@@ -1,6 +1,6 @@
 {
   "name": "skill-flow",
-  "version": "1.3.2",
+  "version": "1.0.0",
   "description": "`skill-flow` is a terminal-first workflow control tower for AI agent skills.",
   "type": "module",
   "main": "dist/cli.js",
