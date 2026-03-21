@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { LockFile, Manifest } from "../domain/types.js";
+import type { LockFile, Manifest, SourceKind } from "../domain/types.js";
 import { SCHEMA_VERSION, getStateRoot } from "../utils/constants.js";
 import { ensureDir, readJsonFile, writeJsonFile } from "../utils/fs.js";
 
@@ -11,7 +11,23 @@ export class StateStore {
   }
 
   get sourceRoot(): string {
-    return path.join(this.stateRoot, "source", "git");
+    return this.getSourceRoot("git");
+  }
+
+  getSourceRoot(kind: SourceKind): string {
+    return path.join(this.stateRoot, "source", kind);
+  }
+
+  getSourceCheckoutPath(kind: SourceKind, sourceId: string): string {
+    return path.join(this.getSourceRoot(kind), sourceId);
+  }
+
+  get catalogRoot(): string {
+    return path.join(this.stateRoot, "catalog", "git");
+  }
+
+  getCatalogCheckoutPath(sourceId: string): string {
+    return path.join(this.catalogRoot, sourceId);
   }
 
   get manifestPath(): string {
@@ -23,7 +39,9 @@ export class StateStore {
   }
 
   async init(): Promise<void> {
-    await ensureDir(this.sourceRoot);
+    await ensureDir(this.getSourceRoot("git"));
+    await ensureDir(this.getSourceRoot("clawhub"));
+    await ensureDir(this.catalogRoot);
     await this.writeManifest(await this.readManifest());
     await this.writeLock(await this.readLock());
   }

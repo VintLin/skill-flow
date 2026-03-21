@@ -5,7 +5,13 @@ import { render } from "ink";
 import { SkillFlowApp } from "./services/skill-flow.js";
 import { ConfigApp } from "./tui/config-app.js";
 import { formatGroupRef } from "./utils/naming.js";
-import { formatActionSummary, formatDoctorIssue, formatWorkflowList } from "./utils/format.js";
+import {
+  formatActionSummary,
+  formatDoctorIssue,
+  formatSkillCandidates,
+  formatWorkflowList,
+} from "./utils/format.js";
+import { buildFindCommand } from "./utils/find-command.js";
 
 const program = new Command();
 const app = new SkillFlowApp();
@@ -17,9 +23,13 @@ program
 
 program
   .command("add")
-  .argument("<source>", "Git source locator")
-  .action(async (source: string) => {
-    const result = await app.addSource(source);
+  .argument("<source>", "Source locator")
+  .option("--path <repoSubpath>", "Filter Git sources to a specific repo subpath")
+  .action(async (source: string, options: { path?: string }) => {
+    const result = await app.addSource(
+      source,
+      options.path ? { path: options.path } : undefined,
+    );
     if (!result.ok) {
       printErrors(result.errors);
       process.exitCode = 1;
@@ -50,6 +60,36 @@ program.command("list").action(async () => {
   }
   console.log(formatWorkflowList(result.data.summaries));
 });
+
+program
+  .command("find")
+  .alias("search")
+  .argument("<query>", "Search query")
+  .option("--json", "Print JSON output")
+  .action(async (query: string, options: { json?: boolean }) => {
+    const result = await app.findSkills(query);
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    if (options.json) {
+      console.log(
+        JSON.stringify(
+          result.data.candidates.map((candidate) => ({
+            ...candidate,
+            nextCommand: buildFindCommand(candidate),
+          })),
+          null,
+          2,
+        ),
+      );
+      printWarnings(result.warnings.map((warning) => warning.message));
+      return;
+    }
+    console.log(formatSkillCandidates(result.data.candidates));
+    printWarnings(result.warnings.map((warning) => warning.message));
+  });
 
 program.command("config").action(async () => {
   const result = await app.getConfigData();

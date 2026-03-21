@@ -12,7 +12,7 @@ export type Result<T> =
   | { ok: true; data: T; warnings: Warning[]; errors: [] }
   | { ok: false; data?: T; warnings: Warning[]; errors: Failure[] };
 
-export type SourceKind = "git";
+export type SourceKind = "git" | "clawhub";
 
 export type DeploymentTargetName =
   | "claude-code"
@@ -48,6 +48,7 @@ export type SourceManifestRecord = {
   kind: SourceKind;
   displayName: string;
   addedAt: string;
+  requestedPath?: string;
 };
 
 export type TargetBinding = {
@@ -76,10 +77,14 @@ export type SourceLockRecord = {
   kind: SourceKind;
   displayName: string;
   checkoutPath: string;
-  commitSha: string;
   updatedAt: string;
   leafIds: string[];
   invalidLeafs: InvalidLeafRecord[];
+  commitSha?: string;
+  packageSlug?: string;
+  resolvedVersion?: string;
+  contentHash?: string;
+  versionMode?: "pinned" | "floating";
 };
 
 export type LeafRecord = {
@@ -174,4 +179,23 @@ export type WorkflowSummary = {
   bindings: SourceBinding;
   activeTargetCount: number;
   health: HealthStatus;
+};
+
+export type SkillCandidateAction =
+  | { type: "none" }
+  | { type: "add-git"; locator: string; requestedPath?: string }
+  | { type: "add-clawhub"; slug: string; version?: string };
+
+export type SkillCandidate = {
+  id: string;
+  title: string;
+  description: string;
+  source: "local" | "builtin-git" | "clawhub";
+  sourceLabel: string;
+  sourceId: string;
+  sourceKind: SourceKind;
+  locator: string;
+  relativePath?: string;
+  installed: boolean;
+  action: SkillCandidateAction;
 };

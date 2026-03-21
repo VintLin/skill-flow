@@ -80,13 +80,15 @@ skill-flow doctor
 skill-flow uninstall my-source-id
 ```
 
-`add <source>` supports local paths, `owner/repo`, and full https/ssh Git URLs.
+`add <source>` supports local paths, `owner/repo`, full https/ssh Git URLs, GitHub tree URLs, and `clawhub:<slug>[@version]`.
 
 ## Command Reference
 
 | Command | Description |
 |---|---|
-| `add <source>` | Add Git source (supports local path, `owner/repo`, https/ssh URL) |
+| `add <source>` | Add a source from Git or ClawHub |
+| `find <query>` | Search installed skills, built-in Git catalogs, and ClawHub |
+| `search <query>` | Alias of `find` |
 | `list` | Show workflow groups |
 | `config` | Open interactive configuration UI |
 | `update [sourceId] --all` | Update sources and re-project |
@@ -99,6 +101,8 @@ skill-flow uninstall my-source-id
 - `~/.skillflow/manifest.json` - Your configuration intent
 - `~/.skillflow/lock.json` - Actual deployment state
 - `~/.skillflow/source/git/<source-id>/` - Git source cache
+- `~/.skillflow/source/clawhub/<source-id>/` - ClawHub source cache
+- `~/.skillflow/catalog/git/<source-id>/` - Built-in Git catalog cache
 
 **Projection Strategy**
 Symlinks preferred, file copies when necessary. Target directories are projections only; true state managed by lock.json.
@@ -108,6 +112,33 @@ Symlinks preferred, file copies when necessary. Target directories are projectio
 Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · OpenClaw · Pi · Windsurf · Roo Code · Cline · Amp · Kiro
 
 Customize target paths via environment variables (e.g., `SKILL_FLOW_TARGET_CLAUDE_CODE`).
+
+Broader ecosystem path references, including project-level rules and instructions paths, are tracked in [docs/refrences/agent-skill-paths.md](./docs/refrences/agent-skill-paths.md).
+
+## Built-in Discovery Catalogs
+
+`find/search` searches built-in Git catalogs in addition to local installed skills and ClawHub.
+
+| Repository | Description | Stars | Skills |
+| --- | --- | ---: | ---: |
+| [anthropic-skills](https://github.com/anthropics/skills) | Official Agent Skills from Anthropic | 95,957 | 18 |
+| [superpowers](https://github.com/obra/superpowers) | Agentic skills framework & development methodology | 89,816 | 14 |
+| [everything-claude-code](https://github.com/affaan-m/everything-claude-code) | Performance optimization system for Claude Code, Codex, and beyond | 81,392 | 147 |
+| [agency-agents](https://github.com/msitarzewski/agency-agents) | Specialized expert agents with personality and proven deliverables | 50,749 | — |
+| [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | Design intelligence for building professional UI/UX | 43,112 | 7 |
+| [antigravity-awesome-skills](https://github.com/sickn33/antigravity-awesome-skills) | 1,000+ battle-tested skills for Claude Code, Cursor, and more | 25,047 | 1,258 |
+| [marketingskills](https://github.com/coreyhaines31/marketingskills) | Marketing skills — CRO, copywriting, SEO, analytics, growth | 14,099 | 33 |
+| [agentskills](https://github.com/agentskills/agentskills) | Specification and documentation for Agent Skills | 13,342 | — |
+| [taste-skill](https://github.com/Leonxlnx/taste-skill) | Gives your AI good taste — stops generic, boring output | 3,389 | 5 |
+| [affiliate-skills](https://github.com/Affitor/affiliate-skills) | Full affiliate marketing funnel: research to deploy | 99 | 47 |
+| [skills](https://github.com/luongnv89/skills) | Reusable skills to supercharge your AI agents | 1 | 29 |
+| [awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) | Community Claude skills collection | — | — |
+| [myclaude](https://github.com/cexll/myclaude) | Personal Claude skills collection | — | — |
+| [baoyu-skills](https://github.com/JimLiu/baoyu-skills) | Community skills collection | — | — |
+| [dbskill](https://github.com/dontbesilent2025/dbskill) | Database-focused skills collection | — | — |
+| [gstack](https://github.com/garrytan/gstack) | Gstack skills and workflows | — | — |
+| [impeccable](https://github.com/pbakaus/impeccable) | Design and taste skills collection | — | — |
+| [frontend-slides](https://github.com/zarazhangrui/frontend-slides) | Frontend presentation skills collection | — | — |
 
 ## Development
 

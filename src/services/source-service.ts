@@ -1,13 +1,16 @@
 import path from "node:path";
 import type {
   LockFile,
-  Manifest,
   Result,
+  SourceKind,
   SourceLockRecord,
   SourceManifestRecord,
 } from "../domain/types.js";
 import { StateStore } from "../state/store.js";
-import { ensureDir, pathExists, removePath } from "../utils/fs.js";
+import { copyDirectory, ensureDir, hashDirectory, pathExists, readJsonFile, removePath } from "../utils/fs.js";
+import {
+  installClawHubSkill,
+} from "../utils/clawhub.js";
 import { git } from "../utils/git.js";
 import { fail, ok } from "../utils/result.js";
 import { deriveDisplayName, deriveSourceId } from "../utils/source-id.js";
@@ -21,46 +24,68 @@ export type SourceSnapshot = {
   invalidLeafCount: number;
 };
 
+export type AddSourceOptions = {
+  path?: string;
+};
+
+type SourceResolution = {
+  kind: SourceKind;
+  locator: string;
+  displayName: string;
+  sourceId: string;
+  requestedPath?: string;
+  gitLocator?: string;
+  clawhubSlug?: string;
+  requestedVersion?: string;
+  versionMode?: "pinned" | "floating";
+};
+
 export class SourceService {
   constructor(
     private readonly store: StateStore,
     private readonly inventoryService: InventoryService,
   ) {}
 
-  async addSource(locator: string): Promise<Result<SourceSnapshot>> {
+  async addSource(
+    locator: string,
+    options: AddSourceOptions = {},
+  ): Promise<Result<SourceSnapshot>> {
     await this.store.init();
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
 
-    const normalizedLocator = await this.normalizeLocator(locator);
-    const displayName = deriveDisplayName(locator);
-    const sourceId = deriveSourceId(locator);
+    const resolved = await this.resolveSource(locator, options);
 
-    if (manifest.sources.some((source) => source.id === sourceId)) {
+    if (manifest.sources.some((source) => source.id === resolved.sourceId)) {
       return fail({
         code: "SOURCE_EXISTS",
-        message: `Workflow group '${formatGroupLabel({ id: sourceId, locator, displayName })}' is already registered with id '${sourceId}'.`,
+        message: `Workflow group '${formatGroupLabel({ id: resolved.sourceId, locator: resolved.locator, displayName: resolved.displayName })}' is already registered with id '${resolved.sourceId}'.`,
       });
     }
 
-    const checkoutPath = path.join(this.store.sourceRoot, sourceId);
-    await ensureDir(this.store.sourceRoot);
+    const checkoutPath = this.store.getSourceCheckoutPath(
+      resolved.kind,
+      resolved.sourceId,
+    );
+    await ensureDir(this.store.getSourceRoot(resolved.kind));
 
     try {
-      await git(["clone", "--depth", "1", normalizedLocator, checkoutPath]);
+      await this.fetchSource(resolved, checkoutPath);
     } catch (error) {
       await removePath(checkoutPath);
       return fail({
-        code: "GIT_CLONE_FAILED",
-        message: `Unable to fetch source '${locator}': ${String(error)}`,
+        code: resolved.kind === "git" ? "GIT_CLONE_FAILED" : "CLAWHUB_FETCH_FAILED",
+        message: `Unable to fetch source '${resolved.locator}': ${String(error)}`,
       });
     }
 
     const snapshot = await this.buildSnapshot(
-      sourceId,
-      locator,
-      displayName,
+      resolved.kind,
+      resolved.sourceId,
+      resolved.locator,
+      resolved.displayName,
       checkoutPath,
+      resolved.requestedPath,
     );
 
     if (!snapshot.ok) {
@@ -69,7 +94,7 @@ export class SourceService {
     }
 
     manifest.sources.push(snapshot.data.manifest);
-    manifest.bindings[sourceId] = { targets: {} };
+    manifest.bindings[resolved.sourceId] = { targets: {} };
     lockFile.sources.push(snapshot.data.lock);
     lockFile.leafInventory.push(...snapshot.data.leafs);
 
@@ -123,20 +148,17 @@ export class SourceService {
         });
       }
 
+      let changed: boolean;
       try {
-        await git(["pull", "--ff-only"], { cwd: currentLock.checkoutPath });
+        changed = await this.updateSource(source, currentLock);
       } catch (error) {
         return fail({
-          code: "GIT_UPDATE_FAILED",
+          code: source.kind === "git" ? "GIT_UPDATE_FAILED" : "CLAWHUB_UPDATE_FAILED",
           message: `Unable to update workflow group id '${sourceId}': ${String(error)}`,
         });
       }
 
-      const latestCommitSha = await git(["rev-parse", "HEAD"], {
-        cwd: currentLock.checkoutPath,
-      });
-
-      if (latestCommitSha === currentLock.commitSha) {
+      if (!changed) {
         updated.push({
           sourceId,
           changed: false,
@@ -148,10 +170,12 @@ export class SourceService {
       }
 
       const snapshot = await this.buildSnapshot(
+        source.kind,
         source.id,
         source.locator,
         source.displayName,
         currentLock.checkoutPath,
+        source.requestedPath,
         { allowEmptyLeafs: true },
       );
 
@@ -261,10 +285,12 @@ export class SourceService {
       }
 
       const snapshot = await this.buildSnapshot(
+        source.kind,
         source.id,
         source.locator,
         source.displayName,
         currentLock.checkoutPath,
+        source.requestedPath,
         { allowEmptyLeafs: true },
       );
 
@@ -341,11 +367,13 @@ export class SourceService {
   }
 
   private async buildSnapshot(
+    kind: SourceKind,
     sourceId: string,
     locator: string,
     displayName: string,
     checkoutPath: string,
-    options: { allowEmptyLeafs?: boolean } = {},
+    requestedPathOrOptions: string | { allowEmptyLeafs?: boolean } | undefined = undefined,
+    maybeOptions: { allowEmptyLeafs?: boolean } = {},
   ): Promise<
     Result<{
       manifest: SourceManifestRecord;
@@ -353,12 +381,21 @@ export class SourceService {
       leafs: LockFile["leafInventory"];
     }>
   > {
-    const commitSha = await git(["rev-parse", "HEAD"], { cwd: checkoutPath });
+    const requestedPath =
+      typeof requestedPathOrOptions === "string" ? requestedPathOrOptions : undefined;
+    const options =
+      typeof requestedPathOrOptions === "string"
+        ? maybeOptions
+        : (maybeOptions.allowEmptyLeafs !== undefined
+            ? maybeOptions
+            : (requestedPathOrOptions ?? {}));
+    const sourceMetadata = await this.readSourceSnapshot(kind, checkoutPath);
     const scanned = await this.inventoryService.scanSource(
       sourceId,
       checkoutPath,
       displayName,
     );
+    const filtered = this.filterScannedLeafs(scanned, requestedPath);
     const metadataWarnings = scanned.leafs.flatMap((leaf) =>
       leaf.metadataWarnings.map((message) => ({
         code: "SKILL_METADATA_WARNING",
@@ -366,13 +403,15 @@ export class SourceService {
       })),
     );
 
-    if (scanned.leafs.length === 0 && !options.allowEmptyLeafs) {
+    if (filtered.leafs.length === 0 && !options.allowEmptyLeafs) {
       return fail(
         {
-          code: "NO_VALID_LEAFS",
-          message: `Source '${displayName}' has no valid skills.`,
+          code: requestedPath ? "SOURCE_PATH_NOT_FOUND" : "NO_VALID_LEAFS",
+          message: requestedPath
+            ? `Source '${displayName}' does not contain a valid skill at '${requestedPath}'.`
+            : `Source '${displayName}' has no valid skills.`,
         },
-        scanned.invalidLeafs.map((leaf) => ({
+        filtered.invalidLeafs.map((leaf) => ({
           code: "INVALID_LEAF",
           message: `${leaf.path}: ${leaf.reason}`,
         })),
@@ -384,26 +423,32 @@ export class SourceService {
         manifest: {
           id: sourceId,
           locator,
-          kind: "git",
+          kind,
           displayName,
           addedAt: new Date().toISOString(),
+          ...(requestedPath ? { requestedPath } : {}),
         },
         lock: {
           id: sourceId,
           locator,
-          kind: "git",
+          kind,
           displayName,
           checkoutPath,
-          commitSha,
           updatedAt: new Date().toISOString(),
-          leafIds: scanned.leafs.map((leaf) => leaf.id),
-          invalidLeafs: scanned.invalidLeafs,
+          leafIds: filtered.leafs.map((leaf) => leaf.id),
+          invalidLeafs: filtered.invalidLeafs,
+          ...sourceMetadata,
+          ...(kind === "clawhub"
+            ? {
+                versionMode: locator.includes("@") ? ("pinned" as const) : ("floating" as const),
+              }
+            : {}),
         },
-        leafs: scanned.leafs,
+        leafs: filtered.leafs,
       },
       [
         ...metadataWarnings,
-        ...scanned.invalidLeafs.map((leaf) => ({
+        ...filtered.invalidLeafs.map((leaf) => ({
           code: "INVALID_LEAF",
           message: `${leaf.path}: ${leaf.reason}`,
         })),
@@ -428,5 +473,203 @@ export class SourceService {
     }
 
     return trimmed;
+  }
+
+  private async resolveSource(
+    locator: string,
+    options: AddSourceOptions,
+  ): Promise<SourceResolution> {
+    const trimmed = locator.trim();
+    const treeLocator = this.parseGitHubTreeLocator(trimmed);
+    if (treeLocator) {
+      return {
+        kind: "git",
+        locator: treeLocator.repoLocator,
+        gitLocator: await this.normalizeLocator(treeLocator.repoLocator),
+        displayName: deriveDisplayName(treeLocator.repoLocator),
+        sourceId: deriveSourceId(treeLocator.repoLocator),
+        ...(options.path ?? treeLocator.requestedPath
+          ? { requestedPath: options.path ?? treeLocator.requestedPath }
+          : {}),
+      };
+    }
+
+    const clawhubMatch = trimmed.match(/^clawhub:([^@\s]+)(?:@(.+))?$/);
+    if (clawhubMatch) {
+      const slug = clawhubMatch[1];
+      const version = clawhubMatch[2];
+      if (!slug) {
+        throw new Error(`Invalid ClawHub locator '${locator}'.`);
+      }
+
+      return version
+        ? {
+            kind: "clawhub",
+            locator: trimmed,
+            displayName: deriveDisplayName(trimmed),
+            sourceId: deriveSourceId(trimmed),
+            ...(options.path ? { requestedPath: options.path } : {}),
+            clawhubSlug: slug,
+            requestedVersion: version,
+            versionMode: "pinned",
+          }
+        : {
+          kind: "clawhub",
+          locator: trimmed,
+          displayName: deriveDisplayName(trimmed),
+          sourceId: deriveSourceId(trimmed),
+          ...(options.path ? { requestedPath: options.path } : {}),
+          clawhubSlug: slug,
+          versionMode: "floating",
+        };
+    }
+
+    return {
+      kind: "git",
+      locator,
+      gitLocator: await this.normalizeLocator(locator),
+      displayName: deriveDisplayName(locator),
+      sourceId: deriveSourceId(locator),
+      ...(options.path ? { requestedPath: options.path } : {}),
+    };
+  }
+
+  private parseGitHubTreeLocator(
+    locator: string,
+  ): { repoLocator: string; requestedPath: string } | null {
+    try {
+      const url = new URL(locator);
+      if (url.hostname !== "github.com") {
+        return null;
+      }
+
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length < 5 || parts[2] !== "tree") {
+        return null;
+      }
+
+      const owner = parts[0];
+      const repo = parts[1];
+      const requestedPath = parts.slice(4).join("/");
+      if (!owner || !repo || !requestedPath) {
+        return null;
+      }
+
+      return {
+        repoLocator: `https://github.com/${owner}/${repo}.git`,
+        requestedPath,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private filterScannedLeafs(
+    scanned: {
+      leafs: LockFile["leafInventory"];
+      invalidLeafs: LockFile["sources"][number]["invalidLeafs"];
+    },
+    requestedPath?: string,
+  ): {
+    leafs: LockFile["leafInventory"];
+    invalidLeafs: LockFile["sources"][number]["invalidLeafs"];
+  } {
+    if (!requestedPath) {
+      return scanned;
+    }
+
+    const normalizedPath = requestedPath.replace(/^\.\/+/, "").replace(/\/+$/, "");
+    const matches = scanned.leafs.filter(
+      (leaf) =>
+        leaf.relativePath === normalizedPath ||
+        leaf.relativePath.startsWith(`${normalizedPath}/`),
+    );
+
+    return {
+      leafs: matches,
+      invalidLeafs: scanned.invalidLeafs,
+    };
+  }
+
+  private async fetchSource(
+    source: SourceResolution,
+    checkoutPath: string,
+  ): Promise<void> {
+    if (source.kind === "git") {
+      await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
+      return;
+    }
+
+    if (source.kind === "clawhub") {
+      const installed = await installClawHubSkill(
+        source.clawhubSlug!,
+        source.requestedVersion,
+      );
+      try {
+        await copyDirectory(installed.installedPath, checkoutPath);
+      } finally {
+        await removePath(installed.workdir);
+      }
+      return;
+    }
+  }
+
+  private async updateSource(
+    source: SourceManifestRecord,
+    currentLock: SourceLockRecord,
+  ): Promise<boolean> {
+    if (source.kind === "git") {
+      await git(["pull", "--ff-only"], { cwd: currentLock.checkoutPath });
+      const latestCommitSha = await git(["rev-parse", "HEAD"], {
+        cwd: currentLock.checkoutPath,
+      });
+      return latestCommitSha !== currentLock.commitSha;
+    }
+
+    if (source.kind === "clawhub") {
+      if (currentLock.versionMode === "pinned") {
+        return false;
+      }
+
+      const installed = await installClawHubSkill(currentLock.packageSlug ?? currentLock.id);
+      try {
+        if (installed.resolvedVersion === currentLock.resolvedVersion) {
+          return false;
+        }
+
+        await copyDirectory(installed.installedPath, currentLock.checkoutPath);
+        return true;
+      } finally {
+        await removePath(installed.workdir);
+      }
+    }
+
+    return false;
+  }
+
+  private async readSourceSnapshot(
+    kind: SourceKind,
+    checkoutPath: string,
+  ): Promise<Partial<SourceLockRecord>> {
+    if (kind === "git") {
+      return {
+        commitSha: await git(["rev-parse", "HEAD"], { cwd: checkoutPath }),
+      };
+    }
+
+    if (kind === "clawhub") {
+      const origin = await readJsonFile<{
+        slug?: string;
+        installedVersion?: string;
+      }>(path.join(checkoutPath, ".clawhub", "origin.json"), {});
+      const contentHash = await hashDirectory(checkoutPath);
+      return {
+        ...(origin.slug ? { packageSlug: origin.slug } : {}),
+        ...(origin.installedVersion ? { resolvedVersion: origin.installedVersion } : {}),
+        contentHash,
+      };
+    }
+
+    return {};
   }
 }

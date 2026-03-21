@@ -2,9 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { InventoryService } from "../services/inventory-service.js";
 import { SkillFlowApp } from "../services/skill-flow.js";
+import * as clawhubUtils from "../utils/clawhub.js";
+import * as builtinGitSources from "../utils/builtin-git-sources.js";
+import { buildFindCommand } from "../utils/find-command.js";
 import {
   buildProjectionWarningMap,
   buildCommandBar,
@@ -75,6 +78,7 @@ describe.sequential("skill-flow", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     delete process.env.SKILL_FLOW_STATE_ROOT;
     delete process.env.SKILL_FLOW_TARGET_CLAUDE_CODE;
     delete process.env.SKILL_FLOW_TARGET_CODEX;
@@ -109,6 +113,201 @@ describe.sequential("skill-flow", () => {
     expect(result.warnings).toHaveLength(0);
   });
 
+  test("adds a git source with path filtering and keeps only matching skills", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "skills/find-skills/SKILL.md": skillDoc("find-skills", "Find skills."),
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const result = await app.addSource(repoPath, { path: "skills/find-skills" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.leafCount).toBe(1);
+
+    const list = await app.listWorkflows();
+    expect(list.ok).toBe(true);
+    if (!list.ok) {
+      return;
+    }
+
+    expect(list.data.summaries[0]?.leafs.map((leaf) => leaf.relativePath)).toEqual([
+      "skills/find-skills",
+    ]);
+  });
+
+  test("rejects add path when it does not resolve to a valid skill", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "skills/find-skills/SKILL.md": skillDoc("find-skills", "Find skills."),
+      "docs/readme.md": "hello",
+    });
+    const app = new SkillFlowApp();
+
+    const result = await app.addSource(repoPath, { path: "docs" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+
+    expect(result.errors[0]?.code).toBe("SOURCE_PATH_NOT_FOUND");
+  });
+
+  test("parses GitHub tree URLs as repo sources with path filtering", async () => {
+    const app = new SkillFlowApp();
+    const result = await app.addSource(
+      "https://github.com/vercel-labs/skills/tree/main/skills/find-skills",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.leafCount).toBe(1);
+    expect(result.data.manifest.id).toBe("vercel-labs-skills");
+  }, 30000);
+
+  test("adds a ClawHub source and stores ClawHub lock metadata", async () => {
+    const app = new SkillFlowApp();
+
+    const result = await app.addSource("clawhub:find-skills-skill");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.manifest.kind).toBe("clawhub");
+    expect(result.data.lock.kind).toBe("clawhub");
+    expect(result.data.lock.packageSlug).toBe("find-skills-skill");
+    expect(result.data.lock.resolvedVersion).toBeTruthy();
+    expect(result.data.leafCount).toBeGreaterThan(0);
+  }, 20000);
+
+  test("keeps a pinned ClawHub source unchanged on update", async () => {
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource("clawhub:find-skills-skill@1.0.0");
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    expect(added.data.lock.versionMode).toBe("pinned");
+
+    const updated = await app.updateSources([added.data.manifest.id]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+
+    expect(updated.data.updated[0]?.changed).toBe(false);
+  }, 20000);
+
+  test("keeps a floating ClawHub source unchanged when no newer version exists", async () => {
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource("clawhub:find-skills-skill");
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    expect(added.data.lock.versionMode).toBe("floating");
+
+    const updated = await app.updateSources([added.data.manifest.id]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+
+    expect(updated.data.updated[0]?.changed).toBe(false);
+  }, 20000);
+
+  test("find prefers local results, then built-in git, then ClawHub", async () => {
+    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([
+      { slug: "browse-skill", title: "Browse Skill", score: 0.92 },
+    ]);
+
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Local browse skill."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+
+    await seedBuiltinCatalog(app);
+    const builtin = builtinGitSources.getBuiltinGitSources()[0]!;
+    const builtinSourceId = deriveSourceId(builtin.locator);
+    await fs.mkdir(
+      path.join(app.store.getCatalogCheckoutPath(builtinSourceId), "skills", "browse"),
+      { recursive: true },
+    );
+    await fs.writeFile(
+      path.join(app.store.getCatalogCheckoutPath(builtinSourceId), "skills", "browse", "SKILL.md"),
+      skillDoc("browse", "Built-in browse skill."),
+      "utf8",
+    );
+
+    const result = await app.findSkills("browse");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.candidates.map((candidate) => candidate.source)).toEqual([
+      "local",
+      "builtin-git",
+      "clawhub",
+    ]);
+  }, 10000);
+
+  test("find builds repo-level add commands for built-in Git results", async () => {
+    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
+
+    const app = new SkillFlowApp();
+    await seedBuiltinCatalog(app);
+    const builtin = builtinGitSources.getBuiltinGitSources()[0]!;
+    const builtinSourceId = deriveSourceId(builtin.locator);
+    await fs.mkdir(
+      path.join(app.store.getCatalogCheckoutPath(builtinSourceId), "skills", "find-skills"),
+      { recursive: true },
+    );
+    await fs.writeFile(
+      path.join(
+        app.store.getCatalogCheckoutPath(builtinSourceId),
+        "skills",
+        "find-skills",
+        "SKILL.md",
+      ),
+      skillDoc("find-skills", "Find skills from a built-in repo."),
+      "utf8",
+    );
+
+    const result = await app.findSkills("find skills");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const candidate = result.data.candidates[0];
+    expect(candidate?.source).toBe("builtin-git");
+    expect(buildFindCommand(candidate!)).toBe(
+      `skill-flow add ${builtin.locator} --path skills/find-skills`,
+    );
+  }, 10000);
+
   test("returns a clear error when git fetch fails", async () => {
     const app = new SkillFlowApp();
 
@@ -135,6 +334,64 @@ describe.sequential("skill-flow", () => {
       "garrytan-gstack",
       "garrytan-gstack",
     ]);
+  });
+
+  test("normalizes ClawHub locators to the same source id across version forms", () => {
+    expect(deriveSourceId("clawhub:find-skills")).toBe("clawhub-find-skills");
+    expect(deriveSourceId("clawhub:find-skills@1.2.3")).toBe("clawhub-find-skills");
+  });
+
+  test("builds follow-up commands for search candidates", () => {
+    expect(buildFindCommand({
+      id: "builtin:1",
+      title: "find-skills",
+      description: "Find skills",
+      source: "builtin-git",
+      sourceLabel: "skills(@anthropics)",
+      sourceId: "anthropics-skills",
+      sourceKind: "git",
+      locator: "https://github.com/anthropics/skills.git",
+      relativePath: "skills/find-skills",
+      installed: false,
+      action: {
+        type: "add-git",
+        locator: "https://github.com/anthropics/skills.git",
+        requestedPath: "skills/find-skills",
+      },
+    })).toBe("skill-flow add https://github.com/anthropics/skills.git --path skills/find-skills");
+
+    expect(buildFindCommand({
+      id: "clawhub:1",
+      title: "Find Skills",
+      description: "Find skills",
+      source: "clawhub",
+      sourceLabel: "ClawHub",
+      sourceId: "clawhub-find-skills",
+      sourceKind: "clawhub",
+      locator: "clawhub:find-skills",
+      installed: false,
+      action: {
+        type: "add-clawhub",
+        slug: "find-skills",
+        version: "1.2.3",
+      },
+    })).toBe("skill-flow add clawhub:find-skills@1.2.3");
+  });
+
+  test("fails find when no local results exist and all remote search backends are unavailable", async () => {
+    vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([]);
+    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockRejectedValueOnce(new Error("offline"));
+
+    const app = new SkillFlowApp();
+    const result = await app.findSkills("browse");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+
+    expect(result.errors[0]?.code).toBe("FIND_UNAVAILABLE");
+    expect(result.warnings[0]?.code).toBe("CLAWHUB_SEARCH_FAILED");
   });
 
   test("formats GitHub groups as groupName(@owner)", () => {
@@ -1230,6 +1487,14 @@ async function createRepo(
   git(repoPath, ["add", "."]);
   git(repoPath, ["commit", "-m", "initial"]);
   return repoPath;
+}
+
+async function seedBuiltinCatalog(app: SkillFlowApp): Promise<void> {
+  for (const builtin of builtinGitSources.getBuiltinGitSources()) {
+    await fs.mkdir(app.store.getCatalogCheckoutPath(deriveSourceId(builtin.locator)), {
+      recursive: true,
+    });
+  }
 }
 
 async function writeRepoFiles(root: string, files: Record<string, string>) {

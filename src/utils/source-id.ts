@@ -2,7 +2,27 @@ import path from "node:path";
 import { slugify } from "./fs.js";
 import { parseGitHubRepo } from "./naming.js";
 
+function parseClawHubLocator(locator: string): { slug: string; version?: string } | null {
+  const match = locator.trim().match(/^clawhub:([^@\s]+)(?:@(.+))?$/);
+  if (!match) {
+    return null;
+  }
+
+  const slug = match[1];
+  const version = match[2];
+  if (!slug) {
+    return null;
+  }
+
+  return version ? { slug, version } : { slug };
+}
+
 export function deriveDisplayName(locator: string): string {
+  const clawHubLocator = parseClawHubLocator(locator);
+  if (clawHubLocator) {
+    return clawHubLocator.slug.split("/").pop() ?? clawHubLocator.slug;
+  }
+
   const githubRepo = parseGitHubRepo(locator);
   if (githubRepo) {
     return githubRepo.repo;
@@ -21,6 +41,11 @@ export function deriveDisplayName(locator: string): string {
 }
 
 export function deriveSourceId(locator: string): string {
+  const clawHubLocator = parseClawHubLocator(locator);
+  if (clawHubLocator) {
+    return slugify(`clawhub-${clawHubLocator.slug}`);
+  }
+
   const githubRepo = parseGitHubRepo(locator);
   if (githubRepo) {
     return slugify(`${githubRepo.owner}-${githubRepo.repo}`);

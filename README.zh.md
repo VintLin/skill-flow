@@ -80,13 +80,15 @@ skill-flow doctor
 skill-flow uninstall my-source-id
 ```
 
-`add <source>` 支持本地路径、`owner/repo`，以及完整的 https/ssh Git URL。
+`add <source>` 支持本地路径、`owner/repo`、完整的 https/ssh Git URL、GitHub tree URL，以及 `clawhub:<slug>[@version]`。
 
 ## 命令参考
 
 | 命令 | 说明 |
 |---|---|
-| `add <source>` | 添加 Git 源（支持本地路径、`owner/repo`、https/ssh URL） |
+| `add <source>` | 从 Git 或 ClawHub 添加技能源 |
+| `find <query>` | 搜索本地已安装技能、内置 Git 仓库和 ClawHub |
+| `search <query>` | `find` 的别名 |
 | `list` | 显示工作流分组 |
 | `config` | 打开交互式配置界面 |
 | `update [sourceId] --all` | 更新源并重新投影 |
@@ -99,6 +101,8 @@ skill-flow uninstall my-source-id
 - `~/.skillflow/manifest.json` - 你的配置意图
 - `~/.skillflow/lock.json` - 实际部署状态
 - `~/.skillflow/source/git/<source-id>/` - Git 源缓存
+- `~/.skillflow/source/clawhub/<source-id>/` - ClawHub 源缓存
+- `~/.skillflow/catalog/git/<source-id>/` - 内置 Git 仓库缓存
 
 **投影策略**
 优先使用符号链接，必要时使用文件复制。目标目录仅作为投影，真实状态由 lock.json 管理。
@@ -108,6 +112,33 @@ skill-flow uninstall my-source-id
 Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · OpenClaw · Pi · Windsurf · Roo Code · Cline · Amp · Kiro
 
 可通过环境变量自定义目标路径（如 `SKILL_FLOW_TARGET_CLAUDE_CODE`）。
+
+更广义的生态路径参考，包括 project 级 rules / instructions 路径，见 [docs/refrences/agent-skill-paths.md](./docs/refrences/agent-skill-paths.md)。
+
+## 默认内置发现仓库
+
+`find/search` 除了搜索本地已安装技能和 ClawHub，也会搜索默认内置的 Git 仓库目录。
+
+| Repository | Description | Stars | Skills |
+| --- | --- | ---: | ---: |
+| [anthropic-skills](https://github.com/anthropics/skills) | Official Agent Skills from Anthropic | 95,957 | 18 |
+| [superpowers](https://github.com/obra/superpowers) | Agentic skills framework & development methodology | 89,816 | 14 |
+| [everything-claude-code](https://github.com/affaan-m/everything-claude-code) | Performance optimization system for Claude Code, Codex, and beyond | 81,392 | 147 |
+| [agency-agents](https://github.com/msitarzewski/agency-agents) | Specialized expert agents with personality and proven deliverables | 50,749 | — |
+| [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | Design intelligence for building professional UI/UX | 43,112 | 7 |
+| [antigravity-awesome-skills](https://github.com/sickn33/antigravity-awesome-skills) | 1,000+ battle-tested skills for Claude Code, Cursor, and more | 25,047 | 1,258 |
+| [marketingskills](https://github.com/coreyhaines31/marketingskills) | Marketing skills — CRO, copywriting, SEO, analytics, growth | 14,099 | 33 |
+| [agentskills](https://github.com/agentskills/agentskills) | Specification and documentation for Agent Skills | 13,342 | — |
+| [taste-skill](https://github.com/Leonxlnx/taste-skill) | Gives your AI good taste — stops generic, boring output | 3,389 | 5 |
+| [affiliate-skills](https://github.com/Affitor/affiliate-skills) | Full affiliate marketing funnel: research to deploy | 99 | 47 |
+| [skills](https://github.com/luongnv89/skills) | Reusable skills to supercharge your AI agents | 1 | 29 |
+| [awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) | Community Claude skills collection | — | — |
+| [myclaude](https://github.com/cexll/myclaude) | Personal Claude skills collection | — | — |
+| [baoyu-skills](https://github.com/JimLiu/baoyu-skills) | Community skills collection | — | — |
+| [dbskill](https://github.com/dontbesilent2025/dbskill) | Database-focused skills collection | — | — |
+| [gstack](https://github.com/garrytan/gstack) | Gstack skills and workflows | — | — |
+| [impeccable](https://github.com/pbakaus/impeccable) | Design and taste skills collection | — | — |
+| [frontend-slides](https://github.com/zarazhangrui/frontend-slides) | Frontend presentation skills collection | — | — |
 
 ## 开发
 

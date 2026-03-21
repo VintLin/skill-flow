@@ -2,16 +2,18 @@ import type {
   DeploymentAction,
   DeploymentTargetName,
   DoctorIssue,
+  SkillCandidate,
   WorkflowSummary,
 } from "../domain/types.js";
 import { TARGET_LABELS } from "./constants.js";
+import { buildFindCommand } from "./find-command.js";
 import { formatGroupLabel } from "./naming.js";
 
 export function formatWorkflowList(summaries: WorkflowSummary[]): string {
   if (summaries.length === 0) {
     return [
       "No workflow groups yet",
-      "Add a Git source to discover a grouped set of related skills.",
+      "Add a source to discover a grouped set of related skills.",
     ].join("\n");
   }
 
@@ -61,4 +63,23 @@ export function formatDoctorIssue(issue: DoctorIssue): string {
       ? ` skill:${issue.leafId}`
       : "";
   return `[${issue.severity.toUpperCase()}] ${issue.sourceLabel ?? issue.sourceId}${target}${leaf} ${issue.message}`;
+}
+
+export function formatSkillCandidates(candidates: SkillCandidate[]): string {
+  if (candidates.length === 0) {
+    return "No matching skills found.";
+  }
+
+  return candidates
+    .map((candidate, index) => {
+      const location = candidate.relativePath ? ` · ${candidate.relativePath}` : "";
+      const next = buildFindCommand(candidate);
+      return [
+        `${index + 1}. ${candidate.title}  ${candidate.source}${candidate.installed ? "  installed" : ""}`,
+        candidate.description,
+        `${candidate.sourceLabel}${location}`,
+        next ? `next: ${next}` : "next: already installed",
+      ].join("\n");
+    })
+    .join("\n\n");
 }
