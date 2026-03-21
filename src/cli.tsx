@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { render } from "ink";
 import { SkillFlowApp } from "./services/skill-flow.js";
 import { ConfigApp } from "./tui/config-app.js";
+import { formatGroupRef } from "./utils/naming.js";
 import { formatActionSummary, formatDoctorIssue, formatWorkflowList } from "./utils/format.js";
 
 const program = new Command();
@@ -24,10 +25,20 @@ program
       process.exitCode = 1;
       return;
     }
-    console.log(
-      `Added ${result.data.manifest.id} with ${result.data.leafCount} valid skills.`,
+    const duplicateSkipCount = result.warnings.filter((warning) =>
+      warning.message.includes("Duplicate skill content skipped because"),
+    ).length;
+    const visibleWarnings = result.warnings.filter(
+      (warning) => !warning.message.includes("Duplicate skill content skipped because"),
     );
-    printWarnings(result.warnings.map((warning) => warning.message));
+    const duplicateSummary =
+      duplicateSkipCount > 0
+        ? `, skipped ${duplicateSkipCount} duplicate skill${duplicateSkipCount === 1 ? "" : "s"}`
+        : "";
+    console.log(
+      `Added ${formatGroupRef(result.data.manifest)} with ${result.data.leafCount} valid skills${duplicateSummary}.`,
+    );
+    printWarnings(visibleWarnings.map((warning) => warning.message));
   });
 
 program.command("list").action(async () => {
@@ -91,9 +102,13 @@ program
       process.exitCode = 1;
       return;
     }
+    const summariesResult = await app.listWorkflows();
+    const summaries = summariesResult.ok ? summariesResult.data.summaries : [];
     for (const item of result.data.updated) {
+      const summary = summaries.find((summary) => summary.source.id === item.sourceId);
+      const groupRef = summary ? formatGroupRef(summary.source) : item.sourceId;
       console.log(
-        `${item.sourceId}  changed:${item.changed}  +${item.addedLeafIds.length}  -${item.removedLeafIds.length}  invalidated:${item.invalidatedLeafIds.length}`,
+        `${groupRef}  changed:${item.changed}  +${item.addedLeafIds.length}  -${item.removedLeafIds.length}  invalidated:${item.invalidatedLeafIds.length}`,
       );
     }
     printWarnings(result.warnings.map((warning) => warning.message));
@@ -126,7 +141,8 @@ program
       process.exitCode = 1;
       return;
     }
-    console.log(`Removed: ${result.data.removed.join(", ")}`);
+    const removed = result.data.removedRefs.map((source) => formatGroupRef(source));
+    console.log(`Removed: ${removed.join(", ")}`);
     printWarnings(result.data.warnings);
   });
 

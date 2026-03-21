@@ -206,10 +206,20 @@ export class SkillFlowApp {
     return this.doctorService.run(manifest, lockFile);
   }
 
-  async uninstall(sourceIds: string[]): Promise<Result<{ removed: string[]; warnings: string[] }>> {
+  async uninstall(sourceIds: string[]): Promise<
+    Result<{
+      removed: string[];
+      removedRefs: Array<{ id: string; locator: string; displayName: string }>;
+      warnings: string[];
+    }>
+  > {
     await this.store.init();
+    const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
     const warnings: string[] = [];
+    const removedRefs = sourceIds
+      .map((sourceId) => manifest.sources.find((source) => source.id === sourceId))
+      .filter((source): source is Manifest["sources"][number] => Boolean(source));
 
     for (const sourceId of sourceIds) {
       const deployments = lockFile.deployments.filter(
@@ -249,7 +259,7 @@ export class SkillFlowApp {
       return fail(removed.errors, removed.warnings);
     }
 
-    return ok({ removed: removed.data.removed, warnings });
+    return ok({ removed: removed.data.removed, removedRefs, warnings });
   }
 
   bindingFromDraft(draft: DraftBinding): SourceBinding {
@@ -285,7 +295,7 @@ export class SkillFlowApp {
 
     const warnings = [...conflictingLeafIds].map((leafId) => ({
       code: "DUPLICATE_LEAF_SELECTION_SKIPPED",
-      message: `${leafId} skipped because an identical skill is already selected in another workflow group.`,
+      message: `${lockFile.leafInventory.find((leaf) => leaf.id === leafId)?.linkName ?? leafId} skipped because an identical skill is already selected in another workflow group.`,
     }));
 
     return {

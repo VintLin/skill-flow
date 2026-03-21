@@ -154,8 +154,10 @@ export type DoctorIssueSeverity = "info" | "warning" | "error";
 export type DoctorIssue = {
   severity: DoctorIssueSeverity;
   sourceId: string;
+  sourceLabel?: string;
   target?: DeploymentTargetName;
   leafId?: string;
+  leafLabel?: string;
   code: string;
   message: string;
 };

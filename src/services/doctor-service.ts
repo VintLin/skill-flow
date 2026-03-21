@@ -8,6 +8,7 @@ import type {
   Result,
 } from "../domain/types.js";
 import { hashDirectory, isBrokenSymlink, pathExists } from "../utils/fs.js";
+import { formatGroupLabel } from "../utils/naming.js";
 import { ok } from "../utils/result.js";
 
 export class DoctorService {
@@ -30,6 +31,7 @@ export class DoctorService {
           issues.push({
             severity: "error",
             sourceId: source.id,
+            sourceLabel: formatGroupLabel(source),
             target: adapter.target,
             code: "TARGET_UNAVAILABLE",
             message: detection.reason ?? "Target is unavailable.",
@@ -50,6 +52,7 @@ export class DoctorService {
             issues.push({
               severity: "error",
               sourceId: source.id,
+              sourceLabel: formatGroupLabel(source),
               target: adapter.target,
               leafId,
               code: "LEAF_MISSING",
@@ -66,8 +69,10 @@ export class DoctorService {
             issues.push({
               severity: "warning",
               sourceId: source.id,
+              sourceLabel: formatGroupLabel(source),
               target: adapter.target,
               leafId,
+              leafLabel: leaf.linkName,
               code: "DRIFT_NOT_DEPLOYED",
               message: "This selected skill is not currently projected to disk.",
             });
@@ -78,8 +83,10 @@ export class DoctorService {
             issues.push({
               severity: "error",
               sourceId: source.id,
+              sourceLabel: formatGroupLabel(source),
               target: adapter.target,
               leafId,
+              leafLabel: leaf.linkName,
               code: "TARGET_MISSING",
               message: "Projected target is missing on disk.",
             });
@@ -92,8 +99,10 @@ export class DoctorService {
               issues.push({
                 severity: "warning",
                 sourceId: source.id,
+                sourceLabel: formatGroupLabel(source),
                 target: adapter.target,
                 leafId,
+                leafLabel: leaf.linkName,
                 code: "DRIFT_TYPE",
                 message: "Expected a symlink, but found foreign content.",
               });
@@ -104,8 +113,10 @@ export class DoctorService {
               issues.push({
                 severity: "error",
                 sourceId: source.id,
+                sourceLabel: formatGroupLabel(source),
                 target: adapter.target,
                 leafId,
+                leafLabel: leaf.linkName,
                 code: "BROKEN_SYMLINK",
                 message: "Projected symlink is broken.",
               });
@@ -116,8 +127,10 @@ export class DoctorService {
               issues.push({
                 severity: "warning",
                 sourceId: source.id,
+                sourceLabel: formatGroupLabel(source),
                 target: adapter.target,
                 leafId,
+                leafLabel: leaf.linkName,
                 code: "DRIFT_COPY",
                 message: "Projected copy no longer matches saved state.",
               });

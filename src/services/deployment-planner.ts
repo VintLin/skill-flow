@@ -12,6 +12,7 @@ import type {
   Warning,
 } from "../domain/types.js";
 import type { ChannelAdapter } from "../adapters/channel-adapters.js";
+import { resolveProjectedSkillNames } from "../utils/naming.js";
 import { fail, ok } from "../utils/result.js";
 
 export class DeploymentPlanner {
@@ -235,25 +236,14 @@ export class DeploymentPlanner {
         .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
         .filter((leaf): leaf is LeafRecord => Boolean(leaf));
     });
-
-    const byLinkName = new Map<string, LeafRecord[]>();
-    for (const leaf of selectedLeafs) {
-      const group = byLinkName.get(leaf.linkName) ?? [];
-      group.push(leaf);
-      byLinkName.set(leaf.linkName, group);
-    }
-
-    const result = new Map<string, string>();
-    for (const leaf of selectedLeafs) {
-      const collisions = byLinkName.get(leaf.linkName) ?? [];
-      if (collisions.length <= 1) {
-        result.set(leaf.id, leaf.linkName);
-        continue;
-      }
-
-      result.set(leaf.id, `${leaf.sourceId}-${leaf.linkName}`);
-    }
-
-    return result;
+    const sourcesById = new Map(manifest.sources.map((source) => [source.id, source]));
+    return resolveProjectedSkillNames(
+      selectedLeafs.map((leaf) => ({
+        leafId: leaf.id,
+        groupId: leaf.sourceId,
+        groupName: sourcesById.get(leaf.sourceId)?.displayName ?? leaf.sourceId,
+        skillName: leaf.linkName,
+      })),
+    );
   }
 }

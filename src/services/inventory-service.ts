@@ -24,7 +24,11 @@ export class InventoryService {
     "node_modules",
   ]);
 
-  async scanSource(sourceId: string, checkoutPath: string): Promise<InventoryScan> {
+  async scanSource(
+    sourceId: string,
+    checkoutPath: string,
+    rootLinkName = sourceId,
+  ): Promise<InventoryScan> {
     const skillFiles = await this.findSkillFiles(checkoutPath);
     const candidates: Array<LeafRecord & { dedupeKey: string }> = [];
     const invalidLeafs: InvalidLeafRecord[] = [];
@@ -33,7 +37,10 @@ export class InventoryService {
       const leafRoot = path.dirname(skillFilePath);
       const relativePath = path.relative(checkoutPath, leafRoot) || ".";
       const raw = await fs.readFile(skillFilePath, "utf8");
-      const linkName = path.basename(leafRoot) || sourceId;
+      const linkName =
+        relativePath === "."
+          ? rootLinkName
+          : (path.basename(leafRoot) || rootLinkName);
       const parsed = this.parseSkillFile(raw, linkName);
 
       if (!parsed.valid) {

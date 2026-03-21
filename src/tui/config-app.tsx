@@ -1,12 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type {
+  SourceManifestRecord,
   DeploymentAction,
   DeploymentTargetName,
   WorkflowSummary,
 } from "../domain/types.js";
 import type { DraftBinding, SkillFlowApp } from "../services/skill-flow.js";
 import { TARGET_LABELS, TARGET_ORDER } from "../utils/constants.js";
+import {
+  buildProjectedSkillName,
+  formatGroupLabel,
+  resolveProjectedSkillNames,
+} from "../utils/naming.js";
 import { countActions } from "../utils/format.js";
 import {
   getParentSelectionState,
@@ -192,7 +198,7 @@ export function buildContextBar({
   selectedLeafName,
   selectedLeafWarnings,
   skippedLeafs,
-  sourceId,
+  sourceLabel,
 }: {
   blockedCount: number;
   changeCount: number;
@@ -203,9 +209,9 @@ export function buildContextBar({
   selectedLeafName: string | undefined;
   selectedLeafWarnings: string[];
   skippedLeafs: number;
-  sourceId: string;
+  sourceLabel: string;
 }) {
-  const parts = [sourceId];
+  const parts = [sourceLabel];
 
   if (selectedLeafName) {
     parts.push(`skill ${selectedLeafName}`);
@@ -285,11 +291,27 @@ export function buildProjectionWarningMap({
       .map((leafId) => summary.leafs.find((leaf) => leaf.id === leafId))
       .filter((leaf): leaf is WorkflowSummary["leafs"][number] => Boolean(leaf))
       .map((leaf) => ({
-        sourceId: summary.source.id,
+        source: summary.source,
         leaf,
         exactKey: getExactDuplicateKey(leaf.linkName, leaf.name, leaf.description),
       }));
   });
+  const projectedNames = resolveProjectedSkillNames([
+    ...otherSelectedLeafs.map((candidate) => ({
+      leafId: candidate.leaf.id,
+      groupId: candidate.source.id,
+      groupName: candidate.source.displayName,
+      skillName: candidate.leaf.linkName,
+    })),
+    ...currentSummary.leafs
+      .filter((leaf) => currentSelectedLeafIds.has(leaf.id))
+      .map((leaf) => ({
+        leafId: leaf.id,
+        groupId: currentSummary.source.id,
+        groupName: currentSummary.source.displayName,
+        skillName: leaf.linkName,
+      })),
+  ]);
 
   const warningsByLeafId: ProjectionWarningMap = {};
   for (const leaf of currentSummary.leafs) {
@@ -301,7 +323,7 @@ export function buildProjectionWarningMap({
     const exactDuplicate = otherSelectedLeafs.find((candidate) => candidate.exactKey === exactKey);
     if (exactDuplicate) {
       warningsByLeafId[leaf.id] = [
-        `identical skill already selected in ${exactDuplicate.sourceId}, this one will be skipped`,
+        `identical skill already selected in ${formatGroupLabel(exactDuplicate.source)}, this one will be skipped`,
       ];
       continue;
     }
@@ -310,8 +332,11 @@ export function buildProjectionWarningMap({
       (candidate) => candidate.leaf.linkName === leaf.linkName,
     );
     if (renameConflict) {
+      const projectedName =
+        projectedNames.get(leaf.id) ??
+        buildProjectedSkillName(currentSummary.source.displayName, leaf.linkName);
       warningsByLeafId[leaf.id] = [
-        `conflicts with ${renameConflict.sourceId}, will deploy as ${sourceId}-${leaf.linkName}`,
+        `conflicts with ${formatGroupLabel(renameConflict.source)}, will deploy as ${projectedName}`,
       ];
     }
   }
@@ -752,7 +777,7 @@ export function ConfigApp({
   const groupRows = getWindowedRows(
     summaries.map((summary, index) => ({
       key: summary.source.id,
-      text: `${summary.source.id}  ${formatGroupSaveState(
+      text: `${formatGroupLabel(summary.source)}  ${formatGroupSaveState(
         getSaveDisplayPhase(
           (saveStateBySourceId[summary.source.id]?.phase ?? "idle"),
           !draftsEqual(
@@ -820,7 +845,7 @@ export function ConfigApp({
     selectedLeafName: selectedLeaf?.linkName,
     selectedLeafWarnings,
     skippedLeafs,
-    sourceId: selectedSourceId,
+    sourceLabel: formatGroupLabel(activeSummary.source),
   });
   const commandBar = buildCommandBar({
     changeCount,
@@ -1053,6 +1078,7 @@ function selectionMarker(state: "empty" | "partial" | "full") {
 function getExactDuplicateKey(linkName: string, name: string, description: string) {
   return `${linkName}\n${name}\n${description}`;
 }
+
 
 function formatGroupSaveState(phase: SaveDisplayPhase) {
   if (phase === "dirty") {

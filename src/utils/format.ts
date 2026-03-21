@@ -5,6 +5,7 @@ import type {
   WorkflowSummary,
 } from "../domain/types.js";
 import { TARGET_LABELS } from "./constants.js";
+import { formatGroupLabel } from "./naming.js";
 
 export function formatWorkflowList(summaries: WorkflowSummary[]): string {
   if (summaries.length === 0) {
@@ -29,7 +30,7 @@ export function formatWorkflowList(summaries: WorkflowSummary[]): string {
         suffixParts.push(`${invalidCount} skipped`);
       }
       const suffix = suffixParts.length > 0 ? `, ${suffixParts.join(", ")}` : "";
-      return `${summary.source.id}  ${summary.health}  ${summary.leafs.length} skills  ${summary.activeTargetCount} targets${suffix}`;
+      return `${formatGroupLabel(summary.source)}  ${summary.health}  ${summary.leafs.length} skills  ${summary.activeTargetCount} targets${suffix}`;
     })
     .join("\n");
 }
@@ -54,6 +55,10 @@ export function formatTargetName(target: DeploymentTargetName): string {
 
 export function formatDoctorIssue(issue: DoctorIssue): string {
   const target = issue.target ? ` ${formatTargetName(issue.target)}` : "";
-  const leaf = issue.leafId ? ` ${issue.leafId}` : "";
-  return `[${issue.severity.toUpperCase()}] ${issue.sourceId}${target}${leaf} ${issue.message}`;
+  const leaf = issue.leafLabel
+    ? ` skill:${issue.leafLabel}`
+    : issue.leafId
+      ? ` skill:${issue.leafId}`
+      : "";
+  return `[${issue.severity.toUpperCase()}] ${issue.sourceLabel ?? issue.sourceId}${target}${leaf} ${issue.message}`;
 }

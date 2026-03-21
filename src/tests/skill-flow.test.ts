@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { InventoryService } from "../services/inventory-service.js";
 import { SkillFlowApp } from "../services/skill-flow.js";
 import {
   buildProjectionWarningMap,
@@ -20,11 +21,17 @@ import {
   TARGET_PATH_CANDIDATES,
 } from "../utils/constants.js";
 import {
+  buildProjectedSkillName,
+  formatGroupLabel,
+  resolveProjectedSkillNames,
+} from "../utils/naming.js";
+import {
   getParentSelectionState,
   toggleChild,
   toggleParent,
   type TreeSelectionState,
 } from "../tui/selection-state.js";
+import { deriveSourceId } from "../utils/source-id.js";
 
 describe.sequential("skill-flow", () => {
   let sandboxRoot: string;
@@ -114,6 +121,70 @@ describe.sequential("skill-flow", () => {
     expect(result.errors[0]?.code).toBe("GIT_CLONE_FAILED");
   });
 
+  test("normalizes GitHub locators to the same source id across supported formats", () => {
+    const locators = [
+      "https://github.com/garrytan/gstack",
+      "https://github.com/garrytan/gstack.git",
+      "git@github.com:garrytan/gstack.git",
+      "garrytan/gstack",
+    ];
+
+    expect(locators.map((locator) => deriveSourceId(locator))).toEqual([
+      "garrytan-gstack",
+      "garrytan-gstack",
+      "garrytan-gstack",
+      "garrytan-gstack",
+    ]);
+  });
+
+  test("formats GitHub groups as groupName(@owner)", () => {
+    expect(formatGroupLabel({
+      id: "garrytan-gstack",
+      locator: "git@github.com:garrytan/gstack.git",
+      displayName: "gstack",
+    })).toBe("gstack(@garrytan)");
+  });
+
+  test("prefers groupName-skillName for projected collisions", () => {
+    const projected = resolveProjectedSkillNames([
+      {
+        leafId: "a:browse",
+        groupId: "garrytan-gstack",
+        groupName: "gstack",
+        skillName: "browse",
+      },
+      {
+        leafId: "b:browse",
+        groupId: "alice-toolkit",
+        groupName: "toolkit",
+        skillName: "browse",
+      },
+    ]);
+
+    expect(projected.get("a:browse")).toBe(buildProjectedSkillName("gstack", "browse"));
+    expect(projected.get("b:browse")).toBe(buildProjectedSkillName("toolkit", "browse"));
+  });
+
+  test("falls back to groupId-skillName when projected names still collide", () => {
+    const projected = resolveProjectedSkillNames([
+      {
+        leafId: "a:browse",
+        groupId: "alice-gstack",
+        groupName: "gstack",
+        skillName: "browse",
+      },
+      {
+        leafId: "b:browse",
+        groupId: "garrytan-gstack",
+        groupName: "gstack",
+        skillName: "browse",
+      },
+    ]);
+
+    expect(projected.get("a:browse")).toBe("alice-gstack-browse");
+    expect(projected.get("b:browse")).toBe("garrytan-gstack-browse");
+  });
+
   test("rejects uninstall for an unknown workflow group", async () => {
     const app = new SkillFlowApp();
 
@@ -192,6 +263,15 @@ description: |
       "Fast headless browser",
     );
     expect(listResult.data.summaries[0]?.leafs[0]?.name).toBe("browse");
+  });
+
+  test("uses repository display name for a root-level skill link name", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "SKILL.md": skillDoc("gstack", "Root skill."),
+    });
+    const inventory = new InventoryService();
+    const scanned = await inventory.scanSource("garrytan-gstack", repoPath, "gstack");
+    expect(scanned.leafs[0]?.linkName).toBe("gstack");
   });
 
   test("blocks apply preview when foreign content already exists at target path", async () => {
@@ -834,9 +914,9 @@ description: |
         selectedLeafName: "gstack",
         selectedLeafWarnings: ["description should be at most 1024 characters"],
         skippedLeafs: 21,
-        sourceId: "gstack",
+        sourceLabel: "gstack(@garrytan)",
       }),
-    ).toContain("warning:");
+    ).toContain("gstack(@garrytan)");
   });
 
   test("projection warning helper marks identical cross-group skills as skipped", () => {

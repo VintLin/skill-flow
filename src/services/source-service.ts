@@ -11,6 +11,7 @@ import { ensureDir, pathExists, removePath } from "../utils/fs.js";
 import { git } from "../utils/git.js";
 import { fail, ok } from "../utils/result.js";
 import { deriveDisplayName, deriveSourceId } from "../utils/source-id.js";
+import { formatGroupLabel } from "../utils/naming.js";
 import { InventoryService } from "./inventory-service.js";
 
 export type SourceSnapshot = {
@@ -38,7 +39,7 @@ export class SourceService {
     if (manifest.sources.some((source) => source.id === sourceId)) {
       return fail({
         code: "SOURCE_EXISTS",
-        message: `Workflow group '${sourceId}' is already registered.`,
+        message: `Workflow group '${formatGroupLabel({ id: sourceId, locator, displayName })}' is already registered with id '${sourceId}'.`,
       });
     }
 
@@ -118,7 +119,7 @@ export class SourceService {
       if (!source || !currentLock) {
         return fail({
           code: "SOURCE_NOT_FOUND",
-          message: `Workflow group '${sourceId}' is not registered.`,
+          message: `Workflow group id '${sourceId}' is not registered.`,
         });
       }
 
@@ -127,7 +128,7 @@ export class SourceService {
       } catch (error) {
         return fail({
           code: "GIT_UPDATE_FAILED",
-          message: `Unable to update '${sourceId}': ${String(error)}`,
+          message: `Unable to update workflow group id '${sourceId}': ${String(error)}`,
         });
       }
 
@@ -205,7 +206,7 @@ export class SourceService {
       if (!currentSource || !currentLock) {
         return fail({
           code: "SOURCE_NOT_FOUND",
-          message: `Workflow group '${sourceId}' is not registered.`,
+          message: `Workflow group id '${sourceId}' is not registered.`,
         });
       }
 
@@ -353,7 +354,11 @@ export class SourceService {
     }>
   > {
     const commitSha = await git(["rev-parse", "HEAD"], { cwd: checkoutPath });
-    const scanned = await this.inventoryService.scanSource(sourceId, checkoutPath);
+    const scanned = await this.inventoryService.scanSource(
+      sourceId,
+      checkoutPath,
+      displayName,
+    );
     const metadataWarnings = scanned.leafs.flatMap((leaf) =>
       leaf.metadataWarnings.map((message) => ({
         code: "SKILL_METADATA_WARNING",
