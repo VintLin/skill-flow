@@ -75,22 +75,34 @@ export class InventoryService {
 
     async function walk(currentPath: string): Promise<void> {
       const entries = await fs.readdir(currentPath, { withFileTypes: true });
-      entries.sort((left, right) => compareTraversalEntries(left.name, right.name));
+      const files = entries
+        .filter((entry) => entry.isFile())
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const visibleDirectories = entries
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            !InventoryService.IGNORED_DIRECTORIES.has(entry.name) &&
+            !entry.name.startsWith("."),
+        )
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const hiddenDirectories = entries
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            !InventoryService.IGNORED_DIRECTORIES.has(entry.name) &&
+            entry.name.startsWith("."),
+        )
+        .sort((left, right) => left.name.localeCompare(right.name));
 
-      for (const entry of entries) {
-        if (InventoryService.IGNORED_DIRECTORIES.has(entry.name)) {
-          continue;
+      for (const entry of files) {
+        if (entry.name === "SKILL.md") {
+          discovered.push(path.join(currentPath, entry.name));
         }
+      }
 
-        const entryPath = path.join(currentPath, entry.name);
-        if (entry.isDirectory()) {
-          await walk(entryPath);
-          continue;
-        }
-
-        if (entry.isFile() && entry.name === "SKILL.md") {
-          discovered.push(entryPath);
-        }
+      for (const entry of [...visibleDirectories, ...hiddenDirectories]) {
+        await walk(path.join(currentPath, entry.name));
       }
     }
 
@@ -236,13 +248,4 @@ export class InventoryService {
 
     return undefined;
   }
-}
-
-function compareTraversalEntries(left: string, right: string): number {
-  const leftHidden = left.startsWith(".");
-  const rightHidden = right.startsWith(".");
-  if (leftHidden !== rightHidden) {
-    return leftHidden ? 1 : -1;
-  }
-  return left.localeCompare(right);
 }

@@ -3,6 +3,7 @@ import { createChannelAdapters } from "../adapters/channel-adapters.js";
 import type {
   DeploymentAction,
   DeploymentPlan,
+  LeafRecord,
   DeploymentTargetName,
   DoctorReport,
   LockFile,
@@ -10,6 +11,7 @@ import type {
   Result,
   SourceBinding,
   TargetBinding,
+  Warning,
   WorkflowSummary,
 } from "../domain/types.js";
 import { StateStore } from "../state/store.js";
@@ -98,19 +100,26 @@ export class SkillManagerApp {
     await this.store.init();
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
-    manifest.bindings[sourceId] = this.bindingFromDraft(draft);
-    const plan = await this.planner.planForSource(sourceId, manifest, lockFile);
+    const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
+    const plan = await this.planForAffectedSources(
+      prepared.manifest,
+      lockFile,
+      sourceId,
+    );
     if (!plan.ok) {
-      return fail(plan.errors, plan.warnings);
+      return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
     }
 
-    return ok({ plan: plan.data, manifest, lockFile }, plan.warnings);
+    return ok(
+      { plan: plan.data, manifest: prepared.manifest, lockFile },
+      [...prepared.warnings, ...plan.warnings],
+    );
   }
 
   async applyDraft(
     sourceId: string,
     draft: DraftBinding,
-  ): Promise<Result<{ actions: DeploymentAction[] }>> {
+  ): Promise<Result<{ actions: DeploymentAction[]; draft: DraftBinding }>> {
     const reconciled = await this.sourceService.reconcileInventory([sourceId], {
       force: true,
     });
@@ -120,22 +129,28 @@ export class SkillManagerApp {
     await this.store.init();
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
-    manifest.bindings[sourceId] = this.bindingFromDraft(draft);
+    const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
 
-    const plan = await this.planner.planForSource(sourceId, manifest, lockFile);
+    const plan = await this.planForAffectedSources(prepared.manifest, lockFile, sourceId);
     if (!plan.ok) {
-      return fail(plan.errors, plan.warnings);
+      return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
     }
 
     const applyResult = await this.applier.applyPlan(lockFile, plan.data.actions);
-    await this.store.writeManifest(manifest);
+    await this.store.writeManifest(prepared.manifest);
     await this.store.writeLock(lockFile);
 
     if (!applyResult.ok) {
-      return fail(applyResult.errors, applyResult.warnings);
+      return fail(
+        applyResult.errors,
+        [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
+      );
     }
 
-    return ok({ actions: plan.data.actions }, [...plan.warnings, ...applyResult.warnings]);
+    return ok(
+      { actions: plan.data.actions, draft: prepared.draft },
+      [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
+    );
   }
 
   async updateSources(sourceIds?: string[]): Promise<
@@ -164,17 +179,12 @@ export class SkillManagerApp {
 
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
+    const activeSourceIds = manifest.sources
+      .map((source) => source.id)
+      .filter((id) => this.hasActiveTargets(manifest, id));
 
-    for (const item of updated.data.updated) {
-      const binding = manifest.bindings[item.sourceId];
-      const hasActiveTargets = binding
-        ? Object.values(binding.targets).some((target) => target?.enabled)
-        : false;
-      if (!hasActiveTargets) {
-        continue;
-      }
-
-      const plan = await this.planner.planForSource(item.sourceId, manifest, lockFile);
+    for (const sourceId of activeSourceIds) {
+      const plan = await this.planner.planForSource(sourceId, manifest, lockFile);
       if (!plan.ok) {
         return fail(plan.errors, plan.warnings);
       }
@@ -251,5 +261,121 @@ export class SkillManagerApp {
       };
     }
     return { targets };
+  }
+
+  private prepareManifestForDraft(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceId: string,
+    draft: DraftBinding,
+  ): { manifest: Manifest; draft: DraftBinding; warnings: Warning[] } {
+    manifest.bindings[sourceId] = this.bindingFromDraft(draft);
+
+    const conflictingLeafIds = this.findExactDuplicateLeafSelections(
+      manifest,
+      lockFile,
+      sourceId,
+      draft.enabledTargets,
+    );
+    const normalizedDraft: DraftBinding = {
+      enabledTargets: [...draft.enabledTargets],
+      selectedLeafIds: draft.selectedLeafIds.filter((leafId) => !conflictingLeafIds.has(leafId)),
+    };
+    manifest.bindings[sourceId] = this.bindingFromDraft(normalizedDraft);
+
+    const warnings = [...conflictingLeafIds].map((leafId) => ({
+      code: "DUPLICATE_LEAF_SELECTION_SKIPPED",
+      message: `${leafId} skipped because an identical skill is already selected in another workflow group.`,
+    }));
+
+    return {
+      manifest,
+      draft: normalizedDraft,
+      warnings,
+    };
+  }
+
+  private findExactDuplicateLeafSelections(
+    manifest: Manifest,
+    lockFile: LockFile,
+    currentSourceId: string,
+    enabledTargets: DeploymentTargetName[],
+  ): Set<string> {
+    const conflictingKeys = new Set<string>();
+
+    for (const source of manifest.sources) {
+      if (source.id === currentSourceId) {
+        continue;
+      }
+
+      const binding = manifest.bindings[source.id];
+      if (!binding) {
+        continue;
+      }
+
+      for (const target of enabledTargets) {
+        const targetBinding = binding.targets[target];
+        if (!targetBinding?.enabled) {
+          continue;
+        }
+
+        for (const leafId of targetBinding.leafIds) {
+          const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
+          if (!leaf) {
+            continue;
+          }
+          conflictingKeys.add(this.getExactDuplicateKey(leaf));
+        }
+      }
+    }
+
+    const currentLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === currentSourceId);
+    return new Set(
+      currentLeafs
+        .filter((leaf) => conflictingKeys.has(this.getExactDuplicateKey(leaf)))
+        .map((leaf) => leaf.id),
+    );
+  }
+
+  private getExactDuplicateKey(leaf: LeafRecord): string {
+    return `${leaf.linkName}\n${leaf.name}\n${leaf.description}`;
+  }
+
+  private async planForAffectedSources(
+    manifest: Manifest,
+    lockFile: LockFile,
+    primarySourceId: string,
+  ): Promise<Result<DeploymentPlan>> {
+    const sourceIds = manifest.sources
+      .map((source) => source.id)
+      .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
+
+    const actions: DeploymentAction[] = [];
+    const warnings: Warning[] = [];
+
+    for (const sourceId of sourceIds) {
+      const plan = await this.planner.planForSource(sourceId, manifest, lockFile);
+      if (!plan.ok) {
+        return fail(plan.errors, [...warnings, ...plan.warnings]);
+      }
+
+      actions.push(...plan.data.actions);
+      warnings.push(...plan.warnings);
+    }
+
+    return ok({
+      actions,
+      warnings,
+      blocked: actions.filter((action) => action.kind === "blocked"),
+    }, warnings);
+  }
+
+  private hasActiveTargets(manifest: Manifest, sourceId: string): boolean {
+    const binding = manifest.bindings[sourceId];
+    if (!binding) {
+      return false;
+    }
+
+    return Object.values(binding.targets).some((target) => target?.enabled);
   }
 }

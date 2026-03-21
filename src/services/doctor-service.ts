@@ -58,7 +58,10 @@ export class DoctorService {
             continue;
           }
 
-          const targetPath = adapter.resolveTargetPath(detection.rootPath, leaf);
+          const targetPath = deployment?.targetPath ?? adapter.resolveTargetPath(
+            detection.rootPath,
+            leaf.linkName,
+          );
           if (!deployment) {
             issues.push({
               severity: "warning",

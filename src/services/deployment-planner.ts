@@ -4,11 +4,11 @@ import type {
   DeploymentAction,
   DeploymentPlan,
   DeploymentRecord,
+  DeploymentTargetName,
   LeafRecord,
   LockFile,
   Manifest,
   Result,
-  SourceBinding,
   Warning,
 } from "../domain/types.js";
 import type { ChannelAdapter } from "../adapters/channel-adapters.js";
@@ -35,6 +35,11 @@ export class DeploymentPlanner {
       const targetBinding = binding.targets[adapter.target];
       const desiredLeafIds =
         targetBinding?.enabled === true ? new Set(targetBinding.leafIds) : new Set<string>();
+      const projectedLinkNames = this.buildProjectedLinkNameMap(
+        manifest,
+        lockFile,
+        adapter.target,
+      );
 
       const plannedForTarget = await this.planTarget(
         sourceId,
@@ -45,6 +50,7 @@ export class DeploymentPlanner {
         desiredLeafIds,
         leafs,
         previousDeployments,
+        projectedLinkNames,
       );
 
       actions.push(...plannedForTarget.actions);
@@ -71,6 +77,7 @@ export class DeploymentPlanner {
     desiredLeafIds: Set<string>,
     leafs: LeafRecord[],
     previousDeployments: DeploymentRecord[],
+    projectedLinkNames: Map<string, string>,
   ): Promise<DeploymentPlan> {
     const actions: DeploymentAction[] = [];
     const warnings: Warning[] = [];
@@ -108,7 +115,8 @@ export class DeploymentPlanner {
 
     for (const leaf of desiredLeafs) {
       const existing = managedByLeafId.get(leaf.id);
-      const targetPath = adapter.resolveTargetPath(rootPath, leaf);
+      const projectedLinkName = projectedLinkNames.get(leaf.id) ?? leaf.linkName;
+      const targetPath = adapter.resolveTargetPath(rootPath, projectedLinkName);
 
       if (!targetAvailable) {
         const blockedAction: DeploymentAction = {
@@ -210,5 +218,42 @@ export class DeploymentPlanner {
     } catch {
       return { exists: false, matchesExpected: false, foreign: false };
     }
+  }
+
+  private buildProjectedLinkNameMap(
+    manifest: Manifest,
+    lockFile: LockFile,
+    target: DeploymentTargetName,
+  ): Map<string, string> {
+    const selectedLeafs = manifest.sources.flatMap((source) => {
+      const targetBinding = manifest.bindings[source.id]?.targets[target];
+      if (!targetBinding?.enabled) {
+        return [];
+      }
+
+      return targetBinding.leafIds
+        .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+        .filter((leaf): leaf is LeafRecord => Boolean(leaf));
+    });
+
+    const byLinkName = new Map<string, LeafRecord[]>();
+    for (const leaf of selectedLeafs) {
+      const group = byLinkName.get(leaf.linkName) ?? [];
+      group.push(leaf);
+      byLinkName.set(leaf.linkName, group);
+    }
+
+    const result = new Map<string, string>();
+    for (const leaf of selectedLeafs) {
+      const collisions = byLinkName.get(leaf.linkName) ?? [];
+      if (collisions.length <= 1) {
+        result.set(leaf.id, leaf.linkName);
+        continue;
+      }
+
+      result.set(leaf.id, `${leaf.sourceId}-${leaf.linkName}`);
+    }
+
+    return result;
   }
 }

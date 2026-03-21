@@ -47,6 +47,8 @@ type PaneRow = {
   bold?: boolean;
 };
 
+type ProjectionWarningMap = Record<string, string[]>;
+
 const EMPTY_DRAFT: DraftBinding = {
   enabledTargets: [],
   selectedLeafIds: [],
@@ -249,6 +251,74 @@ export function buildContextBar({
   return parts.join(" · ");
 }
 
+export function buildProjectionWarningMap({
+  drafts,
+  summaries,
+  sourceId,
+}: {
+  drafts: Record<string, DraftBinding>;
+  summaries: WorkflowSummary[];
+  sourceId: string;
+}): ProjectionWarningMap {
+  const currentDraft = drafts[sourceId] ?? EMPTY_DRAFT;
+  const currentSummary = summaries.find((summary) => summary.source.id === sourceId);
+  if (!currentSummary || currentDraft.enabledTargets.length === 0) {
+    return {};
+  }
+
+  const currentSelectedLeafIds = new Set(currentDraft.selectedLeafIds);
+  const currentEnabledTargets = new Set(currentDraft.enabledTargets);
+  const otherSelectedLeafs = summaries.flatMap((summary) => {
+    if (summary.source.id === sourceId) {
+      return [];
+    }
+
+    const otherDraft = drafts[summary.source.id] ?? EMPTY_DRAFT;
+    const hasTargetOverlap = otherDraft.enabledTargets.some((target) =>
+      currentEnabledTargets.has(target),
+    );
+    if (!hasTargetOverlap) {
+      return [];
+    }
+
+    return otherDraft.selectedLeafIds
+      .map((leafId) => summary.leafs.find((leaf) => leaf.id === leafId))
+      .filter((leaf): leaf is WorkflowSummary["leafs"][number] => Boolean(leaf))
+      .map((leaf) => ({
+        sourceId: summary.source.id,
+        leaf,
+        exactKey: getExactDuplicateKey(leaf.linkName, leaf.name, leaf.description),
+      }));
+  });
+
+  const warningsByLeafId: ProjectionWarningMap = {};
+  for (const leaf of currentSummary.leafs) {
+    if (!currentSelectedLeafIds.has(leaf.id)) {
+      continue;
+    }
+
+    const exactKey = getExactDuplicateKey(leaf.linkName, leaf.name, leaf.description);
+    const exactDuplicate = otherSelectedLeafs.find((candidate) => candidate.exactKey === exactKey);
+    if (exactDuplicate) {
+      warningsByLeafId[leaf.id] = [
+        `identical skill already selected in ${exactDuplicate.sourceId}, this one will be skipped`,
+      ];
+      continue;
+    }
+
+    const renameConflict = otherSelectedLeafs.find(
+      (candidate) => candidate.leaf.linkName === leaf.linkName,
+    );
+    if (renameConflict) {
+      warningsByLeafId[leaf.id] = [
+        `conflicts with ${renameConflict.sourceId}, will deploy as ${sourceId}-${leaf.linkName}`,
+      ];
+    }
+  }
+
+  return warningsByLeafId;
+}
+
 export function ConfigApp({
   app,
   availableTargets,
@@ -293,11 +363,21 @@ export function ConfigApp({
   );
   const allTargetsSelected =
     visibleTargets.length > 0 && visibleEnabledTargets.length === visibleTargets.length;
+  const projectionWarningsByLeafId = buildProjectionWarningMap({
+    drafts,
+    summaries,
+    sourceId: selectedSourceId,
+  });
   const selectedLeaf =
     selectedSummary && skillCursor > 0
       ? selectedSummary.leafs[skillCursor - 1]
       : undefined;
-  const selectedLeafWarnings = selectedLeaf?.metadataWarnings ?? [];
+  const selectedLeafWarnings = selectedLeaf
+    ? [
+        ...selectedLeaf.metadataWarnings,
+        ...(projectionWarningsByLeafId[selectedLeaf.id] ?? []),
+      ]
+    : [];
   const previewState = previewBySourceId[selectedSourceId] ?? EMPTY_PREVIEW;
   const actionCounts = countActions(previewState.actions);
   const changeCount = getActionChangeCount(previewState.actions);
@@ -448,10 +528,15 @@ export function ConfigApp({
         return;
       }
 
+      const appliedDraft = normalizeDraft(result.data.draft);
       const appliedChangeCount = getActionChangeCount(result.data.actions);
+      setDrafts((current) => ({
+        ...current,
+        [sourceId]: appliedDraft,
+      }));
       setSavedDrafts((current) => ({
         ...current,
-        [sourceId]: draftToSave,
+        [sourceId]: appliedDraft,
       }));
       setSaveStateBySourceId((current) => ({
         ...current,
@@ -705,7 +790,10 @@ export function ConfigApp({
           selectedDraft.selectedLeafIds.includes(leaf.id) ? "full" : "empty",
         )} ${leaf.linkName}`,
         active: focus === "skills" && skillCursor === index + 1,
-        color: leaf.metadataWarnings.length > 0 ? ("yellow" as const) : ("gray" as const),
+        color:
+          leaf.metadataWarnings.length > 0 || (projectionWarningsByLeafId[leaf.id]?.length ?? 0) > 0
+            ? ("yellow" as const)
+            : ("gray" as const),
       })),
     ],
     skillCursor,
@@ -960,6 +1048,10 @@ function selectionMarker(state: "empty" | "partial" | "full") {
     return "[-]";
   }
   return "[ ]";
+}
+
+function getExactDuplicateKey(linkName: string, name: string, description: string) {
+  return `${linkName}\n${name}\n${description}`;
 }
 
 function formatGroupSaveState(phase: SaveDisplayPhase) {

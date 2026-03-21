@@ -14,7 +14,7 @@ export interface ChannelAdapter {
   readonly target: DeploymentTargetName;
   readonly strategy: DeploymentStrategy;
   detect(): Promise<ChannelDetection>;
-  resolveTargetPath(rootPath: string, leaf: LeafRecord): string;
+  resolveTargetPath(rootPath: string, linkName: string): string;
 }
 
 class DefaultChannelAdapter implements ChannelAdapter {
@@ -51,8 +51,8 @@ class DefaultChannelAdapter implements ChannelAdapter {
     };
   }
 
-  resolveTargetPath(rootPath: string, leaf: LeafRecord): string {
-    return path.join(rootPath, leaf.linkName);
+  resolveTargetPath(rootPath: string, linkName: string): string {
+    return path.join(rootPath, linkName);
   }
 }
 

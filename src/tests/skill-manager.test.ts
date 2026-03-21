@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { SkillManagerApp } from "../services/skill-manager.js";
 import {
+  buildProjectionWarningMap,
   buildCommandBar,
   buildContextBar,
   buildSaveLabel,
@@ -293,6 +294,33 @@ description: |
     expect(list.data.summaries[0]?.leafs[0]?.relativePath).toBe(".agents/skills/gstack-browse");
   });
 
+  test("prefers visible second-level skill directories before hidden second-level directories", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "catalog/browse/SKILL.md": skillDoc("browse", "Browser flow."),
+      "catalog/.generated/browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(1);
+    const list = await app.listWorkflows();
+    expect(list.ok).toBe(true);
+    if (!list.ok) {
+      return;
+    }
+    expect(list.data.summaries[0]?.leafs[0]?.relativePath).toBe("catalog/browse");
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes("catalog/.generated/browse"),
+      ),
+    ).toBe(true);
+  });
+
   test("dedupes skills by metadata name and description", async () => {
     const repoPath = await createRepo(sandboxRoot, {
       "browse/SKILL.md": `---
@@ -391,6 +419,110 @@ description: |
     expect(await pathExists(legacyPath)).toBe(false);
     expect(
       await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+    ).toBe(true);
+  });
+
+  test("keeps the earlier selected cross-group duplicate when linkName name and description all match", async () => {
+    const repoA = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const repoB = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillManagerApp();
+    const addedA = await app.addSource(repoA);
+    const addedB = await app.addSource(repoB);
+    expect(addedA.ok).toBe(true);
+    expect(addedB.ok).toBe(true);
+    if (!addedA.ok || !addedB.ok) {
+      return;
+    }
+
+    const sourceA = addedA.data.manifest.id;
+    const sourceB = addedB.data.manifest.id;
+    const leafA = `${sourceA}:browse`;
+    const leafB = `${sourceB}:browse`;
+
+    const firstApply = await app.applyDraft(sourceA, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafA],
+    });
+    expect(firstApply.ok).toBe(true);
+
+    const secondApply = await app.applyDraft(sourceB, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafB],
+    });
+    expect(secondApply.ok).toBe(true);
+    if (!secondApply.ok) {
+      return;
+    }
+
+    expect(secondApply.data.draft.selectedLeafIds).toEqual([]);
+    expect(
+      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+    ).toBe(true);
+
+    const lockPath = path.join(stateRoot, "lock.json");
+    const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
+      deployments: Array<{ sourceId: string; targetPath: string }>;
+    };
+    expect(
+      lock.deployments.filter((deployment) =>
+        deployment.targetPath.endsWith(path.join("claude", "browse")),
+      ),
+    ).toHaveLength(1);
+    expect(lock.deployments[0]?.sourceId).toBe(sourceA);
+  });
+
+  test("renames cross-group projections when linkName matches but content differs", async () => {
+    const repoA = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow from A."),
+    });
+    const repoB = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow from B."),
+    });
+    const app = new SkillManagerApp();
+    const addedA = await app.addSource(repoA);
+    const addedB = await app.addSource(repoB);
+    expect(addedA.ok).toBe(true);
+    expect(addedB.ok).toBe(true);
+    if (!addedA.ok || !addedB.ok) {
+      return;
+    }
+
+    const sourceA = addedA.data.manifest.id;
+    const sourceB = addedB.data.manifest.id;
+    const leafA = `${sourceA}:browse`;
+    const leafB = `${sourceB}:browse`;
+
+    const firstApply = await app.applyDraft(sourceA, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafA],
+    });
+    expect(firstApply.ok).toBe(true);
+    expect(
+      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+    ).toBe(true);
+
+    const secondApply = await app.applyDraft(sourceB, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafB],
+    });
+    expect(secondApply.ok).toBe(true);
+
+    expect(
+      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+    ).toBe(false);
+    expect(
+      await pathExists(
+        path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, `${sourceA}-browse`),
+      ),
+    ).toBe(true);
+    expect(
+      await pathExists(
+        path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, `${sourceB}-browse`),
+      ),
     ).toBe(true);
   });
 
@@ -693,6 +825,150 @@ description: |
         sourceId: "gstack",
       }),
     ).toContain("warning:");
+  });
+
+  test("projection warning helper marks identical cross-group skills as skipped", () => {
+    const warnings = buildProjectionWarningMap({
+      drafts: {
+        alpha: { enabledTargets: ["claude-code"], selectedLeafIds: ["alpha:browse"] },
+        beta: { enabledTargets: ["claude-code"], selectedLeafIds: ["beta:browse"] },
+      },
+      summaries: [
+        {
+          source: {
+            id: "alpha",
+            locator: "alpha",
+            kind: "git",
+            displayName: "alpha",
+            addedAt: "",
+          },
+          lock: undefined,
+          bindings: { targets: {} },
+          activeTargetCount: 0,
+          health: "ACTIVE",
+          leafs: [
+            {
+              id: "alpha:browse",
+              sourceId: "alpha",
+              name: "browse",
+              linkName: "browse",
+              title: "browse",
+              description: "Browser flow.",
+              relativePath: "browse",
+              absolutePath: "/tmp/alpha/browse",
+              skillFilePath: "/tmp/alpha/browse/SKILL.md",
+              contentHash: "a",
+              metadataWarnings: [],
+              valid: true,
+            },
+          ],
+        },
+        {
+          source: {
+            id: "beta",
+            locator: "beta",
+            kind: "git",
+            displayName: "beta",
+            addedAt: "",
+          },
+          lock: undefined,
+          bindings: { targets: {} },
+          activeTargetCount: 0,
+          health: "ACTIVE",
+          leafs: [
+            {
+              id: "beta:browse",
+              sourceId: "beta",
+              name: "browse",
+              linkName: "browse",
+              title: "browse",
+              description: "Browser flow.",
+              relativePath: "browse",
+              absolutePath: "/tmp/beta/browse",
+              skillFilePath: "/tmp/beta/browse/SKILL.md",
+              contentHash: "b",
+              metadataWarnings: [],
+              valid: true,
+            },
+          ],
+        },
+      ],
+      sourceId: "beta",
+    });
+
+    expect(warnings["beta:browse"]?.[0]).toContain("will be skipped");
+  });
+
+  test("projection warning helper marks cross-group name collisions as renamed", () => {
+    const warnings = buildProjectionWarningMap({
+      drafts: {
+        alpha: { enabledTargets: ["claude-code"], selectedLeafIds: ["alpha:browse"] },
+        beta: { enabledTargets: ["claude-code"], selectedLeafIds: ["beta:browse"] },
+      },
+      summaries: [
+        {
+          source: {
+            id: "alpha",
+            locator: "alpha",
+            kind: "git",
+            displayName: "alpha",
+            addedAt: "",
+          },
+          lock: undefined,
+          bindings: { targets: {} },
+          activeTargetCount: 0,
+          health: "ACTIVE",
+          leafs: [
+            {
+              id: "alpha:browse",
+              sourceId: "alpha",
+              name: "browse",
+              linkName: "browse",
+              title: "browse",
+              description: "Browser flow A.",
+              relativePath: "browse",
+              absolutePath: "/tmp/alpha/browse",
+              skillFilePath: "/tmp/alpha/browse/SKILL.md",
+              contentHash: "a",
+              metadataWarnings: [],
+              valid: true,
+            },
+          ],
+        },
+        {
+          source: {
+            id: "beta",
+            locator: "beta",
+            kind: "git",
+            displayName: "beta",
+            addedAt: "",
+          },
+          lock: undefined,
+          bindings: { targets: {} },
+          activeTargetCount: 0,
+          health: "ACTIVE",
+          leafs: [
+            {
+              id: "beta:browse",
+              sourceId: "beta",
+              name: "browse",
+              linkName: "browse",
+              title: "browse",
+              description: "Browser flow B.",
+              relativePath: "browse",
+              absolutePath: "/tmp/beta/browse",
+              skillFilePath: "/tmp/beta/browse/SKILL.md",
+              contentHash: "b",
+              metadataWarnings: [],
+              valid: true,
+            },
+          ],
+        },
+      ],
+      sourceId: "beta",
+    });
+
+    expect(warnings["beta:browse"]?.[0]).toContain("will deploy as beta-browse");
   });
 
   test("supports cursor and pi target projections", async () => {
