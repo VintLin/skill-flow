@@ -148,26 +148,16 @@ export function buildSaveLabel(phase: SaveDisplayPhase, changeCount: number) {
 export function buildCommandBar({
   changeCount,
   focus,
-  groupCursor,
+  saveFocused,
   savePhase,
 }: {
   changeCount: number;
   focus: FocusPane;
-  groupCursor: number;
+  saveFocused: boolean;
   savePhase: SaveDisplayPhase;
 }) {
   const backHint =
     focus === "groups" ? "Esc/q exit" : "Esc/q back";
-
-  if (focus === "groups" && groupCursor === 0) {
-    if (savePhase === "saving") {
-      return `Enter wait for save  Tab switch pane  Up/Down move  ${backHint}`;
-    }
-    if (changeCount > 0) {
-      return `Enter save ${changeCount} changes  Tab switch pane  Up/Down move  ${backHint}`;
-    }
-    return `Enter save current state  Tab switch pane  Up/Down move  ${backHint}`;
-  }
 
   if (focus === "groups") {
     return `Enter inspect skills  Tab switch pane  Up/Down move  ${backHint}`;
@@ -177,7 +167,17 @@ export function buildCommandBar({
     return `Space toggle skill  Enter inspect agents  Tab switch pane  Up/Down move  ${backHint}`;
   }
 
-  return `Space toggle agent  Enter return to save  Tab switch pane  Up/Down move  ${backHint}`;
+  if (saveFocused) {
+    if (savePhase === "saving") {
+      return `Enter wait for save  Tab switch pane  Up/Down move  ${backHint}`;
+    }
+    if (changeCount > 0) {
+      return `Enter save ${changeCount} changes  Tab switch pane  Up/Down move  ${backHint}`;
+    }
+    return `Enter save current state  Tab switch pane  Up/Down move  ${backHint}`;
+  }
+
+  return `Space toggle agent  Enter move to save  Tab switch pane  Up/Down move  ${backHint}`;
 }
 
 export function buildContextBar({
@@ -261,7 +261,7 @@ export function ConfigApp({
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(
     summaries.length > 0 ? 0 : -1,
   );
-  const [groupCursor, setGroupCursor] = useState(summaries.length > 0 ? 1 : 0);
+  const [groupCursor, setGroupCursor] = useState(summaries.length > 0 ? 0 : -1);
   const [focus, setFocus] = useState<FocusPane>("groups");
   const [skillCursor, setSkillCursor] = useState(0);
   const [targetCursor, setTargetCursor] = useState(0);
@@ -286,6 +286,8 @@ export function ConfigApp({
   };
   const parentSelectionState = getParentSelectionState(treeState);
   const visibleTargets = availableTargets;
+  const targetSelectableCount = visibleTargets.length > 0 ? visibleTargets.length + 1 : 0;
+  const targetSaveCursor = targetSelectableCount;
   const visibleEnabledTargets = visibleTargets.filter((target) =>
     selectedDraft.enabledTargets.includes(target),
   );
@@ -511,31 +513,23 @@ export function ConfigApp({
     if (focus === "groups") {
       if (key.downArrow) {
         setGroupCursor((current) => {
-          const next = Math.min(current + 1, summaries.length);
-          if (next > 0) {
-            setSelectedGroupIndex(next - 1);
-            setSkillCursor(0);
-            setTargetCursor(0);
-          }
+          const next = Math.min(current + 1, Math.max(0, summaries.length - 1));
+          setSelectedGroupIndex(next);
+          setSkillCursor(0);
+          setTargetCursor(0);
           return next;
         });
       }
       if (key.upArrow) {
         setGroupCursor((current) => {
           const next = Math.max(current - 1, 0);
-          if (next > 0) {
-            setSelectedGroupIndex(next - 1);
-            setSkillCursor(0);
-            setTargetCursor(0);
-          }
+          setSelectedGroupIndex(next);
+          setSkillCursor(0);
+          setTargetCursor(0);
           return next;
         });
       }
       if (key.return) {
-        if (groupCursor === 0) {
-          handleSave();
-          return;
-        }
         setFocus("skills");
       }
       return;
@@ -573,7 +567,7 @@ export function ConfigApp({
 
     if (key.downArrow) {
       setTargetCursor((current) =>
-        Math.min(current + 1, visibleTargets.length > 0 ? visibleTargets.length : 0),
+        Math.min(current + 1, targetSaveCursor),
       );
     }
     if (key.upArrow) {
@@ -581,7 +575,7 @@ export function ConfigApp({
     }
     if (input === " ") {
       updateSelectedDraft((currentDraft) => {
-        if (visibleTargets.length === 0) {
+        if (visibleTargets.length === 0 || targetCursor === targetSaveCursor) {
           return currentDraft;
         }
 
@@ -615,8 +609,11 @@ export function ConfigApp({
       });
     }
     if (key.return) {
-      setFocus("groups");
-      setGroupCursor(0);
+      if (targetCursor === targetSaveCursor) {
+        handleSave();
+        return;
+      }
+      setTargetCursor(targetSaveCursor);
     }
   });
 
@@ -636,7 +633,7 @@ export function ConfigApp({
   const paneHeight = Math.max(12, terminalRows - 4);
   const [groupsWidth, skillsWidth, targetsWidth] = getPaneWidths(terminalColumns);
   const bodyRowCount = getPaneViewportCount(paneHeight);
-  const groupListRowCount = Math.max(1, bodyRowCount - 1);
+  const targetListRowCount = Math.max(1, bodyRowCount - 1);
   const targetItems: PaneRow[] =
     visibleTargets.length > 0
       ? [
@@ -670,12 +667,28 @@ export function ConfigApp({
   const groupRows = getWindowedRows(
     summaries.map((summary, index) => ({
       key: summary.source.id,
-      text: `${summary.source.id}  ${summary.health}`,
-      active: focus === "groups" && groupCursor === index + 1,
-      color: undefined,
+      text: `${summary.source.id}  ${formatGroupSaveState(
+        getSaveDisplayPhase(
+          (saveStateBySourceId[summary.source.id]?.phase ?? "idle"),
+          !draftsEqual(
+            drafts[summary.source.id] ?? EMPTY_DRAFT,
+            savedDrafts[summary.source.id] ?? EMPTY_DRAFT,
+          ),
+        ),
+      )}`,
+      active: focus === "groups" && groupCursor === index,
+      color: getGroupStateColor(
+        getSaveDisplayPhase(
+          (saveStateBySourceId[summary.source.id]?.phase ?? "idle"),
+          !draftsEqual(
+            drafts[summary.source.id] ?? EMPTY_DRAFT,
+            savedDrafts[summary.source.id] ?? EMPTY_DRAFT,
+          ),
+        ),
+      ),
     })),
-    Math.max(0, groupCursor - 1),
-    groupListRowCount,
+    Math.max(0, groupCursor),
+    bodyRowCount,
   );
   const skillRows = getWindowedRows(
     [
@@ -700,12 +713,12 @@ export function ConfigApp({
   );
   const targetRows = getWindowedRows(
     targetItems,
-    targetCursor,
-    bodyRowCount,
+    Math.min(targetCursor, Math.max(0, targetItems.length - 1)),
+    targetListRowCount,
   );
 
   const saveRow = buildSaveRow(
-    focus === "groups" && groupCursor === 0,
+    focus === "targets" && targetCursor === targetSaveCursor,
     savePhase,
     changeCount,
   );
@@ -724,7 +737,7 @@ export function ConfigApp({
   const commandBar = buildCommandBar({
     changeCount,
     focus,
-    groupCursor,
+    saveFocused: focus === "targets" && targetCursor === targetSaveCursor,
     savePhase,
   });
 
@@ -737,14 +750,14 @@ export function ConfigApp({
             groupRows.start,
             groupRows.end,
             summaries.length,
-            groupCursor === 0 ? "action save" : `group ${selectedGroupIndex + 1}/${summaries.length}`,
+            `group ${selectedGroupIndex + 1}/${summaries.length}`,
           )}
           gapAfter
           height={paneHeight}
           title="WORKFLOW GROUPS"
           width={groupsWidth}
         >
-          {renderPaneRows([saveRow, ...groupRows.rows], bodyRowCount, groupsWidth)}
+          {renderPaneRows(groupRows.rows, bodyRowCount, groupsWidth)}
         </Pane>
 
         <Pane
@@ -768,7 +781,7 @@ export function ConfigApp({
           footer={buildPaneFooter(
             targetRows.start,
             targetRows.end,
-            visibleTargets.length > 0 ? visibleTargets.length + 1 : 0,
+            targetItems.length,
             visibleTargets.length > 0
               ? `${visibleEnabledTargets.length}/${visibleTargets.length} targets`
               : "no detected targets",
@@ -777,7 +790,7 @@ export function ConfigApp({
           title="AGENT PROJECTION"
           width={targetsWidth}
         >
-          {renderPaneRows(targetRows.rows, bodyRowCount, targetsWidth)}
+          {renderPaneRows(targetRows.rows, bodyRowCount, targetsWidth, [saveRow])}
         </Pane>
       </Box>
 
@@ -814,6 +827,22 @@ function getSaveColor(phase: SaveDisplayPhase): PaneRow["color"] {
   }
   if (phase === "saving") {
     return "cyan";
+  }
+  return "green";
+}
+
+function getGroupStateColor(phase: SaveDisplayPhase): PaneRow["color"] {
+  if (phase === "failed") {
+    return "red";
+  }
+  if (phase === "dirty") {
+    return "yellow";
+  }
+  if (phase === "saving") {
+    return "cyan";
+  }
+  if (phase === "saved") {
+    return "green";
   }
   return "green";
 }
@@ -890,13 +919,21 @@ function Pane({
   );
 }
 
-function renderPaneRows(rows: PaneRow[], bodyRowCount: number, paneWidth: number) {
+function renderPaneRows(
+  rows: PaneRow[],
+  bodyRowCount: number,
+  paneWidth: number,
+  tailRows: PaneRow[] = [],
+) {
   const items: React.ReactNode[] = rows.map((row) => (
     <RowText key={row.key} row={row} width={paneWidth} />
   ));
-  const blankCount = Math.max(0, bodyRowCount - rows.length);
+  const blankCount = Math.max(0, bodyRowCount - rows.length - tailRows.length);
   for (let index = 0; index < blankCount; index += 1) {
     items.push(<Text key={`__blank__:${index}`}> </Text>);
+  }
+  for (const row of tailRows) {
+    items.push(<RowText key={row.key} row={row} width={paneWidth} />);
   }
   return items;
 }
@@ -923,6 +960,22 @@ function selectionMarker(state: "empty" | "partial" | "full") {
     return "[-]";
   }
   return "[ ]";
+}
+
+function formatGroupSaveState(phase: SaveDisplayPhase) {
+  if (phase === "dirty") {
+    return "DIRTY";
+  }
+  if (phase === "saving") {
+    return "SAVING";
+  }
+  if (phase === "saved") {
+    return "SAVED";
+  }
+  if (phase === "failed") {
+    return "FAILED";
+  }
+  return "SAVED";
 }
 
 function getWindowedRows<T>(

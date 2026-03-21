@@ -13,7 +13,11 @@ import {
   getPaneViewportCount,
   getSaveDisplayPhase,
 } from "../tui/config-app.js";
-import { TARGET_PATH_CANDIDATES } from "../utils/constants.js";
+import {
+  TARGET_COMPAT_READ_CANDIDATES,
+  TARGET_DEFINITIONS,
+  TARGET_PATH_CANDIDATES,
+} from "../utils/constants.js";
 import {
   getParentSelectionState,
   toggleChild,
@@ -36,16 +40,30 @@ describe.sequential("skill-manager", () => {
     process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE = path.join(targetsRoot, "claude");
     process.env.SKILL_MANAGER_TARGET_CODEX = path.join(targetsRoot, "codex");
     process.env.SKILL_MANAGER_TARGET_CURSOR = path.join(targetsRoot, "cursor");
+    process.env.SKILL_MANAGER_TARGET_GITHUB_COPILOT = path.join(targetsRoot, "github-copilot");
+    process.env.SKILL_MANAGER_TARGET_GEMINI_CLI = path.join(targetsRoot, "gemini-cli");
     process.env.SKILL_MANAGER_TARGET_OPENCODE = path.join(targetsRoot, "opencode");
     process.env.SKILL_MANAGER_TARGET_OPENCLAW = path.join(targetsRoot, "openclaw");
     process.env.SKILL_MANAGER_TARGET_PI = path.join(targetsRoot, "pi");
+    process.env.SKILL_MANAGER_TARGET_WINDSURF = path.join(targetsRoot, "windsurf");
+    process.env.SKILL_MANAGER_TARGET_ROO_CODE = path.join(targetsRoot, "roo-code");
+    process.env.SKILL_MANAGER_TARGET_CLINE = path.join(targetsRoot, "cline");
+    process.env.SKILL_MANAGER_TARGET_AMP = path.join(targetsRoot, "amp");
+    process.env.SKILL_MANAGER_TARGET_KIRO = path.join(targetsRoot, "kiro");
 
     await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE, { recursive: true });
     await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CODEX, { recursive: true });
     await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CURSOR, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_GITHUB_COPILOT, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_GEMINI_CLI, { recursive: true });
     await fs.mkdir(process.env.SKILL_MANAGER_TARGET_OPENCODE, { recursive: true });
     await fs.mkdir(process.env.SKILL_MANAGER_TARGET_OPENCLAW, { recursive: true });
     await fs.mkdir(process.env.SKILL_MANAGER_TARGET_PI, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_WINDSURF, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_ROO_CODE, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CLINE, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_AMP, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_KIRO, { recursive: true });
   });
 
   afterEach(async () => {
@@ -53,9 +71,16 @@ describe.sequential("skill-manager", () => {
     delete process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE;
     delete process.env.SKILL_MANAGER_TARGET_CODEX;
     delete process.env.SKILL_MANAGER_TARGET_CURSOR;
+    delete process.env.SKILL_MANAGER_TARGET_GITHUB_COPILOT;
+    delete process.env.SKILL_MANAGER_TARGET_GEMINI_CLI;
     delete process.env.SKILL_MANAGER_TARGET_OPENCODE;
     delete process.env.SKILL_MANAGER_TARGET_OPENCLAW;
     delete process.env.SKILL_MANAGER_TARGET_PI;
+    delete process.env.SKILL_MANAGER_TARGET_WINDSURF;
+    delete process.env.SKILL_MANAGER_TARGET_ROO_CODE;
+    delete process.env.SKILL_MANAGER_TARGET_CLINE;
+    delete process.env.SKILL_MANAGER_TARGET_AMP;
+    delete process.env.SKILL_MANAGER_TARGET_KIRO;
     await fs.rm(sandboxRoot, { recursive: true, force: true });
   });
 
@@ -650,10 +675,10 @@ description: |
       buildCommandBar({
         changeCount: 3,
         focus: "groups",
-        groupCursor: 0,
+        saveFocused: false,
         savePhase: "dirty",
       }),
-    ).toContain("save 3 changes");
+    ).toContain("inspect skills");
     expect(
       buildContextBar({
         blockedCount: 0,
@@ -697,9 +722,130 @@ description: |
     );
   });
 
+  test("supports additional global agent target projections", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: [
+        "github-copilot",
+        "gemini-cli",
+        "windsurf",
+        "roo-code",
+        "cline",
+        "amp",
+        "kiro",
+      ],
+      selectedLeafIds: [leafId],
+    });
+
+    expect(applied.ok).toBe(true);
+    expect(
+      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_GITHUB_COPILOT!, "browse")),
+    ).toBe(true);
+    expect(
+      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_GEMINI_CLI!, "browse")),
+    ).toBe(true);
+    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_WINDSURF!, "browse"))).toBe(
+      true,
+    );
+    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_ROO_CODE!, "browse"))).toBe(
+      true,
+    );
+    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLINE!, "browse"))).toBe(
+      true,
+    );
+    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_AMP!, "browse"))).toBe(
+      true,
+    );
+    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_KIRO!, "browse"))).toBe(
+      true,
+    );
+  });
+
+  test("discovers all configured global targets with isolated roots", async () => {
+    const app = new SkillManagerApp();
+
+    const targets = await app.getAvailableTargets();
+
+    expect(targets).toEqual([
+      "claude-code",
+      "codex",
+      "cursor",
+      "github-copilot",
+      "gemini-cli",
+      "opencode",
+      "openclaw",
+      "pi",
+      "windsurf",
+      "roo-code",
+      "cline",
+      "amp",
+      "kiro",
+    ]);
+  });
+
   test("includes config-based OpenCode skills directory in default detection paths", () => {
     expect(TARGET_PATH_CANDIDATES.opencode).toContain(
       path.join(os.homedir(), ".config", "opencode", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES["github-copilot"]).toContain(
+      path.join(os.homedir(), ".copilot", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES["gemini-cli"]).toContain(
+      path.join(os.homedir(), ".gemini", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES.windsurf).toContain(
+      path.join(os.homedir(), ".codeium", "windsurf", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES["roo-code"]).toContain(
+      path.join(os.homedir(), ".roo", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES.cline).toContain(
+      path.join(os.homedir(), ".cline", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES.amp).toContain(
+      path.join(os.homedir(), ".config", "agents", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES.kiro).toContain(
+      path.join(os.homedir(), ".kiro", "skills"),
+    );
+  });
+
+  test("classifies shared global roots as compatibility reads instead of write roots", () => {
+    expect(TARGET_DEFINITIONS.codex.writerKey).toBe("agents-skills");
+    expect(TARGET_PATH_CANDIDATES.codex).toContain(
+      path.join(os.homedir(), ".agents", "skills"),
+    );
+    expect(TARGET_COMPAT_READ_CANDIDATES["gemini-cli"]).toContain(
+      path.join(os.homedir(), ".agents", "skills"),
+    );
+    expect(TARGET_COMPAT_READ_CANDIDATES["github-copilot"]).toContain(
+      path.join(os.homedir(), ".agents", "skills"),
+    );
+    expect(TARGET_COMPAT_READ_CANDIDATES.cursor).toContain(
+      path.join(os.homedir(), ".claude", "skills"),
+    );
+    expect(TARGET_COMPAT_READ_CANDIDATES.pi).toContain(
+      path.join(os.homedir(), ".claude", "skills"),
+    );
+    expect(TARGET_COMPAT_READ_CANDIDATES.amp).toContain(
+      path.join(os.homedir(), ".claude", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES["gemini-cli"]).not.toContain(
+      path.join(os.homedir(), ".agents", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES["github-copilot"]).not.toContain(
+      path.join(os.homedir(), ".claude", "skills"),
     );
   });
 });

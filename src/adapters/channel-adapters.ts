@@ -6,9 +6,7 @@ import type {
   LeafRecord,
 } from "../domain/types.js";
 import {
-  TARGET_ENV_VARS,
-  TARGET_PATH_CANDIDATES,
-  TARGET_STRATEGIES,
+  TARGET_DEFINITIONS,
 } from "../utils/constants.js";
 import { pathExists } from "../utils/fs.js";
 
@@ -23,13 +21,14 @@ class DefaultChannelAdapter implements ChannelAdapter {
   readonly strategy: DeploymentStrategy;
 
   constructor(readonly target: DeploymentTargetName) {
-    this.strategy = TARGET_STRATEGIES[target];
+    this.strategy = TARGET_DEFINITIONS[target].strategy;
   }
 
   async detect(): Promise<ChannelDetection> {
-    const envVar = TARGET_ENV_VARS[this.target];
+    const definition = TARGET_DEFINITIONS[this.target];
+    const envVar = definition.envVar;
     const override = process.env[envVar];
-    const candidates = override ? [override] : TARGET_PATH_CANDIDATES[this.target];
+    const candidates = override ? [override] : definition.writeRootCandidates;
 
     for (const candidate of candidates) {
       const rootPath = path.resolve(candidate);
@@ -62,8 +61,15 @@ export function createChannelAdapters(): ChannelAdapter[] {
     new DefaultChannelAdapter("claude-code"),
     new DefaultChannelAdapter("codex"),
     new DefaultChannelAdapter("cursor"),
+    new DefaultChannelAdapter("github-copilot"),
+    new DefaultChannelAdapter("gemini-cli"),
     new DefaultChannelAdapter("opencode"),
     new DefaultChannelAdapter("openclaw"),
     new DefaultChannelAdapter("pi"),
+    new DefaultChannelAdapter("windsurf"),
+    new DefaultChannelAdapter("roo-code"),
+    new DefaultChannelAdapter("cline"),
+    new DefaultChannelAdapter("amp"),
+    new DefaultChannelAdapter("kiro"),
   ];
 }

@@ -18,9 +18,16 @@ export type DeploymentTargetName =
   | "claude-code"
   | "codex"
   | "cursor"
+  | "github-copilot"
+  | "gemini-cli"
   | "opencode"
   | "openclaw"
-  | "pi";
+  | "pi"
+  | "windsurf"
+  | "roo-code"
+  | "cline"
+  | "amp"
+  | "kiro";
 
 export type DeploymentStrategy = "symlink" | "copy";
 
