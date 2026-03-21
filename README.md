@@ -1,4 +1,4 @@
-# Skill Manager
+# Skill Flow
 
 > **Workflow-first management for AI agent skills.**
 > Grouped workflows · Multi-target projection · Explicit state · Drift diagnosis
@@ -7,12 +7,12 @@
 
 [中文文档](./README.zh.md)
 
-[![Node.js Version](https://img.shields.io/node/v/skill-manager?style=flat-square)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/node/v/skill-flow?style=flat-square)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
 As your AI agent skills grow, management becomes chaotic: one Git source contains multiple related skills, projections scatter across different agents, updates and troubleshooting become difficult.
 
-`skill-manager` reorganizes skill management around workflows: add skill groups from Git sources, select projection targets, update uniformly, diagnose drift. Keep skill management clear, controlled, and efficient.
+`skill-flow` reorganizes skill management around workflows: add skill groups from Git sources, select projection targets, update uniformly, diagnose drift. Keep skill management clear, controlled, and efficient.
 
 ## Key Features
 
@@ -47,22 +47,22 @@ npm link  # Optional: global install
 
 ```bash
 # Add a skill source
-skill-manager add /path/to/skills-repo
+skill-flow add /path/to/skills-repo
 
 # View workflow groups
-skill-manager list
+skill-flow list
 
 # Interactive configuration (select skills and targets)
-skill-manager config
+skill-flow config
 
 # Update all sources
-skill-manager update --all
+skill-flow update --all
 
 # Health check
-skill-manager doctor
+skill-flow doctor
 
 # Remove a workflow group
-skill-manager uninstall my-source-id
+skill-flow uninstall my-source-id
 ```
 
 ## Command Reference
@@ -79,9 +79,9 @@ skill-manager uninstall my-source-id
 ## How It Works
 
 **State Management**
-- `~/.skillmanager/manifest.json` - Your configuration intent
-- `~/.skillmanager/lock.json` - Actual deployment state
-- `~/.skillmanager/source/git/<source-id>/` - Git source cache
+- `~/.skillflow/manifest.json` - Your configuration intent
+- `~/.skillflow/lock.json` - Actual deployment state
+- `~/.skillflow/source/git/<source-id>/` - Git source cache
 
 **Projection Strategy**
 Symlinks preferred, file copies when necessary. Target directories are projections only; true state managed by lock.json.
@@ -90,7 +90,7 @@ Symlinks preferred, file copies when necessary. Target directories are projectio
 
 Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · OpenClaw · Pi · Windsurf · Roo Code · Cline · Amp · Kiro
 
-Customize target paths via environment variables (e.g., `SKILL_MANAGER_TARGET_CLAUDE_CODE`).
+Customize target paths via environment variables (e.g., `SKILL_FLOW_TARGET_CLAUDE_CODE`).
 
 ## Development
 

@@ -29,7 +29,7 @@ export type DraftBinding = {
   selectedLeafIds: string[];
 };
 
-export class SkillManagerApp {
+export class SkillFlowApp {
   readonly store = new StateStore();
   readonly inventoryService = new InventoryService();
   readonly sourceService = new SourceService(this.store, this.inventoryService);

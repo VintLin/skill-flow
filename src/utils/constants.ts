@@ -8,9 +8,9 @@ import type {
 export const SCHEMA_VERSION = 1 as const;
 
 export function getStateRoot(): string {
-  return process.env.SKILL_MANAGER_STATE_ROOT
-    ? path.resolve(process.env.SKILL_MANAGER_STATE_ROOT)
-    : path.join(os.homedir(), ".skillmanager");
+  return process.env.SKILL_FLOW_STATE_ROOT
+    ? path.resolve(process.env.SKILL_FLOW_STATE_ROOT)
+    : path.join(os.homedir(), ".skillflow");
 }
 
 export type TargetDefinition = {
@@ -42,7 +42,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   "claude-code": {
     label: "Claude Code",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_CLAUDE_CODE",
+    envVar: "SKILL_FLOW_TARGET_CLAUDE_CODE",
     writerKey: "claude-home",
     writeRootCandidates: [path.join(os.homedir(), ".claude", "skills")],
     compatReadRootCandidates: [],
@@ -50,7 +50,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   codex: {
     label: "Codex",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_CODEX",
+    envVar: "SKILL_FLOW_TARGET_CODEX",
     writerKey: "agents-skills",
     writeRootCandidates: [
       path.join(os.homedir(), ".agents", "skills"),
@@ -61,7 +61,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   cursor: {
     label: "Cursor",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_CURSOR",
+    envVar: "SKILL_FLOW_TARGET_CURSOR",
     writerKey: "cursor-home",
     writeRootCandidates: [path.join(os.homedir(), ".cursor", "skills")],
     compatReadRootCandidates: [
@@ -73,7 +73,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   "github-copilot": {
     label: "GitHub Copilot",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_GITHUB_COPILOT",
+    envVar: "SKILL_FLOW_TARGET_GITHUB_COPILOT",
     writerKey: "copilot-home",
     writeRootCandidates: [path.join(os.homedir(), ".copilot", "skills")],
     compatReadRootCandidates: [
@@ -84,7 +84,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   "gemini-cli": {
     label: "Gemini CLI",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_GEMINI_CLI",
+    envVar: "SKILL_FLOW_TARGET_GEMINI_CLI",
     writerKey: "gemini-home",
     writeRootCandidates: [path.join(os.homedir(), ".gemini", "skills")],
     compatReadRootCandidates: [path.join(os.homedir(), ".agents", "skills")],
@@ -92,7 +92,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   opencode: {
     label: "OpenCode",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_OPENCODE",
+    envVar: "SKILL_FLOW_TARGET_OPENCODE",
     writerKey: "opencode-home",
     writeRootCandidates: [
       path.join(os.homedir(), ".config", "opencode", "skills"),
@@ -106,7 +106,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   openclaw: {
     label: "OpenClaw",
     strategy: "copy",
-    envVar: "SKILL_MANAGER_TARGET_OPENCLAW",
+    envVar: "SKILL_FLOW_TARGET_OPENCLAW",
     writerKey: "openclaw-home",
     writeRootCandidates: [path.join(os.homedir(), ".openclaw", "skills")],
     compatReadRootCandidates: [],
@@ -114,7 +114,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   pi: {
     label: "Pi",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_PI",
+    envVar: "SKILL_FLOW_TARGET_PI",
     writerKey: "pi-home",
     writeRootCandidates: [path.join(os.homedir(), ".pi", "agent", "skills")],
     compatReadRootCandidates: [
@@ -126,7 +126,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   windsurf: {
     label: "Windsurf",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_WINDSURF",
+    envVar: "SKILL_FLOW_TARGET_WINDSURF",
     writerKey: "windsurf-home",
     writeRootCandidates: [path.join(os.homedir(), ".codeium", "windsurf", "skills")],
     compatReadRootCandidates: [
@@ -136,7 +136,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   "roo-code": {
     label: "Roo Code",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_ROO_CODE",
+    envVar: "SKILL_FLOW_TARGET_ROO_CODE",
     writerKey: "roo-home",
     writeRootCandidates: [path.join(os.homedir(), ".roo", "skills")],
     compatReadRootCandidates: [],
@@ -144,7 +144,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   cline: {
     label: "Cline",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_CLINE",
+    envVar: "SKILL_FLOW_TARGET_CLINE",
     writerKey: "cline-home",
     writeRootCandidates: [path.join(os.homedir(), ".cline", "skills")],
     compatReadRootCandidates: [path.join(os.homedir(), ".claude", "skills")],
@@ -152,7 +152,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   amp: {
     label: "Amp",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_AMP",
+    envVar: "SKILL_FLOW_TARGET_AMP",
     writerKey: "amp-home",
     writeRootCandidates: [
       path.join(os.homedir(), ".config", "agents", "skills"),
@@ -163,7 +163,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
   kiro: {
     label: "Kiro",
     strategy: "symlink",
-    envVar: "SKILL_MANAGER_TARGET_KIRO",
+    envVar: "SKILL_FLOW_TARGET_KIRO",
     writerKey: "kiro-home",
     writeRootCandidates: [path.join(os.homedir(), ".kiro", "skills")],
     compatReadRootCandidates: [],

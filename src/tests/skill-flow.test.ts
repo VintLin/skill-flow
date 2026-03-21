@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { SkillManagerApp } from "../services/skill-manager.js";
+import { SkillFlowApp } from "../services/skill-flow.js";
 import {
   buildProjectionWarningMap,
   buildCommandBar,
@@ -26,62 +26,62 @@ import {
   type TreeSelectionState,
 } from "../tui/selection-state.js";
 
-describe.sequential("skill-manager", () => {
+describe.sequential("skill-flow", () => {
   let sandboxRoot: string;
   let stateRoot: string;
   let targetsRoot: string;
 
   beforeEach(async () => {
-    sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-manager-test-"));
+    sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-test-"));
     stateRoot = path.join(sandboxRoot, "state");
     targetsRoot = path.join(sandboxRoot, "targets");
     await fs.mkdir(targetsRoot, { recursive: true });
 
-    process.env.SKILL_MANAGER_STATE_ROOT = stateRoot;
-    process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE = path.join(targetsRoot, "claude");
-    process.env.SKILL_MANAGER_TARGET_CODEX = path.join(targetsRoot, "codex");
-    process.env.SKILL_MANAGER_TARGET_CURSOR = path.join(targetsRoot, "cursor");
-    process.env.SKILL_MANAGER_TARGET_GITHUB_COPILOT = path.join(targetsRoot, "github-copilot");
-    process.env.SKILL_MANAGER_TARGET_GEMINI_CLI = path.join(targetsRoot, "gemini-cli");
-    process.env.SKILL_MANAGER_TARGET_OPENCODE = path.join(targetsRoot, "opencode");
-    process.env.SKILL_MANAGER_TARGET_OPENCLAW = path.join(targetsRoot, "openclaw");
-    process.env.SKILL_MANAGER_TARGET_PI = path.join(targetsRoot, "pi");
-    process.env.SKILL_MANAGER_TARGET_WINDSURF = path.join(targetsRoot, "windsurf");
-    process.env.SKILL_MANAGER_TARGET_ROO_CODE = path.join(targetsRoot, "roo-code");
-    process.env.SKILL_MANAGER_TARGET_CLINE = path.join(targetsRoot, "cline");
-    process.env.SKILL_MANAGER_TARGET_AMP = path.join(targetsRoot, "amp");
-    process.env.SKILL_MANAGER_TARGET_KIRO = path.join(targetsRoot, "kiro");
+    process.env.SKILL_FLOW_STATE_ROOT = stateRoot;
+    process.env.SKILL_FLOW_TARGET_CLAUDE_CODE = path.join(targetsRoot, "claude");
+    process.env.SKILL_FLOW_TARGET_CODEX = path.join(targetsRoot, "codex");
+    process.env.SKILL_FLOW_TARGET_CURSOR = path.join(targetsRoot, "cursor");
+    process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT = path.join(targetsRoot, "github-copilot");
+    process.env.SKILL_FLOW_TARGET_GEMINI_CLI = path.join(targetsRoot, "gemini-cli");
+    process.env.SKILL_FLOW_TARGET_OPENCODE = path.join(targetsRoot, "opencode");
+    process.env.SKILL_FLOW_TARGET_OPENCLAW = path.join(targetsRoot, "openclaw");
+    process.env.SKILL_FLOW_TARGET_PI = path.join(targetsRoot, "pi");
+    process.env.SKILL_FLOW_TARGET_WINDSURF = path.join(targetsRoot, "windsurf");
+    process.env.SKILL_FLOW_TARGET_ROO_CODE = path.join(targetsRoot, "roo-code");
+    process.env.SKILL_FLOW_TARGET_CLINE = path.join(targetsRoot, "cline");
+    process.env.SKILL_FLOW_TARGET_AMP = path.join(targetsRoot, "amp");
+    process.env.SKILL_FLOW_TARGET_KIRO = path.join(targetsRoot, "kiro");
 
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CODEX, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CURSOR, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_GITHUB_COPILOT, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_GEMINI_CLI, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_OPENCODE, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_OPENCLAW, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_PI, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_WINDSURF, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_ROO_CODE, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CLINE, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_AMP, { recursive: true });
-    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_KIRO, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CODEX, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CURSOR, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_GEMINI_CLI, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_OPENCODE, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_OPENCLAW, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_PI, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_WINDSURF, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_ROO_CODE, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CLINE, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_AMP, { recursive: true });
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_KIRO, { recursive: true });
   });
 
   afterEach(async () => {
-    delete process.env.SKILL_MANAGER_STATE_ROOT;
-    delete process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE;
-    delete process.env.SKILL_MANAGER_TARGET_CODEX;
-    delete process.env.SKILL_MANAGER_TARGET_CURSOR;
-    delete process.env.SKILL_MANAGER_TARGET_GITHUB_COPILOT;
-    delete process.env.SKILL_MANAGER_TARGET_GEMINI_CLI;
-    delete process.env.SKILL_MANAGER_TARGET_OPENCODE;
-    delete process.env.SKILL_MANAGER_TARGET_OPENCLAW;
-    delete process.env.SKILL_MANAGER_TARGET_PI;
-    delete process.env.SKILL_MANAGER_TARGET_WINDSURF;
-    delete process.env.SKILL_MANAGER_TARGET_ROO_CODE;
-    delete process.env.SKILL_MANAGER_TARGET_CLINE;
-    delete process.env.SKILL_MANAGER_TARGET_AMP;
-    delete process.env.SKILL_MANAGER_TARGET_KIRO;
+    delete process.env.SKILL_FLOW_STATE_ROOT;
+    delete process.env.SKILL_FLOW_TARGET_CLAUDE_CODE;
+    delete process.env.SKILL_FLOW_TARGET_CODEX;
+    delete process.env.SKILL_FLOW_TARGET_CURSOR;
+    delete process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT;
+    delete process.env.SKILL_FLOW_TARGET_GEMINI_CLI;
+    delete process.env.SKILL_FLOW_TARGET_OPENCODE;
+    delete process.env.SKILL_FLOW_TARGET_OPENCLAW;
+    delete process.env.SKILL_FLOW_TARGET_PI;
+    delete process.env.SKILL_FLOW_TARGET_WINDSURF;
+    delete process.env.SKILL_FLOW_TARGET_ROO_CODE;
+    delete process.env.SKILL_FLOW_TARGET_CLINE;
+    delete process.env.SKILL_FLOW_TARGET_AMP;
+    delete process.env.SKILL_FLOW_TARGET_KIRO;
     await fs.rm(sandboxRoot, { recursive: true, force: true });
   });
 
@@ -90,7 +90,7 @@ describe.sequential("skill-manager", () => {
       "frontend/SKILL.md": skillDoc("frontend", "Build frontend flows."),
       "ops/SKILL.md": skillDoc("ops", "Run operator workflows."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -103,7 +103,7 @@ describe.sequential("skill-manager", () => {
   });
 
   test("returns a clear error when git fetch fails", async () => {
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(path.join(sandboxRoot, "missing-repo"));
 
@@ -115,7 +115,7 @@ describe.sequential("skill-manager", () => {
   });
 
   test("rejects uninstall for an unknown workflow group", async () => {
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.uninstall(["missing-source"]);
 
@@ -130,7 +130,7 @@ describe.sequential("skill-manager", () => {
     const repoPath = await createRepo(sandboxRoot, {
       "broken/SKILL.md": "No heading here",
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -146,7 +146,7 @@ describe.sequential("skill-manager", () => {
       "good/SKILL.md": skillDoc("good", "Good description."),
       "bad/SKILL.md": "Broken file",
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -172,7 +172,7 @@ description: |
 ## Preamble
 `,
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -198,7 +198,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -207,7 +207,7 @@ description: |
 
     const sourceId = added.data.manifest.id;
     const leafId = `${sourceId}:good`;
-    await fs.mkdir(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "good"), {
+    await fs.mkdir(path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "good"), {
       recursive: true,
     });
 
@@ -228,7 +228,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -261,7 +261,7 @@ description: |
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
       ".agents/skills/gstack-browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -289,7 +289,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       ".agents/skills/gstack-browse/SKILL.md": skillDoc("gstack-browse", "Host directory skill."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -311,7 +311,7 @@ description: |
       "catalog/browse/SKILL.md": skillDoc("browse", "Browser flow."),
       "catalog/.generated/browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -350,7 +350,7 @@ description: |
 ## Body
 `,
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -371,7 +371,7 @@ description: |
       "browse/SKILL.md": skillDoc("browse", "Canonical browse skill."),
       "copy-of-browse/SKILL.md": skillDoc("browse", "Different browse skill."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -386,7 +386,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -396,7 +396,7 @@ description: |
     const sourceId = added.data.manifest.id;
     const leafId = `${sourceId}:browse`;
     const legacyPath = path.join(
-      process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!,
+      process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!,
       `${sourceId}--browse`,
     );
 
@@ -430,7 +430,7 @@ description: |
     expect(applied.ok).toBe(true);
     expect(await pathExists(legacyPath)).toBe(false);
     expect(
-      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+      await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "browse")),
     ).toBe(true);
   });
 
@@ -441,7 +441,7 @@ description: |
     const repoB = await createRepo(sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const addedA = await app.addSource(repoA);
     const addedB = await app.addSource(repoB);
     expect(addedA.ok).toBe(true);
@@ -472,7 +472,7 @@ description: |
 
     expect(secondApply.data.draft.selectedLeafIds).toEqual([]);
     expect(
-      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+      await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "browse")),
     ).toBe(true);
 
     const lockPath = path.join(stateRoot, "lock.json");
@@ -494,7 +494,7 @@ description: |
     const repoB = await createRepo(sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow from B."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const addedA = await app.addSource(repoA);
     const addedB = await app.addSource(repoB);
     expect(addedA.ok).toBe(true);
@@ -514,7 +514,7 @@ description: |
     });
     expect(firstApply.ok).toBe(true);
     expect(
-      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+      await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "browse")),
     ).toBe(true);
 
     const secondApply = await app.applyDraft(sourceB, {
@@ -524,16 +524,16 @@ description: |
     expect(secondApply.ok).toBe(true);
 
     expect(
-      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+      await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "browse")),
     ).toBe(false);
     expect(
       await pathExists(
-        path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, `${sourceA}-browse`),
+        path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, `${sourceA}-browse`),
       ),
     ).toBe(true);
     expect(
       await pathExists(
-        path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, `${sourceB}-browse`),
+        path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, `${sourceB}-browse`),
       ),
     ).toBe(true);
   });
@@ -542,14 +542,14 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
     }
 
-    await fs.rm(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, {
+    await fs.rm(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, {
       recursive: true,
       force: true,
     });
@@ -570,7 +570,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
 
@@ -592,7 +592,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -617,7 +617,7 @@ description: |
     }
     expect(updated.data.updated[0]?.removedLeafIds).toEqual([leafId]);
     expect(
-      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "good")),
+      await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "good")),
     ).toBe(false);
   });
 
@@ -625,7 +625,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -665,7 +665,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -679,7 +679,7 @@ description: |
       selectedLeafIds: [leafId],
     });
 
-    await writeRepoFiles(process.env.SKILL_MANAGER_TARGET_OPENCLAW!, {
+    await writeRepoFiles(process.env.SKILL_FLOW_TARGET_OPENCLAW!, {
       ["good/SKILL.md"]: "# Good\nMutated copy.",
     });
 
@@ -695,7 +695,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "folder-name/SKILL.md": skillDoc("bad--name", "x".repeat(1025)),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const result = await app.addSource(repoPath);
 
@@ -715,7 +715,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -747,7 +747,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -987,7 +987,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -1002,10 +1002,10 @@ description: |
     });
 
     expect(applied.ok).toBe(true);
-    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CURSOR!, "browse"))).toBe(
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CURSOR!, "browse"))).toBe(
       true,
     );
-    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_PI!, "browse"))).toBe(
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_PI!, "browse"))).toBe(
       true,
     );
   });
@@ -1014,7 +1014,7 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
     const added = await app.addSource(repoPath);
     expect(added.ok).toBe(true);
     if (!added.ok) {
@@ -1038,30 +1038,30 @@ description: |
 
     expect(applied.ok).toBe(true);
     expect(
-      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_GITHUB_COPILOT!, "browse")),
+      await pathExists(path.join(process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT!, "browse")),
     ).toBe(true);
     expect(
-      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_GEMINI_CLI!, "browse")),
+      await pathExists(path.join(process.env.SKILL_FLOW_TARGET_GEMINI_CLI!, "browse")),
     ).toBe(true);
-    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_WINDSURF!, "browse"))).toBe(
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_WINDSURF!, "browse"))).toBe(
       true,
     );
-    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_ROO_CODE!, "browse"))).toBe(
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_ROO_CODE!, "browse"))).toBe(
       true,
     );
-    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLINE!, "browse"))).toBe(
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CLINE!, "browse"))).toBe(
       true,
     );
-    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_AMP!, "browse"))).toBe(
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_AMP!, "browse"))).toBe(
       true,
     );
-    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_KIRO!, "browse"))).toBe(
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_KIRO!, "browse"))).toBe(
       true,
     );
   });
 
   test("discovers all configured global targets with isolated roots", async () => {
-    const app = new SkillManagerApp();
+    const app = new SkillFlowApp();
 
     const targets = await app.getAvailableTargets();
 
@@ -1145,7 +1145,7 @@ async function createRepo(
   const repoPath = await fs.mkdtemp(path.join(root, "repo-"));
   git(repoPath, ["init"]);
   git(repoPath, ["config", "user.email", "test@example.com"]);
-  git(repoPath, ["config", "user.name", "Skill Manager Test"]);
+  git(repoPath, ["config", "user.name", "Skill Flow Test"]);
   await writeRepoFiles(repoPath, files);
   git(repoPath, ["add", "."]);
   git(repoPath, ["commit", "-m", "initial"]);

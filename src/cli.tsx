@@ -2,15 +2,15 @@
 import React from "react";
 import { Command } from "commander";
 import { render } from "ink";
-import { SkillManagerApp } from "./services/skill-manager.js";
+import { SkillFlowApp } from "./services/skill-flow.js";
 import { ConfigApp } from "./tui/config-app.js";
 import { formatActionSummary, formatDoctorIssue, formatWorkflowList } from "./utils/format.js";
 
 const program = new Command();
-const app = new SkillManagerApp();
+const app = new SkillFlowApp();
 
 program
-  .name("skill-manager")
+  .name("skill-flow")
   .description("Workflow-first skill projection manager")
   .version("1.0.0");
 
@@ -144,4 +144,4 @@ function printWarnings(messages: string[]) {
   }
 }
 
-type DraftBinding = import("./services/skill-manager.js").DraftBinding;
+type DraftBinding = import("./services/skill-flow.js").DraftBinding;

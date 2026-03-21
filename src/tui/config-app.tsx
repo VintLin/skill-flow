@@ -5,7 +5,7 @@ import type {
   DeploymentTargetName,
   WorkflowSummary,
 } from "../domain/types.js";
-import type { DraftBinding, SkillManagerApp } from "../services/skill-manager.js";
+import type { DraftBinding, SkillFlowApp } from "../services/skill-flow.js";
 import { TARGET_LABELS, TARGET_ORDER } from "../utils/constants.js";
 import { countActions } from "../utils/format.js";
 import {
@@ -16,7 +16,7 @@ import {
 } from "./selection-state.js";
 
 type ConfigAppProps = {
-  app: SkillManagerApp;
+  app: SkillFlowApp;
   availableTargets: DeploymentTargetName[];
   summaries: WorkflowSummary[];
   initialDrafts: Record<string, DraftBinding>;
