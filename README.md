@@ -35,12 +35,27 @@ Intuitive TUI: view groups → select skills → choose targets → save configu
 
 Requires Node.js >= 20, currently optimized for macOS.
 
+Install from npm:
+
+```bash
+npm install -g skill-flow
+skill-flow --help
+```
+
+Run without a global install:
+
+```bash
+npx skill-flow --help
+```
+
+Install from source for local development:
+
 ```bash
 git clone https://github.com/VintLin/skill-flow.git
 cd skill-flow
 npm install
 npm run build
-npm link  # Optional: global install
+npm link
 ```
 
 ## Quick Start
@@ -64,6 +79,8 @@ skill-flow doctor
 # Remove a workflow group
 skill-flow uninstall my-source-id
 ```
+
+`add <source>` supports local paths, `owner/repo`, and full https/ssh Git URLs.
 
 ## Command Reference
 

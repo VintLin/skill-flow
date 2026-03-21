@@ -35,12 +35,27 @@
 
 需要 Node.js >= 20，当前版本针对 macOS 优化。
 
+通过 npm 安装：
+
+```bash
+npm install -g skill-flow
+skill-flow --help
+```
+
+不做全局安装也可以直接运行：
+
+```bash
+npx skill-flow --help
+```
+
+如果你要本地开发，再使用源码安装：
+
 ```bash
 git clone https://github.com/VintLin/skill-flow.git
 cd skill-flow
 npm install
 npm run build
-npm link  # 可选：全局安装
+npm link
 ```
 
 ## 快速开始
@@ -64,6 +79,8 @@ skill-flow doctor
 # 移除工作流组
 skill-flow uninstall my-source-id
 ```
+
+`add <source>` 支持本地路径、`owner/repo`，以及完整的 https/ssh Git URL。
 
 ## 命令参考
 
