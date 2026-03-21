@@ -36,8 +36,8 @@ Intuitive TUI: view groups → select skills → choose targets → save configu
 Requires Node.js >= 20, currently optimized for macOS.
 
 ```bash
-git clone https://github.com/VintLin/skill-manager.git
-cd skill-manager
+git clone https://github.com/VintLin/skill-flow.git
+cd skill-flow
 npm install
 npm run build
 npm link  # Optional: global install

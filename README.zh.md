@@ -36,8 +36,8 @@
 需要 Node.js >= 20，当前版本针对 macOS 优化。
 
 ```bash
-git clone https://github.com/VintLin/skill-manager.git
-cd skill-manager
+git clone https://github.com/VintLin/skill-flow.git
+cd skill-flow
 npm install
 npm run build
 npm link  # 可选：全局安装
