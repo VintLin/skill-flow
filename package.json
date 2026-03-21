@@ -1,7 +1,7 @@
 {
   "name": "skill-flow",
   "version": "1.0.0",
-  "description": "`skill-flow` is a terminal-first workflow control tower for AI agent skills.",
+  "description": "Workflow-first management for AI agent skills. Group, project, and sync skills across multiple agents with explicit state tracking.",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {
@@ -17,8 +17,19 @@
     "type": "git",
     "url": "git+https://github.com/VintLin/skill-flow.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "ai",
+    "agent",
+    "skills",
+    "workflow",
+    "claude",
+    "cursor",
+    "copilot",
+    "cli",
+    "management",
+    "git"
+  ],
+  "author": "VintLin",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/VintLin/skill-flow/issues"
