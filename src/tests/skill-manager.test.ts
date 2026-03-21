@@ -114,6 +114,18 @@ describe.sequential("skill-manager", () => {
     expect(result.errors[0]?.code).toBe("GIT_CLONE_FAILED");
   });
 
+  test("rejects uninstall for an unknown workflow group", async () => {
+    const app = new SkillManagerApp();
+
+    const result = await app.uninstall(["missing-source"]);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.errors[0]?.code).toBe("SOURCE_NOT_FOUND");
+  });
+
   test("rejects a source with zero valid skills", async () => {
     const repoPath = await createRepo(sandboxRoot, {
       "broken/SKILL.md": "No heading here",

@@ -200,7 +200,15 @@ export class SourceService {
     const removed: string[] = [];
 
     for (const sourceId of sourceIds) {
+      const currentSource = manifest.sources.find((source) => source.id === sourceId);
       const currentLock = lockFile.sources.find((source) => source.id === sourceId);
+      if (!currentSource || !currentLock) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Workflow group '${sourceId}' is not registered.`,
+        });
+      }
+
       manifest.sources = manifest.sources.filter((source) => source.id !== sourceId);
       delete manifest.bindings[sourceId];
       lockFile.sources = lockFile.sources.filter((source) => source.id !== sourceId);
