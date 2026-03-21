@@ -1,2 +1,7 @@
 PRD/
 .gstack/
+node_modules/
+dist/
+coverage/
+.DS_Store
+docs/

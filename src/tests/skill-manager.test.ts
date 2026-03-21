@@ -1,0 +1,750 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { SkillManagerApp } from "../services/skill-manager.js";
+import {
+  buildCommandBar,
+  buildContextBar,
+  buildSaveLabel,
+  draftsEqual,
+  getPaneWidths,
+  getPaneViewportCount,
+  getSaveDisplayPhase,
+} from "../tui/config-app.js";
+import { TARGET_PATH_CANDIDATES } from "../utils/constants.js";
+import {
+  getParentSelectionState,
+  toggleChild,
+  toggleParent,
+  type TreeSelectionState,
+} from "../tui/selection-state.js";
+
+describe.sequential("skill-manager", () => {
+  let sandboxRoot: string;
+  let stateRoot: string;
+  let targetsRoot: string;
+
+  beforeEach(async () => {
+    sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-manager-test-"));
+    stateRoot = path.join(sandboxRoot, "state");
+    targetsRoot = path.join(sandboxRoot, "targets");
+    await fs.mkdir(targetsRoot, { recursive: true });
+
+    process.env.SKILL_MANAGER_STATE_ROOT = stateRoot;
+    process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE = path.join(targetsRoot, "claude");
+    process.env.SKILL_MANAGER_TARGET_CODEX = path.join(targetsRoot, "codex");
+    process.env.SKILL_MANAGER_TARGET_CURSOR = path.join(targetsRoot, "cursor");
+    process.env.SKILL_MANAGER_TARGET_OPENCODE = path.join(targetsRoot, "opencode");
+    process.env.SKILL_MANAGER_TARGET_OPENCLAW = path.join(targetsRoot, "openclaw");
+    process.env.SKILL_MANAGER_TARGET_PI = path.join(targetsRoot, "pi");
+
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CODEX, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_CURSOR, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_OPENCODE, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_OPENCLAW, { recursive: true });
+    await fs.mkdir(process.env.SKILL_MANAGER_TARGET_PI, { recursive: true });
+  });
+
+  afterEach(async () => {
+    delete process.env.SKILL_MANAGER_STATE_ROOT;
+    delete process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE;
+    delete process.env.SKILL_MANAGER_TARGET_CODEX;
+    delete process.env.SKILL_MANAGER_TARGET_CURSOR;
+    delete process.env.SKILL_MANAGER_TARGET_OPENCODE;
+    delete process.env.SKILL_MANAGER_TARGET_OPENCLAW;
+    delete process.env.SKILL_MANAGER_TARGET_PI;
+    await fs.rm(sandboxRoot, { recursive: true, force: true });
+  });
+
+  test("adds a git source and discovers valid skills", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "frontend/SKILL.md": skillDoc("frontend", "Build frontend flows."),
+      "ops/SKILL.md": skillDoc("ops", "Run operator workflows."),
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(2);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  test("returns a clear error when git fetch fails", async () => {
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(path.join(sandboxRoot, "missing-repo"));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.errors[0]?.code).toBe("GIT_CLONE_FAILED");
+  });
+
+  test("rejects a source with zero valid skills", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "broken/SKILL.md": "No heading here",
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.errors[0]?.code).toBe("NO_VALID_LEAFS");
+  });
+
+  test("keeps valid skills and warns about invalid ones", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+      "bad/SKILL.md": "Broken file",
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(1);
+    expect(result.warnings).toHaveLength(1);
+  });
+
+  test("accepts skills that use YAML frontmatter metadata", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": `---
+name: browse
+version: 1.1.0
+description: |
+  Fast headless browser for QA testing and site dogfooding.
+  Opens pages and validates flows.
+---
+<!-- generated -->
+
+## Preamble
+`,
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(1);
+
+    const listResult = await app.listWorkflows();
+    expect(listResult.ok).toBe(true);
+    if (!listResult.ok) {
+      return;
+    }
+    expect(listResult.data.summaries[0]?.leafs[0]?.title).toBe("browse");
+    expect(listResult.data.summaries[0]?.leafs[0]?.description).toContain(
+      "Fast headless browser",
+    );
+    expect(listResult.data.summaries[0]?.leafs[0]?.name).toBe("browse");
+  });
+
+  test("blocks apply preview when foreign content already exists at target path", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:good`;
+    await fs.mkdir(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "good"), {
+      recursive: true,
+    });
+
+    const preview = await app.previewDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafId],
+    });
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) {
+      return;
+    }
+    expect(preview.data.plan.blocked).toHaveLength(1);
+    expect(preview.data.plan.blocked[0]?.reason).toContain("Foreign content");
+  });
+
+  test("doctor detects broken symlinks", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:good`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+
+    await fs.rm(path.join(stateRoot, "source", "git", sourceId, "good"), {
+      recursive: true,
+      force: true,
+    });
+
+    const doctor = await app.doctor();
+    expect(doctor.ok).toBe(true);
+    if (!doctor.ok) {
+      return;
+    }
+    expect(doctor.data.issues.some((issue) => issue.code === "BROKEN_SYMLINK")).toBe(true);
+  });
+
+  test("scans host directories too, but keeps the first discovered duplicate only", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+      ".agents/skills/gstack-browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(1);
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes("Duplicate skill content"),
+      ),
+    ).toBe(true);
+    const list = await app.listWorkflows();
+    expect(list.ok).toBe(true);
+    if (!list.ok) {
+      return;
+    }
+    expect(list.data.summaries[0]?.leafs.map((leaf) => leaf.relativePath)).toEqual([
+      "browse",
+    ]);
+  });
+
+  test("discovers a unique skill from a host directory when no earlier duplicate exists", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      ".agents/skills/gstack-browse/SKILL.md": skillDoc("gstack-browse", "Host directory skill."),
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(1);
+    const list = await app.listWorkflows();
+    expect(list.ok).toBe(true);
+    if (!list.ok) {
+      return;
+    }
+    expect(list.data.summaries[0]?.leafs[0]?.relativePath).toBe(".agents/skills/gstack-browse");
+  });
+
+  test("dedupes skills by metadata name and description", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": `---
+name: browse
+description: |
+  Canonical browse skill.
+---
+## Body
+`,
+      "copy-of-browse/SKILL.md": `---
+name: browse
+description: |
+  Canonical browse skill.
+---
+## Body
+`,
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(1);
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes("Duplicate skill content"),
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps same-name skills when descriptions differ", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Canonical browse skill."),
+      "copy-of-browse/SKILL.md": skillDoc("browse", "Different browse skill."),
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(2);
+  });
+
+  test("apply uses natural skill names and removes legacy prefixed paths", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const legacyPath = path.join(
+      process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!,
+      `${sourceId}--browse`,
+    );
+
+    await fs.symlink(
+      path.join(stateRoot, "source", "git", sourceId, "browse"),
+      legacyPath,
+      "junction",
+    );
+
+    const lockPath = path.join(stateRoot, "lock.json");
+    const lockFile = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
+      deployments: Array<Record<string, string>>;
+    };
+    lockFile.deployments.push({
+      sourceId,
+      leafId,
+      target: "claude-code",
+      targetPath: legacyPath,
+      strategy: "symlink",
+      status: "active",
+      contentHash: "legacy",
+      appliedAt: new Date().toISOString(),
+    });
+    await fs.writeFile(lockPath, `${JSON.stringify(lockFile, null, 2)}\n`, "utf8");
+
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafId],
+    });
+
+    expect(applied.ok).toBe(true);
+    expect(await pathExists(legacyPath)).toBe(false);
+    expect(
+      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "browse")),
+    ).toBe(true);
+  });
+
+  test("doctor reports unavailable target paths", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await fs.rm(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, {
+      recursive: true,
+      force: true,
+    });
+
+    const doctor = await app.previewDraft(added.data.manifest.id, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [`${added.data.manifest.id}:good`],
+    });
+
+    expect(doctor.ok).toBe(true);
+    if (!doctor.ok) {
+      return;
+    }
+    expect(doctor.data.plan.blocked[0]?.reason).toContain("Target directory not found");
+  });
+
+  test("update detects added skills", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+
+    await writeRepoFiles(repoPath, {
+      "extra/SKILL.md": skillDoc("extra", "Extra description."),
+    });
+    git(repoPath, ["add", "."]);
+    git(repoPath, ["commit", "-m", "add extra"]);
+
+    const updated = await app.updateSources([added.ok ? added.data.manifest.id : ""]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated[0]?.addedLeafIds).toHaveLength(1);
+  });
+
+  test("update removes projections for deleted skills", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:good`;
+    await app.applyDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafId],
+    });
+
+    await fs.rm(path.join(repoPath, "good"), { recursive: true, force: true });
+    git(repoPath, ["add", "."]);
+    git(repoPath, ["commit", "-m", "remove good"]);
+
+    const updated = await app.updateSources([sourceId]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated[0]?.removedLeafIds).toEqual([leafId]);
+    expect(
+      await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CLAUDE_CODE!, "good")),
+    ).toBe(false);
+  });
+
+  test("update surfaces invalidated skills", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await writeRepoFiles(repoPath, {
+      "good/SKILL.md": "Broken now",
+    });
+    git(repoPath, ["add", "."]);
+    git(repoPath, ["commit", "-m", "invalidate"]);
+
+    const updated = await app.updateSources([added.data.manifest.id]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated[0]?.invalidatedLeafIds).toHaveLength(1);
+  });
+
+  test("selection state machine handles parent child partial transitions", () => {
+    let state: TreeSelectionState = {
+      allLeafIds: ["a", "b"],
+      selectedLeafIds: [],
+    };
+
+    expect(getParentSelectionState(state)).toBe("empty");
+    state = toggleChild(state, "a");
+    expect(getParentSelectionState(state)).toBe("partial");
+    state = toggleParent(state);
+    expect(getParentSelectionState(state)).toBe("full");
+    state = toggleChild(state, "b");
+    expect(getParentSelectionState(state)).toBe("partial");
+  });
+
+  test("doctor detects drift in copied projections", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:good`;
+    await app.applyDraft(sourceId, {
+      enabledTargets: ["openclaw"],
+      selectedLeafIds: [leafId],
+    });
+
+    await writeRepoFiles(process.env.SKILL_MANAGER_TARGET_OPENCLAW!, {
+      ["good/SKILL.md"]: "# Good\nMutated copy.",
+    });
+
+    const doctor = await app.doctor();
+    expect(doctor.ok).toBe(true);
+    if (!doctor.ok) {
+      return;
+    }
+    expect(doctor.data.issues.some((issue) => issue.code === "DRIFT_COPY")).toBe(true);
+  });
+
+  test("keeps metadata warnings on valid skills", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "folder-name/SKILL.md": skillDoc("bad--name", "x".repeat(1025)),
+    });
+    const app = new SkillManagerApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const list = await app.listWorkflows();
+    expect(list.ok).toBe(true);
+    if (!list.ok) {
+      return;
+    }
+    expect(list.data.summaries[0]?.leafs[0]?.metadataWarnings.length).toBeGreaterThan(0);
+  });
+
+  test("reads old lock entries without metadata fields", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const lockPath = path.join(stateRoot, "lock.json");
+    const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
+      leafInventory: Array<Record<string, unknown>>;
+    };
+    lock.leafInventory = lock.leafInventory.map((leaf) => {
+      const next = { ...leaf };
+      delete next.metadataWarnings;
+      delete next.linkName;
+      return next;
+    });
+    await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
+
+    const list = await app.listWorkflows();
+    expect(list.ok).toBe(true);
+    if (!list.ok) {
+      return;
+    }
+    expect(list.data.summaries[0]?.leafs[0]?.metadataWarnings).toEqual([]);
+    expect(list.data.summaries[0]?.leafs[0]?.linkName).toBe("browse");
+  });
+
+  test("previewDraft is read-only and does not reconcile inventory on its own", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const lockPath = path.join(stateRoot, "lock.json");
+    const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
+      sources: Array<{ id: string; leafIds: string[] }>;
+      leafInventory: Array<Record<string, unknown>>;
+    };
+    const existingLeaf = lock.leafInventory[0] as {
+      id: string;
+      absolutePath: string;
+      linkName: string;
+      name: string;
+      relativePath: string;
+      skillFilePath: string;
+      sourceId: string;
+      title: string;
+    };
+    const generatedLeafId = `${sourceId}:.agents/skills/generated`;
+    lock.sources[0]!.leafIds.push(generatedLeafId);
+    lock.leafInventory.push({
+      ...existingLeaf,
+      id: generatedLeafId,
+      relativePath: ".agents/skills/generated",
+      absolutePath: path.join(stateRoot, "source", "git", sourceId, ".agents/skills/generated"),
+      skillFilePath: path.join(
+        stateRoot,
+        "source",
+        "git",
+        sourceId,
+        ".agents/skills/generated/SKILL.md",
+      ),
+      linkName: "generated",
+      name: "generated",
+      title: "generated",
+    });
+    const mutatedLock = `${JSON.stringify(lock, null, 2)}\n`;
+    await fs.writeFile(lockPath, mutatedLock, "utf8");
+
+    const preview = await app.previewDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [`${sourceId}:browse`],
+    });
+
+    expect(preview.ok).toBe(true);
+    expect(await fs.readFile(lockPath, "utf8")).toBe(mutatedLock);
+  });
+
+  test("config helpers derive save, command, and context states", () => {
+    expect(draftsEqual(
+      {
+        enabledTargets: ["codex", "claude-code"],
+        selectedLeafIds: ["b", "a"],
+      },
+      {
+        enabledTargets: ["claude-code", "codex"],
+        selectedLeafIds: ["a", "b"],
+      },
+    )).toBe(true);
+    expect(getSaveDisplayPhase("idle", true)).toBe("dirty");
+    expect(buildSaveLabel("dirty", 3)).toContain("DIRTY");
+    expect(getPaneViewportCount(16, 1)).toBe(10);
+    expect(getPaneWidths(100).reduce((sum, width) => sum + width, 0)).toBeLessThanOrEqual(98);
+    expect(
+      buildCommandBar({
+        changeCount: 3,
+        focus: "groups",
+        groupCursor: 0,
+        savePhase: "dirty",
+      }),
+    ).toContain("save 3 changes");
+    expect(
+      buildContextBar({
+        blockedCount: 0,
+        changeCount: 3,
+        previewError: undefined,
+        previewLoading: false,
+        savePhase: "clean",
+        saveMessage: undefined,
+        selectedLeafName: "gstack",
+        selectedLeafWarnings: ["description should be at most 1024 characters"],
+        skippedLeafs: 21,
+        sourceId: "gstack",
+      }),
+    ).toContain("warning:");
+  });
+
+  test("supports cursor and pi target projections", async () => {
+    const repoPath = await createRepo(sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillManagerApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["cursor", "pi"],
+      selectedLeafIds: [leafId],
+    });
+
+    expect(applied.ok).toBe(true);
+    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_CURSOR!, "browse"))).toBe(
+      true,
+    );
+    expect(await pathExists(path.join(process.env.SKILL_MANAGER_TARGET_PI!, "browse"))).toBe(
+      true,
+    );
+  });
+
+  test("includes config-based OpenCode skills directory in default detection paths", () => {
+    expect(TARGET_PATH_CANDIDATES.opencode).toContain(
+      path.join(os.homedir(), ".config", "opencode", "skills"),
+    );
+  });
+});
+
+async function createRepo(
+  root: string,
+  files: Record<string, string>,
+): Promise<string> {
+  const repoPath = await fs.mkdtemp(path.join(root, "repo-"));
+  git(repoPath, ["init"]);
+  git(repoPath, ["config", "user.email", "test@example.com"]);
+  git(repoPath, ["config", "user.name", "Skill Manager Test"]);
+  await writeRepoFiles(repoPath, files);
+  git(repoPath, ["add", "."]);
+  git(repoPath, ["commit", "-m", "initial"]);
+  return repoPath;
+}
+
+async function writeRepoFiles(root: string, files: Record<string, string>) {
+  for (const [relativePath, content] of Object.entries(files)) {
+    const absolutePath = path.join(root, relativePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, content, "utf8");
+  }
+}
+
+function skillDoc(name: string, description: string, heading?: string) {
+  return `---
+name: ${name}
+description: |
+  ${description}
+---
+${heading ? `\n# ${heading}\n` : ""}
+`;
+}
+
+function git(cwd: string, args: string[]) {
+  execFileSync("git", args, { cwd, stdio: "pipe" });
+}
+
+async function pathExists(targetPath: string) {
+  try {
+    await fs.lstat(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}

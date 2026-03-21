@@ -1,0 +1,39 @@
+{
+  "name": "skill-manager",
+  "version": "1.0.0",
+  "description": "`skill-manager` is a terminal-first workflow control tower for AI agent skills.",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "skill-manager": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VintLin/skill-manager.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/VintLin/skill-manager/issues"
+  },
+  "homepage": "https://github.com/VintLin/skill-manager#readme",
+  "dependencies": {
+    "commander": "^14.0.3",
+    "ink": "^6.8.0",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}
