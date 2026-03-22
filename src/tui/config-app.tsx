@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type {
+  DoctorReport,
   SourceManifestRecord,
   DeploymentAction,
   DeploymentTargetName,
@@ -28,6 +29,18 @@ type ConfigAppProps = {
   summaries: WorkflowSummary[];
   initialDrafts: Record<string, DraftBinding>;
 };
+
+type ConfigBootstrapState =
+  | { phase: "loading"; logs: string[] }
+  | {
+      phase: "ready";
+      logs: string[];
+      availableTargets: DeploymentTargetName[];
+      summaries: WorkflowSummary[];
+      initialDrafts: Record<string, DraftBinding>;
+      audit: DoctorReport;
+    }
+  | { phase: "error"; logs: string[]; message: string };
 
 type FocusPane = "groups" | "skills" | "targets";
 
@@ -985,6 +998,99 @@ export function ConfigApp({
       <Text dimColor wrap="truncate-middle">
         {commandBar}
       </Text>
+    </Box>
+  );
+}
+
+export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
+  const { exit } = useApp();
+  const { stdout } = useStdout();
+  const [state, setState] = useState<ConfigBootstrapState>({
+    phase: "loading",
+    logs: ["Booting config..."],
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    void app.bootstrapWorkspaceState((event) => {
+      if (cancelled) {
+        return;
+      }
+      setState((current) => {
+        const nextLogs = [...current.logs, event.message].slice(-6);
+        return {
+          ...current,
+          logs: nextLogs,
+        };
+      });
+    }).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      if (!result.ok) {
+        setState((current) => ({
+          phase: "error",
+          logs: current.logs,
+          message: firstErrorMessage(result),
+        }));
+        return;
+      }
+      setState((current) => ({
+        phase: "ready",
+        logs: current.logs,
+        availableTargets: result.data.availableTargets,
+        summaries: result.data.summaries,
+        initialDrafts: result.data.initialDrafts,
+        audit: result.data.audit,
+      }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [app]);
+
+  useInput((input, key) => {
+    if (state.phase === "ready") {
+      return;
+    }
+    if (input === "q" || key.escape || (input === "c" && key.ctrl)) {
+      exit();
+    }
+  });
+
+  if (state.phase === "ready") {
+    return (
+      <ConfigApp
+        app={app}
+        availableTargets={state.availableTargets}
+        summaries={state.summaries}
+        initialDrafts={state.initialDrafts}
+      />
+    );
+  }
+
+  const rows = stdout.rows ?? 24;
+  const bootLogs = state.logs.slice(-4);
+
+  return (
+    <Box flexDirection="column" height={rows}>
+      <Box flexGrow={1} flexDirection="column">
+        <Text bold>Skill Flow Config</Text>
+        <Text color="gray">
+          {state.phase === "loading" ? "Checking groups, skills, targets, and current paths..." : "Bootstrap failed"}
+        </Text>
+        {state.phase === "error" ? <Text color="red">{state.message}</Text> : null}
+      </Box>
+      <Box flexDirection="column">
+        <Text bold>BOOT LOG</Text>
+        {bootLogs.map((log) => (
+          <Text key={log} color="gray">
+            {log}
+          </Text>
+        ))}
+        <Text color="gray">Press q or Esc to exit.</Text>
+      </Box>
     </Box>
   );
 }

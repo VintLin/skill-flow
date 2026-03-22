@@ -27,6 +27,9 @@ Set it up once, deploy to multiple agents (Claude Code, Cursor, Windsurf, and 13
 **Interactive Terminal UI**
 Intuitive TUI: view groups → select skills → choose targets → save configuration.
 
+**Bootstrap On Config Open**
+`config` renders immediately, shows boot progress, adopts unmanaged skills already found in agent roots, then audits current projections before entering the main UI.
+
 **Explicit State Tracking**
 `manifest.json` = what you want, `lock.json` = what's actually installed. Both are readable and queryable.
 
@@ -114,7 +117,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 
 | Command | Description |
 |---|---|
-| `add <source>` | Add a skill source (Git repo or ClawHub) |
+| `add <source>` | Add a skill source (local path, Git repo, or ClawHub) |
 | `find <query>` | Search installed skills, built-in Git catalogs, and ClawHub |
 | `search <query>` | Alias of `find` |
 | `list` | Show skills groups |
@@ -130,12 +133,22 @@ When selected skills collide by name, `skill-flow` keeps identical duplicates as
 **State Management**
 - `~/.skillflow/manifest.json` - Your configuration (what you want)
 - `~/.skillflow/lock.json` - Actual state (what's installed)
+- `~/.skillflow/source/local/<source-id>/` - Imported local sources and adopted unmanaged external skills
 - `~/.skillflow/source/git/<source-id>/` - Git repo cache
 - `~/.skillflow/source/clawhub/<source-id>/` - ClawHub cache
 - `~/.skillflow/catalog/git/<source-id>/` - Built-in Git catalog cache
 
 **Deployment Strategy**
 Uses symlinks when possible, file copies when needed. Target directories are just deploy points — real state lives in lock.json.
+
+**Config Bootstrap**
+- detect available agent targets
+- scan known agent `skills/` roots for unmanaged skills
+- import unmanaged external skills into `~/.skillflow/source/local/`
+- refresh inventory, normalize bindings, and audit projections
+- enter the interactive config UI
+
+Already-managed projections are not imported again. For example, if an agent root contains symlinks that already point into `~/.skillflow/source/*`, bootstrap treats them as managed state and skips them.
 
 ## Supported Agents
 

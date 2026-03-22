@@ -1,4 +1,5 @@
 import type {
+  DoctorReport,
   HealthStatus,
   LockFile,
   Manifest,
@@ -7,7 +8,11 @@ import type {
 } from "../domain/types.js";
 
 export class WorkflowService {
-  getSummaries(manifest: Manifest, lockFile: LockFile): WorkflowSummary[] {
+  getSummaries(
+    manifest: Manifest,
+    lockFile: LockFile,
+    audit?: DoctorReport,
+  ): WorkflowSummary[] {
     return manifest.sources.map((source) => {
       const lock = lockFile.sources.find((item) => item.id === source.id);
       const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
@@ -19,6 +24,10 @@ export class WorkflowService {
         (count, leaf) => count + leaf.metadataWarnings.length,
         0,
       );
+      const issueCounts = {
+        warning: audit?.issues.filter((issue) => issue.sourceId === source.id && issue.severity === "warning").length ?? 0,
+        error: audit?.issues.filter((issue) => issue.sourceId === source.id && issue.severity === "error").length ?? 0,
+      };
 
       return {
         source,
@@ -31,7 +40,14 @@ export class WorkflowService {
           warningCount,
           activeTargetCount,
           lock,
+          issueCounts,
         ),
+        issueCounts,
+        ...(issueCounts.error > 0
+          ? { healthReason: "audit errors detected" }
+          : issueCounts.warning > 0
+            ? { healthReason: "audit warnings detected" }
+            : {}),
       };
     });
   }
@@ -41,11 +57,15 @@ export class WorkflowService {
     warningCount: number,
     activeTargetCount: number,
     lock?: LockFile["sources"][number],
+    issueCounts: { warning: number; error: number } = { warning: 0, error: 0 },
   ): HealthStatus {
     if (!lock) {
       return "BLOCKED";
     }
-    if (invalidLeafCount > 0 || warningCount > 0) {
+    if (issueCounts.error > 0) {
+      return "BLOCKED";
+    }
+    if (invalidLeafCount > 0 || warningCount > 0 || issueCounts.warning > 0) {
       return "PARTIAL";
     }
     if (activeTargetCount === 0) {

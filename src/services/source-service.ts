@@ -1,5 +1,6 @@
 import path from "node:path";
 import type {
+  DeploymentTargetName,
   LockFile,
   Result,
   SourceKind,
@@ -26,6 +27,16 @@ export type SourceSnapshot = {
 
 export type AddSourceOptions = {
   path?: string;
+  enabledTargets?: DeploymentTargetName[];
+  selectionMode?: "all" | "partial";
+  project?: boolean;
+  sourceIdOverride?: string;
+  displayNameOverride?: string;
+  originLocator?: string;
+  originRequestedPath?: string;
+  originBranch?: string;
+  importedFromTargets?: DeploymentTargetName[];
+  importMode?: "explicit-add" | "bootstrap-detected";
 };
 
 type SourceResolution = {
@@ -35,6 +46,7 @@ type SourceResolution = {
   sourceId: string;
   requestedPath?: string;
   gitLocator?: string;
+  localPath?: string;
   clawhubSlug?: string;
   requestedVersion?: string;
   versionMode?: "pinned" | "floating";
@@ -74,7 +86,12 @@ export class SourceService {
     } catch (error) {
       await removePath(checkoutPath);
       return fail({
-        code: resolved.kind === "git" ? "GIT_CLONE_FAILED" : "CLAWHUB_FETCH_FAILED",
+        code:
+          resolved.kind === "git"
+            ? "GIT_CLONE_FAILED"
+            : resolved.kind === "local"
+              ? "LOCAL_IMPORT_FAILED"
+              : "CLAWHUB_FETCH_FAILED",
         message: `Unable to fetch source '${resolved.locator}': ${String(error)}`,
       });
     }
@@ -86,6 +103,7 @@ export class SourceService {
       resolved.displayName,
       checkoutPath,
       resolved.requestedPath,
+      options,
     );
 
     if (!snapshot.ok) {
@@ -153,7 +171,12 @@ export class SourceService {
         changed = await this.updateSource(source, currentLock);
       } catch (error) {
         return fail({
-          code: source.kind === "git" ? "GIT_UPDATE_FAILED" : "CLAWHUB_UPDATE_FAILED",
+          code:
+            source.kind === "git"
+              ? "GIT_UPDATE_FAILED"
+              : source.kind === "local"
+                ? "LOCAL_UPDATE_FAILED"
+                : "CLAWHUB_UPDATE_FAILED",
           message: `Unable to update skills group id '${sourceId}': ${String(error)}`,
         });
       }
@@ -176,6 +199,7 @@ export class SourceService {
         source.displayName,
         currentLock.checkoutPath,
         source.requestedPath,
+        {},
         { allowEmptyLeafs: true },
       );
 
@@ -291,6 +315,7 @@ export class SourceService {
         source.displayName,
         currentLock.checkoutPath,
         source.requestedPath,
+        {},
         { allowEmptyLeafs: true },
       );
 
@@ -373,6 +398,7 @@ export class SourceService {
     displayName: string,
     checkoutPath: string,
     requestedPathOrOptions: string | { allowEmptyLeafs?: boolean } | undefined = undefined,
+    addOptions: AddSourceOptions = {},
     maybeOptions: { allowEmptyLeafs?: boolean } = {},
   ): Promise<
     Result<{
@@ -430,6 +456,11 @@ export class SourceService {
           displayName,
           addedAt: new Date().toISOString(),
           ...(requestedPath ? { requestedPath } : {}),
+          ...(addOptions.selectionMode ? { selectionMode: addOptions.selectionMode } : {}),
+          ...(addOptions.originLocator ? { originLocator: addOptions.originLocator } : {}),
+          ...(addOptions.originRequestedPath
+            ? { originRequestedPath: addOptions.originRequestedPath }
+            : {}),
         },
         lock: {
           id: sourceId,
@@ -441,6 +472,11 @@ export class SourceService {
           leafIds: scanned.leafs.map((leaf) => leaf.id),
           invalidLeafs: scanned.invalidLeafs,
           ...sourceMetadata,
+          ...(addOptions.originBranch ? { originBranch: addOptions.originBranch } : {}),
+          ...(addOptions.importedFromTargets
+            ? { importedFromTargets: addOptions.importedFromTargets }
+            : {}),
+          ...(addOptions.importMode ? { importMode: addOptions.importMode } : {}),
           ...(kind === "clawhub"
             ? {
                 versionMode: locator.includes("@") ? ("pinned" as const) : ("floating" as const),
@@ -483,14 +519,26 @@ export class SourceService {
     options: AddSourceOptions,
   ): Promise<SourceResolution> {
     const trimmed = locator.trim();
+    const resolvedPath = path.resolve(trimmed);
+    if (await pathExists(resolvedPath)) {
+      return {
+        kind: "local",
+        locator: resolvedPath,
+        localPath: resolvedPath,
+        displayName: options.displayNameOverride ?? deriveDisplayName(resolvedPath),
+        sourceId: options.sourceIdOverride ?? deriveSourceId(resolvedPath),
+        ...(options.path ? { requestedPath: options.path } : {}),
+      };
+    }
+
     const treeLocator = this.parseGitHubTreeLocator(trimmed);
     if (treeLocator) {
       return {
         kind: "git",
         locator: treeLocator.repoLocator,
         gitLocator: await this.normalizeLocator(treeLocator.repoLocator),
-        displayName: deriveDisplayName(treeLocator.repoLocator),
-        sourceId: deriveSourceId(treeLocator.repoLocator),
+        displayName: options.displayNameOverride ?? deriveDisplayName(treeLocator.repoLocator),
+        sourceId: options.sourceIdOverride ?? deriveSourceId(treeLocator.repoLocator),
         ...(options.path ?? treeLocator.requestedPath
           ? { requestedPath: options.path ?? treeLocator.requestedPath }
           : {}),
@@ -509,8 +557,8 @@ export class SourceService {
         ? {
             kind: "clawhub",
             locator: trimmed,
-            displayName: deriveDisplayName(trimmed),
-            sourceId: deriveSourceId(trimmed),
+            displayName: options.displayNameOverride ?? deriveDisplayName(trimmed),
+            sourceId: options.sourceIdOverride ?? deriveSourceId(trimmed),
             ...(options.path ? { requestedPath: options.path } : {}),
             clawhubSlug: slug,
             requestedVersion: version,
@@ -519,8 +567,8 @@ export class SourceService {
         : {
           kind: "clawhub",
           locator: trimmed,
-          displayName: deriveDisplayName(trimmed),
-          sourceId: deriveSourceId(trimmed),
+          displayName: options.displayNameOverride ?? deriveDisplayName(trimmed),
+          sourceId: options.sourceIdOverride ?? deriveSourceId(trimmed),
           ...(options.path ? { requestedPath: options.path } : {}),
           clawhubSlug: slug,
           versionMode: "floating",
@@ -531,8 +579,8 @@ export class SourceService {
       kind: "git",
       locator,
       gitLocator: await this.normalizeLocator(locator),
-      displayName: deriveDisplayName(locator),
-      sourceId: deriveSourceId(locator),
+      displayName: options.displayNameOverride ?? deriveDisplayName(locator),
+      sourceId: options.sourceIdOverride ?? deriveSourceId(locator),
       ...(options.path ? { requestedPath: options.path } : {}),
     };
   }
@@ -587,6 +635,11 @@ export class SourceService {
     source: SourceResolution,
     checkoutPath: string,
   ): Promise<void> {
+    if (source.kind === "local") {
+      await copyDirectory(source.localPath!, checkoutPath);
+      return;
+    }
+
     if (source.kind === "git") {
       await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
       return;
@@ -610,6 +663,11 @@ export class SourceService {
     source: SourceManifestRecord,
     currentLock: SourceLockRecord,
   ): Promise<boolean> {
+    if (source.kind === "local") {
+      const contentHash = await hashDirectory(currentLock.checkoutPath);
+      return contentHash !== currentLock.contentHash;
+    }
+
     if (source.kind === "git") {
       await git(["pull", "--ff-only"], { cwd: currentLock.checkoutPath });
       const latestCommitSha = await git(["rev-parse", "HEAD"], {
@@ -643,6 +701,12 @@ export class SourceService {
     kind: SourceKind,
     checkoutPath: string,
   ): Promise<Partial<SourceLockRecord>> {
+    if (kind === "local") {
+      return {
+        contentHash: await hashDirectory(checkoutPath),
+      };
+    }
+
     if (kind === "git") {
       return {
         commitSha: await git(["rev-parse", "HEAD"], { cwd: checkoutPath }),

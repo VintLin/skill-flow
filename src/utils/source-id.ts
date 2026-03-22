@@ -51,5 +51,10 @@ export function deriveSourceId(locator: string): string {
     return slugify(`${githubRepo.owner}-${githubRepo.repo}`);
   }
 
+  const trimmed = locator.replace(/\/+$/, "");
+  if (path.isAbsolute(trimmed)) {
+    return slugify(path.basename(trimmed) || locator);
+  }
+
   return slugify(deriveDisplayName(locator) || locator);
 }

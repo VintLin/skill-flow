@@ -43,6 +43,7 @@ export class StateStore {
   }
 
   async init(): Promise<void> {
+    await ensureDir(this.getSourceRoot("local"));
     await ensureDir(this.getSourceRoot("git"));
     await ensureDir(this.getSourceRoot("clawhub"));
     await ensureDir(this.catalogRoot);

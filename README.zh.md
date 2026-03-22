@@ -26,6 +26,9 @@
 **交互式终端 UI**
 直观的 TUI 界面：查看分组 → 选择技能 → 选择目标 → 保存配置。
 
+**进入 Config 自动自举**
+`config` 会先立即渲染，再显示启动进度；启动阶段会识别 agent 根目录里尚未纳入管理的 skill，回填到 `skill-flow`，并在进入主界面前完成状态审计。
+
 **显式状态追踪**
 `manifest.json` 记录你的意图，`lock.json` 记录实际安装状态。状态清晰可查。
 
@@ -113,7 +116,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 
 | 命令 | 说明 |
 |---|---|
-| `add <source>` | 添加技能源（Git 仓库或 ClawHub） |
+| `add <source>` | 添加技能源（本地路径、Git 仓库或 ClawHub） |
 | `find <query>` | 搜索本地已安装技能、内置 Git 仓库和 ClawHub |
 | `search <query>` | `find` 的别名 |
 | `list` | 显示 Skill 分组 |
@@ -129,12 +132,22 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 **状态管理**
 - `~/.skillflow/manifest.json` - 你的配置（你想要什么）
 - `~/.skillflow/lock.json` - 实际状态（实际装了什么）
+- `~/.skillflow/source/local/<source-id>/` - 本地导入源，以及启动时接管的外部 skill
 - `~/.skillflow/source/git/<source-id>/` - Git 仓库缓存
 - `~/.skillflow/source/clawhub/<source-id>/` - ClawHub 缓存
 - `~/.skillflow/catalog/git/<source-id>/` - 内置 Git 仓库缓存
 
 **部署策略**
 优先使用符号链接，必要时使用文件复制。目标目录只是部署点，真正的状态在 lock.json 里。
+
+**Config 启动时会做什么**
+- 检测当前可用 agent 目标
+- 扫描已知 agent `skills/` 根目录中的未受管 skill
+- 将这些外部 skill 导入到 `~/.skillflow/source/local/`
+- 刷新 inventory、归一化 bindings、审计当前投影状态
+- 然后进入交互式 config 界面
+
+如果某个 agent 根目录里的 symlink 本来就已经指向 `~/.skillflow/source/*` 下的受管内容，bootstrap 会把它视为已管理状态，不会重复回填。
 
 ## 支持的 Agent
 

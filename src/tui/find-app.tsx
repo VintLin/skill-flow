@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type { SkillCandidate } from "../domain/types.js";
 import type { SkillFlowApp } from "../services/skill-flow.js";
@@ -7,7 +7,7 @@ import { buildFindCommand } from "../utils/find-command.js";
 type FindAppProps = {
   app: SkillFlowApp;
   query: string;
-  candidates: SkillCandidate[];
+  candidates?: SkillCandidate[];
 };
 
 type InstallState =
@@ -20,11 +20,41 @@ type InstallState =
 export function FindApp({ app, query, candidates }: FindAppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const [loadedCandidates, setLoadedCandidates] = useState<SkillCandidate[] | undefined>(candidates);
+  const [loadError, setLoadError] = useState<string | undefined>();
+  const [loadWarnings, setLoadWarnings] = useState<string[]>([]);
   const [cursor, setCursor] = useState(0);
   const [state, setState] = useState<InstallState>({ phase: "list" });
-  const visibleCandidates = useMemo(() => candidates.slice(0, 30), [candidates]);
+  const visibleCandidates = useMemo(
+    () => (loadedCandidates ?? []).slice(0, 30),
+    [loadedCandidates],
+  );
   const selected = visibleCandidates[cursor];
   const columns = getColumns(stdout?.columns ?? 100);
+
+  useEffect(() => {
+    if (candidates) {
+      setLoadedCandidates(candidates);
+      return;
+    }
+
+    let cancelled = false;
+    void app.findSkills(query).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      if (!result.ok) {
+        setLoadError(result.errors[0]?.message ?? "Search failed.");
+        return;
+      }
+      setLoadedCandidates(result.data.candidates);
+      setLoadWarnings(result.warnings.map((warning) => warning.message));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [app, candidates, query]);
 
   useInput((input, key) => {
     if (key.escape || input === "q") {
@@ -91,6 +121,27 @@ export function FindApp({ app, query, candidates }: FindAppProps) {
     }
   });
 
+  if (!loadedCandidates && !loadError) {
+    return (
+      <Box flexDirection="column">
+        <Text bold>Find Skills</Text>
+        <Text color="gray">query: {query}</Text>
+        <Text color="yellow">Searching local, Git catalogs, and ClawHub...</Text>
+        <Text color="gray">Press q or Esc to exit.</Text>
+      </Box>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Box flexDirection="column">
+        <Text bold>Find Skills</Text>
+        <Text color="red">{loadError}</Text>
+        <Text color="gray">Press q or Esc to exit.</Text>
+      </Box>
+    );
+  }
+
   if (visibleCandidates.length === 0) {
     return (
       <Box flexDirection="column">
@@ -105,8 +156,15 @@ export function FindApp({ app, query, candidates }: FindAppProps) {
       <Text bold>Find Skills</Text>
       <Text color="gray">
         query: {query} · results: {visibleCandidates.length}
-        {candidates.length > visibleCandidates.length ? ` / ${candidates.length}` : ""}
+        {(loadedCandidates?.length ?? 0) > visibleCandidates.length
+          ? ` / ${loadedCandidates?.length ?? 0}`
+          : ""}
       </Text>
+      {loadWarnings.map((warning) => (
+        <Text key={warning} color="yellow">
+          warning: {warning}
+        </Text>
+      ))}
       <Box marginTop={1}>
         <Text bold>{pad("No.", columns.index)}</Text>
         <Text bold>{pad("Skill", columns.name)}</Text>

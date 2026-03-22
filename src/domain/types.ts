@@ -12,7 +12,7 @@ export type Result<T> =
   | { ok: true; data: T; warnings: Warning[]; errors: [] }
   | { ok: false; data?: T; warnings: Warning[]; errors: Failure[] };
 
-export type SourceKind = "git" | "clawhub";
+export type SourceKind = "local" | "git" | "clawhub";
 
 export type DeploymentTargetName =
   | "claude-code"
@@ -49,6 +49,9 @@ export type SourceManifestRecord = {
   displayName: string;
   addedAt: string;
   requestedPath?: string;
+  selectionMode?: "all" | "partial";
+  originLocator?: string;
+  originRequestedPath?: string;
 };
 
 export type TargetBinding = {
@@ -85,6 +88,9 @@ export type SourceLockRecord = {
   resolvedVersion?: string;
   contentHash?: string;
   versionMode?: "pinned" | "floating";
+  originBranch?: string;
+  importedFromTargets?: DeploymentTargetName[];
+  importMode?: "explicit-add" | "bootstrap-detected";
 };
 
 export type LeafRecord = {
@@ -180,6 +186,8 @@ export type WorkflowSummary = {
   bindings: SourceBinding;
   activeTargetCount: number;
   health: HealthStatus;
+  issueCounts?: { warning: number; error: number };
+  healthReason?: string;
 };
 
 export type SkillCandidateAction =

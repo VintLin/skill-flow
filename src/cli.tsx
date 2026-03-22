@@ -3,7 +3,7 @@ import React from "react";
 import { Command } from "commander";
 import { render } from "ink";
 import { SkillFlowApp } from "./services/skill-flow.js";
-import { ConfigApp } from "./tui/config-app.js";
+import { ConfigBootstrapApp } from "./tui/config-app.js";
 import { FindApp } from "./tui/find-app.js";
 import { formatGroupRef } from "./utils/naming.js";
 import {
@@ -68,13 +68,13 @@ program
   .argument("<query>", "Search query")
   .option("--json", "Print JSON output")
   .action(async (query: string, options: { json?: boolean }) => {
-    const result = await app.findSkills(query);
-    if (!result.ok) {
-      printErrors(result.errors);
-      process.exitCode = 1;
-      return;
-    }
     if (options.json) {
+      const result = await app.findSkills(query);
+      if (!result.ok) {
+        printErrors(result.errors);
+        process.exitCode = 1;
+        return;
+      }
       console.log(
         JSON.stringify(
           result.data.candidates.map((candidate) => ({
@@ -88,51 +88,12 @@ program
       printWarnings(result.warnings.map((warning) => warning.message));
       return;
     }
-    const instance = render(<FindApp app={app} query={query} candidates={result.data.candidates} />);
-    if (result.warnings.length > 0) {
-      for (const warning of result.warnings) {
-        console.warn(`warning: ${warning.message}`);
-      }
-    }
+    const instance = render(<FindApp app={app} query={query} />);
     await instance.waitUntilExit();
   });
 
 program.command("config").action(async () => {
-  const result = await app.getConfigData();
-  if (!result.ok) {
-    printErrors(result.errors);
-    process.exitCode = 1;
-    return;
-  }
-
-  const initialDrafts = Object.fromEntries(
-    result.data.summaries.map((summary) => {
-      const targets = summary.bindings.targets;
-      const enabledTargets = Object.entries(targets)
-        .filter(([, value]) => value?.enabled)
-        .map(([target]) => target) as DraftBinding["enabledTargets"];
-      const selectedLeafIds = [...new Set(
-        enabledTargets.flatMap((target) => targets[target]?.leafIds ?? []),
-      )];
-      return [
-        summary.source.id,
-        {
-          enabledTargets,
-          selectedLeafIds,
-        },
-      ];
-    }),
-  );
-  const availableTargets = await app.getAvailableTargets();
-
-  const instance = render(
-    <ConfigApp
-      app={app}
-      availableTargets={availableTargets}
-      summaries={result.data.summaries}
-      initialDrafts={initialDrafts}
-    />,
-  );
+  const instance = render(<ConfigBootstrapApp app={app} />);
   await instance.waitUntilExit();
 });
 
@@ -205,5 +166,3 @@ function printWarnings(messages: string[]) {
     console.warn(`warning: ${message}`);
   }
 }
-
-type DraftBinding = import("./services/skill-flow.js").DraftBinding;

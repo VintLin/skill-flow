@@ -466,7 +466,7 @@ describe.sequential("skill-flow", () => {
       id: "garrytan-gstack",
       locator: "git@github.com:garrytan/gstack.git",
       displayName: "gstack",
-    })).toBe("gstack(@garrytan)");
+    })).toBe("gstack@garrytan");
   });
 
   test("prefers groupName-skillName for projected collisions", () => {
@@ -629,7 +629,7 @@ description: |
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(repoPath, { project: false });
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -662,7 +662,7 @@ description: |
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(repoPath, { project: false });
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -696,7 +696,7 @@ description: |
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(repoPath, { project: false });
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -714,7 +714,7 @@ description: |
 
     expect(applied.ok).toBe(true);
     expect(path.resolve(await fs.readlink(targetPath))).toBe(
-      path.join(stateRoot, "source", "git", sourceId, "browse"),
+      path.join(added.data.lock.checkoutPath, "browse"),
     );
   });
 
@@ -723,7 +723,7 @@ description: |
       "browse/SKILL.md": skillDoc("browse", "Managed browser flow."),
     });
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(repoPath, { project: false });
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -760,7 +760,7 @@ description: |
       "browse/SKILL.md": skillDoc("browse", "Managed browser flow."),
     });
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(repoPath, { project: false });
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -802,7 +802,7 @@ description: |
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(repoPath, { project: false });
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -816,7 +816,7 @@ description: |
     });
     expect(applied.ok).toBe(true);
 
-    await fs.rm(path.join(stateRoot, "source", "git", sourceId, "good"), {
+    await fs.rm(path.join(added.data.lock.checkoutPath, "good"), {
       recursive: true,
       force: true,
     });
@@ -960,7 +960,7 @@ description: |
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(`file://${repoPath}`);
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -1124,7 +1124,7 @@ description: |
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(`file://${repoPath}`);
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -1151,8 +1151,9 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
+    const remotePath = await createBareRemote(repoPath, sandboxRoot);
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(`file://${remotePath}`);
     expect(added.ok).toBe(true);
 
     await writeRepoFiles(repoPath, {
@@ -1160,6 +1161,7 @@ description: |
     });
     git(repoPath, ["add", "."]);
     git(repoPath, ["commit", "-m", "add extra"]);
+    git(repoPath, ["push", "origin", "HEAD"]);
 
     const updated = await app.updateSources([added.ok ? added.data.manifest.id : ""]);
     expect(updated.ok).toBe(true);
@@ -1173,8 +1175,9 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
+    const remotePath = await createBareRemote(repoPath, sandboxRoot);
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(`file://${remotePath}`);
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -1190,6 +1193,7 @@ description: |
     await fs.rm(path.join(repoPath, "good"), { recursive: true, force: true });
     git(repoPath, ["add", "."]);
     git(repoPath, ["commit", "-m", "remove good"]);
+    git(repoPath, ["push", "origin", "HEAD"]);
 
     const updated = await app.updateSources([sourceId]);
     expect(updated.ok).toBe(true);
@@ -1206,8 +1210,9 @@ description: |
     const repoPath = await createRepo(sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
+    const remotePath = await createBareRemote(repoPath, sandboxRoot);
     const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
+    const added = await app.addSource(`file://${remotePath}`);
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
@@ -1218,6 +1223,7 @@ description: |
     });
     git(repoPath, ["add", "."]);
     git(repoPath, ["commit", "-m", "invalidate"]);
+    git(repoPath, ["push", "origin", "HEAD"]);
 
     const updated = await app.updateSources([added.data.manifest.id]);
     expect(updated.ok).toBe(true);
@@ -1260,8 +1266,15 @@ description: |
       selectedLeafIds: [leafId],
     });
 
-    await writeRepoFiles(process.env.SKILL_FLOW_TARGET_OPENCLAW!, {
-      ["good/SKILL.md"]: "# Good\nMutated copy.",
+    const lock = await app.store.readLock();
+    const deployment = lock.deployments.find(
+      (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
+    );
+    if (!deployment) {
+      throw new Error("expected deployment for openclaw");
+    }
+    await writeRepoFiles(path.dirname(deployment.targetPath), {
+      [`${path.basename(deployment.targetPath)}/SKILL.md`]: "# Good\nMutated copy.",
     });
 
     const doctor = await app.doctor();
@@ -1270,6 +1283,30 @@ description: |
       return;
     }
     expect(doctor.data.issues.some((issue) => issue.code === "DRIFT_COPY")).toBe(true);
+  });
+
+  test("bootstrap detects symlinked skills inside agent roots", async () => {
+    const app = new SkillFlowApp();
+    const externalRoot = path.join(sandboxRoot, "external-skill");
+    await writeRepoFiles(externalRoot, {
+      "SKILL.md": skillDoc("linked-skill", "Symlinked external skill."),
+    });
+
+    await fs.symlink(
+      externalRoot,
+      path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "linked-skill"),
+      "junction",
+    );
+
+    await app.store.init();
+    const manifest = await app.store.readManifest();
+    const lock = await app.store.readLock();
+    const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
+      manifest,
+      lock,
+    );
+
+    expect(detected.some((item) => item.displayName === "linked-skill")).toBe(true);
   });
 
   test("keeps metadata warnings on valid skills", async () => {
@@ -1783,6 +1820,14 @@ async function createRepo(
   git(repoPath, ["add", "."]);
   git(repoPath, ["commit", "-m", "initial"]);
   return repoPath;
+}
+
+async function createBareRemote(repoPath: string, root: string): Promise<string> {
+  const remotePath = await fs.mkdtemp(path.join(root, "remote-"));
+  git(remotePath, ["init", "--bare"]);
+  git(repoPath, ["remote", "add", "origin", remotePath]);
+  git(repoPath, ["push", "-u", "origin", "HEAD"]);
+  return remotePath;
 }
 
 async function seedBuiltinCatalog(app: SkillFlowApp): Promise<void> {

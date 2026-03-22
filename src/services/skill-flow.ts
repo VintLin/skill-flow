@@ -30,7 +30,11 @@ import { DoctorService } from "./doctor-service.js";
 import { InventoryService } from "./inventory-service.js";
 import { SourceService } from "./source-service.js";
 import { WorkflowService } from "./workflow-service.js";
-import type { AddSourceOptions } from "./source-service.js";
+import type { AddSourceOptions, SourceSnapshot } from "./source-service.js";
+import {
+  WorkspaceBootstrapService,
+  type BootstrapEvent,
+} from "./workspace-bootstrap-service.js";
 
 export type DraftBinding = {
   enabledTargets: DeploymentTargetName[];
@@ -45,9 +49,14 @@ export class SkillFlowApp {
   readonly applier = new DeploymentApplier();
   readonly doctorService = new DoctorService();
   readonly workflowService = new WorkflowService();
+  readonly workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
 
-  async addSource(locator: string, options?: AddSourceOptions) {
-    const result = await this.sourceService.addSource(locator, options);
+  async addSource(
+    locator: string,
+    options?: AddSourceOptions,
+  ): Promise<Result<SourceSnapshot>> {
+    const addOptions = options ?? {};
+    const result = await this.sourceService.addSource(locator, addOptions);
     if (!result.ok) {
       return result;
     }
@@ -60,8 +69,15 @@ export class SkillFlowApp {
       return result;
     }
 
+    source.selectionMode =
+      addOptions.selectionMode ??
+      (source.requestedPath ? "partial" : "all");
+
+    const enabledTargets =
+      addOptions.enabledTargets ??
+      await this.getAvailableTargets();
     manifest.bindings[source.id] = this.bindingFromDraft({
-      enabledTargets: await this.getAvailableTargets(),
+      enabledTargets,
       selectedLeafIds: this.selectLeafIdsForRequestedPath(
         lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id),
         source.requestedPath,
@@ -69,7 +85,21 @@ export class SkillFlowApp {
     });
     await this.store.writeManifest(manifest);
 
-    return result;
+    if (addOptions.project === false) {
+      return result;
+    }
+
+    const plan = await this.planForAffectedSources(manifest, lockFile, source.id);
+    if (!plan.ok) {
+      return fail(plan.errors, [...result.warnings, ...plan.warnings]);
+    }
+    const applied = await this.applier.applyPlan(lockFile, plan.data.actions);
+    await this.store.writeLock(lockFile);
+    if (!applied.ok) {
+      return fail(applied.errors, [...result.warnings, ...plan.warnings, ...applied.warnings]);
+    }
+
+    return ok(result.data, [...result.warnings, ...plan.warnings, ...applied.warnings]);
   }
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
@@ -209,6 +239,119 @@ export class SkillFlowApp {
     });
   }
 
+  async bootstrapWorkspaceState(
+    onEvent?: (event: BootstrapEvent) => void,
+  ): Promise<
+    Result<{
+      availableTargets: DeploymentTargetName[];
+      manifest: Manifest;
+      lockFile: LockFile;
+      summaries: WorkflowSummary[];
+      initialDrafts: Record<string, DraftBinding>;
+      audit: DoctorReport;
+      importedSourceIds: string[];
+    }>
+  > {
+    onEvent?.({
+      phase: "detect-targets",
+      level: "info",
+      message: "Detecting available agent targets...",
+    });
+    const availableTargets = await this.getAvailableTargets();
+
+    await this.store.init();
+    let manifest = await this.store.readManifest();
+    let lockFile = await this.store.readLock();
+    const detected = await this.workspaceBootstrapService.detectUnmanagedExternalSkills(
+      manifest,
+      lockFile,
+      onEvent,
+    );
+
+    const importedSourceIds: string[] = [];
+    if (detected.length > 0) {
+      onEvent?.({
+        phase: "import-unmanaged-skills",
+        level: "info",
+        message: `Importing ${detected.length} unmanaged skill${detected.length === 1 ? "" : "s"} into skill-flow...`,
+      });
+    }
+    for (const item of detected) {
+      const imported = await this.addSource(item.path, {
+        enabledTargets: item.importedFromTargets,
+        selectionMode: "all",
+        project: false,
+        sourceIdOverride: item.sourceId,
+        displayNameOverride: item.displayName,
+        importedFromTargets: item.importedFromTargets,
+        importMode: "bootstrap-detected",
+        ...(item.originLocator ? { originLocator: item.originLocator } : {}),
+        ...(item.originRequestedPath ? { originRequestedPath: item.originRequestedPath } : {}),
+        ...(item.originBranch ? { originBranch: item.originBranch } : {}),
+      });
+      if (!imported.ok) {
+        return fail(imported.errors, imported.warnings);
+      }
+      importedSourceIds.push(imported.data.manifest.id);
+      onEvent?.({
+        phase: "import-unmanaged-skills",
+        level: "success",
+        message: `Imported ${imported.data.manifest.displayName}.`,
+      });
+    }
+
+    onEvent?.({
+      phase: "refresh-sources",
+      level: "info",
+      message: "Refreshing managed inventory...",
+    });
+    const reconciled = await this.sourceService.reconcileInventory(undefined, { force: true });
+    if (!reconciled.ok) {
+      return fail(reconciled.errors, reconciled.warnings);
+    }
+
+    manifest = await this.store.readManifest();
+    lockFile = await this.store.readLock();
+    onEvent?.({
+      phase: "normalize-bindings",
+      level: "info",
+      message: "Normalizing config state...",
+    });
+    await this.persistNormalizedBindings(manifest, lockFile);
+
+    onEvent?.({
+      phase: "audit-projections",
+      level: "info",
+      message: "Auditing current projections...",
+    });
+    const audit = await this.doctorService.run(manifest, lockFile);
+    if (!audit.ok) {
+      return fail(audit.errors, audit.warnings);
+    }
+
+    onEvent?.({
+      phase: "build-summaries",
+      level: "info",
+      message: "Building config summaries...",
+    });
+    const summaries = this.workflowService.getSummaries(manifest, lockFile, audit.data);
+    onEvent?.({
+      phase: "done",
+      level: "success",
+      message: "Config bootstrap complete.",
+    });
+
+    return ok({
+      availableTargets,
+      manifest,
+      lockFile,
+      summaries,
+      initialDrafts: this.buildInitialDrafts(summaries),
+      audit: audit.data,
+      importedSourceIds,
+    });
+  }
+
   async getAvailableTargets(): Promise<DeploymentTargetName[]> {
     const adapters = createChannelAdapters();
     const availableTargets: DeploymentTargetName[] = [];
@@ -314,6 +457,7 @@ export class SkillFlowApp {
 
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
+    this.applySelectionModeForUpdatedSources(manifest, lockFile, updated.data.updated);
     await this.persistNormalizedBindings(manifest, lockFile);
     const activeSourceIds = manifest.sources
       .map((source) => source.id)
@@ -488,6 +632,14 @@ export class SkillFlowApp {
     draft: DraftBinding,
   ): { manifest: Manifest; draft: DraftBinding; warnings: Warning[] } {
     manifest.bindings[sourceId] = this.bindingFromDraft(draft);
+    const source = manifest.sources.find((item) => item.id === sourceId);
+    if (source) {
+      const sourceLeafCount = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId).length;
+      source.selectionMode =
+        draft.selectedLeafIds.length >= sourceLeafCount && sourceLeafCount > 0
+          ? "all"
+          : "partial";
+    }
 
     const conflictingLeafIds = this.findExactDuplicateLeafSelections(
       manifest,
@@ -831,10 +983,63 @@ export class SkillFlowApp {
   }
 
   private formatSourceLabel(locator: string, displayName: string): string {
+    if (locator.startsWith("clawhub:")) {
+      return `${displayName}@clawhub`;
+    }
+
+    if (path.isAbsolute(locator)) {
+      return `${displayName}@local`;
+    }
+
     const repo = parseGitHubRepo(locator);
     if (!repo) {
       return displayName;
     }
-    return `${displayName}(@${repo.owner})`;
+    return `${displayName}@${repo.owner}`;
+  }
+
+  private buildInitialDrafts(summaries: WorkflowSummary[]): Record<string, DraftBinding> {
+    return Object.fromEntries(
+      summaries.map((summary) => {
+        const enabledTargets = Object.entries(summary.bindings.targets)
+          .filter(([, value]) => value?.enabled)
+          .map(([target]) => target) as DraftBinding["enabledTargets"];
+        const selectedLeafIds = [...new Set(
+          enabledTargets.flatMap((target) => summary.bindings.targets[target]?.leafIds ?? []),
+        )];
+        return [summary.source.id, { enabledTargets, selectedLeafIds }];
+      }),
+    );
+  }
+
+  private applySelectionModeForUpdatedSources(
+    manifest: Manifest,
+    lockFile: LockFile,
+    updates: Array<{
+      sourceId: string;
+      changed: boolean;
+      addedLeafIds: string[];
+    }>,
+  ) {
+    for (const update of updates) {
+      if (!update.changed || update.addedLeafIds.length === 0) {
+        continue;
+      }
+      const source = manifest.sources.find((item) => item.id === update.sourceId);
+      const binding = manifest.bindings[update.sourceId];
+      if (!source || !binding || source.selectionMode !== "all") {
+        continue;
+      }
+
+      for (const targetBinding of Object.values(binding.targets)) {
+        if (!targetBinding?.enabled) {
+          continue;
+        }
+        const merged = new Set([...targetBinding.leafIds, ...update.addedLeafIds]);
+        targetBinding.leafIds = [...merged].filter((leafId) =>
+          lockFile.leafInventory.some((leaf) => leaf.id === leafId && leaf.sourceId === update.sourceId),
+        );
+      }
+    }
   }
 }

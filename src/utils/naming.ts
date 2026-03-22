@@ -2,6 +2,7 @@ type SourceLike = {
   id: string;
   locator: string;
   displayName: string;
+  kind?: "local" | "git" | "clawhub";
 };
 
 type ProjectedSkillInput = {
@@ -54,11 +55,19 @@ export function parseGitHubRepo(locator: string): { owner: string; repo: string 
 }
 
 export function formatGroupLabel(source: SourceLike): string {
+  if (source.kind === "local") {
+    return `${source.displayName}@local`;
+  }
+
+  if (source.kind === "clawhub") {
+    return `${source.displayName}@clawhub`;
+  }
+
   const githubRepo = parseGitHubRepo(source.locator);
   if (!githubRepo) {
     return source.displayName;
   }
-  return `${source.displayName}(@${githubRepo.owner})`;
+  return `${source.displayName}@${githubRepo.owner}`;
 }
 
 export function formatGroupRef(source: SourceLike): string {
