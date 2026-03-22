@@ -143,7 +143,7 @@ Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · Op
 
 Customize target paths via environment variables (e.g., `SKILL_FLOW_TARGET_CLAUDE_CODE`).
 
-Broader ecosystem path references, including project-level rules and instructions paths, are tracked in [docs/refrences/agent-skill-paths.md](./docs/refrences/agent-skill-paths.md).
+Broader ecosystem path references, including project-level rules and instructions paths (docs TBD).
 
 ## Built-in Discovery Catalogs
 

@@ -142,7 +142,7 @@ Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · Op
 
 可通过环境变量自定义目标路径（如 `SKILL_FLOW_TARGET_CLAUDE_CODE`）。
 
-更广义的生态路径参考，包括 project 级 rules / instructions 路径，见 [docs/refrences/agent-skill-paths.md](./docs/refrences/agent-skill-paths.md)。
+更广义的生态路径参考，包括 project 级 rules / instructions 路径（文档整理中）。
 
 ## 默认内置发现仓库
 
