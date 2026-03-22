@@ -1,7 +1,7 @@
 # Skill Flow
 
-> **让 AI 技能管理回归工作流本质。**
-> 工作流分组 · 多目标投影 · 显式状态 · 漂移诊断
+> **让 AI Skill 管理回归本质。**
+> Skill 分组 · 一键部署到多个工具 · 配置清晰 · 问题快速定位
 
 ![img](img/img-1.jpg)
 
@@ -10,26 +10,26 @@
 [![Node.js Version](https://img.shields.io/node/v/skill-flow?style=flat-square)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
-当你的 AI agent 技能越装越多，管理就会变得混乱：一个 Git 源包含多个相关技能，投影到不同 agent 后结构被打散，更新和排障变得困难。
+当你的 AI agent 技能越装越多，管理就会变得混乱：一个 Git 仓库里塞了一堆相关技能，部署到不同 agent 后结构被打散，更新和排障变得困难。
 
-`skill-flow` 用工作流视角重新组织技能管理：从 Git 源添加技能组，选择投影目标，统一更新，诊断漂移。让技能管理清晰、可控、高效。
+`skill-flow` 用 Skill 视角重新组织管理：从 Git 仓库添加 Skill 分组，选择部署目标，统一更新，快速诊断问题。让 Skill 管理清晰、可控、高效。
 
 ## 核心特性
 
-**工作流分组管理**
-一个 Git 源 = 一个工作流组。相关技能保持在一起，更新和维护以工作流为单位进行。
+**Skill 分组管理**
+一个 Git 仓库 = 一个 Skill 分组。相关 Skills 保持在一起，更新和维护以分组为单位进行。
 
-**多目标投影**
-一次配置，投影到多个 agent（Claude Code、Cursor、Windsurf 等 13+ 目标）。
+**一键部署到多个工具**
+一次配置，部署到多个 agent（Claude Code、Cursor、Windsurf 等 13+ 目标）。
 
 **交互式终端 UI**
 直观的 TUI 界面：查看分组 → 选择技能 → 选择目标 → 保存配置。
 
 **显式状态追踪**
-`manifest.json` 记录你的意图，`lock.json` 记录实际部署状态。状态清晰可查。
+`manifest.json` 记录你的意图，`lock.json` 记录实际安装状态。状态清晰可查。
 
-**健康诊断**
-`doctor` 命令检测断链、漂移、冲突，精准定位问题。
+**一键体检**
+`doctor` 命令检测断链、不一致、冲突，精准定位问题。
 
 ## 安装
 
@@ -64,7 +64,7 @@ npm link
 # 添加技能源
 skill-flow add /path/to/skills-repo
 
-# 查看工作流分组
+# 查看 Skill 分组
 skill-flow list
 
 # 交互式配置（选择技能和目标）
@@ -76,7 +76,7 @@ skill-flow update --all
 # 健康检查
 skill-flow doctor
 
-# 移除工作流组
+# 移除 Skill 分组
 skill-flow uninstall my-source-id
 ```
 
@@ -88,28 +88,28 @@ skill-flow uninstall my-source-id
 
 | 命令 | 说明 |
 |---|---|
-| `add <source>` | 从 Git 或 ClawHub 添加技能源 |
+| `add <source>` | 添加技能源（Git 仓库或 ClawHub） |
 | `find <query>` | 搜索本地已安装技能、内置 Git 仓库和 ClawHub |
 | `search <query>` | `find` 的别名 |
-| `list` | 显示工作流分组 |
+| `list` | 显示 Skill 分组 |
 | `config` | 打开交互式配置界面 |
-| `update [sourceId] --all` | 更新源并重新投影 |
-| `doctor` | 诊断投影健康状态 |
-| `uninstall <sourceIds...>` | 移除工作流组及其投影 |
+| `update [sourceId] --all` | 更新所有技能并重新部署 |
+| `doctor` | 体检，排查问题 |
+| `uninstall <sourceIds...>` | 移除 Skill 分组及其部署 |
 
 当已选 skill 出现同名冲突时，`skill-flow` 会把内容完全相同的重复项保留为 warning，把内容不同的冲突项改成带 repo / author 前缀的链接名，例如 `gstack-browse`、`gstack(garrytan)-browse` 或 `garrytan-skill-creator`。
 
 ## 工作原理
 
 **状态管理**
-- `~/.skillflow/manifest.json` - 你的配置意图
-- `~/.skillflow/lock.json` - 实际部署状态
-- `~/.skillflow/source/git/<source-id>/` - Git 源缓存
-- `~/.skillflow/source/clawhub/<source-id>/` - ClawHub 源缓存
+- `~/.skillflow/manifest.json` - 你的配置（你想要什么）
+- `~/.skillflow/lock.json` - 实际状态（实际装了什么）
+- `~/.skillflow/source/git/<source-id>/` - Git 仓库缓存
+- `~/.skillflow/source/clawhub/<source-id>/` - ClawHub 缓存
 - `~/.skillflow/catalog/git/<source-id>/` - 内置 Git 仓库缓存
 
-**投影策略**
-优先使用符号链接，必要时使用文件复制。目标目录仅作为投影，真实状态由 lock.json 管理。
+**部署策略**
+优先使用符号链接，必要时使用文件复制。目标目录只是部署点，真正的状态在 lock.json 里。
 
 ## 支持的 Agent
 

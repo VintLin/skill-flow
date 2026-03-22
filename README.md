@@ -1,7 +1,7 @@
 # Skill Flow
 
 > **Workflow-first management for AI agent skills.**
-> Grouped workflows · Multi-target projection · Explicit state · Drift diagnosis
+> Skill grouping · Deploy everywhere · Clear config · Quick diagnosis
 
 ![img](img/img-1.jpg)
 
@@ -10,26 +10,26 @@
 [![Node.js Version](https://img.shields.io/node/v/skill-flow?style=flat-square)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
-As your AI agent skills grow, management becomes chaotic: one Git source contains multiple related skills, projections scatter across different agents, updates and troubleshooting become difficult.
+As your AI agent skills grow, management gets messy: one Git repo has a bunch of related skills, they end up scattered across different agents, and updates become a headache.
 
-`skill-flow` reorganizes skill management around workflows: add skill groups from Git sources, select projection targets, update uniformly, diagnose drift. Keep skill management clear, controlled, and efficient.
+`skill-flow` fixes this by organizing skills around groups: add skill groups from Git repos, pick where to deploy, update all at once, spot problems fast. Keep your skill setup clean, organized, and stress-free.
 
 ## Key Features
 
-**Workflow-Based Grouping**
-One Git source = one workflow group. Related skills stay together, updates and maintenance happen at the workflow level.
+**Skill-Based Grouping**
+One Git repo = one skills group. Related skills stay together, updates and maintenance happen at the group level.
 
-**Multi-Target Projection**
-Configure once, project to multiple agents (Claude Code, Cursor, Windsurf, and 13+ targets).
+**Deploy Everywhere**
+Set it up once, deploy to multiple agents (Claude Code, Cursor, Windsurf, and 13+ targets).
 
 **Interactive Terminal UI**
 Intuitive TUI: view groups → select skills → choose targets → save configuration.
 
 **Explicit State Tracking**
-`manifest.json` records your intent, `lock.json` records actual deployment state. Clear and queryable.
+`manifest.json` = what you want, `lock.json` = what's actually installed. Both are readable and queryable.
 
 **Health Diagnosis**
-`doctor` command detects broken links, drift, and conflicts with precision.
+`doctor` catches broken links, mismatches, and conflicts — tells you exactly what's wrong.
 
 ## Installation
 
@@ -64,7 +64,7 @@ npm link
 # Add a skill source
 skill-flow add /path/to/skills-repo
 
-# View workflow groups
+# View skills groups
 skill-flow list
 
 # Interactive configuration (select skills and targets)
@@ -76,7 +76,7 @@ skill-flow update --all
 # Health check
 skill-flow doctor
 
-# Remove a workflow group
+# Remove a skills group
 skill-flow uninstall my-source-id
 ```
 
@@ -88,28 +88,28 @@ By default, `add` preselects all discovered skills and all detected agent target
 
 | Command | Description |
 |---|---|
-| `add <source>` | Add a source from Git or ClawHub |
+| `add <source>` | Add a skill source (Git repo or ClawHub) |
 | `find <query>` | Search installed skills, built-in Git catalogs, and ClawHub |
 | `search <query>` | Alias of `find` |
-| `list` | Show workflow groups |
+| `list` | Show skills groups |
 | `config` | Open interactive configuration UI |
-| `update [sourceId] --all` | Update sources and re-project |
-| `doctor` | Diagnose projection health |
-| `uninstall <sourceIds...>` | Remove workflow groups and projections |
+| `update [sourceId] --all` | Update all skills and re-deploy |
+| `doctor` | Check for problems |
+| `uninstall <sourceIds...>` | Remove skills groups and their deployments |
 
 When selected skills collide by name, `skill-flow` keeps identical duplicates as warnings and renames different-content collisions with repo/author-prefixed link names such as `gstack-browse`, `gstack(garrytan)-browse`, or `garrytan-skill-creator`.
 
 ## How It Works
 
 **State Management**
-- `~/.skillflow/manifest.json` - Your configuration intent
-- `~/.skillflow/lock.json` - Actual deployment state
-- `~/.skillflow/source/git/<source-id>/` - Git source cache
-- `~/.skillflow/source/clawhub/<source-id>/` - ClawHub source cache
+- `~/.skillflow/manifest.json` - Your configuration (what you want)
+- `~/.skillflow/lock.json` - Actual state (what's installed)
+- `~/.skillflow/source/git/<source-id>/` - Git repo cache
+- `~/.skillflow/source/clawhub/<source-id>/` - ClawHub cache
 - `~/.skillflow/catalog/git/<source-id>/` - Built-in Git catalog cache
 
-**Projection Strategy**
-Symlinks preferred, file copies when necessary. Target directories are projections only; true state managed by lock.json.
+**Deployment Strategy**
+Uses symlinks when possible, file copies when needed. Target directories are just deploy points — real state lives in lock.json.
 
 ## Supported Agents
 
