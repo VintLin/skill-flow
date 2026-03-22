@@ -17,9 +17,9 @@ import type {
   WorkflowSummary,
 } from "../domain/types.js";
 import { StateStore } from "../state/store.js";
-import { hashDirectory, pathExists, removePath } from "../utils/fs.js";
-import { git } from "../utils/git.js";
+import { ensureDir, hashDirectory, pathExists, readJsonFile, removePath, writeJsonFile } from "../utils/fs.js";
 import { getBuiltinGitSources } from "../utils/builtin-git-sources.js";
+import { fetchGitHubSkillPaths } from "../utils/github-catalog.js";
 import { parseGitHubRepo } from "../utils/naming.js";
 import { fail, ok } from "../utils/result.js";
 import { searchClawHubSkills } from "../utils/clawhub.js";
@@ -47,7 +47,29 @@ export class SkillFlowApp {
   readonly workflowService = new WorkflowService();
 
   async addSource(locator: string, options?: AddSourceOptions) {
-    return this.sourceService.addSource(locator, options);
+    const result = await this.sourceService.addSource(locator, options);
+    if (!result.ok) {
+      return result;
+    }
+
+    await this.store.init();
+    const manifest = await this.store.readManifest();
+    const lockFile = await this.store.readLock();
+    const source = manifest.sources.find((item) => item.id === result.data.manifest.id);
+    if (!source) {
+      return result;
+    }
+
+    manifest.bindings[source.id] = this.bindingFromDraft({
+      enabledTargets: await this.getAvailableTargets(),
+      selectedLeafIds: this.selectLeafIdsForRequestedPath(
+        lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id),
+        source.requestedPath,
+      ),
+    });
+    await this.store.writeManifest(manifest);
+
+    return result;
   }
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
@@ -65,57 +87,47 @@ export class SkillFlowApp {
       localKeys.add(this.getCandidateKey(candidate));
     }
 
-    for (const builtin of getBuiltinGitSources()) {
-      try {
-        const checkoutPath = await this.ensureBuiltinCatalogCheckout(
-          builtin.locator,
-          builtin.branch,
-        );
-        const sourceId = deriveSourceId(builtin.locator);
-        const displayName = deriveDisplayName(builtin.locator);
-        const scanned = await this.inventoryService.scanSource(sourceId, checkoutPath, displayName);
-        remoteSearchSucceeded = true;
-
-        for (const leaf of scanned.leafs) {
-          if (!this.matchesQuery(normalizedQuery, [
-            leaf.name,
-            leaf.title,
-            leaf.description,
-            leaf.relativePath,
-            displayName,
-          ])) {
-            continue;
-          }
-
-          const candidate: SkillCandidate = {
-            id: `builtin-git:${leaf.id}`,
-            title: leaf.title,
-            description: leaf.description,
-            source: "builtin-git",
-            sourceLabel: this.formatSourceLabel(builtin.locator, displayName),
+    const builtinResults = await Promise.all(
+      getBuiltinGitSources().map(async (builtin) => {
+        try {
+          const sourceId = deriveSourceId(builtin.locator);
+          const displayName = deriveDisplayName(builtin.locator);
+          const search = await this.searchBuiltinGitSource(
+            builtin.locator,
+            builtin.branch,
             sourceId,
-            sourceKind: "git",
-            locator: builtin.locator,
-            relativePath: leaf.relativePath,
-            installed: false,
-            action: {
-              type: "add-git",
-              locator: builtin.locator,
-              requestedPath: leaf.relativePath,
+            displayName,
+            normalizedQuery,
+          );
+          return {
+            ok: true as const,
+            candidates: search.candidates,
+            warnings: search.warnings,
+          };
+        } catch (error) {
+          return {
+            ok: false as const,
+            warning: {
+              code: "BUILTIN_SOURCE_UNAVAILABLE",
+              message: `Unable to refresh built-in source '${builtin.locator}': ${String(error)}`,
             },
           };
-
-          if (localKeys.has(this.getCandidateKey(candidate))) {
-            continue;
-          }
-
-          candidates.push(candidate);
         }
-      } catch (error) {
-        warnings.push({
-          code: "BUILTIN_SOURCE_UNAVAILABLE",
-          message: `Unable to refresh built-in source '${builtin.locator}': ${String(error)}`,
-        });
+      }),
+    );
+
+    for (const result of builtinResults) {
+      if (!result.ok) {
+        warnings.push(result.warning);
+        continue;
+      }
+      warnings.push(...result.warnings);
+      remoteSearchSucceeded = true;
+      for (const candidate of result.candidates) {
+        if (localKeys.has(this.getCandidateKey(candidate))) {
+          continue;
+        }
+        candidates.push(candidate);
       }
     }
 
@@ -171,6 +183,7 @@ export class SkillFlowApp {
     await this.store.init();
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
+    await this.persistNormalizedBindings(manifest, lockFile);
     return ok({
       summaries: this.workflowService.getSummaries(manifest, lockFile),
     });
@@ -188,6 +201,7 @@ export class SkillFlowApp {
     await this.store.init();
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
+    await this.persistNormalizedBindings(manifest, lockFile);
     return ok({
       manifest,
       lockFile,
@@ -219,6 +233,7 @@ export class SkillFlowApp {
     await this.store.init();
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
+    this.normalizeBindings(manifest, lockFile);
     const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
     const plan = await this.planForAffectedSources(
       prepared.manifest,
@@ -248,6 +263,7 @@ export class SkillFlowApp {
     await this.store.init();
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
+    this.normalizeBindings(manifest, lockFile);
     const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
 
     const plan = await this.planForAffectedSources(prepared.manifest, lockFile, sourceId);
@@ -298,6 +314,7 @@ export class SkillFlowApp {
 
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
+    await this.persistNormalizedBindings(manifest, lockFile);
     const activeSourceIds = manifest.sources
       .map((source) => source.id)
       .filter((id) => this.hasActiveTargets(manifest, id));
@@ -322,6 +339,7 @@ export class SkillFlowApp {
     await this.store.init();
     const manifest = await this.store.readManifest();
     const lockFile = await this.store.readLock();
+    await this.persistNormalizedBindings(manifest, lockFile);
     return this.doctorService.run(manifest, lockFile);
   }
 
@@ -390,6 +408,77 @@ export class SkillFlowApp {
       };
     }
     return { targets };
+  }
+
+  private async persistNormalizedBindings(
+    manifest: Manifest,
+    lockFile: LockFile,
+  ): Promise<void> {
+    if (!this.normalizeBindings(manifest, lockFile)) {
+      return;
+    }
+
+    await this.store.writeManifest(manifest);
+  }
+
+  private normalizeBindings(manifest: Manifest, lockFile: LockFile): boolean {
+    let changed = false;
+
+    for (const source of manifest.sources) {
+      const currentBinding = manifest.bindings[source.id] ?? { targets: {} };
+      const normalizedDraft = this.draftFromBinding(source.id, currentBinding, lockFile);
+      const normalizedBinding = this.bindingFromDraft(normalizedDraft);
+
+      if (JSON.stringify(currentBinding) === JSON.stringify(normalizedBinding)) {
+        continue;
+      }
+
+      manifest.bindings[source.id] = normalizedBinding;
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  private draftFromBinding(
+    sourceId: string,
+    binding: SourceBinding,
+    lockFile: LockFile,
+  ): DraftBinding {
+    const leafIds = new Set(
+      lockFile.leafInventory
+        .filter((leaf) => leaf.sourceId === sourceId)
+        .map((leaf) => leaf.id),
+    );
+    const enabledTargets = Object.entries(binding.targets)
+      .filter(([, targetBinding]) => targetBinding?.enabled)
+      .map(([target]) => target) as DeploymentTargetName[];
+    const selectedLeafIds = [...new Set(
+      enabledTargets.flatMap((target) => binding.targets[target]?.leafIds ?? []),
+    )].filter((leafId) => leafIds.has(leafId));
+
+    return {
+      enabledTargets,
+      selectedLeafIds,
+    };
+  }
+
+  private selectLeafIdsForRequestedPath(
+    leafs: LeafRecord[],
+    requestedPath?: string,
+  ): string[] {
+    if (!requestedPath) {
+      return leafs.map((leaf) => leaf.id);
+    }
+
+    const normalizedPath = requestedPath.replace(/^\.\/+/, "").replace(/\/+$/, "");
+    return leafs
+      .filter(
+        (leaf) =>
+          leaf.relativePath === normalizedPath ||
+          leaf.relativePath.startsWith(`${normalizedPath}/`),
+      )
+      .map((leaf) => leaf.id);
   }
 
   private prepareManifestForDraft(
@@ -519,9 +608,7 @@ export class SkillFlowApp {
         return this.matchesQuery(query, [
           leaf.name,
           leaf.title,
-          leaf.description,
-          leaf.relativePath,
-          source?.displayName ?? "",
+          leaf.relativePath.split("/").pop() ?? "",
         ]);
       })
       .map((leaf) => {
@@ -544,20 +631,125 @@ export class SkillFlowApp {
       });
   }
 
-  private async ensureBuiltinCatalogCheckout(locator: string, branch: string): Promise<string> {
-    const sourceId = deriveSourceId(locator);
+  private async searchBuiltinGitSource(
+    locator: string,
+    branch: string,
+    sourceId: string,
+    displayName: string,
+    query: string,
+  ): Promise<{ candidates: SkillCandidate[]; warnings: Warning[] }> {
     const checkoutPath = this.store.getCatalogCheckoutPath(sourceId);
-    if (await pathExists(path.join(checkoutPath, ".git"))) {
-      await git(["pull", "--ff-only"], { cwd: checkoutPath });
-      return checkoutPath;
-    }
-
     if (await pathExists(checkoutPath)) {
-      return checkoutPath;
+      const scanned = await this.inventoryService.scanSource(sourceId, checkoutPath, displayName);
+      return {
+        candidates: scanned.leafs
+        .filter((leaf) =>
+          this.matchesQuery(query, [
+            leaf.name,
+            leaf.relativePath.split("/").pop() ?? "",
+          ]),
+        )
+        .map((leaf) => ({
+          id: `builtin-git:${leaf.id}`,
+          title: leaf.relativePath === "." ? displayName : leaf.relativePath.split("/").pop() ?? displayName,
+          description: leaf.relativePath,
+          source: "builtin-git",
+          sourceLabel: this.formatSourceLabel(locator, displayName),
+          sourceId,
+          sourceKind: "git",
+          locator,
+          relativePath: leaf.relativePath,
+          installed: false,
+          action: {
+            type: "add-git",
+            locator,
+            requestedPath: leaf.relativePath,
+          },
+        })),
+        warnings: [],
+      };
     }
 
-    await git(["clone", "--depth", "1", "--branch", branch, locator, checkoutPath]);
-    return checkoutPath;
+    const builtinCatalog = await this.getBuiltinCatalogSkillPaths(locator, branch, sourceId);
+    const skillPaths = builtinCatalog.skillPaths;
+    const matchedPaths = skillPaths
+      .filter((skillFilePath) =>
+        this.matchesQuery(query, [
+          skillFilePath.replace(/\/SKILL\.md$/, "").split("/").pop() ?? "",
+        ]),
+      )
+      .slice(0, 5);
+
+    return {
+      candidates: matchedPaths.map((skillFilePath) => {
+        const relativePath = skillFilePath.replace(/\/SKILL\.md$/, "").replace(/^SKILL\.md$/, ".");
+        const title =
+          relativePath === "." ? displayName : relativePath.split("/").pop() ?? displayName;
+
+        return {
+          id: `builtin-git:${sourceId}:${relativePath}`,
+          title,
+          description: relativePath,
+          source: "builtin-git",
+          sourceLabel: this.formatSourceLabel(locator, displayName),
+          sourceId,
+          sourceKind: "git",
+          locator,
+          relativePath,
+          installed: false,
+          action: {
+            type: "add-git",
+            locator,
+            requestedPath: relativePath,
+          },
+        };
+      }),
+      warnings: builtinCatalog.warnings,
+    };
+  }
+
+  private async getBuiltinCatalogSkillPaths(
+    locator: string,
+    branch: string,
+    sourceId: string,
+  ): Promise<{ skillPaths: string[]; warnings: Warning[] }> {
+    const indexPath = this.store.getCatalogIndexPath(sourceId);
+    const cached = await readJsonFile<{ skillPaths?: string[]; updatedAt?: string }>(indexPath, {});
+    const cachedSkillPaths = cached.skillPaths ?? [];
+    const cachedUpdatedAt = cached.updatedAt ? Date.parse(cached.updatedAt) : Number.NaN;
+    const cacheFresh =
+      cachedSkillPaths.length > 0 &&
+      Number.isFinite(cachedUpdatedAt) &&
+      Date.now() - cachedUpdatedAt < 1000 * 60 * 60 * 6;
+
+    if (cacheFresh) {
+      return { skillPaths: cachedSkillPaths, warnings: [] };
+    }
+
+    try {
+      const skillPaths = await fetchGitHubSkillPaths(locator, branch);
+      await ensureDir(this.store.catalogRoot);
+      await writeJsonFile(indexPath, {
+        locator,
+        branch,
+        skillPaths,
+        updatedAt: new Date().toISOString(),
+      });
+      return { skillPaths, warnings: [] };
+    } catch (error) {
+      if (cachedSkillPaths.length > 0) {
+        return {
+          skillPaths: cachedSkillPaths,
+          warnings: [
+            {
+              code: "BUILTIN_SOURCE_STALE_CACHE_USED",
+              message: `Unable to refresh built-in source '${locator}', using stale cached catalog: ${String(error)}`,
+            },
+          ],
+        };
+      }
+      throw error;
+    }
   }
 
   private matchesQuery(query: string, fields: string[]): boolean {
@@ -608,19 +800,20 @@ export class SkillFlowApp {
   private getQueryScore(candidate: SkillCandidate, query: string): number {
     const tokens = query.split(/\s+/).filter(Boolean);
     const titleField = candidate.title.toLowerCase();
+    const pathTail = (candidate.relativePath ?? "").split("/").pop()?.toLowerCase() ?? "";
     const fields = [
       titleField,
-      candidate.description.toLowerCase(),
-      candidate.sourceLabel.toLowerCase(),
-      (candidate.relativePath ?? "").toLowerCase(),
+      pathTail,
     ];
 
     let score = 0;
     for (const token of tokens) {
-      if (titleField === token) {
+      if (titleField === token || pathTail === token) {
+        score += 12;
+      } else if (titleField.startsWith(token) || pathTail.startsWith(token)) {
         score += 8;
-      } else if (titleField.includes(token)) {
-        score += 5;
+      } else if (titleField.includes(token) || pathTail.includes(token)) {
+        score += 4;
       }
 
       score += fields.filter((field) => field.includes(token)).length;
