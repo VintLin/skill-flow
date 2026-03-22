@@ -85,6 +85,30 @@ skill-flow uninstall my-source-id
 
 `add` 默认会预选该源的全部 skill，以及当前检测到的全部 agent 目标。传入 `--path <repoSubpath>` 时，仍然会导入整个仓库，但只会预选该路径下的 skill。
 
+示例：
+
+```bash
+# 本地仓库
+skill-flow add ~/code/my-skills
+
+# GitHub 简写
+skill-flow add garrytan/gstack
+
+# 完整 Git URL
+skill-flow add https://github.com/garrytan/gstack.git
+skill-flow add git@github.com:garrytan/gstack.git
+
+# GitHub tree URL
+skill-flow add https://github.com/garrytan/gstack/tree/main/skills
+
+# 导入整个仓库，但只预选某个子路径下的 skill
+skill-flow add garrytan/gstack --path skills
+
+# ClawHub 包
+skill-flow add clawhub:example/skill-pack
+skill-flow add clawhub:example/skill-pack@1.2.3
+```
+
 ## 命令参考
 
 | 命令 | 说明 |

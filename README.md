@@ -86,6 +86,30 @@ skill-flow uninstall my-source-id
 
 By default, `add` preselects all discovered skills and all detected agent targets. When `--path <repoSubpath>` is provided, the full repo is still imported, but only skills under that path are preselected.
 
+Examples:
+
+```bash
+# Local repo
+skill-flow add ~/code/my-skills
+
+# GitHub shorthand
+skill-flow add garrytan/gstack
+
+# Full Git URL
+skill-flow add https://github.com/garrytan/gstack.git
+skill-flow add git@github.com:garrytan/gstack.git
+
+# GitHub tree URL
+skill-flow add https://github.com/garrytan/gstack/tree/main/skills
+
+# Import the repo, but only preselect skills under a subpath
+skill-flow add garrytan/gstack --path skills
+
+# ClawHub package
+skill-flow add clawhub:example/skill-pack
+skill-flow add clawhub:example/skill-pack@1.2.3
+```
+
 ## Command Reference
 
 | Command | Description |
