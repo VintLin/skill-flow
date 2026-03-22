@@ -151,7 +151,7 @@ export class DoctorService {
           target: deployment.target,
           leafId: deployment.leafId,
           code: "STALE_DEPLOYMENT",
-          message: "Saved deployment exists for a workflow group that is no longer registered.",
+          message: "Saved deployment exists for a skills group that is no longer registered.",
         });
       }
     }

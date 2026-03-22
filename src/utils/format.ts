@@ -12,7 +12,7 @@ import { formatGroupLabel } from "./naming.js";
 export function formatWorkflowList(summaries: WorkflowSummary[]): string {
   if (summaries.length === 0) {
     return [
-      "No workflow groups yet",
+      "No skills groups yet",
       "Add a source to discover a grouped set of related skills.",
     ].join("\n");
   }

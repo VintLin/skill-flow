@@ -535,7 +535,7 @@ describe.sequential("skill-flow", () => {
     expect(projected.get("b:skill-creator")).toBe("openai-skill-creator");
   });
 
-  test("rejects uninstall for an unknown workflow group", async () => {
+  test("rejects uninstall for an unknown skills group", async () => {
     const app = new SkillFlowApp();
 
     const result = await app.uninstall(["missing-source"]);

@@ -59,7 +59,7 @@ export class SourceService {
     if (manifest.sources.some((source) => source.id === resolved.sourceId)) {
       return fail({
         code: "SOURCE_EXISTS",
-        message: `Workflow group '${formatGroupLabel({ id: resolved.sourceId, locator: resolved.locator, displayName: resolved.displayName })}' is already registered with id '${resolved.sourceId}'.`,
+        message: `Skills group '${formatGroupLabel({ id: resolved.sourceId, locator: resolved.locator, displayName: resolved.displayName })}' is already registered with id '${resolved.sourceId}'.`,
       });
     }
 
@@ -144,7 +144,7 @@ export class SourceService {
       if (!source || !currentLock) {
         return fail({
           code: "SOURCE_NOT_FOUND",
-          message: `Workflow group id '${sourceId}' is not registered.`,
+          message: `Skills group id '${sourceId}' is not registered.`,
         });
       }
 
@@ -154,7 +154,7 @@ export class SourceService {
       } catch (error) {
         return fail({
           code: source.kind === "git" ? "GIT_UPDATE_FAILED" : "CLAWHUB_UPDATE_FAILED",
-          message: `Unable to update workflow group id '${sourceId}': ${String(error)}`,
+          message: `Unable to update skills group id '${sourceId}': ${String(error)}`,
         });
       }
 
@@ -230,7 +230,7 @@ export class SourceService {
       if (!currentSource || !currentLock) {
         return fail({
           code: "SOURCE_NOT_FOUND",
-          message: `Workflow group id '${sourceId}' is not registered.`,
+          message: `Skills group id '${sourceId}' is not registered.`,
         });
       }
 

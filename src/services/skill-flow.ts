@@ -503,7 +503,7 @@ export class SkillFlowApp {
 
     const warnings = [...conflictingLeafIds].map((leafId) => ({
       code: "DUPLICATE_LEAF_SELECTION_SKIPPED",
-      message: `${lockFile.leafInventory.find((leaf) => leaf.id === leafId)?.linkName ?? leafId} skipped because an identical skill is already selected in another workflow group.`,
+      message: `${lockFile.leafInventory.find((leaf) => leaf.id === leafId)?.linkName ?? leafId} skipped because an identical skill is already selected in another skills group.`,
     }));
 
     return {

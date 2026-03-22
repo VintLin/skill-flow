@@ -138,8 +138,8 @@ program.command("config").action(async () => {
 
 program
   .command("update")
-  .argument("[sourceId]", "Optional workflow group id")
-  .option("--all", "Update all registered workflow groups")
+  .argument("[sourceId]", "Optional skills group id")
+  .option("--all", "Update all registered skills groups")
   .action(async (sourceId: string | undefined, options: { all?: boolean }) => {
     const ids = options.all || !sourceId ? undefined : [sourceId];
     const result = await app.updateSources(ids);
@@ -179,7 +179,7 @@ program.command("doctor").action(async () => {
 
 program
   .command("uninstall")
-  .argument("<sourceIds...>", "Workflow group ids to remove")
+  .argument("<sourceIds...>", "Skills group ids to remove")
   .action(async (sourceIds: string[]) => {
     const result = await app.uninstall(sourceIds);
     if (!result.ok) {

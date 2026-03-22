@@ -798,7 +798,7 @@ export function ConfigApp({
   if (summaries.length === 0) {
     return (
       <Box flexDirection="column">
-        <Text bold>No workflow groups yet</Text>
+        <Text bold>No skills groups yet</Text>
         <Text>Add a Git source to discover a grouped set of related skills.</Text>
         <Text dimColor>Press q or esc to exit.</Text>
       </Box>
