@@ -16,6 +16,8 @@ As your AI agent skills grow, management gets messy: one Git repo has a bunch of
 
 ## Key Features
 
+![Skill groups diagram](./img/skill-groups-diagram.png)
+
 **Skill-Based Grouping**
 One Git repo = one skills group. Related skills stay together, updates and maintenance happen at the group level.
 
