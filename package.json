@@ -41,6 +41,9 @@
     "url": "https://github.com/VintLin/skill-flow/issues"
   },
   "homepage": "https://github.com/VintLin/skill-flow#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "commander": "^14.0.3",
     "ink": "^6.8.0",
