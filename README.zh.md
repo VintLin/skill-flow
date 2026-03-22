@@ -1,6 +1,6 @@
 # Skill Flow
 
-> **让 AI Skill 管理回归本质。**
+> **让 Skill 管理回归本质。**
 > Skill 分组 · 一键部署到多个工具 · 配置清晰 · 问题快速定位
 
 ![img](img/img-1.jpg)
