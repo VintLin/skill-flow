@@ -7,6 +7,12 @@
   "bin": {
     "skill-flow": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.tsx",
