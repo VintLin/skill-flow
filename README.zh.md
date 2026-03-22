@@ -15,6 +15,7 @@
 `skill-flow` 用 Skill 视角重新组织管理：以 Github 仓库作为 Skill 分组依据，选择部署目标，统一更新，快速诊断问题。让 Skill 管理清晰、可控、高效。
 
 ## 核心特性
+![Skill 分组关系图](./img/skill-groups-diagram.png)
 
 **Skill 分组管理**
 一个 Github 仓库 = 一个 Skill 分组。相关 Skills 保持在一起，更新和维护以分组为单位进行。
