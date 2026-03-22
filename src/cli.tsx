@@ -20,7 +20,7 @@ const app = new SkillFlowApp();
 program
   .name("skill-flow")
   .description("Workflow-first skill projection manager")
-  .version("1.0.2");
+  .version("1.0.3");
 
 program
   .command("add")
