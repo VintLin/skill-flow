@@ -10,14 +10,14 @@
 [![Node.js Version](https://img.shields.io/node/v/skill-flow?style=flat-square)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
-当你的 AI agent 技能越装越多，管理就会变得混乱：一个 Git 仓库里塞了一堆相关技能，部署到不同 agent 后结构被打散，更新和排障变得困难。
+当你的 Skill 越装越多，管理就会变得混乱：从 Github 仓库下载了一堆相关技能，部署到不同 agent 后结构被打散，更新和排障变得困难。
 
-`skill-flow` 用 Skill 视角重新组织管理：从 Git 仓库添加 Skill 分组，选择部署目标，统一更新，快速诊断问题。让 Skill 管理清晰、可控、高效。
+`skill-flow` 用 Skill 视角重新组织管理：以 Github 仓库作为 Skill 分组依据，选择部署目标，统一更新，快速诊断问题。让 Skill 管理清晰、可控、高效。
 
 ## 核心特性
 
 **Skill 分组管理**
-一个 Git 仓库 = 一个 Skill 分组。相关 Skills 保持在一起，更新和维护以分组为单位进行。
+一个 Github 仓库 = 一个 Skill 分组。相关 Skills 保持在一起，更新和维护以分组为单位进行。
 
 **一键部署到多个工具**
 一次配置，部署到多个 agent（Claude Code、Cursor、Windsurf 等 13+ 目标）。
