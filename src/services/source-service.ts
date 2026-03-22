@@ -395,7 +395,7 @@ export class SourceService {
       checkoutPath,
       displayName,
     );
-    const filtered = this.filterScannedLeafs(scanned, requestedPath);
+    const requestedMatches = this.findRequestedLeafs(scanned.leafs, requestedPath);
     const metadataWarnings = scanned.leafs.flatMap((leaf) =>
       leaf.metadataWarnings.map((message) => ({
         code: "SKILL_METADATA_WARNING",
@@ -403,7 +403,10 @@ export class SourceService {
       })),
     );
 
-    if (filtered.leafs.length === 0 && !options.allowEmptyLeafs) {
+    if (
+      ((requestedPath && requestedMatches.length === 0) || scanned.leafs.length === 0) &&
+      !options.allowEmptyLeafs
+    ) {
       return fail(
         {
           code: requestedPath ? "SOURCE_PATH_NOT_FOUND" : "NO_VALID_LEAFS",
@@ -411,7 +414,7 @@ export class SourceService {
             ? `Source '${displayName}' does not contain a valid skill at '${requestedPath}'.`
             : `Source '${displayName}' has no valid skills.`,
         },
-        filtered.invalidLeafs.map((leaf) => ({
+        scanned.invalidLeafs.map((leaf) => ({
           code: "INVALID_LEAF",
           message: `${leaf.path}: ${leaf.reason}`,
         })),
@@ -435,8 +438,8 @@ export class SourceService {
           displayName,
           checkoutPath,
           updatedAt: new Date().toISOString(),
-          leafIds: filtered.leafs.map((leaf) => leaf.id),
-          invalidLeafs: filtered.invalidLeafs,
+          leafIds: scanned.leafs.map((leaf) => leaf.id),
+          invalidLeafs: scanned.invalidLeafs,
           ...sourceMetadata,
           ...(kind === "clawhub"
             ? {
@@ -444,11 +447,11 @@ export class SourceService {
               }
             : {}),
         },
-        leafs: filtered.leafs,
+        leafs: scanned.leafs,
       },
       [
         ...metadataWarnings,
-        ...filtered.invalidLeafs.map((leaf) => ({
+        ...scanned.invalidLeafs.map((leaf) => ({
           code: "INVALID_LEAF",
           message: `${leaf.path}: ${leaf.reason}`,
         })),
@@ -564,31 +567,20 @@ export class SourceService {
     }
   }
 
-  private filterScannedLeafs(
-    scanned: {
-      leafs: LockFile["leafInventory"];
-      invalidLeafs: LockFile["sources"][number]["invalidLeafs"];
-    },
+  private findRequestedLeafs(
+    leafs: LockFile["leafInventory"],
     requestedPath?: string,
-  ): {
-    leafs: LockFile["leafInventory"];
-    invalidLeafs: LockFile["sources"][number]["invalidLeafs"];
-  } {
+  ): LockFile["leafInventory"] {
     if (!requestedPath) {
-      return scanned;
+      return leafs;
     }
 
     const normalizedPath = requestedPath.replace(/^\.\/+/, "").replace(/\/+$/, "");
-    const matches = scanned.leafs.filter(
+    return leafs.filter(
       (leaf) =>
         leaf.relativePath === normalizedPath ||
         leaf.relativePath.startsWith(`${normalizedPath}/`),
     );
-
-    return {
-      leafs: matches,
-      invalidLeafs: scanned.invalidLeafs,
-    };
   }
 
   private async fetchSource(

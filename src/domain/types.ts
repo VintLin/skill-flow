@@ -144,6 +144,7 @@ export type DeploymentAction = {
   sourcePath: string;
   targetPath: string;
   previousTargetPath?: string;
+  relocateExternalToTargetPath?: string;
   reason?: string;
   contentHash: string;
 };

@@ -11,6 +11,7 @@ import { TARGET_LABELS, TARGET_ORDER } from "../utils/constants.js";
 import {
   buildProjectedSkillName,
   formatGroupLabel,
+  parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "../utils/naming.js";
 import { countActions } from "../utils/format.js";
@@ -54,6 +55,7 @@ type PaneRow = {
 };
 
 type ProjectionWarningMap = Record<string, string[]>;
+type ProjectionNameMap = Map<string, string>;
 
 const EMPTY_DRAFT: DraftBinding = {
   enabledTargets: [],
@@ -301,6 +303,7 @@ export function buildProjectionWarningMap({
       leafId: candidate.leaf.id,
       groupId: candidate.source.id,
       groupName: candidate.source.displayName,
+      groupAuthor: parseGitHubRepo(candidate.source.locator)?.owner,
       skillName: candidate.leaf.linkName,
     })),
     ...currentSummary.leafs
@@ -309,6 +312,7 @@ export function buildProjectionWarningMap({
         leafId: leaf.id,
         groupId: currentSummary.source.id,
         groupName: currentSummary.source.displayName,
+        groupAuthor: parseGitHubRepo(currentSummary.source.locator)?.owner,
         skillName: leaf.linkName,
       })),
   ]);
@@ -334,7 +338,11 @@ export function buildProjectionWarningMap({
     if (renameConflict) {
       const projectedName =
         projectedNames.get(leaf.id) ??
-        buildProjectedSkillName(currentSummary.source.displayName, leaf.linkName);
+        buildProjectedSkillName(
+          currentSummary.source.displayName,
+          leaf.linkName,
+          parseGitHubRepo(currentSummary.source.locator)?.owner,
+        );
       warningsByLeafId[leaf.id] = [
         `conflicts with ${formatGroupLabel(renameConflict.source)}, will deploy as ${projectedName}`,
       ];
@@ -342,6 +350,61 @@ export function buildProjectionWarningMap({
   }
 
   return warningsByLeafId;
+}
+
+function buildProjectionNameMap({
+  drafts,
+  summaries,
+  sourceId,
+}: {
+  drafts: Record<string, DraftBinding>;
+  summaries: WorkflowSummary[];
+  sourceId: string;
+}): ProjectionNameMap {
+  const currentDraft = drafts[sourceId] ?? EMPTY_DRAFT;
+  const currentSummary = summaries.find((summary) => summary.source.id === sourceId);
+  if (!currentSummary || currentDraft.enabledTargets.length === 0) {
+    return new Map();
+  }
+
+  const currentEnabledTargets = new Set(currentDraft.enabledTargets);
+  const selectedLeafIds = new Set(currentDraft.selectedLeafIds);
+
+  return resolveProjectedSkillNames([
+    ...summaries.flatMap((summary) => {
+      if (summary.source.id === sourceId) {
+        return [];
+      }
+
+      const draft = drafts[summary.source.id] ?? EMPTY_DRAFT;
+      const hasTargetOverlap = draft.enabledTargets.some((target) =>
+        currentEnabledTargets.has(target),
+      );
+      if (!hasTargetOverlap) {
+        return [];
+      }
+
+      return draft.selectedLeafIds
+        .map((leafId) => summary.leafs.find((leaf) => leaf.id === leafId))
+        .filter((leaf): leaf is WorkflowSummary["leafs"][number] => Boolean(leaf))
+        .map((leaf) => ({
+          leafId: leaf.id,
+          groupId: summary.source.id,
+          groupName: summary.source.displayName,
+          groupAuthor: parseGitHubRepo(summary.source.locator)?.owner,
+          skillName: leaf.linkName,
+        }));
+    }),
+    ...currentSummary.leafs
+      .filter((leaf) => selectedLeafIds.has(leaf.id))
+      .map((leaf) => ({
+        leafId: leaf.id,
+        groupId: currentSummary.source.id,
+        groupName: currentSummary.source.displayName,
+        groupAuthor: parseGitHubRepo(currentSummary.source.locator)?.owner,
+        skillName: leaf.linkName,
+      })),
+  ]);
 }
 
 export function ConfigApp({
@@ -389,6 +452,11 @@ export function ConfigApp({
   const allTargetsSelected =
     visibleTargets.length > 0 && visibleEnabledTargets.length === visibleTargets.length;
   const projectionWarningsByLeafId = buildProjectionWarningMap({
+    drafts,
+    summaries,
+    sourceId: selectedSourceId,
+  });
+  const projectedNamesByLeafId = buildProjectionNameMap({
     drafts,
     summaries,
     sourceId: selectedSourceId,
@@ -813,7 +881,11 @@ export function ConfigApp({
         key: leaf.id,
         text: `${selectionMarker(
           selectedDraft.selectedLeafIds.includes(leaf.id) ? "full" : "empty",
-        )} ${leaf.linkName}`,
+        )} ${
+          selectedDraft.selectedLeafIds.includes(leaf.id)
+            ? (projectedNamesByLeafId.get(leaf.id) ?? leaf.linkName)
+            : leaf.linkName
+        }`,
         active: focus === "skills" && skillCursor === index + 1,
         color:
           leaf.metadataWarnings.length > 0 || (projectionWarningsByLeafId[leaf.id]?.length ?? 0) > 0

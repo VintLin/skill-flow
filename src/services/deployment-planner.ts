@@ -12,7 +12,11 @@ import type {
   Warning,
 } from "../domain/types.js";
 import type { ChannelAdapter } from "../adapters/channel-adapters.js";
-import { resolveProjectedSkillNames } from "../utils/naming.js";
+import {
+  buildProjectedSkillNameCandidates,
+  parseGitHubRepo,
+  resolveProjectedSkillNames,
+} from "../utils/naming.js";
 import { fail, ok } from "../utils/result.js";
 
 export class DeploymentPlanner {
@@ -24,6 +28,7 @@ export class DeploymentPlanner {
     lockFile: LockFile,
   ): Promise<Result<DeploymentPlan>> {
     const binding = manifest.bindings[sourceId] ?? { targets: {} };
+    const source = manifest.sources.find((item) => item.id === sourceId);
     const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
     const previousDeployments = lockFile.deployments.filter(
       (deployment) => deployment.sourceId === sourceId,
@@ -51,7 +56,13 @@ export class DeploymentPlanner {
         desiredLeafIds,
         leafs,
         previousDeployments,
+        lockFile,
         projectedLinkNames,
+        {
+          id: sourceId,
+          displayName: source?.displayName ?? sourceId,
+          author: parseGitHubRepo(source?.locator ?? "")?.owner,
+        },
       );
 
       actions.push(...plannedForTarget.actions);
@@ -78,7 +89,9 @@ export class DeploymentPlanner {
     desiredLeafIds: Set<string>,
     leafs: LeafRecord[],
     previousDeployments: DeploymentRecord[],
+    lockFile: LockFile,
     projectedLinkNames: Map<string, string>,
+    sourceRef: { id: string; displayName: string; author?: string | undefined },
   ): Promise<DeploymentPlan> {
     const actions: DeploymentAction[] = [];
     const warnings: Warning[] = [];
@@ -117,7 +130,17 @@ export class DeploymentPlanner {
     for (const leaf of desiredLeafs) {
       const existing = managedByLeafId.get(leaf.id);
       const projectedLinkName = projectedLinkNames.get(leaf.id) ?? leaf.linkName;
-      const targetPath = adapter.resolveTargetPath(rootPath, projectedLinkName);
+      const targetPathCandidates = buildProjectedSkillNameCandidates({
+        preferredName: projectedLinkName,
+        groupId: sourceRef.id,
+        groupName: sourceRef.displayName,
+        groupAuthor: sourceRef.author,
+        skillName: leaf.linkName,
+      }).map((linkName) => ({
+        linkName,
+        targetPath: adapter.resolveTargetPath(rootPath, linkName),
+      }));
+      const preferredTargetPath = targetPathCandidates[0]?.targetPath ?? adapter.resolveTargetPath(rootPath, projectedLinkName);
 
       if (!targetAvailable) {
         const blockedAction: DeploymentAction = {
@@ -127,7 +150,7 @@ export class DeploymentPlanner {
           target: adapter.target,
           strategy: adapter.strategy,
           sourcePath: leaf.absolutePath,
-          targetPath,
+          targetPath: preferredTargetPath,
           contentHash: leaf.contentHash,
           ...(unavailableReason ? { reason: unavailableReason } : {}),
         };
@@ -135,8 +158,64 @@ export class DeploymentPlanner {
         continue;
       }
 
-      const diskState = await this.inspectTargetPath(targetPath, leaf.absolutePath);
-      if (diskState.foreign && !existing) {
+      let chosenCandidate:
+        | {
+            linkName: string;
+            targetPath: string;
+            diskState: Awaited<ReturnType<DeploymentPlanner["inspectTargetPath"]>>;
+            relocateExternalToTargetPath?: string;
+          }
+        | undefined;
+      const inspectedCandidates: Array<{
+        linkName: string;
+        targetPath: string;
+        diskState: Awaited<ReturnType<DeploymentPlanner["inspectTargetPath"]>>;
+      }> = [];
+
+      for (const candidate of targetPathCandidates) {
+        const diskState = await this.inspectTargetPath(
+          candidate.targetPath,
+          leaf.absolutePath,
+          leaf,
+          lockFile,
+        );
+        inspectedCandidates.push({
+          ...candidate,
+          diskState,
+        });
+        if (
+          diskState.managedBySkillFlow &&
+          !(
+            existing &&
+            diskState.managedDeployment?.sourceId === existing.sourceId &&
+            diskState.managedDeployment?.leafId === existing.leafId &&
+            diskState.managedDeployment?.target === existing.target
+          )
+        ) {
+          continue;
+        }
+
+        if (diskState.foreign && !diskState.externalExactMatch) {
+          continue;
+        }
+
+        chosenCandidate = {
+          ...candidate,
+          diskState,
+        };
+        break;
+      }
+
+      if (!chosenCandidate) {
+        chosenCandidate = await this.buildExternalRelocationCandidate(
+          preferredTargetPath,
+          inspectedCandidates,
+          leaf,
+          rootPath,
+        );
+      }
+
+      if (!chosenCandidate) {
         actions.push({
           kind: "blocked",
           sourceId,
@@ -144,14 +223,34 @@ export class DeploymentPlanner {
           target: adapter.target,
           strategy: adapter.strategy,
           sourcePath: leaf.absolutePath,
-          targetPath,
-          reason: "Foreign content already exists at target path.",
+          targetPath: preferredTargetPath,
+          reason: "Foreign content already exists at target path and no safe fallback name is available.",
           contentHash: leaf.contentHash,
         });
         continue;
       }
 
-      const kind = this.resolveDesiredAction(existing, diskState.matchesExpected, leaf);
+      if (
+        chosenCandidate.targetPath !== preferredTargetPath &&
+        !chosenCandidate.diskState.externalExactMatch
+      ) {
+        warnings.push({
+          code: "EXTERNAL_NAME_COLLISION_RENAMED",
+          message: `${leaf.linkName} kept existing target content at ${preferredTargetPath} and will deploy as ${chosenCandidate.linkName}.`,
+        });
+      }
+      if (chosenCandidate.relocateExternalToTargetPath) {
+        warnings.push({
+          code: "EXTERNAL_SKILL_RELOCATED",
+          message: `${leaf.linkName} reclaimed ${preferredTargetPath} and moved the external skill to ${chosenCandidate.relocateExternalToTargetPath}.`,
+        });
+      }
+
+      const kind = this.resolveDesiredAction(
+        existing,
+        chosenCandidate.diskState.matchesExpected,
+        leaf,
+      );
       actions.push({
         kind,
         sourceId,
@@ -159,9 +258,12 @@ export class DeploymentPlanner {
         target: adapter.target,
         strategy: adapter.strategy,
         sourcePath: leaf.absolutePath,
-        targetPath,
-        ...(existing && existing.targetPath !== targetPath
+        targetPath: chosenCandidate.targetPath,
+        ...(existing && existing.targetPath !== chosenCandidate.targetPath
           ? { previousTargetPath: existing.targetPath }
+          : {}),
+        ...(chosenCandidate.relocateExternalToTargetPath
+          ? { relocateExternalToTargetPath: chosenCandidate.relocateExternalToTargetPath }
           : {}),
         contentHash: leaf.contentHash,
       });
@@ -206,18 +308,186 @@ export class DeploymentPlanner {
   private async inspectTargetPath(
     targetPath: string,
     expectedSourcePath: string,
-  ): Promise<{ exists: boolean; matchesExpected: boolean; foreign: boolean }> {
+    leaf: LeafRecord,
+    lockFile: LockFile,
+  ): Promise<{
+    exists: boolean;
+    matchesExpected: boolean;
+    foreign: boolean;
+    managedBySkillFlow: boolean;
+    managedDeployment?: DeploymentRecord;
+    externalExactMatch: boolean;
+    identity?: { name: string; description: string };
+  }> {
     try {
+      const managedDeployment = lockFile.deployments.find(
+        (deployment) => deployment.targetPath === targetPath && deployment.status === "active",
+      );
       const stats = await fs.lstat(targetPath);
       if (stats.isSymbolicLink()) {
         const linked = await fs.readlink(targetPath);
         const resolved = path.resolve(path.dirname(targetPath), linked);
         const matchesExpected = resolved === expectedSourcePath;
-        return { exists: true, matchesExpected, foreign: !matchesExpected };
+        return {
+          exists: true,
+          matchesExpected,
+          foreign: !matchesExpected,
+          managedBySkillFlow: Boolean(managedDeployment),
+          ...(managedDeployment ? { managedDeployment } : {}),
+          ...(await this.buildExternalIdentityState(targetPath, leaf, managedDeployment)),
+        };
       }
-      return { exists: true, matchesExpected: false, foreign: true };
+      return {
+        exists: true,
+        matchesExpected: false,
+        foreign: true,
+        managedBySkillFlow: Boolean(managedDeployment),
+        ...(managedDeployment ? { managedDeployment } : {}),
+        ...(await this.buildExternalIdentityState(targetPath, leaf, managedDeployment)),
+      };
     } catch {
-      return { exists: false, matchesExpected: false, foreign: false };
+      return {
+        exists: false,
+        matchesExpected: false,
+        foreign: false,
+        managedBySkillFlow: false,
+        externalExactMatch: false,
+      };
+    }
+  }
+
+  private async buildExternalIdentityState(
+    targetPath: string,
+    leaf: LeafRecord,
+    managedDeployment: DeploymentRecord | undefined,
+  ) {
+    const identity = !managedDeployment ? await this.readSkillIdentity(targetPath) : undefined;
+    return {
+      externalExactMatch:
+        !managedDeployment &&
+        identity?.name === leaf.name &&
+        identity.description === leaf.description,
+      ...(identity ? { identity } : {}),
+    };
+  }
+
+  private async readSkillIdentity(targetPath: string) {
+    try {
+      const raw = await fs.readFile(path.join(targetPath, "SKILL.md"), "utf8");
+      const lines = raw.split(/\r?\n/);
+      if (lines[0]?.trim() !== "---") {
+        return undefined;
+      }
+
+      const data: Record<string, string> = {};
+      let index = 1;
+      while (index < lines.length) {
+        const line = lines[index] ?? "";
+        if (line.trim() === "---") {
+          break;
+        }
+
+        const pair = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+        if (!pair) {
+          index += 1;
+          continue;
+        }
+
+        const key = pair[1];
+        const rest = pair[2];
+        if (!key || rest === undefined) {
+          index += 1;
+          continue;
+        }
+
+        if (rest === "|" || rest === ">") {
+          const blockLines: string[] = [];
+          index += 1;
+          while (index < lines.length) {
+            const blockLine = lines[index] ?? "";
+            if (blockLine.length === 0) {
+              blockLines.push("");
+              index += 1;
+              continue;
+            }
+            if (!blockLine.startsWith("  ")) {
+              break;
+            }
+            blockLines.push(blockLine.slice(2));
+            index += 1;
+          }
+          data[key] = blockLines.join("\n").trim();
+          continue;
+        }
+
+        data[key] = rest.trim();
+        index += 1;
+      }
+
+      const name = data.name?.trim();
+      const description = data.description?.trim();
+      if (!name || !description) {
+        return undefined;
+      }
+      return { name, description };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async buildExternalRelocationCandidate(
+    preferredTargetPath: string,
+    inspectedCandidates: Array<{
+      linkName: string;
+      targetPath: string;
+      diskState: Awaited<ReturnType<DeploymentPlanner["inspectTargetPath"]>>;
+    }>,
+    leaf: LeafRecord,
+    rootPath: string,
+  ) {
+    const preferredCandidate = inspectedCandidates.find(
+      (candidate) => candidate.targetPath === preferredTargetPath,
+    );
+    if (
+      !preferredCandidate ||
+      !preferredCandidate.diskState.exists ||
+      preferredCandidate.diskState.managedBySkillFlow ||
+      preferredCandidate.diskState.externalExactMatch
+    ) {
+      return undefined;
+    }
+
+    const currentLinkName = path.basename(preferredTargetPath);
+    for (const relocationLinkName of this.buildExternalRelocationLinkNames(currentLinkName)) {
+      const relocationTargetPath = path.join(rootPath, relocationLinkName);
+      const relocationState = await this.inspectExistingTargetPath(relocationTargetPath);
+      if (relocationState.exists) {
+        continue;
+      }
+
+      return {
+        linkName: currentLinkName,
+        targetPath: preferredTargetPath,
+        diskState: preferredCandidate.diskState,
+        relocateExternalToTargetPath: relocationTargetPath,
+      };
+    }
+
+    return undefined;
+  }
+
+  private buildExternalRelocationLinkNames(currentLinkName: string) {
+    return Array.from({ length: 12 }, (_, index) =>
+      index === 0 ? `${currentLinkName}-external` : `${currentLinkName}-external-${index + 1}`,
+    );
+  }
+
+  private async inspectExistingTargetPath(targetPath: string) {
+    try {
+      await fs.lstat(targetPath);
+      return { exists: true };
+    } catch {
+      return { exists: false };
     }
   }
 
@@ -242,6 +512,7 @@ export class DeploymentPlanner {
         leafId: leaf.id,
         groupId: leaf.sourceId,
         groupName: sourcesById.get(leaf.sourceId)?.displayName ?? leaf.sourceId,
+        groupAuthor: parseGitHubRepo(sourcesById.get(leaf.sourceId)?.locator ?? "")?.owner,
         skillName: leaf.linkName,
       })),
     );

@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { render } from "ink";
 import { SkillFlowApp } from "./services/skill-flow.js";
 import { ConfigApp } from "./tui/config-app.js";
+import { FindApp } from "./tui/find-app.js";
 import { formatGroupRef } from "./utils/naming.js";
 import {
   formatActionSummary,
@@ -87,8 +88,13 @@ program
       printWarnings(result.warnings.map((warning) => warning.message));
       return;
     }
-    console.log(formatSkillCandidates(result.data.candidates));
-    printWarnings(result.warnings.map((warning) => warning.message));
+    const instance = render(<FindApp app={app} query={query} candidates={result.data.candidates} />);
+    if (result.warnings.length > 0) {
+      for (const warning of result.warnings) {
+        console.warn(`warning: ${warning.message}`);
+      }
+    }
+    await instance.waitUntilExit();
   });
 
 program.command("config").action(async () => {

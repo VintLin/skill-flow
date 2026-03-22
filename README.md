@@ -82,6 +82,8 @@ skill-flow uninstall my-source-id
 
 `add <source>` supports local paths, `owner/repo`, full https/ssh Git URLs, GitHub tree URLs, and `clawhub:<slug>[@version]`.
 
+By default, `add` preselects all discovered skills and all detected agent targets. When `--path <repoSubpath>` is provided, the full repo is still imported, but only skills under that path are preselected.
+
 ## Command Reference
 
 | Command | Description |
@@ -94,6 +96,8 @@ skill-flow uninstall my-source-id
 | `update [sourceId] --all` | Update sources and re-project |
 | `doctor` | Diagnose projection health |
 | `uninstall <sourceIds...>` | Remove workflow groups and projections |
+
+When selected skills collide by name, `skill-flow` keeps identical duplicates as warnings and renames different-content collisions with repo/author-prefixed link names such as `gstack-browse`, `gstack(garrytan)-browse`, or `garrytan-skill-creator`.
 
 ## How It Works
 
@@ -118,6 +122,8 @@ Broader ecosystem path references, including project-level rules and instruction
 ## Built-in Discovery Catalogs
 
 `find/search` searches built-in Git catalogs in addition to local installed skills and ClawHub.
+
+For more reliable built-in Git catalog search, set `GITHUB_TOKEN` to avoid low unauthenticated GitHub API rate limits.
 
 | Repository | Description | Stars | Skills |
 | --- | --- | ---: | ---: |

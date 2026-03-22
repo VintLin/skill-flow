@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   DeploymentAction,
@@ -43,6 +44,14 @@ export class DeploymentApplier {
         (await pathExists(action.previousTargetPath))
       ) {
         await removePath(action.previousTargetPath);
+      }
+
+      if (
+        action.relocateExternalToTargetPath &&
+        (await pathExists(action.targetPath))
+      ) {
+        await ensureDir(path.dirname(action.relocateExternalToTargetPath));
+        await fs.rename(action.targetPath, action.relocateExternalToTargetPath);
       }
 
       if (action.strategy === "symlink") {

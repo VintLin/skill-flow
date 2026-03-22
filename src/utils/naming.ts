@@ -8,6 +8,7 @@ type ProjectedSkillInput = {
   leafId: string;
   groupId: string;
   groupName: string;
+  groupAuthor?: string | undefined;
   skillName: string;
 };
 
@@ -64,8 +65,35 @@ export function formatGroupRef(source: SourceLike): string {
   return `${formatGroupLabel(source)} [${source.id}]`;
 }
 
-export function buildProjectedSkillName(groupName: string, skillName: string): string {
-  return `${groupName}-${skillName}`;
+export function buildProjectedSkillName(
+  groupName: string,
+  skillName: string,
+  groupAuthor?: string,
+): string {
+  return `${getPreferredProjectedPrefix(groupName, skillName, groupAuthor)}-${skillName}`;
+}
+
+export function buildProjectedSkillNameCandidates({
+  preferredName,
+  groupId,
+  groupName,
+  groupAuthor,
+  skillName,
+}: {
+  preferredName: string;
+  groupId: string;
+  groupName: string;
+  groupAuthor?: string | undefined;
+  skillName: string;
+}) {
+  const candidates = [
+    preferredName,
+    buildProjectedSkillName(groupName, skillName, groupAuthor),
+    buildRepoAuthorProjectedSkillName(groupName, skillName, groupAuthor),
+    `${groupId}-${skillName}`,
+  ];
+
+  return [...new Set(candidates.filter((value): value is string => Boolean(value)))];
 }
 
 export function resolveProjectedSkillNames(
@@ -91,24 +119,64 @@ export function resolveProjectedSkillNames(
 
     const preferredNames = group.map((item) => ({
       item,
-      projectedName: buildProjectedSkillName(item.groupName, item.skillName),
+      projectedName: buildProjectedSkillName(
+        item.groupName,
+        item.skillName,
+        item.groupAuthor,
+      ),
     }));
-    const preferredCounts = new Map<string, number>();
+    const projectedNameCounts = new Map<string, number>();
     for (const preferred of preferredNames) {
-      preferredCounts.set(
+      projectedNameCounts.set(
         preferred.projectedName,
-        (preferredCounts.get(preferred.projectedName) ?? 0) + 1,
+        (projectedNameCounts.get(preferred.projectedName) ?? 0) + 1,
       );
     }
 
     for (const preferred of preferredNames) {
-      if ((preferredCounts.get(preferred.projectedName) ?? 0) === 1) {
+      if ((projectedNameCounts.get(preferred.projectedName) ?? 0) === 1) {
         result.set(preferred.item.leafId, preferred.projectedName);
         continue;
       }
+
+      const repoAuthorProjectedName = buildRepoAuthorProjectedSkillName(
+        preferred.item.groupName,
+        preferred.item.skillName,
+        preferred.item.groupAuthor,
+      );
+      if (
+        repoAuthorProjectedName &&
+        (projectedNameCounts.get(repoAuthorProjectedName) ?? 0) === 0
+      ) {
+        result.set(preferred.item.leafId, repoAuthorProjectedName);
+        continue;
+      }
+
       result.set(preferred.item.leafId, `${preferred.item.groupId}-${preferred.item.skillName}`);
     }
   }
 
   return result;
+}
+
+function getPreferredProjectedPrefix(
+  groupName: string,
+  skillName: string,
+  groupAuthor?: string,
+) {
+  if (skillName.startsWith(`${groupName}-`) && groupAuthor) {
+    return groupAuthor;
+  }
+  return groupName;
+}
+
+function buildRepoAuthorProjectedSkillName(
+  groupName: string,
+  skillName: string,
+  groupAuthor?: string,
+) {
+  if (!groupAuthor) {
+    return undefined;
+  }
+  return `${groupName}(${groupAuthor})-${skillName}`;
 }

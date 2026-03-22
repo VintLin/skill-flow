@@ -30,6 +30,10 @@ export class StateStore {
     return path.join(this.catalogRoot, sourceId);
   }
 
+  getCatalogIndexPath(sourceId: string): string {
+    return path.join(this.catalogRoot, `${sourceId}.json`);
+  }
+
   get manifestPath(): string {
     return path.join(this.stateRoot, "manifest.json");
   }

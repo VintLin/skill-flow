@@ -82,6 +82,8 @@ skill-flow uninstall my-source-id
 
 `add <source>` 支持本地路径、`owner/repo`、完整的 https/ssh Git URL、GitHub tree URL，以及 `clawhub:<slug>[@version]`。
 
+`add` 默认会预选该源的全部 skill，以及当前检测到的全部 agent 目标。传入 `--path <repoSubpath>` 时，仍然会导入整个仓库，但只会预选该路径下的 skill。
+
 ## 命令参考
 
 | 命令 | 说明 |
@@ -94,6 +96,8 @@ skill-flow uninstall my-source-id
 | `update [sourceId] --all` | 更新源并重新投影 |
 | `doctor` | 诊断投影健康状态 |
 | `uninstall <sourceIds...>` | 移除工作流组及其投影 |
+
+当已选 skill 出现同名冲突时，`skill-flow` 会把内容完全相同的重复项保留为 warning，把内容不同的冲突项改成带 repo / author 前缀的链接名，例如 `gstack-browse`、`gstack(garrytan)-browse` 或 `garrytan-skill-creator`。
 
 ## 工作原理
 
@@ -118,6 +122,8 @@ Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · Op
 ## 默认内置发现仓库
 
 `find/search` 除了搜索本地已安装技能和 ClawHub，也会搜索默认内置的 Git 仓库目录。
+
+如果希望内置 Git 仓库搜索更稳定，建议设置 `GITHUB_TOKEN`，避免 GitHub 未认证 API 的低速率限制。
 
 | Repository | Description | Stars | Skills |
 | --- | --- | ---: | ---: |
