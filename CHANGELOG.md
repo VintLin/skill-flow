@@ -9,6 +9,8 @@ All notable changes to `skill-flow` will be documented in this file.
 - Normalized `add --path` handling so stored requested paths and preselection state stay predictable.
 - Added an explicit preselection warning when `add` only scopes the default selection to a subpath.
 - Cleaned up generated `find` follow-up commands so root-scoped skills do not emit `--path .`.
+- Simplified the `config` top bar so stable-state action hints and low-signal status text are hidden by default.
+- Kept the `Skill Flow` title visually stable by rendering it separately from transient status colors.
 
 ### Verification
 
