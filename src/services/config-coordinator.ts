@@ -1,13 +1,16 @@
 import type {
   ConfigBootStatus,
+  ConfigBootFailure,
   DeploymentTargetName,
   DoctorReport,
   DraftBinding,
   LockFile,
   Manifest,
   Result,
+  SourceUpdateResult,
   WorkflowSummary,
 } from "../domain/types.js";
+import { formatGroupLabel } from "../utils/naming.js";
 import { fail, ok } from "../utils/result.js";
 import type { BootstrapEvent } from "./workspace-bootstrap-service.js";
 
@@ -28,17 +31,7 @@ type ConfigCoordinatorDeps = {
   };
   getAvailableTargets(): Promise<DeploymentTargetName[]>;
   pruneMissingCheckouts(): Promise<Result<{ removedSourceIds: string[] }>>;
-  updateSources(sourceIds?: string[]): Promise<
-    Result<{
-      updated: Array<{
-        sourceId: string;
-        changed: boolean;
-        addedLeafIds: string[];
-        removedLeafIds: string[];
-        invalidatedLeafIds: string[];
-      }>;
-    }>
-  >;
+  updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>>;
   getConfigData(): Promise<
     Result<{ manifest: Manifest; lockFile: LockFile; summaries: WorkflowSummary[] }>
   >;
@@ -148,10 +141,15 @@ export class ConfigCoordinator {
       level: "info",
       message: "Building config summaries...",
     });
+    const auditWithBootstrapFailures = this.mergeBootstrapFailuresIntoAudit(
+      configData.data.manifest,
+      audit.data,
+      failedSources,
+    );
     const summaries = this.deps.workflowService.getSummaries(
       configData.data.manifest,
       configData.data.lockFile,
-      audit.data,
+      auditWithBootstrapFailures,
     );
     const bootStatus: ConfigBootStatus = {
       phase: failedSources.length > 0 ? "partial_failure" : "success",
@@ -173,9 +171,36 @@ export class ConfigCoordinator {
       lockFile: configData.data.lockFile,
       summaries,
       initialDrafts: buildInitialDrafts(summaries),
-      audit: audit.data,
+      audit: auditWithBootstrapFailures,
       bootStatus,
     });
+  }
+
+  private mergeBootstrapFailuresIntoAudit(
+    manifest: Manifest,
+    audit: DoctorReport,
+    failedSources: ConfigBootFailure[],
+  ): DoctorReport {
+    if (failedSources.length === 0) {
+      return audit;
+    }
+
+    return {
+      status: audit.status === "HEALTHY" ? "PARTIAL" : audit.status,
+      issues: [
+        ...audit.issues,
+        ...failedSources.map((failed) => {
+          const source = manifest.sources.find((item) => item.id === failed.sourceId);
+          return {
+            severity: "warning" as const,
+            sourceId: failed.sourceId,
+            ...(source ? { sourceLabel: formatGroupLabel(source) } : {}),
+            code: "SOURCE_REFRESH_FAILED",
+            message: `Source refresh failed during bootstrap: ${failed.message}`,
+          };
+        }),
+      ],
+    };
   }
 }
 

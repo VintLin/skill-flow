@@ -98,6 +98,44 @@ program.command("config").action(async () => {
 });
 
 program
+  .command("repair-source")
+  .argument("[sourceId]", "Optional skills group id")
+  .option("--all", "Repair owned source checkouts for all registered skills groups")
+  .action(async (sourceId: string | undefined, options: { all?: boolean }) => {
+    const ids = options.all || !sourceId ? undefined : [sourceId];
+    const result = await app.repairSource(ids);
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    for (const item of result.data.updated) {
+      console.log(
+        `${item.sourceId}  changed:${item.changed}  +${item.addedLeafIds.length}  -${item.removedLeafIds.length}  invalidated:${item.invalidatedLeafIds.length}`,
+      );
+    }
+    printWarnings(result.warnings.map((warning) => warning.message));
+  });
+
+program
+  .command("repair-state")
+  .argument("[sourceId]", "Optional skills group id")
+  .option("--all", "Rebuild source-side state for all registered skills groups")
+  .action(async (sourceId: string | undefined, options: { all?: boolean }) => {
+    const ids = options.all || !sourceId ? undefined : [sourceId];
+    const result = await app.repairState(ids);
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      `repaired sources:${result.data.repairedSourceIds.length}  removed deployments:${result.data.removedDeploymentCount}`,
+    );
+    printWarnings(result.warnings.map((warning) => warning.message));
+  });
+
+program
   .command("update")
   .argument("[sourceId]", "Optional skills group id")
   .option("--all", "Update all registered skills groups")
@@ -118,6 +156,22 @@ program
         `${groupRef}  changed:${item.changed}  +${item.addedLeafIds.length}  -${item.removedLeafIds.length}  invalidated:${item.invalidatedLeafIds.length}`,
       );
     }
+    printWarnings(result.warnings.map((warning) => warning.message));
+  });
+
+program
+  .command("repair-targets")
+  .argument("[sourceId]", "Optional skills group id")
+  .option("--all", "Repair targets for all registered skills groups")
+  .action(async (sourceId: string | undefined, options: { all?: boolean }) => {
+    const ids = options.all || !sourceId ? undefined : [sourceId];
+    const result = await app.repairTargets(ids);
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(formatActionSummary(result.data.actions));
     printWarnings(result.warnings.map((warning) => warning.message));
   });
 

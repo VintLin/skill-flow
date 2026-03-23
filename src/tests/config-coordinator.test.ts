@@ -93,8 +93,8 @@ describe("ConfigCoordinator", () => {
   test("boots config and derives initial drafts from normalized summaries", async () => {
     const updateSources = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, data: { updated: [{ sourceId: "alpha", changed: false, addedLeafIds: [], removedLeafIds: [], invalidatedLeafIds: [] }] }, warnings: [], errors: [] })
-      .mockResolvedValueOnce({ ok: true, data: { updated: [{ sourceId: "beta", changed: true, addedLeafIds: [], removedLeafIds: [], invalidatedLeafIds: [] }] }, warnings: [], errors: [] });
+      .mockResolvedValueOnce({ ok: true, data: { updated: [{ sourceId: "alpha", changed: false, addedLeafIds: [], removedLeafIds: [], invalidatedLeafIds: [], diffs: [] }] }, warnings: [], errors: [] })
+      .mockResolvedValueOnce({ ok: true, data: { updated: [{ sourceId: "beta", changed: true, addedLeafIds: [], removedLeafIds: [], invalidatedLeafIds: [], diffs: [] }] }, warnings: [], errors: [] });
     const coordinator = new ConfigCoordinator({
       store: {
         init: vi.fn().mockResolvedValue(undefined),
@@ -161,6 +161,7 @@ describe("ConfigCoordinator", () => {
               addedLeafIds: [],
               removedLeafIds: [],
               invalidatedLeafIds: [],
+              diffs: [],
             },
           ],
         },
@@ -221,6 +222,14 @@ describe("ConfigCoordinator", () => {
         },
       ],
     });
+    expect(
+      result.data.audit.issues.some(
+        (issue) =>
+          issue.code === "SOURCE_REFRESH_FAILED" &&
+          issue.severity === "warning" &&
+          issue.sourceId === "beta",
+      ),
+    ).toBe(true);
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         phase: "refresh-sources",

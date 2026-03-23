@@ -58,6 +58,8 @@ describe.sequential("config integration", () => {
     );
 
     expect(detected.some((item) => item.displayName === "linked-skill")).toBe(true);
+    expect(await app.store.readManifest()).toEqual(manifest);
+    expect(await app.store.readLock()).toEqual(lock);
   });
 
   test("config boot prunes groups whose local checkout is missing", async () => {

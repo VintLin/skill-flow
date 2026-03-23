@@ -1,3 +1,4 @@
+import path from "node:path";
 import fs from "node:fs/promises";
 import { createChannelAdapters } from "../adapters/channel-adapters.js";
 import type {
@@ -19,6 +20,10 @@ export class DoctorService {
 
     for (const source of manifest.sources) {
       const binding = manifest.bindings[source.id] ?? { targets: {} };
+      const sourceLock = lockFile.sources.find((item) => item.id === source.id);
+      const invalidLeafPaths = new Set(
+        sourceLock?.invalidLeafs.map((leaf) => leaf.path) ?? [],
+      );
 
       for (const adapter of this.adapters) {
         const configured = binding.targets[adapter.target];
@@ -40,6 +45,21 @@ export class DoctorService {
         }
 
         for (const leafId of configured.leafIds) {
+          const selectedPath = this.getLeafPath(source.id, leafId);
+          if (selectedPath && invalidLeafPaths.has(selectedPath)) {
+            issues.push({
+              severity: "error",
+              sourceId: source.id,
+              sourceLabel: formatGroupLabel(source),
+              target: adapter.target,
+              leafId,
+              leafLabel: path.basename(selectedPath) || selectedPath,
+              code: "INVALIDATED_SELECTED_LEAF",
+              message: "This selected skill is invalid in the current source inventory.",
+            });
+            continue;
+          }
+
           const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
           const deployment = lockFile.deployments.find(
             (item) =>
@@ -140,6 +160,8 @@ export class DoctorService {
       }
     }
 
+    await this.reportUnmanagedExternalSkills(lockFile, issues);
+
     for (const deployment of lockFile.deployments) {
       const sourceStillExists = manifest.sources.some(
         (source) => source.id === deployment.sourceId,
@@ -165,5 +187,62 @@ export class DoctorService {
         : "HEALTHY";
 
     return ok({ status, issues });
+  }
+
+  private getLeafPath(sourceId: string, leafId: string) {
+    const prefix = `${sourceId}:`;
+    if (!leafId.startsWith(prefix)) {
+      return undefined;
+    }
+    return leafId.slice(prefix.length);
+  }
+
+  private async reportUnmanagedExternalSkills(
+    lockFile: LockFile,
+    issues: DoctorIssue[],
+  ): Promise<void> {
+    const managedTargetPaths = new Set(
+      lockFile.deployments.map((deployment) => path.resolve(deployment.targetPath)),
+    );
+    const seenPaths = new Set<string>();
+
+    for (const adapter of this.adapters) {
+      const detection = await adapter.detect();
+      if (!detection.available) {
+        continue;
+      }
+
+      const entries = await fs.readdir(detection.rootPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const skillDir = path.join(detection.rootPath, entry.name);
+        const isDirectoryLike =
+          entry.isDirectory() ||
+          (entry.isSymbolicLink() &&
+            (await fs.stat(skillDir).then((stats) => stats.isDirectory()).catch(() => false)));
+        if (!isDirectoryLike) {
+          continue;
+        }
+
+        if (!(await pathExists(path.join(skillDir, "SKILL.md")))) {
+          continue;
+        }
+
+        const resolvedPath = await fs.realpath(skillDir).catch(() => path.resolve(skillDir));
+        if (managedTargetPaths.has(path.resolve(skillDir)) || seenPaths.has(resolvedPath)) {
+          continue;
+        }
+
+        seenPaths.add(resolvedPath);
+        issues.push({
+          severity: "warning",
+          sourceId: `unmanaged:${adapter.target}:${entry.name}`,
+          sourceLabel: "Unmanaged external skill",
+          target: adapter.target,
+          leafLabel: entry.name,
+          code: "UNMANAGED_EXTERNAL_TARGET_SKILL",
+          message: `Unmanaged skill discovered at ${resolvedPath}.`,
+        });
+      }
+    }
   }
 }

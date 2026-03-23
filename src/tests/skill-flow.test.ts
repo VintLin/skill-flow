@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
+import { DoctorService } from "../services/doctor-service.js";
 import { SkillFlowApp } from "../services/skill-flow.js";
 import {
   createBareRemote,
@@ -255,6 +256,194 @@ describe.sequential("skill-flow", () => {
       return;
     }
     expect(doctor.data.issues.some((issue) => issue.code === "BROKEN_SYMLINK")).toBe(true);
+  });
+
+  test("doctor reports invalidated selected leafs as errors", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+      "broken/SKILL.md": "broken",
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const manifest = await app.store.readManifest();
+    manifest.bindings[sourceId] = {
+      targets: {
+        "claude-code": {
+          enabled: true,
+          leafIds: [`${sourceId}:broken`],
+        },
+      },
+    };
+    await app.store.writeManifest(manifest);
+
+    const doctor = await new DoctorService().run(
+      await app.store.readManifest(),
+      await app.store.readLock(),
+    );
+    expect(doctor.ok).toBe(true);
+    if (!doctor.ok) {
+      return;
+    }
+    expect(
+      doctor.data.issues.some(
+        (issue) =>
+          issue.code === "INVALIDATED_SELECTED_LEAF" &&
+          issue.severity === "error" &&
+          issue.sourceId === sourceId,
+      ),
+    ).toBe(true);
+  });
+
+  test("doctor reports unmanaged external target skills", async () => {
+    const unmanagedRoot = path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "unmanaged");
+    await writeRepoFiles(unmanagedRoot, {
+      "SKILL.md": skillDoc("unmanaged", "Unmanaged skill."),
+    });
+
+    const app = new SkillFlowApp();
+    await app.store.init();
+    const doctor = await new DoctorService().run(
+      await app.store.readManifest(),
+      await app.store.readLock(),
+    );
+
+    expect(doctor.ok).toBe(true);
+    if (!doctor.ok) {
+      return;
+    }
+    expect(
+      doctor.data.issues.some(
+        (issue) =>
+          issue.code === "UNMANAGED_EXTERNAL_TARGET_SKILL" &&
+          issue.severity === "warning" &&
+          issue.target === "claude-code",
+      ),
+    ).toBe(true);
+  });
+
+  test("repairTargets recreates missing managed projections without touching unmanaged content", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const managedTargetPath = path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "browse");
+    const unmanagedTargetPath = path.join(
+      process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!,
+      "unmanaged",
+    );
+
+    await app.applyDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafId],
+    });
+    await fs.rm(managedTargetPath, { recursive: true, force: true });
+    await writeRepoFiles(unmanagedTargetPath, {
+      "SKILL.md": skillDoc("unmanaged", "Unmanaged skill."),
+    });
+
+    const repaired = await app.repairTargets([sourceId]);
+
+    expect(repaired.ok).toBe(true);
+    if (!repaired.ok) {
+      return;
+    }
+    expect(await pathExists(managedTargetPath)).toBe(true);
+    expect(await pathExists(unmanagedTargetPath)).toBe(true);
+  });
+
+  test("repairState rebuilds source-side lock data and keeps unmanaged target content intact", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+      "extra/SKILL.md": skillDoc("extra", "Extra flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const checkoutPath = app.store.getSourceCheckoutPath("local", sourceId);
+    const unmanagedTargetPath = path.join(
+      process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!,
+      "unmanaged",
+    );
+
+    await app.applyDraft(sourceId, {
+      enabledTargets: ["openclaw"],
+      selectedLeafIds: [`${sourceId}:browse`],
+    });
+    const lockWithManaged = await app.store.readLock();
+    const managedDeployment = lockWithManaged.deployments.find(
+      (deployment) =>
+        deployment.sourceId === sourceId &&
+        deployment.leafId === `${sourceId}:browse` &&
+        deployment.target === "openclaw",
+    );
+    expect(managedDeployment).toBeTruthy();
+    if (!managedDeployment) {
+      return;
+    }
+    await fs.rm(path.join(checkoutPath, "extra"), { recursive: true, force: true });
+    await writeRepoFiles(unmanagedTargetPath, {
+      "SKILL.md": skillDoc("unmanaged", "Unmanaged skill."),
+    });
+
+    lockWithManaged.deployments = lockWithManaged.deployments.filter(
+      (deployment) =>
+        !(
+          deployment.sourceId === sourceId &&
+          deployment.leafId === `${sourceId}:browse` &&
+          deployment.target === "openclaw"
+        ),
+    );
+    lockWithManaged.deployments.push({
+      sourceId,
+      leafId: `${sourceId}:ghost`,
+      target: "claude-code",
+      targetPath: path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "ghost"),
+      strategy: "symlink",
+      status: "active",
+      contentHash: "ghost",
+      appliedAt: "2026-03-23T00:00:00.000Z",
+    });
+    await app.store.writeLock(lockWithManaged);
+
+    const repaired = await app.repairState();
+
+    expect(repaired.ok).toBe(true);
+    const lockAfter = await app.store.readLock();
+    expect(lockAfter.leafInventory.map((leaf) => leaf.id)).not.toContain(
+      `${sourceId}:extra`,
+    );
+    expect(
+      lockAfter.deployments.some((deployment) => deployment.leafId === `${sourceId}:ghost`),
+    ).toBe(false);
+    expect(
+      lockAfter.deployments.some(
+        (deployment) =>
+          deployment.sourceId === sourceId &&
+          deployment.leafId === `${sourceId}:browse` &&
+          deployment.target === "openclaw" &&
+          deployment.targetPath === managedDeployment.targetPath,
+      ),
+    ).toBe(true);
+    expect(await pathExists(unmanagedTargetPath)).toBe(true);
   });
 
   test("scans host directories too, but keeps the first discovered duplicate only", async () => {
@@ -613,7 +802,39 @@ description: |
     if (!updated.ok) {
       return;
     }
-    expect(updated.data.updated[0]?.addedLeafIds).toHaveLength(1);
+    expect(updated.data.updated[0]?.addedLeafIds.some((id) => id.endsWith(":extra"))).toBe(true);
+  });
+
+  test("local source update re-copies owned checkout from the original locator", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const checkoutPath = app.store.getSourceCheckoutPath("local", sourceId);
+    await writeRepoFiles(repoPath, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow, updated upstream."),
+    });
+    await writeRepoFiles(checkoutPath, {
+      "browse/SKILL.md": skillDoc("browse", "Stale checkout content."),
+    });
+
+    const updated = await app.updateSources([sourceId]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+
+    expect(updated.data.updated[0]?.changed).toBe(true);
+    expect(
+      await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8"),
+    ).toContain("Browser flow, updated upstream.");
   });
 
   test("update removes projections for deleted skills", async () => {

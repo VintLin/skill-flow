@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { createChannelAdapters } from "../adapters/channel-adapters.js";
 import type {
@@ -12,15 +13,28 @@ import type {
   Result,
   SkillCandidate,
   SourceBinding,
+  SourceUpdateResult,
+  SourceUpdateResultItem,
   TargetBinding,
   Warning,
   WorkflowSummary,
 } from "../domain/types.js";
 import { StateStore } from "../state/store.js";
-import { ensureDir, pathExists, readJsonFile, removePath, writeJsonFile } from "../utils/fs.js";
+import {
+  ensureDir,
+  hashDirectory,
+  pathExists,
+  readJsonFile,
+  removePath,
+  writeJsonFile,
+} from "../utils/fs.js";
 import { getBuiltinGitSources } from "../utils/builtin-git-sources.js";
 import { fetchGitHubSkillPaths } from "../utils/github-catalog.js";
-import { parseGitHubRepo } from "../utils/naming.js";
+import {
+  buildProjectedSkillNameCandidates,
+  parseGitHubRepo,
+  resolveProjectedSkillNames,
+} from "../utils/naming.js";
 import { fail, ok } from "../utils/result.js";
 import { searchClawHubSkills } from "../utils/clawhub.js";
 import { deriveDisplayName, deriveSourceId } from "../utils/source-id.js";
@@ -375,12 +389,6 @@ export class SkillFlowApp {
     sourceId: string,
     draft: DraftBinding,
   ): Promise<Result<{ actions: DeploymentAction[]; draft: DraftBinding }>> {
-    const reconciled = await this.sourceService.reconcileInventory([sourceId], {
-      force: true,
-    });
-    if (!reconciled.ok) {
-      return fail(reconciled.errors, reconciled.warnings);
-    }
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
@@ -407,34 +415,12 @@ export class SkillFlowApp {
   }
 
   async updateSources(sourceIds?: string[]): Promise<
-    Result<
-      {
-        updated: Array<{
-          sourceId: string;
-          changed: boolean;
-          addedLeafIds: string[];
-          removedLeafIds: string[];
-          invalidatedLeafIds: string[];
-        }>;
-      }
-    >
+    Result<SourceUpdateResult>
   > {
     return this.runSerializedMutation(() => this.updateSourcesImpl(sourceIds));
   }
 
-  private async updateSourcesImpl(sourceIds?: string[]): Promise<
-    Result<
-      {
-        updated: Array<{
-          sourceId: string;
-          changed: boolean;
-          addedLeafIds: string[];
-          removedLeafIds: string[];
-          invalidatedLeafIds: string[];
-        }>;
-      }
-    >
-  > {
+  private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
     const pruned = await this.pruneMissingCheckoutsImpl();
     if (!pruned.ok) {
       return fail(pruned.errors, pruned.warnings);
@@ -444,34 +430,27 @@ export class SkillFlowApp {
       return ok({ updated: [] }, pruned.warnings);
     }
 
-    const reconciled = await this.sourceService.reconcileInventory(requestedIds, {
-      force: true,
-    });
-    if (!reconciled.ok) {
-      return fail(reconciled.errors, reconciled.warnings);
-    }
     const updated = await this.sourceService.updateSources(requestedIds);
     if (!updated.ok) {
       return updated;
     }
 
     const { manifest, lockFile } = await this.store.readState();
-    this.applySelectionModeForUpdatedSources(manifest, lockFile, updated.data.updated);
+    this.applySourceUpdateResults(manifest, lockFile, updated.data.updated);
     await this.persistNormalizedBindings(manifest, lockFile);
-    const activeSourceIds = manifest.sources
+    const planSourceIds = manifest.sources
       .map((source) => source.id)
-      .filter((id) => this.hasActiveTargets(manifest, id));
-
-    for (const sourceId of activeSourceIds) {
-      const plan = await this.planner.planForSource(sourceId, manifest, lockFile);
-      if (!plan.ok) {
-        return fail(plan.errors, plan.warnings);
-      }
-      await this.applier.applyPlan(lockFile, plan.data.actions);
+      .filter((id) =>
+        updated.data.updated.some((item) => item.sourceId === id) ||
+        this.hasActiveTargets(manifest, id) ||
+        lockFile.deployments.some((deployment) => deployment.sourceId === id),
+      );
+    const planned = await this.planAndApplySources(manifest, lockFile, planSourceIds);
+    if (!planned.ok) {
+      return fail(planned.errors, [...pruned.warnings, ...updated.warnings, ...planned.warnings]);
     }
-
     await this.store.writeState(manifest, lockFile);
-    return ok(updated.data, [...pruned.warnings, ...updated.warnings]);
+    return ok(updated.data, [...pruned.warnings, ...updated.warnings, ...planned.warnings]);
   }
 
   async doctor(): Promise<Result<DoctorReport>> {
@@ -494,6 +473,121 @@ export class SkillFlowApp {
       return doctor;
     }
     return ok(doctor.data, [...pruned.warnings, ...doctor.warnings]);
+  }
+
+  async repairTargets(sourceIds?: string[]): Promise<Result<{ actions: DeploymentAction[] }>> {
+    return this.runSerializedMutation(() => this.repairTargetsImpl(sourceIds));
+  }
+
+  private async repairTargetsImpl(
+    sourceIds?: string[],
+  ): Promise<Result<{ actions: DeploymentAction[] }>> {
+    const { manifest, lockFile } = await this.store.readState();
+    this.normalizeBindings(manifest, lockFile);
+
+    const requestedIds = sourceIds?.length
+      ? sourceIds
+      : manifest.sources.map((source) => source.id);
+    for (const sourceId of requestedIds) {
+      if (!manifest.sources.some((source) => source.id === sourceId)) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+    }
+
+    const planSourceIds = requestedIds.filter(
+      (sourceId) =>
+        this.hasActiveTargets(manifest, sourceId) ||
+        lockFile.deployments.some((deployment) => deployment.sourceId === sourceId),
+    );
+    const planned = await this.planAndApplySources(manifest, lockFile, planSourceIds);
+    if (!planned.ok) {
+      return fail(planned.errors, planned.warnings);
+    }
+
+    await this.store.writeState(manifest, lockFile);
+    return ok({ actions: planned.data.actions }, planned.warnings);
+  }
+
+  async repairSource(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+    return this.runSerializedMutation(() => this.repairSourceImpl(sourceIds));
+  }
+
+  private async repairSourceImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+    const pruned = await this.pruneMissingCheckoutsImpl();
+    if (!pruned.ok) {
+      return fail(pruned.errors, pruned.warnings);
+    }
+
+    const requestedIds = sourceIds?.filter(
+      (sourceId) => !pruned.data.removedSourceIds.includes(sourceId),
+    );
+    if (sourceIds?.length && requestedIds?.length === 0) {
+      return ok({ updated: [] }, pruned.warnings);
+    }
+
+    const repaired = await this.sourceService.updateSources(requestedIds);
+    if (!repaired.ok) {
+      return repaired;
+    }
+
+    const { manifest, lockFile } = await this.store.readState();
+    this.applySourceUpdateResults(manifest, lockFile, repaired.data.updated);
+    await this.persistNormalizedBindings(manifest, lockFile);
+    await this.store.writeState(manifest, lockFile);
+
+    return ok(repaired.data, [...pruned.warnings, ...repaired.warnings]);
+  }
+
+  async repairState(
+    sourceIds?: string[],
+  ): Promise<Result<{ repairedSourceIds: string[]; removedDeploymentCount: number }>> {
+    return this.runSerializedMutation(() => this.repairStateImpl(sourceIds));
+  }
+
+  private async repairStateImpl(
+    sourceIds?: string[],
+  ): Promise<Result<{ repairedSourceIds: string[]; removedDeploymentCount: number }>> {
+    const pruned = await this.pruneMissingCheckoutsImpl();
+    if (!pruned.ok) {
+      return fail(pruned.errors, pruned.warnings);
+    }
+
+    const requestedIds = sourceIds?.filter(
+      (sourceId) => !pruned.data.removedSourceIds.includes(sourceId),
+    );
+    if (sourceIds?.length && requestedIds?.length === 0) {
+      return ok(
+        { repairedSourceIds: [], removedDeploymentCount: 0 },
+        pruned.warnings,
+      );
+    }
+
+    const reconciled = await this.sourceService.reconcileInventory(requestedIds, {
+      force: true,
+    });
+    if (!reconciled.ok) {
+      return fail(reconciled.errors, [...pruned.warnings, ...reconciled.warnings]);
+    }
+
+    const { manifest, lockFile } = await this.store.readState();
+    await this.persistNormalizedBindings(manifest, lockFile);
+    const removedDeploymentCount = await this.rebuildDeploymentState(
+      manifest,
+      lockFile,
+      requestedIds,
+    );
+    await this.store.writeState(manifest, lockFile);
+
+    return ok(
+      {
+        repairedSourceIds: reconciled.data.updatedSourceIds,
+        removedDeploymentCount,
+      },
+      [...pruned.warnings, ...reconciled.warnings],
+    );
   }
 
   async uninstall(sourceIds: string[]): Promise<
@@ -809,10 +903,20 @@ export class SkillFlowApp {
       .map((source) => source.id)
       .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
 
+    return this.planForSources(manifest, lockFile, sourceIds);
+  }
+
+  private async planForSources(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceIds: string[],
+  ): Promise<Result<DeploymentPlan>> {
+    const uniqueSourceIds = [...new Set(sourceIds)];
+
     const actions: DeploymentAction[] = [];
     const warnings: Warning[] = [];
 
-    for (const sourceId of sourceIds) {
+    for (const sourceId of uniqueSourceIds) {
       const plan = await this.planner.planForSource(sourceId, manifest, lockFile);
       if (!plan.ok) {
         return fail(plan.errors, [...warnings, ...plan.warnings]);
@@ -827,6 +931,226 @@ export class SkillFlowApp {
       warnings,
       blocked: actions.filter((action) => action.kind === "blocked"),
     }, warnings);
+  }
+
+  private async planAndApplySources(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceIds: string[],
+  ): Promise<Result<{ actions: DeploymentAction[] }>> {
+    const planned = await this.planForSources(manifest, lockFile, sourceIds);
+    if (!planned.ok) {
+      return fail(planned.errors, planned.warnings);
+    }
+
+    const applyResult = await this.applier.applyPlan(lockFile, planned.data.actions);
+    if (!applyResult.ok) {
+      return fail(applyResult.errors, [...planned.warnings, ...applyResult.warnings]);
+    }
+
+    return ok(
+      { actions: planned.data.actions },
+      [...planned.warnings, ...applyResult.warnings],
+    );
+  }
+
+  private async rebuildDeploymentState(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceIds?: string[],
+  ): Promise<number> {
+    const requested = sourceIds?.length ? new Set(sourceIds) : undefined;
+    const previousDeployments = lockFile.deployments;
+    const previousCount = previousDeployments.length;
+    const previousByKey = new Map(
+      previousDeployments.map((deployment) => [
+        this.getDeploymentKey(deployment.sourceId, deployment.leafId, deployment.target),
+        deployment,
+      ]),
+    );
+    const nextDeployments = previousDeployments.filter(
+      (deployment) => requested ? !requested.has(deployment.sourceId) : false,
+    );
+    const adapters = createChannelAdapters();
+    const detectionCache = new Map<
+      DeploymentTargetName,
+      Awaited<ReturnType<(typeof adapters)[number]["detect"]>>
+    >();
+    const projectedNameCache = new Map<DeploymentTargetName, Map<string, string>>();
+
+    for (const source of manifest.sources) {
+      if (requested && !requested.has(source.id)) {
+        continue;
+      }
+
+      const binding = manifest.bindings[source.id] ?? { targets: {} };
+      for (const adapter of adapters) {
+        const targetBinding = binding.targets[adapter.target];
+        if (!targetBinding?.enabled) {
+          continue;
+        }
+
+        let detection = detectionCache.get(adapter.target);
+        if (!detection) {
+          detection = await adapter.detect();
+          detectionCache.set(adapter.target, detection);
+        }
+
+        for (const leafId of targetBinding.leafIds) {
+          const leaf = lockFile.leafInventory.find(
+            (candidate) => candidate.sourceId === source.id && candidate.id === leafId,
+          );
+          if (!leaf) {
+            continue;
+          }
+
+          const existing = previousByKey.get(
+            this.getDeploymentKey(source.id, leaf.id, adapter.target),
+          );
+          if (!detection.available) {
+            if (existing) {
+              nextDeployments.push({
+                ...existing,
+                contentHash: leaf.contentHash,
+                status: "active",
+              });
+            }
+            continue;
+          }
+
+          let projectedLinkNames = projectedNameCache.get(adapter.target);
+          if (!projectedLinkNames) {
+            projectedLinkNames = this.buildProjectedLinkNameMap(
+              manifest,
+              lockFile,
+              adapter.target,
+            );
+            projectedNameCache.set(adapter.target, projectedLinkNames);
+          }
+
+          const rebuilt = await this.findManagedDeploymentOnDisk(
+            source,
+            leaf,
+            adapter.target,
+            adapter.strategy,
+            detection.rootPath,
+            projectedLinkNames,
+            existing,
+          );
+          if (!rebuilt) {
+            continue;
+          }
+
+          nextDeployments.push(rebuilt);
+        }
+      }
+    }
+
+    lockFile.deployments = nextDeployments;
+    return previousCount - nextDeployments.length;
+  }
+
+  private buildProjectedLinkNameMap(
+    manifest: Manifest,
+    lockFile: LockFile,
+    target: DeploymentTargetName,
+  ): Map<string, string> {
+    return resolveProjectedSkillNames(
+      manifest.sources.flatMap((source) => {
+        const targetBinding = manifest.bindings[source.id]?.targets[target];
+        if (!targetBinding?.enabled) {
+          return [];
+        }
+
+        return targetBinding.leafIds
+          .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+          .filter((leaf): leaf is LeafRecord => Boolean(leaf))
+          .map((leaf) => ({
+            leafId: leaf.id,
+            groupId: source.id,
+            groupName: source.displayName,
+            groupAuthor: parseGitHubRepo(source.locator)?.owner,
+            skillName: leaf.linkName,
+          }));
+      }),
+    );
+  }
+
+  private async findManagedDeploymentOnDisk(
+    source: Manifest["sources"][number],
+    leaf: LeafRecord,
+    target: DeploymentTargetName,
+    strategy: "symlink" | "copy",
+    rootPath: string,
+    projectedLinkNames: Map<string, string>,
+    existing?: LockFile["deployments"][number],
+  ): Promise<LockFile["deployments"][number] | undefined> {
+    const projectedLinkName = projectedLinkNames.get(leaf.id) ?? leaf.linkName;
+    const candidatePaths = buildProjectedSkillNameCandidates({
+      preferredName: projectedLinkName,
+      groupId: source.id,
+      groupName: source.displayName,
+      groupAuthor: parseGitHubRepo(source.locator)?.owner,
+      skillName: leaf.linkName,
+    }).map((name) => path.join(rootPath, name));
+
+    if (existing?.targetPath && !candidatePaths.includes(existing.targetPath)) {
+      candidatePaths.unshift(existing.targetPath);
+    }
+
+    for (const targetPath of candidatePaths) {
+      const matches = await this.matchesManagedProjection(strategy, targetPath, leaf);
+      if (!matches) {
+        continue;
+      }
+
+      return {
+        sourceId: source.id,
+        leafId: leaf.id,
+        target,
+        targetPath,
+        strategy,
+        status: "active",
+        contentHash: leaf.contentHash,
+        appliedAt: existing?.appliedAt ?? new Date().toISOString(),
+      };
+    }
+
+    return undefined;
+  }
+
+  private async matchesManagedProjection(
+    strategy: "symlink" | "copy",
+    targetPath: string,
+    leaf: LeafRecord,
+  ): Promise<boolean> {
+    try {
+      const stats = await fs.lstat(targetPath);
+      if (strategy === "symlink") {
+        if (!stats.isSymbolicLink()) {
+          return false;
+        }
+        const linked = await fs.readlink(targetPath);
+        const resolved = path.resolve(path.dirname(targetPath), linked);
+        return resolved === leaf.absolutePath;
+      }
+
+      if (!stats.isDirectory()) {
+        return false;
+      }
+      const onDiskHash = await hashDirectory(targetPath);
+      return onDiskHash === leaf.contentHash;
+    } catch {
+      return false;
+    }
+  }
+
+  private getDeploymentKey(
+    sourceId: string,
+    leafId: string,
+    target: DeploymentTargetName,
+  ) {
+    return `${sourceId}\n${leafId}\n${target}`;
   }
 
   private hasActiveTargets(manifest: Manifest, sourceId: string): boolean {
@@ -1087,22 +1411,43 @@ export class SkillFlowApp {
     return `${displayName}@${repo.owner}`;
   }
 
-  private applySelectionModeForUpdatedSources(
+  private applySourceUpdateResults(
     manifest: Manifest,
     lockFile: LockFile,
-    updates: Array<{
-      sourceId: string;
-      changed: boolean;
-      addedLeafIds: string[];
-    }>,
+    updates: SourceUpdateResultItem[],
   ) {
     for (const update of updates) {
-      if (!update.changed || update.addedLeafIds.length === 0) {
+      if (!update.changed) {
         continue;
       }
       const source = manifest.sources.find((item) => item.id === update.sourceId);
       const binding = manifest.bindings[update.sourceId];
-      if (!source || !binding || source.selectionMode !== "all") {
+      if (!source || !binding) {
+        continue;
+      }
+
+      for (const diff of update.diffs) {
+        if (diff.kind !== "moved" || !diff.previousLeafId) {
+          continue;
+        }
+        for (const targetBinding of Object.values(binding.targets)) {
+          if (!targetBinding?.enabled || !targetBinding.leafIds.includes(diff.previousLeafId)) {
+            continue;
+          }
+          targetBinding.leafIds = targetBinding.leafIds.map((leafId) =>
+            leafId === diff.previousLeafId ? diff.leafId : leafId,
+          );
+        }
+      }
+
+      if ((update.selectionMode ?? source.selectionMode) !== "all") {
+        continue;
+      }
+
+      const addedLeafIds = update.diffs
+        .filter((diff) => diff.kind === "added")
+        .map((diff) => diff.leafId);
+      if (addedLeafIds.length === 0) {
         continue;
       }
 
@@ -1110,7 +1455,7 @@ export class SkillFlowApp {
         if (!targetBinding?.enabled) {
           continue;
         }
-        const merged = new Set([...targetBinding.leafIds, ...update.addedLeafIds]);
+        const merged = new Set([...targetBinding.leafIds, ...addedLeafIds]);
         targetBinding.leafIds = [...merged].filter((leafId) =>
           lockFile.leafInventory.some((leaf) => leaf.id === leafId && leaf.sourceId === update.sourceId),
         );

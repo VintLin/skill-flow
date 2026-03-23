@@ -136,6 +136,40 @@ export type LockFile = {
   deployments: DeploymentRecord[];
 };
 
+export type SourceUpdateDiffKind =
+  | "added"
+  | "removed"
+  | "moved"
+  | "invalidated"
+  | "changed";
+
+export type SourceUpdateDiff = {
+  kind: SourceUpdateDiffKind;
+  sourceId: string;
+  leafId: string;
+  relativePath: string;
+  contentHash: string;
+  requestedPath?: string;
+  previousLeafId?: string;
+  previousRelativePath?: string;
+  previousContentHash?: string;
+};
+
+export type SourceUpdateResultItem = {
+  sourceId: string;
+  changed: boolean;
+  requestedPath?: string;
+  selectionMode?: "all" | "partial";
+  addedLeafIds: string[];
+  removedLeafIds: string[];
+  invalidatedLeafIds: string[];
+  diffs: SourceUpdateDiff[];
+};
+
+export type SourceUpdateResult = {
+  updated: SourceUpdateResultItem[];
+};
+
 export type ChannelDetection = {
   target: DeploymentTargetName;
   strategy: DeploymentStrategy;

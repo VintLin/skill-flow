@@ -2,7 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { InventoryService } from "../services/inventory-service.js";
+import { SourceService } from "../services/source-service.js";
 import { SkillFlowApp } from "../services/skill-flow.js";
+import { StateStore } from "../state/store.js";
 import * as clawhubUtils from "../utils/clawhub.js";
 import * as builtinGitSources from "../utils/builtin-git-sources.js";
 import * as githubCatalog from "../utils/github-catalog.js";
@@ -12,11 +14,16 @@ import {
   createRepo,
   seedBuiltinCatalog,
   skillDoc,
+  writeRepoFiles,
   useSkillFlowSandbox,
 } from "./test-helpers.js";
 
 describe.sequential("source lifecycle", () => {
   const sandbox = useSkillFlowSandbox();
+
+  function createSourceService() {
+    return new SourceService(new StateStore(), new InventoryService());
+  }
 
   test("adds a git source and discovers valid skills", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
@@ -463,5 +470,201 @@ description: |
     }
     expect(list.data.summaries[0]?.leafs[0]?.metadataWarnings).toEqual([]);
     expect(list.data.summaries[0]?.leafs[0]?.linkName).toBe("browse");
+  });
+
+  test("local source updates re-copy from origin and report changed diffs", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const sourceService = createSourceService();
+
+    const added = await sourceService.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const checkoutPath = path.join(sandbox.stateRoot, "source", "local", sourceId);
+    await writeRepoFiles(repoPath, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow, updated upstream."),
+    });
+    await writeRepoFiles(checkoutPath, {
+      "browse/SKILL.md": skillDoc("browse", "Stale checkout content."),
+    });
+
+    const updated = await sourceService.updateSources([sourceId]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+
+    const item = updated.data.updated[0];
+    expect(item?.changed).toBe(true);
+    expect(item?.diffs.map((diff) => diff.kind)).toEqual(["changed"]);
+    expect(await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8")).toContain(
+      "Browser flow, updated upstream.",
+    );
+  });
+
+  test("repairSource refreshes a local checkout from origin without mutating target disk", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const checkoutPath = app.store.getSourceCheckoutPath("local", sourceId);
+
+    await app.applyDraft(sourceId, {
+      enabledTargets: ["openclaw"],
+      selectedLeafIds: [leafId],
+    });
+    const lockBefore = await app.store.readLock();
+    const targetPath = lockBefore.deployments.find(
+      (deployment) => deployment.sourceId === sourceId && deployment.target === "openclaw",
+    )?.targetPath;
+    expect(targetPath).toBeTruthy();
+    if (!targetPath) {
+      return;
+    }
+    const targetBefore = await fs.readFile(path.join(targetPath, "SKILL.md"), "utf8");
+
+    await writeRepoFiles(repoPath, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow, refreshed upstream."),
+    });
+
+    const repaired = await app.repairSource([sourceId]);
+
+    expect(repaired.ok).toBe(true);
+    expect(
+      await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8"),
+    ).toContain("Browser flow, refreshed upstream.");
+    expect(await fs.readFile(path.join(targetPath, "SKILL.md"), "utf8")).toBe(targetBefore);
+  });
+
+  test("source updates classify changed, removed, and added leafs in order", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "one/SKILL.md": skillDoc("one", "One."),
+      "two/SKILL.md": skillDoc("two", "Two."),
+    });
+    const sourceService = createSourceService();
+
+    const added = await sourceService.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await writeRepoFiles(repoPath, {
+      "one/SKILL.md": skillDoc("one", "One, updated."),
+      "three/SKILL.md": skillDoc("three", "Three."),
+    });
+    await fs.rm(path.join(repoPath, "two"), { recursive: true, force: true });
+
+    const updated = await sourceService.updateSources([added.data.manifest.id]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+
+    const item = updated.data.updated[0];
+    expect(item?.diffs.map((diff) => diff.kind)).toEqual([
+      "changed",
+      "removed",
+      "added",
+    ]);
+    expect(item?.changed).toBe(true);
+    expect(item?.addedLeafIds).toEqual([`${added.data.manifest.id}:three`]);
+    expect(item?.removedLeafIds).toEqual([`${added.data.manifest.id}:two`]);
+    expect(item?.invalidatedLeafIds).toEqual([]);
+  });
+
+  test("source updates classify exact-path renames as moved", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const sourceService = createSourceService();
+
+    const added = await sourceService.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await fs.rename(path.join(repoPath, "browse"), path.join(repoPath, "browse-renamed"));
+
+    const updated = await sourceService.updateSources([added.data.manifest.id]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+
+    const item = updated.data.updated[0];
+    expect(item?.diffs.map((diff) => diff.kind)).toEqual(["moved"]);
+    expect(item?.addedLeafIds).toEqual([]);
+    expect(item?.removedLeafIds).toEqual([]);
+  });
+
+  test("source updates treat requestedPath moves out of scope as remove plus add", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const sourceService = createSourceService();
+
+    const added = await sourceService.addSource(repoPath, { path: "skills/browse" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await fs.rename(
+      path.join(repoPath, "skills", "browse"),
+      path.join(repoPath, "skills", "outside"),
+    );
+
+    const updated = await sourceService.updateSources([added.data.manifest.id]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+
+    const item = updated.data.updated[0];
+    expect(item?.diffs.map((diff) => diff.kind)).toEqual(["removed", "added"]);
+  });
+
+  test("source updates classify invalidated leafs separately from removals", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const sourceService = createSourceService();
+
+    const added = await sourceService.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await writeRepoFiles(repoPath, {
+      "browse/SKILL.md": "Broken now",
+    });
+
+    const updated = await sourceService.updateSources([added.data.manifest.id]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+
+    const item = updated.data.updated[0];
+    expect(item?.diffs.map((diff) => diff.kind)).toEqual(["invalidated"]);
+    expect(item?.invalidatedLeafIds).toEqual([`${added.data.manifest.id}:browse`]);
+    expect(item?.removedLeafIds).toEqual([]);
   });
 });

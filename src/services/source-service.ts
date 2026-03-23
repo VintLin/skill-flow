@@ -1,8 +1,12 @@
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   DeploymentTargetName,
   LockFile,
   Result,
+  SourceUpdateDiff,
+  SourceUpdateResult,
   SourceKind,
   SourceLockRecord,
   SourceManifestRecord,
@@ -124,31 +128,13 @@ export class SourceService {
     }, snapshot.warnings);
   }
 
-  async updateSources(sourceIds?: string[]): Promise<
-    Result<
-      {
-        updated: Array<{
-          sourceId: string;
-          changed: boolean;
-          addedLeafIds: string[];
-          removedLeafIds: string[];
-          invalidatedLeafIds: string[];
-        }>;
-      }
-    >
-  > {
+  async updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
     const { manifest, lockFile } = await this.store.readState();
     const selectedIds = sourceIds?.length
       ? sourceIds
       : manifest.sources.map((source) => source.id);
 
-    const updated: Array<{
-      sourceId: string;
-      changed: boolean;
-      addedLeafIds: string[];
-      removedLeafIds: string[];
-      invalidatedLeafIds: string[];
-    }> = [];
+    const updated: SourceUpdateResult["updated"] = [];
 
     for (const sourceId of selectedIds) {
       const source = manifest.sources.find((item) => item.id === sourceId);
@@ -161,9 +147,64 @@ export class SourceService {
         });
       }
 
-      let changed: boolean;
       try {
-        changed = await this.updateSource(source, currentLock);
+        const sourceChanged = await this.updateSource(source, currentLock);
+        const sourceMeta = {
+          ...(source.requestedPath ? { requestedPath: source.requestedPath } : {}),
+          ...(source.selectionMode ? { selectionMode: source.selectionMode } : {}),
+        };
+        if (!sourceChanged) {
+          updated.push({
+            sourceId,
+            changed: false,
+            addedLeafIds: [],
+            removedLeafIds: [],
+            invalidatedLeafIds: [],
+            diffs: [],
+            ...sourceMeta,
+          });
+          continue;
+        }
+
+        const snapshot = await this.buildSnapshot(
+          source.kind,
+          source.id,
+          source.locator,
+          source.displayName,
+          currentLock.checkoutPath,
+          source.requestedPath,
+          {},
+          { allowEmptyLeafs: true },
+        );
+
+        if (!snapshot.ok) {
+          return fail(snapshot.errors, snapshot.warnings);
+        }
+
+        const diff = this.buildSourceUpdateDiff(
+          source,
+          lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId),
+          snapshot.data.leafs,
+          snapshot.data.lock.invalidLeafs,
+        );
+
+        lockFile.sources = lockFile.sources.map((item) =>
+          item.id === sourceId ? snapshot.data.lock : item,
+        );
+        lockFile.leafInventory = [
+          ...lockFile.leafInventory.filter((leaf) => leaf.sourceId !== sourceId),
+          ...snapshot.data.leafs,
+        ];
+
+        updated.push({
+          sourceId,
+          changed: sourceChanged,
+          addedLeafIds: diff.addedLeafIds,
+          removedLeafIds: diff.removedLeafIds,
+          invalidatedLeafIds: diff.invalidatedLeafIds,
+          diffs: diff.diffs,
+          ...sourceMeta,
+        });
       } catch (error) {
         return fail({
           code:
@@ -175,62 +216,6 @@ export class SourceService {
           message: `Unable to update skills group id '${sourceId}': ${String(error)}`,
         });
       }
-
-      if (!changed) {
-        updated.push({
-          sourceId,
-          changed: false,
-          addedLeafIds: [],
-          removedLeafIds: [],
-          invalidatedLeafIds: [],
-        });
-        continue;
-      }
-
-      const snapshot = await this.buildSnapshot(
-        source.kind,
-        source.id,
-        source.locator,
-        source.displayName,
-        currentLock.checkoutPath,
-        source.requestedPath,
-        {},
-        { allowEmptyLeafs: true },
-      );
-
-      if (!snapshot.ok) {
-        return fail(snapshot.errors, snapshot.warnings);
-      }
-
-      const previousLeafs = lockFile.leafInventory.filter(
-        (leaf) => leaf.sourceId === sourceId,
-      );
-      const previousLeafIds = new Set(previousLeafs.map((leaf) => leaf.id));
-      const nextLeafIds = new Set(snapshot.data.leafs.map((leaf) => leaf.id));
-      const previousInvalidPaths = new Set(
-        currentLock.invalidLeafs.map((leaf) => leaf.path),
-      );
-      const nextInvalidPaths = new Set(
-        snapshot.data.lock.invalidLeafs.map((leaf) => leaf.path),
-      );
-
-      lockFile.sources = lockFile.sources.map((item) =>
-        item.id === sourceId ? snapshot.data.lock : item,
-      );
-      lockFile.leafInventory = [
-        ...lockFile.leafInventory.filter((leaf) => leaf.sourceId !== sourceId),
-        ...snapshot.data.leafs,
-      ];
-
-      updated.push({
-        sourceId,
-        changed: true,
-        addedLeafIds: [...nextLeafIds].filter((id) => !previousLeafIds.has(id)),
-        removedLeafIds: [...previousLeafIds].filter((id) => !nextLeafIds.has(id)),
-        invalidatedLeafIds: [...nextInvalidPaths].filter(
-          (value) => !previousInvalidPaths.has(value),
-        ),
-      });
     }
 
     await this.store.writeState(manifest, lockFile);
@@ -378,6 +363,207 @@ export class SourceService {
     );
 
     return hasGeneratedLeafs || hasLegacyTargetNames;
+  }
+
+  private buildSourceUpdateDiff(
+    source: SourceManifestRecord,
+    previousLeafs: LockFile["leafInventory"],
+    nextLeafs: LockFile["leafInventory"],
+    nextInvalidLeafs: SourceLockRecord["invalidLeafs"],
+  ): {
+    diffs: SourceUpdateDiff[];
+    addedLeafIds: string[];
+    removedLeafIds: string[];
+    invalidatedLeafIds: string[];
+  } {
+    const requestedPath = this.normalizeRequestedPath(source.requestedPath);
+    const requestedPathOption = requestedPath ? { requestedPath } : {};
+    const diffs: SourceUpdateDiff[] = [];
+    const addedLeafIds: string[] = [];
+    const removedLeafIds: string[] = [];
+    const invalidatedLeafIds: string[] = [];
+    const matchedPreviousIds = new Set<string>();
+    const matchedNextIds = new Set<string>();
+
+    const nextById = new Map(nextLeafs.map((leaf) => [leaf.id, leaf] as const));
+    const nextInvalidPaths = new Set(nextInvalidLeafs.map((leaf) => leaf.path));
+
+    for (const previousLeaf of previousLeafs) {
+      const nextLeaf = nextById.get(previousLeaf.id);
+      if (!nextLeaf || previousLeaf.contentHash === nextLeaf.contentHash) {
+        continue;
+      }
+
+      diffs.push(
+        this.createDiffItem("changed", source.id, nextLeaf, {
+          ...requestedPathOption,
+          previousLeafId: previousLeaf.id,
+          previousRelativePath: previousLeaf.relativePath,
+          previousContentHash: previousLeaf.contentHash,
+        }),
+      );
+      matchedPreviousIds.add(previousLeaf.id);
+      matchedNextIds.add(nextLeaf.id);
+    }
+
+    const previousByHash = new Map<string, LockFile["leafInventory"]>();
+    const nextByHash = new Map<string, LockFile["leafInventory"]>();
+    for (const previousLeaf of previousLeafs) {
+      if (matchedPreviousIds.has(previousLeaf.id)) {
+        continue;
+      }
+      const list = previousByHash.get(previousLeaf.contentHash) ?? [];
+      list.push(previousLeaf);
+      previousByHash.set(previousLeaf.contentHash, list);
+    }
+    for (const nextLeaf of nextLeafs) {
+      if (matchedNextIds.has(nextLeaf.id)) {
+        continue;
+      }
+      const list = nextByHash.get(nextLeaf.contentHash) ?? [];
+      list.push(nextLeaf);
+      nextByHash.set(nextLeaf.contentHash, list);
+    }
+
+    for (const contentHash of [...previousByHash.keys()].sort()) {
+      const previousGroup = previousByHash.get(contentHash) ?? [];
+      const nextGroup = nextByHash.get(contentHash) ?? [];
+      if (previousGroup.length !== 1 || nextGroup.length !== 1) {
+        continue;
+      }
+
+      const previousLeaf = previousGroup[0]!;
+      const nextLeaf = nextGroup[0]!;
+      if (
+        previousLeaf.id === nextLeaf.id ||
+        !this.canClassifyAsMoved(requestedPath, previousLeaf.relativePath, nextLeaf.relativePath)
+      ) {
+        continue;
+      }
+
+      diffs.push(
+        this.createDiffItem("moved", source.id, nextLeaf, {
+          ...requestedPathOption,
+          previousLeafId: previousLeaf.id,
+          previousRelativePath: previousLeaf.relativePath,
+          previousContentHash: previousLeaf.contentHash,
+        }),
+      );
+      matchedPreviousIds.add(previousLeaf.id);
+      matchedNextIds.add(nextLeaf.id);
+    }
+
+    for (const previousLeaf of previousLeafs) {
+      if (matchedPreviousIds.has(previousLeaf.id)) {
+        continue;
+      }
+
+      if (nextInvalidPaths.has(previousLeaf.relativePath)) {
+        diffs.push(
+          this.createDiffItem("invalidated", source.id, previousLeaf, {
+            ...requestedPathOption,
+            previousLeafId: previousLeaf.id,
+            previousRelativePath: previousLeaf.relativePath,
+            previousContentHash: previousLeaf.contentHash,
+          }),
+        );
+        invalidatedLeafIds.push(previousLeaf.id);
+        matchedPreviousIds.add(previousLeaf.id);
+      }
+    }
+
+    for (const previousLeaf of previousLeafs) {
+      if (matchedPreviousIds.has(previousLeaf.id)) {
+        continue;
+      }
+
+      diffs.push(
+        this.createDiffItem("removed", source.id, previousLeaf, {
+          ...requestedPathOption,
+          previousLeafId: previousLeaf.id,
+          previousRelativePath: previousLeaf.relativePath,
+          previousContentHash: previousLeaf.contentHash,
+        }),
+      );
+      removedLeafIds.push(previousLeaf.id);
+      matchedPreviousIds.add(previousLeaf.id);
+    }
+
+    for (const nextLeaf of nextLeafs) {
+      if (matchedNextIds.has(nextLeaf.id)) {
+        continue;
+      }
+
+      diffs.push(this.createDiffItem("added", source.id, nextLeaf, requestedPathOption));
+      addedLeafIds.push(nextLeaf.id);
+      matchedNextIds.add(nextLeaf.id);
+    }
+
+    return {
+      diffs,
+      addedLeafIds,
+      removedLeafIds,
+      invalidatedLeafIds,
+    };
+  }
+
+  private createDiffItem(
+    kind: SourceUpdateDiff["kind"],
+    sourceId: string,
+    leaf: LockFile["leafInventory"][number],
+    extras: {
+      requestedPath?: string;
+      previousLeafId?: string;
+      previousRelativePath?: string;
+      previousContentHash?: string;
+    } = {},
+  ): SourceUpdateDiff {
+    return {
+      kind,
+      sourceId,
+      leafId: leaf.id,
+      relativePath: leaf.relativePath,
+      contentHash: leaf.contentHash,
+      ...(extras.requestedPath ? { requestedPath: extras.requestedPath } : {}),
+      ...(extras.previousLeafId ? { previousLeafId: extras.previousLeafId } : {}),
+      ...(extras.previousRelativePath ? { previousRelativePath: extras.previousRelativePath } : {}),
+      ...(extras.previousContentHash ? { previousContentHash: extras.previousContentHash } : {}),
+    };
+  }
+
+  private canClassifyAsMoved(
+    requestedPath: string | undefined,
+    previousRelativePath: string,
+    nextRelativePath: string,
+  ): boolean {
+    if (!requestedPath) {
+      return true;
+    }
+
+    return (
+      this.isWithinRequestedPath(previousRelativePath, requestedPath) &&
+      this.isWithinRequestedPath(nextRelativePath, requestedPath)
+    );
+  }
+
+  private normalizeRequestedPath(requestedPath?: string): string | undefined {
+    if (!requestedPath) {
+      return undefined;
+    }
+
+    const normalized = requestedPath.replace(/^\.\/+/, "").replace(/\/+$/, "");
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private isWithinRequestedPath(relativePath: string, requestedPath?: string): boolean {
+    const normalizedPath = this.normalizeRequestedPath(requestedPath);
+    if (!normalizedPath) {
+      return true;
+    }
+
+    return (
+      relativePath === normalizedPath || relativePath.startsWith(`${normalizedPath}/`)
+    );
   }
 
   private async buildSnapshot(
@@ -616,11 +802,11 @@ export class SourceService {
     leafs: LockFile["leafInventory"],
     requestedPath?: string,
   ): LockFile["leafInventory"] {
-    if (!requestedPath) {
+    const normalizedPath = this.normalizeRequestedPath(requestedPath);
+    if (!normalizedPath) {
       return leafs;
     }
 
-    const normalizedPath = requestedPath.replace(/^\.\/+/, "").replace(/\/+$/, "");
     return leafs.filter(
       (leaf) =>
         leaf.relativePath === normalizedPath ||
@@ -661,8 +847,7 @@ export class SourceService {
     currentLock: SourceLockRecord,
   ): Promise<boolean> {
     if (source.kind === "local") {
-      const contentHash = await hashDirectory(currentLock.checkoutPath);
-      return contentHash !== currentLock.contentHash;
+      return this.refreshLocalSourceCheckout(source, currentLock);
     }
 
     if (source.kind === "git") {
@@ -692,6 +877,46 @@ export class SourceService {
     }
 
     return false;
+  }
+
+  private async refreshLocalSourceCheckout(
+    source: SourceManifestRecord,
+    currentLock: SourceLockRecord,
+  ): Promise<boolean> {
+    const tempCheckoutPath = `${currentLock.checkoutPath}.${process.pid}.${crypto.randomUUID()}.refresh`;
+    const backupPath = `${currentLock.checkoutPath}.${process.pid}.${crypto.randomUUID()}.backup`;
+
+    try {
+      await copyDirectory(source.locator, tempCheckoutPath);
+      const nextHash = await hashDirectory(tempCheckoutPath);
+      const checkoutExists = await pathExists(currentLock.checkoutPath);
+      const currentHash =
+        checkoutExists ? await hashDirectory(currentLock.checkoutPath) : undefined;
+      if (checkoutExists && nextHash === currentLock.contentHash && currentHash === nextHash) {
+        await removePath(tempCheckoutPath);
+        return false;
+      }
+
+      if (checkoutExists) {
+        await fs.rename(currentLock.checkoutPath, backupPath);
+        try {
+          await fs.rename(tempCheckoutPath, currentLock.checkoutPath);
+        } catch (error) {
+          await fs.rename(backupPath, currentLock.checkoutPath).catch(() => {});
+          throw error;
+        } finally {
+          await removePath(backupPath).catch(() => {});
+        }
+      } else {
+        await fs.rename(tempCheckoutPath, currentLock.checkoutPath);
+      }
+
+      return true;
+    } catch (error) {
+      await removePath(tempCheckoutPath).catch(() => {});
+      await removePath(backupPath).catch(() => {});
+      throw error;
+    }
   }
 
   private async readSourceSnapshot(
