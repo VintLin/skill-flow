@@ -1,7 +1,7 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { createChannelAdapters } from "../adapters/channel-adapters.js";
 import type {
+  DraftBinding,
   DeploymentAction,
   DeploymentPlan,
   LeafRecord,
@@ -17,7 +17,7 @@ import type {
   WorkflowSummary,
 } from "../domain/types.js";
 import { StateStore } from "../state/store.js";
-import { ensureDir, hashDirectory, pathExists, readJsonFile, removePath, writeJsonFile } from "../utils/fs.js";
+import { ensureDir, pathExists, readJsonFile, removePath, writeJsonFile } from "../utils/fs.js";
 import { getBuiltinGitSources } from "../utils/builtin-git-sources.js";
 import { fetchGitHubSkillPaths } from "../utils/github-catalog.js";
 import { parseGitHubRepo } from "../utils/naming.js";
@@ -25,6 +25,7 @@ import { fail, ok } from "../utils/result.js";
 import { searchClawHubSkills } from "../utils/clawhub.js";
 import { deriveDisplayName, deriveSourceId } from "../utils/source-id.js";
 import { DeploymentApplier } from "./deployment-applier.js";
+import { ConfigCoordinator } from "./config-coordinator.js";
 import { DeploymentPlanner } from "./deployment-planner.js";
 import { DoctorService } from "./doctor-service.js";
 import { InventoryService } from "./inventory-service.js";
@@ -36,22 +37,46 @@ import {
   type BootstrapEvent,
 } from "./workspace-bootstrap-service.js";
 
-export type DraftBinding = {
-  enabledTargets: DeploymentTargetName[];
-  selectedLeafIds: string[];
-};
-
 export class SkillFlowApp {
-  readonly store = new StateStore();
-  readonly inventoryService = new InventoryService();
-  readonly sourceService = new SourceService(this.store, this.inventoryService);
-  readonly planner = new DeploymentPlanner(createChannelAdapters());
-  readonly applier = new DeploymentApplier();
-  readonly doctorService = new DoctorService();
-  readonly workflowService = new WorkflowService();
-  readonly workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
+  readonly store: StateStore;
+  readonly inventoryService: InventoryService;
+  readonly sourceService: SourceService;
+  readonly planner: DeploymentPlanner;
+  readonly applier: DeploymentApplier;
+  readonly doctorService: DoctorService;
+  readonly workflowService: WorkflowService;
+  readonly workspaceBootstrapService: WorkspaceBootstrapService;
+  readonly configCoordinator: ConfigCoordinator;
+  private mutationQueue: Promise<void> = Promise.resolve();
+
+  constructor() {
+    this.store = new StateStore();
+    this.inventoryService = new InventoryService();
+    this.sourceService = new SourceService(this.store, this.inventoryService);
+    this.planner = new DeploymentPlanner(createChannelAdapters());
+    this.applier = new DeploymentApplier();
+    this.doctorService = new DoctorService();
+    this.workflowService = new WorkflowService();
+    this.workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
+    this.configCoordinator = new ConfigCoordinator({
+      store: this.store,
+      doctorService: this.doctorService,
+      workflowService: this.workflowService,
+      getAvailableTargets: () => this.getAvailableTargets(),
+      pruneMissingCheckouts: () => this.pruneMissingCheckoutsImpl(),
+      updateSources: (sourceIds) => this.updateSourcesImpl(sourceIds),
+      getConfigData: () => this.getConfigDataImpl(),
+    });
+  }
 
   async addSource(
+    locator: string,
+    options?: AddSourceOptions,
+  ): Promise<Result<SourceSnapshot>> {
+    return this.runSerializedMutation(() => this.addSourceImpl(locator, options));
+  }
+
+  private async addSourceImpl(
     locator: string,
     options?: AddSourceOptions,
   ): Promise<Result<SourceSnapshot>> {
@@ -61,9 +86,7 @@ export class SkillFlowApp {
       return result;
     }
 
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     const source = manifest.sources.find((item) => item.id === result.data.manifest.id);
     if (!source) {
       return result;
@@ -83,7 +106,7 @@ export class SkillFlowApp {
         source.requestedPath,
       ),
     });
-    await this.store.writeManifest(manifest);
+    await this.store.writeState(manifest, lockFile);
 
     if (addOptions.project === false) {
       return result;
@@ -94,7 +117,7 @@ export class SkillFlowApp {
       return fail(plan.errors, [...result.warnings, ...plan.warnings]);
     }
     const applied = await this.applier.applyPlan(lockFile, plan.data.actions);
-    await this.store.writeLock(lockFile);
+    await this.store.writeState(manifest, lockFile);
     if (!applied.ok) {
       return fail(applied.errors, [...result.warnings, ...plan.warnings, ...applied.warnings]);
     }
@@ -103,9 +126,7 @@ export class SkillFlowApp {
   }
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     const normalizedQuery = query.trim().toLowerCase();
     const warnings: Warning[] = [];
     const localKeys = new Set<string>();
@@ -204,39 +225,59 @@ export class SkillFlowApp {
   }
 
   async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[] }>> {
+    return this.runSerializedMutation(() => this.listWorkflowsImpl());
+  }
+
+  private async listWorkflowsImpl(): Promise<Result<{ summaries: WorkflowSummary[] }>> {
+    const pruned = await this.pruneMissingCheckoutsImpl();
+    if (!pruned.ok) {
+      return fail(pruned.errors, pruned.warnings);
+    }
     const reconciled = await this.sourceService.reconcileInventory(undefined, {
       force: true,
     });
     if (!reconciled.ok) {
       return fail(reconciled.errors, reconciled.warnings);
     }
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     await this.persistNormalizedBindings(manifest, lockFile);
-    return ok({
-      summaries: this.workflowService.getSummaries(manifest, lockFile),
-    });
+    return ok(
+      {
+        summaries: this.workflowService.getSummaries(manifest, lockFile),
+      },
+      pruned.warnings,
+    );
   }
 
   async getConfigData(): Promise<
     Result<{ manifest: Manifest; lockFile: LockFile; summaries: WorkflowSummary[] }>
   > {
+    return this.runSerializedMutation(() => this.getConfigDataImpl());
+  }
+
+  private async getConfigDataImpl(): Promise<
+    Result<{ manifest: Manifest; lockFile: LockFile; summaries: WorkflowSummary[] }>
+  > {
+    const pruned = await this.pruneMissingCheckoutsImpl();
+    if (!pruned.ok) {
+      return fail(pruned.errors, pruned.warnings);
+    }
     const reconciled = await this.sourceService.reconcileInventory(undefined, {
       force: true,
     });
     if (!reconciled.ok) {
       return fail(reconciled.errors, reconciled.warnings);
     }
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     await this.persistNormalizedBindings(manifest, lockFile);
-    return ok({
-      manifest,
-      lockFile,
-      summaries: this.workflowService.getSummaries(manifest, lockFile),
-    });
+    return ok(
+      {
+        manifest,
+        lockFile,
+        summaries: this.workflowService.getSummaries(manifest, lockFile),
+      },
+      pruned.warnings,
+    );
   }
 
   async bootstrapWorkspaceState(
@@ -252,103 +293,35 @@ export class SkillFlowApp {
       importedSourceIds: string[];
     }>
   > {
-    onEvent?.({
-      phase: "detect-targets",
-      level: "info",
-      message: "Detecting available agent targets...",
-    });
-    const availableTargets = await this.getAvailableTargets();
+    return this.runSerializedMutation(() => this.bootstrapWorkspaceStateImpl(onEvent));
+  }
 
-    await this.store.init();
-    let manifest = await this.store.readManifest();
-    let lockFile = await this.store.readLock();
-    const detected = await this.workspaceBootstrapService.detectUnmanagedExternalSkills(
-      manifest,
-      lockFile,
-      onEvent,
-    );
-
-    const importedSourceIds: string[] = [];
-    if (detected.length > 0) {
-      onEvent?.({
-        phase: "import-unmanaged-skills",
-        level: "info",
-        message: `Importing ${detected.length} unmanaged skill${detected.length === 1 ? "" : "s"} into skill-flow...`,
-      });
+  private async bootstrapWorkspaceStateImpl(
+    onEvent?: (event: BootstrapEvent) => void,
+  ): Promise<
+    Result<{
+      availableTargets: DeploymentTargetName[];
+      manifest: Manifest;
+      lockFile: LockFile;
+      summaries: WorkflowSummary[];
+      initialDrafts: Record<string, DraftBinding>;
+      audit: DoctorReport;
+      importedSourceIds: string[];
+    }>
+  > {
+    const boot = await this.configCoordinator.bootstrapWorkspaceState(onEvent);
+    if (!boot.ok) {
+      return fail(boot.errors, boot.warnings);
     }
-    for (const item of detected) {
-      const imported = await this.addSource(item.path, {
-        enabledTargets: item.importedFromTargets,
-        selectionMode: "all",
-        project: false,
-        sourceIdOverride: item.sourceId,
-        displayNameOverride: item.displayName,
-        importedFromTargets: item.importedFromTargets,
-        importMode: "bootstrap-detected",
-        ...(item.originLocator ? { originLocator: item.originLocator } : {}),
-        ...(item.originRequestedPath ? { originRequestedPath: item.originRequestedPath } : {}),
-        ...(item.originBranch ? { originBranch: item.originBranch } : {}),
-      });
-      if (!imported.ok) {
-        return fail(imported.errors, imported.warnings);
-      }
-      importedSourceIds.push(imported.data.manifest.id);
-      onEvent?.({
-        phase: "import-unmanaged-skills",
-        level: "success",
-        message: `Imported ${imported.data.manifest.displayName}.`,
-      });
-    }
-
-    onEvent?.({
-      phase: "refresh-sources",
-      level: "info",
-      message: "Refreshing managed inventory...",
-    });
-    const reconciled = await this.sourceService.reconcileInventory(undefined, { force: true });
-    if (!reconciled.ok) {
-      return fail(reconciled.errors, reconciled.warnings);
-    }
-
-    manifest = await this.store.readManifest();
-    lockFile = await this.store.readLock();
-    onEvent?.({
-      phase: "normalize-bindings",
-      level: "info",
-      message: "Normalizing config state...",
-    });
-    await this.persistNormalizedBindings(manifest, lockFile);
-
-    onEvent?.({
-      phase: "audit-projections",
-      level: "info",
-      message: "Auditing current projections...",
-    });
-    const audit = await this.doctorService.run(manifest, lockFile);
-    if (!audit.ok) {
-      return fail(audit.errors, audit.warnings);
-    }
-
-    onEvent?.({
-      phase: "build-summaries",
-      level: "info",
-      message: "Building config summaries...",
-    });
-    const summaries = this.workflowService.getSummaries(manifest, lockFile, audit.data);
-    onEvent?.({
-      phase: "done",
-      level: "success",
-      message: "Config bootstrap complete.",
-    });
 
     return ok({
-      availableTargets,
-      manifest,
-      lockFile,
-      summaries,
-      initialDrafts: this.buildInitialDrafts(summaries),
-      audit: audit.data,
-      importedSourceIds,
+      availableTargets: boot.data.availableTargets,
+      manifest: boot.data.manifest,
+      lockFile: boot.data.lockFile,
+      summaries: boot.data.summaries,
+      initialDrafts: boot.data.initialDrafts,
+      audit: boot.data.audit,
+      importedSourceIds: [],
     });
   }
 
@@ -373,9 +346,7 @@ export class SkillFlowApp {
     // config TUI state flow:
     //   draft -> previewDraft() -> plan only
     //   draft -> applyDraft()   -> plan + filesystem + manifest/lock writes
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
     const plan = await this.planForAffectedSources(
@@ -397,15 +368,20 @@ export class SkillFlowApp {
     sourceId: string,
     draft: DraftBinding,
   ): Promise<Result<{ actions: DeploymentAction[]; draft: DraftBinding }>> {
+    return this.runSerializedMutation(() => this.applyDraftImpl(sourceId, draft));
+  }
+
+  private async applyDraftImpl(
+    sourceId: string,
+    draft: DraftBinding,
+  ): Promise<Result<{ actions: DeploymentAction[]; draft: DraftBinding }>> {
     const reconciled = await this.sourceService.reconcileInventory([sourceId], {
       force: true,
     });
     if (!reconciled.ok) {
       return fail(reconciled.errors, reconciled.warnings);
     }
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
 
@@ -415,8 +391,7 @@ export class SkillFlowApp {
     }
 
     const applyResult = await this.applier.applyPlan(lockFile, plan.data.actions);
-    await this.store.writeManifest(prepared.manifest);
-    await this.store.writeLock(lockFile);
+    await this.store.writeState(prepared.manifest, lockFile);
 
     if (!applyResult.ok) {
       return fail(
@@ -444,19 +419,43 @@ export class SkillFlowApp {
       }
     >
   > {
-    const reconciled = await this.sourceService.reconcileInventory(sourceIds, {
+    return this.runSerializedMutation(() => this.updateSourcesImpl(sourceIds));
+  }
+
+  private async updateSourcesImpl(sourceIds?: string[]): Promise<
+    Result<
+      {
+        updated: Array<{
+          sourceId: string;
+          changed: boolean;
+          addedLeafIds: string[];
+          removedLeafIds: string[];
+          invalidatedLeafIds: string[];
+        }>;
+      }
+    >
+  > {
+    const pruned = await this.pruneMissingCheckoutsImpl();
+    if (!pruned.ok) {
+      return fail(pruned.errors, pruned.warnings);
+    }
+    const requestedIds = sourceIds?.filter((sourceId) => !pruned.data.removedSourceIds.includes(sourceId));
+    if (sourceIds?.length && requestedIds?.length === 0) {
+      return ok({ updated: [] }, pruned.warnings);
+    }
+
+    const reconciled = await this.sourceService.reconcileInventory(requestedIds, {
       force: true,
     });
     if (!reconciled.ok) {
       return fail(reconciled.errors, reconciled.warnings);
     }
-    const updated = await this.sourceService.updateSources(sourceIds);
+    const updated = await this.sourceService.updateSources(requestedIds);
     if (!updated.ok) {
       return updated;
     }
 
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     this.applySelectionModeForUpdatedSources(manifest, lockFile, updated.data.updated);
     await this.persistNormalizedBindings(manifest, lockFile);
     const activeSourceIds = manifest.sources
@@ -471,20 +470,30 @@ export class SkillFlowApp {
       await this.applier.applyPlan(lockFile, plan.data.actions);
     }
 
-    await this.store.writeLock(lockFile);
-    return updated;
+    await this.store.writeState(manifest, lockFile);
+    return ok(updated.data, [...pruned.warnings, ...updated.warnings]);
   }
 
   async doctor(): Promise<Result<DoctorReport>> {
+    return this.runSerializedMutation(() => this.doctorImpl());
+  }
+
+  private async doctorImpl(): Promise<Result<DoctorReport>> {
+    const pruned = await this.pruneMissingCheckoutsImpl();
+    if (!pruned.ok) {
+      return fail(pruned.errors, pruned.warnings);
+    }
     const reconciled = await this.sourceService.reconcileInventory();
     if (!reconciled.ok) {
       return fail(reconciled.errors, reconciled.warnings);
     }
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     await this.persistNormalizedBindings(manifest, lockFile);
-    return this.doctorService.run(manifest, lockFile);
+    const doctor = await this.doctorService.run(manifest, lockFile);
+    if (!doctor.ok) {
+      return doctor;
+    }
+    return ok(doctor.data, [...pruned.warnings, ...doctor.warnings]);
   }
 
   async uninstall(sourceIds: string[]): Promise<
@@ -494,9 +503,17 @@ export class SkillFlowApp {
       warnings: string[];
     }>
   > {
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    return this.runSerializedMutation(() => this.uninstallImpl(sourceIds));
+  }
+
+  private async uninstallImpl(sourceIds: string[]): Promise<
+    Result<{
+      removed: string[];
+      removedRefs: Array<{ id: string; locator: string; displayName: string }>;
+      warnings: string[];
+    }>
+  > {
+    const { manifest, lockFile } = await this.store.readState();
     const warnings: string[] = [];
     const removedRefs = sourceIds
       .map((sourceId) => manifest.sources.find((source) => source.id === sourceId))
@@ -511,31 +528,36 @@ export class SkillFlowApp {
         if (!(await pathExists(deployment.targetPath))) {
           continue;
         }
-
-        if (deployment.strategy === "symlink") {
-          const stats = await fs.lstat(deployment.targetPath);
-          if (stats.isSymbolicLink()) {
-            await removePath(deployment.targetPath);
-          } else {
-            warnings.push(
-              `Skipped ${deployment.targetPath} because it no longer looks like a managed symlink.`,
-            );
-          }
-          continue;
-        }
-
-        const currentHash = await hashDirectory(deployment.targetPath);
-        if (currentHash === deployment.contentHash) {
+        try {
           await removePath(deployment.targetPath);
-        } else {
-          warnings.push(
-            `Skipped ${deployment.targetPath} because the copied skill has drifted from saved state.`,
-          );
+        } catch (error) {
+          warnings.push(`Unable to remove ${deployment.targetPath}: ${String(error)}`);
         }
       }
     }
 
-    const removed = await this.sourceService.removeSource(sourceIds);
+    if (warnings.length > 0) {
+      return fail(
+        {
+          code: "GROUP_DELETE_INCOMPLETE",
+          message: `Unable to fully delete ${warnings.length} managed path${warnings.length === 1 ? "" : "s"}.`,
+        },
+        warnings.map((message) => ({
+          code: "GROUP_DELETE_PATH_FAILED",
+          message,
+        })),
+      );
+    }
+
+    let removed;
+    try {
+      removed = await this.sourceService.removeSource(sourceIds);
+    } catch (error) {
+      return fail({
+        code: "GROUP_DELETE_INCOMPLETE",
+        message: `Unable to fully delete selected skills groups: ${String(error)}`,
+      });
+    }
     if (!removed.ok) {
       return fail(removed.errors, removed.warnings);
     }
@@ -554,6 +576,61 @@ export class SkillFlowApp {
     return { targets };
   }
 
+  private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
+    const { manifest, lockFile } = await this.store.readState();
+    const removedSourceIds: string[] = [];
+    const warnings: Warning[] = [];
+
+    for (const source of lockFile.sources) {
+      if (await pathExists(source.checkoutPath)) {
+        continue;
+      }
+
+      removedSourceIds.push(source.id);
+      warnings.push({
+        code: "SOURCE_CHECKOUT_MISSING",
+        message: `Removed ${source.displayName} because checkout is missing at ${source.checkoutPath}.`,
+      });
+
+      const deployments = lockFile.deployments.filter(
+        (deployment) => deployment.sourceId === source.id,
+      );
+      for (const deployment of deployments) {
+        if (!(await pathExists(deployment.targetPath))) {
+          continue;
+        }
+        try {
+          await removePath(deployment.targetPath);
+        } catch (error) {
+          return fail({
+            code: "SOURCE_CHECKOUT_PRUNE_FAILED",
+            message: `Unable to clean deployment ${deployment.targetPath}: ${String(error)}`,
+          }, warnings);
+        }
+      }
+    }
+
+    if (removedSourceIds.length === 0) {
+      return ok({ removedSourceIds: [] });
+    }
+
+    manifest.sources = manifest.sources.filter((source) => !removedSourceIds.includes(source.id));
+    for (const sourceId of removedSourceIds) {
+      delete manifest.bindings[sourceId];
+    }
+    lockFile.sources = lockFile.sources.filter((source) => !removedSourceIds.includes(source.id));
+    lockFile.leafInventory = lockFile.leafInventory.filter(
+      (leaf) => !removedSourceIds.includes(leaf.sourceId),
+    );
+    lockFile.deployments = lockFile.deployments.filter(
+      (deployment) => !removedSourceIds.includes(deployment.sourceId),
+    );
+
+    await this.store.writeState(manifest, lockFile);
+
+    return ok({ removedSourceIds }, warnings);
+  }
+
   private async persistNormalizedBindings(
     manifest: Manifest,
     lockFile: LockFile,
@@ -562,7 +639,19 @@ export class SkillFlowApp {
       return;
     }
 
-    await this.store.writeManifest(manifest);
+    await this.store.writeState(manifest, lockFile);
+  }
+
+  private async runSerializedMutation<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.mutationQueue.then(
+      () => this.store.withMutationLock(task),
+      () => this.store.withMutationLock(task),
+    );
+    this.mutationQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   private normalizeBindings(manifest: Manifest, lockFile: LockFile): boolean {
@@ -996,20 +1085,6 @@ export class SkillFlowApp {
       return displayName;
     }
     return `${displayName}@${repo.owner}`;
-  }
-
-  private buildInitialDrafts(summaries: WorkflowSummary[]): Record<string, DraftBinding> {
-    return Object.fromEntries(
-      summaries.map((summary) => {
-        const enabledTargets = Object.entries(summary.bindings.targets)
-          .filter(([, value]) => value?.enabled)
-          .map(([target]) => target) as DraftBinding["enabledTargets"];
-        const selectedLeafIds = [...new Set(
-          enabledTargets.flatMap((target) => summary.bindings.targets[target]?.leafIds ?? []),
-        )];
-        return [summary.source.id, { enabledTargets, selectedLeafIds }];
-      }),
-    );
   }
 
   private applySelectionModeForUpdatedSources(

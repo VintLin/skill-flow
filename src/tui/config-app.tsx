@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type {
-  DoctorReport,
-  SourceManifestRecord,
+  ConfigBootStatus,
   DeploymentAction,
   DeploymentTargetName,
+  DoctorReport,
+  DraftBinding,
   WorkflowSummary,
 } from "../domain/types.js";
-import type { DraftBinding, SkillFlowApp } from "../services/skill-flow.js";
+import type { SkillFlowApp } from "../services/skill-flow.js";
 import { TARGET_LABELS, TARGET_ORDER } from "../utils/constants.js";
 import {
   buildProjectedSkillName,
@@ -15,7 +16,6 @@ import {
   parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "../utils/naming.js";
-import { countActions } from "../utils/format.js";
 import {
   getParentSelectionState,
   toggleChild,
@@ -28,6 +28,7 @@ type ConfigAppProps = {
   availableTargets: DeploymentTargetName[];
   summaries: WorkflowSummary[];
   initialDrafts: Record<string, DraftBinding>;
+  bootStatus: ConfigBootStatus;
 };
 
 type ConfigBootstrapState =
@@ -39,10 +40,14 @@ type ConfigBootstrapState =
       summaries: WorkflowSummary[];
       initialDrafts: Record<string, DraftBinding>;
       audit: DoctorReport;
+      bootStatus: ConfigBootStatus;
     }
   | { phase: "error"; logs: string[]; message: string };
 
-type FocusPane = "groups" | "skills" | "targets";
+type FocusPane = "groups" | "detail.agents" | "detail.skills" | "detail.actions";
+type DetailFocus = Exclude<FocusPane, "groups">;
+type ActionName = "update" | "delete";
+type AlertLevel = "error" | "blocked" | "warning";
 
 type PreviewState = {
   actions: DeploymentAction[];
@@ -57,7 +62,32 @@ type SaveState = {
   message: string | undefined;
 };
 
-export type SaveDisplayPhase = "clean" | "dirty" | "saving" | "saved" | "failed";
+type UpdateState = {
+  phase: "idle" | "updating" | "updated" | "failed";
+  message: string | undefined;
+};
+
+type DeleteState = {
+  phase: "idle" | "deleting" | "failed";
+  sourceId: string | undefined;
+  message: string | undefined;
+};
+
+type StatusKind =
+  | "clean"
+  | "saving"
+  | "saved"
+  | "failed"
+  | "updating"
+  | "updated"
+  | "update-failed"
+  | "deleting";
+
+type StatusDisplay = {
+  kind: StatusKind;
+  label: string;
+  color: "green" | "cyan" | "red" | "yellow" | "gray";
+};
 
 type PaneRow = {
   key: string;
@@ -65,6 +95,20 @@ type PaneRow = {
   active: boolean;
   color: "cyan" | "gray" | "green" | "red" | "white" | "yellow" | undefined;
   bold?: boolean;
+};
+
+type AlertItem = {
+  level: AlertLevel;
+  message: string;
+};
+
+type FocusSnapshot = {
+  focus: FocusPane;
+  groupIndex: number;
+  sourceId: string | undefined;
+  agentTarget: DeploymentTargetName | undefined;
+  skillId: string | undefined;
+  action: ActionName;
 };
 
 type ProjectionWarningMap = Record<string, string[]>;
@@ -84,6 +128,7 @@ const EMPTY_PREVIEW: PreviewState = {
 };
 
 const PANE_CHROME_ROWS = 5;
+const UPDATED_FEEDBACK_MS = 1_200;
 
 export function normalizeDraft(draft: DraftBinding): DraftBinding {
   return {
@@ -98,178 +143,350 @@ export function draftsEqual(left: DraftBinding, right: DraftBinding): boolean {
   return JSON.stringify(nextLeft) === JSON.stringify(nextRight);
 }
 
-export function getSaveDisplayPhase(
-  savePhase: SaveState["phase"],
-  isDirty: boolean,
-): SaveDisplayPhase {
-  if (savePhase === "saving") {
-    return "saving";
-  }
-  if (savePhase === "failed") {
-    return "failed";
-  }
-  if (isDirty) {
-    return "dirty";
-  }
-  if (savePhase === "saved") {
-    return "saved";
-  }
-  return "clean";
+export function buildDraftsFromSummaries(
+  summaries: WorkflowSummary[],
+): Record<string, DraftBinding> {
+  return Object.fromEntries(
+    summaries.map((summary) => {
+      const enabledTargets = Object.entries(summary.bindings.targets)
+        .filter(([, value]) => value?.enabled)
+        .map(([target]) => target) as DraftBinding["enabledTargets"];
+      const selectedLeafIds = [
+        ...new Set(
+          enabledTargets.flatMap((target) => summary.bindings.targets[target]?.leafIds ?? []),
+        ),
+      ];
+      return [summary.source.id, normalizeDraft({ enabledTargets, selectedLeafIds })];
+    }),
+  );
 }
 
 export function getPaneViewportCount(paneHeight: number, reservedRows = 0) {
   return Math.max(1, paneHeight - PANE_CHROME_ROWS - reservedRows);
 }
 
-export function getPaneWidths(terminalColumns: number): [number, number, number] {
-  const defaultWidths: [number, number, number] = [34, 52, 42];
-  const minWidths: [number, number, number] = [22, 30, 22];
-  const gapColumns = 2;
-  const available = Math.max(74, terminalColumns - gapColumns);
-  const defaultTotal = defaultWidths.reduce((sum, width) => sum + width, 0);
-  if (available >= defaultTotal) {
-    return defaultWidths;
-  }
-
-  const minTotal = minWidths.reduce((sum, width) => sum + width, 0);
-  if (available <= minTotal) {
-    const left = Math.max(18, Math.floor((available * 22) / minTotal));
-    const middle = Math.max(24, Math.floor((available * 30) / minTotal));
-    const right = Math.max(18, available - left - middle);
-    return [left, middle, right];
-  }
-
-  const extra = available - minTotal;
-  const flexTotal = defaultTotal - minTotal;
-  const left = minWidths[0] + Math.floor((extra * (defaultWidths[0] - minWidths[0])) / flexTotal);
-  const middle =
-    minWidths[1] + Math.floor((extra * (defaultWidths[1] - minWidths[1])) / flexTotal);
-  const right = available - left - middle;
-  return [left, middle, right];
+export function getPaneWidths(terminalColumns: number): [number, number] {
+  const available = Math.max(56, terminalColumns - 1);
+  const left = Math.max(20, Math.min(30, Math.floor(available * 0.28)));
+  return [left, Math.max(32, available - left)];
 }
 
 export function getActionChangeCount(actions: DeploymentAction[]) {
   return actions.filter((action) => action.kind !== "noop").length;
 }
 
-export function buildSaveLabel(phase: SaveDisplayPhase, changeCount: number) {
-  if (phase === "saving") {
-    return "Save · SAVING...";
+export function getStatusDisplay({
+  deleteState,
+  isSelectedDelete,
+  saveState,
+  updateState,
+}: {
+  deleteState: DeleteState;
+  isSelectedDelete: boolean;
+  saveState: SaveState;
+  updateState: UpdateState;
+}): StatusDisplay {
+  if (isSelectedDelete && deleteState.phase === "deleting") {
+    return { kind: "deleting", label: "Deleting", color: "yellow" };
   }
-  if (phase === "saved") {
-    return changeCount > 0 ? `Save · SAVED · ${changeCount} changes` : "Save · SAVED";
+  if (updateState.phase === "updating") {
+    return { kind: "updating", label: "Updating", color: "cyan" };
   }
-  if (phase === "failed") {
-    return "Save · FAILED";
+  if (updateState.phase === "failed") {
+    return { kind: "update-failed", label: "Update Failed", color: "red" };
   }
-  if (phase === "dirty") {
-    return changeCount > 0 ? `Save · DIRTY · ${changeCount} changes` : "Save · DIRTY";
+  if (saveState.phase === "saving") {
+    return { kind: "saving", label: "Saving", color: "cyan" };
   }
-  return "Save";
+  if (saveState.phase === "failed") {
+    return { kind: "failed", label: "Failed", color: "red" };
+  }
+  if (updateState.phase === "updated") {
+    return { kind: "updated", label: "Updated", color: "green" };
+  }
+  if (saveState.phase === "saved") {
+    return { kind: "saved", label: "Saved", color: "green" };
+  }
+  return { kind: "clean", label: "Clean", color: "gray" };
 }
 
-export function buildCommandBar({
+export function buildTopBar({
+  width,
+  isDirty,
   changeCount,
+  statusLabel,
+}: {
+  width: number;
+  isDirty: boolean;
+  changeCount: number;
+  statusLabel: string;
+}) {
+  const parts = [
+    "Skill Flow",
+    "[u] Update",
+    "[d] Delete",
+    `Dirty: ${isDirty ? "Yes" : "No"}`,
+  ];
+  if (width >= 100) {
+    parts.push(`Changes: ${changeCount}`);
+  }
+  parts.push(`Status: ${statusLabel}`);
+  return parts.join("   ");
+}
+
+export function prioritizeAlerts(alerts: AlertItem[]): AlertItem[] {
+  const seen = new Set<string>();
+  const priority: Record<AlertLevel, number> = {
+    error: 0,
+    blocked: 1,
+    warning: 2,
+  };
+  return alerts
+    .filter((alert) => {
+      const key = `${alert.level}:${alert.message}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .sort((left, right) => priority[left.level] - priority[right.level])
+    .slice(0, 2);
+}
+
+export function getInitialDetailFocus({
+  hasAgents,
+  hasSkills,
+}: {
+  hasAgents: boolean;
+  hasSkills: boolean;
+}): DetailFocus {
+  if (hasAgents) {
+    return "detail.agents";
+  }
+  if (hasSkills) {
+    return "detail.skills";
+  }
+  return "detail.actions";
+}
+
+export function moveDetailFocus({
+  actionCursor,
+  agentCount,
+  agentCursor,
+  direction,
   focus,
-  saveFocused,
-  savePhase,
+  skillCount,
+  skillCursor,
 }: {
-  changeCount: number;
-  focus: FocusPane;
-  saveFocused: boolean;
-  savePhase: SaveDisplayPhase;
-}) {
-  const backHint =
-    focus === "groups" ? "Esc/q exit" : "Esc/q back";
-
-  if (focus === "groups") {
-    return `Enter inspect skills  Tab switch pane  Up/Down move  ${backHint}`;
-  }
-
-  if (focus === "skills") {
-    return `Space toggle skill  Enter inspect agents  Tab switch pane  Up/Down move  ${backHint}`;
-  }
-
-  if (saveFocused) {
-    if (savePhase === "saving") {
-      return `Enter wait for save  Tab switch pane  Up/Down move  ${backHint}`;
+  actionCursor: number;
+  agentCount: number;
+  agentCursor: number;
+  direction: -1 | 1;
+  focus: DetailFocus;
+  skillCount: number;
+  skillCursor: number;
+}): {
+  focus: DetailFocus;
+  agentCursor: number;
+  skillCursor: number;
+  actionCursor: number;
+} {
+  if (focus === "detail.agents") {
+    if (direction === -1) {
+      if (agentCount > 0 && agentCursor > 0) {
+        return { focus, agentCursor: agentCursor - 1, skillCursor, actionCursor };
+      }
+      return { focus, agentCursor, skillCursor, actionCursor };
     }
-    if (changeCount > 0) {
-      return `Enter save ${changeCount} changes  Tab switch pane  Up/Down move  ${backHint}`;
+
+    if (agentCount > 0 && agentCursor < agentCount - 1) {
+      return { focus, agentCursor: agentCursor + 1, skillCursor, actionCursor };
     }
-    return `Enter save current state  Tab switch pane  Up/Down move  ${backHint}`;
+    if (skillCount > 0) {
+      return { focus: "detail.skills", agentCursor, skillCursor: 0, actionCursor };
+    }
+    return { focus: "detail.actions", agentCursor, skillCursor, actionCursor: 0 };
   }
 
-  return `Space toggle agent  Enter move to save  Tab switch pane  Up/Down move  ${backHint}`;
+  if (focus === "detail.skills") {
+    if (direction === -1) {
+      if (skillCount > 0 && skillCursor > 0) {
+        return { focus, agentCursor, skillCursor: skillCursor - 1, actionCursor };
+      }
+      if (agentCount > 0) {
+        return {
+          focus: "detail.agents",
+          agentCursor: Math.max(0, agentCount - 1),
+          skillCursor,
+          actionCursor,
+        };
+      }
+      return { focus, agentCursor, skillCursor, actionCursor };
+    }
+
+    if (skillCount > 0 && skillCursor < skillCount - 1) {
+      return { focus, agentCursor, skillCursor: skillCursor + 1, actionCursor };
+    }
+    return { focus: "detail.actions", agentCursor, skillCursor, actionCursor: 0 };
+  }
+
+  if (direction === 1) {
+    if (actionCursor < 1) {
+      return { focus, agentCursor, skillCursor, actionCursor: actionCursor + 1 };
+    }
+    return { focus, agentCursor, skillCursor, actionCursor };
+  }
+
+  if (actionCursor > 0) {
+    return { focus, agentCursor, skillCursor, actionCursor: actionCursor - 1 };
+  }
+  if (skillCount > 0) {
+    return {
+      focus: "detail.skills",
+      agentCursor,
+      skillCursor: Math.max(0, skillCount - 1),
+      actionCursor,
+    };
+  }
+  if (agentCount > 0) {
+    return {
+      focus: "detail.agents",
+      agentCursor: Math.max(0, agentCount - 1),
+      skillCursor,
+      actionCursor,
+    };
+  }
+  return { focus, agentCursor, skillCursor, actionCursor };
 }
 
-export function buildContextBar({
-  blockedCount,
-  changeCount,
-  previewError,
-  previewLoading,
-  savePhase,
-  saveMessage,
-  selectedLeafName,
-  selectedLeafWarnings,
-  skippedLeafs,
-  sourceLabel,
+export function getNextSelectionIndexAfterDelete(currentIndex: number, nextCount: number) {
+  if (nextCount <= 0) {
+    return -1;
+  }
+  return Math.min(currentIndex, nextCount - 1);
+}
+
+export function captureFocusSnapshot({
+  actionCursor,
+  agentCursor,
+  availableTargets,
+  focus,
+  selectedGroupIndex,
+  selectedSummary,
+  skillCursor,
 }: {
-  blockedCount: number;
-  changeCount: number;
-  previewError: string | undefined;
-  previewLoading: boolean;
-  savePhase: SaveDisplayPhase;
-  saveMessage: string | undefined;
-  selectedLeafName: string | undefined;
-  selectedLeafWarnings: string[];
-  skippedLeafs: number;
-  sourceLabel: string;
+  actionCursor: number;
+  agentCursor: number;
+  availableTargets: DeploymentTargetName[];
+  focus: FocusPane;
+  selectedGroupIndex: number;
+  selectedSummary: WorkflowSummary | undefined;
+  skillCursor: number;
+}): FocusSnapshot {
+  return {
+    focus,
+    groupIndex: selectedGroupIndex,
+    sourceId: selectedSummary?.source.id,
+    agentTarget: agentCursor > 0 ? availableTargets[agentCursor - 1] : undefined,
+    skillId:
+      selectedSummary && skillCursor > 0
+        ? selectedSummary.leafs[skillCursor - 1]?.id
+        : undefined,
+    action: actionCursor === 1 ? "delete" : "update",
+  };
+}
+
+export function reconcileFocusAfterReload({
+  availableTargets,
+  nextSummaries,
+  snapshot,
+}: {
+  availableTargets: DeploymentTargetName[];
+  nextSummaries: WorkflowSummary[];
+  snapshot: FocusSnapshot;
 }) {
-  const parts = [sourceLabel];
+  const selectedGroupIndex = nextSummaries.findIndex(
+    (summary) => summary.source.id === snapshot.sourceId,
+  );
+  const fallbackGroupIndex = Math.min(
+    snapshot.groupIndex,
+    Math.max(0, nextSummaries.length - 1),
+  );
+  const resolvedGroupIndex =
+    nextSummaries.length === 0
+      ? -1
+      : selectedGroupIndex >= 0 && nextSummaries[selectedGroupIndex]
+        ? selectedGroupIndex
+        : fallbackGroupIndex;
 
-  if (selectedLeafName) {
-    parts.push(`skill ${selectedLeafName}`);
+  const summary = resolvedGroupIndex >= 0 ? nextSummaries[resolvedGroupIndex] : undefined;
+  const hasAgents = availableTargets.length > 0;
+  const hasSkills = (summary?.leafs.length ?? 0) > 0;
+
+  let focus = snapshot.focus;
+  let agentCursor = 0;
+  let skillCursor = 0;
+  let actionCursor = snapshot.action === "delete" ? 1 : 0;
+
+  if (focus === "detail.agents") {
+    if (hasAgents) {
+      const nextAgentIndex = snapshot.agentTarget
+        ? availableTargets.indexOf(snapshot.agentTarget)
+        : -1;
+      agentCursor = nextAgentIndex >= 0 ? nextAgentIndex + 1 : 0;
+    } else {
+      focus = getInitialDetailFocus({ hasAgents, hasSkills });
+    }
   }
 
-  if (savePhase === "saving") {
-    parts.push("saving changes...");
-    return parts.join(" · ");
+  if (focus === "detail.skills") {
+    if (hasSkills) {
+      const nextSkillIndex =
+        snapshot.skillId && summary
+          ? summary.leafs.findIndex((leaf) => leaf.id === snapshot.skillId)
+          : -1;
+      skillCursor = nextSkillIndex >= 0 ? nextSkillIndex + 1 : 0;
+    } else {
+      focus = getInitialDetailFocus({ hasAgents, hasSkills });
+    }
   }
 
-  if (savePhase === "failed") {
-    parts.push(saveMessage ?? "save failed");
-    return parts.join(" · ");
+  if (focus === "detail.actions") {
+    focus = "detail.actions";
   }
 
-  if (savePhase === "saved") {
-    parts.push(saveMessage ?? "saved");
-    return parts.join(" · ");
-  }
+  return {
+    actionCursor,
+    agentCursor,
+    focus: resolvedGroupIndex >= 0 ? focus : "groups",
+    groupCursor: resolvedGroupIndex,
+    selectedGroupIndex: resolvedGroupIndex,
+    skillCursor,
+  };
+}
 
-  if (previewLoading) {
-    parts.push("planning changes...");
-    return parts.join(" · ");
+export function getRequestedAction({
+  actionCursor,
+  focus,
+  input,
+  keyReturn,
+}: {
+  actionCursor: number;
+  focus: FocusPane;
+  input: string;
+  keyReturn: boolean;
+}): ActionName | undefined {
+  if (input === "u") {
+    return "update";
   }
-
-  if (previewError) {
-    parts.push(`preview failed: ${previewError}`);
-    return parts.join(" · ");
+  if (input === "d") {
+    return "delete";
   }
-
-  if (selectedLeafWarnings.length > 0) {
-    parts.push(`warning: ${selectedLeafWarnings[0]}`);
-    return parts.join(" · ");
+  if (focus === "detail.actions" && keyReturn) {
+    return actionCursor === 1 ? "delete" : "update";
   }
-
-  if (skippedLeafs > 0) {
-    parts.push(`skipped ${skippedLeafs} invalid or duplicate skills`);
-    return parts.join(" · ");
-  }
-
-  parts.push(`changes ${changeCount}`);
-  parts.push(`blocked ${blockedCount}`);
-  return parts.join(" · ");
+  return undefined;
 }
 
 export function buildProjectionWarningMap({
@@ -425,10 +642,15 @@ export function ConfigApp({
   availableTargets,
   summaries,
   initialDrafts,
+  bootStatus,
 }: ConfigAppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const previewRequestIds = useRef<Record<string, number>>({});
+  const saveRequestIds = useRef<Record<string, number>>({});
+  const updateRequestIds = useRef<Record<string, number>>({});
+  const updatedTimers = useRef<Record<string, NodeJS.Timeout | undefined>>({});
+  const [summaryList, setSummaryList] = useState(summaries);
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(
     summaries.length > 0 ? 0 : -1,
   );
@@ -436,29 +658,34 @@ export function ConfigApp({
   const [focus, setFocus] = useState<FocusPane>("groups");
   const [skillCursor, setSkillCursor] = useState(0);
   const [targetCursor, setTargetCursor] = useState(0);
+  const [actionCursor, setActionCursor] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, DraftBinding>>(initialDrafts);
   const [savedDrafts, setSavedDrafts] = useState<Record<string, DraftBinding>>(initialDrafts);
-  const [previewBySourceId, setPreviewBySourceId] = useState<
-    Record<string, PreviewState>
+  const [previewBySourceId, setPreviewBySourceId] = useState<Record<string, PreviewState>>({});
+  const [saveStateBySourceId, setSaveStateBySourceId] = useState<Record<string, SaveState>>({});
+  const [updateStateBySourceId, setUpdateStateBySourceId] = useState<
+    Record<string, UpdateState>
   >({});
-  const [saveStateBySourceId, setSaveStateBySourceId] = useState<
-    Record<string, SaveState>
-  >({});
+  const [deleteState, setDeleteState] = useState<DeleteState>({
+    phase: "idle",
+    sourceId: undefined,
+    message: undefined,
+  });
 
-  const selectedSummary = summaries[selectedGroupIndex];
+  const selectedSummary = summaryList[selectedGroupIndex];
   const selectedSourceId = selectedSummary?.source.id ?? "";
   const selectedDraft = drafts[selectedSourceId] ?? EMPTY_DRAFT;
   const savedDraft = savedDrafts[selectedSourceId] ?? EMPTY_DRAFT;
   const isDirty = !draftsEqual(selectedDraft, savedDraft);
   const leafIds = selectedSummary?.leafs.map((leaf) => leaf.id) ?? [];
+  const visibleTargets = availableTargets;
+  const agentInteractiveCount = visibleTargets.length > 0 ? visibleTargets.length + 1 : 0;
+  const skillInteractiveCount = leafIds.length > 0 ? leafIds.length + 1 : 0;
   const treeState: TreeSelectionState = {
     allLeafIds: leafIds,
     selectedLeafIds: selectedDraft.selectedLeafIds,
   };
   const parentSelectionState = getParentSelectionState(treeState);
-  const visibleTargets = availableTargets;
-  const targetSelectableCount = visibleTargets.length > 0 ? visibleTargets.length + 1 : 0;
-  const targetSaveCursor = targetSelectableCount;
   const visibleEnabledTargets = visibleTargets.filter((target) =>
     selectedDraft.enabledTargets.includes(target),
   );
@@ -466,41 +693,56 @@ export function ConfigApp({
     visibleTargets.length > 0 && visibleEnabledTargets.length === visibleTargets.length;
   const projectionWarningsByLeafId = buildProjectionWarningMap({
     drafts,
-    summaries,
+    summaries: summaryList,
     sourceId: selectedSourceId,
   });
   const projectedNamesByLeafId = buildProjectionNameMap({
     drafts,
-    summaries,
+    summaries: summaryList,
     sourceId: selectedSourceId,
   });
-  const selectedLeaf =
-    selectedSummary && skillCursor > 0
-      ? selectedSummary.leafs[skillCursor - 1]
-      : undefined;
-  const selectedLeafWarnings = selectedLeaf
-    ? [
-        ...selectedLeaf.metadataWarnings,
-        ...(projectionWarningsByLeafId[selectedLeaf.id] ?? []),
-      ]
-    : [];
+  const failedBootBySourceId = new Map(
+    bootStatus.failedSources.map((item) => [item.sourceId, item.message]),
+  );
   const previewState = previewBySourceId[selectedSourceId] ?? EMPTY_PREVIEW;
-  const actionCounts = countActions(previewState.actions);
   const changeCount = getActionChangeCount(previewState.actions);
   const saveState = saveStateBySourceId[selectedSourceId] ?? {
     phase: "idle" as const,
     message: undefined,
   };
-  const savePhase = getSaveDisplayPhase(saveState.phase, isDirty);
-  const skippedLeafs = selectedSummary?.lock?.invalidLeafs.length ?? 0;
+  const updateState = updateStateBySourceId[selectedSourceId] ?? {
+    phase: "idle" as const,
+    message: undefined,
+  };
+  const isSelectedDelete = deleteState.sourceId === selectedSourceId;
+  const statusDisplay = getStatusDisplay({
+    deleteState,
+    isSelectedDelete,
+    saveState,
+    updateState,
+  });
+  const canEditSelected = updateState.phase !== "updating" && deleteState.phase !== "deleting";
+  const canRunActions =
+    selectedSummary !== undefined &&
+    saveState.phase !== "saving" &&
+    updateState.phase !== "updating" &&
+    deleteState.phase !== "deleting";
+
+  useEffect(() => {
+    return () => {
+      for (const timer of Object.values(updatedTimers.current)) {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedSummary) {
       return;
     }
 
-    // draft -> preview request id -> latest preview wins
-    // save  -> explicit phase      -> dirty/saving/saved/failed
     const sourceId = selectedSummary.source.id;
     const requestId = (previewRequestIds.current[sourceId] ?? 0) + 1;
     previewRequestIds.current[sourceId] = requestId;
@@ -559,10 +801,79 @@ export function ConfigApp({
     };
   }, [app, selectedDraft, selectedSummary]);
 
+  useEffect(() => {
+    if (!selectedSummary || draftsEqual(selectedDraft, savedDraft)) {
+      return;
+    }
+    if (saveState.phase === "saving" || saveState.phase === "failed") {
+      return;
+    }
+
+    const sourceId = selectedSummary.source.id;
+    const requestId = (saveRequestIds.current[sourceId] ?? 0) + 1;
+    saveRequestIds.current[sourceId] = requestId;
+    const draftToSave = normalizeDraft(selectedDraft);
+
+    setSaveStateBySourceId((current) => ({
+      ...current,
+      [sourceId]: {
+        phase: "saving",
+        message: "saving changes...",
+      },
+    }));
+
+    void app.applyDraft(sourceId, draftToSave).then((result) => {
+      setSaveStateBySourceId((current) => {
+        if ((saveRequestIds.current[sourceId] ?? 0) !== requestId) {
+          return current;
+        }
+
+        if (!result.ok) {
+          return {
+            ...current,
+            [sourceId]: {
+              phase: "failed",
+              message: firstErrorMessage(result),
+            },
+          };
+        }
+
+        const appliedDraft = normalizeDraft(result.data.draft);
+        setDrafts((draftsCurrent) => ({
+          ...draftsCurrent,
+          [sourceId]: appliedDraft,
+        }));
+        setSavedDrafts((savedCurrent) => ({
+          ...savedCurrent,
+          [sourceId]: appliedDraft,
+        }));
+        setPreviewBySourceId((previewCurrent) => ({
+          ...previewCurrent,
+          [sourceId]: {
+            actions: result.data.actions,
+            blockedCount: result.data.actions.filter((action) => action.kind === "blocked")
+              .length,
+            errorMessage: undefined,
+            loading: false,
+            requestId: previewRequestIds.current[sourceId] ?? 0,
+          },
+        }));
+
+        return {
+          ...current,
+          [sourceId]: {
+            phase: "saved",
+            message: "saved",
+          },
+        };
+      });
+    });
+  }, [app, saveState.phase, savedDraft, selectedDraft, selectedSummary]);
+
   const updateSelectedDraft = (
     updater: (currentDraft: DraftBinding) => DraftBinding,
   ) => {
-    if (!selectedSummary) {
+    if (!selectedSummary || !canEditSelected) {
       return;
     }
 
@@ -593,78 +904,182 @@ export function ConfigApp({
     });
   };
 
-  const handleSave = () => {
-    if (!selectedSummary || savePhase === "saving") {
+  const handleUpdate = () => {
+    if (!selectedSummary || !canRunActions) {
       return;
     }
 
     const sourceId = selectedSummary.source.id;
-    const nextRequestId = (previewRequestIds.current[sourceId] ?? 0) + 1;
-    previewRequestIds.current[sourceId] = nextRequestId;
+    const requestId = (updateRequestIds.current[sourceId] ?? 0) + 1;
+    updateRequestIds.current[sourceId] = requestId;
+    previewRequestIds.current[sourceId] = (previewRequestIds.current[sourceId] ?? 0) + 1;
+    saveRequestIds.current[sourceId] = (saveRequestIds.current[sourceId] ?? 0) + 1;
 
-    setSaveStateBySourceId((current) => ({
+    if (updatedTimers.current[sourceId]) {
+      clearTimeout(updatedTimers.current[sourceId]);
+      updatedTimers.current[sourceId] = undefined;
+    }
+
+    const snapshot = captureFocusSnapshot({
+      actionCursor,
+      agentCursor: targetCursor,
+      availableTargets,
+      focus,
+      selectedGroupIndex,
+      selectedSummary,
+      skillCursor,
+    });
+
+    setUpdateStateBySourceId((current) => ({
       ...current,
       [sourceId]: {
-        phase: "saving",
-        message: "saving changes...",
-      },
-    }));
-    setPreviewBySourceId((current) => ({
-      ...current,
-      [sourceId]: {
-        ...(current[sourceId] ?? EMPTY_PREVIEW),
-        errorMessage: undefined,
-        loading: false,
-        requestId: nextRequestId,
+        phase: "updating",
+        message: `updating ${formatGroupLabel(selectedSummary.source)}...`,
       },
     }));
 
-    const draftToSave = normalizeDraft(selectedDraft);
+    void app.updateSources([sourceId]).then(async (result) => {
+      if ((updateRequestIds.current[sourceId] ?? 0) !== requestId) {
+        return;
+      }
 
-    void app.applyDraft(sourceId, draftToSave).then((result) => {
       if (!result.ok) {
-        const message = firstErrorMessage(result);
-        setSaveStateBySourceId((current) => ({
+        setUpdateStateBySourceId((current) => ({
           ...current,
           [sourceId]: {
             phase: "failed",
-            message,
+            message: firstErrorMessage(result),
           },
         }));
         return;
       }
 
-      const appliedDraft = normalizeDraft(result.data.draft);
-      const appliedChangeCount = getActionChangeCount(result.data.actions);
-      setDrafts((current) => ({
-        ...current,
-        [sourceId]: appliedDraft,
-      }));
-      setSavedDrafts((current) => ({
-        ...current,
-        [sourceId]: appliedDraft,
-      }));
+      const configResult = await app.getConfigData();
+      if ((updateRequestIds.current[sourceId] ?? 0) !== requestId) {
+        return;
+      }
+      if (!configResult.ok) {
+        setUpdateStateBySourceId((current) => ({
+          ...current,
+          [sourceId]: {
+            phase: "failed",
+            message: firstErrorMessage(configResult),
+          },
+        }));
+        return;
+      }
+
+      const nextSummaries = configResult.data.summaries;
+      const nextDrafts = buildDraftsFromSummaries(nextSummaries);
+      const nextIds = new Set(nextSummaries.map((summary) => summary.source.id));
+      const nextFocusState = reconcileFocusAfterReload({
+        availableTargets,
+        nextSummaries,
+        snapshot,
+      });
+
+      setSummaryList(nextSummaries);
+      setDrafts(nextDrafts);
+      setSavedDrafts(nextDrafts);
+      setPreviewBySourceId((current) => pruneSourceMap(current, nextIds));
       setSaveStateBySourceId((current) => ({
-        ...current,
+        ...pruneSourceMap(current, nextIds),
         [sourceId]: {
           phase: "saved",
-          message:
-            appliedChangeCount > 0
-              ? `saved ${appliedChangeCount} changes`
-              : "saved with no changes",
+          message: "saved",
         },
       }));
-      setPreviewBySourceId((current) => ({
-        ...current,
+      setSelectedGroupIndex(nextFocusState.selectedGroupIndex);
+      setGroupCursor(nextFocusState.groupCursor);
+      setFocus(nextFocusState.focus);
+      setTargetCursor(nextFocusState.agentCursor);
+      setSkillCursor(nextFocusState.skillCursor);
+      setActionCursor(nextFocusState.actionCursor);
+      setUpdateStateBySourceId((current) => ({
+        ...pruneSourceMap(current, nextIds),
         [sourceId]: {
-          actions: result.data.actions,
-          blockedCount: result.data.actions.filter((action) => action.kind === "blocked")
-            .length,
-          errorMessage: undefined,
-          loading: false,
-          requestId: nextRequestId,
+          phase: "updated",
+          message: "updated",
         },
       }));
+
+      updatedTimers.current[sourceId] = setTimeout(() => {
+        if ((updateRequestIds.current[sourceId] ?? 0) !== requestId) {
+          return;
+        }
+        setUpdateStateBySourceId((current) => {
+          const state = current[sourceId];
+          if (!state || state.phase !== "updated") {
+            return current;
+          }
+          return {
+            ...current,
+            [sourceId]: {
+              phase: "idle",
+              message: undefined,
+            },
+          };
+        });
+        updatedTimers.current[sourceId] = undefined;
+      }, UPDATED_FEEDBACK_MS);
+    });
+  };
+
+  const handleDelete = () => {
+    if (!selectedSummary || !canRunActions) {
+      return;
+    }
+
+    const sourceId = selectedSummary.source.id;
+    previewRequestIds.current[sourceId] = (previewRequestIds.current[sourceId] ?? 0) + 1;
+    saveRequestIds.current[sourceId] = (saveRequestIds.current[sourceId] ?? 0) + 1;
+    updateRequestIds.current[sourceId] = (updateRequestIds.current[sourceId] ?? 0) + 1;
+
+    if (updatedTimers.current[sourceId]) {
+      clearTimeout(updatedTimers.current[sourceId]);
+      updatedTimers.current[sourceId] = undefined;
+    }
+
+    setDeleteState({
+      phase: "deleting",
+      sourceId,
+      message: `deleting ${formatGroupLabel(selectedSummary.source)}...`,
+    });
+
+    void app.uninstall([sourceId]).then((result) => {
+      if (!result.ok) {
+        setDeleteState({
+          phase: "failed",
+          sourceId,
+          message: firstErrorMessage(result),
+        });
+        return;
+      }
+
+      const nextSummaries = summaryList.filter((summary) => summary.source.id !== sourceId);
+      const nextCount = nextSummaries.length;
+      const nextSelectedGroupIndex = getNextSelectionIndexAfterDelete(
+        selectedGroupIndex,
+        nextCount,
+      );
+
+      setSummaryList(nextSummaries);
+      setDrafts((current) => removeSourceFromMap(current, sourceId));
+      setSavedDrafts((current) => removeSourceFromMap(current, sourceId));
+      setPreviewBySourceId((current) => removeSourceFromMap(current, sourceId));
+      setSaveStateBySourceId((current) => removeSourceFromMap(current, sourceId));
+      setUpdateStateBySourceId((current) => removeSourceFromMap(current, sourceId));
+      setDeleteState({
+        phase: "idle",
+        sourceId: undefined,
+        message: undefined,
+      });
+      setSelectedGroupIndex(nextSelectedGroupIndex);
+      setGroupCursor(nextSelectedGroupIndex);
+      setFocus("groups");
+      setTargetCursor(0);
+      setSkillCursor(0);
+      setActionCursor(0);
     });
   };
 
@@ -681,12 +1096,23 @@ export function ConfigApp({
       return;
     }
 
+    const requestedAction = getRequestedAction({
+      actionCursor,
+      focus,
+      input,
+      keyReturn: Boolean(key.return),
+    });
+    if (requestedAction === "update") {
+      handleUpdate();
+      return;
+    }
+    if (requestedAction === "delete") {
+      handleDelete();
+      return;
+    }
+
     if (input === "q" || key.escape) {
-      if (focus === "targets") {
-        setFocus("skills");
-        return;
-      }
-      if (focus === "skills") {
+      if (focus !== "groups") {
         setFocus("groups");
         return;
       }
@@ -695,81 +1121,73 @@ export function ConfigApp({
     }
 
     if (key.tab) {
-      const cycle: FocusPane[] = ["groups", "skills", "targets"];
-      const currentIndex = cycle.indexOf(focus);
-      setFocus(cycle[(currentIndex + 1) % cycle.length] ?? "groups");
+      if (focus === "groups") {
+        setFocus(
+          getInitialDetailFocus({
+            hasAgents: agentInteractiveCount > 0,
+            hasSkills: skillInteractiveCount > 0,
+          }),
+        );
+        return;
+      }
+      setFocus("groups");
+      return;
+    }
+
+    if (key.rightArrow && focus === "groups") {
+      setFocus(
+        getInitialDetailFocus({
+          hasAgents: agentInteractiveCount > 0,
+          hasSkills: skillInteractiveCount > 0,
+        }),
+      );
+      return;
+    }
+
+    if (key.leftArrow && focus !== "groups") {
+      setFocus("groups");
       return;
     }
 
     if (focus === "groups") {
       if (key.downArrow) {
-        setGroupCursor((current) => {
-          const next = Math.min(current + 1, Math.max(0, summaries.length - 1));
-          setSelectedGroupIndex(next);
-          setSkillCursor(0);
-          setTargetCursor(0);
-          return next;
-        });
+        const next = Math.min(groupCursor + 1, Math.max(0, summaryList.length - 1));
+        setGroupCursor(next);
+        setSelectedGroupIndex(next);
+        setTargetCursor(0);
+        setSkillCursor(0);
+        setActionCursor(0);
       }
       if (key.upArrow) {
-        setGroupCursor((current) => {
-          const next = Math.max(current - 1, 0);
-          setSelectedGroupIndex(next);
-          setSkillCursor(0);
-          setTargetCursor(0);
-          return next;
-        });
-      }
-      if (key.return) {
-        setFocus("skills");
+        const next = Math.max(groupCursor - 1, 0);
+        setGroupCursor(next);
+        setSelectedGroupIndex(next);
+        setTargetCursor(0);
+        setSkillCursor(0);
+        setActionCursor(0);
       }
       return;
     }
 
-    if (focus === "skills") {
-      if (key.downArrow) {
-        setSkillCursor((current) => Math.min(current + 1, leafIds.length));
-      }
-      if (key.upArrow) {
-        setSkillCursor((current) => Math.max(current - 1, 0));
-      }
-      if (input === " ") {
-        updateSelectedDraft((currentDraft) => {
-          const baseState: TreeSelectionState = {
-            allLeafIds: leafIds,
-            selectedLeafIds: currentDraft.selectedLeafIds,
-          };
-          const nextState =
-            skillCursor === 0
-              ? toggleParent(baseState)
-              : toggleChild(baseState, leafIds[skillCursor - 1]!);
-
-          return {
-            ...currentDraft,
-            selectedLeafIds: nextState.selectedLeafIds,
-          };
-        });
-      }
-      if (key.return) {
-        setFocus("targets");
-      }
+    if (key.downArrow || key.upArrow) {
+      const next = moveDetailFocus({
+        actionCursor,
+        agentCount: agentInteractiveCount,
+        agentCursor: targetCursor,
+        direction: key.downArrow ? 1 : -1,
+        focus: focus as DetailFocus,
+        skillCount: skillInteractiveCount,
+        skillCursor,
+      });
+      setFocus(next.focus);
+      setTargetCursor(next.agentCursor);
+      setSkillCursor(next.skillCursor);
+      setActionCursor(next.actionCursor);
       return;
     }
 
-    if (key.downArrow) {
-      setTargetCursor((current) =>
-        Math.min(current + 1, targetSaveCursor),
-      );
-    }
-    if (key.upArrow) {
-      setTargetCursor((current) => Math.max(current - 1, 0));
-    }
-    if (input === " ") {
+    if (focus === "detail.agents" && input === " " && agentInteractiveCount > 0) {
       updateSelectedDraft((currentDraft) => {
-        if (visibleTargets.length === 0 || targetCursor === targetSaveCursor) {
-          return currentDraft;
-        }
-
         if (targetCursor === 0) {
           const enabledTargets = new Set(currentDraft.enabledTargets);
           const nextSelectAll = !visibleTargets.every((target) => enabledTargets.has(target));
@@ -786,7 +1204,11 @@ export function ConfigApp({
           };
         }
 
-        const target = visibleTargets[targetCursor - 1]!;
+        const target = visibleTargets[targetCursor - 1];
+        if (!target) {
+          return currentDraft;
+        }
+
         const enabledTargets = new Set(currentDraft.enabledTargets);
         if (enabledTargets.has(target)) {
           enabledTargets.delete(target);
@@ -798,22 +1220,34 @@ export function ConfigApp({
           enabledTargets: TARGET_ORDER.filter((item) => enabledTargets.has(item)),
         };
       });
+      return;
     }
-    if (key.return) {
-      if (targetCursor === targetSaveCursor) {
-        handleSave();
-        return;
-      }
-      setTargetCursor(targetSaveCursor);
+
+    if (focus === "detail.skills" && input === " " && skillInteractiveCount > 0) {
+      updateSelectedDraft((currentDraft) => {
+        const baseState: TreeSelectionState = {
+          allLeafIds: leafIds,
+          selectedLeafIds: currentDraft.selectedLeafIds,
+        };
+        const nextState =
+          skillCursor === 0
+            ? toggleParent(baseState)
+            : toggleChild(baseState, leafIds[skillCursor - 1]!);
+
+        return {
+          ...currentDraft,
+          selectedLeafIds: nextState.selectedLeafIds,
+        };
+      });
     }
   });
 
-  if (summaries.length === 0) {
+  if (summaryList.length === 0) {
     return (
       <Box flexDirection="column">
         <Text bold>No skills groups yet</Text>
-        <Text>Add a Git source to discover a grouped set of related skills.</Text>
-        <Text dimColor>Press q or esc to exit.</Text>
+        <Text>Run skill-flow add &lt;source&gt; to install your first group.</Text>
+        <Text dimColor>{deleteState.message ?? "Press q or esc to exit."}</Text>
       </Box>
     );
   }
@@ -821,19 +1255,29 @@ export function ConfigApp({
   const activeSummary = selectedSummary!;
   const terminalRows = stdout.rows ?? 24;
   const terminalColumns = stdout.columns ?? 120;
-  const paneHeight = Math.max(12, terminalRows - 4);
-  const [groupsWidth, skillsWidth, targetsWidth] = getPaneWidths(terminalColumns);
+  const paneHeight = Math.max(12, terminalRows - 3);
+  const [groupsWidth, detailWidth] = getPaneWidths(terminalColumns);
   const bodyRowCount = getPaneViewportCount(paneHeight);
-  const targetListRowCount = Math.max(1, bodyRowCount - 1);
-  const targetItems: PaneRow[] =
+  const groupRows = getWindowedRows(
+    summaryList.map((summary, index) => ({
+      key: summary.source.id,
+      text: `${formatGroupLabel(summary.source)}${failedBootBySourceId.has(summary.source.id) ? " !" : ""}`,
+      active: focus === "groups" && groupCursor === index,
+      color: failedBootBySourceId.has(summary.source.id) ? ("yellow" as const) : undefined,
+    })),
+    Math.max(0, groupCursor),
+    bodyRowCount,
+  );
+
+  const agentRows: PaneRow[] =
     visibleTargets.length > 0
       ? [
           {
             key: "__all_targets__",
             text: `${selectionMarker(
               allTargetsSelected ? "full" : visibleEnabledTargets.length > 0 ? "partial" : "empty",
-            )} all agents`,
-            active: focus === "targets" && targetCursor === 0,
+            )} All Agents`,
+            active: focus === "detail.agents" && targetCursor === 0,
             bold: true,
             color: undefined,
           },
@@ -842,7 +1286,7 @@ export function ConfigApp({
             text: `${selectionMarker(
               selectedDraft.enabledTargets.includes(target) ? "full" : "empty",
             )} ${TARGET_LABELS[target]}`,
-            active: focus === "targets" && targetCursor === index + 1,
+            active: focus === "detail.agents" && targetCursor === index + 1,
             color: "gray" as const,
           })),
         ]
@@ -851,152 +1295,161 @@ export function ConfigApp({
             key: "__no_targets__",
             text: "No detected agent targets",
             active: false,
-            bold: false,
             color: "gray" as const,
           },
         ];
-  const groupRows = getWindowedRows(
-    summaries.map((summary, index) => ({
-      key: summary.source.id,
-      text: `${formatGroupLabel(summary.source)}  ${formatGroupSaveState(
-        getSaveDisplayPhase(
-          (saveStateBySourceId[summary.source.id]?.phase ?? "idle"),
-          !draftsEqual(
-            drafts[summary.source.id] ?? EMPTY_DRAFT,
-            savedDrafts[summary.source.id] ?? EMPTY_DRAFT,
-          ),
-        ),
-      )}`,
-      active: focus === "groups" && groupCursor === index,
-      color: getGroupStateColor(
-        getSaveDisplayPhase(
-          (saveStateBySourceId[summary.source.id]?.phase ?? "idle"),
-          !draftsEqual(
-            drafts[summary.source.id] ?? EMPTY_DRAFT,
-            savedDrafts[summary.source.id] ?? EMPTY_DRAFT,
-          ),
-        ),
-      ),
-    })),
-    Math.max(0, groupCursor),
-    bodyRowCount,
-  );
-  const skillRows = getWindowedRows(
-    [
-      {
-        key: "__all__",
-        text: `${selectionMarker(parentSelectionState)} all skills`,
-        active: focus === "skills" && skillCursor === 0,
-        bold: true,
-        color: undefined,
-      },
-      ...activeSummary.leafs.map((leaf, index) => ({
-        key: leaf.id,
-        text: `${selectionMarker(
-          selectedDraft.selectedLeafIds.includes(leaf.id) ? "full" : "empty",
-        )} ${
-          selectedDraft.selectedLeafIds.includes(leaf.id)
-            ? (projectedNamesByLeafId.get(leaf.id) ?? leaf.linkName)
-            : leaf.linkName
-        }`,
-        active: focus === "skills" && skillCursor === index + 1,
-        color:
-          leaf.metadataWarnings.length > 0 || (projectionWarningsByLeafId[leaf.id]?.length ?? 0) > 0
-            ? ("yellow" as const)
-            : ("gray" as const),
-      })),
-    ],
-    skillCursor,
-    bodyRowCount,
-  );
-  const targetRows = getWindowedRows(
-    targetItems,
-    Math.min(targetCursor, Math.max(0, targetItems.length - 1)),
-    targetListRowCount,
-  );
 
-  const saveRow = buildSaveRow(
-    focus === "targets" && targetCursor === targetSaveCursor,
-    savePhase,
-    changeCount,
+  const skillRows: PaneRow[] =
+    activeSummary.leafs.length > 0
+      ? [
+          {
+            key: "__all__",
+            text: `${selectionMarker(parentSelectionState)} All Skills`,
+            active: focus === "detail.skills" && skillCursor === 0,
+            bold: true,
+            color: undefined,
+          },
+          ...activeSummary.leafs.map((leaf, index) => {
+            const warnings = [
+              ...leaf.metadataWarnings,
+              ...(projectionWarningsByLeafId[leaf.id] ?? []),
+            ];
+            const inlineWarning = warnings[0] ? ` (${warnings[0]})` : "";
+            const label = selectedDraft.selectedLeafIds.includes(leaf.id)
+              ? (projectedNamesByLeafId.get(leaf.id) ?? leaf.linkName)
+              : leaf.linkName;
+            return {
+              key: leaf.id,
+              text: `${selectionMarker(
+                selectedDraft.selectedLeafIds.includes(leaf.id) ? "full" : "empty",
+              )} ${label}${inlineWarning}`,
+              active: focus === "detail.skills" && skillCursor === index + 1,
+              color: warnings.length > 0 ? ("yellow" as const) : ("gray" as const),
+            };
+          }),
+        ]
+      : [
+          {
+            key: "__no_skills__",
+            text: "No skills in this group",
+            active: false,
+            color: "gray" as const,
+          },
+        ];
+
+  const alerts = prioritizeAlerts(
+    buildAlerts({
+      deleteState,
+      failedBootMessage: failedBootBySourceId.get(selectedSourceId),
+      isSelectedDelete,
+      previewState,
+      projectionWarningsByLeafId,
+      saveState,
+      selectedDraft,
+      selectedSummary: activeSummary,
+      updateState,
+    }),
   );
-  const contextBar = buildContextBar({
+  const previewLabel = buildPreviewLabel({
     blockedCount: previewState.blockedCount,
     changeCount,
-    previewError: previewState.errorMessage,
-    previewLoading: previewState.loading,
-    savePhase,
-    saveMessage: saveState.message,
-    selectedLeafName: selectedLeaf?.linkName,
-    selectedLeafWarnings,
-    skippedLeafs,
-    sourceLabel: formatGroupLabel(activeSummary.source),
+    errorMessage: previewState.errorMessage,
+    loading: previewState.loading,
   });
-  const commandBar = buildCommandBar({
-    changeCount,
+  const bootLabel = failedBootBySourceId.has(selectedSourceId) ? "PARTIAL" : "OK";
+  const metadataRows = buildDetailMetadataRows({
+    alerts,
+    bootLabel,
+    detailWidth,
+    previewLabel,
+    saveLabel: statusDisplay.kind === "failed" ? "Failed" : buildSaveStatusLabel(saveState),
+    summary: activeSummary,
+  });
+  const actionRows = buildActionRows({
+    actionCursor,
+    canRunActions,
+    deleteState,
     focus,
-    saveFocused: focus === "targets" && targetCursor === targetSaveCursor,
-    savePhase,
+    isSelectedDelete,
+    updateState,
   });
+  const fixedRows =
+    metadataRows.length +
+    1 +
+    1 +
+    actionRows.length;
+  const sectionBudget = Math.max(2, bodyRowCount - fixedRows);
+  const agentBudget =
+    visibleTargets.length > 0 && activeSummary.leafs.length > 0
+      ? Math.max(1, Math.floor(sectionBudget / 2))
+      : sectionBudget;
+  const skillBudget =
+    visibleTargets.length > 0 && activeSummary.leafs.length > 0
+      ? Math.max(1, sectionBudget - agentBudget)
+      : sectionBudget;
+  const visibleAgentRows = getWindowedRows(
+    agentRows,
+    Math.min(targetCursor, Math.max(0, agentRows.length - 1)),
+    Math.max(1, agentBudget),
+  );
+  const visibleSkillRows = getWindowedRows(
+    skillRows,
+    Math.min(skillCursor, Math.max(0, skillRows.length - 1)),
+    Math.max(1, skillBudget),
+  );
+  const detailRows: PaneRow[] = [
+    ...metadataRows,
+    {
+      key: "__agents_header__",
+      text: `Apply to Agents (${visibleEnabledTargets.length}/${visibleTargets.length})`,
+      active: false,
+      bold: true,
+      color: undefined,
+    },
+    ...visibleAgentRows.rows,
+    {
+      key: "__skills_header__",
+      text: `Included Skills (${selectedDraft.selectedLeafIds.length}/${leafIds.length})`,
+      active: false,
+      bold: true,
+      color: undefined,
+    },
+    ...visibleSkillRows.rows,
+  ];
 
   return (
     <Box flexDirection="column" height={terminalRows}>
+      <Text color={statusDisplay.color} wrap="truncate-end">
+        {buildTopBar({
+          width: terminalColumns,
+          isDirty,
+          changeCount,
+          statusLabel: statusDisplay.label,
+        })}
+      </Text>
       <Box>
         <Pane
           active={focus === "groups"}
-          footer={buildPaneFooter(
-            groupRows.start,
-            groupRows.end,
-            summaries.length,
-            `group ${selectedGroupIndex + 1}/${summaries.length}`,
-          )}
+          footer={`group ${selectedGroupIndex + 1}/${summaryList.length}`}
           gapAfter
           height={paneHeight}
-          title="WORKFLOW GROUPS"
+          title="Skills Groups"
           width={groupsWidth}
         >
           {renderPaneRows(groupRows.rows, bodyRowCount, groupsWidth)}
         </Pane>
-
         <Pane
-          active={focus === "skills"}
-          footer={buildPaneFooter(
-            skillRows.start,
-            skillRows.end,
-            activeSummary.leafs.length + 1,
-            `${selectedDraft.selectedLeafIds.length}/${leafIds.length} selected`,
-          )}
-          gapAfter
+          active={focus !== "groups"}
+          footer={buildCommandBar(focus)}
           height={paneHeight}
-          title="GROUP DETAIL"
-          width={skillsWidth}
+          title="Group Detail"
+          width={detailWidth}
         >
-          {renderPaneRows(skillRows.rows, bodyRowCount, skillsWidth)}
-        </Pane>
-
-        <Pane
-          active={focus === "targets"}
-          footer={buildPaneFooter(
-            targetRows.start,
-            targetRows.end,
-            targetItems.length,
-            visibleTargets.length > 0
-              ? `${visibleEnabledTargets.length}/${visibleTargets.length} targets`
-              : "no detected targets",
-          )}
-          height={paneHeight}
-          title="AGENT PROJECTION"
-          width={targetsWidth}
-        >
-          {renderPaneRows(targetRows.rows, bodyRowCount, targetsWidth, [saveRow])}
+          {renderPaneRows(detailRows, bodyRowCount, detailWidth, actionRows)}
         </Pane>
       </Box>
-
-      <Text dimColor wrap="truncate-middle">
-        {contextBar}
-      </Text>
-      <Text dimColor wrap="truncate-middle">
-        {commandBar}
+      <Text dimColor wrap="truncate-end">
+        {buildFooterHints(focus)}
       </Text>
     </Box>
   );
@@ -1012,7 +1465,7 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
 
   useEffect(() => {
     let cancelled = false;
-    void app.bootstrapWorkspaceState((event) => {
+    void app.configCoordinator.bootstrapWorkspaceState((event) => {
       if (cancelled) {
         return;
       }
@@ -1042,6 +1495,7 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
         summaries: result.data.summaries,
         initialDrafts: result.data.initialDrafts,
         audit: result.data.audit,
+        bootStatus: result.data.bootStatus,
       }));
     });
 
@@ -1066,6 +1520,7 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
         availableTargets={state.availableTargets}
         summaries={state.summaries}
         initialDrafts={state.initialDrafts}
+        bootStatus={state.bootStatus}
       />
     );
   }
@@ -1078,7 +1533,9 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
       <Box flexGrow={1} flexDirection="column">
         <Text bold>Skill Flow Config</Text>
         <Text color="gray">
-          {state.phase === "loading" ? "Checking groups, skills, targets, and current paths..." : "Bootstrap failed"}
+          {state.phase === "loading"
+            ? "Checking groups, skills, targets, and current paths..."
+            : "Bootstrap failed"}
         </Text>
         {state.phase === "error" ? <Text color="red">{state.message}</Text> : null}
       </Box>
@@ -1095,63 +1552,263 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
   );
 }
 
-function buildSaveRow(
-  active: boolean,
-  phase: SaveDisplayPhase,
-  changeCount: number,
-): PaneRow {
-  return {
-    key: "__save__",
-    text: buildSaveLabel(phase, changeCount),
-    active,
-    bold: true,
-    color: getSaveColor(phase),
-  };
+function buildSaveStatusLabel(saveState: SaveState) {
+  if (saveState.phase === "saving") {
+    return "Saving";
+  }
+  if (saveState.phase === "saved") {
+    return "Saved";
+  }
+  if (saveState.phase === "failed") {
+    return "Failed";
+  }
+  return "Clean";
 }
 
-function getSaveColor(phase: SaveDisplayPhase): PaneRow["color"] {
-  if (phase === "failed") {
-    return "red";
+function buildPreviewLabel({
+  blockedCount,
+  changeCount,
+  errorMessage,
+  loading,
+}: {
+  blockedCount: number;
+  changeCount: number;
+  errorMessage: string | undefined;
+  loading: boolean;
+}) {
+  if (loading) {
+    return "planning...";
   }
-  if (phase === "dirty") {
-    return "yellow";
+  if (errorMessage) {
+    return "failed";
   }
-  if (phase === "saving") {
-    return "cyan";
+  if (blockedCount > 0 && changeCount > 0) {
+    return `${changeCount} changes, ${blockedCount} blocked`;
   }
-  return "green";
+  if (blockedCount > 0) {
+    return `${blockedCount} blocked`;
+  }
+  return `${changeCount} changes`;
 }
 
-function getGroupStateColor(phase: SaveDisplayPhase): PaneRow["color"] {
-  if (phase === "failed") {
-    return "red";
+function buildAlerts({
+  deleteState,
+  failedBootMessage,
+  isSelectedDelete,
+  previewState,
+  projectionWarningsByLeafId,
+  saveState,
+  selectedDraft,
+  selectedSummary,
+  updateState,
+}: {
+  deleteState: DeleteState;
+  failedBootMessage: string | undefined;
+  isSelectedDelete: boolean;
+  previewState: PreviewState;
+  projectionWarningsByLeafId: ProjectionWarningMap;
+  saveState: SaveState;
+  selectedDraft: DraftBinding;
+  selectedSummary: WorkflowSummary;
+  updateState: UpdateState;
+}) {
+  const alerts: AlertItem[] = [];
+
+  if (updateState.phase === "failed" && updateState.message) {
+    alerts.push({ level: "error", message: `Update failed: ${updateState.message}` });
   }
-  if (phase === "dirty") {
-    return "yellow";
+  if (isSelectedDelete && deleteState.phase === "failed" && deleteState.message) {
+    alerts.push({ level: "error", message: `Delete failed: ${deleteState.message}` });
   }
-  if (phase === "saving") {
-    return "cyan";
+  if (saveState.phase === "failed" && saveState.message) {
+    alerts.push({ level: "error", message: `Save failed: ${saveState.message}` });
   }
-  if (phase === "saved") {
-    return "green";
+  if (previewState.errorMessage) {
+    alerts.push({ level: "error", message: `Preview failed: ${previewState.errorMessage}` });
   }
-  return "green";
+  if (failedBootMessage) {
+    alerts.push({ level: "error", message: `Boot issue: ${failedBootMessage}` });
+  }
+
+  for (const action of previewState.actions) {
+    if (action.kind === "blocked" && action.reason) {
+      alerts.push({ level: "blocked", message: action.reason });
+    }
+  }
+
+  for (const leaf of selectedSummary.leafs) {
+    if (!selectedDraft.selectedLeafIds.includes(leaf.id)) {
+      continue;
+    }
+    for (const warning of leaf.metadataWarnings) {
+      alerts.push({ level: "warning", message: warning });
+    }
+    for (const warning of projectionWarningsByLeafId[leaf.id] ?? []) {
+      alerts.push({ level: "warning", message: warning });
+    }
+  }
+
+  if ((selectedSummary.lock?.invalidLeafs.length ?? 0) > 0) {
+    alerts.push({
+      level: "warning",
+      message: `${selectedSummary.lock?.invalidLeafs.length ?? 0} invalid skill entries skipped`,
+    });
+  }
+
+  return alerts;
 }
 
-function buildPaneFooter(start: number, end: number, total: number, summary: string) {
-  const overflow = formatOverflow(start, end, total);
-  return `${overflow} · ${summary}`;
+function buildDetailMetadataRows({
+  alerts,
+  bootLabel,
+  detailWidth,
+  previewLabel,
+  saveLabel,
+  summary,
+}: {
+  alerts: AlertItem[];
+  bootLabel: string;
+  detailWidth: number;
+  previewLabel: string;
+  saveLabel: string;
+  summary: WorkflowSummary;
+}) {
+  const rows: PaneRow[] = [
+    {
+      key: "__title__",
+      text: formatGroupLabel(summary.source),
+      active: false,
+      bold: true,
+      color: undefined,
+    },
+    {
+      key: "__type__",
+      text: `Type: ${summary.source.kind.toUpperCase()}`,
+      active: false,
+      color: "gray",
+    },
+    {
+      key: "__source__",
+      text: fitPaneLine(`Source: ${summary.source.locator}`, getPaneInnerWidth(detailWidth) - 2),
+      active: false,
+      color: "gray",
+    },
+    {
+      key: "__save__",
+      text: `Save: ${saveLabel}   Preview: ${previewLabel}`,
+      active: false,
+      color: "gray",
+    },
+    {
+      key: "__boot__",
+      text: `Boot: ${bootLabel}`,
+      active: false,
+      color: bootLabel === "OK" ? "green" : "yellow",
+    },
+  ];
+
+  if (alerts.length > 0) {
+    rows.push({
+      key: "__alerts__",
+      text: "Alerts",
+      active: false,
+      bold: true,
+      color: undefined,
+    });
+    alerts.forEach((alert, index) => {
+      rows.push({
+        key: `__alert__:${index}`,
+        text: `! ${alert.message}`,
+        active: false,
+        color:
+          alert.level === "error"
+            ? "red"
+            : alert.level === "blocked"
+              ? "yellow"
+              : "gray",
+      });
+    });
+  }
+
+  return rows;
 }
 
-function formatOverflow(start: number, end: number, total: number) {
-  const above = start;
-  const below = Math.max(0, total - end);
-  if (above === 0 && below === 0) {
-    return "top / bottom";
+function buildActionRows({
+  actionCursor,
+  canRunActions,
+  deleteState,
+  focus,
+  isSelectedDelete,
+  updateState,
+}: {
+  actionCursor: number;
+  canRunActions: boolean;
+  deleteState: DeleteState;
+  focus: FocusPane;
+  isSelectedDelete: boolean;
+  updateState: UpdateState;
+}) {
+  const updateText =
+    updateState.phase === "updating"
+      ? "Update · UPDATING..."
+      : updateState.phase === "failed"
+        ? "Update · FAILED"
+        : "Update";
+  const deleteText =
+    isSelectedDelete && deleteState.phase === "deleting"
+      ? "Delete · DELETING..."
+      : isSelectedDelete && deleteState.phase === "failed"
+        ? "Delete · FAILED"
+        : "Delete";
+
+  const rows: PaneRow[] = [
+    {
+      key: "__actions_separator__",
+      text: "────────────────────────",
+      active: false,
+      color: "gray" as const,
+    },
+    {
+      key: "__action_update__",
+      text: `[${updateText}]`,
+      active: focus === "detail.actions" && actionCursor === 0,
+      color: canRunActions || updateState.phase !== "idle" ? undefined : ("gray" as const),
+      bold: true,
+    },
+    {
+      key: "__action_delete__",
+      text: `[${deleteText}]`,
+      active: focus === "detail.actions" && actionCursor === 1,
+      color:
+        isSelectedDelete && deleteState.phase === "failed"
+          ? ("red" as const)
+          : canRunActions || (isSelectedDelete && deleteState.phase !== "idle")
+            ? ("red" as const)
+            : ("gray" as const),
+      bold: true,
+    },
+  ];
+  return rows;
+}
+
+function buildCommandBar(focus: FocusPane) {
+  if (focus === "groups") {
+    return "[Tab/→] Edit";
   }
-  return `${above > 0 ? `${above} above` : "top"} / ${
-    below > 0 ? `${below} below` : "bottom"
-  }`;
+  if (focus === "detail.actions") {
+    return "[Enter] Action";
+  }
+  return "[Space] Toggle";
+}
+
+function buildFooterHints(focus: FocusPane) {
+  if (focus === "groups") {
+    return "[↑↓] Move   [Tab/→] Switch pane   [u] Update   [d] Delete   [q] Exit";
+  }
+  if (focus === "detail.actions") {
+    return "[↑↓] Move   [Enter] Action   [Tab/←/Esc] Back   [u] Update   [d] Delete";
+  }
+  return "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update   [d] Delete";
 }
 
 function RowText({ row, width }: { row: PaneRow; width: number }) {
@@ -1257,23 +1914,6 @@ function getExactDuplicateKey(linkName: string, name: string, description: strin
   return `${linkName}\n${name}\n${description}`;
 }
 
-
-function formatGroupSaveState(phase: SaveDisplayPhase) {
-  if (phase === "dirty") {
-    return "DIRTY";
-  }
-  if (phase === "saving") {
-    return "SAVING";
-  }
-  if (phase === "saved") {
-    return "SAVED";
-  }
-  if (phase === "failed") {
-    return "FAILED";
-  }
-  return "SAVED";
-}
-
 function getWindowedRows<T>(
   items: T[],
   cursorIndex: number,
@@ -1291,6 +1931,18 @@ function getWindowedRows<T>(
     start,
     end,
   };
+}
+
+function pruneSourceMap<T>(sourceMap: Record<string, T>, allowedIds: Set<string>) {
+  return Object.fromEntries(
+    Object.entries(sourceMap).filter(([sourceId]) => allowedIds.has(sourceId)),
+  ) as Record<string, T>;
+}
+
+function removeSourceFromMap<T>(sourceMap: Record<string, T>, sourceId: string) {
+  const next = { ...sourceMap };
+  delete next[sourceId];
+  return next;
 }
 
 function firstErrorMessage(result: { errors: Array<{ message: string }> }) {

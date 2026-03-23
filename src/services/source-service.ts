@@ -62,9 +62,7 @@ export class SourceService {
     locator: string,
     options: AddSourceOptions = {},
   ): Promise<Result<SourceSnapshot>> {
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
 
     const resolved = await this.resolveSource(locator, options);
 
@@ -116,8 +114,7 @@ export class SourceService {
     lockFile.sources.push(snapshot.data.lock);
     lockFile.leafInventory.push(...snapshot.data.leafs);
 
-    await this.store.writeManifest(manifest);
-    await this.store.writeLock(lockFile);
+    await this.store.writeState(manifest, lockFile);
 
     return ok({
       manifest: snapshot.data.manifest,
@@ -140,9 +137,7 @@ export class SourceService {
       }
     >
   > {
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     const selectedIds = sourceIds?.length
       ? sourceIds
       : manifest.sources.map((source) => source.id);
@@ -238,14 +233,12 @@ export class SourceService {
       });
     }
 
-    await this.store.writeLock(lockFile);
+    await this.store.writeState(manifest, lockFile);
     return ok({ updated });
   }
 
   async removeSource(sourceIds: string[]): Promise<Result<{ removed: string[] }>> {
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     const removed: string[] = [];
 
     for (const sourceId of sourceIds) {
@@ -273,8 +266,7 @@ export class SourceService {
       removed.push(sourceId);
     }
 
-    await this.store.writeManifest(manifest);
-    await this.store.writeLock(lockFile);
+    await this.store.writeState(manifest, lockFile);
     return ok({ removed });
   }
 
@@ -282,9 +274,7 @@ export class SourceService {
     sourceIds?: string[],
     options: { force?: boolean } = {},
   ): Promise<Result<{ updatedSourceIds: string[] }>> {
-    await this.store.init();
-    const manifest = await this.store.readManifest();
-    const lockFile = await this.store.readLock();
+    const { manifest, lockFile } = await this.store.readState();
     const selectedIds = sourceIds?.length
       ? sourceIds
       : manifest.sources.map((source) => source.id);
@@ -366,8 +356,7 @@ export class SourceService {
     }
 
     if (updatedSourceIds.length > 0) {
-      await this.store.writeManifest(manifest);
-      await this.store.writeLock(lockFile);
+      await this.store.writeState(manifest, lockFile);
     }
 
     return ok({ updatedSourceIds });
@@ -433,12 +422,16 @@ export class SourceService {
       ((requestedPath && requestedMatches.length === 0) || scanned.leafs.length === 0) &&
       !options.allowEmptyLeafs
     ) {
+      const emptyReason =
+        scanned.skillFileCount === 0
+          ? " No SKILL.md files were found."
+          : "";
       return fail(
         {
           code: requestedPath ? "SOURCE_PATH_NOT_FOUND" : "NO_VALID_LEAFS",
           message: requestedPath
             ? `Source '${displayName}' does not contain a valid skill at '${requestedPath}'.`
-            : `Source '${displayName}' has no valid skills.`,
+            : `Source '${displayName}' has no valid skills.${emptyReason}`,
         },
         scanned.invalidLeafs.map((leaf) => ({
           code: "INVALID_LEAF",
@@ -487,6 +480,10 @@ export class SourceService {
       },
       [
         ...metadataWarnings,
+        ...scanned.duplicateLeafs.map((leaf) => ({
+          code: "DUPLICATE_LEAF",
+          message: `${leaf.path}: Duplicate skill content skipped because ${leaf.keptPath} was discovered first`,
+        })),
         ...scanned.invalidLeafs.map((leaf) => ({
           code: "INVALID_LEAF",
           message: `${leaf.path}: ${leaf.reason}`,

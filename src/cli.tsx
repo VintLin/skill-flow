@@ -36,11 +36,11 @@ program
       process.exitCode = 1;
       return;
     }
-    const duplicateSkipCount = result.warnings.filter((warning) =>
-      warning.message.includes("Duplicate skill content skipped because"),
+    const duplicateSkipCount = result.warnings.filter(
+      (warning) => warning.code === "DUPLICATE_LEAF",
     ).length;
     const visibleWarnings = result.warnings.filter(
-      (warning) => !warning.message.includes("Duplicate skill content skipped because"),
+      (warning) => warning.code !== "DUPLICATE_LEAF",
     );
     const duplicateSummary =
       duplicateSkipCount > 0

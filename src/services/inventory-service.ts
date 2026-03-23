@@ -1,11 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { InvalidLeafRecord, LeafRecord } from "../domain/types.js";
+import type { DuplicateLeafRecord, InvalidLeafRecord, LeafRecord } from "../domain/types.js";
 import { hashDirectory, slugify } from "../utils/fs.js";
 
 type InventoryScan = {
   leafs: LeafRecord[];
   invalidLeafs: InvalidLeafRecord[];
+  duplicateLeafs: DuplicateLeafRecord[];
+  skillFileCount: number;
 };
 
 type ParsedSkillFile =
@@ -32,6 +34,7 @@ export class InventoryService {
     const skillFiles = await this.findSkillFiles(checkoutPath);
     const candidates: Array<LeafRecord & { dedupeKey: string }> = [];
     const invalidLeafs: InvalidLeafRecord[] = [];
+    const duplicateLeafs: DuplicateLeafRecord[] = [];
 
     for (const skillFilePath of skillFiles) {
       const leafRoot = path.dirname(skillFilePath);
@@ -70,11 +73,17 @@ export class InventoryService {
       });
     }
 
-    const leafs = this.dedupeCandidates(candidates, invalidLeafs);
+    const leafs = this.dedupeCandidates(candidates, duplicateLeafs);
     leafs.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+    duplicateLeafs.sort((left, right) => left.path.localeCompare(right.path));
     invalidLeafs.sort((left, right) => left.path.localeCompare(right.path));
 
-    return { leafs, invalidLeafs };
+    return {
+      leafs,
+      invalidLeafs,
+      duplicateLeafs,
+      skillFileCount: skillFiles.length,
+    };
   }
 
   private async findSkillFiles(rootPath: string): Promise<string[]> {
@@ -181,15 +190,15 @@ export class InventoryService {
 
   private dedupeCandidates(
     candidates: Array<LeafRecord & { dedupeKey: string }>,
-    invalidLeafs: InvalidLeafRecord[],
+    duplicateLeafs: DuplicateLeafRecord[],
   ): LeafRecord[] {
     const keptByKey = new Map<string, LeafRecord>();
     for (const candidate of candidates) {
       if (keptByKey.has(candidate.dedupeKey)) {
         const kept = keptByKey.get(candidate.dedupeKey)!;
-        invalidLeafs.push({
+        duplicateLeafs.push({
           path: candidate.relativePath,
-          reason: `Duplicate skill content skipped because ${kept.relativePath} was discovered first`,
+          keptPath: kept.relativePath,
         });
         continue;
       }

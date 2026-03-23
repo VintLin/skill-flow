@@ -26,9 +26,54 @@ export async function readJsonFile<T>(filePath: string, fallback: T): Promise<T>
 
 export async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
   await ensureDir(path.dirname(filePath));
-  const tempPath = `${filePath}.tmp`;
+  const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await fs.rename(tempPath, filePath);
+}
+
+export async function withFileLock<T>(
+  lockPath: string,
+  task: () => Promise<T>,
+  options: { pollMs?: number; staleMs?: number; timeoutMs?: number } = {},
+): Promise<T> {
+  const pollMs = options.pollMs ?? 25;
+  const staleMs = options.staleMs ?? 5 * 60_000;
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const start = Date.now();
+
+  while (true) {
+    try {
+      await fs.mkdir(lockPath);
+      break;
+    } catch (error) {
+      if (!isAlreadyExistsError(error)) {
+        throw error;
+      }
+
+      const stale = await isLockStale(lockPath, staleMs);
+      if (stale) {
+        await fs.rm(lockPath, { recursive: true, force: true });
+        continue;
+      }
+
+      if (Date.now() - start >= timeoutMs) {
+        throw new Error(`Timed out waiting for state lock at ${lockPath}`);
+      }
+
+      await sleep(pollMs);
+    }
+  }
+
+  try {
+    await fs.writeFile(
+      path.join(lockPath, "owner.json"),
+      `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }, null, 2)}\n`,
+      "utf8",
+    );
+    return await task();
+  } finally {
+    await fs.rm(lockPath, { recursive: true, force: true });
+  }
 }
 
 export async function removePath(targetPath: string): Promise<void> {
@@ -99,4 +144,26 @@ export function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+async function isLockStale(lockPath: string, staleMs: number) {
+  try {
+    const stats = await fs.stat(lockPath);
+    return Date.now() - stats.mtimeMs > staleMs;
+  } catch {
+    return false;
+  }
+}
+
+function isAlreadyExistsError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "EEXIST"
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

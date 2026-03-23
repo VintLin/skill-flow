@@ -1,631 +1,59 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { InventoryService } from "../services/inventory-service.js";
+import { describe, expect, test } from "vitest";
 import { SkillFlowApp } from "../services/skill-flow.js";
-import * as clawhubUtils from "../utils/clawhub.js";
-import * as builtinGitSources from "../utils/builtin-git-sources.js";
-import * as githubCatalog from "../utils/github-catalog.js";
-import { buildFindCommand } from "../utils/find-command.js";
 import {
-  buildProjectionWarningMap,
-  buildCommandBar,
-  buildContextBar,
-  buildSaveLabel,
-  draftsEqual,
-  getPaneWidths,
-  getPaneViewportCount,
-  getSaveDisplayPhase,
-} from "../tui/config-app.js";
-import {
-  TARGET_COMPAT_READ_CANDIDATES,
-  TARGET_DEFINITIONS,
-  TARGET_PATH_CANDIDATES,
-} from "../utils/constants.js";
-import {
-  buildProjectedSkillName,
-  formatGroupLabel,
-  resolveProjectedSkillNames,
-} from "../utils/naming.js";
-import {
-  getParentSelectionState,
-  toggleChild,
-  toggleParent,
-  type TreeSelectionState,
-} from "../tui/selection-state.js";
-import { deriveSourceId } from "../utils/source-id.js";
+  createBareRemote,
+  createRepo,
+  git,
+  pathExists,
+  skillDoc,
+  useSkillFlowSandbox,
+  writeRepoFiles,
+} from "./test-helpers.js";
 
 describe.sequential("skill-flow", () => {
-  let sandboxRoot: string;
-  let stateRoot: string;
-  let targetsRoot: string;
+  const sandbox = useSkillFlowSandbox();
 
-  beforeEach(async () => {
-    sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-test-"));
-    stateRoot = path.join(sandboxRoot, "state");
-    targetsRoot = path.join(sandboxRoot, "targets");
-    await fs.mkdir(targetsRoot, { recursive: true });
-
-    process.env.SKILL_FLOW_STATE_ROOT = stateRoot;
-    process.env.SKILL_FLOW_TARGET_CLAUDE_CODE = path.join(targetsRoot, "claude");
-    process.env.SKILL_FLOW_TARGET_CODEX = path.join(targetsRoot, "codex");
-    process.env.SKILL_FLOW_TARGET_CURSOR = path.join(targetsRoot, "cursor");
-    process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT = path.join(targetsRoot, "github-copilot");
-    process.env.SKILL_FLOW_TARGET_GEMINI_CLI = path.join(targetsRoot, "gemini-cli");
-    process.env.SKILL_FLOW_TARGET_OPENCODE = path.join(targetsRoot, "opencode");
-    process.env.SKILL_FLOW_TARGET_OPENCLAW = path.join(targetsRoot, "openclaw");
-    process.env.SKILL_FLOW_TARGET_PI = path.join(targetsRoot, "pi");
-    process.env.SKILL_FLOW_TARGET_WINDSURF = path.join(targetsRoot, "windsurf");
-    process.env.SKILL_FLOW_TARGET_ROO_CODE = path.join(targetsRoot, "roo-code");
-    process.env.SKILL_FLOW_TARGET_CLINE = path.join(targetsRoot, "cline");
-    process.env.SKILL_FLOW_TARGET_AMP = path.join(targetsRoot, "amp");
-    process.env.SKILL_FLOW_TARGET_KIRO = path.join(targetsRoot, "kiro");
-
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CODEX, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CURSOR, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_GEMINI_CLI, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_OPENCODE, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_OPENCLAW, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_PI, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_WINDSURF, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_ROO_CODE, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CLINE, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_AMP, { recursive: true });
-    await fs.mkdir(process.env.SKILL_FLOW_TARGET_KIRO, { recursive: true });
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    delete process.env.SKILL_FLOW_STATE_ROOT;
-    delete process.env.SKILL_FLOW_TARGET_CLAUDE_CODE;
-    delete process.env.SKILL_FLOW_TARGET_CODEX;
-    delete process.env.SKILL_FLOW_TARGET_CURSOR;
-    delete process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT;
-    delete process.env.SKILL_FLOW_TARGET_GEMINI_CLI;
-    delete process.env.SKILL_FLOW_TARGET_OPENCODE;
-    delete process.env.SKILL_FLOW_TARGET_OPENCLAW;
-    delete process.env.SKILL_FLOW_TARGET_PI;
-    delete process.env.SKILL_FLOW_TARGET_WINDSURF;
-    delete process.env.SKILL_FLOW_TARGET_ROO_CODE;
-    delete process.env.SKILL_FLOW_TARGET_CLINE;
-    delete process.env.SKILL_FLOW_TARGET_AMP;
-    delete process.env.SKILL_FLOW_TARGET_KIRO;
-    await fs.rm(sandboxRoot, { recursive: true, force: true });
-  });
-
-  test("adds a git source and discovers valid skills", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "frontend/SKILL.md": skillDoc("frontend", "Build frontend flows."),
-      "ops/SKILL.md": skillDoc("ops", "Run operator workflows."),
+  test("uninstall removes managed copied projections even when they drifted", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
-
-    const result = await app.addSource(repoPath);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.data.leafCount).toBe(2);
-    expect(result.warnings).toHaveLength(0);
-
-    const manifest = await app.store.readManifest();
-    const binding = manifest.bindings[result.data.manifest.id];
-    expect(Object.keys(binding?.targets ?? {})).toEqual([
-      "claude-code",
-      "codex",
-      "cursor",
-      "github-copilot",
-      "gemini-cli",
-      "opencode",
-      "openclaw",
-      "pi",
-      "windsurf",
-      "roo-code",
-      "cline",
-      "amp",
-      "kiro",
-    ]);
-    expect(binding?.targets["claude-code"]?.leafIds).toEqual([
-      `${result.data.manifest.id}:frontend`,
-      `${result.data.manifest.id}:ops`,
-    ]);
-  });
-
-  test("adds a git source with path filtering but only preselects matching skills", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "skills/find-skills/SKILL.md": skillDoc("find-skills", "Find skills."),
-      "skills/review/SKILL.md": skillDoc("review", "Review code."),
-    });
-    const app = new SkillFlowApp();
-
-    const result = await app.addSource(repoPath, { path: "skills/find-skills" });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    expect(result.data.leafCount).toBe(2);
-
-    const list = await app.listWorkflows();
-    expect(list.ok).toBe(true);
-    if (!list.ok) {
-      return;
-    }
-
-    expect(list.data.summaries[0]?.leafs.map((leaf) => leaf.relativePath)).toEqual([
-      "skills/find-skills",
-      "skills/review",
-    ]);
-
-    const manifest = await app.store.readManifest();
-    const binding = manifest.bindings[result.data.manifest.id];
-    expect(binding?.targets["claude-code"]?.leafIds).toEqual([
-      `${result.data.manifest.id}:skills/find-skills`,
-    ]);
-  });
-
-  test("rejects add path when it does not resolve to a valid skill", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "skills/find-skills/SKILL.md": skillDoc("find-skills", "Find skills."),
-      "docs/readme.md": "hello",
-    });
-    const app = new SkillFlowApp();
-
-    const result = await app.addSource(repoPath, { path: "docs" });
-
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      return;
-    }
-
-    expect(result.errors[0]?.code).toBe("SOURCE_PATH_NOT_FOUND");
-  });
-
-  test("parses GitHub tree URLs as repo sources with path filtering", async () => {
-    const app = new SkillFlowApp();
-    const result = await app.addSource(
-      "https://github.com/vercel-labs/skills/tree/main/skills/find-skills",
-    );
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    expect(result.data.manifest.id).toBe("vercel-labs-skills");
-    expect(result.data.manifest.requestedPath).toBe("skills/find-skills");
-  }, 30000);
-
-  test("adds a ClawHub source and stores ClawHub lock metadata", async () => {
-    const app = new SkillFlowApp();
-
-    const result = await app.addSource("clawhub:find-skills-skill");
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    expect(result.data.manifest.kind).toBe("clawhub");
-    expect(result.data.lock.kind).toBe("clawhub");
-    expect(result.data.lock.packageSlug).toBe("find-skills-skill");
-    expect(result.data.lock.resolvedVersion).toBeTruthy();
-    expect(result.data.leafCount).toBeGreaterThan(0);
-  }, 20000);
-
-  test("keeps a pinned ClawHub source unchanged on update", async () => {
-    const app = new SkillFlowApp();
-
-    const added = await app.addSource("clawhub:find-skills-skill@1.0.0");
-
+    const added = await app.addSource(repoPath, { project: false });
     expect(added.ok).toBe(true);
     if (!added.ok) {
       return;
     }
 
-    expect(added.data.lock.versionMode).toBe("pinned");
-
-    const updated = await app.updateSources([added.data.manifest.id]);
-
-    expect(updated.ok).toBe(true);
-    if (!updated.ok) {
-      return;
-    }
-
-    expect(updated.data.updated[0]?.changed).toBe(false);
-  }, 20000);
-
-  test("keeps a floating ClawHub source unchanged when no newer version exists", async () => {
-    const app = new SkillFlowApp();
-
-    const added = await app.addSource("clawhub:find-skills-skill");
-
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
-
-    expect(added.data.lock.versionMode).toBe("floating");
-
-    const updated = await app.updateSources([added.data.manifest.id]);
-
-    expect(updated.ok).toBe(true);
-    if (!updated.ok) {
-      return;
-    }
-
-    expect(updated.data.updated[0]?.changed).toBe(false);
-  }, 40000);
-
-  test("find prefers local results, then built-in git, then ClawHub", async () => {
-    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([
-      { slug: "browse-skill", title: "Browse Skill", score: 0.92 },
-    ]);
-
-    const repoPath = await createRepo(sandboxRoot, {
-      "browse/SKILL.md": skillDoc("browse", "Local browse skill."),
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["openclaw"],
+      selectedLeafIds: [leafId],
     });
-    const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
-    expect(added.ok).toBe(true);
+    expect(applied.ok).toBe(true);
 
-    await seedBuiltinCatalog(app);
-    const builtin = builtinGitSources.getBuiltinGitSources()[0]!;
-    const builtinSourceId = deriveSourceId(builtin.locator);
-    await fs.mkdir(
-      path.join(app.store.getCatalogCheckoutPath(builtinSourceId), "skills", "browse"),
-      { recursive: true },
+    const lock = await app.store.readLock();
+    const deployment = lock.deployments.find(
+      (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );
-    await fs.writeFile(
-      path.join(app.store.getCatalogCheckoutPath(builtinSourceId), "skills", "browse", "SKILL.md"),
-      skillDoc("browse", "Built-in browse skill."),
-      "utf8",
-    );
-
-    const result = await app.findSkills("browse");
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
+    expect(deployment).toBeTruthy();
+    if (!deployment) {
       return;
     }
 
-    expect(result.data.candidates.map((candidate) => candidate.source)).toEqual([
-      "local",
-      "builtin-git",
-      "clawhub",
-    ]);
-  }, 10000);
-
-  test("find falls back to stale built-in catalog cache with a warning", async () => {
-    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
-    vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([
-      { locator: "https://github.com/example/catalog.git", branch: "main" },
-    ]);
-    vi.spyOn(githubCatalog, "fetchGitHubSkillPaths").mockRejectedValueOnce(new Error("offline"));
-
-    const app = new SkillFlowApp();
-    const sourceId = deriveSourceId("https://github.com/example/catalog.git");
-    await fs.mkdir(app.store.catalogRoot, { recursive: true });
-    await fs.writeFile(
-      app.store.getCatalogIndexPath(sourceId),
-      `${JSON.stringify(
-        {
-          locator: "https://github.com/example/catalog.git",
-          branch: "main",
-          skillPaths: ["skills/browse/SKILL.md"],
-          updatedAt: "2020-01-01T00:00:00.000Z",
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
-    );
-
-    const result = await app.findSkills("browse");
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.data.candidates[0]?.source).toBe("builtin-git");
-    expect(
-      result.warnings.some((warning) => warning.code === "BUILTIN_SOURCE_STALE_CACHE_USED"),
-    ).toBe(true);
-  });
-
-  test("find builds repo-level add commands for built-in Git results", async () => {
-    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
-
-    const app = new SkillFlowApp();
-    await seedBuiltinCatalog(app);
-    const builtin = builtinGitSources.getBuiltinGitSources()[0]!;
-    const builtinSourceId = deriveSourceId(builtin.locator);
-    await fs.mkdir(
-      path.join(app.store.getCatalogCheckoutPath(builtinSourceId), "skills", "find-skills"),
-      { recursive: true },
-    );
-    await fs.writeFile(
-      path.join(
-        app.store.getCatalogCheckoutPath(builtinSourceId),
-        "skills",
-        "find-skills",
-        "SKILL.md",
-      ),
-      skillDoc("find-skills", "Find skills from a built-in repo."),
-      "utf8",
-    );
-
-    const result = await app.findSkills("find skills");
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    const candidate = result.data.candidates[0];
-    expect(candidate?.source).toBe("builtin-git");
-    expect(buildFindCommand(candidate!)).toBe(
-      `skill-flow add ${builtin.locator} --path skills/find-skills`,
-    );
-  }, 10000);
-
-  test("returns a clear error when git fetch fails", async () => {
-    const app = new SkillFlowApp();
-
-    const result = await app.addSource(path.join(sandboxRoot, "missing-repo"));
-
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      return;
-    }
-    expect(result.errors[0]?.code).toBe("GIT_CLONE_FAILED");
-  });
-
-  test("normalizes GitHub locators to the same source id across supported formats", () => {
-    const locators = [
-      "https://github.com/garrytan/gstack",
-      "https://github.com/garrytan/gstack.git",
-      "git@github.com:garrytan/gstack.git",
-      "garrytan/gstack",
-    ];
-
-    expect(locators.map((locator) => deriveSourceId(locator))).toEqual([
-      "garrytan-gstack",
-      "garrytan-gstack",
-      "garrytan-gstack",
-      "garrytan-gstack",
-    ]);
-  });
-
-  test("normalizes ClawHub locators to the same source id across version forms", () => {
-    expect(deriveSourceId("clawhub:find-skills")).toBe("clawhub-find-skills");
-    expect(deriveSourceId("clawhub:find-skills@1.2.3")).toBe("clawhub-find-skills");
-  });
-
-  test("builds follow-up commands for search candidates", () => {
-    expect(buildFindCommand({
-      id: "builtin:1",
-      title: "find-skills",
-      description: "Find skills",
-      source: "builtin-git",
-      sourceLabel: "skills(@anthropics)",
-      sourceId: "anthropics-skills",
-      sourceKind: "git",
-      locator: "https://github.com/anthropics/skills.git",
-      relativePath: "skills/find-skills",
-      installed: false,
-      action: {
-        type: "add-git",
-        locator: "https://github.com/anthropics/skills.git",
-        requestedPath: "skills/find-skills",
-      },
-    })).toBe("skill-flow add https://github.com/anthropics/skills.git --path skills/find-skills");
-
-    expect(buildFindCommand({
-      id: "clawhub:1",
-      title: "Find Skills",
-      description: "Find skills",
-      source: "clawhub",
-      sourceLabel: "ClawHub",
-      sourceId: "clawhub-find-skills",
-      sourceKind: "clawhub",
-      locator: "clawhub:find-skills",
-      installed: false,
-      action: {
-        type: "add-clawhub",
-        slug: "find-skills",
-        version: "1.2.3",
-      },
-    })).toBe("skill-flow add clawhub:find-skills@1.2.3");
-  });
-
-  test("fails find when no local results exist and all remote search backends are unavailable", async () => {
-    vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([]);
-    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockRejectedValueOnce(new Error("offline"));
-
-    const app = new SkillFlowApp();
-    const result = await app.findSkills("browse");
-
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      return;
-    }
-
-    expect(result.errors[0]?.code).toBe("FIND_UNAVAILABLE");
-    expect(result.warnings[0]?.code).toBe("CLAWHUB_SEARCH_FAILED");
-  });
-
-  test("formats GitHub groups as groupName(@owner)", () => {
-    expect(formatGroupLabel({
-      id: "garrytan-gstack",
-      locator: "git@github.com:garrytan/gstack.git",
-      displayName: "gstack",
-    })).toBe("gstack@garrytan");
-  });
-
-  test("prefers groupName-skillName for projected collisions", () => {
-    const projected = resolveProjectedSkillNames([
-      {
-        leafId: "a:browse",
-        groupId: "garrytan-gstack",
-        groupName: "gstack",
-        groupAuthor: "garrytan",
-        skillName: "browse",
-      },
-      {
-        leafId: "b:browse",
-        groupId: "alice-toolkit",
-        groupName: "toolkit",
-        groupAuthor: "alice",
-        skillName: "browse",
-      },
-    ]);
-
-    expect(projected.get("a:browse")).toBe(buildProjectedSkillName("gstack", "browse", "garrytan"));
-    expect(projected.get("b:browse")).toBe(buildProjectedSkillName("toolkit", "browse", "alice"));
-  });
-
-  test("falls back to groupId-skillName when projected names still collide", () => {
-    const projected = resolveProjectedSkillNames([
-      {
-        leafId: "a:browse",
-        groupId: "alice-gstack",
-        groupName: "gstack",
-        groupAuthor: "alice",
-        skillName: "browse",
-      },
-      {
-        leafId: "b:browse",
-        groupId: "garrytan-gstack",
-        groupName: "gstack",
-        groupAuthor: "garrytan",
-        skillName: "browse",
-      },
-    ]);
-
-    expect(projected.get("a:browse")).toBe("gstack(alice)-browse");
-    expect(projected.get("b:browse")).toBe("gstack(garrytan)-browse");
-  });
-
-  test("prefers author prefix when repo prefix would repeat the skill prefix", () => {
-    const projected = resolveProjectedSkillNames([
-      {
-        leafId: "a:skill-creator",
-        groupId: "anthropic-skill",
-        groupName: "skill",
-        groupAuthor: "anthropic",
-        skillName: "skill-creator",
-      },
-      {
-        leafId: "b:skill-creator",
-        groupId: "openai-skill",
-        groupName: "skill",
-        groupAuthor: "openai",
-        skillName: "skill-creator",
-      },
-    ]);
-
-    expect(projected.get("a:skill-creator")).toBe("anthropic-skill-creator");
-    expect(projected.get("b:skill-creator")).toBe("openai-skill-creator");
-  });
-
-  test("rejects uninstall for an unknown skills group", async () => {
-    const app = new SkillFlowApp();
-
-    const result = await app.uninstall(["missing-source"]);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      return;
-    }
-    expect(result.errors[0]?.code).toBe("SOURCE_NOT_FOUND");
-  });
-
-  test("rejects a source with zero valid skills", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "broken/SKILL.md": "No heading here",
+    await writeRepoFiles(path.dirname(deployment.targetPath), {
+      [`${path.basename(deployment.targetPath)}/SKILL.md`]: "# Drifted\nChanged content.",
     });
-    const app = new SkillFlowApp();
 
-    const result = await app.addSource(repoPath);
-
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      return;
-    }
-    expect(result.errors[0]?.code).toBe("NO_VALID_LEAFS");
-  });
-
-  test("keeps valid skills and warns about invalid ones", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "good/SKILL.md": skillDoc("good", "Good description."),
-      "bad/SKILL.md": "Broken file",
-    });
-    const app = new SkillFlowApp();
-
-    const result = await app.addSource(repoPath);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.data.leafCount).toBe(1);
-    expect(result.warnings).toHaveLength(1);
-  });
-
-  test("accepts skills that use YAML frontmatter metadata", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "browse/SKILL.md": `---
-name: browse
-version: 1.1.0
-description: |
-  Fast headless browser for QA testing and site dogfooding.
-  Opens pages and validates flows.
----
-<!-- generated -->
-
-## Preamble
-`,
-    });
-    const app = new SkillFlowApp();
-
-    const result = await app.addSource(repoPath);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.data.leafCount).toBe(1);
-
-    const listResult = await app.listWorkflows();
-    expect(listResult.ok).toBe(true);
-    if (!listResult.ok) {
-      return;
-    }
-    expect(listResult.data.summaries[0]?.leafs[0]?.title).toBe("browse");
-    expect(listResult.data.summaries[0]?.leafs[0]?.description).toContain(
-      "Fast headless browser",
-    );
-    expect(listResult.data.summaries[0]?.leafs[0]?.name).toBe("browse");
-  });
-
-  test("uses repository display name for a root-level skill link name", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "SKILL.md": skillDoc("gstack", "Root skill."),
-    });
-    const inventory = new InventoryService();
-    const scanned = await inventory.scanSource("garrytan-gstack", repoPath, "gstack");
-    expect(scanned.leafs[0]?.linkName).toBe("gstack");
+    const removed = await app.uninstall([sourceId]);
+    expect(removed.ok).toBe(true);
+    expect(await pathExists(deployment.targetPath)).toBe(false);
   });
 
   test("renames preview target when foreign content already exists at target path", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
     const app = new SkillFlowApp();
@@ -658,7 +86,7 @@ description: |
   });
 
   test("replaces identical external directory content at target path", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
@@ -689,10 +117,10 @@ description: |
   });
 
   test("replaces identical external symlink content at target path", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const externalRepo = await createRepo(sandboxRoot, {
+    const externalRepo = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
@@ -719,7 +147,7 @@ description: |
   });
 
   test("keeps external different-content skill and renames our projection instead", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Managed browser flow."),
     });
     const app = new SkillFlowApp();
@@ -756,7 +184,7 @@ description: |
   });
 
   test("relocates external skill when our fallback names are fully occupied", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Managed browser flow."),
     });
     const app = new SkillFlowApp();
@@ -798,7 +226,7 @@ description: |
   });
 
   test("doctor detects broken symlinks", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
     const app = new SkillFlowApp();
@@ -830,7 +258,7 @@ description: |
   });
 
   test("scans host directories too, but keeps the first discovered duplicate only", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
       ".agents/skills/gstack-browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
@@ -856,10 +284,27 @@ description: |
     expect(list.data.summaries[0]?.leafs.map((leaf) => leaf.relativePath)).toEqual([
       "browse",
     ]);
+    expect(list.data.summaries[0]?.lock?.invalidLeafs).toEqual([]);
+  });
+
+  test("reports when a source has no SKILL.md files at all", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "engineering/engineering-senior-developer.md": "# Agent",
+    });
+    const app = new SkillFlowApp();
+
+    const result = await app.addSource(repoPath);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.errors[0]?.code).toBe("NO_VALID_LEAFS");
+    expect(result.errors[0]?.message).toContain("No SKILL.md files were found");
   });
 
   test("discovers a unique skill from a host directory when no earlier duplicate exists", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       ".agents/skills/gstack-browse/SKILL.md": skillDoc("gstack-browse", "Host directory skill."),
     });
     const app = new SkillFlowApp();
@@ -880,7 +325,7 @@ description: |
   });
 
   test("prefers visible second-level skill directories before hidden second-level directories", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "catalog/browse/SKILL.md": skillDoc("browse", "Browser flow."),
       "catalog/.generated/browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
@@ -907,7 +352,7 @@ description: |
   });
 
   test("dedupes skills by metadata name and description", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": `---
 name: browse
 description: |
@@ -940,7 +385,7 @@ description: |
   });
 
   test("keeps same-name skills when descriptions differ", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Canonical browse skill."),
       "copy-of-browse/SKILL.md": skillDoc("browse", "Different browse skill."),
     });
@@ -956,7 +401,7 @@ description: |
   });
 
   test("apply uses natural skill names and removes legacy prefixed paths", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
@@ -974,12 +419,12 @@ description: |
     );
 
     await fs.symlink(
-      path.join(stateRoot, "source", "git", sourceId, "browse"),
+      path.join(sandbox.stateRoot, "source", "git", sourceId, "browse"),
       legacyPath,
       "junction",
     );
 
-    const lockPath = path.join(stateRoot, "lock.json");
+    const lockPath = path.join(sandbox.stateRoot, "lock.json");
     const lockFile = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
       deployments: Array<Record<string, string>>;
     };
@@ -1008,10 +453,10 @@ description: |
   });
 
   test("keeps the earlier selected cross-group duplicate when linkName name and description all match", async () => {
-    const repoA = await createRepo(sandboxRoot, {
+    const repoA = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
-    const repoB = await createRepo(sandboxRoot, {
+    const repoB = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
@@ -1052,7 +497,7 @@ description: |
       await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "browse")),
     ).toBe(true);
 
-    const lockPath = path.join(stateRoot, "lock.json");
+    const lockPath = path.join(sandbox.stateRoot, "lock.json");
     const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
       deployments: Array<{ sourceId: string; targetPath: string }>;
     };
@@ -1065,10 +510,10 @@ description: |
   });
 
   test("renames cross-group projections when linkName matches but content differs", async () => {
-    const repoA = await createRepo(sandboxRoot, {
+    const repoA = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow from A."),
     });
-    const repoB = await createRepo(sandboxRoot, {
+    const repoB = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow from B."),
     });
     const app = new SkillFlowApp();
@@ -1120,7 +565,7 @@ description: |
   });
 
   test("doctor reports unavailable target paths", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
     const app = new SkillFlowApp();
@@ -1148,10 +593,10 @@ description: |
   });
 
   test("update detects added skills", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const remotePath = await createBareRemote(repoPath, sandboxRoot);
+    const remotePath = await createBareRemote(repoPath, sandbox.sandboxRoot);
     const app = new SkillFlowApp();
     const added = await app.addSource(`file://${remotePath}`);
     expect(added.ok).toBe(true);
@@ -1172,10 +617,10 @@ description: |
   });
 
   test("update removes projections for deleted skills", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const remotePath = await createBareRemote(repoPath, sandboxRoot);
+    const remotePath = await createBareRemote(repoPath, sandbox.sandboxRoot);
     const app = new SkillFlowApp();
     const added = await app.addSource(`file://${remotePath}`);
     expect(added.ok).toBe(true);
@@ -1207,10 +652,10 @@ description: |
   });
 
   test("update surfaces invalidated skills", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
-    const remotePath = await createBareRemote(repoPath, sandboxRoot);
+    const remotePath = await createBareRemote(repoPath, sandbox.sandboxRoot);
     const app = new SkillFlowApp();
     const added = await app.addSource(`file://${remotePath}`);
     expect(added.ok).toBe(true);
@@ -1233,23 +678,8 @@ description: |
     expect(updated.data.updated[0]?.invalidatedLeafIds).toHaveLength(1);
   });
 
-  test("selection state machine handles parent child partial transitions", () => {
-    let state: TreeSelectionState = {
-      allLeafIds: ["a", "b"],
-      selectedLeafIds: [],
-    };
-
-    expect(getParentSelectionState(state)).toBe("empty");
-    state = toggleChild(state, "a");
-    expect(getParentSelectionState(state)).toBe("partial");
-    state = toggleParent(state);
-    expect(getParentSelectionState(state)).toBe("full");
-    state = toggleChild(state, "b");
-    expect(getParentSelectionState(state)).toBe("partial");
-  });
-
   test("doctor detects drift in copied projections", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
     });
     const app = new SkillFlowApp();
@@ -1285,376 +715,8 @@ description: |
     expect(doctor.data.issues.some((issue) => issue.code === "DRIFT_COPY")).toBe(true);
   });
 
-  test("bootstrap detects symlinked skills inside agent roots", async () => {
-    const app = new SkillFlowApp();
-    const externalRoot = path.join(sandboxRoot, "external-skill");
-    await writeRepoFiles(externalRoot, {
-      "SKILL.md": skillDoc("linked-skill", "Symlinked external skill."),
-    });
-
-    await fs.symlink(
-      externalRoot,
-      path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "linked-skill"),
-      "junction",
-    );
-
-    await app.store.init();
-    const manifest = await app.store.readManifest();
-    const lock = await app.store.readLock();
-    const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
-      manifest,
-      lock,
-    );
-
-    expect(detected.some((item) => item.displayName === "linked-skill")).toBe(true);
-  });
-
-  test("keeps metadata warnings on valid skills", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "folder-name/SKILL.md": skillDoc("bad--name", "x".repeat(1025)),
-    });
-    const app = new SkillFlowApp();
-
-    const result = await app.addSource(repoPath);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    const list = await app.listWorkflows();
-    expect(list.ok).toBe(true);
-    if (!list.ok) {
-      return;
-    }
-    expect(list.data.summaries[0]?.leafs[0]?.metadataWarnings.length).toBeGreaterThan(0);
-  });
-
-  test("reads old lock entries without metadata fields", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
-    });
-    const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
-
-    const lockPath = path.join(stateRoot, "lock.json");
-    const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
-      leafInventory: Array<Record<string, unknown>>;
-    };
-    lock.leafInventory = lock.leafInventory.map((leaf) => {
-      const next = { ...leaf };
-      delete next.metadataWarnings;
-      delete next.linkName;
-      return next;
-    });
-    await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
-
-    const list = await app.listWorkflows();
-    expect(list.ok).toBe(true);
-    if (!list.ok) {
-      return;
-    }
-    expect(list.data.summaries[0]?.leafs[0]?.metadataWarnings).toEqual([]);
-    expect(list.data.summaries[0]?.leafs[0]?.linkName).toBe("browse");
-  });
-
-  test("previewDraft is read-only and does not reconcile inventory on its own", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
-    });
-    const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
-
-    const sourceId = added.data.manifest.id;
-    const lockPath = path.join(stateRoot, "lock.json");
-    const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
-      sources: Array<{ id: string; leafIds: string[] }>;
-      leafInventory: Array<Record<string, unknown>>;
-    };
-    const existingLeaf = lock.leafInventory[0] as {
-      id: string;
-      absolutePath: string;
-      linkName: string;
-      name: string;
-      relativePath: string;
-      skillFilePath: string;
-      sourceId: string;
-      title: string;
-    };
-    const generatedLeafId = `${sourceId}:.agents/skills/generated`;
-    lock.sources[0]!.leafIds.push(generatedLeafId);
-    lock.leafInventory.push({
-      ...existingLeaf,
-      id: generatedLeafId,
-      relativePath: ".agents/skills/generated",
-      absolutePath: path.join(stateRoot, "source", "git", sourceId, ".agents/skills/generated"),
-      skillFilePath: path.join(
-        stateRoot,
-        "source",
-        "git",
-        sourceId,
-        ".agents/skills/generated/SKILL.md",
-      ),
-      linkName: "generated",
-      name: "generated",
-      title: "generated",
-    });
-    const mutatedLock = `${JSON.stringify(lock, null, 2)}\n`;
-    await fs.writeFile(lockPath, mutatedLock, "utf8");
-
-    const preview = await app.previewDraft(sourceId, {
-      enabledTargets: ["claude-code"],
-      selectedLeafIds: [`${sourceId}:browse`],
-    });
-
-    expect(preview.ok).toBe(true);
-    expect(await fs.readFile(lockPath, "utf8")).toBe(mutatedLock);
-  });
-
-  test("config helpers derive save, command, and context states", () => {
-    expect(draftsEqual(
-      {
-        enabledTargets: ["codex", "claude-code"],
-        selectedLeafIds: ["b", "a"],
-      },
-      {
-        enabledTargets: ["claude-code", "codex"],
-        selectedLeafIds: ["a", "b"],
-      },
-    )).toBe(true);
-    expect(getSaveDisplayPhase("idle", true)).toBe("dirty");
-    expect(buildSaveLabel("dirty", 3)).toContain("DIRTY");
-    expect(getPaneViewportCount(16, 1)).toBe(10);
-    expect(getPaneWidths(100).reduce((sum, width) => sum + width, 0)).toBeLessThanOrEqual(98);
-    expect(
-      buildCommandBar({
-        changeCount: 3,
-        focus: "groups",
-        saveFocused: false,
-        savePhase: "dirty",
-      }),
-    ).toContain("inspect skills");
-    expect(
-      buildContextBar({
-        blockedCount: 0,
-        changeCount: 3,
-        previewError: undefined,
-        previewLoading: false,
-        savePhase: "clean",
-        saveMessage: undefined,
-        selectedLeafName: "gstack",
-        selectedLeafWarnings: ["description should be at most 1024 characters"],
-        skippedLeafs: 21,
-        sourceLabel: "gstack(@garrytan)",
-      }),
-    ).toContain("gstack(@garrytan)");
-  });
-
-  test("getConfigData normalizes per-target bindings to the config draft model", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
-      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
-      "review/SKILL.md": skillDoc("review", "Review flow."),
-    });
-    const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath);
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
-
-    const sourceId = added.data.manifest.id;
-    const manifest = await app.store.readManifest();
-    manifest.bindings[sourceId] = {
-      targets: {
-        "claude-code": {
-          enabled: true,
-          leafIds: [`${sourceId}:browse`],
-        },
-        codex: {
-          enabled: true,
-          leafIds: [`${sourceId}:review`],
-        },
-      },
-    };
-    await app.store.writeManifest(manifest);
-
-    const result = await app.getConfigData();
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    const normalizedManifest = await app.store.readManifest();
-    expect(normalizedManifest.bindings[sourceId]).toEqual({
-      targets: {
-        "claude-code": {
-          enabled: true,
-          leafIds: [`${sourceId}:browse`, `${sourceId}:review`],
-        },
-        codex: {
-          enabled: true,
-          leafIds: [`${sourceId}:browse`, `${sourceId}:review`],
-        },
-      },
-    });
-    expect(
-      result.data.summaries.find((summary) => summary.source.id === sourceId)?.bindings,
-    ).toEqual(normalizedManifest.bindings[sourceId]);
-  });
-
-  test("projection warning helper marks identical cross-group skills as skipped", () => {
-    const warnings = buildProjectionWarningMap({
-      drafts: {
-        alpha: { enabledTargets: ["claude-code"], selectedLeafIds: ["alpha:browse"] },
-        beta: { enabledTargets: ["claude-code"], selectedLeafIds: ["beta:browse"] },
-      },
-      summaries: [
-        {
-          source: {
-            id: "alpha",
-            locator: "alpha",
-            kind: "git",
-            displayName: "alpha",
-            addedAt: "",
-          },
-          lock: undefined,
-          bindings: { targets: {} },
-          activeTargetCount: 0,
-          health: "ACTIVE",
-          leafs: [
-            {
-              id: "alpha:browse",
-              sourceId: "alpha",
-              name: "browse",
-              linkName: "browse",
-              title: "browse",
-              description: "Browser flow.",
-              relativePath: "browse",
-              absolutePath: "/tmp/alpha/browse",
-              skillFilePath: "/tmp/alpha/browse/SKILL.md",
-              contentHash: "a",
-              metadataWarnings: [],
-              valid: true,
-            },
-          ],
-        },
-        {
-          source: {
-            id: "beta",
-            locator: "beta",
-            kind: "git",
-            displayName: "beta",
-            addedAt: "",
-          },
-          lock: undefined,
-          bindings: { targets: {} },
-          activeTargetCount: 0,
-          health: "ACTIVE",
-          leafs: [
-            {
-              id: "beta:browse",
-              sourceId: "beta",
-              name: "browse",
-              linkName: "browse",
-              title: "browse",
-              description: "Browser flow.",
-              relativePath: "browse",
-              absolutePath: "/tmp/beta/browse",
-              skillFilePath: "/tmp/beta/browse/SKILL.md",
-              contentHash: "b",
-              metadataWarnings: [],
-              valid: true,
-            },
-          ],
-        },
-      ],
-      sourceId: "beta",
-    });
-
-    expect(warnings["beta:browse"]?.[0]).toContain("will be skipped");
-  });
-
-  test("projection warning helper marks cross-group name collisions as renamed", () => {
-    const warnings = buildProjectionWarningMap({
-      drafts: {
-        alpha: { enabledTargets: ["claude-code"], selectedLeafIds: ["alpha:browse"] },
-        beta: { enabledTargets: ["claude-code"], selectedLeafIds: ["beta:browse"] },
-      },
-      summaries: [
-        {
-          source: {
-            id: "alpha",
-            locator: "alpha",
-            kind: "git",
-            displayName: "alpha",
-            addedAt: "",
-          },
-          lock: undefined,
-          bindings: { targets: {} },
-          activeTargetCount: 0,
-          health: "ACTIVE",
-          leafs: [
-            {
-              id: "alpha:browse",
-              sourceId: "alpha",
-              name: "browse",
-              linkName: "browse",
-              title: "browse",
-              description: "Browser flow A.",
-              relativePath: "browse",
-              absolutePath: "/tmp/alpha/browse",
-              skillFilePath: "/tmp/alpha/browse/SKILL.md",
-              contentHash: "a",
-              metadataWarnings: [],
-              valid: true,
-            },
-          ],
-        },
-        {
-          source: {
-            id: "beta",
-            locator: "beta",
-            kind: "git",
-            displayName: "beta",
-            addedAt: "",
-          },
-          lock: undefined,
-          bindings: { targets: {} },
-          activeTargetCount: 0,
-          health: "ACTIVE",
-          leafs: [
-            {
-              id: "beta:browse",
-              sourceId: "beta",
-              name: "browse",
-              linkName: "browse",
-              title: "browse",
-              description: "Browser flow B.",
-              relativePath: "browse",
-              absolutePath: "/tmp/beta/browse",
-              skillFilePath: "/tmp/beta/browse/SKILL.md",
-              contentHash: "b",
-              metadataWarnings: [],
-              valid: true,
-            },
-          ],
-        },
-      ],
-      sourceId: "beta",
-    });
-
-    expect(warnings["beta:browse"]?.[0]).toContain("will deploy as beta-browse");
-  });
-
   test("supports cursor and pi target projections", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
@@ -1681,7 +743,7 @@ description: |
   });
 
   test("supports additional global agent target projections", async () => {
-    const repoPath = await createRepo(sandboxRoot, {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
@@ -1751,120 +813,4 @@ description: |
       "kiro",
     ]);
   });
-
-  test("includes config-based OpenCode skills directory in default detection paths", () => {
-    expect(TARGET_PATH_CANDIDATES.opencode).toContain(
-      path.join(os.homedir(), ".config", "opencode", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES["github-copilot"]).toContain(
-      path.join(os.homedir(), ".copilot", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES["gemini-cli"]).toContain(
-      path.join(os.homedir(), ".gemini", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES.windsurf).toContain(
-      path.join(os.homedir(), ".codeium", "windsurf", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES["roo-code"]).toContain(
-      path.join(os.homedir(), ".roo", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES.cline).toContain(
-      path.join(os.homedir(), ".cline", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES.amp).toContain(
-      path.join(os.homedir(), ".config", "agents", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES.kiro).toContain(
-      path.join(os.homedir(), ".kiro", "skills"),
-    );
-  });
-
-  test("classifies shared global roots as compatibility reads instead of write roots", () => {
-    expect(TARGET_DEFINITIONS.codex.writerKey).toBe("agents-skills");
-    expect(TARGET_PATH_CANDIDATES.codex).toContain(
-      path.join(os.homedir(), ".agents", "skills"),
-    );
-    expect(TARGET_COMPAT_READ_CANDIDATES["gemini-cli"]).toContain(
-      path.join(os.homedir(), ".agents", "skills"),
-    );
-    expect(TARGET_COMPAT_READ_CANDIDATES["github-copilot"]).toContain(
-      path.join(os.homedir(), ".agents", "skills"),
-    );
-    expect(TARGET_COMPAT_READ_CANDIDATES.cursor).toContain(
-      path.join(os.homedir(), ".claude", "skills"),
-    );
-    expect(TARGET_COMPAT_READ_CANDIDATES.pi).toContain(
-      path.join(os.homedir(), ".claude", "skills"),
-    );
-    expect(TARGET_COMPAT_READ_CANDIDATES.amp).toContain(
-      path.join(os.homedir(), ".claude", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES["gemini-cli"]).not.toContain(
-      path.join(os.homedir(), ".agents", "skills"),
-    );
-    expect(TARGET_PATH_CANDIDATES["github-copilot"]).not.toContain(
-      path.join(os.homedir(), ".claude", "skills"),
-    );
-  });
 });
-
-async function createRepo(
-  root: string,
-  files: Record<string, string>,
-): Promise<string> {
-  const repoPath = await fs.mkdtemp(path.join(root, "repo-"));
-  git(repoPath, ["init"]);
-  git(repoPath, ["config", "user.email", "test@example.com"]);
-  git(repoPath, ["config", "user.name", "Skill Flow Test"]);
-  await writeRepoFiles(repoPath, files);
-  git(repoPath, ["add", "."]);
-  git(repoPath, ["commit", "-m", "initial"]);
-  return repoPath;
-}
-
-async function createBareRemote(repoPath: string, root: string): Promise<string> {
-  const remotePath = await fs.mkdtemp(path.join(root, "remote-"));
-  git(remotePath, ["init", "--bare"]);
-  git(repoPath, ["remote", "add", "origin", remotePath]);
-  git(repoPath, ["push", "-u", "origin", "HEAD"]);
-  return remotePath;
-}
-
-async function seedBuiltinCatalog(app: SkillFlowApp): Promise<void> {
-  for (const builtin of builtinGitSources.getBuiltinGitSources()) {
-    await fs.mkdir(app.store.getCatalogCheckoutPath(deriveSourceId(builtin.locator)), {
-      recursive: true,
-    });
-  }
-}
-
-async function writeRepoFiles(root: string, files: Record<string, string>) {
-  for (const [relativePath, content] of Object.entries(files)) {
-    const absolutePath = path.join(root, relativePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, content, "utf8");
-  }
-}
-
-function skillDoc(name: string, description: string, heading?: string) {
-  return `---
-name: ${name}
-description: |
-  ${description}
----
-${heading ? `\n# ${heading}\n` : ""}
-`;
-}
-
-function git(cwd: string, args: string[]) {
-  execFileSync("git", args, { cwd, stdio: "pipe" });
-}
-
-async function pathExists(targetPath: string) {
-  try {
-    await fs.lstat(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}

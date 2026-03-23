@@ -63,6 +63,11 @@ export type SourceBinding = {
   targets: Partial<Record<DeploymentTargetName, TargetBinding>>;
 };
 
+export type DraftBinding = {
+  enabledTargets: DeploymentTargetName[];
+  selectedLeafIds: string[];
+};
+
 export type Manifest = {
   schemaVersion: 1;
   sources: SourceManifestRecord[];
@@ -72,6 +77,11 @@ export type Manifest = {
 export type InvalidLeafRecord = {
   path: string;
   reason: string;
+};
+
+export type DuplicateLeafRecord = {
+  path: string;
+  keptPath: string;
 };
 
 export type SourceLockRecord = {
@@ -177,6 +187,17 @@ export type DoctorIssue = {
 export type DoctorReport = {
   status: "HEALTHY" | "PARTIAL" | "BLOCKED";
   issues: DoctorIssue[];
+};
+
+export type ConfigBootFailure = {
+  sourceId: string;
+  message: string;
+};
+
+export type ConfigBootStatus = {
+  phase: "success" | "partial_failure";
+  updatedSourceIds: string[];
+  failedSources: ConfigBootFailure[];
 };
 
 export type WorkflowSummary = {
