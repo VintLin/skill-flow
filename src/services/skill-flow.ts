@@ -105,37 +105,59 @@ export class SkillFlowApp {
       return result;
     }
 
+    const requestedPath = this.normalizeRequestedPath(source.requestedPath);
+    if (requestedPath) {
+      source.requestedPath = requestedPath;
+      result.data.manifest.requestedPath = requestedPath;
+    } else {
+      delete source.requestedPath;
+      delete result.data.manifest.requestedPath;
+    }
+
+    const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
+    const selectedLeafIds = this.selectLeafIdsForRequestedPath(sourceLeafs, requestedPath);
     source.selectionMode =
       addOptions.selectionMode ??
-      (source.requestedPath ? "partial" : "all");
+      (selectedLeafIds.length >= sourceLeafs.length && sourceLeafs.length > 0
+        ? "all"
+        : "partial");
+    result.data.manifest.selectionMode = source.selectionMode;
 
     const enabledTargets =
       addOptions.enabledTargets ??
       await this.getAvailableTargets();
     manifest.bindings[source.id] = this.bindingFromDraft({
       enabledTargets,
-      selectedLeafIds: this.selectLeafIdsForRequestedPath(
-        lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id),
-        source.requestedPath,
-      ),
+      selectedLeafIds,
     });
     await this.store.writeState(manifest, lockFile);
 
+    const warnings = [...result.warnings];
+    if (requestedPath && selectedLeafIds.length < sourceLeafs.length) {
+      warnings.push({
+        code: "ADD_SELECTION_PRESELECTED",
+        message:
+          `Preselected ${selectedLeafIds.length} of ${sourceLeafs.length} ` +
+          `skill${sourceLeafs.length === 1 ? "" : "s"} under '${requestedPath}'; ` +
+          "the full skills group was imported.",
+      });
+    }
+
     if (addOptions.project === false) {
-      return result;
+      return ok(result.data, warnings);
     }
 
     const plan = await this.planForAffectedSources(manifest, lockFile, source.id);
     if (!plan.ok) {
-      return fail(plan.errors, [...result.warnings, ...plan.warnings]);
+      return fail(plan.errors, [...warnings, ...plan.warnings]);
     }
     const applied = await this.applier.applyPlan(lockFile, plan.data.actions);
     await this.store.writeState(manifest, lockFile);
     if (!applied.ok) {
-      return fail(applied.errors, [...result.warnings, ...plan.warnings, ...applied.warnings]);
+      return fail(applied.errors, [...warnings, ...plan.warnings, ...applied.warnings]);
     }
 
-    return ok(result.data, [...result.warnings, ...plan.warnings, ...applied.warnings]);
+    return ok(result.data, [...warnings, ...plan.warnings, ...applied.warnings]);
   }
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
@@ -793,11 +815,11 @@ export class SkillFlowApp {
     leafs: LeafRecord[],
     requestedPath?: string,
   ): string[] {
-    if (!requestedPath) {
+    const normalizedPath = this.normalizeRequestedPath(requestedPath);
+    if (!normalizedPath) {
       return leafs.map((leaf) => leaf.id);
     }
 
-    const normalizedPath = requestedPath.replace(/^\.\/+/, "").replace(/\/+$/, "");
     return leafs
       .filter(
         (leaf) =>
@@ -805,6 +827,15 @@ export class SkillFlowApp {
           leaf.relativePath.startsWith(`${normalizedPath}/`),
       )
       .map((leaf) => leaf.id);
+  }
+
+  private normalizeRequestedPath(requestedPath?: string): string | undefined {
+    if (!requestedPath) {
+      return undefined;
+    }
+
+    const normalized = requestedPath.trim().replace(/^\.\/+/, "").replace(/\/+$/, "");
+    return normalized.length > 0 && normalized !== "." ? normalized : undefined;
   }
 
   private prepareManifestForDraft(

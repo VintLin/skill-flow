@@ -11,10 +11,20 @@ export function buildFindCommand(candidate: SkillCandidate): string | null {
   }
 
   const parts = ["skill-flow", "add", shellQuote(candidate.action.locator)];
-  if (candidate.action.requestedPath) {
-    parts.push("--path", shellQuote(candidate.action.requestedPath));
+  const requestedPath = normalizeRequestedPath(candidate.action.requestedPath);
+  if (requestedPath) {
+    parts.push("--path", shellQuote(requestedPath));
   }
   return parts.join(" ");
+}
+
+function normalizeRequestedPath(requestedPath?: string): string | undefined {
+  if (!requestedPath) {
+    return undefined;
+  }
+
+  const normalized = requestedPath.trim().replace(/^\.\/+/, "").replace(/\/+$/, "");
+  return normalized.length > 0 && normalized !== "." ? normalized : undefined;
 }
 
 function shellQuote(value: string): string {

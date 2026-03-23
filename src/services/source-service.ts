@@ -716,8 +716,12 @@ export class SourceService {
     options: AddSourceOptions,
   ): Promise<SourceResolution> {
     const trimmed = locator.trim();
-    const resolvedPath = path.resolve(trimmed);
-    if (await pathExists(resolvedPath)) {
+    const fileLocatorPath = this.parseFileLocator(trimmed);
+    const resolvedPath = path.resolve(fileLocatorPath ?? trimmed);
+    if (
+      await pathExists(resolvedPath) &&
+      (!fileLocatorPath || !(await this.isGitRepositoryPath(resolvedPath)))
+    ) {
       return {
         kind: "local",
         locator: resolvedPath,
@@ -728,7 +732,7 @@ export class SourceService {
       };
     }
 
-    const treeLocator = this.parseGitHubTreeLocator(trimmed);
+    const treeLocator = this.parseTreeLocator(trimmed);
     if (treeLocator) {
       const requestedPath = this.joinRequestedPaths(
         treeLocator.requestedPath,
@@ -740,6 +744,22 @@ export class SourceService {
         gitLocator: await this.normalizeLocator(treeLocator.repoLocator),
         displayName: options.displayNameOverride ?? deriveDisplayName(treeLocator.repoLocator),
         sourceId: options.sourceIdOverride ?? deriveSourceId(treeLocator.repoLocator),
+        ...(requestedPath ? { requestedPath } : {}),
+      };
+    }
+
+    const shorthandLocator = this.parseGitHubShorthandSubpath(trimmed);
+    if (shorthandLocator) {
+      const requestedPath = this.joinRequestedPaths(
+        shorthandLocator.requestedPath,
+        options.path,
+      );
+      return {
+        kind: "git",
+        locator: shorthandLocator.repoLocator,
+        gitLocator: await this.normalizeLocator(shorthandLocator.repoLocator),
+        displayName: options.displayNameOverride ?? deriveDisplayName(shorthandLocator.repoLocator),
+        sourceId: options.sourceIdOverride ?? deriveSourceId(shorthandLocator.repoLocator),
         ...(requestedPath ? { requestedPath } : {}),
       };
     }
@@ -840,34 +860,102 @@ export class SourceService {
     }
   }
 
-  private parseGitHubTreeLocator(
+  private parseTreeLocator(
     locator: string,
-  ): { repoLocator: string; requestedPath: string } | null {
+  ): { repoLocator: string; requestedPath?: string } | null {
     try {
       const url = new URL(locator);
-      if (url.hostname !== "github.com") {
-        return null;
-      }
 
       const parts = url.pathname.split("/").filter(Boolean);
-      if (parts.length < 5 || parts[2] !== "tree") {
-        return null;
+      if (url.hostname === "github.com") {
+        if (parts.length < 5 || parts[2] !== "tree") {
+          return null;
+        }
+
+        const owner = parts[0];
+        const repo = parts[1];
+        const requestedPath = parts.slice(4).join("/");
+        if (!owner || !repo || !requestedPath) {
+          return null;
+        }
+
+        return {
+          repoLocator: `https://github.com/${owner}/${repo}.git`,
+          requestedPath,
+        };
       }
 
-      const owner = parts[0];
-      const repo = parts[1];
-      const requestedPath = parts.slice(4).join("/");
-      if (!owner || !repo || !requestedPath) {
-        return null;
-      }
+      if (url.hostname === "gitlab.com") {
+        const markerIndex = parts.findIndex(
+          (segment, index) => segment === "-" && parts[index + 1] === "tree",
+        );
+        if (markerIndex < 2) {
+          return null;
+        }
 
-      return {
-        repoLocator: `https://github.com/${owner}/${repo}.git`,
-        requestedPath,
-      };
+        const requestedPath = parts.slice(markerIndex + 3).join("/");
+
+        return {
+          repoLocator: `https://gitlab.com/${parts.slice(0, markerIndex).join("/")}.git`,
+          ...(requestedPath ? { requestedPath } : {}),
+        };
+      }
     } catch {
       return null;
     }
+
+    return null;
+  }
+
+  private parseGitHubShorthandSubpath(
+    locator: string,
+  ): { repoLocator: string; requestedPath: string } | null {
+    const trimmed = locator.replace(/\/+$/, "");
+    const parts = trimmed.split("/");
+    if (parts.length < 3) {
+      return null;
+    }
+
+    const owner = parts[0];
+    const rawRepo = parts[1];
+    const requestedPath = parts.slice(2).join("/");
+    if (!owner || !rawRepo || !requestedPath) {
+      return null;
+    }
+
+    const repo = rawRepo.replace(/\.git$/i, "");
+    return {
+      repoLocator: `https://github.com/${owner}/${repo}.git`,
+      requestedPath,
+    };
+  }
+
+  private parseFileLocator(locator: string): string | null {
+    if (!locator.startsWith("file://")) {
+      return null;
+    }
+
+    try {
+      const fileUrl = new URL(locator);
+      if (fileUrl.protocol !== "file:") {
+        return null;
+      }
+      return path.resolve(decodeURIComponent(fileUrl.pathname));
+    } catch {
+      return null;
+    }
+  }
+
+  private async isGitRepositoryPath(candidatePath: string): Promise<boolean> {
+    if (await pathExists(path.join(candidatePath, ".git"))) {
+      return true;
+    }
+
+    return (
+      await pathExists(path.join(candidatePath, "HEAD")) &&
+      await pathExists(path.join(candidatePath, "objects")) &&
+      await pathExists(path.join(candidatePath, "refs"))
+    );
   }
 
   private joinRequestedPaths(basePath?: string, childPath?: string): string | undefined {

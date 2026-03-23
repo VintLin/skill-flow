@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DuplicateLeafRecord, InvalidLeafRecord, LeafRecord } from "../domain/types.js";
-import { hashDirectory, slugify } from "../utils/fs.js";
+import { hashDirectory, pathExists, slugify } from "../utils/fs.js";
 
 type InventoryScan = {
   leafs: LeafRecord[];
@@ -88,42 +88,77 @@ export class InventoryService {
 
   private async findSkillFiles(rootPath: string): Promise<string[]> {
     const discovered: string[] = [];
+    const seen = new Set<string>();
 
-    async function walk(currentPath: string): Promise<void> {
-      const entries = await fs.readdir(currentPath, { withFileTypes: true });
-      const files = entries
-        .filter((entry) => entry.isFile())
-        .sort((left, right) => left.name.localeCompare(right.name));
-      const visibleDirectories = entries
-        .filter(
-          (entry) =>
-            entry.isDirectory() &&
-            !InventoryService.IGNORED_DIRECTORIES.has(entry.name) &&
-            !entry.name.startsWith("."),
-        )
-        .sort((left, right) => left.name.localeCompare(right.name));
-      const hiddenDirectories = entries
-        .filter(
-          (entry) =>
-            entry.isDirectory() &&
-            !InventoryService.IGNORED_DIRECTORIES.has(entry.name) &&
-            entry.name.startsWith("."),
-        )
-        .sort((left, right) => left.name.localeCompare(right.name));
-
-      for (const entry of files) {
-        if (entry.name === "SKILL.md") {
-          discovered.push(path.join(currentPath, entry.name));
-        }
-      }
-
-      for (const entry of [...visibleDirectories, ...hiddenDirectories]) {
-        await walk(path.join(currentPath, entry.name));
-      }
+    const rootSkillPath = path.join(rootPath, "SKILL.md");
+    if (await pathExists(rootSkillPath)) {
+      discovered.push(rootSkillPath);
+      seen.add(rootSkillPath);
     }
 
-    await walk(rootPath);
+    await this.walkSkillTree(path.join(rootPath, "skills"), discovered, seen, false);
+    await this.walkSkillTree(path.join(rootPath, "skills", ".curated"), discovered, seen, true);
+    await this.walkSkillTree(path.join(rootPath, "skills", ".experimental"), discovered, seen, true);
+    await this.walkSkillTree(path.join(rootPath, "skills", ".system"), discovered, seen, true);
+    await this.walkSkillTree(rootPath, discovered, seen, true);
+
     return discovered;
+  }
+
+  private async walkSkillTree(
+    currentPath: string,
+    discovered: string[],
+    seen: Set<string>,
+    includeHiddenDirectories: boolean,
+  ): Promise<void> {
+    if (!(await pathExists(currentPath))) {
+      return;
+    }
+
+    const entries = await fs.readdir(currentPath, { withFileTypes: true });
+    const files = entries
+      .filter((entry) => entry.isFile())
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const visibleDirectories = entries
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          !InventoryService.IGNORED_DIRECTORIES.has(entry.name) &&
+          !entry.name.startsWith("."),
+      )
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const hiddenDirectories = includeHiddenDirectories
+      ? entries
+          .filter(
+            (entry) =>
+              entry.isDirectory() &&
+              !InventoryService.IGNORED_DIRECTORIES.has(entry.name) &&
+              entry.name.startsWith("."),
+          )
+          .sort((left, right) => left.name.localeCompare(right.name))
+      : [];
+
+    for (const entry of files) {
+      if (entry.name !== "SKILL.md") {
+        continue;
+      }
+
+      const skillFilePath = path.join(currentPath, entry.name);
+      if (seen.has(skillFilePath)) {
+        continue;
+      }
+      seen.add(skillFilePath);
+      discovered.push(skillFilePath);
+    }
+
+    for (const entry of [...visibleDirectories, ...hiddenDirectories]) {
+      await this.walkSkillTree(
+        path.join(currentPath, entry.name),
+        discovered,
+        seen,
+        includeHiddenDirectories,
+      );
+    }
   }
 
   private parseSkillFile(raw: string, parentDirName: string): ParsedSkillFile {
