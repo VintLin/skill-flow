@@ -2,6 +2,29 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.0.5 - 2026-03-23
+
+### Changed
+
+- Added `skill-flow add <slug> --from clawhub` support.
+- Aligned CLI `--version` output with `package.json`.
+- Clarified import-path behavior in the workflow documentation.
+
+### Fixed
+
+- Fixed SSH GitHub locators like `git@github.com:owner/repo.git` being normalized into invalid HTTPS clone URLs.
+- Fixed GitHub tree URL imports so `--path` is resolved relative to the tree location.
+- Fixed `repair-state` reporting negative removed deployment counts when rebuilding state.
+
+### Verification
+
+- `npm run build`
+- `npm test`
+- Real CLI smoke tests for:
+  - `npm run dev -- --version`
+  - `npm run dev -- add find-skills-skill --from clawhub`
+  - `npm run dev -- add https://github.com/JimLiu/baoyu-skills/tree/main/skills --path baoyu-translate`
+
 ## v1.0.4 - 2026-03-22
 
 ### Added
