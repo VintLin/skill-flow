@@ -44,7 +44,7 @@ describe("config ui utils", () => {
     expect(getParentSelectionState(state)).toBe("partial");
   });
 
-  test("top bar and status helpers follow the v1.1.1 contract", () => {
+  test("top bar and status helpers only show actionable top bar context", () => {
     expect(
       draftsEqual(
         {
@@ -67,7 +67,63 @@ describe("config ui utils", () => {
         showDelete: true,
         statusLabel: "Saved",
       }),
-    ).toContain("Changes: 3");
+    ).toMatchObject({
+      title: "Skill Flow",
+      detail: "Changes: 3",
+    });
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: true,
+        changeCount: 3,
+        showDelete: true,
+        statusLabel: "Saved",
+      }),
+    ).toMatchObject({
+      title: "Skill Flow",
+    });
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: true,
+        changeCount: 3,
+        showDelete: true,
+        statusLabel: "Saved",
+      }).detailColor,
+    ).toBeUndefined();
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: true,
+        changeCount: 3,
+        showDelete: true,
+        statusLabel: "Saved",
+      }),
+    ).toMatchObject({
+      titleColor: "blue",
+    });
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: true,
+        changeCount: 3,
+        showDelete: true,
+        statusLabel: "Saved",
+      }),
+    ).toMatchObject({
+      title: "Skill Flow",
+    });
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: true,
+        changeCount: 3,
+        showDelete: true,
+        statusLabel: "Saved",
+      }),
+    ).toMatchObject({
+      detail: "Changes: 3",
+    });
     expect(
       buildTopBar({
         width: 90,
@@ -76,7 +132,9 @@ describe("config ui utils", () => {
         showDelete: false,
         statusLabel: "Saved",
       }),
-    ).not.toContain("Changes:");
+    ).toMatchObject({
+      detail: "Changes: 3",
+    });
     expect(
       buildTopBar({
         width: 120,
@@ -85,7 +143,51 @@ describe("config ui utils", () => {
         showDelete: false,
         statusLabel: "Clean",
       }),
-    ).not.toContain("[d] Delete");
+    ).toMatchObject({
+      title: "Skill Flow",
+    });
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: false,
+        changeCount: 0,
+        showDelete: false,
+        statusLabel: "Clean",
+      }).detail,
+    ).toBeUndefined();
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: false,
+        changeCount: 0,
+        showDelete: false,
+        statusLabel: "Clean",
+      }).detailColor,
+    ).toBeUndefined();
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: false,
+        changeCount: 0,
+        showDelete: false,
+        statusLabel: "Saving",
+      }),
+    ).toMatchObject({
+      detail: "Status: Saving",
+      detailColor: "cyan",
+    });
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: false,
+        changeCount: 0,
+        showDelete: false,
+        statusLabel: "Failed",
+      }),
+    ).toMatchObject({
+      detail: "Status: Failed",
+      detailColor: "red",
+    });
 
     expect(
       getStatusDisplay({

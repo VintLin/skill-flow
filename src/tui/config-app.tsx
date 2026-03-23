@@ -89,6 +89,13 @@ type StatusDisplay = {
   color: "green" | "cyan" | "red" | "yellow" | "gray";
 };
 
+type TopBarDisplay = {
+  title: string;
+  titleColor: "blue";
+  detail?: string;
+  detailColor?: StatusDisplay["color"];
+};
+
 type PaneRow = {
   key: string;
   text: string;
@@ -311,20 +318,31 @@ export function buildTopBar({
   changeCount: number;
   showDelete: boolean;
   statusLabel: string;
-}) {
-  const parts = [
-    "Skill Flow",
-    "[u] Update",
-    `Dirty: ${isDirty ? "Yes" : "No"}`,
-  ];
-  if (showDelete) {
-    parts.push("[d] Delete");
+}): TopBarDisplay {
+  const topBar: TopBarDisplay = {
+    title: "Skill Flow",
+    titleColor: "blue",
+  };
+  if (changeCount > 0) {
+    topBar.detail = `Changes: ${changeCount}`;
+    return topBar;
   }
-  if (width >= 100) {
-    parts.push(`Changes: ${changeCount}`);
+  if (
+    statusLabel === "Saving" ||
+    statusLabel === "Updating" ||
+    statusLabel === "Deleting" ||
+    statusLabel === "Failed" ||
+    statusLabel === "Update Failed"
+  ) {
+    topBar.detail = `Status: ${statusLabel}`;
+    topBar.detailColor =
+      statusLabel === "Deleting"
+        ? "yellow"
+        : statusLabel === "Saving" || statusLabel === "Updating"
+          ? "cyan"
+          : "red";
   }
-  parts.push(`Status: ${statusLabel}`);
-  return parts.join("   ");
+  return topBar;
 }
 
 export function prioritizeAlerts(alerts: AlertItem[]): AlertItem[] {
@@ -1688,17 +1706,30 @@ export function ConfigApp({
     ...filledSkillRows,
   ];
 
+  const topBar = buildTopBar({
+    width: terminalColumns,
+    isDirty,
+    changeCount,
+    showDelete: canDelete,
+    statusLabel: statusDisplay.label,
+  });
+
   return (
     <Box flexDirection="column" height={terminalRows}>
-      <Text color={statusDisplay.color} wrap="truncate-end">
-        {buildTopBar({
-          width: terminalColumns,
-          isDirty,
-          changeCount,
-          showDelete: canDelete,
-          statusLabel: statusDisplay.label,
-        })}
-      </Text>
+      <Box>
+        <Text color={topBar.titleColor} wrap="truncate-end">
+          {topBar.title}
+        </Text>
+        {topBar.detail ? (
+          topBar.detailColor ? (
+            <Text color={topBar.detailColor} wrap="truncate-end">
+              {`   ${topBar.detail}`}
+            </Text>
+          ) : (
+            <Text wrap="truncate-end">{`   ${topBar.detail}`}</Text>
+          )
+        ) : null}
+      </Box>
       <Box>
         <Pane
           active={focus === "groups"}
