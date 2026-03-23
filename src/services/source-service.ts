@@ -68,7 +68,21 @@ export class SourceService {
   ): Promise<Result<SourceSnapshot>> {
     const { manifest, lockFile } = await this.store.readState();
 
-    const resolved = await this.resolveSource(locator, options);
+    const resolved = this.resolveUniqueLocalSource(
+      await this.resolveSource(locator, options),
+      manifest.sources,
+    );
+
+    if (
+      manifest.sources.some(
+        (source) => source.id === resolved.sourceId && source.locator === resolved.locator,
+      )
+    ) {
+      return fail({
+        code: "SOURCE_EXISTS",
+        message: `Skills group '${formatGroupLabel({ id: resolved.sourceId, locator: resolved.locator, displayName: resolved.displayName })}' is already registered with id '${resolved.sourceId}'.`,
+      });
+    }
 
     if (manifest.sources.some((source) => source.id === resolved.sourceId)) {
       return fail({
@@ -681,12 +695,12 @@ export class SourceService {
   private async normalizeLocator(locator: string): Promise<string> {
     const trimmed = locator.trim();
 
-    if (/^[^/\s]+\/[^/\s]+$/.test(trimmed)) {
-      return `https://github.com/${trimmed}.git`;
-    }
-
     if (trimmed.startsWith("git@") || trimmed.startsWith("http")) {
       return trimmed;
+    }
+
+    if (/^[^/\s]+\/[^/\s]+$/.test(trimmed)) {
+      return `https://github.com/${trimmed}.git`;
     }
 
     const resolvedPath = path.resolve(trimmed);
@@ -716,15 +730,17 @@ export class SourceService {
 
     const treeLocator = this.parseGitHubTreeLocator(trimmed);
     if (treeLocator) {
+      const requestedPath = this.joinRequestedPaths(
+        treeLocator.requestedPath,
+        options.path,
+      );
       return {
         kind: "git",
         locator: treeLocator.repoLocator,
         gitLocator: await this.normalizeLocator(treeLocator.repoLocator),
         displayName: options.displayNameOverride ?? deriveDisplayName(treeLocator.repoLocator),
         sourceId: options.sourceIdOverride ?? deriveSourceId(treeLocator.repoLocator),
-        ...(options.path ?? treeLocator.requestedPath
-          ? { requestedPath: options.path ?? treeLocator.requestedPath }
-          : {}),
+        ...(requestedPath ? { requestedPath } : {}),
       };
     }
 
@@ -768,6 +784,62 @@ export class SourceService {
     };
   }
 
+  private resolveUniqueLocalSource(
+    resolved: SourceResolution,
+    existingSources: SourceManifestRecord[],
+  ): SourceResolution {
+    if (resolved.kind !== "local" || !resolved.localPath) {
+      return resolved;
+    }
+
+    if (
+      existingSources.some(
+        (source) => source.kind === "local" && path.resolve(source.locator) === resolved.localPath,
+      )
+    ) {
+      return resolved;
+    }
+
+    const folderName = path.basename(resolved.localPath);
+    const parentFolderName = path.basename(path.dirname(resolved.localPath));
+    const displayCandidates = [
+      folderName,
+      `${parentFolderName}_${folderName}`,
+    ];
+    const takenIds = new Set(existingSources.map((source) => source.id));
+    const takenLabels = new Set(
+      existingSources
+        .filter((source) => source.kind === "local")
+        .map((source) => source.displayName),
+    );
+
+    for (const candidate of displayCandidates) {
+      const sourceId = deriveSourceId(candidate);
+      if (!takenIds.has(sourceId) && !takenLabels.has(candidate)) {
+        return {
+          ...resolved,
+          displayName: candidate,
+          sourceId,
+        };
+      }
+    }
+
+    const baseDisplayName = `${parentFolderName}_${folderName}`;
+    let index = 2;
+    while (true) {
+      const displayName = `${baseDisplayName}_${index}`;
+      const sourceId = deriveSourceId(displayName);
+      if (!takenIds.has(sourceId) && !takenLabels.has(displayName)) {
+        return {
+          ...resolved,
+          displayName,
+          sourceId,
+        };
+      }
+      index += 1;
+    }
+  }
+
   private parseGitHubTreeLocator(
     locator: string,
   ): { repoLocator: string; requestedPath: string } | null {
@@ -796,6 +868,28 @@ export class SourceService {
     } catch {
       return null;
     }
+  }
+
+  private joinRequestedPaths(basePath?: string, childPath?: string): string | undefined {
+    const normalizedBase = this.normalizeRequestedPath(basePath);
+    const normalizedChild = this.normalizeRequestedPath(childPath);
+
+    if (!normalizedBase) {
+      return normalizedChild;
+    }
+
+    if (!normalizedChild) {
+      return normalizedBase;
+    }
+
+    if (
+      normalizedChild === normalizedBase ||
+      normalizedChild.startsWith(`${normalizedBase}/`)
+    ) {
+      return normalizedChild;
+    }
+
+    return `${normalizedBase}/${normalizedChild}`;
   }
 
   private findRequestedLeafs(
@@ -887,6 +981,10 @@ export class SourceService {
     const backupPath = `${currentLock.checkoutPath}.${process.pid}.${crypto.randomUUID()}.backup`;
 
     try {
+      if (!(await pathExists(source.locator))) {
+        throw new Error(`Local source origin is missing at ${source.locator}.`);
+      }
+
       await copyDirectory(source.locator, tempCheckoutPath);
       const nextHash = await hashDirectory(tempCheckoutPath);
       const checkoutExists = await pathExists(currentLock.checkoutPath);

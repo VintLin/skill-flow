@@ -184,6 +184,53 @@ describe.sequential("skill-flow", () => {
     expect(await pathExists(deployment?.targetPath ?? "")).toBe(true);
   });
 
+  test("repairState clamps removed deployment count at zero when rebuilding records", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+
+    const lock = await app.store.readLock();
+    lock.deployments = lock.deployments.filter(
+      (deployment) =>
+        !(deployment.sourceId === sourceId &&
+          deployment.leafId === leafId &&
+          deployment.target === "claude-code"),
+    );
+    await app.store.writeLock(lock);
+
+    const repaired = await app.repairState([sourceId]);
+    expect(repaired.ok).toBe(true);
+    if (!repaired.ok) {
+      return;
+    }
+
+    expect(repaired.data.removedDeploymentCount).toBe(0);
+
+    const nextLock = await app.store.readLock();
+    expect(
+      nextLock.deployments.some(
+        (deployment) =>
+          deployment.sourceId === sourceId &&
+          deployment.leafId === leafId &&
+          deployment.target === "claude-code",
+      ),
+    ).toBe(true);
+  });
+
   test("relocates external skill when our fallback names are fully occupied", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Managed browser flow."),
@@ -1033,5 +1080,60 @@ description: |
       "amp",
       "kiro",
     ]);
+  });
+
+  test("explicit target mode ignores non-overridden targets even when default roots exist", async () => {
+    const previousTargets = {
+      claude: process.env.SKILL_FLOW_TARGET_CLAUDE_CODE,
+      codex: process.env.SKILL_FLOW_TARGET_CODEX,
+      cursor: process.env.SKILL_FLOW_TARGET_CURSOR,
+      githubCopilot: process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT,
+      geminiCli: process.env.SKILL_FLOW_TARGET_GEMINI_CLI,
+      opencode: process.env.SKILL_FLOW_TARGET_OPENCODE,
+      openclaw: process.env.SKILL_FLOW_TARGET_OPENCLAW,
+      pi: process.env.SKILL_FLOW_TARGET_PI,
+      windsurf: process.env.SKILL_FLOW_TARGET_WINDSURF,
+      rooCode: process.env.SKILL_FLOW_TARGET_ROO_CODE,
+      cline: process.env.SKILL_FLOW_TARGET_CLINE,
+      amp: process.env.SKILL_FLOW_TARGET_AMP,
+      kiro: process.env.SKILL_FLOW_TARGET_KIRO,
+    };
+    const previousHome = process.env.HOME;
+    try {
+      process.env.HOME = sandbox.sandboxRoot;
+      delete process.env.SKILL_FLOW_TARGET_CODEX;
+      delete process.env.SKILL_FLOW_TARGET_CURSOR;
+      delete process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT;
+      delete process.env.SKILL_FLOW_TARGET_GEMINI_CLI;
+      delete process.env.SKILL_FLOW_TARGET_OPENCODE;
+      delete process.env.SKILL_FLOW_TARGET_OPENCLAW;
+      delete process.env.SKILL_FLOW_TARGET_PI;
+      delete process.env.SKILL_FLOW_TARGET_WINDSURF;
+      delete process.env.SKILL_FLOW_TARGET_ROO_CODE;
+      delete process.env.SKILL_FLOW_TARGET_CLINE;
+      delete process.env.SKILL_FLOW_TARGET_AMP;
+      delete process.env.SKILL_FLOW_TARGET_KIRO;
+      await fs.mkdir(path.join(sandbox.sandboxRoot, ".agents", "skills"), { recursive: true });
+
+      const app = new SkillFlowApp();
+      const targets = await app.getAvailableTargets();
+
+      expect(targets).toEqual(["claude-code"]);
+    } finally {
+      process.env.HOME = previousHome;
+      process.env.SKILL_FLOW_TARGET_CLAUDE_CODE = previousTargets.claude;
+      process.env.SKILL_FLOW_TARGET_CODEX = previousTargets.codex;
+      process.env.SKILL_FLOW_TARGET_CURSOR = previousTargets.cursor;
+      process.env.SKILL_FLOW_TARGET_GITHUB_COPILOT = previousTargets.githubCopilot;
+      process.env.SKILL_FLOW_TARGET_GEMINI_CLI = previousTargets.geminiCli;
+      process.env.SKILL_FLOW_TARGET_OPENCODE = previousTargets.opencode;
+      process.env.SKILL_FLOW_TARGET_OPENCLAW = previousTargets.openclaw;
+      process.env.SKILL_FLOW_TARGET_PI = previousTargets.pi;
+      process.env.SKILL_FLOW_TARGET_WINDSURF = previousTargets.windsurf;
+      process.env.SKILL_FLOW_TARGET_ROO_CODE = previousTargets.rooCode;
+      process.env.SKILL_FLOW_TARGET_CLINE = previousTargets.cline;
+      process.env.SKILL_FLOW_TARGET_AMP = previousTargets.amp;
+      process.env.SKILL_FLOW_TARGET_KIRO = previousTargets.kiro;
+    }
   });
 });

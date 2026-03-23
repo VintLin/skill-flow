@@ -1,8 +1,13 @@
 import { describe, expect, test } from "vitest";
 import type { DraftBinding, WorkflowSummary } from "../domain/types.js";
 import {
+  buildActionRows,
+  buildDetailMetadataRows,
   buildDraftsFromSummaries,
+  buildConfigGroupSkillRows,
+  buildConfigGroups,
   buildProjectionWarningMap,
+  buildScrollableRows,
   buildTopBar,
   captureFocusSnapshot,
   draftsEqual,
@@ -59,6 +64,7 @@ describe("config ui utils", () => {
         width: 120,
         isDirty: true,
         changeCount: 3,
+        showDelete: true,
         statusLabel: "Saved",
       }),
     ).toContain("Changes: 3");
@@ -67,9 +73,19 @@ describe("config ui utils", () => {
         width: 90,
         isDirty: false,
         changeCount: 3,
+        showDelete: false,
         statusLabel: "Saved",
       }),
     ).not.toContain("Changes:");
+    expect(
+      buildTopBar({
+        width: 120,
+        isDirty: false,
+        changeCount: 0,
+        showDelete: false,
+        statusLabel: "Clean",
+      }),
+    ).not.toContain("[d] Delete");
 
     expect(
       getStatusDisplay({
@@ -119,6 +135,7 @@ describe("config ui utils", () => {
     expect(
       moveDetailFocus({
         actionCursor: 0,
+        actionCount: 2,
         agentCount: 2,
         agentCursor: 1,
         direction: 1,
@@ -134,6 +151,7 @@ describe("config ui utils", () => {
     expect(
       moveDetailFocus({
         actionCursor: 0,
+        actionCount: 1,
         agentCount: 0,
         agentCursor: 0,
         direction: -1,
@@ -151,6 +169,7 @@ describe("config ui utils", () => {
     expect(
       getRequestedAction({
         actionCursor: 0,
+        canDelete: true,
         focus: "groups",
         input: "d",
         keyReturn: false,
@@ -159,14 +178,16 @@ describe("config ui utils", () => {
     expect(
       getRequestedAction({
         actionCursor: 1,
+        canDelete: false,
         focus: "detail.actions",
         input: "",
         keyReturn: true,
       }),
-    ).toBe("delete");
+    ).toBe("update");
     expect(
       getRequestedAction({
         actionCursor: 0,
+        canDelete: true,
         focus: "detail.actions",
         input: "",
         keyReturn: true,
@@ -187,6 +208,7 @@ describe("config ui utils", () => {
       agentCursor: 1,
       availableTargets: ["claude-code", "codex"],
       focus: "detail.skills",
+      groupId: "alpha",
       selectedGroupIndex: 0,
       selectedSummary: createSummary({
         sourceId: "alpha",
@@ -198,7 +220,7 @@ describe("config ui utils", () => {
     expect(
       reconcileFocusAfterReload({
         availableTargets: ["claude-code", "codex"],
-        nextSummaries,
+        nextGroups: buildConfigGroups(nextSummaries),
         snapshot,
       }),
     ).toMatchObject({
@@ -214,6 +236,7 @@ describe("config ui utils", () => {
       agentCursor: 0,
       availableTargets: ["claude-code"],
       focus: "detail.actions",
+      groupId: "beta",
       selectedGroupIndex: 1,
       selectedSummary: createSummary({
         sourceId: "beta",
@@ -225,12 +248,12 @@ describe("config ui utils", () => {
     expect(
       reconcileFocusAfterReload({
         availableTargets: ["claude-code"],
-        nextSummaries: [
+        nextGroups: buildConfigGroups([
           createSummary({
             sourceId: "alpha",
             leafIds: ["alpha:browse"],
           }),
-        ],
+        ]),
         snapshot,
       }),
     ).toMatchObject({
@@ -238,6 +261,118 @@ describe("config ui utils", () => {
       selectedGroupIndex: 0,
       actionCursor: 1,
     });
+  });
+
+  test("buildConfigGroups folds clawhub sources into one view group", () => {
+    const groups = buildConfigGroups([
+      createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] }),
+      createSummary({ sourceId: "beta", kind: "clawhub", leafIds: ["beta:summary"] }),
+      createSummary({ sourceId: "gamma", kind: "clawhub", leafIds: ["gamma:review"] }),
+      createSummary({ sourceId: "delta", leafIds: ["delta:slides"] }),
+    ]);
+
+    expect(groups.map((group) => group.title)).toEqual([
+      "alpha",
+      "ClawHub Skills",
+      "delta",
+    ]);
+    expect(groups[1]?.kind).toBe("clawhub");
+    expect(groups[1]?.summaries.map((summary) => summary.source.id)).toEqual(["beta", "gamma"]);
+    expect(buildConfigGroupSkillRows(groups[1]!).map((row) => row.summary.source.id)).toEqual([
+      "beta",
+      "gamma",
+    ]);
+  });
+
+  test("buildActionRows hides delete for clawhub aggregate detail", () => {
+    const rows = buildActionRows({
+      actionCursor: 0,
+      canRunActions: true,
+      deleteState: {
+        phase: "idle",
+        sourceId: undefined,
+        message: undefined,
+      },
+      focus: "detail.actions",
+      isSelectedDelete: false,
+      showDeleteAction: false,
+      updateState: { phase: "idle", message: undefined },
+    });
+
+    expect(rows.map((row) => row.key)).toEqual(["__actions_separator__", "__action_update__"]);
+  });
+
+  test("buildDetailMetadataRows hides clean-state status noise", () => {
+    const rows = buildDetailMetadataRows({
+      alerts: [],
+      detailWidth: 80,
+      group: buildConfigGroups([createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] })])[0]!,
+      summary: createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] }),
+    });
+
+    expect(rows.map((row) => row.key)).toEqual(["__title__", "__source__"]);
+  });
+
+  test("buildDetailMetadataRows never shows status/save/preview rows", () => {
+    const rows = buildDetailMetadataRows({
+      alerts: [],
+      detailWidth: 80,
+      group: buildConfigGroups([createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] })])[0]!,
+      summary: createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] }),
+    });
+
+    expect(rows.map((row) => row.key)).toEqual(["__title__", "__source__"]);
+  });
+
+  test("buildDetailMetadataRows describes clawhub aggregate detail as a group", () => {
+    const group = buildConfigGroups([
+      createSummary({ sourceId: "beta", kind: "clawhub", leafIds: ["beta:summary"] }),
+      createSummary({ sourceId: "gamma", kind: "clawhub", leafIds: ["gamma:review"] }),
+    ])[0]!;
+    const rows = buildDetailMetadataRows({
+      alerts: [],
+      detailWidth: 80,
+      group,
+      summary: group.summaries[0]!,
+    });
+
+    expect(rows.find((row) => row.key === "__source__")?.text).toContain("2 clawhub sources");
+    expect(rows.find((row) => row.key === "__focused_source__")?.text).toContain("beta@clawhub");
+  });
+
+  test("buildScrollableRows adds up/down hints when content is clipped", () => {
+    const rows = buildScrollableRows(
+      Array.from({ length: 8 }, (_, index) => ({
+        key: `row-${index}`,
+        text: `row ${index}`,
+        active: false,
+        color: undefined,
+      })),
+      4,
+      4,
+      "skills",
+    );
+
+    expect(rows.rows[0]?.key).toBe("__scroll_up__:skills");
+    expect(rows.rows.at(-1)?.key).toBe("__scroll_down__:skills");
+  });
+
+  test("buildScrollableRows can reserve blank hint slots without overflow", () => {
+    const rows = buildScrollableRows(
+      Array.from({ length: 2 }, (_, index) => ({
+        key: `row-${index}`,
+        text: `row ${index}`,
+        active: false,
+        color: undefined,
+      })),
+      0,
+      4,
+      "skills",
+      true,
+    );
+
+    expect(rows.rows[0]).toMatchObject({ key: "__scroll_up__:skills", text: "" });
+    expect(rows.rows.at(-1)).toMatchObject({ key: "__scroll_down__:skills", text: "" });
   });
 
   test("delete selection falls back to the nearest remaining group", () => {
@@ -325,17 +460,19 @@ describe("config ui utils", () => {
 function createSummary({
   sourceId,
   leafIds,
+  kind = "git",
   descriptions = {},
 }: {
   sourceId: string;
   leafIds: string[];
+  kind?: "git" | "clawhub";
   descriptions?: Record<string, string>;
 }): WorkflowSummary {
   return {
     source: {
       id: sourceId,
       locator: sourceId,
-      kind: "git",
+      kind,
       displayName: sourceId,
       addedAt: "",
     },

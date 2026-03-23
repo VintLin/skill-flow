@@ -78,7 +78,6 @@ export class SkillFlowApp {
       workflowService: this.workflowService,
       getAvailableTargets: () => this.getAvailableTargets(),
       pruneMissingCheckouts: () => this.pruneMissingCheckoutsImpl(),
-      updateSources: (sourceIds) => this.updateSourcesImpl(sourceIds),
       getConfigData: () => this.getConfigDataImpl(),
     });
   }
@@ -141,7 +140,7 @@ export class SkillFlowApp {
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
     const { manifest, lockFile } = await this.store.readState();
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = this.normalizeSearchQuery(query);
     const warnings: Warning[] = [];
     const localKeys = new Set<string>();
     const candidates: SkillCandidate[] = [];
@@ -197,7 +196,7 @@ export class SkillFlowApp {
     }
 
     try {
-      const results = await searchClawHubSkills(query, 8);
+      const results = await searchClawHubSkills(normalizedQuery, 8);
       remoteSearchSucceeded = true;
       for (const result of results) {
         candidates.push({
@@ -1047,7 +1046,7 @@ export class SkillFlowApp {
     }
 
     lockFile.deployments = nextDeployments;
-    return previousCount - nextDeployments.length;
+    return Math.max(0, previousCount - nextDeployments.length);
   }
 
   private buildProjectedLinkNameMap(
@@ -1180,7 +1179,7 @@ export class SkillFlowApp {
         const source = manifest.sources.find((item) => item.id === leaf.sourceId);
         return {
           id: `local:${leaf.id}`,
-          title: leaf.title,
+          title: this.getCandidateTitle(leaf),
           description: leaf.description,
           source: "local",
           sourceLabel: source
@@ -1323,7 +1322,7 @@ export class SkillFlowApp {
       return true;
     }
 
-    const haystack = fields.join("\n").toLowerCase();
+    const haystack = this.normalizeSearchQuery(fields.join("\n"));
     return tokens.every((token) => haystack.includes(token));
   }
 
@@ -1364,8 +1363,10 @@ export class SkillFlowApp {
 
   private getQueryScore(candidate: SkillCandidate, query: string): number {
     const tokens = query.split(/\s+/).filter(Boolean);
-    const titleField = candidate.title.toLowerCase();
-    const pathTail = (candidate.relativePath ?? "").split("/").pop()?.toLowerCase() ?? "";
+    const titleField = this.normalizeSearchQuery(candidate.title);
+    const pathTail = this.normalizeSearchQuery(
+      (candidate.relativePath ?? "").split("/").pop() ?? "",
+    );
     const fields = [
       titleField,
       pathTail,
@@ -1393,6 +1394,18 @@ export class SkillFlowApp {
     }
 
     return candidate.locator;
+  }
+
+  private getCandidateTitle(leaf: LeafRecord): string {
+    const title = leaf.title.trim();
+    if (title.length === 0 || /^\{[^}]+\}$/.test(title)) {
+      return leaf.linkName || leaf.name;
+    }
+    return title;
+  }
+
+  private normalizeSearchQuery(value: string): string {
+    return value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
   }
 
   private formatSourceLabel(locator: string, displayName: string): string {

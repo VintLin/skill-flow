@@ -2,6 +2,7 @@
 import React from "react";
 import { Command } from "commander";
 import { render } from "ink";
+import packageJson from "../package.json" with { type: "json" };
 import { SkillFlowApp } from "./services/skill-flow.js";
 import { ConfigBootstrapApp } from "./tui/config-app.js";
 import { FindApp } from "./tui/find-app.js";
@@ -12,6 +13,7 @@ import {
   formatSkillCandidates,
   formatWorkflowList,
 } from "./utils/format.js";
+import { resolveAddSourceLocator } from "./utils/cli.js";
 import { buildFindCommand } from "./utils/find-command.js";
 
 const program = new Command();
@@ -20,15 +22,25 @@ const app = new SkillFlowApp();
 program
   .name("skill-flow")
   .description("Workflow-first skill projection manager")
-  .version("1.0.3");
+  .version(packageJson.version);
 
 program
   .command("add")
   .argument("<source>", "Source locator")
   .option("--path <repoSubpath>", "Filter Git sources to a specific repo subpath")
-  .action(async (source: string, options: { path?: string }) => {
+  .option("--from <catalog>", "Interpret source using a named catalog")
+  .action(async (source: string, options: { path?: string; from?: string }) => {
+    let resolvedSource: string;
+    try {
+      resolvedSource = resolveAddSourceLocator(source, options.from);
+    } catch (error) {
+      printErrors([{ message: error instanceof Error ? error.message : String(error) }]);
+      process.exitCode = 1;
+      return;
+    }
+
     const result = await app.addSource(
-      source,
+      resolvedSource,
       options.path ? { path: options.path } : undefined,
     );
     if (!result.ok) {
@@ -85,7 +97,6 @@ program
           2,
         ),
       );
-      printWarnings(result.warnings.map((warning) => warning.message));
       return;
     }
     const instance = render(<FindApp app={app} query={query} />);

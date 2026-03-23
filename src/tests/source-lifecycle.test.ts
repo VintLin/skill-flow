@@ -98,6 +98,16 @@ describe.sequential("source lifecycle", () => {
     ]);
   });
 
+  test("keeps ssh git locators unchanged during normalization", async () => {
+    const service = createSourceService();
+
+    await expect(
+      (service as unknown as { normalizeLocator(locator: string): Promise<string> }).normalizeLocator(
+        "git@github.com:JimLiu/baoyu-skills.git",
+      ),
+    ).resolves.toBe("git@github.com:JimLiu/baoyu-skills.git");
+  });
+
   test("rejects add path when it does not resolve to a valid skill", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/find-skills/SKILL.md": skillDoc("find-skills", "Find skills."),
@@ -119,6 +129,22 @@ describe.sequential("source lifecycle", () => {
     const app = new SkillFlowApp();
     const result = await app.addSource(
       "https://github.com/vercel-labs/skills/tree/main/skills/find-skills",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.manifest.id).toBe("vercel-labs-skills");
+    expect(result.data.manifest.requestedPath).toBe("skills/find-skills");
+  }, 30000);
+
+  test("combines GitHub tree paths with --path relative to the tree location", async () => {
+    const app = new SkillFlowApp();
+    const result = await app.addSource(
+      "https://github.com/vercel-labs/skills/tree/main/skills",
+      { path: "find-skills" },
     );
 
     expect(result.ok).toBe(true);
@@ -302,6 +328,51 @@ describe.sequential("source lifecycle", () => {
       `skill-flow add ${builtin.locator} --path skills/find-skills`,
     );
   }, 10000);
+
+  test("find normalizes spaces, hyphens, and underscores in query matching", async () => {
+    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "agent-browser/SKILL.md": skillDoc("agent-browser", "Agent browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+
+    const result = await app.findSkills("agent browser");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.candidates[0]?.title).toBe("agent-browser");
+  });
+
+  test("find falls back to linkName when local skill title is a placeholder heading", async () => {
+    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "templated/SKILL.md": `---
+name: templated
+description: |
+  Templated description.
+---
+
+# {Title}
+`,
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+
+    const result = await app.findSkills("templated");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.candidates[0]?.title).toBe("templated");
+  });
 
   test("returns a clear error when git fetch fails", async () => {
     const app = new SkillFlowApp();
@@ -505,6 +576,63 @@ description: |
     expect(await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8")).toContain(
       "Browser flow, updated upstream.",
     );
+  });
+
+  test("local sources with the same folder name fall back to parent-prefixed naming", async () => {
+    const leftParent = path.join(sandbox.sandboxRoot, "left");
+    const rightParent = path.join(sandbox.sandboxRoot, "right");
+    const leftRepo = path.join(leftParent, "skills");
+    const rightRepo = path.join(rightParent, "skills");
+
+    await writeRepoFiles(leftRepo, {
+      "browse/SKILL.md": skillDoc("browse", "Left browse."),
+    });
+    await writeRepoFiles(rightRepo, {
+      "review/SKILL.md": skillDoc("review", "Right review."),
+    });
+
+    const sourceService = createSourceService();
+    const first = await sourceService.addSource(leftRepo);
+    const second = await sourceService.addSource(rightRepo);
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) {
+      return;
+    }
+
+    expect(first.data.manifest.displayName).toBe("skills");
+    expect(first.data.manifest.id).toBe("skills");
+    expect(second.data.manifest.displayName).toBe("right_skills");
+    expect(second.data.manifest.id).toBe("right-skills");
+  });
+
+  test("local source update fails without mutating checkout when origin path is missing", async () => {
+    const repoPath = path.join(sandbox.sandboxRoot, "local-skills");
+    await writeRepoFiles(repoPath, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const sourceService = createSourceService();
+
+    const added = await sourceService.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const checkoutPath = path.join(sandbox.stateRoot, "source", "local", added.data.manifest.id);
+    const before = await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8");
+    await fs.rm(repoPath, { recursive: true, force: true });
+
+    const updated = await sourceService.updateSources([added.data.manifest.id]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) {
+      return;
+    }
+    expect(updated.errors[0]?.code).toBe("LOCAL_UPDATE_FAILED");
+    expect(updated.errors[0]?.message).toContain("Local source origin is missing");
+    expect(await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8")).toBe(before);
   });
 
   test("repairSource refreshes a local checkout from origin without mutating target disk", async () => {

@@ -6,6 +6,7 @@ import type {
   LeafRecord,
 } from "../domain/types.js";
 import {
+  getTargetDetectionCandidates,
   TARGET_DEFINITIONS,
 } from "../utils/constants.js";
 import { pathExists } from "../utils/fs.js";
@@ -27,8 +28,17 @@ class DefaultChannelAdapter implements ChannelAdapter {
   async detect(): Promise<ChannelDetection> {
     const definition = TARGET_DEFINITIONS[this.target];
     const envVar = definition.envVar;
-    const override = process.env[envVar];
-    const candidates = override ? [override] : definition.writeRootCandidates;
+    const candidates = getTargetDetectionCandidates(this.target);
+
+    if (candidates.length === 0) {
+      return {
+        target: this.target,
+        strategy: this.strategy,
+        available: false,
+        rootPath: path.resolve("."),
+        reason: `Target is disabled in explicit target mode. Set ${envVar} to enable it.`,
+      };
+    }
 
     for (const candidate of candidates) {
       const rootPath = path.resolve(candidate);

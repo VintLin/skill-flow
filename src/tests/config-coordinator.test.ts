@@ -91,14 +91,10 @@ const summaries: WorkflowSummary[] = [
 
 describe("ConfigCoordinator", () => {
   test("boots config and derives initial drafts from normalized summaries", async () => {
-    const updateSources = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, data: { updated: [{ sourceId: "alpha", changed: false, addedLeafIds: [], removedLeafIds: [], invalidatedLeafIds: [], diffs: [] }] }, warnings: [], errors: [] })
-      .mockResolvedValueOnce({ ok: true, data: { updated: [{ sourceId: "beta", changed: true, addedLeafIds: [], removedLeafIds: [], invalidatedLeafIds: [], diffs: [] }] }, warnings: [], errors: [] });
     const coordinator = new ConfigCoordinator({
       store: {
         init: vi.fn().mockResolvedValue(undefined),
-        readManifest: vi.fn().mockResolvedValue(manifest),
+        readManifest: vi.fn(),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -113,7 +109,6 @@ describe("ConfigCoordinator", () => {
         warnings: [],
         errors: [],
       }),
-      updateSources,
       getConfigData: vi.fn().mockResolvedValue({
         ok: true,
         data: { manifest, lockFile, summaries },
@@ -130,7 +125,7 @@ describe("ConfigCoordinator", () => {
     }
     expect(result.data.bootStatus).toEqual({
       phase: "success",
-      updatedSourceIds: ["alpha", "beta"],
+      updatedSourceIds: [],
       failedSources: [],
     });
     expect(result.data.initialDrafts).toEqual<Record<string, DraftBinding>>({
@@ -143,46 +138,14 @@ describe("ConfigCoordinator", () => {
         selectedLeafIds: [],
       },
     });
-    expect(updateSources).toHaveBeenCalledTimes(2);
-    expect(updateSources).toHaveBeenNthCalledWith(1, ["alpha"]);
-    expect(updateSources).toHaveBeenNthCalledWith(2, ["beta"]);
   });
 
-  test("keeps config boot usable when one group update fails", async () => {
-    const updateSources = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        data: {
-          updated: [
-            {
-              sourceId: "alpha",
-              changed: false,
-              addedLeafIds: [],
-              removedLeafIds: [],
-              invalidatedLeafIds: [],
-              diffs: [],
-            },
-          ],
-        },
-        warnings: [],
-        errors: [],
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        warnings: [],
-        errors: [
-          {
-            code: "LOCAL_UPDATE_FAILED",
-            message: "Unable to update skills group id 'beta': boom",
-          },
-        ],
-      });
+  test("keeps config boot usable when prune removes missing groups", async () => {
     const onEvent = vi.fn();
     const coordinator = new ConfigCoordinator({
       store: {
         init: vi.fn().mockResolvedValue(undefined),
-        readManifest: vi.fn().mockResolvedValue(manifest),
+        readManifest: vi.fn(),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -193,11 +156,10 @@ describe("ConfigCoordinator", () => {
       getAvailableTargets: vi.fn().mockResolvedValue(["codex"]),
       pruneMissingCheckouts: vi.fn().mockResolvedValue({
         ok: true,
-        data: { removedSourceIds: [] },
+        data: { removedSourceIds: ["beta"] },
         warnings: [],
         errors: [],
       }),
-      updateSources,
       getConfigData: vi.fn().mockResolvedValue({
         ok: true,
         data: { manifest, lockFile, summaries },
@@ -213,29 +175,14 @@ describe("ConfigCoordinator", () => {
       return;
     }
     expect(result.data.bootStatus).toEqual({
-      phase: "partial_failure",
-      updatedSourceIds: ["alpha"],
-      failedSources: [
-        {
-          sourceId: "beta",
-          message: "Unable to update skills group id 'beta': boom",
-        },
-      ],
+      phase: "success",
+      updatedSourceIds: [],
+      failedSources: [],
     });
-    expect(
-      result.data.audit.issues.some(
-        (issue) =>
-          issue.code === "SOURCE_REFRESH_FAILED" &&
-          issue.severity === "warning" &&
-          issue.sourceId === "beta",
-      ),
-    ).toBe(true);
-    expect(onEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        phase: "refresh-sources",
-        level: "error",
-        message: expect.stringContaining("beta update failed"),
-      }),
-    );
+    expect(onEvent).toHaveBeenCalledWith({
+      phase: "refresh-sources",
+      level: "warning",
+      message: "Removed 1 missing group from config state.",
+    });
   });
 });

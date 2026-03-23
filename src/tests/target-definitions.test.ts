@@ -2,6 +2,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  getExplicitTargetNames,
+  getTargetDetectionCandidates,
+  getTargetScanRoots,
   TARGET_COMPAT_READ_CANDIDATES,
   TARGET_DEFINITIONS,
   TARGET_PATH_CANDIDATES,
@@ -61,5 +64,30 @@ describe("target definitions", () => {
     expect(TARGET_PATH_CANDIDATES["github-copilot"]).not.toContain(
       path.join(os.homedir(), ".claude", "skills"),
     );
+  });
+
+  test("explicit target mode only exposes overridden targets", () => {
+    const previousClaude = process.env.SKILL_FLOW_TARGET_CLAUDE_CODE;
+    const previousCodex = process.env.SKILL_FLOW_TARGET_CODEX;
+
+    process.env.SKILL_FLOW_TARGET_CLAUDE_CODE = "/tmp/claude-skills";
+    delete process.env.SKILL_FLOW_TARGET_CODEX;
+
+    expect(getExplicitTargetNames()).toEqual(["claude-code"]);
+    expect(getTargetDetectionCandidates("claude-code")).toEqual(["/tmp/claude-skills"]);
+    expect(getTargetDetectionCandidates("codex")).toEqual([]);
+    expect(getTargetScanRoots("claude-code")).toEqual(["/tmp/claude-skills"]);
+    expect(getTargetScanRoots("codex")).toEqual([]);
+
+    if (previousClaude === undefined) {
+      delete process.env.SKILL_FLOW_TARGET_CLAUDE_CODE;
+    } else {
+      process.env.SKILL_FLOW_TARGET_CLAUDE_CODE = previousClaude;
+    }
+    if (previousCodex === undefined) {
+      delete process.env.SKILL_FLOW_TARGET_CODEX;
+    } else {
+      process.env.SKILL_FLOW_TARGET_CODEX = previousCodex;
+    }
   });
 });

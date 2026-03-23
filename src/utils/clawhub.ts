@@ -11,6 +11,13 @@ type ClawHubOrigin = {
   installedVersion: string;
 };
 
+export class ClawHubSecurityBlockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ClawHubSecurityBlockError";
+  }
+}
+
 export type ClawHubInstallResult = {
   workdir: string;
   installedPath: string;
@@ -70,7 +77,16 @@ export async function installClawHubSkill(
     args.push("--version", version);
   }
 
-  await clawhub(args);
+  try {
+    await clawhub(args);
+  } catch (error) {
+    if (isSuspiciousClawHubInstallError(error)) {
+      throw new ClawHubSecurityBlockError(
+        `ClawHub security block: '${slug}' is flagged as suspicious. Use --force to install suspicious skills in non-interactive mode.`,
+      );
+    }
+    throw error;
+  }
 
   const installedPath = path.join(workdir, "skills", slug);
   const origin = JSON.parse(
@@ -114,9 +130,8 @@ export async function searchClawHubSkills(
   return output
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line.startsWith("- "))
     .map((line) => {
-      const match = line.match(/^- ([^\s]+)\s+(.+?)\s+\(([0-9.]+)\)$/);
+      const match = line.match(/^(?:-\s+)?([^\s]+)\s{2,}(.+?)\s+\(([0-9.]+)\)$/);
       if (!match) {
         return null;
       }
@@ -128,4 +143,24 @@ export async function searchClawHubSkills(
       };
     })
     .filter((item): item is ClawHubSearchResult => item !== null);
+}
+
+function isSuspiciousClawHubInstallError(error: unknown): boolean {
+  const message = getClawHubErrorMessage(error);
+  return /use --force to install suspicious skills/i.test(message);
+}
+
+function getClawHubErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const stderr = Reflect.get(error, "stderr");
+    if (typeof stderr === "string" && stderr.trim().length > 0) {
+      return stderr.trim();
+    }
+
+    if (error.message.trim().length > 0) {
+      return error.message.trim();
+    }
+  }
+
+  return String(error);
 }

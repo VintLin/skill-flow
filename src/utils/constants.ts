@@ -199,3 +199,42 @@ export const TARGET_COMPAT_READ_CANDIDATES: Record<DeploymentTargetName, string[
       TARGET_DEFINITIONS[target].compatReadRootCandidates,
     ]),
   ) as Record<DeploymentTargetName, string[]>;
+
+export function getExplicitTargetNames(): DeploymentTargetName[] {
+  return TARGET_ORDER.filter((target) => {
+    const value = process.env[TARGET_DEFINITIONS[target].envVar]?.trim();
+    return Boolean(value);
+  });
+}
+
+export function isExplicitTargetMode(): boolean {
+  return getExplicitTargetNames().length > 0;
+}
+
+export function getTargetDetectionCandidates(target: DeploymentTargetName): string[] {
+  const definition = TARGET_DEFINITIONS[target];
+  const override = process.env[definition.envVar]?.trim();
+
+  if (isExplicitTargetMode()) {
+    return override ? [override] : [];
+  }
+
+  return override ? [override] : definition.writeRootCandidates;
+}
+
+export function getTargetScanRoots(target: DeploymentTargetName): string[] {
+  const definition = TARGET_DEFINITIONS[target];
+  const override = process.env[definition.envVar]?.trim();
+
+  if (isExplicitTargetMode()) {
+    return override ? [override] : [];
+  }
+
+  return [
+    ...new Set([
+      ...(override ? [override] : []),
+      ...definition.writeRootCandidates,
+      ...definition.compatReadRootCandidates,
+    ]),
+  ];
+}

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { DeploymentTargetName, LockFile, Manifest } from "../domain/types.js";
-import { TARGET_DEFINITIONS, TARGET_ORDER } from "../utils/constants.js";
+import { getTargetScanRoots, TARGET_DEFINITIONS, TARGET_ORDER } from "../utils/constants.js";
 import { hashDirectory, pathExists, readJsonFile } from "../utils/fs.js";
 import { deriveSourceId } from "../utils/source-id.js";
 import { StateStore } from "../state/store.js";
@@ -89,15 +89,7 @@ export class WorkspaceBootstrapService {
     });
 
     for (const target of TARGET_ORDER) {
-      const definition = TARGET_DEFINITIONS[target];
-      const overrideRoot = process.env[definition.envVar]?.trim();
-      const roots = [
-        ...new Set([
-          ...(overrideRoot ? [path.resolve(overrideRoot)] : []),
-          ...definition.writeRootCandidates,
-          ...definition.compatReadRootCandidates,
-        ]),
-      ];
+      const roots = getTargetScanRoots(target).map((root) => path.resolve(root));
       for (const root of roots) {
         if (!(await pathExists(root))) {
           continue;

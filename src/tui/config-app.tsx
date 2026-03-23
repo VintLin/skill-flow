@@ -95,6 +95,7 @@ type PaneRow = {
   active: boolean;
   color: "cyan" | "gray" | "green" | "red" | "white" | "yellow" | undefined;
   bold?: boolean;
+  activeColor?: "cyan" | "gray" | "green" | "red" | "white" | "yellow";
 };
 
 type AlertItem = {
@@ -102,9 +103,28 @@ type AlertItem = {
   message: string;
 };
 
+export type ConfigGroup = {
+  id: string;
+  title: string;
+  kind: "source" | "clawhub";
+  summaries: WorkflowSummary[];
+};
+
+type ConfigSkillRow = {
+  summary: WorkflowSummary;
+  leaf: WorkflowSummary["leafs"][number];
+};
+
+type WindowedRows<T> = {
+  rows: T[];
+  start: number;
+  end: number;
+};
+
 type FocusSnapshot = {
   focus: FocusPane;
   groupIndex: number;
+  groupId: string;
   sourceId: string | undefined;
   agentTarget: DeploymentTargetName | undefined;
   skillId: string | undefined;
@@ -119,6 +139,13 @@ const EMPTY_DRAFT: DraftBinding = {
   selectedLeafIds: [],
 };
 
+const EMPTY_CONFIG_GROUP: ConfigGroup = {
+  id: "__empty__",
+  title: "",
+  kind: "source",
+  summaries: [],
+};
+
 const EMPTY_PREVIEW: PreviewState = {
   actions: [],
   blockedCount: 0,
@@ -129,6 +156,7 @@ const EMPTY_PREVIEW: PreviewState = {
 
 const PANE_CHROME_ROWS = 5;
 const UPDATED_FEEDBACK_MS = 1_200;
+const CLAWHUB_GROUP_ID = "__clawhub_skills__";
 
 export function normalizeDraft(draft: DraftBinding): DraftBinding {
   return {
@@ -161,6 +189,54 @@ export function buildDraftsFromSummaries(
   );
 }
 
+export function buildConfigGroups(summaries: WorkflowSummary[]): ConfigGroup[] {
+  const clawhubSummaries = summaries.filter((summary) => summary.source.kind === "clawhub");
+  const groups: ConfigGroup[] = [];
+  let clawhubGroupInserted = false;
+
+  for (const summary of summaries) {
+    if (summary.source.kind === "clawhub") {
+      if (!clawhubGroupInserted && clawhubSummaries.length > 0) {
+        groups.push({
+          id: CLAWHUB_GROUP_ID,
+          title: "ClawHub Skills",
+          kind: "clawhub",
+          summaries: clawhubSummaries,
+        });
+        clawhubGroupInserted = true;
+      }
+      continue;
+    }
+
+    groups.push({
+      id: summary.source.id,
+      title: formatGroupLabel(summary.source),
+      kind: "source",
+      summaries: [summary],
+    });
+  }
+
+  if (!clawhubGroupInserted && clawhubSummaries.length > 0) {
+    groups.push({
+      id: CLAWHUB_GROUP_ID,
+      title: "ClawHub Skills",
+      kind: "clawhub",
+      summaries: clawhubSummaries,
+    });
+  }
+
+  return groups;
+}
+
+export function buildConfigGroupSkillRows(group: ConfigGroup): ConfigSkillRow[] {
+  return group.summaries.flatMap((summary) =>
+    summary.leafs.map((leaf) => ({
+      summary,
+      leaf,
+    })),
+  );
+}
+
 export function getPaneViewportCount(paneHeight: number, reservedRows = 0) {
   return Math.max(1, paneHeight - PANE_CHROME_ROWS - reservedRows);
 }
@@ -173,6 +249,19 @@ export function getPaneWidths(terminalColumns: number): [number, number] {
 
 export function getActionChangeCount(actions: DeploymentAction[]) {
   return actions.filter((action) => action.kind !== "noop").length;
+}
+
+export function getGroupSelectedLeafCount({
+  drafts,
+  group,
+}: {
+  drafts: Record<string, DraftBinding>;
+  group: ConfigGroup;
+}) {
+  return group.summaries.reduce(
+    (count, summary) => count + (drafts[summary.source.id]?.selectedLeafIds.length ?? 0),
+    0,
+  );
 }
 
 export function getStatusDisplay({
@@ -214,19 +303,23 @@ export function buildTopBar({
   width,
   isDirty,
   changeCount,
+  showDelete,
   statusLabel,
 }: {
   width: number;
   isDirty: boolean;
   changeCount: number;
+  showDelete: boolean;
   statusLabel: string;
 }) {
   const parts = [
     "Skill Flow",
     "[u] Update",
-    "[d] Delete",
     `Dirty: ${isDirty ? "Yes" : "No"}`,
   ];
+  if (showDelete) {
+    parts.push("[d] Delete");
+  }
   if (width >= 100) {
     parts.push(`Changes: ${changeCount}`);
   }
@@ -272,6 +365,7 @@ export function getInitialDetailFocus({
 
 export function moveDetailFocus({
   actionCursor,
+  actionCount,
   agentCount,
   agentCursor,
   direction,
@@ -280,6 +374,7 @@ export function moveDetailFocus({
   skillCursor,
 }: {
   actionCursor: number;
+  actionCount: number;
   agentCount: number;
   agentCursor: number;
   direction: -1 | 1;
@@ -306,7 +401,12 @@ export function moveDetailFocus({
     if (skillCount > 0) {
       return { focus: "detail.skills", agentCursor, skillCursor: 0, actionCursor };
     }
-    return { focus: "detail.actions", agentCursor, skillCursor, actionCursor: 0 };
+    return {
+      focus: "detail.actions",
+      agentCursor,
+      skillCursor,
+      actionCursor: Math.min(actionCursor, Math.max(0, actionCount - 1)),
+    };
   }
 
   if (focus === "detail.skills") {
@@ -328,11 +428,16 @@ export function moveDetailFocus({
     if (skillCount > 0 && skillCursor < skillCount - 1) {
       return { focus, agentCursor, skillCursor: skillCursor + 1, actionCursor };
     }
-    return { focus: "detail.actions", agentCursor, skillCursor, actionCursor: 0 };
+    return {
+      focus: "detail.actions",
+      agentCursor,
+      skillCursor,
+      actionCursor: Math.min(actionCursor, Math.max(0, actionCount - 1)),
+    };
   }
 
   if (direction === 1) {
-    if (actionCursor < 1) {
+    if (actionCursor < actionCount - 1) {
       return { focus, agentCursor, skillCursor, actionCursor: actionCursor + 1 };
     }
     return { focus, agentCursor, skillCursor, actionCursor };
@@ -372,6 +477,7 @@ export function captureFocusSnapshot({
   agentCursor,
   availableTargets,
   focus,
+  groupId,
   selectedGroupIndex,
   selectedSummary,
   skillCursor,
@@ -380,6 +486,7 @@ export function captureFocusSnapshot({
   agentCursor: number;
   availableTargets: DeploymentTargetName[];
   focus: FocusPane;
+  groupId: string;
   selectedGroupIndex: number;
   selectedSummary: WorkflowSummary | undefined;
   skillCursor: number;
@@ -387,6 +494,7 @@ export function captureFocusSnapshot({
   return {
     focus,
     groupIndex: selectedGroupIndex,
+    groupId,
     sourceId: selectedSummary?.source.id,
     agentTarget: agentCursor > 0 ? availableTargets[agentCursor - 1] : undefined,
     skillId:
@@ -399,35 +507,34 @@ export function captureFocusSnapshot({
 
 export function reconcileFocusAfterReload({
   availableTargets,
-  nextSummaries,
+  nextGroups,
   snapshot,
 }: {
   availableTargets: DeploymentTargetName[];
-  nextSummaries: WorkflowSummary[];
+  nextGroups: ConfigGroup[];
   snapshot: FocusSnapshot;
 }) {
-  const selectedGroupIndex = nextSummaries.findIndex(
-    (summary) => summary.source.id === snapshot.sourceId,
-  );
+  const selectedGroupIndex = nextGroups.findIndex((group) => group.id === snapshot.groupId);
   const fallbackGroupIndex = Math.min(
     snapshot.groupIndex,
-    Math.max(0, nextSummaries.length - 1),
+    Math.max(0, nextGroups.length - 1),
   );
   const resolvedGroupIndex =
-    nextSummaries.length === 0
+    nextGroups.length === 0
       ? -1
-      : selectedGroupIndex >= 0 && nextSummaries[selectedGroupIndex]
+      : selectedGroupIndex >= 0 && nextGroups[selectedGroupIndex]
         ? selectedGroupIndex
         : fallbackGroupIndex;
 
-  const summary = resolvedGroupIndex >= 0 ? nextSummaries[resolvedGroupIndex] : undefined;
+  const group = resolvedGroupIndex >= 0 ? nextGroups[resolvedGroupIndex] : undefined;
+  const skillRows = group ? buildConfigGroupSkillRows(group) : [];
   const hasAgents = availableTargets.length > 0;
-  const hasSkills = (summary?.leafs.length ?? 0) > 0;
+  const hasSkills = skillRows.length > 0;
 
   let focus = snapshot.focus;
   let agentCursor = 0;
   let skillCursor = 0;
-  let actionCursor = snapshot.action === "delete" ? 1 : 0;
+  let actionCursor = snapshot.action === "delete" && group?.kind !== "clawhub" ? 1 : 0;
 
   if (focus === "detail.agents") {
     if (hasAgents) {
@@ -443,8 +550,11 @@ export function reconcileFocusAfterReload({
   if (focus === "detail.skills") {
     if (hasSkills) {
       const nextSkillIndex =
-        snapshot.skillId && summary
-          ? summary.leafs.findIndex((leaf) => leaf.id === snapshot.skillId)
+        snapshot.sourceId && snapshot.skillId
+          ? skillRows.findIndex(
+              (row) =>
+                row.summary.source.id === snapshot.sourceId && row.leaf.id === snapshot.skillId,
+            )
           : -1;
       skillCursor = nextSkillIndex >= 0 ? nextSkillIndex + 1 : 0;
     } else {
@@ -468,11 +578,13 @@ export function reconcileFocusAfterReload({
 
 export function getRequestedAction({
   actionCursor,
+  canDelete,
   focus,
   input,
   keyReturn,
 }: {
   actionCursor: number;
+  canDelete: boolean;
   focus: FocusPane;
   input: string;
   keyReturn: boolean;
@@ -480,11 +592,11 @@ export function getRequestedAction({
   if (input === "u") {
     return "update";
   }
-  if (input === "d") {
+  if (input === "d" && canDelete) {
     return "delete";
   }
   if (focus === "detail.actions" && keyReturn) {
-    return actionCursor === 1 ? "delete" : "update";
+    return actionCursor === 1 && canDelete ? "delete" : "update";
   }
   return undefined;
 }
@@ -637,6 +749,47 @@ function buildProjectionNameMap({
   ]);
 }
 
+export function buildScrollableRows<T extends PaneRow>(
+  items: T[],
+  cursorIndex: number,
+  visibleCount: number,
+  keyPrefix = "scroll",
+  reserveHintSlots = false,
+): WindowedRows<T | PaneRow> {
+  const safeVisibleCount = Math.max(1, visibleCount);
+  const needsHints = items.length > safeVisibleCount;
+  const hasHintSlots = needsHints || (reserveHintSlots && safeVisibleCount >= 3);
+  const adjustedVisibleCount = hasHintSlots ? Math.max(1, safeVisibleCount - 2) : safeVisibleCount;
+  const windowed = getWindowedRows(items, cursorIndex, adjustedVisibleCount);
+  const hasUp = windowed.start > 0;
+  const hasDown = windowed.end < items.length;
+
+  const rows: Array<T | PaneRow> = [];
+  if (hasHintSlots) {
+    rows.push({
+      key: `__scroll_up__:${keyPrefix}`,
+      text: hasUp ? "↑ more" : "",
+      active: false,
+      color: "gray",
+    });
+  }
+  rows.push(...windowed.rows);
+  if (hasHintSlots) {
+    rows.push({
+      key: `__scroll_down__:${keyPrefix}`,
+      text: hasDown ? "↓ more" : "",
+      active: false,
+      color: "gray",
+    });
+  }
+
+  return {
+    rows,
+    start: windowed.start,
+    end: windowed.end,
+  };
+}
+
 export function ConfigApp({
   app,
   availableTargets,
@@ -651,10 +804,11 @@ export function ConfigApp({
   const updateRequestIds = useRef<Record<string, number>>({});
   const updatedTimers = useRef<Record<string, NodeJS.Timeout | undefined>>({});
   const [summaryList, setSummaryList] = useState(summaries);
+  const groupViews = buildConfigGroups(summaryList);
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(
-    summaries.length > 0 ? 0 : -1,
+    groupViews.length > 0 ? 0 : -1,
   );
-  const [groupCursor, setGroupCursor] = useState(summaries.length > 0 ? 0 : -1);
+  const [groupCursor, setGroupCursor] = useState(groupViews.length > 0 ? 0 : -1);
   const [focus, setFocus] = useState<FocusPane>("groups");
   const [skillCursor, setSkillCursor] = useState(0);
   const [targetCursor, setTargetCursor] = useState(0);
@@ -672,19 +826,34 @@ export function ConfigApp({
     message: undefined,
   });
 
-  const selectedSummary = summaryList[selectedGroupIndex];
-  const selectedSourceId = selectedSummary?.source.id ?? "";
+  const selectedGroup = groupViews[selectedGroupIndex] ?? EMPTY_CONFIG_GROUP;
+  const selectedSkillRows = buildConfigGroupSkillRows(selectedGroup);
+  const selectedSkillRow = skillCursor > 0 ? selectedSkillRows[skillCursor - 1] : undefined;
+  const activeSummary = selectedSkillRow?.summary ?? selectedGroup.summaries[0];
+  const selectedSourceId = activeSummary?.source.id ?? "";
   const selectedDraft = drafts[selectedSourceId] ?? EMPTY_DRAFT;
   const savedDraft = savedDrafts[selectedSourceId] ?? EMPTY_DRAFT;
   const isDirty = !draftsEqual(selectedDraft, savedDraft);
-  const leafIds = selectedSummary?.leafs.map((leaf) => leaf.id) ?? [];
+  const leafIds = activeSummary?.leafs.map((leaf) => leaf.id) ?? [];
+  const groupSelectedLeafCount = getGroupSelectedLeafCount({
+    drafts,
+    group: selectedGroup,
+  });
   const visibleTargets = availableTargets;
   const agentInteractiveCount = visibleTargets.length > 0 ? visibleTargets.length + 1 : 0;
-  const skillInteractiveCount = leafIds.length > 0 ? leafIds.length + 1 : 0;
-  const treeState: TreeSelectionState = {
-    allLeafIds: leafIds,
-    selectedLeafIds: selectedDraft.selectedLeafIds,
-  };
+  const skillInteractiveCount = selectedSkillRows.length > 0 ? selectedSkillRows.length + 1 : 0;
+  const treeState: TreeSelectionState =
+    selectedGroup.kind === "clawhub"
+      ? {
+          allLeafIds: selectedSkillRows.map((row) => row.leaf.id),
+          selectedLeafIds: selectedGroup.summaries.flatMap(
+            (summary) => drafts[summary.source.id]?.selectedLeafIds ?? [],
+          ),
+        }
+      : {
+          allLeafIds: leafIds,
+          selectedLeafIds: selectedDraft.selectedLeafIds,
+        };
   const parentSelectionState = getParentSelectionState(treeState);
   const visibleEnabledTargets = visibleTargets.filter((target) =>
     selectedDraft.enabledTargets.includes(target),
@@ -715,15 +884,22 @@ export function ConfigApp({
     message: undefined,
   };
   const isSelectedDelete = deleteState.sourceId === selectedSourceId;
+  const canDelete =
+    selectedGroup.kind === "clawhub" ? focus === "detail.skills" && skillCursor > 0 : true;
+  const showDeleteAction = selectedGroup.kind !== "clawhub";
+  const actionCount = showDeleteAction ? 2 : 1;
   const statusDisplay = getStatusDisplay({
     deleteState,
     isSelectedDelete,
     saveState,
     updateState,
   });
-  const canEditSelected = updateState.phase !== "updating" && deleteState.phase !== "deleting";
+  const canEditSelected =
+    activeSummary !== undefined &&
+    updateState.phase !== "updating" &&
+    deleteState.phase !== "deleting";
   const canRunActions =
-    selectedSummary !== undefined &&
+    activeSummary !== undefined &&
     saveState.phase !== "saving" &&
     updateState.phase !== "updating" &&
     deleteState.phase !== "deleting";
@@ -739,11 +915,11 @@ export function ConfigApp({
   }, []);
 
   useEffect(() => {
-    if (!selectedSummary) {
+    if (!activeSummary) {
       return;
     }
 
-    const sourceId = selectedSummary.source.id;
+    const sourceId = activeSummary.source.id;
     const requestId = (previewRequestIds.current[sourceId] ?? 0) + 1;
     previewRequestIds.current[sourceId] = requestId;
 
@@ -799,17 +975,17 @@ export function ConfigApp({
     return () => {
       disposed = true;
     };
-  }, [app, selectedDraft, selectedSummary]);
+  }, [app, activeSummary, selectedDraft]);
 
   useEffect(() => {
-    if (!selectedSummary || draftsEqual(selectedDraft, savedDraft)) {
+    if (!activeSummary || draftsEqual(selectedDraft, savedDraft)) {
       return;
     }
     if (saveState.phase === "saving" || saveState.phase === "failed") {
       return;
     }
 
-    const sourceId = selectedSummary.source.id;
+    const sourceId = activeSummary.source.id;
     const requestId = (saveRequestIds.current[sourceId] ?? 0) + 1;
     saveRequestIds.current[sourceId] = requestId;
     const draftToSave = normalizeDraft(selectedDraft);
@@ -868,16 +1044,16 @@ export function ConfigApp({
         };
       });
     });
-  }, [app, saveState.phase, savedDraft, selectedDraft, selectedSummary]);
+  }, [app, saveState.phase, savedDraft, selectedDraft, activeSummary]);
 
   const updateSelectedDraft = (
     updater: (currentDraft: DraftBinding) => DraftBinding,
   ) => {
-    if (!selectedSummary || !canEditSelected) {
+    if (!activeSummary || !canEditSelected) {
       return;
     }
 
-    const sourceId = selectedSummary.source.id;
+    const sourceId = activeSummary.source.id;
     setDrafts((current) => {
       const currentDraft = current[sourceId] ?? EMPTY_DRAFT;
       const nextDraft = normalizeDraft(updater(currentDraft));
@@ -905,15 +1081,21 @@ export function ConfigApp({
   };
 
   const handleUpdate = () => {
-    if (!selectedSummary || !canRunActions) {
+    if (!activeSummary || !selectedGroup || !canRunActions) {
       return;
     }
 
-    const sourceId = selectedSummary.source.id;
+    const sourceId = activeSummary.source.id;
+    const sourceIds =
+      selectedGroup.kind === "clawhub"
+        ? selectedGroup.summaries.map((summary) => summary.source.id)
+        : [sourceId];
     const requestId = (updateRequestIds.current[sourceId] ?? 0) + 1;
     updateRequestIds.current[sourceId] = requestId;
-    previewRequestIds.current[sourceId] = (previewRequestIds.current[sourceId] ?? 0) + 1;
-    saveRequestIds.current[sourceId] = (saveRequestIds.current[sourceId] ?? 0) + 1;
+    for (const id of sourceIds) {
+      previewRequestIds.current[id] = (previewRequestIds.current[id] ?? 0) + 1;
+      saveRequestIds.current[id] = (saveRequestIds.current[id] ?? 0) + 1;
+    }
 
     if (updatedTimers.current[sourceId]) {
       clearTimeout(updatedTimers.current[sourceId]);
@@ -925,8 +1107,9 @@ export function ConfigApp({
       agentCursor: targetCursor,
       availableTargets,
       focus,
+      groupId: selectedGroup.id,
       selectedGroupIndex,
-      selectedSummary,
+      selectedSummary: activeSummary,
       skillCursor,
     });
 
@@ -934,11 +1117,11 @@ export function ConfigApp({
       ...current,
       [sourceId]: {
         phase: "updating",
-        message: `updating ${formatGroupLabel(selectedSummary.source)}...`,
+        message: `updating ${selectedGroup.title}...`,
       },
     }));
 
-    void app.updateSources([sourceId]).then(async (result) => {
+    void app.updateSources(sourceIds).then(async (result) => {
       if ((updateRequestIds.current[sourceId] ?? 0) !== requestId) {
         return;
       }
@@ -972,9 +1155,10 @@ export function ConfigApp({
       const nextSummaries = configResult.data.summaries;
       const nextDrafts = buildDraftsFromSummaries(nextSummaries);
       const nextIds = new Set(nextSummaries.map((summary) => summary.source.id));
+      const nextGroups = buildConfigGroups(nextSummaries);
       const nextFocusState = reconcileFocusAfterReload({
         availableTargets,
-        nextSummaries,
+        nextGroups,
         snapshot,
       });
 
@@ -1026,11 +1210,11 @@ export function ConfigApp({
   };
 
   const handleDelete = () => {
-    if (!selectedSummary || !canRunActions) {
+    if (!activeSummary || !canRunActions) {
       return;
     }
 
-    const sourceId = selectedSummary.source.id;
+    const sourceId = activeSummary.source.id;
     previewRequestIds.current[sourceId] = (previewRequestIds.current[sourceId] ?? 0) + 1;
     saveRequestIds.current[sourceId] = (saveRequestIds.current[sourceId] ?? 0) + 1;
     updateRequestIds.current[sourceId] = (updateRequestIds.current[sourceId] ?? 0) + 1;
@@ -1043,7 +1227,7 @@ export function ConfigApp({
     setDeleteState({
       phase: "deleting",
       sourceId,
-      message: `deleting ${formatGroupLabel(selectedSummary.source)}...`,
+      message: `deleting ${formatGroupLabel(activeSummary.source)}...`,
     });
 
     void app.uninstall([sourceId]).then((result) => {
@@ -1057,10 +1241,10 @@ export function ConfigApp({
       }
 
       const nextSummaries = summaryList.filter((summary) => summary.source.id !== sourceId);
-      const nextCount = nextSummaries.length;
+      const nextGroups = buildConfigGroups(nextSummaries);
       const nextSelectedGroupIndex = getNextSelectionIndexAfterDelete(
         selectedGroupIndex,
-        nextCount,
+        nextGroups.length,
       );
 
       setSummaryList(nextSummaries);
@@ -1084,7 +1268,7 @@ export function ConfigApp({
   };
 
   useInput((input, key) => {
-    if (!selectedSummary) {
+    if (!activeSummary) {
       if (input === "q" || key.escape || (input === "c" && key.ctrl)) {
         exit();
       }
@@ -1098,6 +1282,7 @@ export function ConfigApp({
 
     const requestedAction = getRequestedAction({
       actionCursor,
+      canDelete,
       focus,
       input,
       keyReturn: Boolean(key.return),
@@ -1151,7 +1336,7 @@ export function ConfigApp({
 
     if (focus === "groups") {
       if (key.downArrow) {
-        const next = Math.min(groupCursor + 1, Math.max(0, summaryList.length - 1));
+        const next = Math.min(groupCursor + 1, Math.max(0, groupViews.length - 1));
         setGroupCursor(next);
         setSelectedGroupIndex(next);
         setTargetCursor(0);
@@ -1172,6 +1357,7 @@ export function ConfigApp({
     if (key.downArrow || key.upArrow) {
       const next = moveDetailFocus({
         actionCursor,
+        actionCount,
         agentCount: agentInteractiveCount,
         agentCursor: targetCursor,
         direction: key.downArrow ? 1 : -1,
@@ -1225,6 +1411,32 @@ export function ConfigApp({
 
     if (focus === "detail.skills" && input === " " && skillInteractiveCount > 0) {
       updateSelectedDraft((currentDraft) => {
+        if (selectedGroup.kind === "clawhub") {
+          if (skillCursor === 0) {
+            return currentDraft;
+          }
+
+          const row = selectedSkillRows[skillCursor - 1];
+          if (!row) {
+            return currentDraft;
+          }
+
+          if (row.summary.source.id !== selectedSourceId) {
+            return currentDraft;
+          }
+
+          const baseState: TreeSelectionState = {
+            allLeafIds: row.summary.leafs.map((leaf) => leaf.id),
+            selectedLeafIds: currentDraft.selectedLeafIds,
+          };
+          const nextState = toggleChild(baseState, row.leaf.id);
+
+          return {
+            ...currentDraft,
+            selectedLeafIds: nextState.selectedLeafIds,
+          };
+        }
+
         const baseState: TreeSelectionState = {
           allLeafIds: leafIds,
           selectedLeafIds: currentDraft.selectedLeafIds,
@@ -1242,7 +1454,7 @@ export function ConfigApp({
     }
   });
 
-  if (summaryList.length === 0) {
+  if (groupViews.length === 0) {
     return (
       <Box flexDirection="column">
         <Text bold>No skills groups yet</Text>
@@ -1252,21 +1464,37 @@ export function ConfigApp({
     );
   }
 
-  const activeSummary = selectedSummary!;
+  const renderSummary = activeSummary!;
+
   const terminalRows = stdout.rows ?? 24;
   const terminalColumns = stdout.columns ?? 120;
   const paneHeight = Math.max(12, terminalRows - 3);
   const [groupsWidth, detailWidth] = getPaneWidths(terminalColumns);
   const bodyRowCount = getPaneViewportCount(paneHeight);
-  const groupRows = getWindowedRows(
-    summaryList.map((summary, index) => ({
-      key: summary.source.id,
-      text: `${formatGroupLabel(summary.source)}${failedBootBySourceId.has(summary.source.id) ? " !" : ""}`,
-      active: focus === "groups" && groupCursor === index,
-      color: failedBootBySourceId.has(summary.source.id) ? ("yellow" as const) : undefined,
-    })),
+  const groupRows = buildScrollableRows(
+    groupViews.map((group, index) => {
+      const isCursor = groupCursor === index;
+      const isSelected = selectedGroupIndex === index;
+      return {
+        key: group.id,
+        text: `${group.title}${
+          group.kind === "clawhub"
+            ? group.summaries.some((summary) => failedBootBySourceId.has(summary.source.id))
+              ? " !"
+              : ""
+            : failedBootBySourceId.has(group.summaries[0]?.source.id ?? "")
+              ? " !"
+              : ""
+        }`,
+        active: focus === "groups" && isCursor,
+        activeColor: "cyan" as const,
+        bold: isSelected,
+        color: isSelected ? ("white" as const) : ("gray" as const),
+      };
+    }),
     Math.max(0, groupCursor),
     bodyRowCount,
+    "groups",
   );
 
   const agentRows: PaneRow[] =
@@ -1300,7 +1528,7 @@ export function ConfigApp({
         ];
 
   const skillRows: PaneRow[] =
-    activeSummary.leafs.length > 0
+    selectedSkillRows.length > 0
       ? [
           {
             key: "__all__",
@@ -1309,19 +1537,28 @@ export function ConfigApp({
             bold: true,
             color: undefined,
           },
-          ...activeSummary.leafs.map((leaf, index) => {
+          ...selectedSkillRows.map((row, index) => {
+            const rowDraft = drafts[row.summary.source.id] ?? EMPTY_DRAFT;
+            const rowSelected = rowDraft.selectedLeafIds.includes(row.leaf.id);
             const warnings = [
-              ...leaf.metadataWarnings,
-              ...(projectionWarningsByLeafId[leaf.id] ?? []),
+              ...row.leaf.metadataWarnings,
+              ...(row.summary.source.id === selectedSourceId
+                ? (projectionWarningsByLeafId[row.leaf.id] ?? [])
+                : []),
             ];
             const inlineWarning = warnings[0] ? ` (${warnings[0]})` : "";
-            const label = selectedDraft.selectedLeafIds.includes(leaf.id)
-              ? (projectedNamesByLeafId.get(leaf.id) ?? leaf.linkName)
-              : leaf.linkName;
+            const projectedLabel =
+              row.summary.source.id === selectedSourceId && rowSelected
+                ? (projectedNamesByLeafId.get(row.leaf.id) ?? row.leaf.linkName)
+                : row.leaf.linkName;
+            const label =
+              selectedGroup.kind === "clawhub"
+                ? `${projectedLabel} · ${formatGroupLabel(row.summary.source)}`
+                : projectedLabel;
             return {
-              key: leaf.id,
+              key: row.leaf.id,
               text: `${selectionMarker(
-                selectedDraft.selectedLeafIds.includes(leaf.id) ? "full" : "empty",
+                rowSelected ? "full" : "empty",
               )} ${label}${inlineWarning}`,
               active: focus === "detail.skills" && skillCursor === index + 1,
               color: warnings.length > 0 ? ("yellow" as const) : ("gray" as const),
@@ -1337,16 +1574,23 @@ export function ConfigApp({
           },
         ];
 
+  const selectedGroupBootMessages = selectedGroup
+    ? selectedGroup.kind === "clawhub"
+      ? selectedGroup.summaries
+          .map((summary) => failedBootBySourceId.get(summary.source.id))
+          .filter((message): message is string => Boolean(message))
+      : [failedBootBySourceId.get(selectedSourceId)].filter((message): message is string => Boolean(message))
+    : [];
   const alerts = prioritizeAlerts(
     buildAlerts({
       deleteState,
-      failedBootMessage: failedBootBySourceId.get(selectedSourceId),
+      failedBootMessages: selectedGroupBootMessages,
       isSelectedDelete,
       previewState,
       projectionWarningsByLeafId,
       saveState,
       selectedDraft,
-      selectedSummary: activeSummary,
+      selectedSummary: renderSummary,
       updateState,
     }),
   );
@@ -1356,14 +1600,12 @@ export function ConfigApp({
     errorMessage: previewState.errorMessage,
     loading: previewState.loading,
   });
-  const bootLabel = failedBootBySourceId.has(selectedSourceId) ? "PARTIAL" : "OK";
+  const bootLabel = selectedGroupBootMessages.length > 0 ? "PARTIAL" : "OK";
   const metadataRows = buildDetailMetadataRows({
     alerts,
-    bootLabel,
     detailWidth,
-    previewLabel,
-    saveLabel: statusDisplay.kind === "failed" ? "Failed" : buildSaveStatusLabel(saveState),
-    summary: activeSummary,
+    group: selectedGroup,
+    summary: renderSummary,
   });
   const actionRows = buildActionRows({
     actionCursor,
@@ -1371,34 +1613,57 @@ export function ConfigApp({
     deleteState,
     focus,
     isSelectedDelete,
+    showDeleteAction,
     updateState,
   });
   const fixedRows =
     metadataRows.length +
-    1 +
-    1 +
+    4 +
     actionRows.length;
   const sectionBudget = Math.max(2, bodyRowCount - fixedRows);
+  const hasAgentSection = visibleTargets.length > 0;
+  const hasSkillSection = selectedSkillRows.length > 0;
   const agentBudget =
-    visibleTargets.length > 0 && activeSummary.leafs.length > 0
-      ? Math.max(1, Math.floor(sectionBudget / 2))
+    hasAgentSection && hasSkillSection
+      ? Math.min(
+          Math.max(1, sectionBudget - 1),
+          Math.max(4, Math.floor(sectionBudget * 0.4)),
+        )
       : sectionBudget;
   const skillBudget =
-    visibleTargets.length > 0 && activeSummary.leafs.length > 0
-      ? Math.max(1, sectionBudget - agentBudget)
-      : sectionBudget;
-  const visibleAgentRows = getWindowedRows(
+    hasAgentSection && hasSkillSection ? Math.max(1, sectionBudget - agentBudget) : sectionBudget;
+  const visibleAgentRows = buildScrollableRows(
     agentRows,
     Math.min(targetCursor, Math.max(0, agentRows.length - 1)),
     Math.max(1, agentBudget),
+    "agents",
+    true,
   );
-  const visibleSkillRows = getWindowedRows(
+  const visibleSkillRows = buildScrollableRows(
     skillRows,
     Math.min(skillCursor, Math.max(0, skillRows.length - 1)),
     Math.max(1, skillBudget),
+    "skills",
+    true,
   );
+  const filledSkillRows = [...visibleSkillRows.rows];
+  const skillPaddingCount = Math.max(0, skillBudget - filledSkillRows.length);
+  for (let index = 0; index < skillPaddingCount; index += 1) {
+    filledSkillRows.push({
+      key: `__skills_fill__:${index}`,
+      text: "",
+      active: false,
+      color: undefined,
+    });
+  }
   const detailRows: PaneRow[] = [
     ...metadataRows,
+    {
+      key: "__agents_gap__",
+      text: "",
+      active: false,
+      color: undefined,
+    },
     {
       key: "__agents_header__",
       text: `Apply to Agents (${visibleEnabledTargets.length}/${visibleTargets.length})`,
@@ -1408,13 +1673,19 @@ export function ConfigApp({
     },
     ...visibleAgentRows.rows,
     {
+      key: "__skills_gap__",
+      text: "",
+      active: false,
+      color: undefined,
+    },
+    {
       key: "__skills_header__",
-      text: `Included Skills (${selectedDraft.selectedLeafIds.length}/${leafIds.length})`,
+      text: `Included Skills (${selectedGroup.kind === "clawhub" ? groupSelectedLeafCount : selectedDraft.selectedLeafIds.length}/${selectedSkillRows.length})`,
       active: false,
       bold: true,
       color: undefined,
     },
-    ...visibleSkillRows.rows,
+    ...filledSkillRows,
   ];
 
   return (
@@ -1424,13 +1695,14 @@ export function ConfigApp({
           width: terminalColumns,
           isDirty,
           changeCount,
+          showDelete: canDelete,
           statusLabel: statusDisplay.label,
         })}
       </Text>
       <Box>
         <Pane
           active={focus === "groups"}
-          footer={`group ${selectedGroupIndex + 1}/${summaryList.length}`}
+          footer={`${groupViews.length} groups`}
           gapAfter
           height={paneHeight}
           title="Skills Groups"
@@ -1449,7 +1721,7 @@ export function ConfigApp({
         </Pane>
       </Box>
       <Text dimColor wrap="truncate-end">
-        {buildFooterHints(focus)}
+        {buildFooterHints(focus, canDelete)}
       </Text>
     </Box>
   );
@@ -1593,7 +1865,7 @@ function buildPreviewLabel({
 
 function buildAlerts({
   deleteState,
-  failedBootMessage,
+  failedBootMessages,
   isSelectedDelete,
   previewState,
   projectionWarningsByLeafId,
@@ -1603,7 +1875,7 @@ function buildAlerts({
   updateState,
 }: {
   deleteState: DeleteState;
-  failedBootMessage: string | undefined;
+  failedBootMessages: string[];
   isSelectedDelete: boolean;
   previewState: PreviewState;
   projectionWarningsByLeafId: ProjectionWarningMap;
@@ -1626,7 +1898,7 @@ function buildAlerts({
   if (previewState.errorMessage) {
     alerts.push({ level: "error", message: `Preview failed: ${previewState.errorMessage}` });
   }
-  if (failedBootMessage) {
+  for (const failedBootMessage of failedBootMessages) {
     alerts.push({ level: "error", message: `Boot issue: ${failedBootMessage}` });
   }
 
@@ -1658,54 +1930,48 @@ function buildAlerts({
   return alerts;
 }
 
-function buildDetailMetadataRows({
+export function buildDetailMetadataRows({
   alerts,
-  bootLabel,
   detailWidth,
-  previewLabel,
-  saveLabel,
+  group,
   summary,
 }: {
   alerts: AlertItem[];
-  bootLabel: string;
   detailWidth: number;
-  previewLabel: string;
-  saveLabel: string;
+  group: ConfigGroup;
   summary: WorkflowSummary;
 }) {
+  const sourceSummary =
+    group.kind === "clawhub"
+      ? `Sources: ${group.summaries.length} clawhub source${group.summaries.length === 1 ? "" : "s"}`
+      : `Source: ${summary.source.locator}`;
   const rows: PaneRow[] = [
     {
       key: "__title__",
-      text: formatGroupLabel(summary.source),
+      text: group.title,
       active: false,
       bold: true,
       color: undefined,
     },
     {
-      key: "__type__",
-      text: `Type: ${summary.source.kind.toUpperCase()}`,
-      active: false,
-      color: "gray",
-    },
-    {
       key: "__source__",
-      text: fitPaneLine(`Source: ${summary.source.locator}`, getPaneInnerWidth(detailWidth) - 2),
+      text: fitPaneLine(sourceSummary, getPaneInnerWidth(detailWidth) - 2),
       active: false,
       color: "gray",
-    },
-    {
-      key: "__save__",
-      text: `Save: ${saveLabel}   Preview: ${previewLabel}`,
-      active: false,
-      color: "gray",
-    },
-    {
-      key: "__boot__",
-      text: `Boot: ${bootLabel}`,
-      active: false,
-      color: bootLabel === "OK" ? "green" : "yellow",
     },
   ];
+
+  if (group.kind === "clawhub") {
+    rows.push({
+      key: "__focused_source__",
+      text: fitPaneLine(
+        `Focused Source: ${formatGroupLabel(summary.source)}`,
+        getPaneInnerWidth(detailWidth) - 2,
+      ),
+      active: false,
+      color: "gray",
+    });
+  }
 
   if (alerts.length > 0) {
     rows.push({
@@ -1733,12 +1999,13 @@ function buildDetailMetadataRows({
   return rows;
 }
 
-function buildActionRows({
+export function buildActionRows({
   actionCursor,
   canRunActions,
   deleteState,
   focus,
   isSelectedDelete,
+  showDeleteAction,
   updateState,
 }: {
   actionCursor: number;
@@ -1746,6 +2013,7 @@ function buildActionRows({
   deleteState: DeleteState;
   focus: FocusPane;
   isSelectedDelete: boolean;
+  showDeleteAction: boolean;
   updateState: UpdateState;
 }) {
   const updateText =
@@ -1754,13 +2022,6 @@ function buildActionRows({
       : updateState.phase === "failed"
         ? "Update · FAILED"
         : "Update";
-  const deleteText =
-    isSelectedDelete && deleteState.phase === "deleting"
-      ? "Delete · DELETING..."
-      : isSelectedDelete && deleteState.phase === "failed"
-        ? "Delete · FAILED"
-        : "Delete";
-
   const rows: PaneRow[] = [
     {
       key: "__actions_separator__",
@@ -1775,7 +2036,15 @@ function buildActionRows({
       color: canRunActions || updateState.phase !== "idle" ? undefined : ("gray" as const),
       bold: true,
     },
-    {
+  ];
+  if (showDeleteAction) {
+    const deleteText =
+      isSelectedDelete && deleteState.phase === "deleting"
+        ? "Delete · DELETING..."
+        : isSelectedDelete && deleteState.phase === "failed"
+          ? "Delete · FAILED"
+          : "Delete";
+    rows.push({
       key: "__action_delete__",
       text: `[${deleteText}]`,
       active: focus === "detail.actions" && actionCursor === 1,
@@ -1786,8 +2055,8 @@ function buildActionRows({
             ? ("red" as const)
             : ("gray" as const),
       bold: true,
-    },
-  ];
+    });
+  }
   return rows;
 }
 
@@ -1801,18 +2070,24 @@ function buildCommandBar(focus: FocusPane) {
   return "[Space] Toggle";
 }
 
-function buildFooterHints(focus: FocusPane) {
+function buildFooterHints(focus: FocusPane, canDelete: boolean) {
   if (focus === "groups") {
-    return "[↑↓] Move   [Tab/→] Switch pane   [u] Update   [d] Delete   [q] Exit";
+    return canDelete
+      ? "[↑↓] Move   [Tab/→] Switch pane   [u] Update   [d] Delete   [q] Exit"
+      : "[↑↓] Move   [Tab/→] Switch pane   [u] Update   [q] Exit";
   }
   if (focus === "detail.actions") {
-    return "[↑↓] Move   [Enter] Action   [Tab/←/Esc] Back   [u] Update   [d] Delete";
+    return canDelete
+      ? "[↑↓] Move   [Enter] Action   [Tab/←/Esc] Back   [u] Update   [d] Delete"
+      : "[↑↓] Move   [Enter] Action   [Tab/←/Esc] Back   [u] Update";
   }
-  return "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update   [d] Delete";
+  return canDelete
+    ? "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update   [d] Delete"
+    : "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update";
 }
 
 function RowText({ row, width }: { row: PaneRow; width: number }) {
-  const color = row.active ? "cyan" : row.color;
+  const color = row.active ? row.activeColor ?? "cyan" : row.color;
   const prefix = row.active ? "> " : "  ";
   const contentWidth = Math.max(1, getPaneInnerWidth(width) - prefix.length);
   const content = fitPaneLine(row.text, contentWidth);
