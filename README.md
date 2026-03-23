@@ -87,7 +87,7 @@ skill-flow uninstall my-source-id
 
 `add <source>` supports local paths, `owner/repo`, full https/ssh Git URLs, GitHub tree URLs, and `clawhub:<slug>[@version]`.
 
-By default, `add` preselects all discovered skills and all detected agent targets. When `--path <repoSubpath>` is provided, the full repo is still imported, but only skills under that path are preselected.
+By default, `add` preselects all discovered skills and all detected agent targets. When `--path <repoSubpath>` is provided, the full repo is still imported, but only skills under that path are preselected. `--path` values are normalized, so `./skills/` and `skills/` behave the same, and the CLI prints a preselection warning when the import only scopes the default selection.
 
 Examples:
 

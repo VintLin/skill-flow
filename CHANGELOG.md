@@ -2,6 +2,19 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.0.6 - 2026-03-23
+
+### Changed
+
+- Normalized `add --path` handling so stored requested paths and preselection state stay predictable.
+- Added an explicit preselection warning when `add` only scopes the default selection to a subpath.
+- Cleaned up generated `find` follow-up commands so root-scoped skills do not emit `--path .`.
+
+### Verification
+
+- `npm run build`
+- `npm test -- src/tests/add-selection-and-find-command.test.ts src/tests/find-and-naming-utils.test.ts src/tests/source-lifecycle.test.ts src/tests/skill-flow.test.ts`
+
 ## v1.0.5 - 2026-03-23
 
 ### Changed
