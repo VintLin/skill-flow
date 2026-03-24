@@ -924,69 +924,6 @@ export function ConfigApp({
     updateState.phase !== "updating" &&
     deleteState.phase !== "deleting";
 
-  const commitSelectedDraft = (
-    sourceId: string,
-    draftToSave: DraftBinding,
-  ) => {
-    const requestId = (saveRequestIds.current[sourceId] ?? 0) + 1;
-    saveRequestIds.current[sourceId] = requestId;
-
-    setSaveStateBySourceId((current) => ({
-      ...current,
-      [sourceId]: {
-        phase: "saving",
-        message: "saving changes...",
-      },
-    }));
-
-    void app.applyDraft(sourceId, draftToSave).then((result) => {
-      setSaveStateBySourceId((current) => {
-        if ((saveRequestIds.current[sourceId] ?? 0) !== requestId) {
-          return current;
-        }
-
-        if (!result.ok) {
-          return {
-            ...current,
-            [sourceId]: {
-              phase: "failed",
-              message: firstErrorMessage(result),
-            },
-          };
-        }
-
-        const appliedDraft = normalizeDraft(result.data.draft);
-        setDrafts((draftsCurrent) => ({
-          ...draftsCurrent,
-          [sourceId]: appliedDraft,
-        }));
-        setSavedDrafts((savedCurrent) => ({
-          ...savedCurrent,
-          [sourceId]: appliedDraft,
-        }));
-        setPreviewBySourceId((previewCurrent) => ({
-          ...previewCurrent,
-          [sourceId]: {
-            actions: result.data.actions,
-            blockedCount: result.data.actions.filter((action) => action.kind === "blocked")
-              .length,
-            errorMessage: undefined,
-            loading: false,
-            requestId: previewRequestIds.current[sourceId] ?? 0,
-          },
-        }));
-
-        return {
-          ...current,
-          [sourceId]: {
-            phase: "saved",
-            message: "saved",
-          },
-        };
-      });
-    });
-  };
-
   useEffect(() => {
     return () => {
       for (const timer of Object.values(updatedTimers.current)) {
@@ -1069,8 +1006,64 @@ export function ConfigApp({
     }
 
     const sourceId = activeSummary.source.id;
+    const requestId = (saveRequestIds.current[sourceId] ?? 0) + 1;
+    saveRequestIds.current[sourceId] = requestId;
     const draftToSave = normalizeDraft(selectedDraft);
-    commitSelectedDraft(sourceId, draftToSave);
+
+    setSaveStateBySourceId((current) => ({
+      ...current,
+      [sourceId]: {
+        phase: "saving",
+        message: "saving changes...",
+      },
+    }));
+
+    void app.applyDraft(sourceId, draftToSave).then((result) => {
+      setSaveStateBySourceId((current) => {
+        if ((saveRequestIds.current[sourceId] ?? 0) !== requestId) {
+          return current;
+        }
+
+        if (!result.ok) {
+          return {
+            ...current,
+            [sourceId]: {
+              phase: "failed",
+              message: firstErrorMessage(result),
+            },
+          };
+        }
+
+        const appliedDraft = normalizeDraft(result.data.draft);
+        setDrafts((draftsCurrent) => ({
+          ...draftsCurrent,
+          [sourceId]: appliedDraft,
+        }));
+        setSavedDrafts((savedCurrent) => ({
+          ...savedCurrent,
+          [sourceId]: appliedDraft,
+        }));
+        setPreviewBySourceId((previewCurrent) => ({
+          ...previewCurrent,
+          [sourceId]: {
+            actions: result.data.actions,
+            blockedCount: result.data.actions.filter((action) => action.kind === "blocked")
+              .length,
+            errorMessage: undefined,
+            loading: false,
+            requestId: previewRequestIds.current[sourceId] ?? 0,
+          },
+        }));
+
+        return {
+          ...current,
+          [sourceId]: {
+            phase: "saved",
+            message: "saved",
+          },
+        };
+      });
+    });
   }, [app, saveState.phase, savedDraft, selectedDraft, activeSummary]);
 
   const updateSelectedDraft = (
@@ -1396,19 +1389,6 @@ export function ConfigApp({
       setTargetCursor(next.agentCursor);
       setSkillCursor(next.skillCursor);
       setActionCursor(next.actionCursor);
-      return;
-    }
-
-    if (
-      key.return &&
-      (focus === "detail.agents" || focus === "detail.skills") &&
-      activeSummary &&
-      !draftsEqual(selectedDraft, savedDraft) &&
-      saveState.phase !== "saving" &&
-      updateState.phase !== "updating" &&
-      deleteState.phase !== "deleting"
-    ) {
-      commitSelectedDraft(activeSummary.source.id, normalizeDraft(selectedDraft));
       return;
     }
 
@@ -2085,7 +2065,7 @@ export function buildCommandBar(focus: FocusPane) {
   if (focus === "detail.actions") {
     return "[Enter] Action";
   }
-  return "[Space] Toggle  [Enter] Save";
+  return "[Space] Toggle";
 }
 
 export function buildFooterHints(focus: FocusPane, canDelete: boolean) {
@@ -2100,8 +2080,8 @@ export function buildFooterHints(focus: FocusPane, canDelete: boolean) {
       : "[↑↓] Move   [Enter] Action   [Tab/←/Esc] Back   [u] Update";
   }
   return canDelete
-    ? "[↑↓] Move   [Space] Toggle   [Enter] Save   [Tab/←/Esc] Back   [u] Update   [d] Delete"
-    : "[↑↓] Move   [Space] Toggle   [Enter] Save   [Tab/←/Esc] Back   [u] Update";
+    ? "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update   [d] Delete"
+    : "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update";
 }
 
 function RowText({ row, width }: { row: PaneRow; width: number }) {

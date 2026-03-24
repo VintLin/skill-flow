@@ -222,8 +222,8 @@ describe("config ui utils", () => {
     expect(selectionMarker("full")).toBe("●");
     expect(selectionMarker("partial")).toBe("◐");
     expect(selectionMarker("empty")).toBe("○");
-    expect(buildCommandBar("detail.skills")).toContain("Enter");
-    expect(buildFooterHints("detail.agents", true)).toContain("[Enter] Save");
+    expect(buildCommandBar("detail.skills")).toContain("Toggle");
+    expect(buildFooterHints("detail.agents", true)).not.toContain("[⌫] Clear");
   });
 
   test("alerts are prioritized error before blocked before warning", () => {
