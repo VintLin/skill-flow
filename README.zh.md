@@ -188,12 +188,27 @@ Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · Op
 
 ```bash
 npm install
-npm run dev     # 开发模式
 npm run build   # 构建
 npm test        # 运行测试
+npm run -w skill-flow dev  # CLI 开发模式
 ```
 
-技术栈：TypeScript + Vitest + Ink TUI
+工作区结构：
+
+- `apps/cli`：对外发布的 npm CLI 包（`skill-flow`）
+- `packages/core`：共享领域模型 / 服务 / 状态逻辑
+- `packages/tui`：Ink 终端 UI 模块
+- `packages/shared-types`：bridge 协议契约
+- `packages/bridge`：桌面端进程调用 bridge client
+- `apps/desktop-mac`：SwiftUI 桌面壳（macOS 14+）
+
+桌面/辅助进程机器协议入口：
+
+```bash
+printf '%s' '{"protocolVersion":"1.0","command":"list"}' | skill-flow bridge --json
+```
+
+技术栈：TypeScript + Vitest + Ink TUI + SwiftUI（桌面壳）
 
 ## 许可证
 

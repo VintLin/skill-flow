@@ -6,3 +6,4 @@ coverage/
 .DS_Store
 docs/
 .superset/
+.build/

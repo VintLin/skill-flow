@@ -189,12 +189,27 @@ For more reliable built-in Git catalog search, set `GITHUB_TOKEN` to avoid low u
 
 ```bash
 npm install
-npm run dev     # Development mode
 npm run build   # Build
 npm test        # Run tests
+npm run -w skill-flow dev  # CLI dev mode
 ```
 
-Tech stack: TypeScript + Vitest + Ink TUI
+Workspace layout:
+
+- `apps/cli`: published npm CLI package (`skill-flow`)
+- `packages/core`: shared domain/services/state logic
+- `packages/tui`: Ink UI modules
+- `packages/shared-types`: bridge protocol contract
+- `packages/bridge`: desktop process bridge client
+- `apps/desktop-mac`: SwiftUI desktop shell (macOS 14+)
+
+Machine bridge command (for desktop/helper use):
+
+```bash
+printf '%s' '{"protocolVersion":"1.0","command":"list"}' | skill-flow bridge --json
+```
+
+Tech stack: TypeScript + Vitest + Ink TUI + SwiftUI (desktop shell)
 
 ## License
 
