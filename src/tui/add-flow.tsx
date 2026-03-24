@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import type { DeploymentPlan, DeploymentTargetName, DraftBinding } from "../domain/types.js";
+import type { DeploymentTargetName, DraftBinding } from "../domain/types.js";
 import type { SkillFlowApp } from "../services/skill-flow.js";
 import {
   ALL_AGENTS_CHOICE_ID,
@@ -12,7 +12,6 @@ import {
   buildAddCompletionMessage,
   buildInitialDraft,
   buildLeafChoices,
-  buildSummaryLines,
   buildTargetChoices,
   filterChoices,
   toggleAllSelections,
@@ -35,8 +34,6 @@ type Phase =
   | "skills"
   | "agents-loading"
   | "agents"
-  | "summary-loading"
-  | "summary"
   | "applying"
   | "rolling-back"
   | "done"
@@ -63,7 +60,6 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [session, setSession] = useState<PreparedSession | undefined>();
   const [draft, setDraft] = useState<DraftBinding | undefined>();
-  const [preview, setPreview] = useState<DeploymentPlan | undefined>();
   const [message, setMessage] = useState<string>("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [currentStep, setCurrentStep] = useState<SelectionStep>("skills");
@@ -188,7 +184,15 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
         return;
       }
 
-      await loadSummary(app, nextSession, nextDraft, setPhase, setPreview, setMessage, setWarnings, nextSession.importWarnings);
+      await applyDraftAndFinish(
+        app,
+        nextSession,
+        nextDraft,
+        setPhase,
+        setMessage,
+        setWarnings,
+        setLastResult,
+      );
     });
 
     return () => {
@@ -197,13 +201,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   }, [app, request]);
 
   useInput((input, key) => {
-    if (
-      phase === "loading" ||
-      phase === "agents-loading" ||
-      phase === "summary-loading" ||
-      phase === "applying" ||
-      phase === "rolling-back"
-    ) {
+      if (phase === "loading" || phase === "agents-loading" || phase === "applying" || phase === "rolling-back") {
       return;
     }
 
@@ -262,15 +260,14 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
             setCurrentStep("agents");
             return;
           }
-          await loadSummary(
+          await applyDraftAndFinish(
             app,
-            session,
+            resolvedSession,
             draft,
             setPhase,
-            setPreview,
             setMessage,
             setWarnings,
-            session.importWarnings,
+            setLastResult,
           );
         },
       });
@@ -306,47 +303,18 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
           : {}),
         onConfirm: async () => {
           setInlineError(undefined);
-          await loadSummary(
+          await applyDraftAndFinish(
             app,
             session,
             draft,
             setPhase,
-            setPreview,
             setMessage,
             setWarnings,
-            session.importWarnings,
+            setLastResult,
           );
         },
       });
       return;
-    }
-
-    if (phase === "summary") {
-      if (key.leftArrow) {
-        setInlineError(undefined);
-        if (!(request.requestedAgents?.length) && session.availableTargets.length > 1) {
-          setPhase("agents");
-          setCurrentStep("agents");
-          return;
-        }
-        if (!(request.requestedSkills?.length) && session.leafs.length > 1) {
-          setPhase("skills");
-          setCurrentStep("skills");
-        }
-        return;
-      }
-
-      if (key.return) {
-        void applyDraftAndFinish(
-          app,
-          session,
-          draft,
-          setPhase,
-          setMessage,
-          setWarnings,
-          setLastResult,
-        );
-      }
     }
   });
 
@@ -429,8 +397,8 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
             allSelectableIds: targetChoices.map((choice) => choice.id),
             footer:
               currentStep === "agents" && session.leafs.length > 1 && !(request.requestedSkills?.length)
-                ? "Type to filter · Space toggle · Enter continue · ← back · Esc cancel"
-                : "Type to filter · Space toggle · Enter continue · Esc cancel",
+                ? "Type to filter · Space toggle · Enter install · ← back · Esc cancel"
+                : "Type to filter · Space toggle · Enter install · Esc cancel",
             emptyMessage:
               session.availableTargets.length === 0
                 ? "No agents detected. Continue to install the source without projections."
@@ -439,30 +407,6 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
             ...(inlineError ? { inlineError } : {}),
           })
         : null}
-      {phase === "summary-loading" ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold>◆ Review installation summary</Text>
-          <Text color="gray">Building deployment preview...</Text>
-        </Box>
-      ) : null}
-      {phase === "summary" && preview ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold>◆ Review installation summary</Text>
-          {buildSummaryLines({
-            source: session.source,
-            leafs: session.leafs,
-            availableTargets: session.availableTargets,
-            draft,
-            importWarnings: session.importWarnings,
-            ...(session.requestedPath ? { requestedPath: session.requestedPath } : {}),
-          }, preview).map((line) => (
-            <Text key={line}>{line}</Text>
-          ))}
-          <Text color="gray">
-            Enter install · {((!(request.requestedAgents?.length) && session.availableTargets.length > 1) || (!(request.requestedSkills?.length) && session.leafs.length > 1)) ? "← back · " : ""}Esc cancel
-          </Text>
-        </Box>
-      ) : null}
       {phase === "applying" ? (
         <Box flexDirection="column" marginTop={1}>
           <Text bold>◆ Installing</Text>
@@ -579,30 +523,6 @@ async function prepareAddSession(
         : {}),
     },
   };
-}
-
-async function loadSummary(
-  app: SkillFlowApp,
-  session: PreparedSession,
-  draft: DraftBinding,
-  setPhase: (phase: Phase) => void,
-  setPreview: (plan: DeploymentPlan) => void,
-  setMessage: (message: string) => void,
-  setWarnings: (warnings: string[]) => void,
-  importWarnings: string[],
-) {
-  setPhase("summary-loading");
-  const preview = await app.previewDraft(session.sourceId, draft);
-  if (!preview.ok) {
-    setPhase("error");
-    setMessage(preview.errors[0]?.message ?? "Unable to build installation summary.");
-    setWarnings([...importWarnings, ...preview.warnings.map((warning) => warning.message)]);
-    return;
-  }
-
-  setPreview(preview.data.plan);
-  setWarnings([...importWarnings, ...preview.warnings.map((warning) => warning.message)]);
-  setPhase("summary");
 }
 
 async function ensureTargetsLoaded(
