@@ -1,0 +1,61 @@
+{
+  "name": "skill-flow",
+  "version": "1.1.5",
+  "description": "Workflow-first management for AI agent skills. Group, project, and sync skills across multiple agents with explicit state tracking.",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "skill-flow": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VintLin/skill-flow.git"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "skills",
+    "workflow",
+    "claude",
+    "cursor",
+    "copilot",
+    "cli",
+    "management",
+    "git"
+  ],
+  "author": "VintLin",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/VintLin/skill-flow/issues"
+  },
+  "homepage": "https://github.com/VintLin/skill-flow#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@skill-flow/core": "1.1.5",
+    "@skill-flow/tui": "1.1.5",
+    "commander": "^14.0.3",
+    "ink": "^6.8.0",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}
