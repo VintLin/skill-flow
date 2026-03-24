@@ -6,6 +6,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { SkillFlowApp } from "./services/skill-flow.js";
 import { ConfigBootstrapApp } from "./tui/config-app.js";
 import { FindApp } from "./tui/find-app.js";
+import { AddFlowApp, runAddFlowNonInteractive, type AddFlowExitResult } from "./tui/add-flow.js";
 import { formatGroupRef } from "./utils/naming.js";
 import {
   formatActionSummary,
@@ -29,7 +30,21 @@ program
   .argument("<source>", "Source locator")
   .option("--path <repoSubpath>", "Filter Git sources to a specific repo subpath")
   .option("--from <catalog>", "Interpret source using a named catalog")
-  .action(async (source: string, options: { path?: string; from?: string }) => {
+  .option("--skill <id>", "Enable a specific skill selector", collectOption, [])
+  .option("--agent <target>", "Enable a specific deployment target", collectOption, [])
+  .option("--yes", "Skip prompts and use default selections")
+  .option("--all", "Enable all discovered skills and all detected targets")
+  .action(async (
+    source: string,
+    options: {
+      path?: string;
+      from?: string;
+      skill?: string[];
+      agent?: string[];
+      yes?: boolean;
+      all?: boolean;
+    },
+  ) => {
     let resolvedSource: string;
     try {
       resolvedSource = resolveAddSourceLocator(source, options.from);
@@ -39,29 +54,23 @@ program
       return;
     }
 
-    const result = await app.addSource(
-      resolvedSource,
-      options.path ? { path: options.path } : undefined,
-    );
-    if (!result.ok) {
-      printErrors(result.errors);
-      process.exitCode = 1;
+    const request = {
+      locator: resolvedSource,
+      ...(options.path ? { path: options.path } : {}),
+      ...(options.skill?.length ? { requestedSkills: options.skill } : {}),
+      ...(options.agent?.length ? { requestedAgents: options.agent } : {}),
+      ...(options.yes ? { yes: true } : {}),
+      ...(options.all ? { all: true } : {}),
+    };
+
+    if (options.all || options.yes) {
+      const result = await runAddFlowNonInteractive(app, request);
+      handleAddFlowResult(result);
       return;
     }
-    const duplicateSkipCount = result.warnings.filter(
-      (warning) => warning.code === "DUPLICATE_LEAF",
-    ).length;
-    const visibleWarnings = result.warnings.filter(
-      (warning) => warning.code !== "DUPLICATE_LEAF",
-    );
-    const duplicateSummary =
-      duplicateSkipCount > 0
-        ? `, skipped ${duplicateSkipCount} duplicate skill${duplicateSkipCount === 1 ? "" : "s"}`
-        : "";
-    console.log(
-      `Added ${formatGroupRef(result.data.manifest)} with ${result.data.leafCount} valid skills${duplicateSummary}.`,
-    );
-    printWarnings(visibleWarnings.map((warning) => warning.message));
+
+    const result = await runRenderedAddFlow(app, request);
+    handleAddFlowResult(result);
   });
 
 program.command("list").action(async () => {
@@ -230,4 +239,50 @@ function printWarnings(messages: string[]) {
   for (const message of messages) {
     console.warn(`warning: ${message}`);
   }
+}
+
+async function runRenderedAddFlow(
+  app: SkillFlowApp,
+  request: {
+    locator: string;
+    path?: string;
+    requestedSkills?: string[];
+    requestedAgents?: string[];
+    yes?: boolean;
+    all?: boolean;
+  },
+): Promise<AddFlowExitResult> {
+  return new Promise<AddFlowExitResult>((resolve) => {
+    const instance = render(
+      <AddFlowApp
+        app={app}
+        request={request}
+        onExit={(result) => {
+          resolve(result);
+          instance.unmount();
+        }}
+      />,
+    );
+  });
+}
+
+function handleAddFlowResult(result: AddFlowExitResult) {
+  if (result.status === "applied") {
+    console.log(result.message);
+    printWarnings(result.warnings);
+    return;
+  }
+
+  if (result.status === "cancelled") {
+    console.log(result.message);
+    return;
+  }
+
+  printErrors([{ message: result.message }]);
+  printWarnings(result.warnings ?? []);
+  process.exitCode = 1;
+}
+
+function collectOption(value: string, previous: string[]) {
+  return [...previous, value];
 }

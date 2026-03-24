@@ -68,6 +68,19 @@ export type DraftBinding = {
   selectedLeafIds: string[];
 };
 
+export type AddSourceDraftOptions = {
+  skillNames?: string[];
+  agentTargets?: DeploymentTargetName[];
+  draft?: DraftBinding;
+};
+
+export type AddSourcePreparation = {
+  sourceId: string;
+  availableTargets: DeploymentTargetName[];
+  draft: DraftBinding;
+  leafs: LeafRecord[];
+};
+
 export type Manifest = {
   schemaVersion: 1;
   sources: SourceManifestRecord[];

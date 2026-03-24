@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type { SkillCandidate } from "../domain/types.js";
 import type { SkillFlowApp } from "../services/skill-flow.js";
+import { AddFlowApp, type AddFlowExitResult } from "./add-flow.js";
 import { buildFindCommand } from "../utils/find-command.js";
 
 type FindAppProps = {
@@ -13,7 +14,7 @@ type FindAppProps = {
 type InstallState =
   | { phase: "list" }
   | { phase: "confirm" }
-  | { phase: "installing" }
+  | { phase: "installing"; candidate: SkillCandidate }
   | { phase: "done"; message: string; warnings: string[] }
   | { phase: "error"; message: string };
 
@@ -105,19 +106,7 @@ export function FindApp({ app, query, candidates }: FindAppProps) {
         return;
       }
 
-      setState({ phase: "installing" });
-      void installSelected(app, selected).then((result) => {
-        if (result.ok) {
-          setState({
-            phase: "done",
-            message: result.message,
-            warnings: result.warnings,
-          });
-          return;
-        }
-
-        setState({ phase: "error", message: result.message });
-      });
+      setState({ phase: "installing", candidate: selected });
     }
   });
 
@@ -148,6 +137,18 @@ export function FindApp({ app, query, candidates }: FindAppProps) {
         <Text>No matching skills found for "{query}".</Text>
         <Text color="gray">Press q or Esc to exit.</Text>
       </Box>
+    );
+  }
+
+  if (state.phase === "installing") {
+    return (
+      <AddFlowApp
+        app={app}
+        request={buildAddFlowRequest(state.candidate)}
+        onExit={(result) => {
+          setState(mapAddFlowResult(result));
+        }}
+      />
     );
   }
 
@@ -197,7 +198,6 @@ export function FindApp({ app, query, candidates }: FindAppProps) {
               <Text color="gray">Enter install · Esc back</Text>
             </>
           ) : null}
-          {state.phase === "installing" ? <Text color="yellow">Installing...</Text> : null}
           {state.phase === "done" ? (
             <>
               <Text color="green">{state.message}</Text>
@@ -221,42 +221,6 @@ export function FindApp({ app, query, candidates }: FindAppProps) {
   );
 }
 
-async function installSelected(app: SkillFlowApp, candidate: SkillCandidate) {
-  if (candidate.action.type === "add-clawhub") {
-    const locator = candidate.action.version
-      ? `clawhub:${candidate.action.slug}@${candidate.action.version}`
-      : `clawhub:${candidate.action.slug}`;
-    const result = await app.addSource(locator);
-    if (!result.ok) {
-      return { ok: false as const, message: result.errors[0]?.message ?? "Install failed." };
-    }
-    return {
-      ok: true as const,
-      message: `Added ${result.data.manifest.displayName} with ${result.data.leafCount} skills.`,
-      warnings: result.warnings.map((warning) => warning.message),
-    };
-  }
-
-  if (candidate.action.type === "add-git") {
-    const result = await app.addSource(
-      candidate.action.locator,
-      candidate.action.requestedPath
-        ? { path: candidate.action.requestedPath }
-        : undefined,
-    );
-    if (!result.ok) {
-      return { ok: false as const, message: result.errors[0]?.message ?? "Install failed." };
-    }
-    return {
-      ok: true as const,
-      message: `Added ${result.data.manifest.displayName} with ${result.data.leafCount} skills.`,
-      warnings: result.warnings.map((warning) => warning.message),
-    };
-  }
-
-  return { ok: false as const, message: "This skill is already installed." };
-}
-
 function getColumns(total: number) {
   const usable = Math.max(72, total);
   return {
@@ -269,4 +233,46 @@ function getColumns(total: number) {
 function pad(value: string, width: number) {
   const trimmed = value.length > width - 1 ? `${value.slice(0, width - 2)}…` : value;
   return trimmed.padEnd(width, " ");
+}
+
+function buildAddFlowRequest(candidate: SkillCandidate) {
+  if (candidate.action.type === "add-clawhub") {
+    return {
+      locator: candidate.action.version
+        ? `clawhub:${candidate.action.slug}@${candidate.action.version}`
+        : `clawhub:${candidate.action.slug}`,
+    };
+  }
+
+  if (candidate.action.type === "add-git") {
+    return {
+      locator: candidate.action.locator,
+      ...(candidate.action.requestedPath
+        ? { path: candidate.action.requestedPath }
+        : {}),
+    };
+  }
+
+  return {
+    locator: candidate.locator,
+  };
+}
+
+function mapAddFlowResult(result: AddFlowExitResult): InstallState {
+  if (result.status === "applied") {
+    return {
+      phase: "done",
+      message: result.message,
+      warnings: result.warnings,
+    };
+  }
+
+  if (result.status === "cancelled") {
+    return { phase: "list" };
+  }
+
+  return {
+    phase: "error",
+    message: result.message,
+  };
 }
