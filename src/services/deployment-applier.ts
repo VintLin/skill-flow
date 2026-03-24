@@ -7,7 +7,7 @@ import type {
   Result,
 } from "../domain/types.js";
 import type { ChannelAdapter } from "../adapters/channel-adapters.js";
-import { copyDirectory, createSymlink, ensureDir, pathExists, removePath } from "../utils/fs.js";
+import { copyDirectory, createSymlink, ensureDir, isPathInside, pathExists, removePath } from "../utils/fs.js";
 import { ok } from "../utils/result.js";
 
 export class DeploymentApplier {
@@ -32,7 +32,12 @@ export class DeploymentApplier {
         continue;
       }
 
-      this.assertManagedTargetPath(action.target, action.targetPath, targetRoots);
+      this.assertManagedTargetPath(
+        action.target,
+        action.targetPath,
+        targetRoots,
+        action.targetRootPath,
+      );
       if (action.kind === "remove") {
         if (await pathExists(action.targetPath)) {
           await removePath(action.targetPath);
@@ -55,7 +60,12 @@ export class DeploymentApplier {
         action.previousTargetPath !== action.targetPath &&
         (await pathExists(action.previousTargetPath))
       ) {
-        this.assertManagedTargetPath(action.target, action.previousTargetPath, targetRoots);
+        this.assertManagedTargetPath(
+          action.target,
+          action.previousTargetPath,
+          targetRoots,
+          action.previousTargetRootPath,
+        );
         await removePath(action.previousTargetPath);
       }
 
@@ -67,6 +77,7 @@ export class DeploymentApplier {
           action.target,
           action.relocateExternalToTargetPath,
           targetRoots,
+          action.targetRootPath,
         );
         await ensureDir(path.dirname(action.relocateExternalToTargetPath));
         await fs.rename(action.targetPath, action.relocateExternalToTargetPath);
@@ -83,6 +94,7 @@ export class DeploymentApplier {
         leafId: action.leafId,
         target: action.target,
         targetPath: action.targetPath,
+        ...(action.targetRootPath ? { targetRootPath: action.targetRootPath } : {}),
         strategy: action.strategy,
         status: "active",
         contentHash: action.contentHash,
@@ -110,14 +122,17 @@ export class DeploymentApplier {
     target: DeploymentAction["target"],
     targetPath: string,
     targetRoots: Map<DeploymentAction["target"], string>,
+    explicitRootPath?: string,
   ) {
-    const rootPath = targetRoots.get(target);
-    if (!rootPath) {
+    const roots = [
+      explicitRootPath,
+      targetRoots.get(target),
+    ].filter((value): value is string => Boolean(value));
+    if (roots.length === 0) {
       throw new Error(`Managed target root is unavailable for ${target}.`);
     }
 
-    const relative = path.relative(rootPath, targetPath);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    if (!roots.some((rootPath) => isPathInside(rootPath, targetPath))) {
       throw new Error(`Refusing to modify path outside managed root for ${target}: ${targetPath}`);
     }
   }

@@ -12,6 +12,7 @@ import { buildFindCommand } from "../utils/find-command.js";
 import { deriveSourceId } from "../utils/source-id.js";
 import {
   createRepo,
+  pathExists,
   seedBuiltinCatalog,
   skillDoc,
   writeRepoFiles,
@@ -401,6 +402,37 @@ description: |
     expect(result.ok).toBe(false);
     expect(result.errors[0]?.code).toBe("GIT_CLONE_FAILED");
     expect(await fs.readFile(path.join(checkoutPath, "keep.txt"), "utf8")).toBe("keep");
+  });
+
+  test("refuses to delete the managed source root itself during uninstall", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const lock = await app.store.readLock();
+    const source = lock.sources.find((item) => item.id === added.data.manifest.id);
+    expect(source).toBeTruthy();
+    if (!source) {
+      return;
+    }
+    source.checkoutPath = app.store.getSourceRoot("local");
+    await app.store.writeLock(lock);
+
+    const removed = await app.uninstall([added.data.manifest.id]);
+
+    expect(removed.ok).toBe(false);
+    if (removed.ok) {
+      return;
+    }
+    expect(removed.errors[0]?.code).toBe("SOURCE_CHECKOUT_PATH_INVALID");
+    expect(await pathExists(app.store.getSourceRoot("local"))).toBe(true);
   });
 
   test("fails find when no local results exist and all remote search backends are unavailable", async () => {

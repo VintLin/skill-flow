@@ -101,6 +101,93 @@ describe.sequential("skill-flow", () => {
     expect(manifest.sources.some((source) => source.id === sourceId)).toBe(true);
   });
 
+  test("uninstall refuses to delete the managed target root itself", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["openclaw"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+
+    const lock = await app.store.readLock();
+    const deployment = lock.deployments.find(
+      (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
+    );
+    expect(deployment).toBeTruthy();
+    if (!deployment) {
+      return;
+    }
+    deployment.targetPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
+    deployment.targetRootPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
+    await app.store.writeLock(lock);
+
+    const removed = await app.uninstall([sourceId]);
+    expect(removed.ok).toBe(false);
+    if (removed.ok) {
+      return;
+    }
+
+    expect(removed.errors[0]?.code).toBe("GROUP_DELETE_INCOMPLETE");
+    expect(await pathExists(process.env.SKILL_FLOW_TARGET_OPENCLAW!)).toBe(true);
+  });
+
+  test("applyDraft removes an existing deployment after the target root changes", async () => {
+    const oldRoot = path.join(sandbox.targetsRoot, "openclaw-old");
+    const newRoot = path.join(sandbox.targetsRoot, "openclaw-new");
+    await fs.mkdir(oldRoot, { recursive: true });
+    await fs.mkdir(newRoot, { recursive: true });
+    process.env.SKILL_FLOW_TARGET_OPENCLAW = oldRoot;
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["openclaw"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+
+    const lockBefore = await app.store.readLock();
+    const deployment = lockBefore.deployments.find(
+      (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
+    );
+    expect(deployment).toBeTruthy();
+    if (!deployment) {
+      return;
+    }
+    expect(deployment.targetRootPath).toBe(oldRoot);
+    expect(await pathExists(deployment.targetPath)).toBe(true);
+
+    process.env.SKILL_FLOW_TARGET_OPENCLAW = newRoot;
+
+    const removed = await app.applyDraft(sourceId, {
+      enabledTargets: [],
+      selectedLeafIds: [],
+    });
+    expect(removed.ok).toBe(true);
+    expect(await pathExists(deployment.targetPath)).toBe(false);
+  });
+
   test("renames preview target when foreign content already exists at target path", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),

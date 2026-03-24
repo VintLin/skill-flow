@@ -25,6 +25,7 @@ import { StateStore } from "../state/store.js";
 import {
   ensureDir,
   hashDirectory,
+  isPathInside,
   pathExists,
   readJsonFile,
   removePath,
@@ -709,7 +710,14 @@ export class SkillFlowApp {
         if (!(await pathExists(deployment.targetPath))) {
           continue;
         }
-        if (!this.isPathInsideManagedTargetRoot(deployment.target, deployment.targetPath, targetRoots)) {
+        if (
+          !this.isPathInsideManagedTargetRoot(
+            deployment.target,
+            deployment.targetPath,
+            targetRoots,
+            deployment.targetRootPath,
+          )
+        ) {
           warnings.push(`Refusing to remove unmanaged target path ${deployment.targetPath}.`);
           continue;
         }
@@ -788,7 +796,14 @@ export class SkillFlowApp {
         if (!(await pathExists(deployment.targetPath))) {
           continue;
         }
-        if (!this.isPathInsideManagedTargetRoot(deployment.target, deployment.targetPath, targetRoots)) {
+        if (
+          !this.isPathInsideManagedTargetRoot(
+            deployment.target,
+            deployment.targetPath,
+            targetRoots,
+            deployment.targetRootPath,
+          )
+        ) {
           warnings.push({
             code: "SOURCE_CHECKOUT_PRUNE_SKIPPED",
             message: `Skipped unmanaged deployment path ${deployment.targetPath} while pruning ${source.displayName}.`,
@@ -842,14 +857,11 @@ export class SkillFlowApp {
     target: DeploymentTargetName,
     targetPath: string,
     targetRoots: Map<DeploymentTargetName, string>,
+    explicitRootPath?: string,
   ): boolean {
-    const rootPath = targetRoots.get(target);
-    if (!rootPath) {
-      return false;
-    }
-
-    const relative = path.relative(rootPath, targetPath);
-    return !(relative.startsWith("..") || path.isAbsolute(relative));
+    return [explicitRootPath, targetRoots.get(target)]
+      .filter((value): value is string => Boolean(value))
+      .some((rootPath) => isPathInside(rootPath, targetPath));
   }
 
   private async persistNormalizedBindings(
@@ -1276,7 +1288,7 @@ export class SkillFlowApp {
           );
           if (!detection.available) {
             if (existing) {
-              nextDeployments.push({
+          nextDeployments.push({
                 ...existing,
                 contentHash: leaf.contentHash,
                 status: "active",
@@ -1376,6 +1388,10 @@ export class SkillFlowApp {
         leafId: leaf.id,
         target,
         targetPath,
+        targetRootPath:
+          targetPath === existing?.targetPath && existing.targetRootPath
+            ? existing.targetRootPath
+            : rootPath,
         strategy,
         status: "active",
         contentHash: leaf.contentHash,

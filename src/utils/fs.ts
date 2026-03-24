@@ -82,7 +82,7 @@ export async function removePath(targetPath: string): Promise<void> {
 
 export function isPathInside(rootPath: string, targetPath: string): boolean {
   const relative = path.relative(path.resolve(rootPath), path.resolve(targetPath));
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
 export async function copyDirectory(sourcePath: string, targetPath: string): Promise<void> {

@@ -138,6 +138,7 @@ export type DeploymentRecord = {
   leafId: string;
   target: DeploymentTargetName;
   targetPath: string;
+  targetRootPath?: string;
   strategy: DeploymentStrategy;
   status: "active" | "drifted" | "blocked" | "removed";
   contentHash: string;
@@ -208,7 +209,9 @@ export type DeploymentAction = {
   strategy: DeploymentStrategy;
   sourcePath: string;
   targetPath: string;
+  targetRootPath?: string;
   previousTargetPath?: string;
+  previousTargetRootPath?: string;
   relocateExternalToTargetPath?: string;
   reason?: string;
   contentHash: string;
