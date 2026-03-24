@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import type { DeploymentTargetName, DraftBinding } from "../domain/types.js";
+import type { DeploymentPlan, DeploymentTargetName, DraftBinding } from "../domain/types.js";
 import type { SkillFlowApp } from "../services/skill-flow.js";
 import {
   ALL_AGENTS_CHOICE_ID,
@@ -12,6 +12,7 @@ import {
   buildAddCompletionMessage,
   buildInitialDraft,
   buildLeafChoices,
+  buildSummaryLines,
   buildTargetChoices,
   filterChoices,
   toggleAllSelections,
@@ -60,6 +61,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [session, setSession] = useState<PreparedSession | undefined>();
   const [draft, setDraft] = useState<DraftBinding | undefined>();
+  const [preview, setPreview] = useState<DeploymentPlan | undefined>();
   const [message, setMessage] = useState<string>("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [currentStep, setCurrentStep] = useState<SelectionStep>("skills");
@@ -160,6 +162,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
           nextSession,
           nextDraft,
           setPhase,
+          setPreview,
           setMessage,
           setWarnings,
           setLastResult,
@@ -189,6 +192,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
         nextSession,
         nextDraft,
         setPhase,
+        setPreview,
         setMessage,
         setWarnings,
         setLastResult,
@@ -265,6 +269,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
             resolvedSession,
             draft,
             setPhase,
+            setPreview,
             setMessage,
             setWarnings,
             setLastResult,
@@ -308,6 +313,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
             session,
             draft,
             setPhase,
+            setPreview,
             setMessage,
             setWarnings,
             setLastResult,
@@ -409,6 +415,21 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
         : null}
       {phase === "applying" ? (
         <Box flexDirection="column" marginTop={1}>
+          <Text bold>◆ Installation Summary</Text>
+          {preview && session && draft
+            ? buildSummaryLines(
+                {
+                  source: session.source,
+                  leafs: session.leafs,
+                  availableTargets: session.availableTargets,
+                  draft,
+                  importWarnings: session.importWarnings,
+                  ...(session.requestedPath ? { requestedPath: session.requestedPath } : {}),
+                },
+                preview,
+              ).map((line) => <Text key={line}>{line}</Text>)
+            : null}
+          <Text> </Text>
           <Text bold>◆ Installing</Text>
           <Text color="gray">Applying selected skills and agents...</Text>
         </Box>
@@ -421,6 +442,20 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
       ) : null}
       {phase === "done" ? (
         <Box flexDirection="column" marginTop={1}>
+          {preview && session && draft
+            ? buildSummaryLines(
+                {
+                  source: session.source,
+                  leafs: session.leafs,
+                  availableTargets: session.availableTargets,
+                  draft,
+                  importWarnings: session.importWarnings,
+                  ...(session.requestedPath ? { requestedPath: session.requestedPath } : {}),
+                },
+                preview,
+              ).map((line) => <Text key={line}>{line}</Text>)
+            : null}
+          {preview ? <Text> </Text> : null}
           <Text color="green">{message}</Text>
           <Text color="gray">Enter, q, or Esc exit</Text>
         </Box>
@@ -563,14 +598,35 @@ async function applyDraftAndFinish(
   session: PreparedSession,
   draft: DraftBinding,
   setPhase: (phase: Phase) => void,
+  setPreview: (plan: DeploymentPlan) => void,
   setMessage: (message: string) => void,
   setWarnings: (warnings: string[]) => void,
   setLastResult: (result: AddFlowExitResult) => void,
 ) {
+  const preview = await app.previewDraft(session.sourceId, draft);
+  if (!preview.ok) {
+    const nextWarnings = [...session.importWarnings, ...preview.warnings.map((warning) => warning.message)];
+    setWarnings(nextWarnings);
+    setMessage(preview.errors[0]?.message ?? "Unable to build installation summary.");
+    setLastResult({
+      status: "error",
+      message: preview.errors[0]?.message ?? "Unable to build installation summary.",
+      warnings: nextWarnings,
+    });
+    setPhase("error");
+    return;
+  }
+
+  setPreview(preview.data.plan);
+  setWarnings([...session.importWarnings, ...preview.warnings.map((warning) => warning.message)]);
   setPhase("applying");
   const applied = await app.applyDraft(session.sourceId, draft);
   if (!applied.ok) {
-    const nextWarnings = [...session.importWarnings, ...applied.warnings.map((warning) => warning.message)];
+    const nextWarnings = [
+      ...session.importWarnings,
+      ...preview.warnings.map((warning) => warning.message),
+      ...applied.warnings.map((warning) => warning.message),
+    ];
     setWarnings(nextWarnings);
     setMessage(applied.errors[0]?.message ?? "Install failed.");
     setLastResult({
@@ -582,7 +638,11 @@ async function applyDraftAndFinish(
     return;
   }
 
-  const nextWarnings = [...session.importWarnings, ...applied.warnings.map((warning) => warning.message)];
+  const nextWarnings = [
+    ...session.importWarnings,
+    ...preview.warnings.map((warning) => warning.message),
+    ...applied.warnings.map((warning) => warning.message),
+  ];
   const nextMessage = buildAddCompletionMessage(session.source, applied.data.draft, session.leafs);
   setWarnings(nextWarnings);
   setMessage(nextMessage);
