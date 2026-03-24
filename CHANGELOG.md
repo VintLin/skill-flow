@@ -2,6 +2,24 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.0.8 - 2026-03-25
+
+### Changed
+
+- `skill-flow add` now hides low-signal duplicate warnings when generated agent skill mirrors are skipped in favor of canonical `source/skills/*` entries.
+
+### Fixed
+
+- Fixed source import so failed `add` attempts no longer remove an existing checkout path.
+- Fixed managed cleanup guards so uninstall, config bootstrap pruning, and deployment updates refuse to delete managed roots themselves or unmanaged paths outside the recorded target/source roots.
+- Fixed cleanup flows so existing deployments can still be removed after a target root changes by preserving the original managed root in lock state.
+- Fixed the file-URL compatibility test to use the sandbox state root, so the full test suite no longer depends on write access to `~/.skillflow`.
+
+### Verification
+
+- `npm run build`
+- `npm test`
+
 ## v1.0.7 - 2026-03-24
 
 ### Added
