@@ -70,7 +70,7 @@ program
     }
 
     const result = await runRenderedAddFlow(app, request);
-    handleAddFlowResult(result);
+    handleAddFlowResult(result, { rendered: true });
   });
 
 program.command("list").action(async () => {
@@ -266,9 +266,14 @@ async function runRenderedAddFlow(
   });
 }
 
-function handleAddFlowResult(result: AddFlowExitResult) {
+function handleAddFlowResult(
+  result: AddFlowExitResult,
+  options?: { rendered?: boolean },
+) {
   if (result.status === "applied") {
-    console.log(result.message);
+    if (!options?.rendered) {
+      console.log(result.message);
+    }
     printWarnings(result.warnings);
     return;
   }
