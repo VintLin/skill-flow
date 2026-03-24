@@ -1,6 +1,6 @@
 {
   "name": "skill-flow",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Workflow-first management for AI agent skills. Group, project, and sync skills across multiple agents with explicit state tracking.",
   "type": "module",
   "main": "dist/cli.js",
