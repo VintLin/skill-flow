@@ -4,9 +4,26 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## v1.0.7 - 2026-03-24
 
+### Added
+
+- Added an interactive `skill-flow add` flow with searchable multi-select steps for skills and agent targets, visible loading phases, an installation summary, and rollback on cancel.
+- Added `skill-flow add --skill <id>`, `--agent <target>`, `--yes`, and `--all` so scripted installs can preselect or skip prompts.
+
 ### Changed
 
-- Added `.superset/` to `.gitignore`.
+- `find` now hands candidate installs to the same add flow used by `skill-flow add`, so install behavior, prompts, and completion output stay consistent.
+- `config` now uses the same header and selection language as the add flow, refreshes layout on terminal resize, and shows local checkout paths in metadata.
+
+### Fixed
+
+- Fixed config draft restoration so selected skills are preserved even when a source currently has no enabled agent targets.
+- Fixed add preparation to reject ambiguous skill selectors and unavailable agent targets before projection, while keeping prepared sources rollback-safe.
+- Fixed rendered add installs to avoid duplicate completion output and reduced low-signal status noise in the config header.
+
+### Verification
+
+- `npm run build`
+- `npm test`
 
 ## v1.0.6 - 2026-03-23
 
