@@ -820,6 +820,7 @@ export function ConfigApp({
 }: ConfigAppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const terminalSize = useTerminalSize(stdout);
   const previewRequestIds = useRef<Record<string, number>>({});
   const saveRequestIds = useRef<Record<string, number>>({});
   const updateRequestIds = useRef<Record<string, number>>({});
@@ -1487,8 +1488,8 @@ export function ConfigApp({
 
   const renderSummary = activeSummary!;
 
-  const terminalRows = stdout.rows ?? 24;
-  const terminalColumns = stdout.columns ?? 120;
+  const terminalRows = terminalSize.rows;
+  const terminalColumns = terminalSize.columns;
   const paneHeight = Math.max(12, terminalRows - 3);
   const [groupsWidth, detailWidth] = getPaneWidths(terminalColumns);
   const bodyRowCount = getPaneViewportCount(paneHeight);
@@ -1729,6 +1730,7 @@ export function ConfigApp({
 export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const terminalSize = useTerminalSize(stdout);
   const [state, setState] = useState<ConfigBootstrapState>({
     phase: "loading",
     logs: ["Booting config..."],
@@ -1796,7 +1798,7 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
     );
   }
 
-  const rows = stdout.rows ?? 24;
+  const rows = terminalSize.rows;
   const bootLogs = state.logs.slice(-4);
 
   return (
@@ -1832,6 +1834,31 @@ function ConfigHeader({ title }: { title?: string }) {
       {title ? <Text bold>{title}</Text> : null}
     </Box>
   );
+}
+
+function useTerminalSize(stdout: NodeJS.WriteStream) {
+  const [size, setSize] = useState(() => ({
+    rows: stdout.rows ?? 24,
+    columns: stdout.columns ?? 120,
+  }));
+
+  useEffect(() => {
+    const handleResize = () => {
+      setSize({
+        rows: stdout.rows ?? 24,
+        columns: stdout.columns ?? 120,
+      });
+    };
+
+    handleResize();
+    stdout.on("resize", handleResize);
+
+    return () => {
+      stdout.off("resize", handleResize);
+    };
+  }, [stdout]);
+
+  return size;
 }
 
 function buildSaveStatusLabel(saveState: SaveState) {
