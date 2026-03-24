@@ -185,4 +185,55 @@ describe("ConfigCoordinator", () => {
       message: "Removed 1 missing group from config state.",
     });
   });
+
+  test("restores selected skills from binding even when enabled targets are empty", async () => {
+    const summariesWithLocalOnly: WorkflowSummary[] = [
+      {
+        ...summaries[0]!,
+        bindings: {
+          selectedLeafIds: ["alpha:browse"],
+          targets: {},
+        },
+        activeTargetCount: 0,
+        health: "INACTIVE",
+      },
+    ];
+
+    const coordinator = new ConfigCoordinator({
+      store: {
+        init: vi.fn().mockResolvedValue(undefined),
+        readManifest: vi.fn(),
+      },
+      doctorService: {
+        run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
+      },
+      workflowService: {
+        getSummaries: vi.fn().mockReturnValue(summariesWithLocalOnly),
+      },
+      getAvailableTargets: vi.fn().mockResolvedValue(["codex"]),
+      pruneMissingCheckouts: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { removedSourceIds: [] },
+        warnings: [],
+        errors: [],
+      }),
+      getConfigData: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { manifest, lockFile, summaries: summariesWithLocalOnly },
+        warnings: [],
+        errors: [],
+      }),
+    });
+
+    const result = await coordinator.bootstrapWorkspaceState();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.initialDrafts.alpha).toEqual({
+      enabledTargets: [],
+      selectedLeafIds: ["alpha:browse"],
+    });
+  });
 });

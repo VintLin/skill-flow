@@ -60,12 +60,27 @@ export type TargetBinding = {
 };
 
 export type SourceBinding = {
+  selectedLeafIds?: string[];
   targets: Partial<Record<DeploymentTargetName, TargetBinding>>;
 };
 
 export type DraftBinding = {
   enabledTargets: DeploymentTargetName[];
   selectedLeafIds: string[];
+};
+
+export type AddSourceDraftOptions = {
+  skillNames?: string[];
+  agentTargets?: DeploymentTargetName[];
+  draft?: DraftBinding;
+  skipTargetDetection?: boolean;
+};
+
+export type AddSourcePreparation = {
+  sourceId: string;
+  availableTargets: DeploymentTargetName[];
+  draft: DraftBinding;
+  leafs: LeafRecord[];
 };
 
 export type Manifest = {

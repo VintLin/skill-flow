@@ -2,12 +2,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createChannelAdapters } from "../adapters/channel-adapters.js";
 import type {
+  AddSourceDraftOptions,
+  AddSourcePreparation,
   DraftBinding,
   DeploymentAction,
   DeploymentPlan,
-  LeafRecord,
   DeploymentTargetName,
   DoctorReport,
+  LeafRecord,
   LockFile,
   Manifest,
   Result,
@@ -51,6 +53,13 @@ import {
   type BootstrapEvent,
 } from "./workspace-bootstrap-service.js";
 
+type SkillFlowAddOptions = AddSourceOptions &
+  AddSourceDraftOptions & {
+    project?: boolean;
+  };
+
+type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: boolean };
+
 export class SkillFlowApp {
   readonly store: StateStore;
   readonly inventoryService: InventoryService;
@@ -84,25 +93,67 @@ export class SkillFlowApp {
 
   async addSource(
     locator: string,
-    options?: AddSourceOptions,
-  ): Promise<Result<SourceSnapshot>> {
+    options?: SkillFlowAddOptions,
+  ): Promise<Result<AddSourceResult>> {
     return this.runSerializedMutation(() => this.addSourceImpl(locator, options));
+  }
+
+  async prepareAddSource(
+    locator: string,
+    options?: SkillFlowAddOptions,
+  ): Promise<Result<AddSourceResult>> {
+    return this.runSerializedMutation(() => this.prepareAddSourceImpl(locator, options));
   }
 
   private async addSourceImpl(
     locator: string,
-    options?: AddSourceOptions,
-  ): Promise<Result<SourceSnapshot>> {
+    options?: SkillFlowAddOptions,
+  ): Promise<Result<AddSourceResult>> {
+    const prepared = await this.prepareAddSourceImpl(locator, options);
+    if (!prepared.ok) {
+      return prepared;
+    }
+
+    const addOptions = options ?? {};
+    if (addOptions.project === false) {
+      return prepared;
+    }
+
+    const applied = await this.applyDraftImpl(
+      prepared.data.sourceId,
+      addOptions.draft ?? prepared.data.draft,
+    );
+    if (!applied.ok) {
+      return fail(applied.errors, [...prepared.warnings, ...applied.warnings]);
+    }
+
+    return ok(
+      {
+        ...prepared.data,
+        draft: applied.data.draft,
+        projected: true,
+      },
+      [...prepared.warnings, ...applied.warnings],
+    );
+  }
+
+  private async prepareAddSourceImpl(
+    locator: string,
+    options?: SkillFlowAddOptions,
+  ): Promise<Result<AddSourceResult>> {
     const addOptions = options ?? {};
     const result = await this.sourceService.addSource(locator, addOptions);
     if (!result.ok) {
-      return result;
+      return fail(result.errors, result.warnings);
     }
 
     const { manifest, lockFile } = await this.store.readState();
     const source = manifest.sources.find((item) => item.id === result.data.manifest.id);
     if (!source) {
-      return result;
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Skills group id '${result.data.manifest.id}' is not registered.`,
+      });
     }
 
     const requestedPath = this.normalizeRequestedPath(source.requestedPath);
@@ -115,49 +166,60 @@ export class SkillFlowApp {
     }
 
     const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
-    const selectedLeafIds = this.selectLeafIdsForRequestedPath(sourceLeafs, requestedPath);
+    const availableTargets = addOptions.skipTargetDetection
+      ? []
+      : await this.getAvailableTargets();
+    const preparedDraft = this.buildAddDraft(
+      sourceLeafs,
+      requestedPath,
+      availableTargets,
+      addOptions,
+    );
+    if (!preparedDraft.ok) {
+      await this.rollbackPreparedSourceInternal(source.id);
+      return fail(preparedDraft.errors, [...result.warnings, ...preparedDraft.warnings]);
+    }
+
     source.selectionMode =
       addOptions.selectionMode ??
-      (selectedLeafIds.length >= sourceLeafs.length && sourceLeafs.length > 0
+      (preparedDraft.data.selectedLeafIds.length >= sourceLeafs.length && sourceLeafs.length > 0
         ? "all"
         : "partial");
     result.data.manifest.selectionMode = source.selectionMode;
-
-    const enabledTargets =
-      addOptions.enabledTargets ??
-      await this.getAvailableTargets();
-    manifest.bindings[source.id] = this.bindingFromDraft({
-      enabledTargets,
-      selectedLeafIds,
-    });
+    manifest.bindings[source.id] = { targets: {} };
     await this.store.writeState(manifest, lockFile);
 
     const warnings = [...result.warnings];
-    if (requestedPath && selectedLeafIds.length < sourceLeafs.length) {
+    if (
+      requestedPath &&
+      !addOptions.skillNames?.length &&
+      !addOptions.draft &&
+      preparedDraft.data.selectedLeafIds.length < sourceLeafs.length
+    ) {
       warnings.push({
         code: "ADD_SELECTION_PRESELECTED",
         message:
-          `Preselected ${selectedLeafIds.length} of ${sourceLeafs.length} ` +
+          `Preselected ${preparedDraft.data.selectedLeafIds.length} of ${sourceLeafs.length} ` +
           `skill${sourceLeafs.length === 1 ? "" : "s"} under '${requestedPath}'; ` +
           "the full skills group was imported.",
       });
     }
 
-    if (addOptions.project === false) {
-      return ok(result.data, warnings);
-    }
+    return ok(
+      {
+        ...result.data,
+        sourceId: source.id,
+        availableTargets,
+        draft: preparedDraft.data,
+        leafs: sourceLeafs,
+        projected: false,
+      },
+      warnings,
+    );
+  }
 
-    const plan = await this.planForAffectedSources(manifest, lockFile, source.id);
-    if (!plan.ok) {
-      return fail(plan.errors, [...warnings, ...plan.warnings]);
-    }
-    const applied = await this.applier.applyPlan(lockFile, plan.data.actions);
-    await this.store.writeState(manifest, lockFile);
-    if (!applied.ok) {
-      return fail(applied.errors, [...warnings, ...plan.warnings, ...applied.warnings]);
-    }
-
-    return ok(result.data, [...warnings, ...plan.warnings, ...applied.warnings]);
+  async rollbackPreparedSource(sourceId: string): Promise<Result<{ removed: string[] }>> {
+    return this.runSerializedMutation(() => this.rollbackPreparedSourceInternal(sourceId));
   }
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
@@ -688,7 +750,10 @@ export class SkillFlowApp {
         leafIds: [...draft.selectedLeafIds],
       };
     }
-    return { targets };
+    return {
+      selectedLeafIds: [...draft.selectedLeafIds],
+      targets,
+    };
   }
 
   private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
@@ -801,9 +866,13 @@ export class SkillFlowApp {
     const enabledTargets = Object.entries(binding.targets)
       .filter(([, targetBinding]) => targetBinding?.enabled)
       .map(([target]) => target) as DeploymentTargetName[];
-    const selectedLeafIds = [...new Set(
-      enabledTargets.flatMap((target) => binding.targets[target]?.leafIds ?? []),
-    )].filter((leafId) => leafIds.has(leafId));
+    const selectedLeafIds = [
+      ...new Set(
+        (binding.selectedLeafIds && binding.selectedLeafIds.length > 0
+          ? binding.selectedLeafIds
+          : enabledTargets.flatMap((target) => binding.targets[target]?.leafIds ?? [])),
+      ),
+    ].filter((leafId) => leafIds.has(leafId));
 
     return {
       enabledTargets,
@@ -829,6 +898,112 @@ export class SkillFlowApp {
       .map((leaf) => leaf.id);
   }
 
+  private buildAddDraft(
+    sourceLeafs: LeafRecord[],
+    requestedPath: string | undefined,
+    availableTargets: DeploymentTargetName[],
+    options: SkillFlowAddOptions,
+  ): Result<DraftBinding> {
+    if (options.draft) {
+      return ok({
+        enabledTargets: [...new Set(options.draft.enabledTargets)],
+        selectedLeafIds: [...new Set(options.draft.selectedLeafIds)],
+      });
+    }
+
+    const selectedLeafIdsResult = this.resolveSelectedLeafIds(
+      sourceLeafs,
+      requestedPath,
+      options.skillNames,
+    );
+    if (!selectedLeafIdsResult.ok) {
+      return fail(selectedLeafIdsResult.errors, selectedLeafIdsResult.warnings);
+    }
+
+    const enabledTargetsResult = this.resolveRequestedTargets(
+      availableTargets,
+      options.agentTargets ?? options.enabledTargets,
+    );
+    if (!enabledTargetsResult.ok) {
+      return fail(enabledTargetsResult.errors, enabledTargetsResult.warnings);
+    }
+
+    return ok({
+      enabledTargets: enabledTargetsResult.data,
+      selectedLeafIds: selectedLeafIdsResult.data,
+    });
+  }
+
+  private resolveSelectedLeafIds(
+    sourceLeafs: LeafRecord[],
+    requestedPath: string | undefined,
+    skillNames?: string[],
+  ): Result<string[]> {
+    if (!skillNames || skillNames.length === 0) {
+      return ok(this.selectLeafIdsForRequestedPath(sourceLeafs, requestedPath));
+    }
+
+    const requested = [...new Set(skillNames.map((skillName) => skillName.trim()).filter(Boolean))];
+    const matchedLeafIds: string[] = [];
+
+    for (const selector of requested) {
+      const relativePathMatches = sourceLeafs.filter((leaf) => leaf.relativePath === selector);
+      if (relativePathMatches.length === 1) {
+        matchedLeafIds.push(relativePathMatches[0]!.id);
+        continue;
+      }
+      if (relativePathMatches.length > 1) {
+        return fail({
+          code: "ADD_SKILL_SELECTOR_AMBIGUOUS",
+          message: `Skill selector '${selector}' is ambiguous. Use a unique relative path.`,
+        });
+      }
+
+      const fallbackMatches = sourceLeafs.filter(
+        (leaf) => leaf.linkName === selector || leaf.name === selector,
+      );
+      if (fallbackMatches.length === 1) {
+        matchedLeafIds.push(fallbackMatches[0]!.id);
+        continue;
+      }
+      if (fallbackMatches.length > 1) {
+        return fail({
+          code: "ADD_SKILL_SELECTOR_AMBIGUOUS",
+          message:
+            `Skill selector '${selector}' is ambiguous. ` +
+            `Use a relative path such as '${fallbackMatches[0]!.relativePath}'.`,
+        });
+      }
+
+      return fail({
+        code: "ADD_SKILL_NOT_FOUND",
+        message: `Unable to preselect skill(s): ${selector}.`,
+      });
+    }
+
+    return ok([...new Set(matchedLeafIds)]);
+  }
+
+  private resolveRequestedTargets(
+    availableTargets: DeploymentTargetName[],
+    requestedTargets?: DeploymentTargetName[],
+  ): Result<DeploymentTargetName[]> {
+    if (!requestedTargets?.length) {
+      return ok([...availableTargets]);
+    }
+
+    const available = new Set(availableTargets);
+    const unsupported = [...new Set(requestedTargets)].filter((target) => !available.has(target));
+    if (unsupported.length > 0) {
+      return fail({
+        code: "ADD_AGENT_NOT_AVAILABLE",
+        message: `Unknown or unavailable agent(s): ${unsupported.join(", ")}.`,
+      });
+    }
+
+    return ok([...new Set(requestedTargets)]);
+  }
+
   private normalizeRequestedPath(requestedPath?: string): string | undefined {
     if (!requestedPath) {
       return undefined;
@@ -836,6 +1011,27 @@ export class SkillFlowApp {
 
     const normalized = requestedPath.trim().replace(/^\.\/+/, "").replace(/\/+$/, "");
     return normalized.length > 0 && normalized !== "." ? normalized : undefined;
+  }
+
+  private async rollbackPreparedSourceInternal(
+    sourceId: string,
+  ): Promise<Result<{ removed: string[] }>> {
+    const { lockFile, manifest } = await this.store.readState();
+    if (!manifest.sources.some((source) => source.id === sourceId)) {
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Skills group id '${sourceId}' is not registered.`,
+      });
+    }
+
+    if (lockFile.deployments.some((deployment) => deployment.sourceId === sourceId)) {
+      return fail({
+        code: "ADD_ROLLBACK_HAS_DEPLOYMENTS",
+        message: `Unable to roll back skills group id '${sourceId}' because deployments already exist.`,
+      });
+    }
+
+    return this.sourceService.removeSource([sourceId]);
   }
 
   private prepareManifestForDraft(

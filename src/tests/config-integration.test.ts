@@ -202,6 +202,7 @@ describe.sequential("config integration", () => {
 
     const normalizedManifest = await app.store.readManifest();
     expect(normalizedManifest.bindings[sourceId]).toEqual({
+      selectedLeafIds: [`${sourceId}:browse`, `${sourceId}:review`],
       targets: {
         "claude-code": {
           enabled: true,
@@ -281,6 +282,7 @@ describe.sequential("config integration", () => {
 
     const manifest = await app.store.readManifest();
     expect(manifest.bindings[sourceId]).toEqual({
+      selectedLeafIds: [leafId],
       targets: {
         codex: {
           enabled: true,

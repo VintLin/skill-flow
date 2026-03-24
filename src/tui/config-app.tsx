@@ -22,6 +22,7 @@ import {
   toggleParent,
   type TreeSelectionState,
 } from "./selection-state.js";
+import { ADD_BADGE_TEXT } from "./add-flow.js";
 
 type ConfigAppProps = {
   app: SkillFlowApp;
@@ -188,7 +189,9 @@ export function buildDraftsFromSummaries(
         .map(([target]) => target) as DraftBinding["enabledTargets"];
       const selectedLeafIds = [
         ...new Set(
-          enabledTargets.flatMap((target) => summary.bindings.targets[target]?.leafIds ?? []),
+          (summary.bindings.selectedLeafIds && summary.bindings.selectedLeafIds.length > 0
+            ? summary.bindings.selectedLeafIds
+            : enabledTargets.flatMap((target) => summary.bindings.targets[target]?.leafIds ?? [])),
         ),
       ];
       return [summary.source.id, normalizeDraft({ enabledTargets, selectedLeafIds })];
@@ -817,6 +820,7 @@ export function ConfigApp({
 }: ConfigAppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const terminalSize = useTerminalSize(stdout);
   const previewRequestIds = useRef<Record<string, number>>({});
   const saveRequestIds = useRef<Record<string, number>>({});
   const updateRequestIds = useRef<Record<string, number>>({});
@@ -1484,8 +1488,8 @@ export function ConfigApp({
 
   const renderSummary = activeSummary!;
 
-  const terminalRows = stdout.rows ?? 24;
-  const terminalColumns = stdout.columns ?? 120;
+  const terminalRows = terminalSize.rows;
+  const terminalColumns = terminalSize.columns;
   const paneHeight = Math.max(12, terminalRows - 3);
   const [groupsWidth, detailWidth] = getPaneWidths(terminalColumns);
   const bodyRowCount = getPaneViewportCount(paneHeight);
@@ -1592,35 +1596,13 @@ export function ConfigApp({
           },
         ];
 
-  const selectedGroupBootMessages = selectedGroup
-    ? selectedGroup.kind === "clawhub"
-      ? selectedGroup.summaries
-          .map((summary) => failedBootBySourceId.get(summary.source.id))
-          .filter((message): message is string => Boolean(message))
-      : [failedBootBySourceId.get(selectedSourceId)].filter((message): message is string => Boolean(message))
-    : [];
-  const alerts = prioritizeAlerts(
-    buildAlerts({
-      deleteState,
-      failedBootMessages: selectedGroupBootMessages,
-      isSelectedDelete,
-      previewState,
-      projectionWarningsByLeafId,
-      saveState,
-      selectedDraft,
-      selectedSummary: renderSummary,
-      updateState,
-    }),
-  );
   const previewLabel = buildPreviewLabel({
     blockedCount: previewState.blockedCount,
     changeCount,
     errorMessage: previewState.errorMessage,
     loading: previewState.loading,
   });
-  const bootLabel = selectedGroupBootMessages.length > 0 ? "PARTIAL" : "OK";
   const metadataRows = buildDetailMetadataRows({
-    alerts,
     detailWidth,
     group: selectedGroup,
     summary: renderSummary,
@@ -1684,7 +1666,7 @@ export function ConfigApp({
     },
     {
       key: "__agents_header__",
-      text: `Apply to Agents (${visibleEnabledTargets.length}/${visibleTargets.length})`,
+      text: `Select Agents (${visibleEnabledTargets.length}/${availableTargets.length})`,
       active: false,
       bold: true,
       color: undefined,
@@ -1698,7 +1680,7 @@ export function ConfigApp({
     },
     {
       key: "__skills_header__",
-      text: `Included Skills (${selectedGroup.kind === "clawhub" ? groupSelectedLeafCount : selectedDraft.selectedLeafIds.length}/${selectedSkillRows.length})`,
+      text: `Select Skills (${selectedGroup.kind === "clawhub" ? groupSelectedLeafCount : selectedDraft.selectedLeafIds.length}/${selectedSkillRows.length})`,
       active: false,
       bold: true,
       color: undefined,
@@ -1716,20 +1698,7 @@ export function ConfigApp({
 
   return (
     <Box flexDirection="column" height={terminalRows}>
-      <Box>
-        <Text color={topBar.titleColor} wrap="truncate-end">
-          {topBar.title}
-        </Text>
-        {topBar.detail ? (
-          topBar.detailColor ? (
-            <Text color={topBar.detailColor} wrap="truncate-end">
-              {`   ${topBar.detail}`}
-            </Text>
-          ) : (
-            <Text wrap="truncate-end">{`   ${topBar.detail}`}</Text>
-          )
-        ) : null}
-      </Box>
+      <ConfigHeader />
       <Box>
         <Pane
           active={focus === "groups"}
@@ -1761,6 +1730,7 @@ export function ConfigApp({
 export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const terminalSize = useTerminalSize(stdout);
   const [state, setState] = useState<ConfigBootstrapState>({
     phase: "loading",
     logs: ["Booting config..."],
@@ -1828,13 +1798,13 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
     );
   }
 
-  const rows = stdout.rows ?? 24;
+  const rows = terminalSize.rows;
   const bootLogs = state.logs.slice(-4);
 
   return (
     <Box flexDirection="column" height={rows}>
       <Box flexGrow={1} flexDirection="column">
-        <Text bold>Skill Flow Config</Text>
+        <ConfigHeader title="Skill Flow Config" />
         <Text color="gray">
           {state.phase === "loading"
             ? "Checking groups, skills, targets, and current paths..."
@@ -1853,6 +1823,42 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
       </Box>
     </Box>
   );
+}
+
+function ConfigHeader({ title }: { title?: string }) {
+  return (
+    <Box flexDirection="column">
+      <Text backgroundColor="cyan" color="black">
+        {ADD_BADGE_TEXT}
+      </Text>
+      {title ? <Text bold>{title}</Text> : null}
+    </Box>
+  );
+}
+
+function useTerminalSize(stdout: NodeJS.WriteStream) {
+  const [size, setSize] = useState(() => ({
+    rows: stdout.rows ?? 24,
+    columns: stdout.columns ?? 120,
+  }));
+
+  useEffect(() => {
+    const handleResize = () => {
+      setSize({
+        rows: stdout.rows ?? 24,
+        columns: stdout.columns ?? 120,
+      });
+    };
+
+    handleResize();
+    stdout.on("resize", handleResize);
+
+    return () => {
+      stdout.off("resize", handleResize);
+    };
+  }, [stdout]);
+
+  return size;
 }
 
 function buildSaveStatusLabel(saveState: SaveState) {
@@ -1962,12 +1968,10 @@ function buildAlerts({
 }
 
 export function buildDetailMetadataRows({
-  alerts,
   detailWidth,
   group,
   summary,
 }: {
-  alerts: AlertItem[];
   detailWidth: number;
   group: ConfigGroup;
   summary: WorkflowSummary;
@@ -1992,6 +1996,18 @@ export function buildDetailMetadataRows({
     },
   ];
 
+  if (summary.lock?.checkoutPath) {
+    rows.push({
+      key: "__local_path__",
+      text: fitPaneLine(
+        `Local Path: ${summary.lock.checkoutPath}`,
+        getPaneInnerWidth(detailWidth) - 2,
+      ),
+      active: false,
+      color: "gray",
+    });
+  }
+
   if (group.kind === "clawhub") {
     rows.push({
       key: "__focused_source__",
@@ -2001,29 +2017,6 @@ export function buildDetailMetadataRows({
       ),
       active: false,
       color: "gray",
-    });
-  }
-
-  if (alerts.length > 0) {
-    rows.push({
-      key: "__alerts__",
-      text: "Alerts",
-      active: false,
-      bold: true,
-      color: undefined,
-    });
-    alerts.forEach((alert, index) => {
-      rows.push({
-        key: `__alert__:${index}`,
-        text: `! ${alert.message}`,
-        active: false,
-        color:
-          alert.level === "error"
-            ? "red"
-            : alert.level === "blocked"
-              ? "yellow"
-              : "gray",
-      });
     });
   }
 
@@ -2091,7 +2084,7 @@ export function buildActionRows({
   return rows;
 }
 
-function buildCommandBar(focus: FocusPane) {
+export function buildCommandBar(focus: FocusPane) {
   if (focus === "groups") {
     return "[Tab/→] Edit";
   }
@@ -2101,7 +2094,7 @@ function buildCommandBar(focus: FocusPane) {
   return "[Space] Toggle";
 }
 
-function buildFooterHints(focus: FocusPane, canDelete: boolean) {
+export function buildFooterHints(focus: FocusPane, canDelete: boolean) {
   if (focus === "groups") {
     return canDelete
       ? "[↑↓] Move   [Tab/→] Switch pane   [u] Update   [d] Delete   [q] Exit"
@@ -2119,7 +2112,7 @@ function buildFooterHints(focus: FocusPane, canDelete: boolean) {
 
 function RowText({ row, width }: { row: PaneRow; width: number }) {
   const color = row.active ? row.activeColor ?? "cyan" : row.color;
-  const prefix = row.active ? "> " : "  ";
+  const prefix = row.active ? "❯ " : "  ";
   const contentWidth = Math.max(1, getPaneInnerWidth(width) - prefix.length);
   const content = fitPaneLine(row.text, contentWidth);
   return (
@@ -2206,14 +2199,14 @@ function getPaneInnerWidth(width: number) {
   return Math.max(1, width - 4);
 }
 
-function selectionMarker(state: "empty" | "partial" | "full") {
+export function selectionMarker(state: "empty" | "partial" | "full") {
   if (state === "full") {
-    return "[x]";
+    return "●";
   }
   if (state === "partial") {
-    return "[-]";
+    return "◐";
   }
-  return "[ ]";
+  return "○";
 }
 
 function getExactDuplicateKey(linkName: string, name: string, description: string) {

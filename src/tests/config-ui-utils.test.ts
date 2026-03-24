@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 import type { DraftBinding, WorkflowSummary } from "../domain/types.js";
 import {
   buildActionRows,
+  buildCommandBar,
   buildDetailMetadataRows,
   buildDraftsFromSummaries,
+  buildFooterHints,
   buildConfigGroupSkillRows,
   buildConfigGroups,
   buildProjectionWarningMap,
@@ -20,6 +22,7 @@ import {
   moveDetailFocus,
   prioritizeAlerts,
   reconcileFocusAfterReload,
+  selectionMarker,
 } from "../tui/config-app.js";
 import {
   getParentSelectionState,
@@ -215,6 +218,14 @@ describe("config ui utils", () => {
     ).toBe("Failed");
   });
 
+  test("config uses add-style markers and filter hints", () => {
+    expect(selectionMarker("full")).toBe("●");
+    expect(selectionMarker("partial")).toBe("◐");
+    expect(selectionMarker("empty")).toBe("○");
+    expect(buildCommandBar("detail.skills")).toContain("Toggle");
+    expect(buildFooterHints("detail.agents", true)).not.toContain("[⌫] Clear");
+  });
+
   test("alerts are prioritized error before blocked before warning", () => {
     const alerts = prioritizeAlerts([
       { level: "warning", message: "rename warning" },
@@ -406,7 +417,6 @@ describe("config ui utils", () => {
 
   test("buildDetailMetadataRows hides clean-state status noise", () => {
     const rows = buildDetailMetadataRows({
-      alerts: [],
       detailWidth: 80,
       group: buildConfigGroups([createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] })])[0]!,
       summary: createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] }),
@@ -417,7 +427,6 @@ describe("config ui utils", () => {
 
   test("buildDetailMetadataRows never shows status/save/preview rows", () => {
     const rows = buildDetailMetadataRows({
-      alerts: [],
       detailWidth: 80,
       group: buildConfigGroups([createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] })])[0]!,
       summary: createSummary({ sourceId: "alpha", leafIds: ["alpha:browse"] }),
@@ -432,7 +441,6 @@ describe("config ui utils", () => {
       createSummary({ sourceId: "gamma", kind: "clawhub", leafIds: ["gamma:review"] }),
     ])[0]!;
     const rows = buildDetailMetadataRows({
-      alerts: [],
       detailWidth: 80,
       group,
       summary: group.summaries[0]!,
@@ -508,6 +516,58 @@ describe("config ui utils", () => {
       enabledTargets: ["claude-code", "codex"],
       selectedLeafIds: ["alpha:browse", "alpha:review"],
     });
+  });
+
+  test("buildDraftsFromSummaries preserves selected skills when no agents are enabled", () => {
+    const drafts = buildDraftsFromSummaries([
+      {
+        ...createSummary({
+          sourceId: "alpha",
+          leafIds: ["alpha:browse", "alpha:review"],
+        }),
+        bindings: {
+          selectedLeafIds: ["alpha:review", "alpha:browse"],
+          targets: {},
+        },
+      },
+    ]);
+
+    expect(drafts.alpha).toEqual<DraftBinding>({
+      enabledTargets: [],
+      selectedLeafIds: ["alpha:browse", "alpha:review"],
+    });
+  });
+
+  test("detail metadata rows include local checkout path", () => {
+    const rows = buildDetailMetadataRows({
+      detailWidth: 100,
+      group: buildConfigGroups([
+        createSummary({
+          sourceId: "alpha",
+          leafIds: ["alpha:browse"],
+        }),
+      ])[0]!,
+      summary: {
+        ...createSummary({
+          sourceId: "alpha",
+          leafIds: ["alpha:browse"],
+        }),
+        lock: {
+          id: "alpha",
+          locator: "alpha",
+          kind: "git",
+          displayName: "alpha",
+          checkoutPath: "/tmp/alpha",
+          updatedAt: "",
+          leafIds: ["alpha:browse"],
+          invalidLeafs: [],
+        },
+      },
+    });
+
+    expect(rows.some((row) => row.key === "__local_path__" && row.text.includes("/tmp/alpha"))).toBe(
+      true,
+    );
   });
 
   test("projection warning helper marks identical cross-group skills as skipped", () => {
