@@ -2,6 +2,12 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.0.7 - 2026-03-24
+
+### Changed
+
+- Added `.superset/` to `.gitignore`.
+
 ## v1.0.6 - 2026-03-23
 
 ### Changed
