@@ -833,8 +833,6 @@ export function ConfigApp({
   const [skillCursor, setSkillCursor] = useState(0);
   const [targetCursor, setTargetCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
-  const [skillQuery, setSkillQuery] = useState("");
-  const [targetQuery, setTargetQuery] = useState("");
   const [drafts, setDrafts] = useState<Record<string, DraftBinding>>(initialDrafts);
   const [savedDrafts, setSavedDrafts] = useState<Record<string, DraftBinding>>(initialDrafts);
   const [previewBySourceId, setPreviewBySourceId] = useState<Record<string, PreviewState>>({});
@@ -850,8 +848,7 @@ export function ConfigApp({
 
   const selectedGroup = groupViews[selectedGroupIndex] ?? EMPTY_CONFIG_GROUP;
   const selectedSkillRows = buildConfigGroupSkillRows(selectedGroup);
-  const filteredSkillRows = filterSkillRows(selectedSkillRows, skillQuery);
-  const selectedSkillRow = skillCursor > 0 ? filteredSkillRows[skillCursor - 1] : undefined;
+  const selectedSkillRow = skillCursor > 0 ? selectedSkillRows[skillCursor - 1] : undefined;
   const activeSummary = selectedSkillRow?.summary ?? selectedGroup.summaries[0];
   const selectedSourceId = activeSummary?.source.id ?? "";
   const selectedDraft = drafts[selectedSourceId] ?? EMPTY_DRAFT;
@@ -862,9 +859,9 @@ export function ConfigApp({
     drafts,
     group: selectedGroup,
   });
-  const visibleTargets = filterTargets(availableTargets, targetQuery);
+  const visibleTargets = availableTargets;
   const agentInteractiveCount = visibleTargets.length > 0 ? visibleTargets.length + 1 : 0;
-  const skillInteractiveCount = filteredSkillRows.length > 0 ? filteredSkillRows.length + 1 : 0;
+  const skillInteractiveCount = selectedSkillRows.length > 0 ? selectedSkillRows.length + 1 : 0;
   const treeState: TreeSelectionState =
     selectedGroup.kind === "clawhub"
       ? {
@@ -936,13 +933,6 @@ export function ConfigApp({
       }
     };
   }, []);
-
-  useEffect(() => {
-    setSkillQuery("");
-    setTargetQuery("");
-    setSkillCursor(0);
-    setTargetCursor(0);
-  }, [selectedGroupIndex]);
 
   useEffect(() => {
     if (!activeSummary) {
@@ -1364,32 +1354,6 @@ export function ConfigApp({
       return;
     }
 
-    if (focus === "detail.agents") {
-      if (key.backspace || key.delete) {
-        setTargetQuery((current) => current.slice(0, -1));
-        setTargetCursor(0);
-        return;
-      }
-      if (!key.ctrl && !key.meta && !key.return && input.length === 1 && /[^\s]/.test(input)) {
-        setTargetQuery((current) => `${current}${input}`);
-        setTargetCursor(0);
-        return;
-      }
-    }
-
-    if (focus === "detail.skills") {
-      if (key.backspace || key.delete) {
-        setSkillQuery((current) => current.slice(0, -1));
-        setSkillCursor(0);
-        return;
-      }
-      if (!key.ctrl && !key.meta && !key.return && input.length === 1 && /[^\s]/.test(input)) {
-        setSkillQuery((current) => `${current}${input}`);
-        setSkillCursor(0);
-        return;
-      }
-    }
-
     if (focus === "groups") {
       if (key.downArrow) {
         const next = Math.min(groupCursor + 1, Math.max(0, groupViews.length - 1));
@@ -1397,8 +1361,6 @@ export function ConfigApp({
         setSelectedGroupIndex(next);
         setTargetCursor(0);
         setSkillCursor(0);
-        setTargetQuery("");
-        setSkillQuery("");
         setActionCursor(0);
       }
       if (key.upArrow) {
@@ -1407,8 +1369,6 @@ export function ConfigApp({
         setSelectedGroupIndex(next);
         setTargetCursor(0);
         setSkillCursor(0);
-        setTargetQuery("");
-        setSkillQuery("");
         setActionCursor(0);
       }
       return;
@@ -1476,7 +1436,7 @@ export function ConfigApp({
             return currentDraft;
           }
 
-          const row = filteredSkillRows[skillCursor - 1];
+          const row = selectedSkillRows[skillCursor - 1];
           if (!row) {
             return currentDraft;
           }
@@ -1504,7 +1464,7 @@ export function ConfigApp({
         const nextState =
           skillCursor === 0
             ? toggleParent(baseState)
-            : toggleChild(baseState, filteredSkillRows[skillCursor - 1]!.leaf.id);
+            : toggleChild(baseState, leafIds[skillCursor - 1]!);
 
         return {
           ...currentDraft,
@@ -1581,14 +1541,14 @@ export function ConfigApp({
       : [
           {
             key: "__no_targets__",
-            text: targetQuery ? "No agents match the current filter" : "No detected agent targets",
+            text: "No detected agent targets",
             active: false,
             color: "gray" as const,
           },
         ];
 
   const skillRows: PaneRow[] =
-    filteredSkillRows.length > 0
+    selectedSkillRows.length > 0
       ? [
           {
             key: "__all__",
@@ -1597,7 +1557,7 @@ export function ConfigApp({
             bold: true,
             color: undefined,
           },
-          ...filteredSkillRows.map((row, index) => {
+          ...selectedSkillRows.map((row, index) => {
             const rowDraft = drafts[row.summary.source.id] ?? EMPTY_DRAFT;
             const rowSelected = rowDraft.selectedLeafIds.includes(row.leaf.id);
             const warnings = [
@@ -1628,41 +1588,19 @@ export function ConfigApp({
       : [
           {
             key: "__no_skills__",
-            text: skillQuery ? "No skills match the current filter" : "No skills in this group",
+            text: "No skills in this group",
             active: false,
             color: "gray" as const,
           },
         ];
 
-  const selectedGroupBootMessages = selectedGroup
-    ? selectedGroup.kind === "clawhub"
-      ? selectedGroup.summaries
-          .map((summary) => failedBootBySourceId.get(summary.source.id))
-          .filter((message): message is string => Boolean(message))
-      : [failedBootBySourceId.get(selectedSourceId)].filter((message): message is string => Boolean(message))
-    : [];
-  const alerts = prioritizeAlerts(
-    buildAlerts({
-      deleteState,
-      failedBootMessages: selectedGroupBootMessages,
-      isSelectedDelete,
-      previewState,
-      projectionWarningsByLeafId,
-      saveState,
-      selectedDraft,
-      selectedSummary: renderSummary,
-      updateState,
-    }),
-  );
   const previewLabel = buildPreviewLabel({
     blockedCount: previewState.blockedCount,
     changeCount,
     errorMessage: previewState.errorMessage,
     loading: previewState.loading,
   });
-  const bootLabel = selectedGroupBootMessages.length > 0 ? "PARTIAL" : "OK";
   const metadataRows = buildDetailMetadataRows({
-    alerts,
     detailWidth,
     group: selectedGroup,
     summary: renderSummary,
@@ -1731,12 +1669,6 @@ export function ConfigApp({
       bold: true,
       color: undefined,
     },
-    {
-      key: "__agents_search__",
-      text: `Search: ${targetQuery || " "}`,
-      active: false,
-      color: "gray" as const,
-    },
     ...visibleAgentRows.rows,
     {
       key: "__skills_gap__",
@@ -1750,12 +1682,6 @@ export function ConfigApp({
       active: false,
       bold: true,
       color: undefined,
-    },
-    {
-      key: "__skills_search__",
-      text: `Search: ${skillQuery || " "}`,
-      active: false,
-      color: "gray" as const,
     },
     ...filledSkillRows,
   ];
@@ -2016,12 +1942,10 @@ function buildAlerts({
 }
 
 export function buildDetailMetadataRows({
-  alerts,
   detailWidth,
   group,
   summary,
 }: {
-  alerts: AlertItem[];
   detailWidth: number;
   group: ConfigGroup;
   summary: WorkflowSummary;
@@ -2046,6 +1970,18 @@ export function buildDetailMetadataRows({
     },
   ];
 
+  if (summary.lock?.checkoutPath) {
+    rows.push({
+      key: "__local_path__",
+      text: fitPaneLine(
+        `Local Path: ${summary.lock.checkoutPath}`,
+        getPaneInnerWidth(detailWidth) - 2,
+      ),
+      active: false,
+      color: "gray",
+    });
+  }
+
   if (group.kind === "clawhub") {
     rows.push({
       key: "__focused_source__",
@@ -2055,29 +1991,6 @@ export function buildDetailMetadataRows({
       ),
       active: false,
       color: "gray",
-    });
-  }
-
-  if (alerts.length > 0) {
-    rows.push({
-      key: "__alerts__",
-      text: "Alerts",
-      active: false,
-      bold: true,
-      color: undefined,
-    });
-    alerts.forEach((alert, index) => {
-      rows.push({
-        key: `__alert__:${index}`,
-        text: `! ${alert.message}`,
-        active: false,
-        color:
-          alert.level === "error"
-            ? "red"
-            : alert.level === "blocked"
-              ? "yellow"
-              : "gray",
-      });
     });
   }
 
@@ -2152,7 +2065,7 @@ export function buildCommandBar(focus: FocusPane) {
   if (focus === "detail.actions") {
     return "[Enter] Action";
   }
-  return "[Type] Filter  [Space] Toggle";
+  return "[Space] Toggle";
 }
 
 export function buildFooterHints(focus: FocusPane, canDelete: boolean) {
@@ -2167,8 +2080,8 @@ export function buildFooterHints(focus: FocusPane, canDelete: boolean) {
       : "[↑↓] Move   [Enter] Action   [Tab/←/Esc] Back   [u] Update";
   }
   return canDelete
-    ? "[Type] Filter   [⌫] Clear   [↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update   [d] Delete"
-    : "[Type] Filter   [⌫] Clear   [↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update";
+    ? "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update   [d] Delete"
+    : "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update";
 }
 
 function RowText({ row, width }: { row: PaneRow; width: number }) {
@@ -2268,40 +2181,6 @@ export function selectionMarker(state: "empty" | "partial" | "full") {
     return "◐";
   }
   return "○";
-}
-
-export function normalizeFilterQuery(value: string) {
-  return value.toLowerCase().replace(/[_\s-]+/g, " ").trim();
-}
-
-export function filterTargets(targets: DeploymentTargetName[], query: string) {
-  const normalized = normalizeFilterQuery(query);
-  if (!normalized) {
-    return targets;
-  }
-
-  return targets.filter((target) =>
-    normalizeFilterQuery(`${target} ${TARGET_LABELS[target]}`).includes(normalized),
-  );
-}
-
-export function filterSkillRows(rows: ConfigSkillRow[], query: string) {
-  const normalized = normalizeFilterQuery(query);
-  if (!normalized) {
-    return rows;
-  }
-
-  return rows.filter((row) =>
-    normalizeFilterQuery(
-      [
-        row.leaf.linkName,
-        row.leaf.name,
-        row.leaf.title,
-        row.leaf.relativePath,
-        row.leaf.description,
-      ].join(" "),
-    ).includes(normalized),
-  );
 }
 
 function getExactDuplicateKey(linkName: string, name: string, description: string) {
