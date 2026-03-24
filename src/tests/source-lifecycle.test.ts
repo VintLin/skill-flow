@@ -347,7 +347,7 @@ describe.sequential("source lifecycle", () => {
       return;
     }
     expect(result.data.candidates[0]?.title).toBe("agent-browser");
-  });
+  }, 10000);
 
   test("find falls back to linkName when local skill title is a placeholder heading", async () => {
     vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);

@@ -14,7 +14,7 @@ import {
   formatSkillCandidates,
   formatWorkflowList,
 } from "./utils/format.js";
-import { resolveAddSourceLocator } from "./utils/cli.js";
+import { filterAddWarnings, resolveAddSourceLocator } from "./utils/cli.js";
 import { buildFindCommand } from "./utils/find-command.js";
 
 const program = new Command();
@@ -274,7 +274,7 @@ function handleAddFlowResult(
     if (!options?.rendered) {
       console.log(result.message);
     }
-    printWarnings(result.warnings);
+    printWarnings(filterAddWarnings(result.warnings));
     return;
   }
 
@@ -284,7 +284,7 @@ function handleAddFlowResult(
   }
 
   printErrors([{ message: result.message }]);
-  printWarnings(result.warnings ?? []);
+  printWarnings(filterAddWarnings(result.warnings ?? []));
   process.exitCode = 1;
 }
 

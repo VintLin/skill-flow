@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import type { DeploymentPlan, DeploymentTargetName, DraftBinding } from "../domain/types.js";
 import type { SkillFlowApp } from "../services/skill-flow.js";
+import { filterAddWarnings } from "../utils/cli.js";
 import {
   ALL_AGENTS_CHOICE_ID,
   ALL_SKILLS_CHOICE_ID,
@@ -378,7 +379,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
       <Box flexDirection="column">
         <AddFlowHeader />
         <Text color="red">{message}</Text>
-        {warnings.map((warning) => (
+        {filterAddWarnings(warnings).map((warning) => (
           <Text key={warning} color="yellow">
             warning: {warning}
           </Text>
@@ -399,7 +400,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
       <Text color="gray">
         Skills: {draft.selectedLeafIds.length}/{session.leafs.length} · Agents: {draft.enabledTargets.length}
       </Text>
-      {warnings.map((warning) => (
+      {filterAddWarnings(warnings).map((warning) => (
         <Text key={warning} color="yellow">
           warning: {warning}
         </Text>

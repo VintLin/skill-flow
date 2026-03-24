@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { InventoryService } from "../services/inventory-service.js";
@@ -7,6 +6,7 @@ import { SourceService } from "../services/source-service.js";
 import { StateStore } from "../state/store.js";
 import { SkillFlowApp } from "../services/skill-flow.js";
 import { resolveAddSourceLocator } from "../utils/cli.js";
+import { useSkillFlowSandbox } from "./test-helpers.js";
 
 type ResolvedSource = {
   kind: string;
@@ -29,6 +29,8 @@ async function resolveSource(locator: string): Promise<ResolvedSource> {
 }
 
 describe("source parsing compatibility", () => {
+  const sandbox = useSkillFlowSandbox();
+
   test("keeps GitHub shorthand subpaths intact at the CLI layer", () => {
     expect(resolveAddSourceLocator("JimLiu/baoyu-skills/skills/find-skills")).toBe(
       "JimLiu/baoyu-skills/skills/find-skills",
@@ -72,7 +74,7 @@ describe("source parsing compatibility", () => {
   });
 
   test("treats file URLs to local skill directories as local sources", async () => {
-    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-file-url-"));
+    const tempRoot = await fs.mkdtemp(path.join(sandbox.sandboxRoot, "skill-flow-file-url-"));
     const repoPath = path.join(tempRoot, "local-skill");
     await fs.mkdir(path.join(repoPath, "browse"), { recursive: true });
     await fs.writeFile(

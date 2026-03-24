@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { resolveAddSourceLocator } from "../utils/cli.js";
+import { filterAddWarnings, resolveAddSourceLocator } from "../utils/cli.js";
 
 describe("cli utils", () => {
   test("leaves direct source locators unchanged without a catalog override", () => {
@@ -19,5 +19,17 @@ describe("cli utils", () => {
     expect(() => resolveAddSourceLocator("find-skills-skill", "github")).toThrow(
       "Unsupported source catalog 'github'.",
     );
+  });
+
+  test("filters generated duplicate add warnings but keeps other warnings", () => {
+    expect(
+      filterAddWarnings([
+        ".agents/skills/adapt: Duplicate skill content skipped because source/skills/adapt was discovered first",
+        ".codex/skills/animate: Duplicate skill content skipped because source/skills/animate was discovered first",
+        "source/skills/broken: Missing title",
+      ]),
+    ).toEqual([
+      "source/skills/broken: Missing title",
+    ]);
   });
 });
