@@ -16,6 +16,12 @@ import {
 } from "@skill-flow/core/utils/format.js";
 import { resolveAddSourceLocator } from "@skill-flow/core/utils/cli.js";
 import { buildFindCommand } from "@skill-flow/core/utils/find-command.js";
+import {
+  buildBridgeResponse,
+  parseBridgeRequest,
+  type BridgeRequest,
+} from "@skill-flow/shared-types/protocol";
+import { executeBridgeRequest } from "./bridge-command.js";
 
 const program = new Command();
 const app = new SkillFlowApp();
@@ -227,6 +233,67 @@ program
     printWarnings(result.data.warnings);
   });
 
+program
+  .command("bridge")
+  .description("Execute machine protocol requests for desktop/helper integrations")
+  .option("--json", "Require JSON request/response envelope")
+  .option("--request <json>", "Raw request JSON (falls back to stdin if omitted)")
+  .action(async (options: { json?: boolean; request?: string }) => {
+    if (!options.json) {
+      console.error("bridge requires --json");
+      process.exitCode = 2;
+      return;
+    }
+
+    const requestInput = options.request ?? (await readStdin()).trim();
+    if (!requestInput) {
+      console.log(
+        JSON.stringify(
+          buildBridgeResponse({
+            command: "list",
+            ok: false,
+            errors: [
+              {
+                code: "BRIDGE_EMPTY_REQUEST",
+                message: "Bridge request payload is empty.",
+              },
+            ],
+          }),
+        ),
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    let request: BridgeRequest;
+    try {
+      request = parseBridgeRequest(JSON.parse(requestInput));
+    } catch (error) {
+      console.log(
+        JSON.stringify(
+          buildBridgeResponse({
+            command: "list",
+            ok: false,
+            errors: [
+              {
+                code: "BRIDGE_REQUEST_INVALID",
+                message: error instanceof Error ? error.message : String(error),
+              },
+            ],
+          }),
+        ),
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    const response = await executeBridgeRequest(app, request);
+    console.log(JSON.stringify(response));
+    if (!response.ok) {
+      process.exitCode = 1;
+    }
+  });
+
 await program.parseAsync(process.argv);
 
 function printErrors(errors: Array<{ message: string }>) {
@@ -264,6 +331,14 @@ async function runRenderedAddFlow(
       />,
     );
   });
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function handleAddFlowResult(

@@ -1,0 +1,19 @@
+{
+  "name": "@skill-flow/shared-types",
+  "version": "1.1.5",
+  "type": "module",
+  "private": true,
+  "main": "dist/protocol.js",
+  "exports": {
+    "./protocol": "./dist/protocol.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest --passWithNoTests"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

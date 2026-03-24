@@ -325,6 +325,60 @@ export class SkillFlowApp {
     return this.runSerializedMutation(() => this.listWorkflowsImpl());
   }
 
+  async inspectSource(
+    sourceId: string,
+  ): Promise<
+    Result<{
+      summary: WorkflowSummary;
+      source: Manifest["sources"][number];
+      binding: SourceBinding;
+      leafs: LeafRecord[];
+      deployments: LockFile["deployments"];
+    }>
+  > {
+    return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId));
+  }
+
+  private async inspectSourceImpl(
+    sourceId: string,
+  ): Promise<
+    Result<{
+      summary: WorkflowSummary;
+      source: Manifest["sources"][number];
+      binding: SourceBinding;
+      leafs: LeafRecord[];
+      deployments: LockFile["deployments"];
+    }>
+  > {
+    const listed = await this.listWorkflowsImpl();
+    if (!listed.ok) {
+      return fail(listed.errors, listed.warnings);
+    }
+
+    const { manifest, lockFile } = await this.store.readState();
+    const source = manifest.sources.find((item) => item.id === sourceId);
+    if (!source) {
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Skills group id '${sourceId}' is not registered.`,
+      });
+    }
+
+    const summary = listed.data.summaries.find((item) => item.source.id === sourceId);
+    if (!summary) {
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Unable to inspect '${sourceId}' because no summary data was found.`,
+      });
+    }
+
+    const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
+    const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
+    const deployments = lockFile.deployments.filter((deployment) => deployment.sourceId === sourceId);
+
+    return ok({ summary, source, binding, leafs, deployments }, listed.warnings);
+  }
+
   private async listWorkflowsImpl(): Promise<Result<{ summaries: WorkflowSummary[] }>> {
     const pruned = await this.pruneMissingCheckoutsImpl();
     if (!pruned.ok) {
