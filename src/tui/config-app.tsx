@@ -1698,20 +1698,17 @@ export function ConfigApp({
   return (
     <Box flexDirection="column" height={terminalRows}>
       <ConfigHeader />
-      <Box>
-        <Text color={topBar.titleColor} wrap="truncate-end">
-          {topBar.title}
-        </Text>
-        {topBar.detail ? (
-          topBar.detailColor ? (
+      {topBar.detail ? (
+        <Box>
+          {topBar.detailColor ? (
             <Text color={topBar.detailColor} wrap="truncate-end">
-              {`   ${topBar.detail}`}
+              {topBar.detail}
             </Text>
           ) : (
-            <Text wrap="truncate-end">{`   ${topBar.detail}`}</Text>
-          )
-        ) : null}
-      </Box>
+            <Text wrap="truncate-end">{topBar.detail}</Text>
+          )}
+        </Box>
+      ) : null}
       <Box>
         <Pane
           active={focus === "groups"}
