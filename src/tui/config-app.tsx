@@ -1836,7 +1836,7 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
 
 function ConfigHeader({ title }: { title?: string }) {
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <Box flexDirection="column">
       <Text backgroundColor="cyan" color="black">
         {ADD_BADGE_TEXT}
       </Text>
