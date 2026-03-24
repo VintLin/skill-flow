@@ -16,6 +16,7 @@ final class MainViewModel {
     var loadState: LoadState = .idle
     var sourceIds: [String] = []
     var selectedSourceId: String?
+    var newSourceLocator: String = ""
     var detailText: String = "Select a source to inspect details."
     var healthLabel: String = "Unknown"
     var latestWarnings: [BridgeIssue] = []
@@ -78,6 +79,40 @@ final class MainViewModel {
             await refreshList()
         } catch {
             detailText = "Update failed: \(error.localizedDescription)"
+        }
+    }
+
+    func addSource() async {
+        let locator = newSourceLocator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !locator.isEmpty else {
+            detailText = "Add failed: source locator is empty."
+            return
+        }
+        do {
+            _ = try await bridgeClient.add(locator: locator, applyNow: true)
+            newSourceLocator = ""
+            await refreshList()
+        } catch {
+            detailText = "Add failed: \(error.localizedDescription)"
+        }
+    }
+
+    func uninstallSelectedSource() async {
+        guard let selectedSourceId else {
+            detailText = "Uninstall failed: no source selected."
+            return
+        }
+        do {
+            _ = try await bridgeClient.uninstall(sourceIds: [selectedSourceId])
+            self.selectedSourceId = nil
+            await refreshList()
+            if let first = sourceIds.first {
+                await selectSource(first)
+            } else {
+                detailText = "No sources installed."
+            }
+        } catch {
+            detailText = "Uninstall failed: \(error.localizedDescription)"
         }
     }
 

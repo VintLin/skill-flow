@@ -21,6 +21,18 @@ struct MainView: View {
                 Text("Health: \(viewModel.healthLabel)")
                     .font(.headline)
 
+                HStack(spacing: 8) {
+                    TextField("Add source locator", text: $viewModel.newSourceLocator)
+                    Button("Add") {
+                        Task { await viewModel.addSource() }
+                    }
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    Button("Uninstall Selected") {
+                        Task { await viewModel.uninstallSelectedSource() }
+                    }
+                    .disabled(viewModel.selectedSourceId == nil)
+                }
+
                 if !viewModel.latestWarnings.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Warnings")
