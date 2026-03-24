@@ -22,6 +22,7 @@ import {
   toggleParent,
   type TreeSelectionState,
 } from "./selection-state.js";
+import { ADD_BADGE_TEXT } from "./add-flow.js";
 
 type ConfigAppProps = {
   app: SkillFlowApp;
@@ -1696,6 +1697,7 @@ export function ConfigApp({
 
   return (
     <Box flexDirection="column" height={terminalRows}>
+      <ConfigHeader title="Skill Flow Config" />
       <Box>
         <Text color={topBar.titleColor} wrap="truncate-end">
           {topBar.title}
@@ -1814,7 +1816,7 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
   return (
     <Box flexDirection="column" height={rows}>
       <Box flexGrow={1} flexDirection="column">
-        <Text bold>Skill Flow Config</Text>
+        <ConfigHeader title="Skill Flow Config" />
         <Text color="gray">
           {state.phase === "loading"
             ? "Checking groups, skills, targets, and current paths..."
@@ -1831,6 +1833,17 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
         ))}
         <Text color="gray">Press q or Esc to exit.</Text>
       </Box>
+    </Box>
+  );
+}
+
+function ConfigHeader({ title }: { title: string }) {
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text backgroundColor="cyan" color="black">
+        {ADD_BADGE_TEXT}
+      </Text>
+      <Text bold>{title}</Text>
     </Box>
   );
 }
