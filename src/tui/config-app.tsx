@@ -833,6 +833,8 @@ export function ConfigApp({
   const [skillCursor, setSkillCursor] = useState(0);
   const [targetCursor, setTargetCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
+  const [skillQuery, setSkillQuery] = useState("");
+  const [targetQuery, setTargetQuery] = useState("");
   const [drafts, setDrafts] = useState<Record<string, DraftBinding>>(initialDrafts);
   const [savedDrafts, setSavedDrafts] = useState<Record<string, DraftBinding>>(initialDrafts);
   const [previewBySourceId, setPreviewBySourceId] = useState<Record<string, PreviewState>>({});
@@ -848,7 +850,8 @@ export function ConfigApp({
 
   const selectedGroup = groupViews[selectedGroupIndex] ?? EMPTY_CONFIG_GROUP;
   const selectedSkillRows = buildConfigGroupSkillRows(selectedGroup);
-  const selectedSkillRow = skillCursor > 0 ? selectedSkillRows[skillCursor - 1] : undefined;
+  const filteredSkillRows = filterSkillRows(selectedSkillRows, skillQuery);
+  const selectedSkillRow = skillCursor > 0 ? filteredSkillRows[skillCursor - 1] : undefined;
   const activeSummary = selectedSkillRow?.summary ?? selectedGroup.summaries[0];
   const selectedSourceId = activeSummary?.source.id ?? "";
   const selectedDraft = drafts[selectedSourceId] ?? EMPTY_DRAFT;
@@ -859,9 +862,9 @@ export function ConfigApp({
     drafts,
     group: selectedGroup,
   });
-  const visibleTargets = availableTargets;
+  const visibleTargets = filterTargets(availableTargets, targetQuery);
   const agentInteractiveCount = visibleTargets.length > 0 ? visibleTargets.length + 1 : 0;
-  const skillInteractiveCount = selectedSkillRows.length > 0 ? selectedSkillRows.length + 1 : 0;
+  const skillInteractiveCount = filteredSkillRows.length > 0 ? filteredSkillRows.length + 1 : 0;
   const treeState: TreeSelectionState =
     selectedGroup.kind === "clawhub"
       ? {
@@ -933,6 +936,13 @@ export function ConfigApp({
       }
     };
   }, []);
+
+  useEffect(() => {
+    setSkillQuery("");
+    setTargetQuery("");
+    setSkillCursor(0);
+    setTargetCursor(0);
+  }, [selectedGroupIndex]);
 
   useEffect(() => {
     if (!activeSummary) {
@@ -1354,6 +1364,32 @@ export function ConfigApp({
       return;
     }
 
+    if (focus === "detail.agents") {
+      if (key.backspace || key.delete) {
+        setTargetQuery((current) => current.slice(0, -1));
+        setTargetCursor(0);
+        return;
+      }
+      if (!key.ctrl && !key.meta && !key.return && input.length === 1 && /[^\s]/.test(input)) {
+        setTargetQuery((current) => `${current}${input}`);
+        setTargetCursor(0);
+        return;
+      }
+    }
+
+    if (focus === "detail.skills") {
+      if (key.backspace || key.delete) {
+        setSkillQuery((current) => current.slice(0, -1));
+        setSkillCursor(0);
+        return;
+      }
+      if (!key.ctrl && !key.meta && !key.return && input.length === 1 && /[^\s]/.test(input)) {
+        setSkillQuery((current) => `${current}${input}`);
+        setSkillCursor(0);
+        return;
+      }
+    }
+
     if (focus === "groups") {
       if (key.downArrow) {
         const next = Math.min(groupCursor + 1, Math.max(0, groupViews.length - 1));
@@ -1361,6 +1397,8 @@ export function ConfigApp({
         setSelectedGroupIndex(next);
         setTargetCursor(0);
         setSkillCursor(0);
+        setTargetQuery("");
+        setSkillQuery("");
         setActionCursor(0);
       }
       if (key.upArrow) {
@@ -1369,6 +1407,8 @@ export function ConfigApp({
         setSelectedGroupIndex(next);
         setTargetCursor(0);
         setSkillCursor(0);
+        setTargetQuery("");
+        setSkillQuery("");
         setActionCursor(0);
       }
       return;
@@ -1436,7 +1476,7 @@ export function ConfigApp({
             return currentDraft;
           }
 
-          const row = selectedSkillRows[skillCursor - 1];
+          const row = filteredSkillRows[skillCursor - 1];
           if (!row) {
             return currentDraft;
           }
@@ -1464,7 +1504,7 @@ export function ConfigApp({
         const nextState =
           skillCursor === 0
             ? toggleParent(baseState)
-            : toggleChild(baseState, leafIds[skillCursor - 1]!);
+            : toggleChild(baseState, filteredSkillRows[skillCursor - 1]!.leaf.id);
 
         return {
           ...currentDraft,
@@ -1541,14 +1581,14 @@ export function ConfigApp({
       : [
           {
             key: "__no_targets__",
-            text: "No detected agent targets",
+            text: targetQuery ? "No agents match the current filter" : "No detected agent targets",
             active: false,
             color: "gray" as const,
           },
         ];
 
   const skillRows: PaneRow[] =
-    selectedSkillRows.length > 0
+    filteredSkillRows.length > 0
       ? [
           {
             key: "__all__",
@@ -1557,7 +1597,7 @@ export function ConfigApp({
             bold: true,
             color: undefined,
           },
-          ...selectedSkillRows.map((row, index) => {
+          ...filteredSkillRows.map((row, index) => {
             const rowDraft = drafts[row.summary.source.id] ?? EMPTY_DRAFT;
             const rowSelected = rowDraft.selectedLeafIds.includes(row.leaf.id);
             const warnings = [
@@ -1588,7 +1628,7 @@ export function ConfigApp({
       : [
           {
             key: "__no_skills__",
-            text: "No skills in this group",
+            text: skillQuery ? "No skills match the current filter" : "No skills in this group",
             active: false,
             color: "gray" as const,
           },
@@ -1686,10 +1726,16 @@ export function ConfigApp({
     },
     {
       key: "__agents_header__",
-      text: `Apply to Agents (${visibleEnabledTargets.length}/${visibleTargets.length})`,
+      text: `Select Agents (${visibleEnabledTargets.length}/${availableTargets.length})`,
       active: false,
       bold: true,
       color: undefined,
+    },
+    {
+      key: "__agents_search__",
+      text: `Search: ${targetQuery || " "}`,
+      active: false,
+      color: "gray" as const,
     },
     ...visibleAgentRows.rows,
     {
@@ -1700,10 +1746,16 @@ export function ConfigApp({
     },
     {
       key: "__skills_header__",
-      text: `Included Skills (${selectedGroup.kind === "clawhub" ? groupSelectedLeafCount : selectedDraft.selectedLeafIds.length}/${selectedSkillRows.length})`,
+      text: `Select Skills (${selectedGroup.kind === "clawhub" ? groupSelectedLeafCount : selectedDraft.selectedLeafIds.length}/${selectedSkillRows.length})`,
       active: false,
       bold: true,
       color: undefined,
+    },
+    {
+      key: "__skills_search__",
+      text: `Search: ${skillQuery || " "}`,
+      active: false,
+      color: "gray" as const,
     },
     ...filledSkillRows,
   ];
@@ -2093,17 +2145,17 @@ export function buildActionRows({
   return rows;
 }
 
-function buildCommandBar(focus: FocusPane) {
+export function buildCommandBar(focus: FocusPane) {
   if (focus === "groups") {
     return "[Tab/→] Edit";
   }
   if (focus === "detail.actions") {
     return "[Enter] Action";
   }
-  return "[Space] Toggle";
+  return "[Type] Filter  [Space] Toggle";
 }
 
-function buildFooterHints(focus: FocusPane, canDelete: boolean) {
+export function buildFooterHints(focus: FocusPane, canDelete: boolean) {
   if (focus === "groups") {
     return canDelete
       ? "[↑↓] Move   [Tab/→] Switch pane   [u] Update   [d] Delete   [q] Exit"
@@ -2115,13 +2167,13 @@ function buildFooterHints(focus: FocusPane, canDelete: boolean) {
       : "[↑↓] Move   [Enter] Action   [Tab/←/Esc] Back   [u] Update";
   }
   return canDelete
-    ? "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update   [d] Delete"
-    : "[↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update";
+    ? "[Type] Filter   [⌫] Clear   [↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update   [d] Delete"
+    : "[Type] Filter   [⌫] Clear   [↑↓] Move   [Space] Toggle   [Tab/←/Esc] Back   [u] Update";
 }
 
 function RowText({ row, width }: { row: PaneRow; width: number }) {
   const color = row.active ? row.activeColor ?? "cyan" : row.color;
-  const prefix = row.active ? "> " : "  ";
+  const prefix = row.active ? "❯ " : "  ";
   const contentWidth = Math.max(1, getPaneInnerWidth(width) - prefix.length);
   const content = fitPaneLine(row.text, contentWidth);
   return (
@@ -2208,14 +2260,48 @@ function getPaneInnerWidth(width: number) {
   return Math.max(1, width - 4);
 }
 
-function selectionMarker(state: "empty" | "partial" | "full") {
+export function selectionMarker(state: "empty" | "partial" | "full") {
   if (state === "full") {
-    return "[x]";
+    return "●";
   }
   if (state === "partial") {
-    return "[-]";
+    return "◐";
   }
-  return "[ ]";
+  return "○";
+}
+
+export function normalizeFilterQuery(value: string) {
+  return value.toLowerCase().replace(/[_\s-]+/g, " ").trim();
+}
+
+export function filterTargets(targets: DeploymentTargetName[], query: string) {
+  const normalized = normalizeFilterQuery(query);
+  if (!normalized) {
+    return targets;
+  }
+
+  return targets.filter((target) =>
+    normalizeFilterQuery(`${target} ${TARGET_LABELS[target]}`).includes(normalized),
+  );
+}
+
+export function filterSkillRows(rows: ConfigSkillRow[], query: string) {
+  const normalized = normalizeFilterQuery(query);
+  if (!normalized) {
+    return rows;
+  }
+
+  return rows.filter((row) =>
+    normalizeFilterQuery(
+      [
+        row.leaf.linkName,
+        row.leaf.name,
+        row.leaf.title,
+        row.leaf.relativePath,
+        row.leaf.description,
+      ].join(" "),
+    ).includes(normalized),
+  );
 }
 
 function getExactDuplicateKey(linkName: string, name: string, description: string) {

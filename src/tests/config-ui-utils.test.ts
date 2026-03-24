@@ -2,10 +2,14 @@ import { describe, expect, test } from "vitest";
 import type { DraftBinding, WorkflowSummary } from "../domain/types.js";
 import {
   buildActionRows,
+  buildCommandBar,
   buildDetailMetadataRows,
   buildDraftsFromSummaries,
+  buildFooterHints,
   buildConfigGroupSkillRows,
   buildConfigGroups,
+  filterSkillRows,
+  filterTargets,
   buildProjectionWarningMap,
   buildScrollableRows,
   buildTopBar,
@@ -20,6 +24,7 @@ import {
   moveDetailFocus,
   prioritizeAlerts,
   reconcileFocusAfterReload,
+  selectionMarker,
 } from "../tui/config-app.js";
 import {
   getParentSelectionState,
@@ -213,6 +218,14 @@ describe("config ui utils", () => {
         updateState: { phase: "updated", message: undefined },
       }).label,
     ).toBe("Failed");
+  });
+
+  test("config uses add-style markers and filter hints", () => {
+    expect(selectionMarker("full")).toBe("●");
+    expect(selectionMarker("partial")).toBe("◐");
+    expect(selectionMarker("empty")).toBe("○");
+    expect(buildCommandBar("detail.skills")).toContain("Filter");
+    expect(buildFooterHints("detail.agents", true)).toContain("[⌫] Clear");
   });
 
   test("alerts are prioritized error before blocked before warning", () => {
@@ -528,6 +541,26 @@ describe("config ui utils", () => {
       enabledTargets: [],
       selectedLeafIds: ["alpha:browse", "alpha:review"],
     });
+  });
+
+  test("config filters agents and skills by search query", () => {
+    const rows = buildConfigGroupSkillRows(
+      buildConfigGroups([
+        createSummary({
+          sourceId: "alpha",
+          leafIds: ["alpha:browse", "alpha:review"],
+        }),
+      ])[0]!,
+    );
+
+    expect(filterTargets(["claude-code", "codex"], "claude")).toEqual(["claude-code"]);
+    expect(filterTargets(["claude-code", "codex"], "code")).toEqual([
+      "claude-code",
+      "codex",
+    ]);
+    expect(filterSkillRows(rows, "review").map((row) => row.leaf.id)).toEqual([
+      "alpha:review",
+    ]);
   });
 
   test("projection warning helper marks identical cross-group skills as skipped", () => {
