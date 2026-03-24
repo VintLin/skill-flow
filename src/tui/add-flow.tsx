@@ -56,6 +56,24 @@ type InputKey = {
   meta?: boolean;
 };
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+export const ADD_BADGE_TEXT = " skill flow ";
+
+export function getAddLoadingLabel(phase: Phase): string | undefined {
+  switch (phase) {
+    case "loading":
+      return "Preparing source and discovering skills...";
+    case "agents-loading":
+      return "Loading available agents...";
+    case "applying":
+      return "Applying selected skills and agents...";
+    case "rolling-back":
+      return "Rolling back imported source...";
+    default:
+      return undefined;
+  }
+}
+
 export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   const { exit } = useApp();
   const [phase, setPhase] = useState<Phase>("loading");
@@ -71,6 +89,12 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   const [agentCursor, setAgentCursor] = useState(0);
   const [inlineError, setInlineError] = useState<string | undefined>();
   const [lastResult, setLastResult] = useState<AddFlowExitResult | undefined>();
+  const spinnerFrame = useSpinnerFrame(
+    phase === "loading" ||
+      phase === "agents-loading" ||
+      phase === "applying" ||
+      phase === "rolling-back",
+  );
 
   const leafChoices = useMemo(
     () => (session ? buildLeafChoices(session.leafs) : []),
@@ -327,9 +351,10 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   if (phase === "loading") {
     return (
       <Box flexDirection="column">
-        <Text bold>Add Skills Group</Text>
-        <Text color="gray">◆ Parsing source</Text>
-        <Text color="gray">◆ Discovering skills</Text>
+        <AddFlowHeader />
+        <Text bold>
+          {spinnerFrame} {getAddLoadingLabel("loading")}
+        </Text>
         <Text color="gray">q or Esc cancel after discovery</Text>
       </Box>
     );
@@ -338,10 +363,12 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   if (phase === "agents-loading") {
     return (
       <Box flexDirection="column">
-        <Text bold>Add Skills Group</Text>
+        <AddFlowHeader />
         <Text color="gray">Source: {session?.source.displayName ?? "loading..."}</Text>
-        <Text bold>◆ Detecting available agents</Text>
-        <Text color="gray">Skills are ready. Loading agent targets in the background...</Text>
+        <Text bold>
+          {spinnerFrame} {getAddLoadingLabel("agents-loading")}
+        </Text>
+        <Text color="gray">Skills are ready. Agent targets are loading in the background...</Text>
       </Box>
     );
   }
@@ -349,7 +376,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   if (phase === "error") {
     return (
       <Box flexDirection="column">
-        <Text bold>Add Skills Group</Text>
+        <AddFlowHeader />
         <Text color="red">{message}</Text>
         {warnings.map((warning) => (
           <Text key={warning} color="yellow">
@@ -367,7 +394,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
 
   return (
     <Box flexDirection="column">
-      <Text bold>Add Skills Group</Text>
+      <AddFlowHeader />
       <Text color="gray">Source: {session.source.displayName}</Text>
       <Text color="gray">
         Skills: {draft.selectedLeafIds.length}/{session.leafs.length} · Agents: {draft.enabledTargets.length}
@@ -430,14 +457,18 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
               ).map((line) => <Text key={line}>{line}</Text>)
             : null}
           <Text> </Text>
-          <Text bold>◆ Installing</Text>
-          <Text color="gray">Applying selected skills and agents...</Text>
+          <Text bold>
+            {spinnerFrame} Installing
+          </Text>
+          <Text color="gray">{getAddLoadingLabel("applying")}</Text>
         </Box>
       ) : null}
       {phase === "rolling-back" ? (
         <Box flexDirection="column" marginTop={1}>
-          <Text bold>■ Cancelling</Text>
-          <Text color="gray">Rolling back imported source...</Text>
+          <Text bold>
+            {spinnerFrame} Cancelling
+          </Text>
+          <Text color="gray">{getAddLoadingLabel("rolling-back")}</Text>
         </Box>
       ) : null}
       {phase === "done" ? (
@@ -460,6 +491,17 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
           <Text color="gray">Enter, q, or Esc exit</Text>
         </Box>
       ) : null}
+    </Box>
+  );
+}
+
+function AddFlowHeader() {
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text backgroundColor="cyan" color="black">
+        {ADD_BADGE_TEXT}
+      </Text>
+      <Text bold>Add Skills Group</Text>
     </Box>
   );
 }
@@ -850,4 +892,25 @@ function closeFlow(
   }
 
   exit();
+}
+
+function useSpinnerFrame(active: boolean) {
+  const [frameIndex, setFrameIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setFrameIndex(0);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setFrameIndex((current) => (current + 1) % SPINNER_FRAMES.length);
+    }, 80);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [active]);
+
+  return SPINNER_FRAMES[frameIndex] ?? SPINNER_FRAMES[0];
 }
