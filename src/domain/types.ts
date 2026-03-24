@@ -60,6 +60,7 @@ export type TargetBinding = {
 };
 
 export type SourceBinding = {
+  selectedLeafIds?: string[];
   targets: Partial<Record<DeploymentTargetName, TargetBinding>>;
 };
 

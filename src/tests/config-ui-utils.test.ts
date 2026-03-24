@@ -510,6 +510,26 @@ describe("config ui utils", () => {
     });
   });
 
+  test("buildDraftsFromSummaries preserves selected skills when no agents are enabled", () => {
+    const drafts = buildDraftsFromSummaries([
+      {
+        ...createSummary({
+          sourceId: "alpha",
+          leafIds: ["alpha:browse", "alpha:review"],
+        }),
+        bindings: {
+          selectedLeafIds: ["alpha:review", "alpha:browse"],
+          targets: {},
+        },
+      },
+    ]);
+
+    expect(drafts.alpha).toEqual<DraftBinding>({
+      enabledTargets: [],
+      selectedLeafIds: ["alpha:browse", "alpha:review"],
+    });
+  });
+
   test("projection warning helper marks identical cross-group skills as skipped", () => {
     const warnings = buildProjectionWarningMap({
       drafts: {

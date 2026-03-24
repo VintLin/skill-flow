@@ -750,7 +750,10 @@ export class SkillFlowApp {
         leafIds: [...draft.selectedLeafIds],
       };
     }
-    return { targets };
+    return {
+      selectedLeafIds: [...draft.selectedLeafIds],
+      targets,
+    };
   }
 
   private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
@@ -863,9 +866,13 @@ export class SkillFlowApp {
     const enabledTargets = Object.entries(binding.targets)
       .filter(([, targetBinding]) => targetBinding?.enabled)
       .map(([target]) => target) as DeploymentTargetName[];
-    const selectedLeafIds = [...new Set(
-      enabledTargets.flatMap((target) => binding.targets[target]?.leafIds ?? []),
-    )].filter((leafId) => leafIds.has(leafId));
+    const selectedLeafIds = [
+      ...new Set(
+        (binding.selectedLeafIds && binding.selectedLeafIds.length > 0
+          ? binding.selectedLeafIds
+          : enabledTargets.flatMap((target) => binding.targets[target]?.leafIds ?? [])),
+      ),
+    ].filter((leafId) => leafIds.has(leafId));
 
     return {
       enabledTargets,

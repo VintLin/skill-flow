@@ -169,4 +169,41 @@ describe.sequential("add prepare flow", () => {
       lockFile.deployments.some((deployment) => deployment.sourceId === prepared.data.sourceId),
     ).toBe(false);
   });
+
+  test("config bootstrap keeps selected skills when add is saved with no enabled agents", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+      "review/SKILL.md": skillDoc("review", "Review flow."),
+    });
+    const app = new SkillFlowApp();
+
+    const prepared = await app.prepareAddSource(repoPath, { skipTargetDetection: true });
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+
+    const applied = await app.applyDraft(prepared.data.sourceId, {
+      selectedLeafIds: [...prepared.data.draft.selectedLeafIds],
+      enabledTargets: [],
+    });
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    const boot = await app.configCoordinator.bootstrapWorkspaceState();
+
+    expect(boot.ok).toBe(true);
+    if (!boot.ok) {
+      return;
+    }
+
+    expect(boot.data.initialDrafts[prepared.data.sourceId]).toEqual({
+      enabledTargets: [],
+      selectedLeafIds: [...prepared.data.draft.selectedLeafIds].sort(),
+    });
+  });
 });
