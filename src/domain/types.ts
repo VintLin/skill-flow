@@ -72,6 +72,7 @@ export type AddSourceDraftOptions = {
   skillNames?: string[];
   agentTargets?: DeploymentTargetName[];
   draft?: DraftBinding;
+  skipTargetDetection?: boolean;
 };
 
 export type AddSourcePreparation = {

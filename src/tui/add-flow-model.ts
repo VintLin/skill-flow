@@ -25,6 +25,9 @@ export type AddChoice = {
   description?: string;
 };
 
+export const ALL_SKILLS_CHOICE_ID = "__all_skills__";
+export const ALL_AGENTS_CHOICE_ID = "__all_agents__";
+
 export type AddFlowPrepared = {
   source: SourceManifestRecord;
   leafs: LeafRecord[];
@@ -84,6 +87,10 @@ export function buildTargetChoices(
       ? { hint: TARGET_DEFINITIONS[target].writeRootCandidates[0] }
       : {}),
   }));
+}
+
+export function withAllChoice(choices: AddChoice[], label: string, id: string): AddChoice[] {
+  return [{ id, label }, ...choices];
 }
 
 export function filterChoices(choices: AddChoice[], query: string): AddChoice[] {
@@ -207,6 +214,28 @@ export function buildAddCompletionMessage(
       : `${targetCount} agent${targetCount === 1 ? "" : "s"} selected`;
 
   return `Added ${formatGroupRef(source)} with ${selectedCount}/${importedCount} skills enabled, ${targetSummary}.`;
+}
+
+export function areAllSelected(selectedIds: readonly string[], allIds: readonly string[]): boolean {
+  return allIds.length > 0 && allIds.every((id) => selectedIds.includes(id));
+}
+
+export function toggleAllSelections(
+  selectedIds: readonly string[],
+  allIds: readonly string[],
+): string[] {
+  const current = new Set(selectedIds);
+  if (areAllSelected(selectedIds, allIds)) {
+    for (const id of allIds) {
+      current.delete(id);
+    }
+    return [...current];
+  }
+
+  for (const id of allIds) {
+    current.add(id);
+  }
+  return [...current];
 }
 
 export function buildSummaryLines(

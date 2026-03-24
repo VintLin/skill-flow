@@ -1,10 +1,15 @@
 import { describe, expect, test } from "vitest";
 import type { LeafRecord } from "../domain/types.js";
 import {
+  ALL_AGENTS_CHOICE_ID,
+  ALL_SKILLS_CHOICE_ID,
+  areAllSelected,
   buildDefaultSelectedLeafIds,
   buildInitialDraft,
   normalizeRequestedPath,
   resolveRequestedLeafIds,
+  toggleAllSelections,
+  withAllChoice,
 } from "../tui/add-flow-model.js";
 
 function createLeaf(params: {
@@ -115,5 +120,25 @@ describe("add flow model", () => {
         enabledTargets: ["codex"],
       },
     });
+  });
+
+  test("prepends all-choice rows and toggles full selection", () => {
+    const choices = withAllChoice(
+      [
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+      ],
+      "All skills",
+      ALL_SKILLS_CHOICE_ID,
+    );
+
+    expect(choices[0]).toEqual({ id: ALL_SKILLS_CHOICE_ID, label: "All skills" });
+    expect(areAllSelected(["a"], ["a", "b"])).toBe(false);
+    expect(areAllSelected(["a", "b"], ["a", "b"])).toBe(true);
+    expect(toggleAllSelections([], ["a", "b"])).toEqual(["a", "b"]);
+    expect(toggleAllSelections(["a", "b"], ["a", "b"])).toEqual([]);
+    expect(withAllChoice([], "All agents", ALL_AGENTS_CHOICE_ID)[0]?.id).toBe(
+      ALL_AGENTS_CHOICE_ID,
+    );
   });
 });

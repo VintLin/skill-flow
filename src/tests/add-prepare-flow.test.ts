@@ -138,4 +138,35 @@ describe.sequential("add prepare flow", () => {
 
     expect(result.errors[0]?.code).toBe("ADD_AGENT_NOT_AVAILABLE");
   });
+
+  test("applyDraft keeps imported source when no skills or agents are selected", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "review/SKILL.md": skillDoc("review", "Review flow."),
+    });
+    const app = new SkillFlowApp();
+
+    const prepared = await app.prepareAddSource(repoPath, { skipTargetDetection: true });
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+
+    const applied = await app.applyDraft(prepared.data.sourceId, {
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    const { manifest, lockFile } = await app.store.readState();
+    expect(manifest.sources.some((source) => source.id === prepared.data.sourceId)).toBe(true);
+    expect(manifest.bindings[prepared.data.sourceId]?.targets).toEqual({});
+    expect(
+      lockFile.deployments.some((deployment) => deployment.sourceId === prepared.data.sourceId),
+    ).toBe(false);
+  });
 });

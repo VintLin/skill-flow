@@ -3,15 +3,20 @@ import { Box, Text, useApp, useInput } from "ink";
 import type { DeploymentPlan, DeploymentTargetName, DraftBinding } from "../domain/types.js";
 import type { SkillFlowApp } from "../services/skill-flow.js";
 import {
+  ALL_AGENTS_CHOICE_ID,
+  ALL_SKILLS_CHOICE_ID,
   type AddChoice,
   type AddFlowPrepared,
   type AddFlowRequest,
+  areAllSelected,
   buildAddCompletionMessage,
   buildInitialDraft,
   buildLeafChoices,
   buildSummaryLines,
   buildTargetChoices,
   filterChoices,
+  toggleAllSelections,
+  withAllChoice,
 } from "./add-flow-model.js";
 
 export type AddFlowExitResult =
@@ -28,6 +33,7 @@ type AddFlowAppProps = {
 type Phase =
   | "loading"
   | "skills"
+  | "agents-loading"
   | "agents"
   | "summary-loading"
   | "summary"
@@ -80,10 +86,51 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
     () => filterChoices(leafChoices, skillQuery),
     [leafChoices, skillQuery],
   );
+  const skillChoicesWithAll = useMemo(
+    () => withAllChoice(visibleLeafChoices, "All skills", ALL_SKILLS_CHOICE_ID),
+    [visibleLeafChoices],
+  );
   const visibleTargetChoices = useMemo(
     () => filterChoices(targetChoices, agentQuery),
     [targetChoices, agentQuery],
   );
+  const targetChoicesWithAll = useMemo(
+    () => withAllChoice(visibleTargetChoices, "All agents", ALL_AGENTS_CHOICE_ID),
+    [visibleTargetChoices],
+  );
+
+  useEffect(() => {
+    if (
+      !session ||
+      request.yes ||
+      request.all ||
+      request.requestedAgents?.length ||
+      session.availableTargets.length > 0
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    void app.getAvailableTargets().then((targets) => {
+      if (cancelled) {
+        return;
+      }
+      setSession((current) => (current ? { ...current, availableTargets: targets } : current));
+      setDraft((current) => {
+        if (!current || current.enabledTargets.length > 0) {
+          return current;
+        }
+        return {
+          ...current,
+          enabledTargets: [...targets],
+        };
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [app, request.all, request.requestedAgents, request.yes, session]);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,7 +197,13 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
   }, [app, request]);
 
   useInput((input, key) => {
-    if (phase === "loading" || phase === "summary-loading" || phase === "applying" || phase === "rolling-back") {
+    if (
+      phase === "loading" ||
+      phase === "agents-loading" ||
+      phase === "summary-loading" ||
+      phase === "applying" ||
+      phase === "rolling-back"
+    ) {
       return;
     }
 
@@ -178,22 +231,33 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
       handleSelectionInput({
         input,
         key,
-        choices: visibleLeafChoices,
+        choices: skillChoicesWithAll,
         cursor: skillCursor,
         setCursor: setSkillCursor,
         query: skillQuery,
         setQuery: setSkillQuery,
         selectedIds: draft.selectedLeafIds,
+        allChoiceId: ALL_SKILLS_CHOICE_ID,
+        allSelectableIds: leafChoices.map((choice) => choice.id),
         setSelectedIds: (selectedLeafIds) => {
           setDraft({ ...draft, selectedLeafIds });
         },
         onConfirm: async () => {
-          if (draft.selectedLeafIds.length === 0) {
-            setInlineError("Select at least one skill.");
+          setInlineError(undefined);
+          const resolvedSession = await ensureTargetsLoaded(
+            app,
+            session,
+            request,
+            setPhase,
+            setSession,
+            setDraft,
+          );
+          if (!resolvedSession) {
+            setPhase("error");
+            setMessage("Unable to detect available agents.");
             return;
           }
-          setInlineError(undefined);
-          if (!(request.requestedAgents?.length) && session.availableTargets.length > 1) {
+          if (!(request.requestedAgents?.length) && resolvedSession.availableTargets.length > 1) {
             setPhase("agents");
             setCurrentStep("agents");
             return;
@@ -217,12 +281,14 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
       handleSelectionInput({
         input,
         key,
-        choices: visibleTargetChoices,
+        choices: targetChoicesWithAll,
         cursor: agentCursor,
         setCursor: setAgentCursor,
         query: agentQuery,
         setQuery: setAgentQuery,
         selectedIds: draft.enabledTargets,
+        allChoiceId: ALL_AGENTS_CHOICE_ID,
+        allSelectableIds: targetChoices.map((choice) => choice.id),
         setSelectedIds: (enabledTargets) => {
           setDraft({
             ...draft,
@@ -239,10 +305,6 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
             }
           : {}),
         onConfirm: async () => {
-          if (session.availableTargets.length > 0 && draft.enabledTargets.length === 0) {
-            setInlineError("Select at least one agent.");
-            return;
-          }
           setInlineError(undefined);
           await loadSummary(
             app,
@@ -299,6 +361,17 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
     );
   }
 
+  if (phase === "agents-loading") {
+    return (
+      <Box flexDirection="column">
+        <Text bold>Add Skills Group</Text>
+        <Text color="gray">Source: {session?.source.displayName ?? "loading..."}</Text>
+        <Text bold>◆ Detecting available agents</Text>
+        <Text color="gray">Skills are ready. Loading agent targets in the background...</Text>
+      </Box>
+    );
+  }
+
   if (phase === "error") {
     return (
       <Box flexDirection="column">
@@ -334,9 +407,11 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
         ? renderSelectionStep({
             title: "◆ Select skills to enable",
             query: skillQuery,
-            choices: visibleLeafChoices,
+            choices: skillChoicesWithAll,
             cursor: skillCursor,
             selectedIds: draft.selectedLeafIds,
+            allChoiceId: ALL_SKILLS_CHOICE_ID,
+            allSelectableIds: leafChoices.map((choice) => choice.id),
             footer: "Type to filter · Space toggle · Enter continue · Esc cancel",
             emptyMessage: "No skills match the current filter.",
             selectedSummary: summarizeSelectedChoices(leafChoices, draft.selectedLeafIds),
@@ -347,9 +422,11 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
         ? renderSelectionStep({
             title: "◆ Select agents to project to",
             query: agentQuery,
-            choices: visibleTargetChoices,
+            choices: targetChoicesWithAll,
             cursor: agentCursor,
             selectedIds: draft.enabledTargets,
+            allChoiceId: ALL_AGENTS_CHOICE_ID,
+            allSelectableIds: targetChoices.map((choice) => choice.id),
             footer:
               currentStep === "agents" && session.leafs.length > 1 && !(request.requestedSkills?.length)
                 ? "Type to filter · Space toggle · Enter continue · ← back · Esc cancel"
@@ -450,6 +527,9 @@ async function prepareAddSession(
 > {
   const added = await app.prepareAddSource(request.locator, {
     ...(request.path ? { path: request.path } : {}),
+    ...(!request.yes && !request.all && !request.requestedAgents?.length
+      ? { skipTargetDetection: true }
+      : {}),
     ...(!request.all && request.requestedSkills?.length
       ? { skillNames: request.requestedSkills }
       : {}),
@@ -523,6 +603,39 @@ async function loadSummary(
   setPreview(preview.data.plan);
   setWarnings([...importWarnings, ...preview.warnings.map((warning) => warning.message)]);
   setPhase("summary");
+}
+
+async function ensureTargetsLoaded(
+  app: SkillFlowApp,
+  session: PreparedSession,
+  request: AddFlowRequest,
+  setPhase: (phase: Phase) => void,
+  setSession: (session: PreparedSession | ((current: PreparedSession | undefined) => PreparedSession | undefined)) => void,
+  setDraft: (draft: DraftBinding | ((current: DraftBinding | undefined) => DraftBinding | undefined)) => void,
+): Promise<PreparedSession | undefined> {
+  if (
+    request.yes ||
+    request.all ||
+    request.requestedAgents?.length ||
+    session.availableTargets.length > 0
+  ) {
+    return session;
+  }
+
+  setPhase("agents-loading");
+  const targets = await app.getAvailableTargets();
+  const nextSession = { ...session, availableTargets: targets };
+  setSession(nextSession);
+  setDraft((current) => {
+    if (!current || current.enabledTargets.length > 0) {
+      return current;
+    }
+    return {
+      ...current,
+      enabledTargets: [...targets],
+    };
+  });
+  return nextSession;
 }
 
 async function applyDraftAndFinish(
@@ -602,6 +715,8 @@ function handleSelectionInput({
   query,
   setQuery,
   selectedIds,
+  allChoiceId,
+  allSelectableIds,
   setSelectedIds,
   onBack,
   onConfirm,
@@ -614,6 +729,8 @@ function handleSelectionInput({
   query: string;
   setQuery: (query: string) => void;
   selectedIds: string[];
+  allChoiceId?: string;
+  allSelectableIds: string[];
   setSelectedIds: (selectedIds: string[]) => void;
   onBack?: () => void;
   onConfirm: () => void | Promise<void>;
@@ -649,6 +766,10 @@ function handleSelectionInput({
     if (!current) {
       return;
     }
+    if (allChoiceId && current.id === allChoiceId) {
+      setSelectedIds(toggleAllSelections(selectedIds, allSelectableIds));
+      return;
+    }
     const selected = new Set(selectedIds);
     if (selected.has(current.id)) {
       selected.delete(current.id);
@@ -673,6 +794,8 @@ function renderSelectionStep({
   choices,
   cursor,
   selectedIds,
+  allChoiceId,
+  allSelectableIds,
   footer,
   emptyMessage,
   selectedSummary,
@@ -683,6 +806,8 @@ function renderSelectionStep({
   choices: AddChoice[];
   cursor: number;
   selectedIds: readonly string[];
+  allChoiceId?: string;
+  allSelectableIds: readonly string[];
   footer: string;
   emptyMessage: string;
   selectedSummary: string;
@@ -699,7 +824,10 @@ function renderSelectionStep({
         ) : (
           choices.map((choice, index) => {
             const active = index === cursor;
-            const selected = selectedIds.includes(choice.id);
+            const selected =
+              choice.id === allChoiceId
+                ? areAllSelected(selectedIds, allSelectableIds)
+                : selectedIds.includes(choice.id);
             return (
               <Text key={choice.id} {...(active ? { color: "cyan" as const } : {})}>
                 {active ? "❯" : " "} {selected ? "●" : "○"} {choice.label}

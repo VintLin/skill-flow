@@ -166,7 +166,9 @@ export class SkillFlowApp {
     }
 
     const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
-    const availableTargets = await this.getAvailableTargets();
+    const availableTargets = addOptions.skipTargetDetection
+      ? []
+      : await this.getAvailableTargets();
     const preparedDraft = this.buildAddDraft(
       sourceLeafs,
       requestedPath,
