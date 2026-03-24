@@ -95,12 +95,13 @@ export class SourceService {
       resolved.kind,
       resolved.sourceId,
     );
+    const tempCheckoutPath = `${checkoutPath}.${process.pid}.${crypto.randomUUID()}.add`;
     await ensureDir(this.store.getSourceRoot(resolved.kind));
 
     try {
-      await this.fetchSource(resolved, checkoutPath);
+      await this.fetchSource(resolved, tempCheckoutPath);
     } catch (error) {
-      await removePath(checkoutPath);
+      await removePath(tempCheckoutPath);
       return fail({
         code:
           resolved.kind === "git"
@@ -117,15 +118,39 @@ export class SourceService {
       resolved.sourceId,
       resolved.locator,
       resolved.displayName,
-      checkoutPath,
+      tempCheckoutPath,
       resolved.requestedPath,
       options,
     );
 
     if (!snapshot.ok) {
-      await removePath(checkoutPath);
+      await removePath(tempCheckoutPath);
       return fail(snapshot.errors, snapshot.warnings);
     }
+
+    if (await pathExists(checkoutPath)) {
+      await removePath(tempCheckoutPath);
+      return fail({
+        code: "SOURCE_CHECKOUT_PATH_EXISTS",
+        message: `Unable to register source '${resolved.locator}' because checkout path already exists at ${checkoutPath}.`,
+      });
+    }
+
+    try {
+      await fs.rename(tempCheckoutPath, checkoutPath);
+    } catch (error) {
+      await removePath(tempCheckoutPath).catch(() => {});
+      return fail({
+        code: "SOURCE_CHECKOUT_MOVE_FAILED",
+        message: `Unable to finalize source '${resolved.locator}' at ${checkoutPath}: ${String(error)}`,
+      });
+    }
+    snapshot.data.lock.checkoutPath = checkoutPath;
+    snapshot.data.leafs = snapshot.data.leafs.map((leaf) => ({
+      ...leaf,
+      absolutePath: path.join(checkoutPath, leaf.relativePath),
+      skillFilePath: path.join(checkoutPath, leaf.relativePath, "SKILL.md"),
+    }));
 
     manifest.sources.push(snapshot.data.manifest);
     manifest.bindings[resolved.sourceId] = { targets: {} };

@@ -386,6 +386,23 @@ description: |
     expect(result.errors[0]?.code).toBe("GIT_CLONE_FAILED");
   });
 
+  test("keeps an existing checkout directory when git fetch fails", async () => {
+    const app = new SkillFlowApp();
+    const sourceId = "existing-checkout";
+    const checkoutPath = app.store.getSourceCheckoutPath("git", sourceId);
+
+    await fs.mkdir(checkoutPath, { recursive: true });
+    await fs.writeFile(path.join(checkoutPath, "keep.txt"), "keep", "utf8");
+
+    const result = await app.addSource(path.join(sandbox.sandboxRoot, "missing-repo"), {
+      sourceIdOverride: sourceId,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]?.code).toBe("GIT_CLONE_FAILED");
+    expect(await fs.readFile(path.join(checkoutPath, "keep.txt"), "utf8")).toBe("keep");
+  });
+
   test("fails find when no local results exist and all remote search backends are unavailable", async () => {
     vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([]);
     vi.spyOn(clawhubUtils, "searchClawHubSkills").mockRejectedValueOnce(new Error("offline"));
