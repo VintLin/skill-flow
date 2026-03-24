@@ -1697,7 +1697,7 @@ export function ConfigApp({
 
   return (
     <Box flexDirection="column" height={terminalRows}>
-      <ConfigHeader title="Skill Flow Config" />
+      <ConfigHeader />
       <Box>
         <Text color={topBar.titleColor} wrap="truncate-end">
           {topBar.title}
@@ -1837,13 +1837,13 @@ export function ConfigBootstrapApp({ app }: { app: SkillFlowApp }) {
   );
 }
 
-function ConfigHeader({ title }: { title: string }) {
+function ConfigHeader({ title }: { title?: string }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text backgroundColor="cyan" color="black">
         {ADD_BADGE_TEXT}
       </Text>
-      <Text bold>{title}</Text>
+      {title ? <Text bold>{title}</Text> : null}
     </Box>
   );
 }
