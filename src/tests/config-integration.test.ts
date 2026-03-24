@@ -103,6 +103,53 @@ describe.sequential("config integration", () => {
     );
   });
 
+  test("config boot skips unmanaged deployment paths while pruning missing checkouts", async () => {
+    const staleRepo = await createRepo(sandbox.sandboxRoot, {
+      "eval/SKILL.md": skillDoc("eval", "Eval flow."),
+    });
+    const app = new SkillFlowApp();
+
+    const stale = await app.addSource(staleRepo, { project: false });
+    expect(stale.ok).toBe(true);
+    if (!stale.ok) {
+      return;
+    }
+
+    await app.applyDraft(stale.data.manifest.id, {
+      enabledTargets: ["openclaw"],
+      selectedLeafIds: [`${stale.data.manifest.id}:eval`],
+    });
+
+    const externalPath = path.join(sandbox.sandboxRoot, "prune-external");
+    await writeRepoFiles(externalPath, {
+      "SKILL.md": skillDoc("external", "Keep external content."),
+    });
+
+    const lock = await app.store.readLock();
+    const deployment = lock.deployments.find(
+      (item) => item.sourceId === stale.data.manifest.id && item.target === "openclaw",
+    );
+    expect(deployment).toBeTruthy();
+    if (!deployment) {
+      return;
+    }
+    deployment.targetPath = externalPath;
+    await app.store.writeLock(lock);
+
+    await fs.rm(stale.data.lock.checkoutPath, { recursive: true, force: true });
+
+    const boot = await app.configCoordinator.bootstrapWorkspaceState();
+
+    expect(boot.ok).toBe(true);
+    if (!boot.ok) {
+      return;
+    }
+    expect(await pathExists(externalPath)).toBe(true);
+
+    const manifest = await app.store.readManifest();
+    expect(manifest.sources).toHaveLength(0);
+  });
+
   test("previewDraft is read-only and does not reconcile inventory on its own", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),

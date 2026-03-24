@@ -53,6 +53,54 @@ describe.sequential("skill-flow", () => {
     expect(await pathExists(deployment.targetPath)).toBe(false);
   });
 
+  test("uninstall refuses to delete deployment paths outside the managed target root", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["openclaw"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+
+    const externalPath = path.join(sandbox.sandboxRoot, "external-target");
+    await writeRepoFiles(externalPath, {
+      "SKILL.md": skillDoc("external", "Keep external content."),
+    });
+
+    const lock = await app.store.readLock();
+    const deployment = lock.deployments.find(
+      (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
+    );
+    expect(deployment).toBeTruthy();
+    if (!deployment) {
+      return;
+    }
+    deployment.targetPath = externalPath;
+    await app.store.writeLock(lock);
+
+    const removed = await app.uninstall([sourceId]);
+    expect(removed.ok).toBe(false);
+    if (removed.ok) {
+      return;
+    }
+
+    expect(removed.errors[0]?.code).toBe("GROUP_DELETE_INCOMPLETE");
+    expect(await pathExists(externalPath)).toBe(true);
+
+    const manifest = await app.store.readManifest();
+    expect(manifest.sources.some((source) => source.id === sourceId)).toBe(true);
+  });
+
   test("renames preview target when foreign content already exists at target path", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),

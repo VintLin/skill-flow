@@ -12,7 +12,15 @@ import type {
   SourceManifestRecord,
 } from "../domain/types.js";
 import { StateStore } from "../state/store.js";
-import { copyDirectory, ensureDir, hashDirectory, pathExists, readJsonFile, removePath } from "../utils/fs.js";
+import {
+  copyDirectory,
+  ensureDir,
+  hashDirectory,
+  isPathInside,
+  pathExists,
+  readJsonFile,
+  removePath,
+} from "../utils/fs.js";
 import {
   installClawHubSkill,
 } from "../utils/clawhub.js";
@@ -284,6 +292,13 @@ export class SourceService {
       lockFile.deployments = lockFile.deployments.filter(
         (deployment) => deployment.sourceId !== sourceId,
       );
+      const checkoutRoot = this.store.getSourceRoot(currentSource.kind);
+      if (!isPathInside(checkoutRoot, currentLock.checkoutPath)) {
+        return fail({
+          code: "SOURCE_CHECKOUT_PATH_INVALID",
+          message: `Refusing to delete checkout outside managed root: ${currentLock.checkoutPath}`,
+        });
+      }
       if (currentLock && (await pathExists(currentLock.checkoutPath))) {
         await removePath(currentLock.checkoutPath);
       }
