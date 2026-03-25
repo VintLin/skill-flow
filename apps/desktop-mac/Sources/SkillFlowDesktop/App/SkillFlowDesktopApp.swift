@@ -3,15 +3,12 @@ import AppKit
 
 @main
 struct SkillFlowDesktopApp: App {
-    @State private var showMenuBar = true
-    @State private var showMainWindow = false
-    @State private var statusLabel = "Unknown"
+    @Environment(\.openWindow) private var openWindow
 
-    private let bridgeClient = BridgeClient()
     @State private var viewModel = MainViewModel(bridgeClient: BridgeClient())
 
     var body: some Scene {
-        WindowGroup("Skill Flow") {
+        Window("Skill Flow", id: "main-window") {
             MainView(viewModel: viewModel)
                 .frame(minWidth: 980, minHeight: 640)
         }
@@ -21,22 +18,20 @@ struct SkillFlowDesktopApp: App {
         }
 
         MenuBarExtra("Skill Flow", systemImage: menuIcon) {
-            Text("Status: \(statusLabel)")
+            Text("Status: \(viewModel.healthLabel)")
             Divider()
             Button("Open Skill Flow") {
-                showMainWindow = true
+                openWindow(id: "main-window")
                 NSApp.activate(ignoringOtherApps: true)
             }
             Button("Run Doctor") {
                 Task {
                     await viewModel.runDoctor()
-                    statusLabel = viewModel.healthLabel
                 }
             }
             Button("Update All") {
                 Task {
                     await viewModel.updateAll()
-                    statusLabel = viewModel.healthLabel
                 }
             }
             Divider()

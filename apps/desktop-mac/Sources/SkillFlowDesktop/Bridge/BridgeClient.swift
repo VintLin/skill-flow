@@ -124,6 +124,10 @@ final class BridgeClient {
         }
         #endif
 
+        if let resourcePath = Bundle.main.path(forResource: "cli", ofType: "js", inDirectory: "helper/dist") {
+            return URL(fileURLWithPath: resourcePath)
+        }
+
         if let resourcePath = Bundle.main.path(forResource: "skill-flow-helper", ofType: nil) {
             return URL(fileURLWithPath: resourcePath)
         }
