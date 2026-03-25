@@ -72,6 +72,21 @@ final class BridgeClient {
         }
     }
 
+    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(
+                command: .apply,
+                payload: [
+                    "sourceId": AnyCodable(sourceId),
+                    "draft": AnyCodable([
+                        "selectedLeafIds": selectedLeafIds,
+                        "enabledTargets": enabledTargets,
+                    ]),
+                ]
+            )
+        }
+    }
+
     private func send(command: BridgeCommand, payload: [String: AnyCodable]? = nil) async throws -> BridgeResponse {
         let helperURL = try resolveHelperURL()
         let request = BridgeRequest(command: command, payload: payload)

@@ -18,26 +18,9 @@ struct SkillFlowDesktopApp: App {
         }
 
         MenuBarExtra("Skill Flow", systemImage: menuIcon) {
-            Text("Status: \(viewModel.healthLabel)")
-            Divider()
-            Button("Open Skill Flow") {
+            MenuBarQuickConfigView(viewModel: viewModel) {
                 openWindow(id: "main-window")
                 NSApp.activate(ignoringOtherApps: true)
-            }
-            Button("Run Doctor") {
-                Task {
-                    await viewModel.runDoctor()
-                }
-            }
-            Button("Update All") {
-                Task {
-                    await viewModel.updateAll()
-                }
-            }
-            Divider()
-            SettingsLink()
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
             }
         }
         .menuBarExtraStyle(.window)
