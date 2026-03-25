@@ -14,7 +14,7 @@ import {
   formatSkillCandidates,
   formatWorkflowList,
 } from "@skill-flow/core/utils/format.js";
-import { resolveAddSourceLocator } from "@skill-flow/core/utils/cli.js";
+import { filterAddWarnings, resolveAddSourceLocator } from "@skill-flow/core/utils/cli.js";
 import { buildFindCommand } from "@skill-flow/core/utils/find-command.js";
 import {
   buildBridgeResponse,
@@ -349,7 +349,7 @@ function handleAddFlowResult(
     if (!options?.rendered) {
       console.log(result.message);
     }
-    printWarnings(result.warnings);
+    printWarnings(filterAddWarnings(result.warnings));
     return;
   }
 
@@ -359,7 +359,7 @@ function handleAddFlowResult(
   }
 
   printErrors([{ message: result.message }]);
-  printWarnings(result.warnings ?? []);
+  printWarnings(filterAddWarnings(result.warnings ?? []));
   process.exitCode = 1;
 }
 

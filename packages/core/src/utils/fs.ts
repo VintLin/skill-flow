@@ -80,6 +80,11 @@ export async function removePath(targetPath: string): Promise<void> {
   await fs.rm(targetPath, { recursive: true, force: true });
 }
 
+export function isPathInside(rootPath: string, targetPath: string): boolean {
+  const relative = path.relative(path.resolve(rootPath), path.resolve(targetPath));
+  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 export async function copyDirectory(sourcePath: string, targetPath: string): Promise<void> {
   await removePath(targetPath);
   await fs.cp(sourcePath, targetPath, { recursive: true, dereference: false });

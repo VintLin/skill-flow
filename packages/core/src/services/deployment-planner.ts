@@ -121,6 +121,7 @@ export class DeploymentPlanner {
           strategy: existing.strategy,
           sourcePath: "",
           targetPath: existing.targetPath,
+          ...(existing.targetRootPath ? { targetRootPath: existing.targetRootPath } : {}),
           contentHash: existing.contentHash,
           reason: "Selected leaf no longer exists in source inventory.",
         });
@@ -259,8 +260,19 @@ export class DeploymentPlanner {
         strategy: adapter.strategy,
         sourcePath: leaf.absolutePath,
         targetPath: chosenCandidate.targetPath,
+        ...((chosenCandidate.targetPath === preferredTargetPath ||
+          chosenCandidate.targetPath.startsWith(`${rootPath}${path.sep}`))
+          ? { targetRootPath: rootPath }
+          : (existing?.targetRootPath
+              ? { targetRootPath: existing.targetRootPath }
+              : {})),
         ...(existing && existing.targetPath !== chosenCandidate.targetPath
-          ? { previousTargetPath: existing.targetPath }
+          ? {
+              previousTargetPath: existing.targetPath,
+              ...(existing.targetRootPath
+                ? { previousTargetRootPath: existing.targetRootPath }
+                : {}),
+            }
           : {}),
         ...(chosenCandidate.relocateExternalToTargetPath
           ? { relocateExternalToTargetPath: chosenCandidate.relocateExternalToTargetPath }
@@ -282,6 +294,7 @@ export class DeploymentPlanner {
         strategy: deployment.strategy,
         sourcePath: "",
         targetPath: deployment.targetPath,
+        ...(deployment.targetRootPath ? { targetRootPath: deployment.targetRootPath } : {}),
         contentHash: deployment.contentHash,
       });
     }
