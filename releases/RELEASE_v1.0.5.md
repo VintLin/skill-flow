@@ -5,42 +5,78 @@ Version: `v1.0.5`
 
 ## Summary
 
-`v1.0.5` is primarily a version stabilization release. The actual feature development for this cycle was completed in earlier commits.
+`v1.0.5` is a major feature release introducing repair commands, enhanced diagnostics, and substantial architecture improvements.
 
-This release adds repair commands, enhanced doctor diagnostics, duplicate leaf detection, ConfigCoordinator bootstrap flow, and CLI command improvements.
+This release adds 3,600+ lines of new code across 17 files, introducing ConfigCoordinator bootstrap flow, duplicate leaf detection, repair commands, and major TUI enhancements.
 
 ## Highlights
 
-### 1. CLI Commands Enhancement
+### 1. ConfigCoordinator Bootstrap Flow (Major Architecture Change)
 
-Added new CLI commands and improved existing ones for better skill flow management.
+Introduced `ConfigCoordinator` to handle workspace bootstrap with proper error recovery:
 
-### 2. Source Lifecycle Improvements
+- `ConfigBootFailure` and `ConfigBootStatus` types for bootstrap phase tracking
+- `runSerializedMutation` to prevent concurrent state modifications
+- `pruneMissingCheckoutsImpl` to handle missing checkout directories
+- Refactored `StateStore` to use `readState`/`writeState` with mutation locking
 
-Enhanced source lifecycle management with better state handling and recovery mechanisms.
+### 2. Repair Commands
 
-### 3. Repair Commands
+New repair CLI commands for troubleshooting:
 
-New repair commands and enhanced doctor diagnostics for identifying and fixing common issues in skill configurations.
+- `repair-source` - Repair source configuration issues
+- `repair-state` - Fix state corruption
+- `repair-targets` - Recover target configuration
+
+### 3. Enhanced Doctor Diagnostics
+
+Doctor service now reports:
+
+- Invalidated selected leafs as errors
+- Unmanaged external target skills as warnings
+- Bootstrap failures merged into audit report
 
 ### 4. Duplicate Leaf Detection
 
-Added detection and handling of duplicate leaf nodes in skill configurations.
+Added detection and handling of duplicate leaf nodes:
 
-### 5. ConfigCoordinator Bootstrap Flow
+- `DuplicateLeafRecord` type
+- `DUPLICATE_LEAF` warning code
 
-Implemented ConfigCoordinator bootstrap flow for more reliable startup and state initialization.
+### 5. Source Lifecycle Improvements
 
-### 6. TUI Component Improvements
+Major improvements to source update tracking:
 
-Enhanced terminal UI components for better user experience.
+- Source update diff tracking with `moved`, `added`, `removed`, `changed`, `invalidated` kinds
+- Local source refresh uses atomic swap with backup
+- `SourceService` builds detailed diffs when updating sources
+
+### 6. TUI Major Enhancement
+
+Config app received substantial improvements:
+
+- 1580 lines of changes
+- Added search functionality
+- Source cards and target panels
+- Better layout and user experience
+
+### 7. New Test Coverage
+
+Added comprehensive test coverage:
+
+- `source-lifecycle.test.ts` - 467 lines
+- `config-integration.test.ts` - 317 lines
+- `config-ui-utils.test.ts` - 364 lines
+- `target-definitions.test.ts`
+- `test-helpers.ts` - 144 lines
 
 ## User-visible Behavior Changes
 
-- New repair commands available for troubleshooting
-- Better diagnostics from doctor service
-- Improved startup reliability
-- Enhanced TUI responsiveness
+- New repair commands available: `repair-source`, `repair-state`, `repair-targets`
+- Better diagnostics from `doctor` service
+- Improved startup reliability with ConfigCoordinator
+- Enhanced TUI with search, better layout
+- More accurate source updates with diff tracking
 
 ## Verification
 
