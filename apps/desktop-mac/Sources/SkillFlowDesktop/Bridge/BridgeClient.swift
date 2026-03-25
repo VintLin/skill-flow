@@ -28,6 +28,23 @@ enum BridgeClientError: Error, LocalizedError {
 
 @MainActor
 final class BridgeClient {
+    private final class ThreadSafeBuffer: @unchecked Sendable {
+        private var data = Data()
+        private let lock = NSLock()
+
+        func append(_ chunk: Data) {
+            lock.lock()
+            data.append(chunk)
+            lock.unlock()
+        }
+
+        func snapshot() -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+            return data
+        }
+    }
+
     private let mutationCoordinator = MutationCoordinator()
 
     func bootstrap() async throws -> BridgeResponse {
@@ -109,14 +126,41 @@ final class BridgeClient {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        let outputBuffer = ThreadSafeBuffer()
+        let errorBuffer = ThreadSafeBuffer()
+
+        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            outputBuffer.append(chunk)
+        }
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            errorBuffer.append(chunk)
+        }
+
         try process.run()
         inputPipe.fileHandleForWriting.write(requestData)
         inputPipe.fileHandleForWriting.closeFile()
 
         process.waitUntilExit()
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+        errorPipe.fileHandleForReading.readabilityHandler = nil
+
+        // Drain any remaining buffered bytes after process exit.
+        let outputTail = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        if !outputTail.isEmpty {
+            outputBuffer.append(outputTail)
+        }
+        let errorTail = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        if !errorTail.isEmpty {
+            errorBuffer.append(errorTail)
+        }
+
+        let outputData = outputBuffer.snapshot()
+        let errorData = errorBuffer.snapshot()
 
         guard !outputData.isEmpty else {
             if !errorData.isEmpty {
