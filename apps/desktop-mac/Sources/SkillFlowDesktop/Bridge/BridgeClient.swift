@@ -91,10 +91,16 @@ final class BridgeClient {
         let helperURL = try resolveHelperURL()
         let request = BridgeRequest(command: command, payload: payload)
         let requestData = try JSONEncoder().encode(request)
+        let nodeExecutable = resolveNodeExecutable()
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["node", helperURL.path, "bridge", "--json"]
+        if nodeExecutable == "node" {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["node", helperURL.path, "bridge", "--json"]
+        } else {
+            process.executableURL = URL(fileURLWithPath: nodeExecutable)
+            process.arguments = [helperURL.path, "bridge", "--json"]
+        }
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()
@@ -113,6 +119,13 @@ final class BridgeClient {
         let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
 
         guard !outputData.isEmpty else {
+            if !errorData.isEmpty {
+                let stderrMessage = String(decoding: errorData, as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !stderrMessage.isEmpty {
+                    throw BridgeClientError.commandFailed(stderrMessage)
+                }
+            }
             throw BridgeClientError.emptyResponse
         }
 
@@ -155,5 +168,26 @@ final class BridgeClient {
         }
 
         throw BridgeClientError.helperMissing
+    }
+
+    private func resolveNodeExecutable() -> String {
+        #if DEBUG
+        if let override = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_NODE_OVERRIDE"],
+           !override.isEmpty {
+            return override
+        }
+        #endif
+
+        let commonNodePaths = [
+            "/opt/homebrew/bin/node",
+            "/usr/local/bin/node",
+            "/usr/bin/node",
+        ]
+
+        for path in commonNodePaths where FileManager.default.fileExists(atPath: path) {
+            return path
+        }
+
+        return "node"
     }
 }
