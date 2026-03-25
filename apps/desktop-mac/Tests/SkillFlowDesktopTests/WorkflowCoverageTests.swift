@@ -149,19 +149,19 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(
             allTargets,
             [
-                "amp",
                 "claude-code",
-                "cline",
                 "codex",
                 "cursor",
-                "gemini-cli",
                 "github-copilot",
-                "kiro",
-                "openclaw",
+                "gemini-cli",
                 "opencode",
+                "openclaw",
                 "pi",
+                "windsurf",
                 "roo-code",
-                "windsurf"
+                "cline",
+                "amp",
+                "kiro"
             ]
         )
     }

@@ -1,96 +1,46 @@
-# PLAN v1.2.0 Execution Checklist
+# PLAN - MAC GUI vCurrent
 
-> Source of truth: `docs/plan/PLAN_v1.2.0.a.md` / `b.md` / `c.md`
-> Principle: Reuse existing TUI logic and command chain (`group` / `selectedLeafIds` / `enabledTargets`, `apply` / `doctor` / `bootstrap`).
+## 目标
+- 按 `docs/plan/PLAN_MAC_GUI.md` 完成当前版本 GUI 开发。
+- 主窗口与 `docs/gui/index.html` 视觉与结构对齐（无 Footer 品牌区）。
+- 菜单栏与 `docs/gui/enum.html` 视觉与交互对齐。
+- TUI 关键语义在 GUI 层完整可用：tri-state、draft/apply、clawhub 批量 update、失败恢复。
 
-## 0. Plan Setup
+## 任务分配
 
-- [x] Create root execution plan file (`PLAN.md`)
-- [x] Confirm implementation boundary against v1.2.0 a/b/c docs before coding each phase
-- [x] Keep menu bar scope minimal: `Group switch + Agent toggles + Apply Now + Open Doctor + Open Main Window`
+- [x] T1 `MainViewModel` 语义补齐（Owner: subagent-A）
+  - 新增 `SelectionState.swift`
+  - 新增 `ProjectionRules.swift`
+  - `MainViewModel` 增加 skill/target tri-state API
+  - draft 初始化 fallback、target 顺序归一化、state map prune
+  - save failed -> edit reset -> retry 语义
+  - clawhub 组批量 update 语义
 
-## 1. Phase 1: Shell and Frame (Main Window + Menu Bar Skeleton)
+- [x] T2 主窗口 UI 对齐 `index.html`（Owner: subagent-B）
+  - Header / Toolbar / Config Grid / Stats / Detail Overlay
+  - 断点布局：>1120, <=1120, <=860, <=620
+  - Detail active-line 与 warning/projected name 展示
+  - 不渲染 Footer 品牌区
 
-- [x] Build main window 3-pane shell: `Sidebar / Content / Inspector`
-- [x] Implement responsive behavior (`>=1200`, `900-1199`, `<900`)
-- [x] Wire top toolbar core actions (no extra scope)
-- [x] Build menu bar popup shell (window-style)
-- [x] Restrict menu bar controls to locked scope only (no search/recent/settings/quit)
+- [x] T3 菜单栏 UI 对齐 `enum.html`（Owner: subagent-C）
+  - Popover topbar + list + actionbar
+  - Import 展开与输入 focus
+  - Details 联动开关及 close 清理
+  - 与主窗口共享状态同步
 
-## 2. Phase 2: Core Pages
+- [x] T4 测试补齐（Owner: subagent-A）
+  - `MainViewModelSelectionTests.swift`
+  - `ProjectionRulesTests.swift`
+  - `WorkflowCoverageTests.swift` 补充关键集成路径
 
-- [x] `Overview`: aggregated health + attention-first layout + latest apply result
-- [x] `Sources`: table + filters + inspector + add source sheet
-- [x] `Deployments`: plan summary + classification + blocked reasons + apply entry
-- [x] `Doctor`: grouped issues + cause/impact/fix actions + post-fix feedback
+- [x] T5 集成验收（Owner: main）
+  - `swift build`
+  - `swift test`
+  - 校对交互与样式偏差并做最后修正
 
-## 3. Phase 3: Menu Bar Instant Config (Locked Decisions)
-
-- [x] Group selector (existing groups only; no create/delete)
-- [x] Agent(target) toggles draft behavior (no auto-apply)
-- [x] Unsaved draft guard on group switch: `Apply / Discard / Cancel`
-- [x] `Apply Now` affects current group only
-- [x] Target visibility: default detected targets + `Show All`
-- [x] Failure feedback template: failed count + first cause + `Open Doctor`
-- [x] `Open Main Window` handoff path
-
-## 4. Phase 4: State, Data Flow, and Command Reuse
-
-- [x] Enforce single source of truth between menu bar and main window
-- [x] Reuse same write pipeline for menu bar/main window (no double-write)
-- [x] Ensure mapping consistency: `group / selectedLeafIds / enabledTargets`
-- [x] Reuse existing `apply / doctor / bootstrap` command chain
-
-## 5. Phase 5: Interaction States and UX Consistency
-
-- [x] Implement 5 states per core page: `loading / empty / error / success / partial`
-- [x] Apply unified error template on all core pages
-- [x] Keep first-screen Top-3 information budget on core pages
-- [x] Keep menu bar info density budget (items/buttons/alerts)
-
-## 6. Phase 6: Accessibility and Keyboard
-
-- [x] Keyboard path for main workflows
-- [x] Focus order for main window and menu bar popup
-- [x] 44px minimum target size for actionable controls
-- [x] VoiceOver readable labels for status/actions
-- [x] Status dual encoding (text + icon/color)
-
-## 7. Test Plan (Must Pass)
-
-### 7.1 Unit
-
-- [x] Draft switch branching: `Apply / Discard / Cancel`
-- [x] Agent draft toggles do not trigger deploy automatically
-- [x] `Apply Now` scope isolation (current group only)
-- [x] Mapping consistency tests for `group/selectedLeafIds/enabledTargets`
-- [x] Detected targets default + `Show All` expansion behavior
-- [x] Failure template structure assertion
-
-### 7.2 Integration
-
-- [x] Menu bar -> main window state sync
-- [x] Main window -> menu bar state sync
-- [x] Same write chain for both surfaces (no branch)
-- [x] Negative test: menu bar has no complex edit entry
-
-### 7.3 E2E
-
-- [x] First launch bootstrap flow with failure branch
-- [x] Add source -> preview -> apply end-to-end
-- [x] Drifted/blocked -> doctor fix -> re-preview -> apply loop
-- [x] Menu bar quick flow: group + agent + apply + doctor jump
-
-## 8. Release Gates (DoD)
-
-- [x] A/B/C/D/F/G flows demoable and accepted
-- [x] Locked 8 decisions fully covered by tests
-- [x] Menu bar and main window responsibilities remain separate
-- [x] No out-of-scope features introduced in menu bar
-- [x] Docs updated only for final external behavior changes
-
-## 9. Execution Notes
-
-- [x] Implement in small atomic steps; finish one logical unit then verify
-- [x] No compatibility shim for internal evolution
-- [x] No unrelated refactor or incidental feature expansion
+## 回填记录
+- T1 已完成：`MainViewModel` 已补齐 tri-state API、fallback draft 初始化、TARGET_ORDER 归一化、save failed 恢复、group update（含 clawhub 组 sourceIds）与状态 prune；新增 `SelectionState.swift`、`ProjectionRules.swift`。
+- T2 已完成：`apps/desktop-mac/Sources/SkillFlowDesktop/Features/Main/MainView.swift` 现已接入真实 `viewModel` 数据，完成 header / toolbar / config grid / stats / detail overlay 结构与响应式断点。
+- T3 已完成：`MenuBarQuickConfigView.swift` 已对齐 topbar/list/actionbar，补齐 import 展开+focus、details active 联动、close/onDisappear 清理状态。
+- T4 已完成：新增 `MainViewModelSelectionTests.swift`、`ProjectionRulesTests.swift`，并补充 `WorkflowCoverageTests.swift` 断言。
+- T5 已完成：主线程复验 `cd apps/desktop-mac && swift build`、`cd apps/desktop-mac && swift test` 全部通过（6 tests, 0 failures）。

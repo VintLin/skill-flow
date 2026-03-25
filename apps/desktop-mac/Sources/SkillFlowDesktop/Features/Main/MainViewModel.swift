@@ -38,6 +38,18 @@ final class MainViewModel {
         case success
     }
 
+    enum SavePhase: String, Equatable {
+        case idle
+        case saving
+        case saved
+        case failed
+    }
+
+    struct SaveState: Equatable {
+        var phase: SavePhase
+        var message: String?
+    }
+
     struct TargetOption: Identifiable {
         let id: String
         let label: String
@@ -81,6 +93,14 @@ final class MainViewModel {
         let target: String
     }
 
+    private struct LeafSummary {
+        let id: String
+        let linkName: String
+        let name: String
+        let description: String
+        let metadataWarnings: [String]
+    }
+
     private struct DraftState: Equatable {
         var selectedLeafIds: [String]
         var enabledTargets: [String]
@@ -89,9 +109,12 @@ final class MainViewModel {
     private struct WorkflowSummary {
         let sourceId: String
         let sourceKind: String
-        let leafIds: [String]
+        let sourceDisplayName: String
+        let sourceLocator: String
+        let leafs: [LeafSummary]
         let selectedLeafIds: [String]
         let enabledTargets: [String]
+        let targetLeafIdsByTarget: [String: [String]]
         let health: String
         let warningCount: Int
         let errorCount: Int
@@ -99,6 +122,22 @@ final class MainViewModel {
     }
 
     private let bridgeClient: BridgeClient
+
+    private static let targetOrder: [String] = [
+        "claude-code",
+        "codex",
+        "cursor",
+        "github-copilot",
+        "gemini-cli",
+        "opencode",
+        "openclaw",
+        "pi",
+        "windsurf",
+        "roo-code",
+        "cline",
+        "amp",
+        "kiro",
+    ]
 
     private static let targetCatalog: [String: String] = [
         "claude-code": "Claude Code",
@@ -142,6 +181,7 @@ final class MainViewModel {
     var showGroupSwitchDialog: Bool = false
     var isApplyingDraft: Bool = false
     var isRefreshing: Bool = false
+    var saveStateBySourceId: [String: SaveState] = [:]
 
     var lastApplyFailureCount: Int = 0
     var lastApplyFirstReason: String = ""
@@ -165,6 +205,18 @@ final class MainViewModel {
         selectedSourceId
     }
 
+    var selectedGroupSourceIds: [String] {
+        guard let selectedSourceId, let summary = allSummaries.first(where: { $0.sourceId == selectedSourceId }) else {
+            return []
+        }
+        if summary.sourceKind == "clawhub" {
+            return allSummaries
+                .filter { $0.sourceKind == "clawhub" }
+                .map(\.sourceId)
+        }
+        return [selectedSourceId]
+    }
+
     var hasPendingDraftForCurrentGroup: Bool {
         guard let groupId = selectedGroupId else { return false }
         guard let baseline = baselineDrafts[groupId], let working = workingDrafts[groupId] else {
@@ -181,12 +233,7 @@ final class MainViewModel {
     }
 
     var visibleTargets: [TargetOption] {
-        let targetIds: [String]
-        if showAllTargets {
-            targetIds = Self.targetCatalog.keys.sorted()
-        } else {
-            targetIds = Array(detectedTargets.sorted().prefix(10))
-        }
+        let targetIds = visibleTargetIds()
 
         return targetIds.map { target in
             TargetOption(id: target, label: Self.targetCatalog[target] ?? target)
@@ -203,7 +250,7 @@ final class MainViewModel {
             SourceRow(
                 id: summary.sourceId,
                 kind: summary.sourceKind,
-                skillCount: summary.leafIds.count,
+                skillCount: summary.leafs.count,
                 status: summary.health,
                 lastUpdate: summary.updatedAt,
                 warningCount: summary.warningCount,
@@ -339,6 +386,111 @@ final class MainViewModel {
             guard let issues = groups[severity], !issues.isEmpty else { return nil }
             return (severity, issues)
         }
+    }
+
+    var currentSaveState: SaveState {
+        guard let groupId = selectedGroupId else {
+            return SaveState(phase: .idle, message: nil)
+        }
+        return saveStateBySourceId[groupId] ?? SaveState(phase: .idle, message: nil)
+    }
+
+    func saveState(for sourceId: String) -> SaveState {
+        saveStateBySourceId[sourceId] ?? SaveState(phase: .idle, message: nil)
+    }
+
+    func skillSelectionState(sourceId: String? = nil) -> SelectionState {
+        guard let summary = summary(for: sourceId), let draft = draft(for: sourceId) else {
+            return .empty
+        }
+        let treeState = TreeSelectionState(
+            allLeafIds: summary.leafs.map(\.id),
+            selectedLeafIds: draft.selectedLeafIds
+        )
+        return getParentSelectionState(treeState)
+    }
+
+    func targetSelectionState(sourceId: String? = nil) -> SelectionState {
+        guard let draft = draft(for: sourceId) else {
+            return .empty
+        }
+        let targetIds = visibleTargetIds()
+        guard !targetIds.isEmpty else {
+            return .empty
+        }
+        let enabledTargets = Set(draft.enabledTargets)
+        let selectedTargets = targetIds.filter { enabledTargets.contains($0) }
+        return selectionState(allIds: targetIds, selectedIds: selectedTargets)
+    }
+
+    func isSkillEnabled(_ leafId: String, sourceId: String? = nil) -> Bool {
+        draft(for: sourceId)?.selectedLeafIds.contains(leafId) == true
+    }
+
+    func toggleAllSkills(sourceId: String? = nil) {
+        guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = workingDrafts[sourceId] else {
+            return
+        }
+
+        let treeState = TreeSelectionState(
+            allLeafIds: summary.leafs.map(\.id),
+            selectedLeafIds: draft.selectedLeafIds
+        )
+        let nextState = toggleParent(treeState)
+        draft.selectedLeafIds = nextState.selectedLeafIds
+        workingDrafts[sourceId] = normalizeDraft(draft)
+        markDraftEdited(sourceId: sourceId)
+    }
+
+    func setSkillEnabled(_ leafId: String, enabled: Bool, sourceId: String? = nil) {
+        guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = workingDrafts[sourceId] else {
+            return
+        }
+        guard summary.leafs.contains(where: { $0.id == leafId }) else {
+            return
+        }
+
+        let selectedLeafIds = Set(draft.selectedLeafIds)
+        guard selectedLeafIds.contains(leafId) != enabled else {
+            return
+        }
+
+        let nextSelectedLeafIds: [String]
+        if enabled {
+            nextSelectedLeafIds = summary.leafs
+                .map(\.id)
+                .filter { selectedLeafIds.union([leafId]).contains($0) }
+        } else {
+            nextSelectedLeafIds = summary.leafs
+                .map(\.id)
+                .filter { selectedLeafIds.subtracting([leafId]).contains($0) }
+        }
+
+        draft.selectedLeafIds = nextSelectedLeafIds
+        workingDrafts[sourceId] = normalizeDraft(draft)
+        markDraftEdited(sourceId: sourceId)
+    }
+
+    func toggleAllTargets(sourceId: String? = nil) {
+        guard let sourceId = resolveSourceId(sourceId), var draft = workingDrafts[sourceId] else {
+            return
+        }
+
+        let targetIds = visibleTargetIds()
+        guard !targetIds.isEmpty else {
+            return
+        }
+        let visibleEnabledTargets = draft.enabledTargets.filter { targetIds.contains($0) }
+
+        let treeState = TreeSelectionState(
+            allLeafIds: targetIds,
+            selectedLeafIds: visibleEnabledTargets
+        )
+        let nextState = toggleParent(treeState)
+        let hiddenTargets = draft.enabledTargets.filter { !targetIds.contains($0) }
+        draft.enabledTargets = normalizedTargets(hiddenTargets + nextState.selectedLeafIds)
+        workingDrafts[sourceId] = normalizeDraft(draft)
+        markDraftEdited(sourceId: sourceId)
     }
 
     private var deploymentRows: [DeploymentRow] {
@@ -513,6 +665,10 @@ final class MainViewModel {
         }
     }
 
+    func updateCurrentGroup() async {
+        await updateAll()
+    }
+
     func addSource() async {
         let locator = newSourceLocator.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !locator.isEmpty else {
@@ -565,13 +721,19 @@ final class MainViewModel {
             return
         }
 
+        let currentlyEnabled = draft.enabledTargets.contains(target)
+        guard currentlyEnabled != enabled else {
+            return
+        }
+
         if enabled {
-            draft.enabledTargets = uniqueSorted(draft.enabledTargets + [target])
+            draft.enabledTargets = normalizedTargets(draft.enabledTargets + [target])
         } else {
             draft.enabledTargets.removeAll { $0 == target }
         }
 
-        workingDrafts[groupId] = draft
+        workingDrafts[groupId] = normalizeDraft(draft)
+        markDraftEdited(sourceId: groupId)
     }
 
     func applyCurrentGroupDraft() async -> Bool {
@@ -588,17 +750,22 @@ final class MainViewModel {
         isApplyingDraft = true
         defer { isApplyingDraft = false }
 
+        let normalizedDraft = normalizeDraft(draft)
+        saveStateBySourceId[groupId] = SaveState(phase: .saving, message: "saving changes...")
+
         do {
             _ = try await bridgeClient.apply(
                 sourceId: groupId,
-                selectedLeafIds: draft.selectedLeafIds,
-                enabledTargets: draft.enabledTargets
+                selectedLeafIds: normalizedDraft.selectedLeafIds,
+                enabledTargets: normalizedDraft.enabledTargets
             )
-            baselineDrafts[groupId] = draft
+            baselineDrafts[groupId] = normalizedDraft
+            workingDrafts[groupId] = normalizedDraft
+            saveStateBySourceId[groupId] = SaveState(phase: .saved, message: "saved")
             lastApplyFailureCount = 0
             lastApplyFirstReason = ""
-            lastApplySummary = "Applied \(draft.selectedLeafIds.count) skills to \(draft.enabledTargets.count) targets"
-            detailText = "Applied group '\(groupId)' to \(draft.enabledTargets.count) targets."
+            lastApplySummary = "Applied \(normalizedDraft.selectedLeafIds.count) skills to \(normalizedDraft.enabledTargets.count) targets"
+            detailText = "Applied group '\(groupId)' to \(normalizedDraft.enabledTargets.count) targets."
             await refreshList()
             await runDoctor()
             return true
@@ -610,6 +777,7 @@ final class MainViewModel {
 
             lastApplyFailureCount = max(reasons.count, 1)
             lastApplyFirstReason = reasons.first ?? error.localizedDescription
+            saveStateBySourceId[groupId] = SaveState(phase: .failed, message: lastApplyFirstReason)
             detailText = "Apply failed: \(lastApplyFirstReason)"
             return false
         }
@@ -619,14 +787,14 @@ final class MainViewModel {
         guard let data = value as? [String: Any] else { return }
 
         if let availableTargets = data["availableTargets"] as? [String] {
-            detectedTargets = Set(availableTargets)
+            detectedTargets.formUnion(availableTargets)
         }
 
         if let initialDrafts = data["initialDrafts"] as? [String: Any] {
             for (sourceId, rawDraft) in initialDrafts {
                 guard let draftObject = rawDraft as? [String: Any] else { continue }
                 let selectedLeafIds = uniqueSorted(draftObject["selectedLeafIds"] as? [String] ?? [])
-                let enabledTargets = uniqueSorted(draftObject["enabledTargets"] as? [String] ?? [])
+                let enabledTargets = normalizedTargets(draftObject["enabledTargets"] as? [String] ?? [])
                 let draft = DraftState(selectedLeafIds: selectedLeafIds, enabledTargets: enabledTargets)
                 baselineDrafts[sourceId] = draft
                 workingDrafts[sourceId] = draft
@@ -637,34 +805,26 @@ final class MainViewModel {
     private func applyList(_ response: BridgeResponse) {
         allSummaries = parseSummaries(response)
         sourceIds = allSummaries.map(\.sourceId)
+        pruneStateMaps(allowedSourceIds: Set(sourceIds))
 
         if selectedSourceId == nil || !sourceIds.contains(selectedSourceId ?? "") {
             selectedSourceId = sourceIds.first
         }
 
         for summary in allSummaries {
-            let draftFromSummary = DraftState(
-                selectedLeafIds: uniqueSorted(summary.selectedLeafIds),
-                enabledTargets: uniqueSorted(summary.enabledTargets)
-            )
-
             if baselineDrafts[summary.sourceId] == nil {
-                baselineDrafts[summary.sourceId] = draftFromSummary
+                baselineDrafts[summary.sourceId] = buildInitialDraftFromSummary(summary)
             }
             if workingDrafts[summary.sourceId] == nil {
-                workingDrafts[summary.sourceId] = baselineDrafts[summary.sourceId] ?? draftFromSummary
+                workingDrafts[summary.sourceId] = baselineDrafts[summary.sourceId] ?? buildInitialDraftFromSummary(summary)
             }
 
-            if detectedTargets.isEmpty {
-                for target in summary.enabledTargets {
-                    detectedTargets.insert(target)
-                }
-            }
+            detectedTargets.formUnion(summary.enabledTargets)
 
-            if workingDrafts[summary.sourceId]?.selectedLeafIds.isEmpty == true {
-                let fallbackLeafs = uniqueSorted(summary.leafIds)
-                workingDrafts[summary.sourceId]?.selectedLeafIds = fallbackLeafs
-                baselineDrafts[summary.sourceId]?.selectedLeafIds = fallbackLeafs
+            if let baseline = baselineDrafts[summary.sourceId], let working = workingDrafts[summary.sourceId], baseline == working, baseline.selectedLeafIds.isEmpty {
+                let fallbackDraft = buildInitialDraftFromSummary(summary)
+                baselineDrafts[summary.sourceId] = fallbackDraft
+                workingDrafts[summary.sourceId] = fallbackDraft
             }
         }
 
@@ -673,7 +833,7 @@ final class MainViewModel {
                 "sourceId": summary.sourceId,
                 "selectedLeafIds": summary.selectedLeafIds,
                 "enabledTargets": summary.enabledTargets,
-                "leafCount": summary.leafIds.count,
+                "leafCount": summary.leafs.count,
                 "health": summary.health,
             ]) ?? detailText
         }
@@ -696,21 +856,35 @@ final class MainViewModel {
             }
 
             let kind = source["kind"] as? String ?? "unknown"
+            let sourceDisplayName = source["displayName"] as? String ?? sourceId
+            let sourceLocator = source["locator"] as? String ?? ""
 
             let lock = summary["lock"] as? [String: Any]
             let updatedAt = lock?["updatedAt"] as? String ?? "-"
 
-            let leafIds: [String] = (summary["leafs"] as? [[String: Any]] ?? []).compactMap { leaf in
-                leaf["id"] as? String
+            let leafs: [LeafSummary] = (summary["leafs"] as? [[String: Any]] ?? []).compactMap { leaf in
+                guard let leafId = leaf["id"] as? String else {
+                    return nil
+                }
+                return LeafSummary(
+                    id: leafId,
+                    linkName: leaf["linkName"] as? String ?? leafId,
+                    name: leaf["name"] as? String ?? leafId,
+                    description: leaf["description"] as? String ?? "",
+                    metadataWarnings: leaf["metadataWarnings"] as? [String] ?? []
+                )
             }
 
             let bindings = summary["bindings"] as? [String: Any] ?? [:]
-            let selectedLeafIds = uniqueSorted(bindings["selectedLeafIds"] as? [String] ?? leafIds)
+            let selectedLeafIds = uniqueSorted(bindings["selectedLeafIds"] as? [String] ?? [])
             let targets = bindings["targets"] as? [String: Any] ?? [:]
 
             var enabledTargets: [String] = []
+            var targetLeafIdsByTarget: [String: [String]] = [:]
             for (targetId, rawBinding) in targets {
                 guard let binding = rawBinding as? [String: Any] else { continue }
+                let leafIds = uniqueSorted(binding["leafIds"] as? [String] ?? [])
+                targetLeafIdsByTarget[targetId] = leafIds
                 if (binding["enabled"] as? Bool) == true {
                     enabledTargets.append(targetId)
                 }
@@ -723,9 +897,12 @@ final class MainViewModel {
             return WorkflowSummary(
                 sourceId: sourceId,
                 sourceKind: kind,
-                leafIds: uniqueSorted(leafIds),
+                sourceDisplayName: sourceDisplayName,
+                sourceLocator: sourceLocator,
+                leafs: leafs,
                 selectedLeafIds: selectedLeafIds,
-                enabledTargets: uniqueSorted(enabledTargets),
+                enabledTargets: normalizedTargets(enabledTargets),
+                targetLeafIdsByTarget: targetLeafIdsByTarget,
                 health: summary["health"] as? String ?? "UNKNOWN",
                 warningCount: warningCount,
                 errorCount: errorCount,
@@ -756,8 +933,135 @@ final class MainViewModel {
         }
     }
 
+    private func buildInitialDraftFromSummary(_ summary: WorkflowSummary) -> DraftState {
+        let selectedLeafIds: [String]
+        if !summary.selectedLeafIds.isEmpty {
+            selectedLeafIds = uniqueSorted(summary.selectedLeafIds)
+        } else {
+            let enabledTargetLeafIds = normalizedTargets(summary.enabledTargets).flatMap { target in
+                summary.targetLeafIdsByTarget[target] ?? []
+            }
+            selectedLeafIds = !enabledTargetLeafIds.isEmpty
+                ? uniqueSorted(enabledTargetLeafIds)
+                : uniqueSorted(summary.leafs.map(\.id))
+        }
+
+        return DraftState(
+            selectedLeafIds: selectedLeafIds,
+            enabledTargets: normalizedTargets(summary.enabledTargets)
+        )
+    }
+
+    private func draft(for sourceId: String?) -> DraftState? {
+        guard let sourceId = resolveSourceId(sourceId) else {
+            return nil
+        }
+        return workingDrafts[sourceId]
+    }
+
+    private func summary(for sourceId: String?) -> WorkflowSummary? {
+        guard let sourceId = resolveSourceId(sourceId) else {
+            return nil
+        }
+        return allSummaries.first(where: { $0.sourceId == sourceId })
+    }
+
+    private func resolveSourceId(_ sourceId: String?) -> String? {
+        sourceId ?? selectedGroupId
+    }
+
+    private func visibleTargetIds() -> [String] {
+        if showAllTargets {
+            return Self.targetOrder
+        }
+
+        return Array(Self.targetOrder.filter { detectedTargets.contains($0) }.prefix(10))
+    }
+
+    private func normalizedTargets(_ values: [String]) -> [String] {
+        let selected = Set(values)
+        return Self.targetOrder.filter { selected.contains($0) }
+    }
+
+    private func normalizeDraft(_ draft: DraftState) -> DraftState {
+        DraftState(
+            selectedLeafIds: uniqueSorted(draft.selectedLeafIds),
+            enabledTargets: normalizedTargets(draft.enabledTargets)
+        )
+    }
+
+    private func markDraftEdited(sourceId: String) {
+        guard let currentState = saveStateBySourceId[sourceId], currentState.phase != .idle else {
+            return
+        }
+        saveStateBySourceId[sourceId] = SaveState(phase: .idle, message: nil)
+        if sourceId == selectedGroupId {
+            lastApplyFailureCount = 0
+            lastApplyFirstReason = ""
+        }
+    }
+
+    private func pruneStateMaps(allowedSourceIds: Set<String>) {
+        baselineDrafts = pruneSourceMap(baselineDrafts, allowedSourceIds: allowedSourceIds)
+        workingDrafts = pruneSourceMap(workingDrafts, allowedSourceIds: allowedSourceIds)
+        saveStateBySourceId = pruneSourceMap(saveStateBySourceId, allowedSourceIds: allowedSourceIds)
+    }
+
+    private func projectionSummaries() -> [ProjectionSourceSummary] {
+        allSummaries.map { summary in
+            ProjectionSourceSummary(
+                sourceId: summary.sourceId,
+                displayName: summary.sourceDisplayName,
+                locator: summary.sourceLocator,
+                leafs: summary.leafs.map {
+                    ProjectionLeafSummary(
+                        id: $0.id,
+                        linkName: $0.linkName,
+                        name: $0.name,
+                        description: $0.description
+                    )
+                }
+            )
+        }
+    }
+
+    private func projectionDrafts() -> [String: ProjectionDraftState] {
+        workingDrafts.mapValues {
+            ProjectionDraftState(
+                enabledTargets: $0.enabledTargets,
+                selectedLeafIds: $0.selectedLeafIds
+            )
+        }
+    }
+
+    func projectionWarningMap(for sourceId: String? = nil) -> [String: [String]] {
+        guard let sourceId = resolveSourceId(sourceId) else {
+            return [:]
+        }
+        return buildProjectionWarningMap(
+            summaries: projectionSummaries(),
+            drafts: projectionDrafts(),
+            sourceId: sourceId
+        )
+    }
+
+    func projectionNameMap(for sourceId: String? = nil) -> [String: String] {
+        guard let sourceId = resolveSourceId(sourceId) else {
+            return [:]
+        }
+        return buildProjectionNameMap(
+            summaries: projectionSummaries(),
+            drafts: projectionDrafts(),
+            sourceId: sourceId
+        )
+    }
+
     private func uniqueSorted(_ values: [String]) -> [String] {
         Array(Set(values)).sorted()
+    }
+
+    private func pruneSourceMap<T>(_ sourceMap: [String: T], allowedSourceIds: Set<String>) -> [String: T] {
+        Dictionary(uniqueKeysWithValues: sourceMap.filter { allowedSourceIds.contains($0.key) })
     }
 
     private func prettyPrint(_ value: Any?) -> String? {
