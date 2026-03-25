@@ -13,6 +13,11 @@ let package = Package(
         .executableTarget(
             name: "SkillFlowDesktop",
             path: "Sources/SkillFlowDesktop"
+        ),
+        .testTarget(
+            name: "SkillFlowDesktopTests",
+            dependencies: ["SkillFlowDesktop"],
+            path: "Tests"
         )
     ]
 )
