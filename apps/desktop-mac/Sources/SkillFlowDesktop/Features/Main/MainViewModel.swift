@@ -410,7 +410,9 @@ final class MainViewModel {
             loadState = .ready
             healthLabel = list.warnings.isEmpty ? "Healthy" : "Warnings"
 
-            await runDoctor()
+            Task {
+                await runDoctor()
+            }
         } catch {
             loadState = .failed(error.localizedDescription)
             healthLabel = "Error"
