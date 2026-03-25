@@ -75,6 +75,7 @@ struct MenuBarQuickConfigView: View {
                         _ = await viewModel.applyCurrentGroupDraft()
                     }
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(!viewModel.canApplyCurrentGroupDraft)
                 .frame(minHeight: 44)
 
@@ -91,6 +92,7 @@ struct MenuBarQuickConfigView: View {
         }
         .frame(width: 320)
         .padding(12)
+        .background(Color(red: 250.0 / 255.0, green: 250.0 / 255.0, blue: 250.0 / 255.0))
         .alert("Unsaved changes", isPresented: $viewModel.showGroupSwitchDialog) {
             Button("Apply") {
                 Task { await viewModel.resolveGroupSwitch(.apply) }

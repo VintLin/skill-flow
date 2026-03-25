@@ -14,21 +14,26 @@ struct MainView: View {
         GeometryReader { proxy in
             let mode = layoutMode(for: proxy.size.width)
 
-            HStack(spacing: 0) {
-                if mode != .compact || viewModel.compactSidebarVisible {
-                    sidebar
-                        .frame(width: 250)
-                    Divider()
-                }
+            ZStack {
+                AppTheme.pageBackground.ignoresSafeArea()
 
-                content
+                HStack(spacing: 0) {
+                    if mode != .compact || viewModel.compactSidebarVisible {
+                        sidebar
+                            .frame(width: 250)
+                        Divider()
+                    }
 
-                if showInspector(in: mode) {
-                    Divider()
-                    inspector
-                        .frame(width: 320)
+                    content
+
+                    if showInspector(in: mode) {
+                        Divider()
+                        inspector
+                            .frame(width: 320)
+                    }
                 }
             }
+            .tint(AppTheme.brand)
             .sheet(isPresented: compactInspectorBinding(for: mode)) {
                 inspector
                     .frame(minWidth: 320, minHeight: 420)
@@ -55,6 +60,7 @@ struct MainView: View {
                 }
                 .padding(16)
                 .frame(width: 460)
+                .background(AppTheme.surface)
             }
             .alert("Unsaved changes", isPresented: $viewModel.showGroupSwitchDialog) {
                 Button("Apply") {
@@ -98,6 +104,7 @@ struct MainView: View {
                     Button("Apply") {
                         Task { _ = await viewModel.applyCurrentGroupDraft() }
                     }
+                    .buttonStyle(.borderedProminent)
                     .disabled(!viewModel.canApplyCurrentGroupDraft)
                     .keyboardShortcut("a", modifiers: [.command, .shift])
                     .frame(minHeight: 44)
@@ -133,6 +140,9 @@ struct MainView: View {
                 }
             }
         }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(AppTheme.surface)
     }
 
     private var content: some View {
@@ -141,6 +151,7 @@ struct MainView: View {
                 Text(viewModel.selectedSection.rawValue)
                     .font(.title2)
                     .bold()
+                    .foregroundStyle(AppTheme.textPrimary)
                 Spacer()
                 TextField("Search", text: $viewModel.searchQuery)
                     .textFieldStyle(.roundedBorder)
@@ -165,6 +176,7 @@ struct MainView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppTheme.pageBackground)
     }
 
     @ViewBuilder
@@ -204,6 +216,10 @@ struct MainView: View {
                                 .font(.caption)
                         }
                     }
+                    .padding(10)
+                    .background(AppTheme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
+                    .cornerRadius(8)
                 }
 
                 if viewModel.hasApplyError {
@@ -229,7 +245,7 @@ struct MainView: View {
                 title: "No source installed",
                 description: "Add a source to start managing skills.",
                 actionTitle: "+ Add Source",
-                action: { Task { await viewModel.addSource() } }
+                action: { showAddSourceSheet = true }
             )
         case .error(let message):
             ErrorStateView(
@@ -245,6 +261,7 @@ struct MainView: View {
                     Button("Add Source") {
                         showAddSourceSheet = true
                     }
+                    .buttonStyle(.borderedProminent)
                     .frame(minHeight: 44)
 
                     Button("Uninstall Selected") {
@@ -281,6 +298,7 @@ struct MainView: View {
                     }
                 }
                 .frame(minHeight: 240)
+                .listStyle(.plain)
             }
         }
     }
@@ -334,6 +352,7 @@ struct MainView: View {
                     Button("Apply Now") {
                         Task { _ = await viewModel.applyCurrentGroupDraft() }
                     }
+                    .buttonStyle(.borderedProminent)
                     .disabled(!viewModel.canApplyCurrentGroupDraft)
                     .frame(minHeight: 44)
                 }
@@ -352,6 +371,7 @@ struct MainView: View {
                     .font(.caption)
                 }
                 .frame(minHeight: 240)
+                .listStyle(.plain)
             }
         }
     }
@@ -392,11 +412,16 @@ struct MainView: View {
                             }
                         }
                     }
+                    .padding(10)
+                    .background(AppTheme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
+                    .cornerRadius(8)
                 }
 
                 Button("Repair Now") {
                     Task { await viewModel.runDoctor() }
                 }
+                .buttonStyle(.borderedProminent)
                 .frame(minHeight: 44)
             }
         }
@@ -431,6 +456,7 @@ struct MainView: View {
             }
         }
         .padding()
+        .background(AppTheme.surface)
     }
 
     private func showInspector(in mode: LayoutMode) -> Bool {
@@ -482,10 +508,10 @@ private struct StatusCard: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.windowBackgroundColor))
+        .background(AppTheme.surface)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(.separatorColor), lineWidth: 1)
+                .stroke(AppTheme.border, lineWidth: 1)
         )
     }
 }
@@ -504,9 +530,13 @@ private struct EmptyStateView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button(actionTitle, action: action)
+                .buttonStyle(.borderedProminent)
                 .frame(minHeight: 44)
         }
         .padding(12)
+        .background(AppTheme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
+        .cornerRadius(8)
     }
 }
 
@@ -527,6 +557,7 @@ private struct ErrorStateView: View {
 
             HStack(spacing: 8) {
                 Button(nextActionTitle, action: onNextAction)
+                    .buttonStyle(.borderedProminent)
                     .frame(minHeight: 44)
                 Button(detailActionTitle, action: onDetailAction)
                     .frame(minHeight: 44)
@@ -540,4 +571,12 @@ private struct ErrorStateView: View {
         )
         .cornerRadius(8)
     }
+}
+
+private enum AppTheme {
+    static let brand = Color(red: 238.0 / 255.0, green: 96.0 / 255.0, blue: 24.0 / 255.0)
+    static let pageBackground = Color(red: 238.0 / 255.0, green: 238.0 / 255.0, blue: 238.0 / 255.0)
+    static let surface = Color(red: 250.0 / 255.0, green: 250.0 / 255.0, blue: 250.0 / 255.0)
+    static let border = Color(red: 184.0 / 255.0, green: 179.0 / 255.0, blue: 176.0 / 255.0)
+    static let textPrimary = Color(red: 2.0 / 255.0, green: 2.0 / 255.0, blue: 2.0 / 255.0)
 }
