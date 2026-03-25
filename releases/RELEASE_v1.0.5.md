@@ -5,31 +5,31 @@ Version: `v1.0.5`
 
 ## Summary
 
-`v1.0.5` adds CLI commands, enhances source lifecycle management, and improves TUI components.
+`v1.0.5` is primarily a version stabilization release. The actual feature development for this cycle was completed in earlier commits.
 
-This release introduces repair commands, enhanced doctor diagnostics, duplicate leaf detection, and a ConfigCoordinator bootstrap flow.
+This release adds repair commands, enhanced doctor diagnostics, duplicate leaf detection, ConfigCoordinator bootstrap flow, and CLI command improvements.
 
 ## Highlights
 
-### 1. New CLI Commands
+### 1. CLI Commands Enhancement
 
-Added new CLI commands for better skill flow management and troubleshooting.
+Added new CLI commands and improved existing ones for better skill flow management.
 
-### 2. Source Lifecycle Enhancement
+### 2. Source Lifecycle Improvements
 
-Improved source lifecycle management with better state handling and recovery mechanisms.
+Enhanced source lifecycle management with better state handling and recovery mechanisms.
 
 ### 3. Repair Commands
 
-New `repair` command and enhanced doctor diagnostics for identifying and fixing common issues.
+New repair commands and enhanced doctor diagnostics for identifying and fixing common issues in skill configurations.
 
-### 4. ConfigCoordinator Bootstrap Flow
-
-Implemented ConfigCoordinator bootstrap flow for more reliable startup and state initialization.
-
-### 5. Duplicate Leaf Detection
+### 4. Duplicate Leaf Detection
 
 Added detection and handling of duplicate leaf nodes in skill configurations.
+
+### 5. ConfigCoordinator Bootstrap Flow
+
+Implemented ConfigCoordinator bootstrap flow for more reliable startup and state initialization.
 
 ### 6. TUI Component Improvements
 
@@ -38,7 +38,7 @@ Enhanced terminal UI components for better user experience.
 ## User-visible Behavior Changes
 
 - New repair commands available for troubleshooting
-- Better diagnostics from `doctor` service
+- Better diagnostics from doctor service
 - Improved startup reliability
 - Enhanced TUI responsiveness
 

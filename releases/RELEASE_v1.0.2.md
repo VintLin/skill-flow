@@ -5,29 +5,17 @@ Version: `v1.0.2`
 
 ## Summary
 
-`v1.0.2` is a minor release focusing on workflow integration and planner improvements.
+`v1.0.2` is a version bump release without significant code changes from v1.0.1.
 
-This release completes the remaining workflow and deployment planner updates, ensuring better integration between skill management and deployment processes.
+This release stabilizes the v1.0.1 feature set and updates version numbers across the project.
 
-## Highlights
+## Summary of v1.0.1 Features (since v1.0.0)
 
-### 1. Workflow Service Updates
-
-Completed remaining workflow integration updates for better skill lifecycle management.
-
-### 2. Deployment Planner Improvements
-
-Enhanced deployment planning capabilities for more reliable skill deployments.
-
-### 3. Config State Reconciliation
-
-Improved state reconciliation to ensure config state remains consistent across operations.
-
-## User-visible Behavior Changes
-
-- Better workflow state management
-- Improved deployment planning accuracy
-- More reliable configuration restoration
+- Source expansion and discovery improvements
+- ClawHub integration for community skill sharing
+- Enhanced find command with better query matching
+- Improved source ID naming and deduplication
+- Better format and output across CLI
 
 ## Verification
 

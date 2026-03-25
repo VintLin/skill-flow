@@ -5,35 +5,17 @@ Version: `v1.0.3`
 
 ## Summary
 
-`v1.0.3` introduces terminology refinements and documentation improvements.
+`v1.0.3` is a version bump release without significant code changes from v1.0.2.
 
-This release renames "workflow group" to "skills group" across the codebase for clearer terminology, adds architecture documentation, and improves the README with simplified language.
+This release stabilizes the existing feature set and updates version numbers across the project.
 
-## Highlights
+## Summary of Recent Improvements
 
-### 1. Terminology Update: "Skills Group"
-
-Renamed "workflow group" to "skills group" throughout the codebase for more intuitive naming.
-
-### 2. Architecture Documentation
-
-Added ASCII diagram showing skill-flow architecture in the README for better understanding of the system design.
-
-### 3. README Improvements
-
-- Replaced AI jargon with plain language
-- Simplified installation and usage instructions
-- Added better npm/npx usage documentation
-
-### 4. Node Engine Requirement
-
-Added explicit Node.js engine requirement (`>=20`) to ensure compatibility.
-
-## User-visible Behavior Changes
-
-- Menu labels and documentation now use "skills group" instead of "workflow group"
-- Easier to understand README for new users
-- Clearer installation instructions
+- TypeScript CLI with Ink TUI
+- Git source support
+- ClawHub integration
+- Source expansion and discovery
+- Find command enhancements
 
 ## Verification
 
