@@ -30,9 +30,55 @@ final class MainViewModel {
         case cancel
     }
 
+    enum PageViewState {
+        case loading
+        case empty
+        case error(String)
+        case partial
+        case success
+    }
+
     struct TargetOption: Identifiable {
         let id: String
         let label: String
+    }
+
+    struct SourceRow: Identifiable {
+        let id: String
+        let kind: String
+        let skillCount: Int
+        let status: String
+        let lastUpdate: String
+        let warningCount: Int
+        let errorCount: Int
+    }
+
+    struct DeploymentRow: Identifiable {
+        let id: String
+        let kind: String
+        let skill: String
+        let target: String
+        let path: String
+        let result: String
+    }
+
+    struct DeploymentSummary {
+        let create: Int
+        let update: Int
+        let remove: Int
+        let blocked: Int
+        let noop: Int
+
+        static let empty = DeploymentSummary(create: 0, update: 0, remove: 0, blocked: 0, noop: 0)
+    }
+
+    struct DoctorIssueRow: Identifiable {
+        let id: String
+        let severity: String
+        let code: String
+        let message: String
+        let sourceId: String
+        let target: String
     }
 
     private struct DraftState: Equatable {
@@ -42,9 +88,14 @@ final class MainViewModel {
 
     private struct WorkflowSummary {
         let sourceId: String
+        let sourceKind: String
         let leafIds: [String]
         let selectedLeafIds: [String]
         let enabledTargets: [String]
+        let health: String
+        let warningCount: Int
+        let errorCount: Int
+        let updatedAt: String
     }
 
     private let bridgeClient: BridgeClient
@@ -70,12 +121,15 @@ final class MainViewModel {
     private var pendingGroupId: String?
     private var detectedTargets: Set<String> = []
 
+    private var allSummaries: [WorkflowSummary] = []
+
     var loadState: LoadState = .idle
     var selectedSection: Section = .overview
 
     var sourceIds: [String] = []
     var selectedSourceId: String?
     var newSourceLocator: String = ""
+    var searchQuery: String = ""
 
     var detailText: String = "Select a source to inspect details."
     var healthLabel: String = "Unknown"
@@ -87,8 +141,17 @@ final class MainViewModel {
 
     var showGroupSwitchDialog: Bool = false
     var isApplyingDraft: Bool = false
+    var isRefreshing: Bool = false
+
     var lastApplyFailureCount: Int = 0
     var lastApplyFirstReason: String = ""
+    var lastApplySummary: String = "No apply action yet"
+
+    var doctorIssues: [DoctorIssueRow] = []
+    var lastDoctorError: String?
+
+    var deploymentFilterTarget: String = "All"
+    var deploymentFilterKind: String = "All"
 
     init(bridgeClient: BridgeClient) {
         self.bridgeClient = bridgeClient
@@ -122,7 +185,7 @@ final class MainViewModel {
         if showAllTargets {
             targetIds = Self.targetCatalog.keys.sorted()
         } else {
-            targetIds = detectedTargets.sorted()
+            targetIds = Array(detectedTargets.sorted().prefix(10))
         }
 
         return targetIds.map { target in
@@ -132,6 +195,206 @@ final class MainViewModel {
 
     var hasApplyError: Bool {
         lastApplyFailureCount > 0 && !lastApplyFirstReason.isEmpty
+    }
+
+    var sourceRows: [SourceRow] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let rows = allSummaries.map { summary in
+            SourceRow(
+                id: summary.sourceId,
+                kind: summary.sourceKind,
+                skillCount: summary.leafIds.count,
+                status: summary.health,
+                lastUpdate: summary.updatedAt,
+                warningCount: summary.warningCount,
+                errorCount: summary.errorCount
+            )
+        }
+        if query.isEmpty {
+            return rows
+        }
+        return rows.filter { row in
+            row.id.lowercased().contains(query)
+                || row.kind.lowercased().contains(query)
+                || row.status.lowercased().contains(query)
+        }
+    }
+
+    var deploymentSummary: DeploymentSummary {
+        guard !deploymentRows.isEmpty else { return .empty }
+        var create = 0
+        var update = 0
+        var remove = 0
+        var blocked = 0
+        var noop = 0
+
+        for row in deploymentRows {
+            switch row.kind {
+            case "create": create += 1
+            case "remove": remove += 1
+            case "blocked": blocked += 1
+            case "noop": noop += 1
+            default: update += 1
+            }
+        }
+
+        return DeploymentSummary(
+            create: create,
+            update: update,
+            remove: remove,
+            blocked: blocked,
+            noop: noop
+        )
+    }
+
+    var deploymentTargets: [String] {
+        let targets = Set(deploymentRows.map(\.target))
+        return ["All"] + targets.sorted()
+    }
+
+    var deploymentKinds: [String] {
+        ["All", "create", "update", "remove", "blocked", "noop"]
+    }
+
+    var filteredDeploymentRows: [DeploymentRow] {
+        deploymentRows.filter { row in
+            (deploymentFilterTarget == "All" || row.target == deploymentFilterTarget)
+                && (deploymentFilterKind == "All" || row.kind == deploymentFilterKind)
+        }
+    }
+
+    var overviewState: PageViewState {
+        switch loadState {
+        case .loading:
+            return .loading
+        case .failed(let message):
+            return .error(message)
+        case .idle:
+            return .loading
+        case .ready:
+            if sourceRows.isEmpty {
+                return .empty
+            }
+            if !latestWarnings.isEmpty || hasApplyError {
+                return .partial
+            }
+            return .success
+        }
+    }
+
+    var sourcesState: PageViewState {
+        switch loadState {
+        case .loading:
+            return .loading
+        case .failed(let message):
+            return .error(message)
+        case .idle:
+            return .loading
+        case .ready:
+            if sourceRows.isEmpty {
+                return .empty
+            }
+            if sourceRows.contains(where: { $0.warningCount > 0 || $0.errorCount > 0 }) {
+                return .partial
+            }
+            return .success
+        }
+    }
+
+    var deploymentsState: PageViewState {
+        switch loadState {
+        case .loading:
+            return .loading
+        case .failed(let message):
+            return .error(message)
+        case .idle:
+            return .loading
+        case .ready:
+            if filteredDeploymentRows.isEmpty {
+                return .empty
+            }
+            if filteredDeploymentRows.contains(where: { $0.kind == "blocked" }) {
+                return .partial
+            }
+            return .success
+        }
+    }
+
+    var doctorState: PageViewState {
+        if let lastDoctorError {
+            return .error(lastDoctorError)
+        }
+        if doctorIssues.isEmpty {
+            return .empty
+        }
+        if doctorIssues.contains(where: { $0.severity == "error" || $0.severity == "warning" }) {
+            return .partial
+        }
+        return .success
+    }
+
+    var groupedDoctorIssues: [(String, [DoctorIssueRow])] {
+        let groups = Dictionary(grouping: doctorIssues, by: \.severity)
+        return ["error", "warning", "info"].compactMap { severity in
+            guard let issues = groups[severity], !issues.isEmpty else { return nil }
+            return (severity, issues)
+        }
+    }
+
+    private var deploymentRows: [DeploymentRow] {
+        var rows: [DeploymentRow] = []
+
+        for summary in allSummaries {
+            let selectedLeafIds = baselineDrafts[summary.sourceId]?.selectedLeafIds ?? summary.selectedLeafIds
+            let enabledTargets = baselineDrafts[summary.sourceId]?.enabledTargets ?? summary.enabledTargets
+
+            if enabledTargets.isEmpty {
+                rows.append(
+                    DeploymentRow(
+                        id: "noop-\(summary.sourceId)",
+                        kind: "noop",
+                        skill: "-",
+                        target: "-",
+                        path: "-",
+                        result: "No enabled targets"
+                    )
+                )
+                continue
+            }
+
+            for target in enabledTargets {
+                let targetLabel = Self.targetCatalog[target] ?? target
+
+                if selectedLeafIds.isEmpty {
+                    rows.append(
+                        DeploymentRow(
+                            id: "blocked-\(summary.sourceId)-\(target)",
+                            kind: "blocked",
+                            skill: "-",
+                            target: targetLabel,
+                            path: "-",
+                            result: "No selected skills"
+                        )
+                    )
+                    continue
+                }
+
+                for leafId in selectedLeafIds {
+                    rows.append(
+                        DeploymentRow(
+                            id: "\(summary.sourceId)-\(target)-\(leafId)",
+                            kind: "update",
+                            skill: leafId,
+                            target: targetLabel,
+                            path: "~/.skillflow/<target>/\(leafId)",
+                            result: summary.health
+                        )
+                    )
+                }
+            }
+        }
+
+        return rows
     }
 
     func bootstrap() async {
@@ -146,6 +409,8 @@ final class MainViewModel {
 
             loadState = .ready
             healthLabel = list.warnings.isEmpty ? "Healthy" : "Warnings"
+
+            await runDoctor()
         } catch {
             loadState = .failed(error.localizedDescription)
             healthLabel = "Error"
@@ -154,6 +419,9 @@ final class MainViewModel {
     }
 
     func refreshList() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         do {
             let response = try await bridgeClient.list()
             applyList(response)
@@ -224,9 +492,12 @@ final class MainViewModel {
             detailText = prettyPrint(response.data?.value) ?? "No doctor data"
             latestWarnings = response.warnings
             healthLabel = response.warnings.isEmpty ? "Healthy" : "Warnings"
+            lastDoctorError = nil
+            doctorIssues = parseDoctorIssues(response.data?.value)
         } catch {
             detailText = "Doctor failed: \(error.localizedDescription)"
             healthLabel = "Error"
+            lastDoctorError = error.localizedDescription
         }
     }
 
@@ -234,6 +505,7 @@ final class MainViewModel {
         do {
             _ = try await bridgeClient.updateAll()
             await refreshList()
+            await runDoctor()
         } catch {
             detailText = "Update failed: \(error.localizedDescription)"
         }
@@ -249,6 +521,7 @@ final class MainViewModel {
             _ = try await bridgeClient.add(locator: locator, applyNow: true)
             newSourceLocator = ""
             await refreshList()
+            await runDoctor()
         } catch {
             detailText = "Add failed: \(error.localizedDescription)"
         }
@@ -266,6 +539,8 @@ final class MainViewModel {
             workingDrafts.removeValue(forKey: selectedSourceId)
 
             await refreshList()
+            await runDoctor()
+
             if let first = sourceIds.first {
                 await selectSource(first)
             } else {
@@ -320,8 +595,10 @@ final class MainViewModel {
             baselineDrafts[groupId] = draft
             lastApplyFailureCount = 0
             lastApplyFirstReason = ""
+            lastApplySummary = "Applied \(draft.selectedLeafIds.count) skills to \(draft.enabledTargets.count) targets"
             detailText = "Applied group '\(groupId)' to \(draft.enabledTargets.count) targets."
             await refreshList()
+            await runDoctor()
             return true
         } catch {
             let reasons = error.localizedDescription
@@ -356,14 +633,14 @@ final class MainViewModel {
     }
 
     private func applyList(_ response: BridgeResponse) {
-        let summaries = parseSummaries(response)
-        sourceIds = summaries.map(\.sourceId)
+        allSummaries = parseSummaries(response)
+        sourceIds = allSummaries.map(\.sourceId)
 
         if selectedSourceId == nil || !sourceIds.contains(selectedSourceId ?? "") {
             selectedSourceId = sourceIds.first
         }
 
-        for summary in summaries {
+        for summary in allSummaries {
             let draftFromSummary = DraftState(
                 selectedLeafIds: uniqueSorted(summary.selectedLeafIds),
                 enabledTargets: uniqueSorted(summary.enabledTargets)
@@ -389,12 +666,13 @@ final class MainViewModel {
             }
         }
 
-        if let selected = selectedSourceId, let summary = summaries.first(where: { $0.sourceId == selected }) {
+        if let selected = selectedSourceId, let summary = allSummaries.first(where: { $0.sourceId == selected }) {
             detailText = prettyPrint([
                 "sourceId": summary.sourceId,
                 "selectedLeafIds": summary.selectedLeafIds,
                 "enabledTargets": summary.enabledTargets,
                 "leafCount": summary.leafIds.count,
+                "health": summary.health,
             ]) ?? detailText
         }
     }
@@ -415,6 +693,11 @@ final class MainViewModel {
                 return nil
             }
 
+            let kind = source["kind"] as? String ?? "unknown"
+
+            let lock = summary["lock"] as? [String: Any]
+            let updatedAt = lock?["updatedAt"] as? String ?? "-"
+
             let leafIds: [String] = (summary["leafs"] as? [[String: Any]] ?? []).compactMap { leaf in
                 leaf["id"] as? String
             }
@@ -431,11 +714,42 @@ final class MainViewModel {
                 }
             }
 
+            let issueCounts = summary["issueCounts"] as? [String: Int] ?? [:]
+            let warningCount = issueCounts["warning"] ?? 0
+            let errorCount = issueCounts["error"] ?? 0
+
             return WorkflowSummary(
                 sourceId: sourceId,
+                sourceKind: kind,
                 leafIds: uniqueSorted(leafIds),
                 selectedLeafIds: selectedLeafIds,
-                enabledTargets: uniqueSorted(enabledTargets)
+                enabledTargets: uniqueSorted(enabledTargets),
+                health: summary["health"] as? String ?? "UNKNOWN",
+                warningCount: warningCount,
+                errorCount: errorCount,
+                updatedAt: updatedAt
+            )
+        }
+    }
+
+    private func parseDoctorIssues(_ value: Any?) -> [DoctorIssueRow] {
+        guard let data = value as? [String: Any] else { return [] }
+        guard let issues = data["issues"] as? [[String: Any]] else { return [] }
+
+        return issues.enumerated().map { index, issue in
+            let severity = (issue["severity"] as? String) ?? "info"
+            let code = (issue["code"] as? String) ?? "UNKNOWN"
+            let message = (issue["message"] as? String) ?? "No message"
+            let sourceId = (issue["sourceId"] as? String) ?? "-"
+            let target = (issue["target"] as? String) ?? "-"
+
+            return DoctorIssueRow(
+                id: "\(severity)-\(code)-\(index)",
+                severity: severity,
+                code: code,
+                message: message,
+                sourceId: sourceId,
+                target: target
             )
         }
     }

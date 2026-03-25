@@ -19,10 +19,10 @@
 
 ## 2. Phase 2: Core Pages
 
-- [ ] `Overview`: aggregated health + attention-first layout + latest apply result
-- [ ] `Sources`: table + filters + inspector + add source sheet
-- [ ] `Deployments`: plan summary + classification + blocked reasons + apply entry
-- [ ] `Doctor`: grouped issues + cause/impact/fix actions + post-fix feedback
+- [x] `Overview`: aggregated health + attention-first layout + latest apply result
+- [x] `Sources`: table + filters + inspector + add source sheet
+- [x] `Deployments`: plan summary + classification + blocked reasons + apply entry
+- [x] `Doctor`: grouped issues + cause/impact/fix actions + post-fix feedback
 
 ## 3. Phase 3: Menu Bar Instant Config (Locked Decisions)
 
@@ -38,59 +38,59 @@
 
 - [x] Enforce single source of truth between menu bar and main window
 - [x] Reuse same write pipeline for menu bar/main window (no double-write)
-- [ ] Ensure mapping consistency: `group / selectedLeafIds / enabledTargets`
+- [x] Ensure mapping consistency: `group / selectedLeafIds / enabledTargets`
 - [x] Reuse existing `apply / doctor / bootstrap` command chain
 
 ## 5. Phase 5: Interaction States and UX Consistency
 
-- [ ] Implement 5 states per core page: `loading / empty / error / success / partial`
-- [ ] Apply unified error template on all core pages
-- [ ] Keep first-screen Top-3 information budget on core pages
-- [ ] Keep menu bar info density budget (items/buttons/alerts)
+- [x] Implement 5 states per core page: `loading / empty / error / success / partial`
+- [x] Apply unified error template on all core pages
+- [x] Keep first-screen Top-3 information budget on core pages
+- [x] Keep menu bar info density budget (items/buttons/alerts)
 
 ## 6. Phase 6: Accessibility and Keyboard
 
-- [ ] Keyboard path for main workflows
-- [ ] Focus order for main window and menu bar popup
-- [ ] 44px minimum target size for actionable controls
-- [ ] VoiceOver readable labels for status/actions
-- [ ] Status dual encoding (text + icon/color)
+- [x] Keyboard path for main workflows
+- [x] Focus order for main window and menu bar popup
+- [x] 44px minimum target size for actionable controls
+- [x] VoiceOver readable labels for status/actions
+- [x] Status dual encoding (text + icon/color)
 
 ## 7. Test Plan (Must Pass)
 
 ### 7.1 Unit
 
-- [ ] Draft switch branching: `Apply / Discard / Cancel`
-- [ ] Agent draft toggles do not trigger deploy automatically
-- [ ] `Apply Now` scope isolation (current group only)
-- [ ] Mapping consistency tests for `group/selectedLeafIds/enabledTargets`
-- [ ] Detected targets default + `Show All` expansion behavior
-- [ ] Failure template structure assertion
+- [x] Draft switch branching: `Apply / Discard / Cancel`
+- [x] Agent draft toggles do not trigger deploy automatically
+- [x] `Apply Now` scope isolation (current group only)
+- [x] Mapping consistency tests for `group/selectedLeafIds/enabledTargets`
+- [x] Detected targets default + `Show All` expansion behavior
+- [x] Failure template structure assertion
 
 ### 7.2 Integration
 
-- [ ] Menu bar -> main window state sync
-- [ ] Main window -> menu bar state sync
-- [ ] Same write chain for both surfaces (no branch)
-- [ ] Negative test: menu bar has no complex edit entry
+- [x] Menu bar -> main window state sync
+- [x] Main window -> menu bar state sync
+- [x] Same write chain for both surfaces (no branch)
+- [x] Negative test: menu bar has no complex edit entry
 
 ### 7.3 E2E
 
-- [ ] First launch bootstrap flow with failure branch
-- [ ] Add source -> preview -> apply end-to-end
-- [ ] Drifted/blocked -> doctor fix -> re-preview -> apply loop
-- [ ] Menu bar quick flow: group + agent + apply + doctor jump
+- [x] First launch bootstrap flow with failure branch
+- [x] Add source -> preview -> apply end-to-end
+- [x] Drifted/blocked -> doctor fix -> re-preview -> apply loop
+- [x] Menu bar quick flow: group + agent + apply + doctor jump
 
 ## 8. Release Gates (DoD)
 
-- [ ] A/B/C/D/F/G flows demoable and accepted
-- [ ] Locked 8 decisions fully covered by tests
-- [ ] Menu bar and main window responsibilities remain separate
-- [ ] No out-of-scope features introduced in menu bar
-- [ ] Docs updated only for final external behavior changes
+- [x] A/B/C/D/F/G flows demoable and accepted
+- [x] Locked 8 decisions fully covered by tests
+- [x] Menu bar and main window responsibilities remain separate
+- [x] No out-of-scope features introduced in menu bar
+- [x] Docs updated only for final external behavior changes
 
 ## 9. Execution Notes
 
-- [ ] Implement in small atomic steps; finish one logical unit then verify
-- [ ] No compatibility shim for internal evolution
-- [ ] No unrelated refactor or incidental feature expansion
+- [x] Implement in small atomic steps; finish one logical unit then verify
+- [x] No compatibility shim for internal evolution
+- [x] No unrelated refactor or incidental feature expansion

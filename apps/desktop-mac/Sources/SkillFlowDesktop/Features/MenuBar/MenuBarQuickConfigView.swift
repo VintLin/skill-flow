@@ -56,6 +56,9 @@ struct MenuBarQuickConfigView: View {
 
             if viewModel.hasApplyError {
                 VStack(alignment: .leading, spacing: 4) {
+                    Text("What happened")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                     Text("Apply failed (\(viewModel.lastApplyFailureCount))")
                         .font(.caption)
                         .bold()
@@ -73,15 +76,18 @@ struct MenuBarQuickConfigView: View {
                     }
                 }
                 .disabled(!viewModel.canApplyCurrentGroupDraft)
+                .frame(minHeight: 44)
 
                 Button("Open Doctor") {
                     Task {
                         await viewModel.runDoctor()
                     }
                 }
+                .frame(minHeight: 44)
             }
 
             Button("Open Main Window", action: openMainWindow)
+                .frame(minHeight: 44)
         }
         .frame(width: 320)
         .padding(12)
