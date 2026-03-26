@@ -40,6 +40,25 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.stringArray(forKey: "desktop.pinnedSourceIds"), [])
     }
 
+    func testDeleteSourceRemovesPinnedStateAndReturnsHomeWhenDetailIsDeleted() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        model.togglePinned(sourceId: "alpha")
+        model.currentPage = .detail(sourceId: "alpha")
+
+        await model.deleteSource(sourceId: "alpha")
+
+        XCTAssertEqual(model.currentPage, .home)
+        XCTAssertEqual(model.selectedGroupId, "beta")
+        XCTAssertEqual(model.pinnedSourceIds, [])
+        XCTAssertFalse(model.sourceIds.contains("alpha"))
+
+        let uninstallRequests = fixture.loggedRequests().filter { $0.command == "uninstall" }
+        XCTAssertEqual(uninstallRequests.count, 1)
+    }
+
     func testPrepareImportCreatesPreviewAndConfirmImportsSource() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

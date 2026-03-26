@@ -1162,11 +1162,19 @@ final class MainViewModel {
             showToast(style: .error, message: "Uninstall failed: no group selected.")
             return
         }
+        await deleteSource(sourceId: selectedSourceId)
+    }
+
+    func deleteSource(sourceId: String) async {
         do {
-            _ = try await bridgeClient.uninstall(sourceIds: [selectedSourceId])
-            self.selectedSourceId = nil
-            baselineDrafts.removeValue(forKey: selectedSourceId)
-            workingDrafts.removeValue(forKey: selectedSourceId)
+            _ = try await bridgeClient.uninstall(sourceIds: [sourceId])
+            if selectedSourceId == sourceId {
+                selectedSourceId = nil
+            }
+            baselineDrafts.removeValue(forKey: sourceId)
+            workingDrafts.removeValue(forKey: sourceId)
+            pinnedSourceIds.removeAll { $0 == sourceId }
+            UserDefaults.standard.set(pinnedSourceIds, forKey: pinnedSourceIdsKey)
 
             await refreshList()
             await runDoctor()
@@ -1175,8 +1183,12 @@ final class MainViewModel {
                 await selectSource(first)
             } else {
                 detailText = "No sources installed."
+                currentPage = .home
             }
-            showToast(style: .success, message: "Removed \(selectedSourceId).")
+            if case .detail(let detailSourceId) = currentPage, detailSourceId == sourceId {
+                currentPage = .home
+            }
+            showToast(style: .success, message: "Removed \(sourceId).")
         } catch {
             detailText = "Uninstall failed: \(error.localizedDescription)"
             showToast(style: .error, message: "Uninstall failed: \(error.localizedDescription)")

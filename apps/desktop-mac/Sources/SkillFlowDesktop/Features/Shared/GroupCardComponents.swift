@@ -159,10 +159,14 @@ struct SharedGroupCard: View {
     let skillsCollapsed: Bool
     let onOpen: (() -> Void)?
     let onTogglePinned: () -> Void
+    let onDelete: () -> Void
     let onToggleSkill: (String, Bool) -> Void
     let onToggleAllSkills: () -> Void
     let onToggleTarget: (String, Bool) -> Void
     let onToggleAllTargets: () -> Void
+
+    @State private var isActionMenuOpen = false
+    @State private var isActionButtonHovered = false
 
     private var scale: GroupCardScale {
         displayMode.scale
@@ -170,6 +174,10 @@ struct SharedGroupCard: View {
 
     private var isSaving: Bool {
         card.saveState.phase == .saving
+    }
+
+    private var shouldShowPinnedIcon: Bool {
+        card.isPinned && !isActionButtonHovered && !isActionMenuOpen
     }
 
     var body: some View {
@@ -240,7 +248,7 @@ struct SharedGroupCard: View {
             HStack(alignment: .firstTextBaseline, spacing: max(4, scale.cardInset * 0.5)) {
                 Text(card.title)
                     .font(.system(size: scale.titleSize, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                 if displayMode.showsSubtitle {
                     Text(card.subtitle)
                         .font(.system(size: scale.metaSize, weight: .regular))
@@ -260,14 +268,41 @@ struct SharedGroupCard: View {
     }
 
     private var pinButton: some View {
-        Button(action: onTogglePinned) {
-            Image(systemName: card.isPinned ? "pin.fill" : "pin")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(card.isPinned ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme))
+        Button {
+            isActionMenuOpen.toggle()
+        } label: {
+            actionIcon(shouldShowPinnedIcon ? .pin : .more, size: 12)
+                .foregroundStyle(shouldShowPinnedIcon ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme))
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { isHovering in
+            isActionButtonHovered = isHovering
+        }
+        .popover(isPresented: $isActionMenuOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                actionMenuButton(
+                    title: card.isPinned ? "取消置顶" : "置顶",
+                    icon: .pin,
+                    foreground: card.isPinned ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme)
+                ) {
+                    isActionMenuOpen = false
+                    onTogglePinned()
+                }
+                actionMenuButton(
+                    title: "删除",
+                    icon: .delete,
+                    foreground: AppTheme.statusError(for: theme)
+                ) {
+                    isActionMenuOpen = false
+                    onDelete()
+                }
+            }
+            .padding(6)
+            .background(AppTheme.pageBackground(for: theme))
+            .frame(width: 136)
+        }
     }
 
     private func cardRow(
@@ -347,7 +382,7 @@ struct SharedGroupCard: View {
             .font(.system(size: scale.chipFontSize, weight: .bold))
             .padding(.horizontal, max(6, scale.cardInset - 2))
             .frame(height: scale.chipHeight)
-            .background(isOn ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30) : AppTheme.idleChipFill(for: theme))
+            .background(isOn ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30) : AppTheme.documentBlock(for: theme))
             .foregroundStyle(AppTheme.textPrimary(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
     }
@@ -392,7 +427,7 @@ struct SharedGroupCard: View {
     private func targetBackgroundFill(isOn: Bool) -> Color {
         isOn
             ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30)
-            : AppTheme.idleChipFill(for: theme)
+            : AppTheme.documentBlock(for: theme)
     }
 
     private func targetForegroundColor(isOn: Bool) -> NSColor {
@@ -447,30 +482,51 @@ struct SharedGroupCard: View {
     }
 
     private func switchFill(_ selection: SelectionState) -> Color {
-        switch selection {
-        case .empty:
-            return Color(red: 148.0 / 255.0, green: 163.0 / 255.0, blue: 184.0 / 255.0).opacity(0.30)
-        case .partial:
-            return AppTheme.statusWarning(for: theme).opacity(theme == .dark ? 0.38 : 0.32)
-        case .full:
-            return AppTheme.statusSuccess(for: theme).opacity(theme == .dark ? 0.36 : 0.30)
-        }
+        AppTheme.selectionControlFill(selection, for: theme)
     }
 
     private func switchText(_ selection: SelectionState) -> Color {
-        switch (theme, selection) {
-        case (.light, .empty):
-            return Color(red: 71.0 / 255.0, green: 85.0 / 255.0, blue: 105.0 / 255.0)
-        case (.light, .partial):
-            return AppTheme.statusWarning(for: theme)
-        case (.light, .full):
-            return AppTheme.statusSuccess(for: theme)
-        case (.dark, .empty):
-            return Color(red: 226.0 / 255.0, green: 232.0 / 255.0, blue: 240.0 / 255.0)
-        case (.dark, .partial):
-            return AppTheme.statusWarning(for: theme)
-        case (.dark, .full):
-            return AppTheme.statusSuccess(for: theme)
+        AppTheme.selectionControlText(selection, for: theme)
+    }
+
+    private func actionMenuButton(
+        title: String,
+        icon: ActionIcon,
+        foreground: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                actionIcon(icon, size: 12)
+                    .foregroundStyle(foreground)
+                    .frame(width: 12, height: 12)
+
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 10)
+            .frame(width: 124, height: 30, alignment: .leading)
+            .background(Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func actionIcon(_ icon: ActionIcon, size: CGFloat) -> some View {
+        if let image = icon.image(size: size) {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else {
+            Color.clear.frame(width: size, height: size)
         }
     }
 }

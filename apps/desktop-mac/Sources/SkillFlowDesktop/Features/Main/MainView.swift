@@ -3,7 +3,7 @@ import SwiftUI
 
 struct MainView: View {
     private let detailHeaderMinHeight: CGFloat = 76
-    private let detailGroupRowHeight: CGFloat = 72
+    private let detailGroupRowHeight: CGFloat = 64
     private let detailSkillRowHeight: CGFloat = 60
     private let detailSkillDividerHeight: CGFloat = 16
     private let detailIndicatorHeight: CGFloat = 36
@@ -144,8 +144,7 @@ struct MainView: View {
                 Button {
                     viewModel.currentPage = .home
                 } label: {
-                    Image(systemName: "arrow.left")
-                        .font(.system(size: 14, weight: .semibold))
+                    actionIcon(.back, size: 14)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
@@ -191,13 +190,23 @@ struct MainView: View {
 
     private var searchField: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11, weight: .medium))
+            actionIcon(.search, size: 11)
                 .foregroundStyle(AppTheme.textMuted(for: theme))
-            TextField("Search Group / Author", text: $viewModel.searchQuery)
-                .textFieldStyle(.plain)
-                .font(.system(size: 10, weight: .medium))
-                .textCase(.uppercase)
+            ZStack(alignment: .leading) {
+                if viewModel.searchQuery.isEmpty {
+                    Text("Search Group / Author")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
+                        .textCase(.uppercase)
+                        .allowsHitTesting(false)
+                }
+
+                TextField("", text: $viewModel.searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .textCase(.uppercase)
+            }
         }
         .padding(.horizontal, 12)
         .frame(width: 320, height: 34, alignment: .leading)
@@ -211,41 +220,15 @@ struct MainView: View {
     }
 
     private var importButton: some View {
-        Button("Import") {
+        toolbarIconButton(.import) {
             viewModel.currentPage = .importPage
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .background(AppTheme.headerControlFill(for: theme))
-        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-        }
-        .foregroundStyle(AppTheme.textPrimary(for: theme))
-        .font(.system(size: 10, weight: .bold))
-        .textCase(.uppercase)
     }
 
     private var settingsButton: some View {
-        Button("Settings") {
+        toolbarIconButton(.settings) {
             viewModel.currentPage = .settings
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .background(AppTheme.headerControlFill(for: theme))
-        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-        }
-        .foregroundStyle(AppTheme.textPrimary(for: theme))
-        .font(.system(size: 10, weight: .bold))
-        .textCase(.uppercase)
     }
 
     @ViewBuilder
@@ -307,6 +290,9 @@ struct MainView: View {
                                 },
                                 onTogglePinned: {
                                     viewModel.togglePinned(sourceId: card.id)
+                                },
+                                onDelete: {
+                                    Task { await viewModel.deleteSource(sourceId: card.id) }
                                 },
                                 onToggleSkill: { skillId, enabled in
                                     Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
@@ -397,9 +383,11 @@ struct MainView: View {
                     }
                     .padding(.leading, 14)
                 }
-                .padding(.vertical, 10)
+                .padding(.vertical, 6)
             }
-            .padding(16)
+            .scrollIndicators(.never)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
         .frame(minWidth: width, maxWidth: width, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
@@ -437,6 +425,7 @@ struct MainView: View {
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .scrollIndicators(.never)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
@@ -449,8 +438,6 @@ struct MainView: View {
 
     private func detailGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            detailAgentRail(groupId: groupId, detail: detail)
-
             HStack(spacing: 12) {
                 detailOverviewCard(
                     title: "Skills",
@@ -489,6 +476,8 @@ struct MainView: View {
                 fallbackText: detail?.locator ?? "Path unavailable"
             )
 
+            detailAgentRail(groupId: groupId, detail: detail)
+
             if let detail, !detail.groupDocuments.isEmpty {
                 detailGroupDocuments(detail, groupId: groupId)
             }
@@ -524,6 +513,7 @@ struct MainView: View {
                             ForEach(skill.metadata) { entry in
                                 Text("\(entry.key): \(entry.value)")
                                     .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                                     .padding(.horizontal, 10)
                                     .frame(height: 30)
                                     .background(AppTheme.toolbarButtonBackground(for: theme))
@@ -550,7 +540,7 @@ struct MainView: View {
                                     .font(.system(size: 11, weight: .semibold))
                                     .padding(.horizontal, 10)
                                     .frame(height: 30)
-                                    .background(selectedDocument(for: skill)?.id == document.id ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.toolbarButtonBackground(for: theme))
+                                    .background(selectedDocument(for: skill)?.id == document.id ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.documentBlock(for: theme))
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                             }
@@ -611,16 +601,16 @@ struct MainView: View {
 
                 Spacer(minLength: 12)
 
-                Button("Update") {
+                Button {
                     Task { await viewModel.updateCurrentGroup() }
+                } label: {
+                    actionIcon(.update, size: 14)
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 12)
-                .frame(height: 32)
                 .background(AppTheme.toolbarButtonBackground(for: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .font(.system(size: 11, weight: .bold))
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -715,7 +705,7 @@ struct MainView: View {
                 .fill(AppTheme.border(for: theme))
                 .frame(height: 1)
         }
-        .frame(height: 16)
+        .frame(height: 10)
     }
 
     private func detailSkillListRow(groupId: String, skill: MainViewModel.DetailSkill) -> some View {
@@ -744,9 +734,9 @@ struct MainView: View {
             .buttonStyle(.plain)
             .font(.system(size: 10, weight: .bold))
             .frame(width: detailToggleWidth, height: detailToggleHeight)
-            .background(skill.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
+            .background(AppTheme.selectionControlFill(skill.isEnabled ? .full : .empty, for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(skill.isEnabled ? detailSwitchText(.full) : detailSwitchText(.empty))
+            .foregroundStyle(AppTheme.selectionControlText(skill.isEnabled ? .full : .empty, for: theme))
         }
         .frame(height: detailSkillRowHeight)
         .contentShape(Rectangle())
@@ -775,13 +765,13 @@ struct MainView: View {
                         Button {
                             detailDocumentTabIdByGroup[groupId] = document.id
                         } label: {
-                            Text(document.title)
-                                .font(.system(size: 11, weight: .semibold))
-                                .padding(.horizontal, 10)
-                                .frame(height: 30)
-                                .background(selectedGroupDocument(for: detail, groupId: groupId)?.id == document.id ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.toolbarButtonBackground(for: theme))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                Text(document.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 30)
+                                    .background(selectedGroupDocument(for: detail, groupId: groupId)?.id == document.id ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.documentBlock(for: theme))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                         }
                         .buttonStyle(.plain)
                     }
@@ -842,7 +832,7 @@ struct MainView: View {
                             }
                             .padding(.horizontal, 14)
                             .frame(height: detailAgentItemHeight)
-                            .background(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.18) : AppTheme.toolbarButtonBackground(for: theme))
+                            .background(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.18) : AppTheme.documentBlock(for: theme))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : Color.clear, lineWidth: 1)
@@ -898,6 +888,7 @@ struct MainView: View {
     private func detailDocumentContent(document: MainViewModel.DocumentTab) -> some View {
         if document.isMarkdown {
             MarkdownDocumentView(document: document, theme: theme)
+                .frame(maxWidth: AppTheme.detailMarkdownWidth, alignment: .leading)
         } else {
             Text(document.content)
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
@@ -1132,8 +1123,8 @@ struct MainView: View {
                                         .buttonStyle(.plain)
                                         .font(.system(size: 10, weight: .bold))
                                         .frame(width: detailToggleWidth, height: detailToggleHeight)
-                                        .background(skill.isSelected ? Color.green.opacity(0.25) : Color.gray.opacity(0.20))
-                                        .foregroundStyle(skill.isSelected ? Color.green : AppTheme.textPrimary(for: theme))
+                                        .background(AppTheme.selectionControlFill(skill.isSelected ? .full : .empty, for: theme))
+                                        .foregroundStyle(AppTheme.selectionControlText(skill.isSelected ? .full : .empty, for: theme))
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                     }
                                     .padding(12)
@@ -1167,8 +1158,8 @@ struct MainView: View {
                                             .buttonStyle(.plain)
                                             .font(.system(size: 10, weight: .bold))
                                             .frame(width: detailToggleWidth, height: detailToggleHeight)
-                                            .background(isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.22))
-                                            .foregroundStyle(isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
+                                            .background(AppTheme.selectionControlFill(isEnabled ? .full : .empty, for: theme))
+                                            .foregroundStyle(AppTheme.selectionControlText(isEnabled ? .full : .empty, for: theme))
                                             .clipShape(RoundedRectangle(cornerRadius: 8))
                                         }
                                         .padding(12)
@@ -1451,24 +1442,40 @@ struct MainView: View {
     }
 
     private func detailSwitchFill(_ selection: SelectionState) -> Color {
-        switch selection {
-        case .empty:
-            return Color(red: 148.0 / 255.0, green: 163.0 / 255.0, blue: 184.0 / 255.0).opacity(0.30)
-        case .partial:
-            return Color(red: 234.0 / 255.0, green: 179.0 / 255.0, blue: 8.0 / 255.0).opacity(0.32)
-        case .full:
-            return Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0).opacity(0.26)
-        }
+        AppTheme.selectionControlFill(selection, for: theme)
     }
 
     private func detailSwitchText(_ selection: SelectionState) -> Color {
-        switch selection {
-        case .empty:
-            return Color(red: 71.0 / 255.0, green: 85.0 / 255.0, blue: 105.0 / 255.0)
-        case .partial:
-            return Color(red: 146.0 / 255.0, green: 64.0 / 255.0, blue: 14.0 / 255.0)
-        case .full:
-            return Color(red: 22.0 / 255.0, green: 101.0 / 255.0, blue: 52.0 / 255.0)
+        AppTheme.selectionControlText(selection, for: theme)
+    }
+
+    @ViewBuilder
+    private func actionIcon(_ icon: ActionIcon, size: CGFloat) -> some View {
+        if let image = icon.image(size: size) {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else {
+            Color.clear.frame(width: size, height: size)
+        }
+    }
+
+    private func toolbarIconButton(_ icon: ActionIcon, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            actionIcon(icon, size: 14)
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .frame(width: 34, height: 34)
+        }
+        .buttonStyle(.plain)
+        .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
         }
     }
 }
@@ -1646,6 +1653,15 @@ enum AppTheme {
         }
     }
 
+    static func searchPlaceholder(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return textMuted(for: mode)
+        case .dark:
+            return Color(red: 229.0 / 255.0, green: 229.0 / 255.0, blue: 231.0 / 255.0).opacity(0.88)
+        }
+    }
+
     static func statusSuccess(for mode: DesktopThemeMode) -> Color {
         switch mode {
         case .light:
@@ -1661,6 +1677,15 @@ enum AppTheme {
             return brand(for: .yellow, in: .light)
         case .dark:
             return brand(for: .yellow, in: .dark)
+        }
+    }
+
+    static func statusError(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return brand(for: .orange, in: .light)
+        case .dark:
+            return Color(red: 252.0 / 255.0, green: 165.0 / 255.0, blue: 165.0 / 255.0)
         }
     }
 
@@ -1713,8 +1738,33 @@ enum AppTheme {
         neutralCardColor(.color3, for: mode)
     }
 
+    private static let detailDefaultWindowWidth: CGFloat = 980
+    static let detailMarkdownWidth: CGFloat = floor(detailDefaultWindowWidth * 0.694)
+
     static func cardBorder(for mode: DesktopThemeMode) -> Color {
         neutralCardColor(.color3, for: mode)
+    }
+
+    static func selectionControlFill(_ selection: SelectionState, for mode: DesktopThemeMode) -> Color {
+        switch selection {
+        case .empty:
+            return documentBlock(for: mode)
+        case .partial:
+            return statusWarning(for: mode).opacity(mode == .dark ? 0.38 : 0.32)
+        case .full:
+            return statusSuccess(for: mode).opacity(mode == .dark ? 0.36 : 0.30)
+        }
+    }
+
+    static func selectionControlText(_ selection: SelectionState, for mode: DesktopThemeMode) -> Color {
+        switch selection {
+        case .empty:
+            return textPrimary(for: mode).opacity(mode == .dark ? 0.92 : 0.82)
+        case .partial:
+            return statusWarning(for: mode)
+        case .full:
+            return statusSuccess(for: mode)
+        }
     }
 
     private enum NeutralCardColor {

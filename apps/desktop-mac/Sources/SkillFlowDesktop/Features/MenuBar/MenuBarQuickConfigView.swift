@@ -5,10 +5,8 @@ struct MenuBarQuickConfigView: View {
 
     let openMainWindow: () -> Void
 
-    @State private var showImportInput: Bool = false
     @State private var hoveredGroupId: String?
     @State private var hoverExpandTask: Task<Void, Never>?
-    @FocusState private var isImportFieldFocused: Bool
     @AppStorage("desktop.themeMode") private var themeMode = "light"
     @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
     @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
@@ -48,6 +46,9 @@ struct MenuBarQuickConfigView: View {
                             onOpen: nil,
                             onTogglePinned: {
                                 viewModel.togglePinned(sourceId: card.id)
+                            },
+                            onDelete: {
+                                Task { await viewModel.deleteSource(sourceId: card.id) }
                             },
                             onToggleSkill: { skillId, enabled in
                                 Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
@@ -89,28 +90,27 @@ struct MenuBarQuickConfigView: View {
         .frame(width: 360)
         .background(menuBackground)
         .onDisappear(perform: resetTransientState)
-        .onChange(of: showImportInput) { _, isVisible in
-            guard isVisible else {
-                isImportFieldFocused = false
-                return
-            }
-            DispatchQueue.main.async {
-                isImportFieldFocused = true
-            }
-        }
     }
 
     private var topBar: some View {
         HStack(spacing: 6) {
             HStack {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
+                actionIcon(.search, size: 11)
                     .foregroundStyle(AppTheme.textMuted(for: theme))
-                TextField("Search Group / Source", text: $viewModel.searchQuery)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    .disableAutocorrection(true)
+                ZStack(alignment: .leading) {
+                    if viewModel.searchQuery.isEmpty {
+                        Text("Search Group / Source")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
+                            .allowsHitTesting(false)
+                    }
+
+                    TextField("", text: $viewModel.searchQuery)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .disableAutocorrection(true)
+                }
             }
             .padding(.horizontal, 10)
             .frame(height: 26)
@@ -121,14 +121,16 @@ struct MenuBarQuickConfigView: View {
                     .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
             }
 
-            Button("×") {
+            Button {
                 resetTransientState()
                 NSApp.keyWindow?.close()
+            } label: {
+                actionIcon(.close, size: 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .buttonStyle(.plain)
-            .font(.system(size: 14, weight: .bold))
             .foregroundStyle(AppTheme.textPrimary(for: theme))
-            .frame(width: 28, height: 28)
+            .frame(width: 26, height: 26)
             .background(controlFill)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
@@ -145,46 +147,31 @@ struct MenuBarQuickConfigView: View {
 
     private var actionBar: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Button("Import") {
-                    withAnimation(.easeOut(duration: 0.16)) {
-                        showImportInput.toggle()
-                    }
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 10, weight: .bold))
-                .textCase(.uppercase)
-                .padding(.horizontal, 0)
-                .frame(height: 22)
-                .foregroundStyle(showImportInput ? AppTheme.brand(for: accent) : AppTheme.textPrimary(for: theme))
-
-                if showImportInput {
-                    TextField("repo / path", text: $viewModel.newSourceLocator)
-                        .focused($isImportFieldFocused)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .padding(.horizontal, 7)
-                        .frame(width: 170, height: 22)
-                        .background(controlFill)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .onSubmit {
-                            Task { await viewModel.addSource() }
-                        }
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                }
+            Button {
+                viewModel.currentPage = .importPage
+                openMainWindow()
+            } label: {
+                actionIcon(.import, size: 12)
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .frame(width: 22, height: 22)
             }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 0)
+            .frame(height: 22)
 
             Spacer()
 
-            Button("Details") {
+            Button {
+                viewModel.currentPage = .settings
                 openMainWindow()
+            } label: {
+                actionIcon(.settings, size: 12)
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .frame(width: 22, height: 22)
             }
             .buttonStyle(.plain)
-            .font(.system(size: 10, weight: .bold))
-            .textCase(.uppercase)
             .padding(.horizontal, 0)
             .frame(height: 22)
-            .foregroundStyle(AppTheme.textPrimary(for: theme))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -209,8 +196,6 @@ struct MenuBarQuickConfigView: View {
     private func resetTransientState() {
         hoverExpandTask?.cancel()
         hoverExpandTask = nil
-        showImportInput = false
-        isImportFieldFocused = false
         hoveredGroupId = nil
     }
 
@@ -243,5 +228,19 @@ struct MenuBarQuickConfigView: View {
 
     private var controlFill: Color {
         AppTheme.surface(for: theme)
+    }
+
+    @ViewBuilder
+    private func actionIcon(_ icon: ActionIcon, size: CGFloat) -> some View {
+        if let image = icon.image(size: size) {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else {
+            Color.clear.frame(width: size, height: size)
+        }
     }
 }

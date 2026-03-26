@@ -5,7 +5,6 @@ import SwiftUI
 
 @MainActor
 enum MarkdownDocumentRenderer {
-    private static let theme: MarkdownTheme = .default
     private static var parser = MarkdownParser()
     private static var contentCache: [String: MarkdownView.PreprocessedContent] = [:]
     private static var heightCache: [String: CGFloat] = [:]
@@ -38,8 +37,35 @@ enum MarkdownDocumentRenderer {
         heightCache.removeAll()
     }
 
-    static var markdownTheme: MarkdownTheme {
-        theme
+    static func markdownTheme(for mode: DesktopThemeMode) -> MarkdownTheme {
+        var theme = MarkdownTheme.default
+        #if canImport(AppKit)
+        switch mode {
+        case .light:
+            theme.colors.body = NSColor.labelColor
+            theme.colors.code = NSColor.labelColor
+            theme.colors.highlight = NSColor.systemBlue
+            theme.colors.emphasis = NSColor.systemBlue
+            theme.colors.codeBackground = NSColor.controlAccentColor.withAlphaComponent(0.10)
+            theme.colors.selectionBackground = NSColor.controlAccentColor.withAlphaComponent(0.18)
+            theme.table.headerBackgroundColor = NSColor.windowBackgroundColor
+            theme.table.cellBackgroundColor = NSColor.clear
+            theme.table.stripeCellBackgroundColor = NSColor.systemGray.withAlphaComponent(0.03)
+            theme.table.borderColor = NSColor.separatorColor
+        case .dark:
+            theme.colors.body = NSColor(calibratedRed: 233.0 / 255.0, green: 236.0 / 255.0, blue: 239.0 / 255.0, alpha: 1.0)
+            theme.colors.code = NSColor(calibratedRed: 233.0 / 255.0, green: 236.0 / 255.0, blue: 239.0 / 255.0, alpha: 1.0)
+            theme.colors.highlight = NSColor.systemBlue
+            theme.colors.emphasis = NSColor.systemBlue
+            theme.colors.codeBackground = NSColor.white.withAlphaComponent(0.08)
+            theme.colors.selectionBackground = NSColor.systemBlue.withAlphaComponent(0.24)
+            theme.table.headerBackgroundColor = NSColor(calibratedWhite: 1.0, alpha: 0.05)
+            theme.table.cellBackgroundColor = NSColor.clear
+            theme.table.stripeCellBackgroundColor = NSColor.white.withAlphaComponent(0.03)
+            theme.table.borderColor = NSColor.white.withAlphaComponent(0.14)
+        }
+        #endif
+        return theme
     }
 
     private static func heightCacheKey(documentKey: String, width: CGFloat) -> String {
@@ -59,12 +85,13 @@ struct MarkdownDocumentView: View {
 
             if !document.content.isEmpty {
                 CachedMarkdownContentView(
-                    documentKey: document.renderCacheKey,
+                    documentKey: "\(document.renderCacheKey)::\(theme.cacheKey)",
                     preprocessedContent: MarkdownDocumentRenderer.preprocessedContent(
-                        cacheKey: document.renderCacheKey,
+                        cacheKey: "\(document.renderCacheKey)::\(theme.cacheKey)",
                         markdown: document.content
                     ),
-                    theme: MarkdownDocumentRenderer.markdownTheme
+                    theme: MarkdownDocumentRenderer.markdownTheme(for: theme),
+                    themeMode: theme
                 )
             }
         }
@@ -104,13 +131,17 @@ private struct CachedMarkdownContentView: View {
     let documentKey: String
     let preprocessedContent: MarkdownView.PreprocessedContent
     let theme: MarkdownTheme
+    let themeMode: DesktopThemeMode
 
     var body: some View {
         CachedMarkdownTextViewRepresentable(
             documentKey: documentKey,
             preprocessedContent: preprocessedContent,
-            theme: theme
+            theme: theme,
+            themeMode: themeMode
         )
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: AppTheme.detailMarkdownWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -122,6 +153,7 @@ private struct CachedMarkdownTextViewRepresentable: NSViewRepresentable {
     let documentKey: String
     let preprocessedContent: MarkdownView.PreprocessedContent
     let theme: MarkdownTheme
+    let themeMode: DesktopThemeMode
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -130,6 +162,7 @@ private struct CachedMarkdownTextViewRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> MarkdownTextView {
         let view = MarkdownTextView()
         view.theme = theme
+        view.appearance = appearance
         view.throttleInterval = nil
         view.setContentHuggingPriority(.required, for: .vertical)
         view.setContentCompressionResistancePriority(.required, for: .vertical)
@@ -140,6 +173,7 @@ private struct CachedMarkdownTextViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ nsView: MarkdownTextView, context: Context) {
         let width = nsView.bounds.width
+        nsView.appearance = appearance
 
         if context.coordinator.lastDocumentKey != documentKey
             || context.coordinator.lastContent !== preprocessedContent {
@@ -178,18 +212,39 @@ private struct CachedMarkdownTextViewRepresentable: NSViewRepresentable {
         var lastMeasuredWidth: CGFloat?
         var lastMeasuredHeight: CGFloat?
     }
+
+    private var appearance: NSAppearance? {
+        switch themeMode {
+        case .light:
+            return NSAppearance(named: .aqua)
+        case .dark:
+            return NSAppearance(named: .darkAqua)
+        }
+    }
 }
 #else
 private struct CachedMarkdownTextViewRepresentable: View {
     let documentKey: String
     let preprocessedContent: MarkdownView.PreprocessedContent
     let theme: MarkdownTheme
+    let themeMode: DesktopThemeMode
 
     var body: some View {
         MarkdownView(preprocessedContent, theme: theme)
     }
 }
 #endif
+
+private extension DesktopThemeMode {
+    var cacheKey: String {
+        switch self {
+        case .light:
+            return "light"
+        case .dark:
+            return "dark"
+        }
+    }
+}
 
 extension MainViewModel.DocumentTab {
     var isMarkdown: Bool {
