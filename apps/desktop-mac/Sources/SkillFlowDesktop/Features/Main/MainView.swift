@@ -1400,9 +1400,9 @@ enum AppTheme {
     static func cardShadow(for mode: DesktopThemeMode) -> Color {
         switch mode {
         case .light:
-            return Color.black.opacity(0.12)
+            return Color.black.opacity(0.08)
         case .dark:
-            return Color.white.opacity(0.14)
+            return Color.white.opacity(0.10)
         }
     }
 

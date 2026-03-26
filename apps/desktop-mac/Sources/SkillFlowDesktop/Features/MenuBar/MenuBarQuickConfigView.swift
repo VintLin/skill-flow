@@ -7,6 +7,7 @@ struct MenuBarQuickConfigView: View {
 
     @State private var showImportInput: Bool = false
     @State private var hoveredGroupId: String?
+    @State private var hoverExpandTask: Task<Void, Never>?
     @FocusState private var isImportFieldFocused: Bool
     @AppStorage("desktop.themeMode") private var themeMode = "light"
     @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
@@ -63,12 +64,10 @@ struct MenuBarQuickConfigView: View {
                         )
                         .onHover { isHovering in
                             guard menuCompactCards else { return }
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                if isHovering {
-                                    hoveredGroupId = card.id
-                                } else if hoveredGroupId == card.id {
-                                    hoveredGroupId = nil
-                                }
+                            if isHovering {
+                                scheduleHoverExpansion(for: card.id)
+                            } else {
+                                cancelHoverExpansion(for: card.id)
                             }
                         }
                     }
@@ -203,9 +202,34 @@ struct MenuBarQuickConfigView: View {
     }
 
     private func resetTransientState() {
+        hoverExpandTask?.cancel()
+        hoverExpandTask = nil
         showImportInput = false
         isImportFieldFocused = false
         hoveredGroupId = nil
+    }
+
+    private func scheduleHoverExpansion(for groupId: String) {
+        hoverExpandTask?.cancel()
+        hoverExpandTask = Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    hoveredGroupId = groupId
+                }
+                hoverExpandTask = nil
+            }
+        }
+    }
+
+    private func cancelHoverExpansion(for groupId: String) {
+        hoverExpandTask?.cancel()
+        hoverExpandTask = nil
+        guard hoveredGroupId == groupId else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            hoveredGroupId = nil
+        }
     }
 
     private var menuFill: Color {
@@ -221,6 +245,6 @@ struct MenuBarQuickConfigView: View {
     }
 
     private var menuShadow: Color {
-        isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.18)
+        isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.10)
     }
 }

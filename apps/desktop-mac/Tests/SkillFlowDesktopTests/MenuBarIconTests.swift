@@ -38,6 +38,13 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(GroupCardScale.menu.triStateFontSize, 10)
     }
 
+    func testGroupCardShadowStaysCenteredAndSoft() {
+        XCTAssertEqual(GroupCardScale.home.shadowYOffset, 0)
+        XCTAssertEqual(GroupCardScale.menu.shadowYOffset, 0)
+        XCTAssertEqual(GroupCardScale.home.shadowRadius, 16)
+        XCTAssertEqual(GroupCardScale.menu.shadowRadius, 12.8, accuracy: 0.001)
+    }
+
     func testMenuBarIconLoadsTemplateSvg() {
         let image = MenuBarIcon.image()
 

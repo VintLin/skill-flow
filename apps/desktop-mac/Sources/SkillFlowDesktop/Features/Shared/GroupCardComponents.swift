@@ -93,11 +93,11 @@ enum GroupCardScale {
     }
 
     var shadowRadius: CGFloat {
-        14 * factor
+        16 * factor
     }
 
     var shadowYOffset: CGFloat {
-        8 * factor
+        0
     }
 }
 
