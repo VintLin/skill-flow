@@ -534,11 +534,15 @@ struct MainView: View {
                 }
 
                 detailContentCard {
-                    Text(selectedDocument(for: skill)?.content ?? skill.documentContent)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    if let document = selectedDocument(for: skill) {
+                        detailDocumentContent(document: document)
+                    } else {
+                        Text(skill.documentContent)
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         }
@@ -766,11 +770,7 @@ struct MainView: View {
                     detailFileTreeCard(detail.fileTree)
                 } else {
                     detailContentCard {
-                        Text(selectedDocument.content)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .foregroundStyle(AppTheme.textPrimary(for: theme))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
+                        detailDocumentContent(document: selectedDocument)
                     }
                 }
             }
@@ -872,6 +872,19 @@ struct MainView: View {
                         .textSelection(.enabled)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func detailDocumentContent(document: MainViewModel.DocumentTab) -> some View {
+        if document.isMarkdown {
+            MarkdownDocumentView(document: document, theme: theme)
+        } else {
+            Text(document.content)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
         }
     }
 

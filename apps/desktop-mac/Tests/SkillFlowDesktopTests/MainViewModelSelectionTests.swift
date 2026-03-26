@@ -86,6 +86,8 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(detail?.fileTree.dropFirst().contains(where: { $0.prefix.contains("|--") || $0.prefix.contains("`--") }) == true)
         XCTAssertFalse(detail?.fileTree.contains(where: { $0.title == "SKILL.md" }) == true)
         XCTAssertTrue(detail?.skills.first?.detailLines.contains(where: { $0.contains("SKILL.md") }) == true)
+        XCTAssertEqual(detail?.skills.first?.documents.first?.metadata.map(\.key), ["name", "description"])
+        XCTAssertFalse(detail?.skills.first?.documents.first?.content.contains("---") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("# browse") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("Final verification line.") == true)
     }

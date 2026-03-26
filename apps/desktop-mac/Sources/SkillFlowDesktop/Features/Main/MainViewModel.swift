@@ -136,7 +136,9 @@ final class MainViewModel {
         let id: String
         let title: String
         let path: String
+        let metadata: [MetadataEntry]
         let content: String
+        let renderCacheKey: String
     }
 
     struct DetailTarget: Identifiable {
@@ -278,6 +280,11 @@ final class MainViewModel {
         }
     }
 
+    private struct ParsedDocument {
+        let metadata: [MetadataEntry]
+        let body: String
+    }
+
     private let bridgeClient: BridgeClient
 
     private static let targetOrder: [String] = [
@@ -334,7 +341,7 @@ final class MainViewModel {
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
     private var skillDocumentCache: [String: String] = [:]
-    private var parsedMetadataCache: [String: [MetadataEntry]] = [:]
+    private var parsedDocumentCache: [String: ParsedDocument] = [:]
     private var documentTabsCache: [String: [DocumentTab]] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
@@ -1447,9 +1454,11 @@ final class MainViewModel {
             let leafRelativePath = leafPayload["relativePath"] as? String
             let folderPath = (leafPayload["absolutePath"] as? String)?.nonEmpty
                 ?? skillFilePath.flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty }
-            let documentContent = skillFilePath.flatMap { cachedSkillDocument(path: $0) }
+            let documentContent = skillFilePath
+                .map { parsedDocument(path: $0).body }
+                .flatMap(\.nonEmpty)
                 ?? leaf.description
-            let metadata = skillFilePath.flatMap { parsedMetadata(path: $0) } ?? []
+            let metadata = skillFilePath.flatMap { parsedDocument(path: $0).metadata } ?? []
             let metadataName = metadata.first(where: { $0.key.lowercased() == "name" })?.value.nonEmpty
             let version = metadata.first(where: { $0.key.lowercased() == "version" })?.value
             let documents = skillFilePath.flatMap { documentTabs(for: $0) }
@@ -1458,7 +1467,9 @@ final class MainViewModel {
                         id: "inline-skill-md",
                         title: "SKILL.md",
                         path: "SKILL.md",
-                        content: documentContent
+                        metadata: [],
+                        content: documentContent,
+                        renderCacheKey: "inline-skill-md:\(documentContent.hashValue)"
                     )
                 ]
             let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
@@ -1670,15 +1681,15 @@ final class MainViewModel {
         return document
     }
 
-    private func parsedMetadata(path: String) -> [MetadataEntry] {
-        if let cached = parsedMetadataCache[path] {
+    private func parsedDocument(path: String) -> ParsedDocument {
+        if let cached = parsedDocumentCache[path] {
             return cached
         }
 
         let content = cachedSkillDocument(path: path)
-        let metadata = parseFrontmatterEntries(from: content)
-        parsedMetadataCache[path] = metadata
-        return metadata
+        let parsed = parseDocument(content)
+        parsedDocumentCache[path] = parsed
+        return parsed
     }
 
     private func documentTabs(for skillFilePath: String) -> [DocumentTab] {
@@ -1687,11 +1698,10 @@ final class MainViewModel {
         }
 
         var tabs: [DocumentTab] = [
-            DocumentTab(
+            makeDocumentTab(
                 id: skillFilePath,
                 title: "SKILL.md",
-                path: skillFilePath,
-                content: cachedSkillDocument(path: skillFilePath)
+                path: skillFilePath
             )
         ]
 
@@ -1701,11 +1711,10 @@ final class MainViewModel {
             for entry in entries.sorted() where entry.lowercased().hasSuffix(".md") {
                 let fullPath = (referencesPath as NSString).appendingPathComponent(entry)
                 tabs.append(
-                    DocumentTab(
+                    makeDocumentTab(
                         id: fullPath,
                         title: "references/\(entry)",
-                        path: fullPath,
-                        content: cachedSkillDocument(path: fullPath)
+                        path: fullPath
                     )
                 )
             }
@@ -1715,18 +1724,41 @@ final class MainViewModel {
         return tabs
     }
 
-    private func parseFrontmatterEntries(from content: String) -> [MetadataEntry] {
+    private func makeDocumentTab(id: String, title: String, path: String) -> DocumentTab {
+        let parsed = parsedDocument(path: path)
+        let rawContent = cachedSkillDocument(path: path)
+        return DocumentTab(
+            id: id,
+            title: title,
+            path: path,
+            metadata: parsed.metadata,
+            content: parsed.body,
+            renderCacheKey: "\(path):\(rawContent.hashValue)"
+        )
+    }
+
+    private func parseDocument(_ content: String) -> ParsedDocument {
         let lines = content.components(separatedBy: .newlines)
         guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
-            return []
+            return ParsedDocument(metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
+        guard let closingIndex = lines.dropFirst().firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines) == "---"
+        }) else {
+            return ParsedDocument(metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+
+        let metadata = parseFrontmatterEntries(lines: Array(lines[1..<closingIndex]))
+        let bodyLines = closingIndex + 1 < lines.count ? Array(lines[(closingIndex + 1)...]) : []
+        let body = bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return ParsedDocument(metadata: metadata, body: body)
+    }
+
+    private func parseFrontmatterEntries(lines: [String]) -> [MetadataEntry] {
         var entries: [MetadataEntry] = []
-        for line in lines.dropFirst() {
+        for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed == "---" {
-                break
-            }
             guard let separator = trimmed.firstIndex(of: ":") else {
                 continue
             }
@@ -1746,7 +1778,9 @@ final class MainViewModel {
                 id: "group:filetree",
                 title: "FILETREE",
                 path: groupPath ?? ".",
-                content: renderFileTree(fileTree)
+                metadata: [],
+                content: renderFileTree(fileTree),
+                renderCacheKey: "group:filetree:\(groupPath ?? ".")"
             )
         ]
 
@@ -1763,11 +1797,10 @@ final class MainViewModel {
         for entry in markdownFiles {
             let fullPath = (groupPath as NSString).appendingPathComponent(entry)
             tabs.append(
-                DocumentTab(
+                makeDocumentTab(
                     id: "group:\(fullPath)",
                     title: entry,
-                    path: fullPath,
-                    content: cachedSkillDocument(path: fullPath)
+                    path: fullPath
                 )
             )
         }
