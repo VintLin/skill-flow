@@ -9,6 +9,10 @@ struct MenuBarQuickConfigView: View {
     @FocusState private var isImportFieldFocused: Bool
     @AppStorage("desktop.themeMode") private var themeMode = "light"
 
+    private var theme: DesktopThemeMode {
+        isDark ? .dark : .light
+    }
+
     private var isDark: Bool {
         themeMode == "dark"
     }
@@ -16,44 +20,43 @@ struct MenuBarQuickConfigView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
+            Divider()
+                .overlay(AppTheme.border(for: theme))
 
-            ZStack(alignment: .bottom) {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(groupCards) { card in
-                            SharedGroupCard(
-                                card: card,
-                                theme: isDark ? .dark : .light,
-                                scale: .menu,
-                                onOpen: nil,
-                                onToggleSkill: { skillId, enabled in
-                                    Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
-                                },
-                                onToggleAllSkills: {
-                                    Task { await viewModel.toggleAllSkills(sourceId: card.id) }
-                                },
-                                onToggleTarget: { targetId, enabled in
-                                    Task { await viewModel.setTargetEnabled(targetId, enabled: enabled, sourceId: card.id) }
-                                },
-                                onToggleAllTargets: {
-                                    Task { await viewModel.toggleAllTargets(sourceId: card.id) }
-                                }
-                            )
-                        }
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(groupCards) { card in
+                        SharedGroupCard(
+                            card: card,
+                            theme: theme,
+                            scale: .menu,
+                            onOpen: nil,
+                            onToggleSkill: { skillId, enabled in
+                                Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
+                            },
+                            onToggleAllSkills: {
+                                Task { await viewModel.toggleAllSkills(sourceId: card.id) }
+                            },
+                            onToggleTarget: { targetId, enabled in
+                                Task { await viewModel.setTargetEnabled(targetId, enabled: enabled, sourceId: card.id) }
+                            },
+                            onToggleAllTargets: {
+                                Task { await viewModel.toggleAllTargets(sourceId: card.id) }
+                            }
+                        )
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.top, 10)
-                    .padding(.bottom, 58)
                 }
-                .frame(minHeight: 300, maxHeight: 360)
-
-                actionBar
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 6)
+                .padding(.vertical, 10)
             }
+            .frame(minHeight: 300, maxHeight: 360)
+            .scrollClipDisabled()
+
+            Divider()
+                .overlay(AppTheme.border(for: theme))
+
+            actionBar
         }
         .frame(width: 360)
-        .padding(8)
         .background(menuBackground)
         .onDisappear(perform: resetTransientState)
         .onChange(of: showImportInput) { _, isVisible in
@@ -95,8 +98,9 @@ struct MenuBarQuickConfigView: View {
             .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
-        .padding(.bottom, 8)
-        .padding(.horizontal, 0)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(.clear)
     }
 
     private var actionBar: some View {
@@ -149,10 +153,7 @@ struct MenuBarQuickConfigView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(menuFooterFill)
-        )
+        .background(.clear)
     }
 
     private var menuBackground: some View {
@@ -171,11 +172,11 @@ struct MenuBarQuickConfigView: View {
     }
 
     private var menuFill: Color {
-        isDark ? .black : .white
+        AppTheme.groupCardFill(for: theme)
     }
 
     private var controlFill: Color {
-        isDark ? .black : .white
+        AppTheme.groupCardFill(for: theme)
     }
 
     private var controlShadow: Color {
@@ -184,9 +185,5 @@ struct MenuBarQuickConfigView: View {
 
     private var menuShadow: Color {
         isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.18)
-    }
-
-    private var menuFooterFill: Color {
-        isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.78)
     }
 }
