@@ -4,151 +4,95 @@ enum GroupCardScale {
     case home
     case menu
 
-    var cardInset: CGFloat {
+    private var factor: CGFloat {
         switch self {
-        case .home: return 12
-        case .menu: return 8
+        case .home: return 1.0
+        case .menu: return 0.75
         }
+    }
+
+    var cardInset: CGFloat {
+        12 * factor
     }
 
     var cardSpacing: CGFloat {
-        switch self {
-        case .home: return 12
-        case .menu: return 8
-        }
+        12 * factor
     }
 
     var titleSize: CGFloat {
-        switch self {
-        case .home: return 14
-        case .menu: return 9.5
-        }
+        14 * factor
     }
 
     var metaSize: CGFloat {
-        switch self {
-        case .home: return 11
-        case .menu: return 7.5
-        }
+        11 * factor
     }
 
     var sectionLabelSize: CGFloat {
-        switch self {
-        case .home: return 12
-        case .menu: return 8
-        }
+        12 * factor
     }
 
     var chipHeight: CGFloat {
-        switch self {
-        case .home: return 34
-        case .menu: return 22
-        }
+        34 * factor
     }
 
     var chipFontSize: CGFloat {
-        switch self {
-        case .home: return 11
-        case .menu: return 7.5
-        }
+        11 * factor
     }
 
     var targetSize: CGFloat {
-        switch self {
-        case .home: return 34
-        case .menu: return 22
-        }
+        34 * factor
     }
 
     var targetFontSize: CGFloat {
-        switch self {
-        case .home: return 11
-        case .menu: return 7.5
-        }
+        11 * factor
     }
 
     var triStateWidth: CGFloat {
-        switch self {
-        case .home: return 42
-        case .menu: return 28
-        }
+        42 * factor
     }
 
     var triStateHeight: CGFloat {
-        switch self {
-        case .home: return 34
-        case .menu: return 22
-        }
+        34 * factor
     }
 
     var triStateFontSize: CGFloat {
-        switch self {
-        case .home: return 10
-        case .menu: return 7
-        }
+        10 * factor
     }
 
     var rowSpacing: CGFloat {
-        switch self {
-        case .home: return 8
-        case .menu: return 5
-        }
+        8 * factor
     }
 
     var headerSpacing: CGFloat {
-        switch self {
-        case .home: return 5
-        case .menu: return 3
-        }
+        5 * factor
     }
 
     var sectionTopPadding: CGFloat {
-        switch self {
-        case .home: return 4
-        case .menu: return 2
-        }
+        4 * factor
     }
 
     var sectionHorizontalPadding: CGFloat {
-        switch self {
-        case .home: return 12
-        case .menu: return 8
-        }
+        12 * factor
     }
 
     var fadeWidth: CGFloat {
-        switch self {
-        case .home: return 14
-        case .menu: return 10
-        }
+        14 * factor
     }
 
     var minHeight: CGFloat {
-        switch self {
-        case .home: return 206
-        case .menu: return 138
-        }
+        206 * factor
     }
 
     var cornerRadius: CGFloat {
-        switch self {
-        case .home: return 10
-        case .menu: return 8
-        }
+        max(6, 10 * factor)
     }
 
     var shadowRadius: CGFloat {
-        switch self {
-        case .home: return 14
-        case .menu: return 9
-        }
+        14 * factor
     }
 
     var shadowYOffset: CGFloat {
-        switch self {
-        case .home: return 8
-        case .menu: return 5
-        }
+        8 * factor
     }
 }
 
