@@ -936,7 +936,7 @@ private struct GroupCardView: View {
         .buttonStyle(.plain)
     }
 
-    private func chipScroller<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func chipScroller<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
         HorizontalFadeScroll(
             height: 34,
             fadeWidth: 24,
@@ -1083,7 +1083,7 @@ private struct HorizontalFadeMetrics: Equatable {
 }
 
 private struct HorizontalFadeMetricsKey: PreferenceKey {
-    static var defaultValue: HorizontalFadeMetrics = .init(minX: 0, width: 0)
+    static let defaultValue: HorizontalFadeMetrics = .init(minX: 0, width: 0)
 
     static func reduce(value: inout HorizontalFadeMetrics, nextValue: () -> HorizontalFadeMetrics) {
         value = nextValue()
