@@ -1714,14 +1714,13 @@ enum AppTheme {
     }
 
     static func cardBorder(for mode: DesktopThemeMode) -> Color {
-        neutralCardColor(.color5, for: mode)
+        neutralCardColor(.color3, for: mode)
     }
 
     private enum NeutralCardColor {
         case color1
         case color2
         case color3
-        case color5
     }
 
     private static func neutralCardColor(_ color: NeutralCardColor, for mode: DesktopThemeMode) -> Color {
@@ -1732,26 +1731,18 @@ enum AppTheme {
             return grayscaleColor(249)
         case (.light, .color3):
             return grayscaleColor(242)
-        case (.light, .color5):
-            return rgbColor(184, 179, 176)
         case (.dark, .color1):
             return grayscaleColor(14)
         case (.dark, .color2):
             return grayscaleColor(21)
         case (.dark, .color3):
             return grayscaleColor(34)
-        case (.dark, .color5):
-            return rgbColor(82, 82, 82)
         }
     }
 
     private static func grayscaleColor(_ value: Double) -> Color {
         let channel = value / 255.0
         return Color(red: channel, green: channel, blue: channel)
-    }
-
-    private static func rgbColor(_ red: Double, _ green: Double, _ blue: Double) -> Color {
-        Color(red: red / 255.0, green: green / 255.0, blue: blue / 255.0)
     }
 }
 
