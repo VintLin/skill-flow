@@ -26,8 +26,18 @@ Principles:
 ## 4. Color Tokens
 
 - `--color-brand-primary`: `rgb(238, 96, 24)`
-- `--color-bg-page-light`: `rgb(238, 238, 238)`
-- `--color-surface-1-light`: `rgb(250, 250, 250)`
+- Neutral surface scale for card layering:
+- `light --color-1`: `oklch(0.993 0 0)` / `rgb(253, 253, 253)`
+- `light --color-2`: `oklch(0.982 0 0)` / `rgb(249, 249, 249)`
+- `light --color-3`: `oklch(0.961 0 0)` / `rgb(242, 242, 242)`
+- `dark --color-1`: `oklch(0.162 0 0)` / `rgb(14, 14, 14)`
+- `dark --color-2`: `oklch(0.195 0 0)` / `rgb(21, 21, 21)`
+- `dark --color-3`: `oklch(0.254 0 0)` / `rgb(34, 34, 34)`
+- Card background mapping:
+- Page background uses `color-2`
+- Card on page uses `color-1`
+- One-level nested card uses `color-2`
+- Two-level nested card uses `color-3`
 - `--color-text-primary-light`: `rgb(2, 2, 2)`
 - `--color-border-default-light`: `rgb(184, 179, 176)`
 - `--color-success`: `rgb(34, 197, 94)`
