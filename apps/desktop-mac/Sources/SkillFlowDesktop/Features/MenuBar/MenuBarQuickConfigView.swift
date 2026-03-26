@@ -19,6 +19,8 @@ struct MenuBarQuickConfigView: View {
 
     private let topBarHeight: CGFloat = 44
     private let footerHeight: CGFloat = 38
+    private let menuListMinHeight: CGFloat = 360
+    private let menuListMaxHeight: CGFloat = 440
 
     var body: some View {
         ZStack {
@@ -49,7 +51,7 @@ struct MenuBarQuickConfigView: View {
                 .padding(.top, topBarHeight + 10)
                 .padding(.bottom, footerHeight + 10)
             }
-            .frame(minHeight: 300, maxHeight: 360)
+            .frame(minHeight: menuListMinHeight, maxHeight: menuListMaxHeight)
             .scrollClipDisabled()
 
             VStack(spacing: 0) {
@@ -169,11 +171,6 @@ struct MenuBarQuickConfigView: View {
     private var menuOverlayBackground: some View {
         Rectangle()
             .fill(menuFill)
-            .overlay(
-                Rectangle()
-                    .fill(AppTheme.border(for: theme)),
-                alignment: .bottom
-            )
     }
 
     private var groupCards: [MainViewModel.GroupCardModel] {
