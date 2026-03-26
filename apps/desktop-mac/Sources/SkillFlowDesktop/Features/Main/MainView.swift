@@ -3,15 +3,12 @@ import SwiftUI
 struct MainView: View {
     @Bindable var viewModel: MainViewModel
 
-    @State private var activePage: Page = .config
     @State private var detailGroupId: String?
     @State private var detailSkillIdByGroup: [String: String] = [:]
     @State private var theme: DesktopThemeMode = .light
+    @State private var showImportSheet: Bool = false
 
-    private enum Page {
-        case config
-        case stats
-    }
+    let openSettings: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -25,10 +22,8 @@ struct MainView: View {
                     .ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    header(layout: layout)
-                    toolbar(layout: layout)
-
-                    content(layout: layout)
+                    topBar(layout: layout)
+                    configPage(layout: layout)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -46,6 +41,20 @@ struct MainView: View {
                         }
                 }
             }
+        }
+        .sheet(isPresented: $showImportSheet) {
+            ImportSourceSheet(
+                locator: $viewModel.newSourceLocator,
+                onCancel: {
+                    showImportSheet = false
+                },
+                onSubmit: {
+                    Task {
+                        await viewModel.addSource()
+                        showImportSheet = false
+                    }
+                }
+            )
         }
         .tint(AppTheme.brand)
         .onChange(of: viewModel.selectedGroupId) { _, newValue in
@@ -99,38 +108,31 @@ struct MainView: View {
         .allowsHitTesting(false)
     }
 
-    private func header(layout: LayoutMetrics) -> some View {
+    private func topBar(layout: LayoutMetrics) -> some View {
         Group {
-            if layout.isNarrowHeader {
+            if layout.isNarrowTopBar {
                 VStack(alignment: .leading, spacing: 10) {
                     headerLogoRow
-                    headerTabRow
-                    headerThemeButton
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) {
+                        searchField
+                        importButton
+                        settingsButton
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(AppTheme.headerBackground(for: theme))
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(AppTheme.border(for: theme))
-                        .frame(height: 1)
-                }
             } else {
-                HStack(spacing: 24) {
+                HStack(spacing: 12) {
                     headerLogoRow
-                    headerTabRow
-                    Spacer()
-                    headerThemeButton
+                    searchField
+                    Spacer(minLength: 0)
+                    importButton
+                    settingsButton
                 }
                 .padding(.horizontal, 16)
-                .frame(height: 46)
+                .frame(height: 52)
                 .background(AppTheme.headerBackground(for: theme))
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(AppTheme.border(for: theme))
-                        .frame(height: 1)
-                }
             }
         }
     }
@@ -152,60 +154,6 @@ struct MainView: View {
         }
     }
 
-    private var headerTabRow: some View {
-        HStack(spacing: 4) {
-            navButton("Config", selected: activePage == .config) { activePage = .config }
-            navButton("Stats", selected: activePage == .stats) { activePage = .stats }
-        }
-    }
-
-    private var headerThemeButton: some View {
-        Button(theme == .dark ? "Light" : "Dark") {
-            theme = theme == .dark ? .light : .dark
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 12)
-        .frame(height: 30)
-        .background(AppTheme.toolbarButtonBackground(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .foregroundStyle(AppTheme.textPrimary(for: theme))
-        .font(.system(size: 10, weight: .bold))
-        .textCase(.uppercase)
-    }
-
-    private func toolbar(layout: LayoutMetrics) -> some View {
-        Group {
-            if layout.isNarrowToolbar {
-                VStack(alignment: .leading, spacing: 8) {
-                    searchField
-                    toolbarHint
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(AppTheme.headerBackground(for: theme))
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(AppTheme.border(for: theme))
-                        .frame(height: 1)
-                }
-            } else {
-                HStack(spacing: 12) {
-                    searchField
-                    Spacer()
-                    toolbarHint
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(AppTheme.headerBackground(for: theme))
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(AppTheme.border(for: theme))
-                        .frame(height: 1)
-                }
-            }
-        }
-    }
-
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
@@ -216,26 +164,38 @@ struct MainView: View {
                 .font(.system(size: 10, weight: .medium))
                 .textCase(.uppercase)
         }
-        .padding(.horizontal, 10)
-        .frame(width: 240, height: 30, alignment: .leading)
-        .background(AppTheme.toolbarButtonBackground(for: theme))
+        .padding(.horizontal, 12)
+        .frame(width: 320, height: 34, alignment: .leading)
+        .background(AppTheme.headerControlFill(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private var toolbarHint: some View {
-        EmptyView()
+    private var importButton: some View {
+        Button("Import") {
+            showImportSheet = true
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(AppTheme.headerControlFill(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .foregroundStyle(AppTheme.textPrimary(for: theme))
+        .font(.system(size: 10, weight: .bold))
+        .textCase(.uppercase)
     }
 
-    private func content(layout: LayoutMetrics) -> some View {
-        Group {
-            switch activePage {
-            case .config:
-                configPage(layout: layout)
-            case .stats:
-                statsPage(layout: layout)
-            }
+    private var settingsButton: some View {
+        Button("Settings") {
+            openSettings()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(AppTheme.headerControlFill(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .foregroundStyle(AppTheme.textPrimary(for: theme))
+        .font(.system(size: 10, weight: .bold))
+        .textCase(.uppercase)
     }
 
     private func configPage(layout: LayoutMetrics) -> some View {
@@ -293,25 +253,6 @@ struct MainView: View {
                     Spacer(minLength: 0)
                 }
             }
-        }
-    }
-
-    private func statsPage(layout: LayoutMetrics) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                sectionShell {
-                    VStack(alignment: .leading, spacing: 16) {
-                        sectionHeader(title: "Metrics", subtitle: "Overview cards and trend chart.", badge: viewModel.healthLabel)
-
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                            StatsCard(title: "Groups", value: "\(viewModel.sourceRows.count)", theme: theme)
-                            StatsCard(title: "Warnings", value: "\(viewModel.latestWarnings.count)", theme: theme)
-                            StatsCard(title: "Health", value: viewModel.healthLabel, theme: theme)
-                        }
-                    }
-                }
-            }
-            .padding(16)
         }
     }
 
@@ -1090,14 +1031,36 @@ private struct HorizontalFadeMetricsKey: PreferenceKey {
     }
 }
 
+private struct ImportSourceSheet: View {
+    @Binding var locator: String
+    let onCancel: () -> Void
+    let onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Import Source")
+                .font(.system(size: 15, weight: .semibold))
+
+            TextField("repo / path", text: $locator)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                Button("Import", action: onSubmit)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 420)
+    }
+}
+
 private struct LayoutMetrics {
     let width: CGFloat
 
-    var isNarrowHeader: Bool {
-        width <= 860
-    }
-
-    var isNarrowToolbar: Bool {
+    var isNarrowTopBar: Bool {
         width <= 860
     }
 
@@ -1182,9 +1145,18 @@ private enum AppTheme {
     static func headerBackground(for mode: DesktopThemeMode) -> Color {
         switch mode {
         case .light:
-            return Color(red: 242.0 / 255.0, green: 242.0 / 255.0, blue: 242.0 / 255.0).opacity(0.88)
+            return Color(red: 235.0 / 255.0, green: 235.0 / 255.0, blue: 235.0 / 255.0)
         case .dark:
-            return Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 31.0 / 255.0).opacity(0.88)
+            return Color(red: 22.0 / 255.0, green: 22.0 / 255.0, blue: 24.0 / 255.0)
+        }
+    }
+
+    static func headerControlFill(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return .white
+        case .dark:
+            return .black
         }
     }
 

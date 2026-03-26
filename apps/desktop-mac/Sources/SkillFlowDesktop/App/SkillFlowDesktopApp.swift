@@ -4,14 +4,18 @@ import AppKit
 @main
 struct SkillFlowDesktopApp: App {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     @State private var viewModel = MainViewModel(bridgeClient: BridgeClient())
 
     var body: some Scene {
         Window("Skill Flow", id: "main-window") {
-            MainView(viewModel: viewModel)
+            MainView(viewModel: viewModel) {
+                openSettings()
+            }
                 .frame(minWidth: 980, minHeight: 640)
         }
+        .windowStyle(.hiddenTitleBar)
 
         Settings {
             SettingsView()
