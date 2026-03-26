@@ -16,7 +16,7 @@ enum GroupCardScale {
     }
 
     var cardSpacing: CGFloat {
-        12 * factor
+        10 * factor
     }
 
     var titleSize: CGFloat {
@@ -60,19 +60,23 @@ enum GroupCardScale {
     }
 
     var rowSpacing: CGFloat {
-        8 * factor
+        6 * factor
     }
 
     var headerSpacing: CGFloat {
-        5 * factor
+        4 * factor
     }
 
     var sectionTopPadding: CGFloat {
-        4 * factor
+        1.5 * factor
     }
 
     var sectionHorizontalPadding: CGFloat {
         12 * factor
+    }
+
+    var headerBottomSpacing: CGFloat {
+        2 * factor
     }
 
     var fadeWidth: CGFloat {
@@ -110,7 +114,7 @@ struct SharedGroupCard: View {
         VStack(alignment: .leading, spacing: scale.cardSpacing) {
             header
 
-            Divider()
+            dashedDivider
 
             cardRow(
                 title: "Agents",
@@ -153,18 +157,22 @@ struct SharedGroupCard: View {
 
     private var headerText: some View {
         VStack(alignment: .leading, spacing: scale.headerSpacing) {
-            Text(card.title)
-                .font(.system(size: scale.titleSize, weight: .semibold))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-            Text(card.subtitle)
-                .font(.system(size: scale.metaSize, weight: .regular, design: .monospaced))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
+            HStack(alignment: .firstTextBaseline, spacing: max(4, scale.cardInset * 0.5)) {
+                Text(card.title)
+                    .font(.system(size: scale.titleSize, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                Text(card.subtitle)
+                    .font(.system(size: scale.metaSize, weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+            }
             Text(card.metaLine)
-                .font(.system(size: scale.metaSize, weight: .regular, design: .monospaced))
+                .font(.system(size: scale.metaSize, weight: .regular))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, scale.headerBottomSpacing)
     }
 
     private func cardRow(
@@ -243,6 +251,13 @@ struct SharedGroupCard: View {
             contentPadding: scale.cardInset,
             content: content
         )
+    }
+
+    private var dashedDivider: some View {
+        Rectangle()
+            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            .foregroundStyle(AppTheme.textMuted(for: theme).opacity(0.45))
+            .frame(height: 1)
     }
 
     private func switchLabel(_ selection: SelectionState) -> String {

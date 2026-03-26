@@ -338,8 +338,8 @@ final class MainViewModel {
             return GroupCardModel(
                 id: row.id,
                 title: row.displayName,
-                subtitle: row.id,
-                metaLine: row.locator.isEmpty ? row.kind : row.locator,
+                subtitle: subtitleText(locator: row.locator, kind: row.kind),
+                metaLine: "from \(row.locator.isEmpty ? row.kind : row.locator)",
                 health: row.status,
                 warningCount: row.warningCount,
                 errorCount: row.errorCount,
@@ -364,6 +364,38 @@ final class MainViewModel {
                 saveState: saveStateBySourceId[row.id] ?? SaveState(phase: .idle, message: nil)
             )
         }
+    }
+
+    private func subtitleText(locator: String, kind: String) -> String {
+        if let handle = authorHandle(from: locator) {
+            return "by \(handle)"
+        }
+        return "by \(kind.lowercased())"
+    }
+
+    private func authorHandle(from locator: String) -> String? {
+        let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let patterns = [
+            #"github\.com/([^/\s]+)/"#,
+            #"git@github\.com:([^/\s]+)/"#,
+            #"clawhub/([^/\s]+)/"#,
+        ]
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let nsrange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+                if let match = regex.firstMatch(in: trimmed, range: nsrange),
+                   match.numberOfRanges > 1,
+                   let range = Range(match.range(at: 1), in: trimmed)
+                {
+                    return "@\(trimmed[range])"
+                }
+            }
+        }
+
+        return nil
     }
 
     var deploymentSummary: DeploymentSummary {
