@@ -115,10 +115,28 @@ final class MainViewModel {
         let id: String
         let title: String
         let summary: String
+        let version: String?
+        let folderPath: String?
+        let relativeFolderPath: String?
+        let metadata: [MetadataEntry]
+        let documents: [DocumentTab]
         let detailLines: [String]
         let documentContent: String
         let isEnabled: Bool
         let warningCount: Int
+    }
+
+    struct MetadataEntry: Identifiable {
+        let id: String
+        let key: String
+        let value: String
+    }
+
+    struct DocumentTab: Identifiable {
+        let id: String
+        let title: String
+        let path: String
+        let content: String
     }
 
     struct DetailTarget: Identifiable {
@@ -128,12 +146,23 @@ final class MainViewModel {
         let isEnabled: Bool
     }
 
+    struct FileTreeLine: Identifiable {
+        let id: String
+        let depth: Int
+        let title: String
+        let isFile: Bool
+    }
+
     struct DetailViewData {
         let sourceId: String
         let title: String
         let subtitle: String
+        let author: String
+        let originLabel: String
         let locator: String
+        let groupPath: String?
         let updatedAt: String
+        let updatedRelative: String
         let health: String
         let warningCount: Int
         let errorCount: Int
@@ -146,6 +175,7 @@ final class MainViewModel {
         let enabledTargetLabels: [String]
         let sourceFacts: [String]
         let deploymentFacts: [String]
+        let fileTree: [FileTreeLine]
         let targets: [DetailTarget]
         let skills: [DetailSkill]
     }
@@ -290,6 +320,8 @@ final class MainViewModel {
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
     private var skillDocumentCache: [String: String] = [:]
+    private var parsedMetadataCache: [String: [MetadataEntry]] = [:]
+    private var documentTabsCache: [String: [DocumentTab]] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -1390,25 +1422,50 @@ final class MainViewModel {
         let enabledTargets = Set(draft.enabledTargets)
         let inspectedLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
+        let groupPath = preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
 
-        let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId in
+        let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId -> DetailSkill? in
             guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
                 return nil
             }
             let leafPayload = leafPayloads.first(where: { ($0["id"] as? String) == leafId }) ?? [:]
             let skillFilePath = leafPayload["skillFilePath"] as? String
-            let relativePath = leafPayload["relativePath"] as? String
+            let leafRelativePath = leafPayload["relativePath"] as? String
+            let folderPath = (leafPayload["absolutePath"] as? String)?.nonEmpty
+                ?? skillFilePath.flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty }
             let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
             let title = (leafPayload["title"] as? String)?.nonEmpty ?? leaf.name
             let documentContent = skillFilePath.flatMap { cachedSkillDocument(path: $0) }
                 ?? leaf.description
+            let metadata = skillFilePath.flatMap { parsedMetadata(path: $0) } ?? []
+            let version = metadata.first(where: { $0.key.lowercased() == "version" })?.value
+            let documents = skillFilePath.flatMap { documentTabs(for: $0) }
+                ?? [
+                    DocumentTab(
+                        id: "inline-skill-md",
+                        title: "SKILL.md",
+                        path: "SKILL.md",
+                        content: documentContent
+                    )
+                ]
+            let relativeFolderPath = groupPath.flatMap { basePath in
+                folderPath.flatMap { relativePath(from: basePath, to: $0) }
+            } ?? leafRelativePath
 
             return DetailSkill(
                 id: leaf.id,
                 title: title,
                 summary: leaf.description.isEmpty ? linkName : leaf.description,
+                version: version,
+                folderPath: folderPath,
+                relativeFolderPath: relativeFolderPath,
+                metadata: metadata.filter { metadata in
+                    let lowered = metadata.key.lowercased()
+                    return lowered != "name" && lowered != "enabled" && lowered != "description"
+                },
+                documents: documents,
                 detailLines: [
-                    relativePath,
+                    leafRelativePath,
                     skillFilePath,
                     "Link name: \(linkName)"
                 ].compactMap { $0?.nonEmpty },
@@ -1454,8 +1511,13 @@ final class MainViewModel {
                 ?? (summarySourcePayload["displayName"] as? String)?.nonEmpty
                 ?? summary.sourceDisplayName,
             subtitle: (sourcePayload["kind"] as? String)?.nonEmpty ?? summary.sourceKind,
+            author: authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
+                ?? "@\(summary.sourceKind.lowercased())",
+            originLabel: displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator),
             locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
+            groupPath: groupPath,
             updatedAt: (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt,
+            updatedRelative: relativeUpdateLabel((lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt),
             health: summary.health,
             warningCount: summary.warningCount,
             errorCount: summary.errorCount,
@@ -1468,6 +1530,7 @@ final class MainViewModel {
             enabledTargetLabels: enabledTargetLabels,
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
+            fileTree: buildFileTreeLines(groupPath: groupPath, skills: skills),
             targets: targets,
             skills: skills
         )
@@ -1581,6 +1644,214 @@ final class MainViewModel {
 
         skillDocumentCache[path] = document
         return document
+    }
+
+    private func parsedMetadata(path: String) -> [MetadataEntry] {
+        if let cached = parsedMetadataCache[path] {
+            return cached
+        }
+
+        let content = cachedSkillDocument(path: path)
+        let metadata = parseFrontmatterEntries(from: content)
+        parsedMetadataCache[path] = metadata
+        return metadata
+    }
+
+    private func documentTabs(for skillFilePath: String) -> [DocumentTab] {
+        if let cached = documentTabsCache[skillFilePath] {
+            return cached
+        }
+
+        var tabs: [DocumentTab] = [
+            DocumentTab(
+                id: skillFilePath,
+                title: "SKILL.md",
+                path: skillFilePath,
+                content: cachedSkillDocument(path: skillFilePath)
+            )
+        ]
+
+        let folderPath = (skillFilePath as NSString).deletingLastPathComponent
+        let referencesPath = (folderPath as NSString).appendingPathComponent("references")
+        if let entries = try? FileManager.default.contentsOfDirectory(atPath: referencesPath) {
+            for entry in entries.sorted() where entry.lowercased().hasSuffix(".md") {
+                let fullPath = (referencesPath as NSString).appendingPathComponent(entry)
+                tabs.append(
+                    DocumentTab(
+                        id: fullPath,
+                        title: "references/\(entry)",
+                        path: fullPath,
+                        content: cachedSkillDocument(path: fullPath)
+                    )
+                )
+            }
+        }
+
+        documentTabsCache[skillFilePath] = tabs
+        return tabs
+    }
+
+    private func parseFrontmatterEntries(from content: String) -> [MetadataEntry] {
+        let lines = content.components(separatedBy: .newlines)
+        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
+            return []
+        }
+
+        var entries: [MetadataEntry] = []
+        for line in lines.dropFirst() {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed == "---" {
+                break
+            }
+            guard let separator = trimmed.firstIndex(of: ":") else {
+                continue
+            }
+            let key = String(trimmed[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = String(trimmed[trimmed.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty, !value.isEmpty else {
+                continue
+            }
+            entries.append(MetadataEntry(id: "\(key):\(value)", key: key, value: value))
+        }
+        return entries
+    }
+
+    private func preferredGroupPath(lockPayload: [String: Any], leafPayloads: [[String: Any]]) -> String? {
+        if let checkoutPath = (lockPayload["checkoutPath"] as? String)?.nonEmpty {
+            return checkoutPath
+        }
+
+        let folderPaths = leafPayloads.compactMap {
+            (($0["absolutePath"] as? String)?.nonEmpty)
+                ?? (($0["skillFilePath"] as? String).flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty })
+        }
+        return commonDirectoryPath(paths: folderPaths)
+    }
+
+    private func commonDirectoryPath(paths: [String]) -> String? {
+        guard var components = paths.first?.split(separator: "/").map(String.init), !components.isEmpty else {
+            return nil
+        }
+
+        for path in paths.dropFirst() {
+            let current = path.split(separator: "/").map(String.init)
+            var index = 0
+            while index < min(components.count, current.count), components[index] == current[index] {
+                index += 1
+            }
+            components = Array(components.prefix(index))
+            if components.isEmpty {
+                return "/"
+            }
+        }
+
+        return "/" + components.joined(separator: "/")
+    }
+
+    private func relativePath(from basePath: String, to targetPath: String) -> String? {
+        let standardizedBase = URL(fileURLWithPath: basePath).standardizedFileURL.path
+        let standardizedTarget = URL(fileURLWithPath: targetPath).standardizedFileURL.path
+        guard standardizedTarget.hasPrefix(standardizedBase) else {
+            return nil
+        }
+        let suffix = String(standardizedTarget.dropFirst(standardizedBase.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return suffix.isEmpty ? "." : suffix
+    }
+
+    private func buildFileTreeLines(groupPath: String?, skills: [DetailSkill]) -> [FileTreeLine] {
+        let paths = skills.compactMap { skill -> [String]? in
+            let relativeFolderPath = skill.relativeFolderPath ?? skill.folderPath
+            guard let relativeFolderPath else {
+                return nil
+            }
+            let trimmedFolder = relativeFolderPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            var components = trimmedFolder.isEmpty || trimmedFolder == "."
+                ? [String]()
+                : trimmedFolder.split(separator: "/").map(String.init)
+            components.append("SKILL.md")
+            return components
+        }
+
+        var seen = Set<String>()
+        var lines: [FileTreeLine] = []
+
+        for components in paths.sorted(by: { $0.joined(separator: "/") < $1.joined(separator: "/") }) {
+            for index in components.indices {
+                let prefix = Array(components.prefix(index + 1))
+                let id = prefix.joined(separator: "/")
+                if seen.insert(id).inserted {
+                    lines.append(
+                        FileTreeLine(
+                            id: id,
+                            depth: index,
+                            title: components[index],
+                            isFile: index == components.count - 1
+                        )
+                    )
+                }
+            }
+        }
+
+        if lines.isEmpty, let groupPath {
+            return [
+                FileTreeLine(
+                    id: groupPath,
+                    depth: 0,
+                    title: URL(fileURLWithPath: groupPath).lastPathComponent,
+                    isFile: false
+                )
+            ]
+        }
+
+        return lines
+    }
+
+    private func displayOriginLabel(from locator: String) -> String {
+        let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return "unknown source"
+        }
+
+        if let url = URL(string: trimmed), let host = url.host?.nonEmpty {
+            return host
+        }
+
+        if trimmed.contains("github.com") {
+            return "github.com"
+        }
+
+        return trimmed
+    }
+
+    private func relativeUpdateLabel(_ rawValue: String) -> String {
+        guard let date = ISO8601DateFormatter().date(from: rawValue) else {
+            return "Updated time unavailable"
+        }
+
+        let seconds = max(0, Int(Date().timeIntervalSince(date)))
+        if seconds < 60 {
+            return "Updated just now"
+        }
+
+        let minute = 60
+        let hour = 60 * minute
+        let day = 24 * hour
+        let week = 7 * day
+
+        switch seconds {
+        case ..<hour:
+            let value = seconds / minute
+            return "Updated \(value) minute\(value == 1 ? "" : "s") ago"
+        case ..<day:
+            let value = seconds / hour
+            return "Updated \(value) hour\(value == 1 ? "" : "s") ago"
+        case ..<week:
+            let value = seconds / day
+            return "Updated \(value) day\(value == 1 ? "" : "s") ago"
+        default:
+            let value = seconds / week
+            return "Updated \(value) week\(value == 1 ? "" : "s") ago"
+        }
     }
 
     private func pruneStateMaps(allowedSourceIds: Set<String>) {

@@ -13,6 +13,8 @@ struct MainView: View {
 
     @State private var detailSkillIdByGroup: [String: String] = [:]
     @State private var detailShowsGroupOverviewByGroup: [String: Bool] = [:]
+    @State private var detailHoveredItemIdByGroup: [String: String] = [:]
+    @State private var detailDocumentTabIdBySkill: [String: String] = [:]
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
 
@@ -61,7 +63,10 @@ struct MainView: View {
                 detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
             }
             if detailShowsGroupOverviewByGroup[groupId] == nil {
-                detailShowsGroupOverviewByGroup[groupId] = false
+                detailShowsGroupOverviewByGroup[groupId] = true
+            }
+            for skill in detail.skills where detailDocumentTabIdBySkill[skill.id] == nil {
+                detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
             }
         }
         .task(id: viewModel.toast?.id) {
@@ -325,25 +330,14 @@ struct MainView: View {
 
     private func detailPage(groupId: String, layout: LayoutMetrics) -> some View {
         let detail = viewModel.detailViewData(for: groupId)
-        let stacked = layout.detailStacks
         let sidebarWidth = layout.detailSidebarWidth
 
-        return ScrollView {
-            Group {
-                if stacked {
-                    VStack(spacing: 14) {
-                        detailSidebar(groupId: groupId, detail: detail, selectedSkillId: detailSkillIdByGroup[groupId], width: sidebarWidth)
-                        detailMain(groupId: groupId, detail: detail)
-                    }
-                } else {
-                    HStack(alignment: .top, spacing: 14) {
-                        detailSidebar(groupId: groupId, detail: detail, selectedSkillId: detailSkillIdByGroup[groupId], width: sidebarWidth)
-                        detailMain(groupId: groupId, detail: detail)
-                    }
-                }
-            }
-            .padding(16)
+        return HStack(alignment: .top, spacing: 14) {
+            detailSidebar(groupId: groupId, detail: detail, selectedSkillId: detailSkillIdByGroup[groupId], width: sidebarWidth)
+            detailMain(groupId: groupId, detail: detail)
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func detailSidebar(
@@ -352,46 +346,36 @@ struct MainView: View {
         selectedSkillId: String?,
         width: CGFloat
     ) -> some View {
-        let skillItems = detail?.skills ?? []
-        let activeIndex = isShowingGroupOverview(groupId) ? nil : skillItems.firstIndex(where: { $0.id == selectedSkillId })
+        let skills = detail?.skills ?? []
+        let selectedItemId = detailSelectedItemId(groupId: groupId, selectedSkillId: selectedSkillId)
+        let hoveredItemId = detailHoveredItemIdByGroup[groupId]
+        let indicatorItemId = hoveredItemId ?? selectedItemId
 
         return VStack(alignment: .leading, spacing: 0) {
-            Button {
-                selectGroupOverview(groupId: groupId, detail: detail)
-            } label: {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(detail?.title ?? groupId)
-                            .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(1)
-                            .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        Text(detail?.subtitle ?? "source")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(AppTheme.textMuted(for: theme))
-                            .lineLimit(1)
+            ScrollView {
+                ZStack(alignment: .topLeading) {
+                    if let indicatorFrame = detailIndicatorFrame(itemId: indicatorItemId, skillCount: skills.count) {
+                        RoundedRectangle(cornerRadius: 999)
+                            .fill(AppTheme.brand(for: accent, in: theme))
+                            .frame(width: 4, height: indicatorFrame.height)
+                            .offset(x: 0, y: indicatorFrame.minY)
+                            .animation(.spring(response: 0.22, dampingFraction: 0.82), value: indicatorItemId)
                     }
-                    Spacer(minLength: 8)
-                    detailToggleButton(selection: detail?.skillSelection ?? .empty) {
-                        Task { await viewModel.toggleAllSkills(sourceId: groupId) }
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(12)
-            .background(isShowingGroupOverview(groupId) ? AppTheme.toolbarButtonBackground(for: theme) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .padding(.bottom, 12)
 
-            detailSkillList(
-                items: skillItems,
-                activeIndex: activeIndex,
-                groupId: groupId,
-                width: width
-            )
-            .frame(maxHeight: .infinity, alignment: .top)
+                    VStack(alignment: .leading, spacing: 0) {
+                        detailGroupListRow(groupId: groupId, detail: detail)
+                        detailSkillsLabelRow
+                        ForEach(skills) { skill in
+                            detailSkillListRow(groupId: groupId, skill: skill)
+                        }
+                    }
+                    .padding(.leading, 14)
+                }
+                .padding(.vertical, 10)
+            }
+            .padding(16)
         }
-        .padding(12)
-        .frame(minWidth: width, maxWidth: width, minHeight: 196, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: width, maxWidth: width, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
@@ -405,51 +389,25 @@ struct MainView: View {
         let showingGroupOverview = isShowingGroupOverview(groupId)
 
         return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(showingGroupOverview ? (detail?.title ?? groupId) : (selectedSkill?.title ?? detail?.title ?? groupId))
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text(showingGroupOverview ? (detail?.locator ?? "No source locator") : (selectedSkill?.detailLines.last ?? detail?.locator ?? "No source locator"))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(detail?.health ?? viewModel.healthLabel)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text(detailSaveLabel(detail))
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                }
+            if showingGroupOverview {
+                detailGroupHeader(detail: detail, fallbackGroupId: groupId)
+            } else {
+                detailSkillHeader(skill: selectedSkill, fallbackGroupId: groupId)
             }
-            .padding(12)
-            .background(AppTheme.toolbarGlass(for: theme))
 
-            VStack(alignment: .leading, spacing: 12) {
-                if showingGroupOverview {
-                    detailGroupOverview(groupId: groupId, detail: detail)
-                } else if let selectedSkill {
-                    ScrollView {
-                        detailDocumentRow(skill: selectedSkill)
-                            .padding(18)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if showingGroupOverview {
+                        detailGroupOverview(groupId: groupId, detail: detail)
+                    } else if let selectedSkill {
+                        detailSkillOverview(skill: selectedSkill)
+                    } else {
+                        emptyState(title: "No skill selected", subtitle: "Choose one skill from the left list.")
                     }
-                    .background(AppTheme.toolbarButtonBackground(for: theme))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
-                } else {
-                    emptyState(title: "No skill selected", subtitle: "Choose one skill from the left list.")
                 }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(AppTheme.surface(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
@@ -459,6 +417,8 @@ struct MainView: View {
 
     private func detailGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            detailAgentRail(groupId: groupId, detail: detail)
+
             HStack(spacing: 12) {
                 detailOverviewCard(
                     title: "Skills",
@@ -483,64 +443,79 @@ struct MainView: View {
                 )
             }
 
-            if let sourceFacts = detail?.sourceFacts, !sourceFacts.isEmpty {
-                detailOverviewCard(title: "Source", lines: sourceFacts, lineLimit: nil)
-            }
+            detailPathRow(
+                title: "Path",
+                path: detail?.groupPath,
+                fallbackText: detail?.locator ?? "Path unavailable"
+            )
 
-            detailAgentPanel(groupId: groupId, detail: detail)
-
-            if let deploymentFacts = detail?.deploymentFacts, !deploymentFacts.isEmpty {
-                detailOverviewCard(title: "Deployments", lines: deploymentFacts, lineLimit: nil)
+            if let fileTree = detail?.fileTree, !fileTree.isEmpty {
+                detailFileTreeCard(fileTree)
             }
         }
     }
 
-    private func detailAgentPanel(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
+    private func detailSkillOverview(skill: MainViewModel.DetailSkill) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Agents")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text(detail?.enabledTargetLabels.joined(separator: ", ").nonEmpty ?? "No agents enabled")
-                        .font(.system(size: 11, weight: .regular))
+            detailOverviewCard(title: "Skill Description", lines: [skill.summary], lineLimit: nil)
+
+            if !skill.metadata.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Skill Metadata")
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(2)
-                }
-                Spacer()
-                detailToggleButton(selection: detail?.targetSelection ?? .empty) {
-                    Task { await viewModel.toggleAllTargets(sourceId: groupId) }
+                        .textCase(.uppercase)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(skill.metadata) { entry in
+                                Text("\(entry.key): \(entry.value)")
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 30)
+                                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
                 }
             }
 
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
-                ForEach(detail?.targets ?? []) { target in
-                    HStack(spacing: 10) {
-                        Text(target.label)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(AppTheme.textPrimary(for: theme))
-                            .lineLimit(1)
-                        Spacer(minLength: 6)
-                        Button(target.isEnabled ? "ON" : "OFF") {
-                            Task { await viewModel.setTargetEnabled(target.id, enabled: !target.isEnabled, sourceId: groupId) }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Documents")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .textCase(.uppercase)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(skill.documents) { document in
+                            Button {
+                                detailDocumentTabIdBySkill[skill.id] = document.id
+                            } label: {
+                                Text(document.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 30)
+                                    .background(selectedDocument(for: skill)?.id == document.id ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.toolbarButtonBackground(for: theme))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 10, weight: .bold))
-                        .frame(width: 36, height: 28)
-                        .background(target.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.22))
-                        .foregroundStyle(target.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .padding(12)
-                    .background(AppTheme.toolbarButtonBackground(for: theme))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
+
+                Text(selectedDocument(for: skill)?.content ?? skill.documentContent)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(14)
+                    .background(AppTheme.documentBlock(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
         }
-        .padding(14)
-        .background(AppTheme.toolbarButtonBackground(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
     private func detailOverviewCard(title: String, lines: [String], lineLimit: Int? = 1) -> some View {
@@ -567,125 +542,332 @@ struct MainView: View {
         .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
-    private func detailSkillList(items: [MainViewModel.DetailSkill], activeIndex: Int?, groupId: String, width: CGFloat) -> some View {
-        let lineOffset = activeIndex.map { CGFloat($0) * 64 + 10 } ?? 10
-        let isActiveVisible = activeIndex != nil
-
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Skills")
-                    .font(.system(size: 10, weight: .semibold))
+    private func detailGroupHeader(detail: MainViewModel.DetailViewData?, fallbackGroupId: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(detail?.title ?? fallbackGroupId) by \(detail?.author ?? "@unknown")")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                Text("from \(detail?.originLabel ?? "unknown source")")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .textCase(.uppercase)
-                Spacer()
-                Text("\(items.count)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Button("Update") {
+                    Task { await viewModel.updateCurrentGroup() }
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+                .background(AppTheme.toolbarButtonBackground(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .font(.system(size: 11, weight: .bold))
+
+                Text(detail?.updatedRelative ?? "Updated time unavailable")
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
             }
-            .padding(.bottom, 8)
+        }
+        .padding(14)
+        .background(AppTheme.toolbarGlass(for: theme))
+    }
 
-            ScrollView {
-                ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(AppTheme.brand(for: accent))
-                        .frame(width: 4, height: 28)
-                        .offset(x: 8, y: lineOffset)
-                        .opacity(isActiveVisible ? 1 : 0)
-                        .animation(.easeInOut(duration: 0.15), value: activeIndex)
+    private func detailSkillHeader(skill: MainViewModel.DetailSkill?, fallbackGroupId: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(skill?.title ?? fallbackGroupId)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                if let path = skill?.relativeFolderPath, let folderPath = skill?.folderPath {
+                    Button {
+                        openPath(folderPath)
+                    } label: {
+                        Text("from \(path)")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text("from .")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                }
+            }
 
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                            detailSkillRow(item: item, active: index == activeIndex) {
-                                detailSkillIdByGroup[groupId] = item.id
-                                detailShowsGroupOverviewByGroup[groupId] = false
+            Spacer(minLength: 12)
+
+            Text(skill?.version.map(normalizedVersionText) ?? "")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+        }
+        .padding(14)
+        .background(AppTheme.toolbarGlass(for: theme))
+    }
+
+    private func detailGroupListRow(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(detail?.title ?? groupId)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+                Text("by \(detail?.author ?? "@unknown")")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 10)
+
+            detailToggleButton(selection: detail?.skillSelection ?? .empty) {
+                Task { await viewModel.toggleAllSkills(sourceId: groupId) }
+            }
+        }
+        .frame(height: 72)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectGroupOverview(groupId: groupId, detail: detail)
+        }
+        .onHover { isHovering in
+            detailHoveredItemIdByGroup[groupId] = isHovering ? detailGroupItemId(groupId) : nil
+        }
+    }
+
+    private var detailSkillsLabelRow: some View {
+        HStack {
+            Text("Skills")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+            Spacer()
+        }
+        .frame(height: 28)
+    }
+
+    private func detailSkillListRow(groupId: String, skill: MainViewModel.DetailSkill) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(skill.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+                Text(skill.version.map(normalizedVersionText) ?? " ")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 10)
+
+            Button(skill.isEnabled ? "ON" : "OFF") {
+                Task { await viewModel.setSkillEnabled(skill.id, enabled: !skill.isEnabled, sourceId: groupId) }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 10, weight: .bold))
+            .frame(width: 36, height: 30)
+            .background(skill.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(skill.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
+        }
+        .frame(height: 60)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            detailSkillIdByGroup[groupId] = skill.id
+            detailShowsGroupOverviewByGroup[groupId] = false
+            if detailDocumentTabIdBySkill[skill.id] == nil {
+                detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
+            }
+        }
+        .onHover { isHovering in
+            detailHoveredItemIdByGroup[groupId] = isHovering ? detailSkillItemId(skill.id) : nil
+        }
+    }
+
+    private func detailAgentRail(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Agents")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    detailToggleButton(selection: detail?.targetSelection ?? .empty) {
+                        Task { await viewModel.toggleAllTargets(sourceId: groupId) }
+                    }
+
+                    ForEach(detail?.targets ?? []) { target in
+                        Button {
+                            Task { await viewModel.setTargetEnabled(target.id, enabled: !target.isEnabled, sourceId: groupId) }
+                        } label: {
+                            VStack(spacing: 8) {
+                                if let image = AgentIconLibrary.symbolImage(
+                                    for: target.id,
+                                    foreground: agentIconForeground(isEnabled: target.isEnabled)
+                                ) {
+                                    Image(nsImage: image)
+                                        .renderingMode(.original)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 22, height: 22)
+                                } else {
+                                    Text(target.shortLabel.uppercased())
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                }
+
+                                Text(target.label)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                    .lineLimit(1)
                             }
+                            .padding(.horizontal, 14)
+                            .frame(height: 72)
+                            .background(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.18) : AppTheme.toolbarButtonBackground(for: theme))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : Color.clear, lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .padding(.vertical, 4)
             }
-            .frame(maxHeight: 260)
         }
-        .padding(12)
+        .padding(14)
         .background(AppTheme.toolbarButtonBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
-    private func detailSkillRow(item: MainViewModel.DetailSkill, active: Bool, action: @escaping () -> Void) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
-                    .font(.system(size: 13, weight: .semibold))
+    private func detailPathRow(title: String, path: String?, fallbackText: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+
+            Button {
+                if let path {
+                    openPath(path)
+                }
+            } label: {
+                Text(path ?? fallbackText)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text(item.summary)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 10)
-
-            Button(item.isEnabled ? "ON" : "OFF") {
-                guard case .detail(let sourceId) = viewModel.currentPage else { return }
-                Task { await viewModel.setSkillEnabled(item.id, enabled: !item.isEnabled, sourceId: sourceId) }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
-            .font(.system(size: 10, weight: .bold))
-            .frame(width: 36, height: 30)
-            .background(item.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(item.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 16)
-        .padding(.vertical, 9)
-        .background(active ? AppTheme.pageBackground(for: theme).opacity(0.5) : Color.clear)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: action)
     }
 
-    private func detailDocumentRow(skill: MainViewModel.DetailSkill) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Text(skill.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                pillText(skill.isEnabled ? "Enabled" : "Disabled", tint: skill.isEnabled ? Color.green.opacity(0.22) : Color.gray.opacity(0.20), text: AppTheme.textPrimary(for: theme))
-                if skill.warningCount > 0 {
-                    pillText("Warnings \(skill.warningCount)", tint: Color.orange.opacity(0.24), text: AppTheme.textPrimary(for: theme))
-                }
-            }
-            Text(skill.summary)
-                .font(.system(size: 12, weight: .regular))
+    private func detailFileTreeCard(_ lines: [MainViewModel.FileTreeLine]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("File Tree")
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .textCase(.uppercase)
 
-            if !skill.detailLines.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
-                    ForEach(Array(skill.detailLines.enumerated()), id: \.offset) { _, line in
-                        detailOverviewCard(title: "Meta", lines: [line], lineLimit: 2)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(lines) { line in
+                    HStack(spacing: 8) {
+                        Rectangle()
+                            .fill(AppTheme.border(for: theme))
+                            .frame(width: 1, height: 18)
+                            .opacity(line.depth > 0 ? 1 : 0)
+                            .padding(.leading, CGFloat(line.depth) * 14)
+
+                        Text(line.title)
+                            .font(.system(size: 11, weight: line.isFile ? .semibold : .regular, design: .monospaced))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
                     }
                 }
             }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("SKILL.md")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .textCase(.uppercase)
-                Text(skill.documentContent)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(12)
-                    .background(AppTheme.documentBlock(for: theme))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.toolbarButtonBackground(for: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 12)
+    }
+
+    private func selectedDocument(for skill: MainViewModel.DetailSkill) -> MainViewModel.DocumentTab? {
+        let selectedId = detailDocumentTabIdBySkill[skill.id] ?? skill.documents.first?.id
+        return skill.documents.first(where: { $0.id == selectedId }) ?? skill.documents.first
+    }
+
+    private func detailSelectedItemId(groupId: String, selectedSkillId: String?) -> String {
+        if isShowingGroupOverview(groupId) {
+            return detailGroupItemId(groupId)
+        }
+        if let selectedSkillId {
+            return detailSkillItemId(selectedSkillId)
+        }
+        return detailGroupItemId(groupId)
+    }
+
+    private func detailGroupItemId(_ groupId: String) -> String {
+        "group:\(groupId)"
+    }
+
+    private func detailSkillItemId(_ skillId: String) -> String {
+        "skill:\(skillId)"
+    }
+
+    private func detailIndicatorFrame(itemId: String?, skillCount: Int) -> CGRect? {
+        guard let itemId else {
+            return nil
+        }
+        if itemId.hasPrefix("group:") {
+            return CGRect(x: 0, y: 12, width: 4, height: 48)
+        }
+        guard itemId.hasPrefix("skill:") else {
+            return nil
+        }
+        let index = max(0, detailSkillIndex(from: itemId))
+        let originY = 12 + 72 + 28 + CGFloat(index) * 60 + 10
+        return CGRect(x: 0, y: originY, width: 4, height: 40)
+    }
+
+    private func detailSkillIndex(from itemId: String) -> Int {
+        let skillId = itemId.replacingOccurrences(of: "skill:", with: "")
+        guard case .detail(let sourceId) = viewModel.currentPage,
+              let detail = viewModel.detailViewData(for: sourceId),
+              let index = detail.skills.firstIndex(where: { $0.id == skillId }) else {
+            return 0
+        }
+        return index
+    }
+
+    private func openPath(_ path: String) {
+        let url = URL(fileURLWithPath: path)
+        NSWorkspace.shared.open(url)
+    }
+
+    private func normalizedVersionText(_ version: String) -> String {
+        version.lowercased().hasPrefix("v") ? "Version \(version)" : "Version v\(version)"
+    }
+
+    private func agentIconForeground(isEnabled: Bool) -> NSColor {
+        switch theme {
+        case .light:
+            return isEnabled
+                ? NSColor(calibratedRed: 15.0 / 255.0, green: 23.0 / 255.0, blue: 42.0 / 255.0, alpha: 1)
+                : NSColor(calibratedRed: 100.0 / 255.0, green: 116.0 / 255.0, blue: 139.0 / 255.0, alpha: 1)
+        case .dark:
+            return isEnabled
+                ? NSColor(calibratedRed: 241.0 / 255.0, green: 245.0 / 255.0, blue: 249.0 / 255.0, alpha: 1)
+                : NSColor(calibratedRed: 148.0 / 255.0, green: 163.0 / 255.0, blue: 184.0 / 255.0, alpha: 1)
+        }
     }
 
     private func detailSaveLabel(_ detail: MainViewModel.DetailViewData?) -> String {
