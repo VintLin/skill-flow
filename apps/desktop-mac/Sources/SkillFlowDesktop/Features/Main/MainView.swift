@@ -205,10 +205,11 @@ struct MainView: View {
                     Spacer(minLength: 0)
                     LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
                         ForEach(groupCards) { card in
-                            GroupCardView(
+                            SharedGroupCard(
                                 card: card,
                                 theme: theme,
-                                onOpenDetail: {
+                                scale: .home,
+                                onOpen: {
                                     detailGroupId = card.id
                                     Task { await viewModel.selectSource(card.id) }
                                 },
@@ -741,165 +742,6 @@ struct MainView: View {
     }
 }
 
-private struct GroupCardView: View {
-    private static let cardInset: CGFloat = 12
-
-    let card: MainViewModel.GroupCardModel
-    let theme: DesktopThemeMode
-    let onOpenDetail: () -> Void
-    let onToggleSkill: (String, Bool) -> Void
-    let onToggleAllSkills: () -> Void
-    let onToggleTarget: (String, Bool) -> Void
-    let onToggleAllTargets: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button(action: onOpenDetail) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(card.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text(card.subtitle)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                    Text(card.metaLine)
-                        .font(.system(size: 11, weight: .regular, design: .monospaced))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text("Skills")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .textCase(.uppercase)
-                }
-                chipScroller {
-                    HStack(spacing: 6) {
-                        triStateSwitch(card.skillSelection, size: .desktopWide, action: onToggleAllSkills)
-                        ForEach(card.skills) { skill in
-                            cardToggle(skill.label, isOn: skill.isEnabled) {
-                                onToggleSkill(skill.id, !skill.isEnabled)
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, -Self.cardInset)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text("Agents")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .textCase(.uppercase)
-                }
-                chipScroller {
-                    HStack(spacing: 6) {
-                        triStateSwitch(card.targetSelection, size: .desktopWide, action: onToggleAllTargets)
-                        ForEach(card.targets) { target in
-                            agentToggle(target.shortLabel, accessibilityLabel: target.label, isOn: target.isEnabled) {
-                                onToggleTarget(target.id, !target.isEnabled)
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, -Self.cardInset)
-            }
-        }
-        .padding(12)
-        .frame(minHeight: 206, alignment: .topLeading)
-        .background(AppTheme.groupCardFill(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: AppTheme.cardShadow(for: theme), radius: 14, x: 0, y: 8)
-    }
-
-    private func cardToggle(_ text: String, isOn: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(text)
-                .font(.system(size: 11, weight: .bold))
-                .padding(.horizontal, 10)
-                .frame(height: AppTheme.ControlSize.chip.height)
-                .background(isOn ? AppTheme.brand.opacity(0.30) : AppTheme.idleChipFill(for: theme))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func agentToggle(_ text: String, accessibilityLabel: String, isOn: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(text)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .frame(width: 34, height: 34)
-                .background(isOn ? AppTheme.brand.opacity(0.30) : AppTheme.idleChipFill(for: theme))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-        .help(accessibilityLabel)
-    }
-
-    @ViewBuilder
-    private func triStateSwitch(_ selection: SelectionState, size: AppTheme.ControlSize, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(switchLabel(selection))
-                .font(.system(size: size.fontSize, weight: .bold))
-                .frame(width: size.width, height: size.height)
-                .background(switchFill(selection))
-                .foregroundStyle(switchText(selection))
-                .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func chipScroller<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
-        HorizontalFadeScroll(
-            height: 34,
-            fadeWidth: 14,
-            fill: AppTheme.groupCardFill(for: theme),
-            contentPadding: Self.cardInset,
-            content: content
-        )
-    }
-
-    private func switchLabel(_ selection: SelectionState) -> String {
-        switch selection {
-        case .empty: return "OFF"
-        case .partial: return "MIX"
-        case .full: return "ON"
-        }
-    }
-
-    private func switchFill(_ selection: SelectionState) -> Color {
-        switch selection {
-        case .empty:
-            return Color(red: 148.0 / 255.0, green: 163.0 / 255.0, blue: 184.0 / 255.0).opacity(0.30)
-        case .partial:
-            return Color(red: 234.0 / 255.0, green: 179.0 / 255.0, blue: 8.0 / 255.0).opacity(0.32)
-        case .full:
-            return Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0).opacity(0.30)
-        }
-    }
-
-    private func switchText(_ selection: SelectionState) -> Color {
-        switch selection {
-        case .empty:
-            return Color(red: 71.0 / 255.0, green: 85.0 / 255.0, blue: 105.0 / 255.0)
-        case .partial:
-            return Color(red: 146.0 / 255.0, green: 64.0 / 255.0, blue: 14.0 / 255.0)
-        case .full:
-            return Color(red: 22.0 / 255.0, green: 101.0 / 255.0, blue: 52.0 / 255.0)
-        }
-    }
-}
-
 private struct StatsCard: View {
     let title: String
     let value: String
@@ -925,90 +767,6 @@ private struct StatsCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppTheme.border(for: theme), lineWidth: 1)
         )
-    }
-}
-
-private struct HorizontalFadeScroll<Content: View>: View {
-    let height: CGFloat
-    let fadeWidth: CGFloat
-    let fill: Color
-    let contentPadding: CGFloat
-    @ViewBuilder let content: () -> Content
-
-    @State private var viewportWidth: CGFloat = 0
-    @State private var contentWidth: CGFloat = 0
-    @State private var contentMinX: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                content()
-                    .padding(.horizontal, contentPadding)
-                    .background(
-                        GeometryReader { contentProxy in
-                            Color.clear.preference(
-                                key: HorizontalFadeMetricsKey.self,
-                                value: HorizontalFadeMetrics(
-                                    minX: contentProxy.frame(in: .named("HorizontalFadeScroll")).minX,
-                                    width: contentProxy.size.width
-                                )
-                            )
-                        }
-                    )
-            }
-            .coordinateSpace(name: "HorizontalFadeScroll")
-            .onAppear {
-                viewportWidth = proxy.size.width
-            }
-            .onChange(of: proxy.size.width) { _, newValue in
-                viewportWidth = newValue
-            }
-            .onPreferenceChange(HorizontalFadeMetricsKey.self) { metrics in
-                contentMinX = metrics.minX
-                contentWidth = metrics.width
-            }
-            .overlay(alignment: .leading) {
-                LinearGradient(
-                    stops: [
-                        .init(color: fill, location: 0),
-                        .init(color: fill, location: 0.4),
-                        .init(color: fill.opacity(0), location: 1)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: fadeWidth)
-                .allowsHitTesting(false)
-            }
-            .overlay(alignment: .trailing) {
-                LinearGradient(
-                    stops: [
-                        .init(color: fill.opacity(0), location: 0),
-                        .init(color: fill, location: 0.6),
-                        .init(color: fill, location: 1)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: fadeWidth)
-                .allowsHitTesting(false)
-            }
-            .clipped()
-        }
-        .frame(height: height)
-    }
-}
-
-private struct HorizontalFadeMetrics: Equatable {
-    let minX: CGFloat
-    let width: CGFloat
-}
-
-private struct HorizontalFadeMetricsKey: PreferenceKey {
-    static let defaultValue: HorizontalFadeMetrics = .init(minX: 0, width: 0)
-
-    static func reduce(value: inout HorizontalFadeMetrics, nextValue: () -> HorizontalFadeMetrics) {
-        value = nextValue()
     }
 }
 
@@ -1074,12 +832,12 @@ private struct LayoutMetrics {
     }
 }
 
-private enum DesktopThemeMode: String {
+enum DesktopThemeMode: String {
     case light
     case dark
 }
 
-private enum AppTheme {
+enum AppTheme {
     static let brand = Color(red: 255.0 / 255.0, green: 97.0 / 255.0, blue: 26.0 / 255.0)
 
     struct ControlSize {

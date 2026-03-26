@@ -21,8 +21,11 @@ struct MenuBarQuickConfigView: View {
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(groupCards) { card in
-                            MenuGroupCard(
+                            SharedGroupCard(
                                 card: card,
+                                theme: isDark ? .dark : .light,
+                                scale: .menu,
+                                onOpen: nil,
                                 onToggleSkill: { skillId, enabled in
                                     Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
                                 },
@@ -185,146 +188,5 @@ struct MenuBarQuickConfigView: View {
 
     private var menuFooterFill: Color {
         isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.78)
-    }
-}
-
-private struct MenuGroupCard: View {
-    let card: MainViewModel.GroupCardModel
-    let onToggleSkill: (String, Bool) -> Void
-    let onToggleAllSkills: () -> Void
-    let onToggleTarget: (String, Bool) -> Void
-    let onToggleAllTargets: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(card.title)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(card.metaLine)
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            cardRow(
-                title: "Skills",
-                selection: card.skillSelection,
-                items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
-                onToggleAll: onToggleAllSkills,
-                action: onToggleSkill
-            )
-            cardRow(
-                title: "Agents",
-                selection: card.targetSelection,
-                items: card.targets.prefix(6).map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled) },
-                compact: true,
-                onToggleAll: onToggleAllTargets,
-                action: onToggleTarget
-            )
-        }
-        .padding(10)
-        .background(isDark ? Color.black : Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.12), radius: 11, x: 0, y: 5)
-    }
-
-    private func cardRow(
-        title: String,
-        selection: SelectionState,
-        items: [(id: String, label: String, shortLabel: String, isEnabled: Bool)],
-        compact: Bool = false,
-        onToggleAll: @escaping () -> Void,
-        action: @escaping (String, Bool) -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 5) {
-                    compactTriStateSwitch(selection, action: onToggleAll)
-                    ForEach(items, id: \.id) { item in
-                        Button {
-                            action(item.id, !item.isEnabled)
-                        } label: {
-                            if compact {
-                                iconTag(item.shortLabel, title: item.label, tint: item.isEnabled ? Color.orange.opacity(0.32) : Color.gray.opacity(0.20))
-                            } else {
-                                tag(item.label, tint: item.isEnabled ? Color.orange.opacity(0.32) : Color.gray.opacity(0.20))
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-
-    private func iconTag(_ text: String, title: String, tint: Color) -> some View {
-        Text(text)
-            .font(.system(size: 8, weight: .bold, design: .monospaced))
-            .frame(width: 19, height: 19)
-            .background(tint)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .help(title)
-    }
-
-    private func compactTriStateSwitch(_ selection: SelectionState, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(switchLabel(selection))
-                .font(.system(size: 7, weight: .bold))
-                .frame(width: 20, height: 19)
-                .background(switchFill(selection))
-                .foregroundStyle(switchText(selection))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func switchLabel(_ selection: SelectionState) -> String {
-        switch selection {
-        case .empty: return "OFF"
-        case .partial: return "MIX"
-        case .full: return "ON"
-        }
-    }
-
-    private func switchFill(_ selection: SelectionState) -> Color {
-        switch selection {
-        case .empty:
-            return Color(red: 148.0 / 255.0, green: 163.0 / 255.0, blue: 184.0 / 255.0).opacity(0.30)
-        case .partial:
-            return Color(red: 234.0 / 255.0, green: 179.0 / 255.0, blue: 8.0 / 255.0).opacity(0.32)
-        case .full:
-            return Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0).opacity(0.26)
-        }
-    }
-
-    private func switchText(_ selection: SelectionState) -> Color {
-        switch selection {
-        case .empty:
-            return Color(red: 71.0 / 255.0, green: 85.0 / 255.0, blue: 105.0 / 255.0)
-        case .partial:
-            return Color(red: 146.0 / 255.0, green: 64.0 / 255.0, blue: 14.0 / 255.0)
-        case .full:
-            return Color(red: 22.0 / 255.0, green: 101.0 / 255.0, blue: 52.0 / 255.0)
-        }
-    }
-
-    private func tag(_ text: String, tint: Color) -> some View {
-        Text(text)
-            .font(.system(size: 8, weight: .bold))
-            .padding(.horizontal, 6)
-            .frame(height: 19)
-            .background(tint)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
-    @AppStorage("desktop.themeMode") private var themeMode = "light"
-
-    private var isDark: Bool {
-        themeMode == "dark"
     }
 }
