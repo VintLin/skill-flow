@@ -957,6 +957,42 @@ private struct HorizontalFadeScroll<Content: View>: View {
                     )
             }
             .coordinateSpace(name: "HorizontalFadeScroll")
+            .mask {
+                HStack(spacing: 0) {
+                    if showsLeadingFade {
+                        LinearGradient(
+                            colors: [.clear, .black],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: fadeWidth)
+                        .padding(.leading, contentPadding)
+                    } else {
+                        Rectangle()
+                            .fill(Color.black)
+                            .frame(width: fadeWidth)
+                            .padding(.leading, contentPadding)
+                    }
+
+                    Rectangle()
+                        .fill(Color.black)
+
+                    if showsTrailingFade {
+                        LinearGradient(
+                            colors: [.black, .clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: fadeWidth)
+                        .padding(.trailing, contentPadding)
+                    } else {
+                        Rectangle()
+                            .fill(Color.black)
+                            .frame(width: fadeWidth)
+                            .padding(.trailing, contentPadding)
+                    }
+                }
+            }
             .onAppear {
                 viewportWidth = proxy.size.width
             }
@@ -966,38 +1002,6 @@ private struct HorizontalFadeScroll<Content: View>: View {
             .onPreferenceChange(HorizontalFadeMetricsKey.self) { metrics in
                 contentMinX = metrics.minX
                 contentWidth = metrics.width
-            }
-            .overlay {
-                HStack(spacing: 0) {
-                    LinearGradient(
-                        stops: [
-                            .init(color: fill, location: 0),
-                            .init(color: fill, location: 0.45),
-                            .init(color: fill.opacity(0), location: 1)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: fadeWidth)
-                    .padding(.leading, contentPadding)
-                    .opacity(showsLeadingFade ? 1 : 0)
-
-                    Spacer(minLength: 0)
-
-                    LinearGradient(
-                        stops: [
-                            .init(color: fill.opacity(0), location: 0),
-                            .init(color: fill, location: 0.55),
-                            .init(color: fill, location: 1)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: fadeWidth)
-                    .padding(.trailing, contentPadding)
-                    .opacity(showsTrailingFade ? 1 : 0)
-                }
-                .allowsHitTesting(false)
             }
             .clipped()
         }
