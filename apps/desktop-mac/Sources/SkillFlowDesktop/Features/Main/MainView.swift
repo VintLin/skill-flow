@@ -742,6 +742,8 @@ struct MainView: View {
 }
 
 private struct GroupCardView: View {
+    private static let cardInset: CGFloat = 12
+
     let card: MainViewModel.GroupCardModel
     let theme: DesktopThemeMode
     let onOpenDetail: () -> Void
@@ -788,6 +790,7 @@ private struct GroupCardView: View {
                         }
                     }
                 }
+                .padding(.horizontal, -Self.cardInset)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -807,6 +810,7 @@ private struct GroupCardView: View {
                         }
                     }
                 }
+                .padding(.horizontal, -Self.cardInset)
             }
         }
         .padding(12)
