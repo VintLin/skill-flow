@@ -979,6 +979,7 @@ private struct HorizontalFadeScroll<Content: View>: View {
                         endPoint: .trailing
                     )
                     .frame(width: fadeWidth)
+                    .padding(.leading, contentPadding)
                     .opacity(showsLeadingFade ? 1 : 0)
 
                     Spacer(minLength: 0)
@@ -993,6 +994,7 @@ private struct HorizontalFadeScroll<Content: View>: View {
                         endPoint: .trailing
                     )
                     .frame(width: fadeWidth)
+                    .padding(.trailing, contentPadding)
                     .opacity(showsTrailingFade ? 1 : 0)
                 }
                 .allowsHitTesting(false)
