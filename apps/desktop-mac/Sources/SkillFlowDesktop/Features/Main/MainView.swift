@@ -937,49 +937,12 @@ private struct GroupCardView: View {
     }
 
     private func chipScroller<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ZStack {
-            ScrollView(.horizontal, showsIndicators: false) {
-                content()
-            }
-            .clipped()
-            .mask {
-                HStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [Color.clear, Color.white],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: 24)
-                    Rectangle()
-                        .fill(Color.white)
-                    LinearGradient(
-                        colors: [Color.white, Color.clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: 24)
-                }
-            }
-
-            HStack {
-                LinearGradient(
-                    colors: [AppTheme.groupCardFill(for: theme), AppTheme.groupCardFill(for: theme).opacity(0)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 24)
-                Spacer()
-                LinearGradient(
-                    colors: [AppTheme.groupCardFill(for: theme).opacity(0), AppTheme.groupCardFill(for: theme)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: 24)
-            }
-            .allowsHitTesting(false)
-        }
-        .frame(height: 34)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        HorizontalFadeScroll(
+            height: 34,
+            fadeWidth: 24,
+            fill: AppTheme.groupCardFill(for: theme),
+            content: content
+        )
     }
 
     private func switchLabel(_ selection: SelectionState) -> String {
@@ -1038,6 +1001,92 @@ private struct StatsCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppTheme.border(for: theme), lineWidth: 1)
         )
+    }
+}
+
+private struct HorizontalFadeScroll<Content: View>: View {
+    let height: CGFloat
+    let fadeWidth: CGFloat
+    let fill: Color
+    @ViewBuilder let content: () -> Content
+
+    @State private var viewportWidth: CGFloat = 0
+    @State private var contentWidth: CGFloat = 0
+    @State private var contentMinX: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                content()
+                    .background(
+                        GeometryReader { contentProxy in
+                            Color.clear.preference(
+                                key: HorizontalFadeMetricsKey.self,
+                                value: HorizontalFadeMetrics(
+                                    minX: contentProxy.frame(in: .named("HorizontalFadeScroll")).minX,
+                                    width: contentProxy.size.width
+                                )
+                            )
+                        }
+                    )
+            }
+            .coordinateSpace(name: "HorizontalFadeScroll")
+            .onAppear {
+                viewportWidth = proxy.size.width
+            }
+            .onChange(of: proxy.size.width) { _, newValue in
+                viewportWidth = newValue
+            }
+            .onPreferenceChange(HorizontalFadeMetricsKey.self) { metrics in
+                contentMinX = metrics.minX
+                contentWidth = metrics.width
+            }
+            .overlay {
+                HStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [fill, fill.opacity(0)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: fadeWidth)
+                    .opacity(showsLeadingFade ? 1 : 0)
+
+                    Spacer(minLength: 0)
+
+                    LinearGradient(
+                        colors: [fill.opacity(0), fill],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: fadeWidth)
+                    .opacity(showsTrailingFade ? 1 : 0)
+                }
+                .allowsHitTesting(false)
+            }
+            .clipped()
+        }
+        .frame(height: height)
+    }
+
+    private var showsLeadingFade: Bool {
+        contentMinX < -1
+    }
+
+    private var showsTrailingFade: Bool {
+        (contentMinX + contentWidth) > (viewportWidth + 1)
+    }
+}
+
+private struct HorizontalFadeMetrics: Equatable {
+    let minX: CGFloat
+    let width: CGFloat
+}
+
+private struct HorizontalFadeMetricsKey: PreferenceKey {
+    static var defaultValue: HorizontalFadeMetrics = .init(minX: 0, width: 0)
+
+    static func reduce(value: inout HorizontalFadeMetrics, nextValue: () -> HorizontalFadeMetrics) {
+        value = nextValue()
     }
 }
 
