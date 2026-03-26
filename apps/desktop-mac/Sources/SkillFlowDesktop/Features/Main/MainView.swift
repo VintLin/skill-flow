@@ -946,10 +946,8 @@ struct MainView: View {
 
     private func settingsPage(layout: LayoutMetrics) -> some View {
         ScrollView {
-            pageSectionCard {
-                SettingsView(cardStyle: true, theme: theme)
-            }
-            .padding(16)
+            SettingsView(cardStyle: true, theme: theme)
+                .padding(16)
         }
     }
 

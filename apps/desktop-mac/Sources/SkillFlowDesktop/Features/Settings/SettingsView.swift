@@ -8,8 +8,47 @@ struct SettingsView: View {
     @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
     @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
 
+    @State private var openDropdown: DropdownKind?
+
     var cardStyle: Bool = false
     var theme: DesktopThemeMode = .light
+
+    private enum DropdownKind: Hashable {
+        case accent
+        case logLevel
+    }
+
+    private struct DropdownOption: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let swatch: Color?
+    }
+
+    private let controlColumnWidth: CGFloat = 190
+
+    private var colorScheme: ColorScheme {
+        theme == .dark ? .dark : .light
+    }
+
+    private var currentAccent: DesktopAccentColor {
+        DesktopAccentColor(rawValue: themeAccent) ?? .blue
+    }
+
+    private var accentOptions: [DropdownOption] {
+        DesktopAccentColor.allCases.map { accent in
+            DropdownOption(
+                id: accent.rawValue,
+                title: accent.title,
+                swatch: AppTheme.brand(for: accent, in: theme)
+            )
+        }
+    }
+
+    private var logLevelOptions: [DropdownOption] {
+        ["debug", "info", "warn", "error"].map { level in
+            DropdownOption(id: level, title: level, swatch: nil)
+        }
+    }
 
     var body: some View {
         Group {
@@ -23,15 +62,6 @@ struct SettingsView: View {
 
     private var customContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Settings")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text("Configure global desktop preferences. Group-level behavior stays in Home and Group Detail.")
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-            }
-
             VStack(alignment: .leading, spacing: 12) {
                 settingsSection(
                     title: "Appearance",
@@ -44,16 +74,18 @@ struct SettingsView: View {
                             .labelsHidden()
                             .pickerStyle(.segmented)
                             .frame(width: 180)
+                            .environment(\.colorScheme, colorScheme)
                         }
 
                         settingsRow(title: "Accent", description: "Use one accent color across desktop surfaces.") {
-                            Picker("Accent", selection: $themeAccent) {
-                                ForEach(DesktopAccentColor.allCases) { accent in
-                                    Text(accent.title).tag(accent.rawValue)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 150)
+                            dropdownControl(
+                                kind: .accent,
+                                selectionTitle: currentAccent.title,
+                                selectionSwatch: AppTheme.brand(for: currentAccent, in: theme),
+                                options: accentOptions,
+                                selectedId: themeAccent,
+                                onSelect: { themeAccent = $0 }
+                            )
                         }
                     }
                 )
@@ -77,14 +109,14 @@ struct SettingsView: View {
                         }
 
                         settingsRow(title: "Log level", description: "Choose how verbose local desktop logs should be.") {
-                            Picker("Log level", selection: $logLevel) {
-                                Text("debug").tag("debug")
-                                Text("info").tag("info")
-                                Text("warn").tag("warn")
-                                Text("error").tag("error")
-                            }
-                            .labelsHidden()
-                            .frame(width: 120)
+                            dropdownControl(
+                                kind: .logLevel,
+                                selectionTitle: logLevel,
+                                selectionSwatch: nil,
+                                options: logLevelOptions,
+                                selectedId: logLevel,
+                                onSelect: { logLevel = $0 }
+                            )
                         }
                     }
                 )
@@ -101,6 +133,7 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: 900, alignment: .leading)
+        .environment(\.colorScheme, colorScheme)
     }
 
     private var fallbackForm: some View {
@@ -140,10 +173,11 @@ struct SettingsView: View {
         .padding(14)
         .background(AppTheme.toolbarButtonBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 0)
     }
 
     private func settingsRow<Control: View>(title: String, description: String, @ViewBuilder control: () -> Control) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -152,8 +186,102 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
             }
-            Spacer(minLength: 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             control()
+                .frame(width: controlColumnWidth, alignment: .trailing)
         }
+    }
+
+    @ViewBuilder
+    private func dropdownControl(
+        kind: DropdownKind,
+        selectionTitle: String,
+        selectionSwatch: Color?,
+        options: [DropdownOption],
+        selectedId: String,
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Button {
+                openDropdown = openDropdown == kind ? nil : kind
+            } label: {
+                HStack(spacing: 8) {
+                    if let selectionSwatch {
+                        Circle()
+                            .fill(selectionSwatch)
+                            .frame(width: 10, height: 10)
+                    }
+
+                    Text(selectionTitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: openDropdown == kind ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                }
+                .padding(.horizontal, 10)
+                .frame(width: controlColumnWidth, height: 32, alignment: .leading)
+                .background(AppTheme.groupCardFill(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(AppTheme.border(for: theme).opacity(theme == .dark ? 0.9 : 0.5), lineWidth: 0.8)
+                }
+                .shadow(color: AppTheme.softShadow(for: theme), radius: 8, x: 0, y: 0)
+            }
+            .buttonStyle(.plain)
+
+            if openDropdown == kind {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(options) { option in
+                        Button {
+                            onSelect(option.id)
+                            openDropdown = nil
+                        } label: {
+                            HStack(spacing: 8) {
+                                if let swatch = option.swatch {
+                                    Circle()
+                                        .fill(swatch)
+                                        .frame(width: 10, height: 10)
+                                }
+
+                                Text(option.title)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+
+                                Spacer(minLength: 8)
+
+                                if option.id == selectedId {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(width: controlColumnWidth, height: 30, alignment: .leading)
+                            .background(option.id == selectedId ? AppTheme.toolbarButtonBackground(for: theme) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(6)
+                .background(AppTheme.groupCardFill(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(AppTheme.border(for: theme).opacity(theme == .dark ? 0.9 : 0.5), lineWidth: 0.8)
+                }
+                .shadow(color: AppTheme.cardShadow(for: theme), radius: 14, x: 0, y: 0)
+                .offset(y: 38)
+                .zIndex(1)
+            }
+        }
+        .frame(width: controlColumnWidth, alignment: .trailing)
     }
 }
