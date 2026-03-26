@@ -940,9 +940,7 @@ private struct GroupCardView: View {
         ZStack {
             ScrollView(.horizontal, showsIndicators: false) {
                 content()
-                    .padding(.horizontal, 18)
             }
-            .contentMargins(.horizontal, -18, for: .scrollContent)
             .clipped()
             .mask {
                 HStack(spacing: 0) {
@@ -965,14 +963,14 @@ private struct GroupCardView: View {
 
             HStack {
                 LinearGradient(
-                    colors: [AppTheme.surface(for: theme), AppTheme.surface(for: theme).opacity(0)],
+                    colors: [AppTheme.groupCardFill(for: theme), AppTheme.groupCardFill(for: theme).opacity(0)],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
                 .frame(width: 24)
                 Spacer()
                 LinearGradient(
-                    colors: [AppTheme.surface(for: theme).opacity(0), AppTheme.surface(for: theme)],
+                    colors: [AppTheme.groupCardFill(for: theme).opacity(0), AppTheme.groupCardFill(for: theme)],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
