@@ -7,11 +7,16 @@ struct MainView: View {
     @State private var detailSkillIdByGroup: [String: String] = [:]
     @State private var showImportSheet: Bool = false
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
+    @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
 
     let openSettings: () -> Void
 
     private var theme: DesktopThemeMode {
         DesktopThemeMode(rawValue: themeModeRawValue) ?? .light
+    }
+
+    private var accent: DesktopAccentColor {
+        DesktopAccentColor(rawValue: themeAccentRawValue) ?? .blue
     }
 
     var body: some View {
@@ -57,7 +62,7 @@ struct MainView: View {
                 }
             )
         }
-        .tint(AppTheme.brand)
+        .tint(AppTheme.brand(for: accent))
         .onChange(of: viewModel.selectedGroupId) { _, newValue in
             guard detailGroupId != nil else { return }
             detailGroupId = newValue
@@ -69,7 +74,7 @@ struct MainView: View {
             }
         }
         .task(id: viewModel.toast?.id) {
-            guard viewModel.toast != nil else { return }
+            guard let toast = viewModel.toast, toast.style != .loading else { return }
             try? await Task.sleep(for: .seconds(2))
             viewModel.dismissToast()
         }
@@ -208,6 +213,7 @@ struct MainView: View {
                             SharedGroupCard(
                                 card: card,
                                 theme: theme,
+                                accent: accent,
                                 scale: .home,
                                 onOpen: {
                                     detailGroupId = card.id
@@ -497,7 +503,7 @@ struct MainView: View {
             ScrollView {
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(AppTheme.brand)
+                        .fill(AppTheme.brand(for: accent))
                         .frame(width: 4, height: 28)
                         .offset(x: 8, y: lineOffset)
                         .opacity(isActiveVisible ? 1 : 0)
@@ -676,17 +682,61 @@ struct MainView: View {
     }
 
     private func toastBanner(_ toast: MainViewModel.ToastState) -> some View {
-        Text(toast.message)
-            .font(.system(size: 12, weight: .semibold))
-            .padding(.horizontal, 14)
-            .frame(height: 38)
-            .background(toast.style == .success ? Color.green.opacity(0.22) : Color.red.opacity(0.20))
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(toast.style == .success ? Color.green.opacity(0.45) : Color.red.opacity(0.35), lineWidth: 1)
-            )
-            .foregroundStyle(AppTheme.textPrimary(for: theme))
+        HStack(spacing: 10) {
+            if toast.style == .loading {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            Text(toast.message)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(toastBackground(toast.style))
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(toastBorder(toast.style), lineWidth: 1)
+        )
+        .foregroundStyle(toastForeground(toast.style))
+    }
+
+    private func toastBackground(_ style: MainViewModel.ToastStyle) -> Color {
+        switch style {
+        case .loading:
+            return AppTheme.toolbarGlass(for: theme)
+        case .success:
+            return Color.green.opacity(0.22)
+        case .neutral:
+            return Color.gray.opacity(theme == .dark ? 0.26 : 0.20)
+        case .error:
+            return Color.red.opacity(0.20)
+        }
+    }
+
+    private func toastBorder(_ style: MainViewModel.ToastStyle) -> Color {
+        switch style {
+        case .loading:
+            return AppTheme.border(for: theme)
+        case .success:
+            return Color.green.opacity(0.45)
+        case .neutral:
+            return Color.gray.opacity(0.40)
+        case .error:
+            return Color.red.opacity(0.35)
+        }
+    }
+
+    private func toastForeground(_ style: MainViewModel.ToastStyle) -> Color {
+        switch style {
+        case .success:
+            return theme == .dark
+                ? Color(red: 220.0 / 255.0, green: 252.0 / 255.0, blue: 231.0 / 255.0)
+                : Color(red: 22.0 / 255.0, green: 101.0 / 255.0, blue: 52.0 / 255.0)
+        case .loading, .neutral, .error:
+            return AppTheme.textPrimary(for: theme)
+        }
     }
 
     private func preferredDetailSkillId(for detail: MainViewModel.DetailViewData) -> String? {
@@ -837,8 +887,51 @@ enum DesktopThemeMode: String {
     case dark
 }
 
+enum DesktopAccentColor: String, CaseIterable, Identifiable {
+    case blue
+    case green
+    case yellow
+    case pink
+    case orange
+    case purple
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .blue:
+            return "Blue"
+        case .green:
+            return "Green"
+        case .yellow:
+            return "Yellow"
+        case .pink:
+            return "Pink"
+        case .orange:
+            return "Orange"
+        case .purple:
+            return "Purple"
+        }
+    }
+}
+
 enum AppTheme {
-    static let brand = Color(red: 255.0 / 255.0, green: 97.0 / 255.0, blue: 26.0 / 255.0)
+    static func brand(for accent: DesktopAccentColor) -> Color {
+        switch accent {
+        case .blue:
+            return Color(red: 59.0 / 255.0, green: 130.0 / 255.0, blue: 246.0 / 255.0)
+        case .green:
+            return Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0)
+        case .yellow:
+            return Color(red: 234.0 / 255.0, green: 179.0 / 255.0, blue: 8.0 / 255.0)
+        case .pink:
+            return Color(red: 236.0 / 255.0, green: 72.0 / 255.0, blue: 153.0 / 255.0)
+        case .orange:
+            return Color(red: 249.0 / 255.0, green: 115.0 / 255.0, blue: 22.0 / 255.0)
+        case .purple:
+            return Color(red: 139.0 / 255.0, green: 92.0 / 255.0, blue: 246.0 / 255.0)
+        }
+    }
 
     struct ControlSize {
         let width: CGFloat

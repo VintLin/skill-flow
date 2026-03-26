@@ -103,12 +103,17 @@ enum GroupCardScale {
 struct SharedGroupCard: View {
     let card: MainViewModel.GroupCardModel
     let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
     let scale: GroupCardScale
     let onOpen: (() -> Void)?
     let onToggleSkill: (String, Bool) -> Void
     let onToggleAllSkills: () -> Void
     let onToggleTarget: (String, Bool) -> Void
     let onToggleAllTargets: () -> Void
+
+    private var isSaving: Bool {
+        card.saveState.phase == .saving
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: scale.cardSpacing) {
@@ -141,6 +146,25 @@ struct SharedGroupCard: View {
         .background(AppTheme.groupCardFill(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius))
         .shadow(color: AppTheme.cardShadow(for: theme), radius: scale.shadowRadius, x: 0, y: scale.shadowYOffset)
+        .overlay {
+            if isSaving {
+                RoundedRectangle(cornerRadius: scale.cornerRadius)
+                    .fill(AppTheme.groupCardFill(for: theme).opacity(theme == .dark ? 0.72 : 0.84))
+                    .overlay {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(card.saveState.message ?? "Applying...")
+                                .font(.system(size: scale.metaSize, weight: .semibold))
+                        }
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(AppTheme.toolbarGlass(for: theme))
+                        .clipShape(Capsule())
+                    }
+            }
+        }
     }
 
     @ViewBuilder
@@ -190,6 +214,13 @@ struct SharedGroupCard: View {
                 .textCase(.uppercase)
                 .padding(.horizontal, scale.sectionHorizontalPadding)
                 .padding(.top, scale.sectionTopPadding)
+                .overlay(alignment: .trailing) {
+                    if isSaving {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(.trailing, scale.sectionHorizontalPadding)
+                    }
+                }
 
             cardScroller {
                 HStack(spacing: scale.rowSpacing) {
@@ -199,15 +230,22 @@ struct SharedGroupCard: View {
                             action(item.id, !item.isEnabled)
                         } label: {
                             if compact {
-                                targetToggle(item.shortLabel, accessibilityLabel: item.label, isOn: item.isEnabled)
+                                targetToggle(
+                                    targetId: item.id,
+                                    fallbackText: item.shortLabel,
+                                    accessibilityLabel: item.label,
+                                    isOn: item.isEnabled
+                                )
                             } else {
                                 skillToggle(item.label, isOn: item.isEnabled)
                             }
                         }
                         .buttonStyle(.plain)
+                        .disabled(isSaving)
                     }
                 }
             }
+            .allowsHitTesting(!isSaving)
         }
     }
 
@@ -216,19 +254,65 @@ struct SharedGroupCard: View {
             .font(.system(size: scale.chipFontSize, weight: .bold))
             .padding(.horizontal, max(6, scale.cardInset - 2))
             .frame(height: scale.chipHeight)
-            .background(isOn ? AppTheme.brand.opacity(0.30) : AppTheme.idleChipFill(for: theme))
+            .background(isOn ? AppTheme.brand(for: accent).opacity(0.30) : AppTheme.idleChipFill(for: theme))
             .foregroundStyle(AppTheme.textPrimary(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
     }
 
-    private func targetToggle(_ text: String, accessibilityLabel: String, isOn: Bool) -> some View {
-        Text(text)
-            .font(.system(size: scale.targetFontSize, weight: .bold, design: .monospaced))
+    private func targetToggle(
+        targetId: String,
+        fallbackText: String,
+        accessibilityLabel: String,
+        isOn: Bool
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: scale.cornerRadius - 2)
+
+        return ZStack {
+            shape
+                .fill(targetBackgroundFill(isOn: isOn))
+
+            if let image = AgentIconLibrary.image(for: targetId) {
+                targetIcon(image: image, isOn: isOn)
+            } else {
+                Text(fallbackText)
+                    .font(.system(size: scale.targetFontSize, weight: .bold, design: .monospaced))
+                    .foregroundStyle(targetFallbackTextColor(isOn: isOn))
+                    .opacity(isOn ? 1.0 : 0.75)
+            }
+        }
+        .frame(width: scale.targetSize, height: scale.targetSize)
+        .clipShape(shape)
+        .help(accessibilityLabel)
+    }
+
+    @ViewBuilder
+    private func targetIcon(image: NSImage, isOn: Bool) -> some View {
+        let icon = Image(nsImage: image)
+            .renderingMode(.template)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFill()
             .frame(width: scale.targetSize, height: scale.targetSize)
-            .background(isOn ? AppTheme.brand.opacity(0.30) : AppTheme.idleChipFill(for: theme))
-            .foregroundStyle(AppTheme.textPrimary(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
-            .help(accessibilityLabel)
+
+        icon
+            .foregroundStyle(targetIconTint(isOn: isOn))
+            .background(targetBackgroundFill(isOn: isOn))
+    }
+
+    private func targetBackgroundFill(isOn: Bool) -> Color {
+        isOn
+            ? AppTheme.brand(for: accent).opacity(0.30)
+            : AppTheme.idleChipFill(for: theme)
+    }
+
+    private func targetIconTint(isOn: Bool) -> Color {
+        isOn
+            ? (theme == .dark ? Color.white : AppTheme.textPrimary(for: theme))
+            : AppTheme.textMuted(for: theme).opacity(theme == .dark ? 0.88 : 0.74)
+    }
+
+    private func targetFallbackTextColor(isOn: Bool) -> Color {
+        isOn ? .white : AppTheme.textPrimary(for: theme)
     }
 
     private func triStateSwitch(_ selection: SelectionState, action: @escaping () -> Void) -> some View {
@@ -241,6 +325,7 @@ struct SharedGroupCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
         }
         .buttonStyle(.plain)
+        .disabled(isSaving)
     }
 
     private func cardScroller<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {

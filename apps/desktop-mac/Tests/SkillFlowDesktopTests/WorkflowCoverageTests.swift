@@ -56,6 +56,7 @@ final class WorkflowCoverageTests: XCTestCase {
         let draft = applyRequests.first?.payload?["draft"]?.value as? [String: Any]
         XCTAssertEqual(draft?["enabledTargets"] as? [String], [])
         XCTAssertEqual(model.saveState(for: "alpha").phase, .saved)
+        XCTAssertEqual(model.toast?.style, .neutral)
     }
 
     private func verifySkillToggleWritesImmediately(using fixture: TestFixture) async throws {
@@ -64,9 +65,12 @@ final class WorkflowCoverageTests: XCTestCase {
         await model.setSkillEnabled("alpha-leaf-1", enabled: false)
 
         let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
-        XCTAssertEqual(applyRequests.count, 0)
-        XCTAssertTrue(model.isSkillEnabled("alpha-leaf-1"))
-        XCTAssertEqual(model.toast?.style, .error)
+        XCTAssertEqual(applyRequests.count, 1)
+        XCTAssertFalse(model.isSkillEnabled("alpha-leaf-1"))
+        let draft = applyRequests.first?.payload?["draft"]?.value as? [String: Any]
+        XCTAssertEqual(draft?["selectedLeafIds"] as? [String], [])
+        XCTAssertEqual(model.saveState(for: "alpha").phase, .saved)
+        XCTAssertEqual(model.toast?.style, .neutral)
     }
 
     private func verifyDetectedTargetsDefaultAndShowAll(using fixture: TestFixture) async throws {

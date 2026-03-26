@@ -45,7 +45,9 @@ final class MainViewModel {
     }
 
     enum ToastStyle {
+        case loading
         case success
+        case neutral
         case error
     }
 
@@ -530,6 +532,10 @@ final class MainViewModel {
         saveStateBySourceId[sourceId] ?? SaveState(phase: .idle, message: nil)
     }
 
+    func isSaving(sourceId: String? = nil) -> Bool {
+        saveState(for: resolveSourceId(sourceId) ?? "").phase == .saving
+    }
+
     func skillSelectionState(sourceId: String? = nil) -> SelectionState {
         guard let summary = summary(for: sourceId), let draft = draft(for: sourceId) else {
             return .empty
@@ -562,6 +568,9 @@ final class MainViewModel {
         guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = workingDrafts[sourceId] else {
             return
         }
+        guard !isSaving(sourceId: sourceId) else {
+            return
+        }
 
         let treeState = TreeSelectionState(
             allLeafIds: summary.leafs.map(\.id),
@@ -572,12 +581,17 @@ final class MainViewModel {
         await commitDraftChange(
             sourceId: sourceId,
             nextDraft: draft,
-            successMessage: "Updated skills for \(sourceId)."
+            pendingMessage: "Applying skill selection for \(groupLabel(for: sourceId))...",
+            successMessage: "Updated all skills for \(groupLabel(for: sourceId)). \(nextState.selectedLeafIds.count) skill\(nextState.selectedLeafIds.count == 1 ? "" : "s") enabled.",
+            successStyle: nextState.selectedLeafIds.isEmpty ? .neutral : .success
         )
     }
 
     func setSkillEnabled(_ leafId: String, enabled: Bool, sourceId: String? = nil) async {
         guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = workingDrafts[sourceId] else {
+            return
+        }
+        guard !isSaving(sourceId: sourceId) else {
             return
         }
         guard summary.leafs.contains(where: { $0.id == leafId }) else {
@@ -604,12 +618,21 @@ final class MainViewModel {
         await commitDraftChange(
             sourceId: sourceId,
             nextDraft: draft,
-            successMessage: enabled ? "Enabled \(leafId)." : "Disabled \(leafId)."
+            pendingMessage: enabled
+                ? "Enabling skill \(leafLabel(for: leafId, sourceId: sourceId)) in \(groupLabel(for: sourceId))..."
+                : "Disabling skill \(leafLabel(for: leafId, sourceId: sourceId)) in \(groupLabel(for: sourceId))...",
+            successMessage: enabled
+                ? "Skill \(leafLabel(for: leafId, sourceId: sourceId)) is enabled for \(groupLabel(for: sourceId)) and will project to \(draft.enabledTargets.count) agent\(draft.enabledTargets.count == 1 ? "" : "s")."
+                : "Skill \(leafLabel(for: leafId, sourceId: sourceId)) is disabled for \(groupLabel(for: sourceId)). Existing projections are updated.",
+            successStyle: enabled ? .success : .neutral
         )
     }
 
     func toggleAllTargets(sourceId: String? = nil) async {
         guard let sourceId = resolveSourceId(sourceId), var draft = workingDrafts[sourceId] else {
+            return
+        }
+        guard !isSaving(sourceId: sourceId) else {
             return
         }
 
@@ -629,7 +652,9 @@ final class MainViewModel {
         await commitDraftChange(
             sourceId: sourceId,
             nextDraft: draft,
-            successMessage: "Updated agents for \(sourceId)."
+            pendingMessage: "Applying agent selection for \(groupLabel(for: sourceId))...",
+            successMessage: "Updated agents for \(groupLabel(for: sourceId)). \(draft.enabledTargets.count) agent\(draft.enabledTargets.count == 1 ? "" : "s") enabled.",
+            successStyle: draft.enabledTargets.isEmpty ? .neutral : .success
         )
     }
 
@@ -828,6 +853,9 @@ final class MainViewModel {
         guard let groupId = resolveSourceId(sourceId), var draft = workingDrafts[groupId] else {
             return
         }
+        guard !isSaving(sourceId: groupId) else {
+            return
+        }
 
         let currentlyEnabled = draft.enabledTargets.contains(target)
         guard currentlyEnabled != enabled else {
@@ -843,7 +871,13 @@ final class MainViewModel {
         await commitDraftChange(
             sourceId: groupId,
             nextDraft: draft,
-            successMessage: enabled ? "Enabled \(Self.targetCatalog[target] ?? target)." : "Disabled \(Self.targetCatalog[target] ?? target)."
+            pendingMessage: enabled
+                ? "Enabling agent \(targetLabel(for: target)) for \(groupLabel(for: groupId))..."
+                : "Disabling agent \(targetLabel(for: target)) for \(groupLabel(for: groupId))...",
+            successMessage: enabled
+                ? "Agent \(targetLabel(for: target)) is enabled for \(groupLabel(for: groupId)). Selected skills will be synced to this agent."
+                : "Agent \(targetLabel(for: target)) is disabled for \(groupLabel(for: groupId)). Existing projections for this agent are being removed.",
+            successStyle: enabled ? .success : .neutral
         )
     }
 
@@ -885,11 +919,6 @@ final class MainViewModel {
 
             detectedTargets.formUnion(summary.enabledTargets)
 
-            if let baseline = baselineDrafts[summary.sourceId], let working = workingDrafts[summary.sourceId], baseline == working, baseline.selectedLeafIds.isEmpty {
-                let fallbackDraft = buildInitialDraftFromSummary(summary)
-                baselineDrafts[summary.sourceId] = fallbackDraft
-                workingDrafts[summary.sourceId] = fallbackDraft
-            }
         }
 
         if let selected = selectedSourceId, let summary = allSummaries.first(where: { $0.sourceId == selected }) {
@@ -914,8 +943,12 @@ final class MainViewModel {
         return summaries.compactMap { summary in
             guard
                 let source = summary["source"] as? [String: Any],
-                let sourceId = source["id"] as? String
+                let rawSourceId = source["id"] as? String
             else {
+                return nil
+            }
+            let sourceId = rawSourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !sourceId.isEmpty else {
                 return nil
             }
 
@@ -1005,9 +1038,7 @@ final class MainViewModel {
             let enabledTargetLeafIds = normalizedTargets(summary.enabledTargets).flatMap { target in
                 summary.targetLeafIdsByTarget[target] ?? []
             }
-            selectedLeafIds = !enabledTargetLeafIds.isEmpty
-                ? uniqueSorted(enabledTargetLeafIds)
-                : uniqueSorted(summary.leafs.map(\.id))
+            selectedLeafIds = uniqueSorted(enabledTargetLeafIds)
         }
 
         return DraftState(
@@ -1031,7 +1062,11 @@ final class MainViewModel {
     }
 
     private func resolveSourceId(_ sourceId: String?) -> String? {
-        sourceId ?? selectedGroupId
+        let resolved = (sourceId ?? selectedGroupId)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let resolved, !resolved.isEmpty else {
+            return nil
+        }
+        return resolved
     }
 
     private func visibleTargetIds() -> [String] {
@@ -1143,17 +1178,27 @@ final class MainViewModel {
         toast = nil
     }
 
-    private func commitDraftChange(sourceId: String, nextDraft: DraftState, successMessage: String) async {
-        let normalizedDraft = normalizeDraft(nextDraft)
-        guard !normalizedDraft.selectedLeafIds.isEmpty else {
-            showToast(style: .error, message: "At least one skill must stay enabled.")
+    private func commitDraftChange(
+        sourceId: String,
+        nextDraft: DraftState,
+        pendingMessage: String,
+        successMessage: String,
+        successStyle: ToastStyle
+    ) async {
+        let sourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sourceId.isEmpty else {
+            detailText = "Apply failed: missing source id."
+            showToast(style: .error, message: "Save failed: missing source id.")
             return
         }
+
+        let normalizedDraft = normalizeDraft(nextDraft)
 
         let previousDraft = workingDrafts[sourceId] ?? baselineDrafts[sourceId] ?? normalizedDraft
         selectedSourceId = sourceId
         workingDrafts[sourceId] = normalizedDraft
-        saveStateBySourceId[sourceId] = SaveState(phase: .saving, message: "saving...")
+        saveStateBySourceId[sourceId] = SaveState(phase: .saving, message: "Applying...")
+        showToast(style: .loading, message: pendingMessage)
 
         do {
             _ = try await bridgeClient.apply(
@@ -1169,7 +1214,7 @@ final class MainViewModel {
             if selectedGroupId == sourceId {
                 await selectSource(sourceId)
             }
-            showToast(style: .success, message: successMessage)
+            showToast(style: successStyle, message: successMessage)
         } catch {
             let firstReason = firstErrorLine(from: error)
             workingDrafts[sourceId] = previousDraft
@@ -1177,6 +1222,18 @@ final class MainViewModel {
             detailText = "Apply failed: \(firstReason)"
             showToast(style: .error, message: "Save failed: \(firstReason)")
         }
+    }
+
+    private func groupLabel(for sourceId: String) -> String {
+        summary(for: sourceId)?.sourceDisplayName ?? sourceId
+    }
+
+    private func leafLabel(for leafId: String, sourceId: String) -> String {
+        summary(for: sourceId)?.leafs.first(where: { $0.id == leafId })?.name ?? leafId
+    }
+
+    private func targetLabel(for targetId: String) -> String {
+        Self.targetCatalog[targetId] ?? targetId
     }
 
     private func showToast(style: ToastStyle, message: String) {
