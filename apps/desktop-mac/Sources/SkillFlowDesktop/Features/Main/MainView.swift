@@ -892,7 +892,7 @@ private struct GroupCardView: View {
         }
         .padding(12)
         .frame(minHeight: 206, alignment: .topLeading)
-        .background(AppTheme.surface(for: theme))
+        .background(AppTheme.groupCardFill(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: AppTheme.cardShadow(for: theme), radius: 14, x: 0, y: 8)
     }
@@ -1120,6 +1120,15 @@ private enum AppTheme {
             return Color(red: 241.0 / 255.0, green: 241.0 / 255.0, blue: 241.0 / 255.0)
         case .dark:
             return Color(red: 34.0 / 255.0, green: 34.0 / 255.0, blue: 38.0 / 255.0)
+        }
+    }
+
+    static func groupCardFill(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return .white
+        case .dark:
+            return .black
         }
     }
 
