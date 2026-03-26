@@ -978,7 +978,6 @@ private struct HorizontalFadeScroll<Content: View>: View {
                     endPoint: .trailing
                 )
                 .frame(width: fadeWidth)
-                .padding(.leading, contentPadding)
                 .allowsHitTesting(false)
             }
             .overlay(alignment: .trailing) {
@@ -992,7 +991,6 @@ private struct HorizontalFadeScroll<Content: View>: View {
                     endPoint: .trailing
                 )
                 .frame(width: fadeWidth)
-                .padding(.trailing, contentPadding)
                 .allowsHitTesting(false)
             }
             .clipped()
