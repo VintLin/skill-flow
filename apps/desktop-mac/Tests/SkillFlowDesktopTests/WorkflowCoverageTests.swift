@@ -11,15 +11,15 @@ final class WorkflowCoverageTests: XCTestCase {
 
         try fixture.reset(state: .baseline)
 
-        try await verifyGroupSwitchBranches(using: fixture)
+        try await verifyGroupSelectionIsImmediate(using: fixture)
 
         try fixture.reset(state: .baseline)
 
-        try await verifyAgentToggleStaysDraftOnly(using: fixture)
+        try await verifyAgentToggleWritesImmediately(using: fixture)
 
         try fixture.reset(state: .baseline)
 
-        try await verifyApplyNowIsCurrentGroupOnly(using: fixture)
+        try await verifySkillToggleWritesImmediately(using: fixture)
 
         try fixture.reset(state: .baseline)
 
@@ -27,111 +27,46 @@ final class WorkflowCoverageTests: XCTestCase {
 
         try fixture.reset(state: .failureBaseline)
 
-        try await verifyApplyFailureTemplate(using: fixture)
+        try await verifyApplyFailureRollsBack(using: fixture)
     }
 
-    private func verifyGroupSwitchBranches(using fixture: TestFixture) async throws {
-        try fixture.reset(state: .baseline)
-        let applyModel = try await fixture.makeModel()
-        let applySelectedGroup = applyModel.selectedGroupId
-        let applyVisibleTargets = applyModel.visibleTargets.map(\.id)
-        XCTAssertEqual(applySelectedGroup, "alpha")
-        XCTAssertEqual(applyVisibleTargets, ["claude-code", "cursor"])
-
-        applyModel.setTargetEnabled("claude-code", enabled: false)
-        let applyHasPendingDraft = applyModel.hasPendingDraftForCurrentGroup
-        XCTAssertTrue(applyHasPendingDraft)
-
-        applyModel.requestGroupSwitch(to: "beta")
-        let applyShowDialog = applyModel.showGroupSwitchDialog
-        let applySelectedBeforeDecision = applyModel.selectedGroupId
-        XCTAssertTrue(applyShowDialog)
-        XCTAssertEqual(applySelectedBeforeDecision, "alpha")
-
-        await applyModel.resolveGroupSwitch(.apply)
-        let applyDialogAfterDecision = applyModel.showGroupSwitchDialog
-        let applySelectedAfterDecision = applyModel.selectedGroupId
-        XCTAssertFalse(applyDialogAfterDecision)
-        XCTAssertEqual(applySelectedAfterDecision, "beta")
-
-        let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
-        XCTAssertEqual(applyRequests.count, 1)
-        XCTAssertEqual(applyRequests.first?.payload?["sourceId"]?.value as? String, "alpha")
-
-        try fixture.reset(state: .baseline)
-        let discardModel = try await fixture.makeModel()
-        discardModel.setTargetEnabled("claude-code", enabled: false)
-        discardModel.requestGroupSwitch(to: "beta")
-        let discardShowDialog = discardModel.showGroupSwitchDialog
-        XCTAssertTrue(discardShowDialog)
-
-        await discardModel.resolveGroupSwitch(.discard)
-        let discardDialogAfterDecision = discardModel.showGroupSwitchDialog
-        let discardSelectedAfterDecision = discardModel.selectedGroupId
-        let discardHasPending = discardModel.hasPendingDraftForCurrentGroup
-        XCTAssertFalse(discardDialogAfterDecision)
-        XCTAssertEqual(discardSelectedAfterDecision, "beta")
-        XCTAssertFalse(discardHasPending)
-
-        discardModel.requestGroupSwitch(to: "alpha")
-        try await fixture.waitForSelection(discardModel, expected: "alpha")
-        let discardSelectedAfterReturn = discardModel.selectedGroupId
-        let discardTargetEnabled = discardModel.isTargetEnabled("claude-code")
-        XCTAssertEqual(discardSelectedAfterReturn, "alpha")
-        XCTAssertTrue(discardTargetEnabled)
-
-        try fixture.reset(state: .baseline)
-        let cancelModel = try await fixture.makeModel()
-        cancelModel.setTargetEnabled("claude-code", enabled: false)
-        cancelModel.requestGroupSwitch(to: "beta")
-        let cancelShowDialog = cancelModel.showGroupSwitchDialog
-        XCTAssertTrue(cancelShowDialog)
-
-        await cancelModel.resolveGroupSwitch(.cancel)
-        let cancelDialogAfterDecision = cancelModel.showGroupSwitchDialog
-        let cancelSelectedAfterDecision = cancelModel.selectedGroupId
-        let cancelHasPending = cancelModel.hasPendingDraftForCurrentGroup
-        let cancelTargetEnabled = cancelModel.isTargetEnabled("claude-code")
-        XCTAssertFalse(cancelDialogAfterDecision)
-        XCTAssertEqual(cancelSelectedAfterDecision, "alpha")
-        XCTAssertTrue(cancelHasPending)
-        XCTAssertFalse(cancelTargetEnabled)
-
-        let cancelRequests = fixture.loggedRequests().filter { $0.command == "apply" }
-        XCTAssertEqual(cancelRequests.count, 0)
-    }
-
-    private func verifyAgentToggleStaysDraftOnly(using fixture: TestFixture) async throws {
+    private func verifyGroupSelectionIsImmediate(using fixture: TestFixture) async throws {
         let model = try await fixture.makeModel()
-        let before = fixture.loggedRequests().count
+        XCTAssertEqual(model.selectedGroupId, "alpha")
+        XCTAssertEqual(model.visibleTargets.map(\.id), ["claude-code", "cursor"])
 
-        model.setTargetEnabled("claude-code", enabled: false)
+        await model.selectSource("beta")
 
-        let hasPendingDraft = model.hasPendingDraftForCurrentGroup
-        let targetEnabled = model.isTargetEnabled("claude-code")
-        XCTAssertTrue(hasPendingDraft)
-        XCTAssertFalse(targetEnabled)
-        XCTAssertEqual(fixture.loggedRequests().count, before)
+        XCTAssertEqual(model.selectedGroupId, "beta")
         XCTAssertEqual(fixture.loggedRequests().filter { $0.command == "apply" }.count, 0)
     }
 
-    private func verifyApplyNowIsCurrentGroupOnly(using fixture: TestFixture) async throws {
+    private func verifyAgentToggleWritesImmediately(using fixture: TestFixture) async throws {
         let model = try await fixture.makeModel()
+        let before = fixture.loggedRequests().count
 
-        model.setTargetEnabled("claude-code", enabled: false)
-        let canApply = model.canApplyCurrentGroupDraft
-        XCTAssertTrue(canApply)
+        await model.setTargetEnabled("claude-code", enabled: false)
 
-        let applied = await model.applyCurrentGroupDraft()
-        XCTAssertTrue(applied)
-        let selectedGroup = model.selectedGroupId
-        XCTAssertEqual(selectedGroup, "alpha")
-
+        let targetEnabled = model.isTargetEnabled("claude-code")
+        XCTAssertFalse(targetEnabled)
+        XCTAssertGreaterThan(fixture.loggedRequests().count, before)
         let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
         XCTAssertEqual(applyRequests.count, 1)
         XCTAssertEqual(applyRequests.first?.payload?["sourceId"]?.value as? String, "alpha")
         let draft = applyRequests.first?.payload?["draft"]?.value as? [String: Any]
         XCTAssertEqual(draft?["enabledTargets"] as? [String], [])
+        XCTAssertEqual(model.saveState(for: "alpha").phase, .saved)
+    }
+
+    private func verifySkillToggleWritesImmediately(using fixture: TestFixture) async throws {
+        let model = try await fixture.makeModel()
+
+        await model.setSkillEnabled("alpha-leaf-1", enabled: false)
+
+        let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
+        XCTAssertEqual(applyRequests.count, 0)
+        XCTAssertTrue(model.isSkillEnabled("alpha-leaf-1"))
+        XCTAssertEqual(model.toast?.style, .error)
     }
 
     private func verifyDetectedTargetsDefaultAndShowAll(using fixture: TestFixture) async throws {
@@ -166,21 +101,16 @@ final class WorkflowCoverageTests: XCTestCase {
         )
     }
 
-    private func verifyApplyFailureTemplate(using fixture: TestFixture) async throws {
+    private func verifyApplyFailureRollsBack(using fixture: TestFixture) async throws {
         let model = try await fixture.makeModel()
 
-        model.setTargetEnabled("claude-code", enabled: false)
+        await model.setTargetEnabled("claude-code", enabled: false)
 
-        let applied = await model.applyCurrentGroupDraft()
-        XCTAssertFalse(applied)
-        let hasApplyError = model.hasApplyError
-        let failureCount = model.lastApplyFailureCount
-        let firstReason = model.lastApplyFirstReason
         let detailText = model.detailText
-        XCTAssertTrue(hasApplyError)
-        XCTAssertEqual(failureCount, 2)
-        XCTAssertEqual(firstReason, "Primary cause: missing leaf mapping")
+        XCTAssertTrue(model.isTargetEnabled("claude-code"))
+        XCTAssertEqual(model.saveState(for: "alpha").phase, .failed)
         XCTAssertEqual(detailText, "Apply failed: Primary cause: missing leaf mapping")
+        XCTAssertEqual(model.toast?.style, .error)
 
         let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
         XCTAssertEqual(applyRequests.count, 1)

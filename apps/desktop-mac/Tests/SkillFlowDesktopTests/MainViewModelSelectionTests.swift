@@ -21,41 +21,32 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(model.isSkillEnabled("beta-a", sourceId: "beta"))
         XCTAssertTrue(model.isSkillEnabled("beta-b", sourceId: "beta"))
 
-        model.toggleAllSkills(sourceId: "alpha")
+        await model.toggleAllSkills(sourceId: "alpha")
         XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
-        model.toggleAllSkills(sourceId: "alpha")
-        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .empty)
+        await model.toggleAllSkills(sourceId: "alpha")
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
+        XCTAssertEqual(model.toast?.style, .error)
 
-        model.setSkillEnabled("alpha-b", enabled: true, sourceId: "alpha")
-        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .partial)
+        await model.setSkillEnabled("alpha-b", enabled: true, sourceId: "alpha")
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
         XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
 
-        model.toggleAllTargets(sourceId: "alpha")
+        await model.toggleAllTargets(sourceId: "alpha")
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .full)
-        model.toggleAllTargets(sourceId: "alpha")
+        await model.toggleAllTargets(sourceId: "alpha")
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
     }
 
-    func testSaveFailureResetsAfterEdit() async throws {
+    func testSaveFailureRollsBackOptimisticEdit() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .failureBaseline)
 
         let model = try await fixture.makeModel()
 
-        model.setTargetEnabled("cursor", enabled: true)
-        XCTAssertTrue(model.hasPendingDraftForCurrentGroup)
-
-        let applied = await model.applyCurrentGroupDraft()
-        XCTAssertFalse(applied)
+        await model.setTargetEnabled("cursor", enabled: true)
         XCTAssertEqual(model.saveState(for: "alpha").phase, .failed)
-        XCTAssertTrue(model.hasApplyError)
-        XCTAssertEqual(model.lastApplyFirstReason, "Primary cause: missing leaf mapping")
-
-        model.setTargetEnabled("cursor", enabled: false)
-        XCTAssertEqual(model.saveState(for: "alpha").phase, .idle)
-        XCTAssertFalse(model.hasApplyError)
-        XCTAssertEqual(model.lastApplyFailureCount, 0)
-        XCTAssertEqual(model.lastApplyFirstReason, "")
+        XCTAssertFalse(model.isTargetEnabled("cursor"))
+        XCTAssertEqual(model.detailText, "Apply failed: Primary cause: missing leaf mapping")
     }
 
     func testClawhubGroupSelectionIncludesAllClawhubSources() async throws {

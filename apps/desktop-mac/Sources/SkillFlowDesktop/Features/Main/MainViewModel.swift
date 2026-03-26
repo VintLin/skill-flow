@@ -24,12 +24,6 @@ final class MainViewModel {
         var id: String { rawValue }
     }
 
-    enum GroupSwitchDecision {
-        case apply
-        case discard
-        case cancel
-    }
-
     enum PageViewState {
         case loading
         case empty
@@ -50,6 +44,17 @@ final class MainViewModel {
         var message: String?
     }
 
+    enum ToastStyle {
+        case success
+        case error
+    }
+
+    struct ToastState: Identifiable, Equatable {
+        let id = UUID()
+        let style: ToastStyle
+        let message: String
+    }
+
     struct TargetOption: Identifiable {
         let id: String
         let label: String
@@ -57,12 +62,61 @@ final class MainViewModel {
 
     struct SourceRow: Identifiable {
         let id: String
+        let displayName: String
+        let locator: String
         let kind: String
         let skillCount: Int
         let status: String
         let lastUpdate: String
         let warningCount: Int
         let errorCount: Int
+    }
+
+    struct GroupCardSkill: Identifiable {
+        let id: String
+        let label: String
+        let description: String
+        let isEnabled: Bool
+    }
+
+    struct GroupCardTarget: Identifiable {
+        let id: String
+        let label: String
+        let isEnabled: Bool
+    }
+
+    struct GroupCardModel: Identifiable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let metaLine: String
+        let health: String
+        let warningCount: Int
+        let errorCount: Int
+        let skills: [GroupCardSkill]
+        let targets: [GroupCardTarget]
+        let saveState: SaveState
+    }
+
+    struct DetailSkill: Identifiable {
+        let id: String
+        let title: String
+        let summary: String
+        let isEnabled: Bool
+        let warningCount: Int
+    }
+
+    struct DetailViewData {
+        let sourceId: String
+        let title: String
+        let subtitle: String
+        let locator: String
+        let updatedAt: String
+        let health: String
+        let warningCount: Int
+        let errorCount: Int
+        let enabledTargetLabels: [String]
+        let skills: [DetailSkill]
     }
 
     struct DeploymentRow: Identifiable {
@@ -157,8 +211,8 @@ final class MainViewModel {
 
     private var baselineDrafts: [String: DraftState] = [:]
     private var workingDrafts: [String: DraftState] = [:]
-    private var pendingGroupId: String?
     private var detectedTargets: Set<String> = []
+    private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -178,14 +232,9 @@ final class MainViewModel {
     var compactSidebarVisible: Bool = true
     var showAllTargets: Bool = false
 
-    var showGroupSwitchDialog: Bool = false
-    var isApplyingDraft: Bool = false
     var isRefreshing: Bool = false
     var saveStateBySourceId: [String: SaveState] = [:]
-
-    var lastApplyFailureCount: Int = 0
-    var lastApplyFirstReason: String = ""
-    var lastApplySummary: String = "No apply action yet"
+    var toast: ToastState?
 
     var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?
@@ -217,21 +266,6 @@ final class MainViewModel {
         return [selectedSourceId]
     }
 
-    var hasPendingDraftForCurrentGroup: Bool {
-        guard let groupId = selectedGroupId else { return false }
-        guard let baseline = baselineDrafts[groupId], let working = workingDrafts[groupId] else {
-            return false
-        }
-        return baseline != working
-    }
-
-    var canApplyCurrentGroupDraft: Bool {
-        guard let groupId = selectedGroupId, let draft = workingDrafts[groupId] else {
-            return false
-        }
-        return !isApplyingDraft && draft.selectedLeafIds.count > 0 && hasPendingDraftForCurrentGroup
-    }
-
     var visibleTargets: [TargetOption] {
         let targetIds = visibleTargetIds()
 
@@ -240,15 +274,13 @@ final class MainViewModel {
         }
     }
 
-    var hasApplyError: Bool {
-        lastApplyFailureCount > 0 && !lastApplyFirstReason.isEmpty
-    }
-
     var sourceRows: [SourceRow] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let rows = allSummaries.map { summary in
             SourceRow(
                 id: summary.sourceId,
+                displayName: summary.sourceDisplayName,
+                locator: summary.sourceLocator,
                 kind: summary.sourceKind,
                 skillCount: summary.leafs.count,
                 status: summary.health,
@@ -262,8 +294,47 @@ final class MainViewModel {
         }
         return rows.filter { row in
             row.id.lowercased().contains(query)
+                || row.displayName.lowercased().contains(query)
+                || row.locator.lowercased().contains(query)
                 || row.kind.lowercased().contains(query)
                 || row.status.lowercased().contains(query)
+        }
+    }
+
+    var groupCards: [GroupCardModel] {
+        sourceRows.compactMap { row in
+            guard let summary = summary(for: row.id), let draft = draft(for: row.id) else {
+                return nil
+            }
+
+            let enabledLeafIds = Set(draft.selectedLeafIds)
+            let enabledTargets = Set(draft.enabledTargets)
+
+            return GroupCardModel(
+                id: row.id,
+                title: row.displayName,
+                subtitle: row.id,
+                metaLine: row.locator.isEmpty ? row.kind : row.locator,
+                health: row.status,
+                warningCount: row.warningCount,
+                errorCount: row.errorCount,
+                skills: summary.leafs.map { leaf in
+                    GroupCardSkill(
+                        id: leaf.id,
+                        label: leaf.name,
+                        description: leaf.description,
+                        isEnabled: enabledLeafIds.contains(leaf.id)
+                    )
+                },
+                targets: visibleTargetIds().map { targetId in
+                    GroupCardTarget(
+                        id: targetId,
+                        label: Self.targetCatalog[targetId] ?? targetId,
+                        isEnabled: enabledTargets.contains(targetId)
+                    )
+                },
+                saveState: saveStateBySourceId[row.id] ?? SaveState(phase: .idle, message: nil)
+            )
         }
     }
 
@@ -322,7 +393,7 @@ final class MainViewModel {
             if sourceRows.isEmpty {
                 return .empty
             }
-            if !latestWarnings.isEmpty || hasApplyError {
+            if !latestWarnings.isEmpty {
                 return .partial
             }
             return .success
@@ -427,7 +498,7 @@ final class MainViewModel {
         draft(for: sourceId)?.selectedLeafIds.contains(leafId) == true
     }
 
-    func toggleAllSkills(sourceId: String? = nil) {
+    func toggleAllSkills(sourceId: String? = nil) async {
         guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = workingDrafts[sourceId] else {
             return
         }
@@ -438,11 +509,14 @@ final class MainViewModel {
         )
         let nextState = toggleParent(treeState)
         draft.selectedLeafIds = nextState.selectedLeafIds
-        workingDrafts[sourceId] = normalizeDraft(draft)
-        markDraftEdited(sourceId: sourceId)
+        await commitDraftChange(
+            sourceId: sourceId,
+            nextDraft: draft,
+            successMessage: "Updated skills for \(sourceId)."
+        )
     }
 
-    func setSkillEnabled(_ leafId: String, enabled: Bool, sourceId: String? = nil) {
+    func setSkillEnabled(_ leafId: String, enabled: Bool, sourceId: String? = nil) async {
         guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = workingDrafts[sourceId] else {
             return
         }
@@ -467,11 +541,14 @@ final class MainViewModel {
         }
 
         draft.selectedLeafIds = nextSelectedLeafIds
-        workingDrafts[sourceId] = normalizeDraft(draft)
-        markDraftEdited(sourceId: sourceId)
+        await commitDraftChange(
+            sourceId: sourceId,
+            nextDraft: draft,
+            successMessage: enabled ? "Enabled \(leafId)." : "Disabled \(leafId)."
+        )
     }
 
-    func toggleAllTargets(sourceId: String? = nil) {
+    func toggleAllTargets(sourceId: String? = nil) async {
         guard let sourceId = resolveSourceId(sourceId), var draft = workingDrafts[sourceId] else {
             return
         }
@@ -489,8 +566,11 @@ final class MainViewModel {
         let nextState = toggleParent(treeState)
         let hiddenTargets = draft.enabledTargets.filter { !targetIds.contains($0) }
         draft.enabledTargets = normalizedTargets(hiddenTargets + nextState.selectedLeafIds)
-        workingDrafts[sourceId] = normalizeDraft(draft)
-        markDraftEdited(sourceId: sourceId)
+        await commitDraftChange(
+            sourceId: sourceId,
+            nextDraft: draft,
+            successMessage: "Updated agents for \(sourceId)."
+        )
     }
 
     private var deploymentRows: [DeploymentRow] {
@@ -591,52 +671,14 @@ final class MainViewModel {
         selectedSourceId = sourceId
         do {
             let response = try await bridgeClient.inspect(sourceId: sourceId)
+            if let payload = response.data?.value as? [String: Any] {
+                inspectedPayloadBySourceId[sourceId] = payload
+            }
             detailText = prettyPrint(response.data?.value) ?? "No details"
             latestWarnings = response.warnings
         } catch {
             detailText = "Inspect failed: \(error.localizedDescription)"
-        }
-    }
-
-    func requestGroupSwitch(to groupId: String) {
-        guard selectedGroupId != groupId else { return }
-        guard hasPendingDraftForCurrentGroup else {
-            selectedSourceId = groupId
-            Task { await selectSource(groupId) }
-            return
-        }
-        pendingGroupId = groupId
-        showGroupSwitchDialog = true
-    }
-
-    func resolveGroupSwitch(_ decision: GroupSwitchDecision) async {
-        defer {
-            showGroupSwitchDialog = false
-            if case .cancel = decision {
-                pendingGroupId = nil
-            }
-        }
-
-        switch decision {
-        case .cancel:
-            return
-        case .discard:
-            if let current = selectedGroupId, let baseline = baselineDrafts[current] {
-                workingDrafts[current] = baseline
-            }
-            if let pending = pendingGroupId {
-                pendingGroupId = nil
-                selectedSourceId = pending
-                await selectSource(pending)
-            }
-        case .apply:
-            let applied = await applyCurrentGroupDraft()
-            guard applied else { return }
-            if let pending = pendingGroupId {
-                pendingGroupId = nil
-                selectedSourceId = pending
-                await selectSource(pending)
-            }
+            showToast(style: .error, message: "Failed to load \(sourceId) details.")
         }
     }
 
@@ -673,6 +715,7 @@ final class MainViewModel {
         let locator = newSourceLocator.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !locator.isEmpty else {
             detailText = "Add failed: source locator is empty."
+            showToast(style: .error, message: "Import failed: empty source locator.")
             return
         }
         do {
@@ -680,14 +723,17 @@ final class MainViewModel {
             newSourceLocator = ""
             await refreshList()
             await runDoctor()
+            showToast(style: .success, message: "Imported source.")
         } catch {
             detailText = "Add failed: \(error.localizedDescription)"
+            showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
         }
     }
 
     func uninstallSelectedSource() async {
         guard let selectedSourceId else {
             detailText = "Uninstall failed: no source selected."
+            showToast(style: .error, message: "Uninstall failed: no group selected.")
             return
         }
         do {
@@ -704,8 +750,10 @@ final class MainViewModel {
             } else {
                 detailText = "No sources installed."
             }
+            showToast(style: .success, message: "Removed \(selectedSourceId).")
         } catch {
             detailText = "Uninstall failed: \(error.localizedDescription)"
+            showToast(style: .error, message: "Uninstall failed: \(error.localizedDescription)")
         }
     }
 
@@ -716,8 +764,8 @@ final class MainViewModel {
         return draft.enabledTargets.contains(target)
     }
 
-    func setTargetEnabled(_ target: String, enabled: Bool) {
-        guard let groupId = selectedGroupId, var draft = workingDrafts[groupId] else {
+    func setTargetEnabled(_ target: String, enabled: Bool, sourceId: String? = nil) async {
+        guard let groupId = resolveSourceId(sourceId), var draft = workingDrafts[groupId] else {
             return
         }
 
@@ -732,55 +780,11 @@ final class MainViewModel {
             draft.enabledTargets.removeAll { $0 == target }
         }
 
-        workingDrafts[groupId] = normalizeDraft(draft)
-        markDraftEdited(sourceId: groupId)
-    }
-
-    func applyCurrentGroupDraft() async -> Bool {
-        guard let groupId = selectedGroupId, let draft = workingDrafts[groupId] else {
-            detailText = "Apply failed: no group selected."
-            return false
-        }
-
-        guard !draft.selectedLeafIds.isEmpty else {
-            detailText = "Apply failed: current group has no selected skills."
-            return false
-        }
-
-        isApplyingDraft = true
-        defer { isApplyingDraft = false }
-
-        let normalizedDraft = normalizeDraft(draft)
-        saveStateBySourceId[groupId] = SaveState(phase: .saving, message: "saving changes...")
-
-        do {
-            _ = try await bridgeClient.apply(
-                sourceId: groupId,
-                selectedLeafIds: normalizedDraft.selectedLeafIds,
-                enabledTargets: normalizedDraft.enabledTargets
-            )
-            baselineDrafts[groupId] = normalizedDraft
-            workingDrafts[groupId] = normalizedDraft
-            saveStateBySourceId[groupId] = SaveState(phase: .saved, message: "saved")
-            lastApplyFailureCount = 0
-            lastApplyFirstReason = ""
-            lastApplySummary = "Applied \(normalizedDraft.selectedLeafIds.count) skills to \(normalizedDraft.enabledTargets.count) targets"
-            detailText = "Applied group '\(groupId)' to \(normalizedDraft.enabledTargets.count) targets."
-            await refreshList()
-            await runDoctor()
-            return true
-        } catch {
-            let reasons = error.localizedDescription
-                .split(separator: "\n")
-                .map { String($0) }
-                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
-            lastApplyFailureCount = max(reasons.count, 1)
-            lastApplyFirstReason = reasons.first ?? error.localizedDescription
-            saveStateBySourceId[groupId] = SaveState(phase: .failed, message: lastApplyFirstReason)
-            detailText = "Apply failed: \(lastApplyFirstReason)"
-            return false
-        }
+        await commitDraftChange(
+            sourceId: groupId,
+            nextDraft: draft,
+            successMessage: enabled ? "Enabled \(Self.targetCatalog[target] ?? target)." : "Disabled \(Self.targetCatalog[target] ?? target)."
+        )
     }
 
     private func parseBootstrapData(_ value: Any?) {
@@ -990,15 +994,92 @@ final class MainViewModel {
         )
     }
 
-    private func markDraftEdited(sourceId: String) {
-        guard let currentState = saveStateBySourceId[sourceId], currentState.phase != .idle else {
+    func detailViewData(for sourceId: String) -> DetailViewData? {
+        guard let summary = summary(for: sourceId), let draft = draft(for: sourceId) else {
+            return nil
+        }
+
+        let selectedLeafIds = Set(draft.selectedLeafIds)
+        let enabledTargetLabels = draft.enabledTargets.map { Self.targetCatalog[$0] ?? $0 }
+        let inspectedLeafIds = uniqueSorted(inspectedPayloadBySourceId[sourceId]?["leafIds"] as? [String] ?? [])
+        let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
+
+        let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId in
+            guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
+                return nil
+            }
+            return DetailSkill(
+                id: leaf.id,
+                title: leaf.name,
+                summary: leaf.description.isEmpty ? leaf.linkName : leaf.description,
+                isEnabled: selectedLeafIds.contains(leaf.id),
+                warningCount: leaf.metadataWarnings.count
+            )
+        }
+
+        return DetailViewData(
+            sourceId: summary.sourceId,
+            title: summary.sourceDisplayName,
+            subtitle: summary.sourceKind,
+            locator: summary.sourceLocator,
+            updatedAt: summary.updatedAt,
+            health: summary.health,
+            warningCount: summary.warningCount,
+            errorCount: summary.errorCount,
+            enabledTargetLabels: enabledTargetLabels,
+            skills: skills
+        )
+    }
+
+    func dismissToast() {
+        toast = nil
+    }
+
+    private func commitDraftChange(sourceId: String, nextDraft: DraftState, successMessage: String) async {
+        let normalizedDraft = normalizeDraft(nextDraft)
+        guard !normalizedDraft.selectedLeafIds.isEmpty else {
+            showToast(style: .error, message: "At least one skill must stay enabled.")
             return
         }
-        saveStateBySourceId[sourceId] = SaveState(phase: .idle, message: nil)
-        if sourceId == selectedGroupId {
-            lastApplyFailureCount = 0
-            lastApplyFirstReason = ""
+
+        let previousDraft = workingDrafts[sourceId] ?? baselineDrafts[sourceId] ?? normalizedDraft
+        selectedSourceId = sourceId
+        workingDrafts[sourceId] = normalizedDraft
+        saveStateBySourceId[sourceId] = SaveState(phase: .saving, message: "saving...")
+
+        do {
+            _ = try await bridgeClient.apply(
+                sourceId: sourceId,
+                selectedLeafIds: normalizedDraft.selectedLeafIds,
+                enabledTargets: normalizedDraft.enabledTargets
+            )
+            baselineDrafts[sourceId] = normalizedDraft
+            workingDrafts[sourceId] = normalizedDraft
+            saveStateBySourceId[sourceId] = SaveState(phase: .saved, message: "saved")
+            detailText = "Applied group '\(sourceId)' to \(normalizedDraft.enabledTargets.count) targets."
+            await refreshList()
+            if selectedGroupId == sourceId {
+                await selectSource(sourceId)
+            }
+            showToast(style: .success, message: successMessage)
+        } catch {
+            let firstReason = firstErrorLine(from: error)
+            workingDrafts[sourceId] = previousDraft
+            saveStateBySourceId[sourceId] = SaveState(phase: .failed, message: firstReason)
+            detailText = "Apply failed: \(firstReason)"
+            showToast(style: .error, message: "Save failed: \(firstReason)")
         }
+    }
+
+    private func showToast(style: ToastStyle, message: String) {
+        toast = ToastState(style: style, message: message)
+    }
+
+    private func firstErrorLine(from error: Error) -> String {
+        error.localizedDescription
+            .split(separator: "\n")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? error.localizedDescription
     }
 
     private func pruneStateMaps(allowedSourceIds: Set<String>) {

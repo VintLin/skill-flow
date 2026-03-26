@@ -34,25 +34,27 @@ struct MainView: View {
                 if let groupId = detailGroupId {
                     detailOverlay(groupId: groupId, layout: layout)
                 }
+
+                if let toast = viewModel.toast {
+                    toastBanner(toast)
+                        .padding(.top, 16)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .onTapGesture {
+                            viewModel.dismissToast()
+                        }
+                }
             }
         }
         .tint(AppTheme.brand)
-        .alert("Unsaved changes", isPresented: $viewModel.showGroupSwitchDialog) {
-            Button("Apply") {
-                Task { await viewModel.resolveGroupSwitch(.apply) }
-            }
-            Button("Discard", role: .destructive) {
-                Task { await viewModel.resolveGroupSwitch(.discard) }
-            }
-            Button("Cancel", role: .cancel) {
-                Task { await viewModel.resolveGroupSwitch(.cancel) }
-            }
-        } message: {
-            Text("Current group has unapplied changes. Choose how to continue.")
-        }
         .onChange(of: viewModel.selectedGroupId) { _, newValue in
             guard detailGroupId != nil else { return }
             detailGroupId = newValue
+        }
+        .task(id: viewModel.toast?.id) {
+            guard viewModel.toast != nil else { return }
+            try? await Task.sleep(for: .seconds(2))
+            viewModel.dismissToast()
         }
         .task {
             if case .idle = viewModel.loadState {
@@ -214,7 +216,7 @@ struct MainView: View {
     }
 
     private var toolbarHint: some View {
-        Text("Click group title to open detail. Search is shared with the menu popover.")
+        Text("Card actions save immediately. Click the card header to open detail.")
             .font(.system(size: 12, weight: .regular))
             .foregroundStyle(AppTheme.textMuted(for: theme))
     }
@@ -243,14 +245,14 @@ struct MainView: View {
     }
 
     private func gridSection(layout: LayoutMetrics) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(
-                title: "Groups",
-                subtitle: layout.gridSubtitle,
-                badge: "\(filteredSourceRows.count)"
-            )
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader(
+                    title: "Groups",
+                    subtitle: "Configure skills and agents directly from each group card.",
+                    badge: "\(groupCards.count)"
+                )
 
-            if filteredSourceRows.isEmpty {
+            if groupCards.isEmpty {
                 let loading = {
                     switch viewModel.loadState {
                     case .loading:
@@ -267,14 +269,20 @@ struct MainView: View {
                 HStack {
                     Spacer(minLength: 0)
                     LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
-                        ForEach(filteredSourceRows) { row in
+                        ForEach(groupCards) { card in
                             GroupCardView(
-                                row: row,
-                                isSelected: row.id == viewModel.selectedGroupId,
+                                card: card,
+                                isSelected: card.id == viewModel.selectedGroupId,
                                 theme: theme,
                                 onOpenDetail: {
-                                    detailGroupId = row.id
-                                    viewModel.requestGroupSwitch(to: row.id)
+                                    detailGroupId = card.id
+                                    Task { await viewModel.selectSource(card.id) }
+                                },
+                                onToggleSkill: { skillId, enabled in
+                                    Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
+                                },
+                                onToggleTarget: { targetId, enabled in
+                                    Task { await viewModel.setTargetEnabled(targetId, enabled: enabled, sourceId: card.id) }
                                 }
                             )
                         }
@@ -298,8 +306,6 @@ struct MainView: View {
                             StatsCard(title: "Warnings", value: "\(viewModel.latestWarnings.count)", theme: theme)
                             StatsCard(title: "Health", value: viewModel.healthLabel, theme: theme)
                         }
-
-                        chartCard
                     }
                 }
             }
@@ -307,41 +313,8 @@ struct MainView: View {
         }
     }
 
-    private var chartCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Changes")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Spacer()
-                Text("Last 7 snapshots")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-            }
-
-            HStack(alignment: .bottom, spacing: 6) {
-                ForEach(0..<7, id: \.self) { idx in
-                    let value = max(8, ((idx * 11 + viewModel.sourceRows.count * 7) % 90))
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(AppTheme.brand.opacity(0.85))
-                        .frame(height: CGFloat(value))
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .frame(height: 150)
-        }
-        .padding(14)
-        .background(AppTheme.surface(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(AppTheme.border(for: theme), lineWidth: 1)
-        )
-    }
-
     private func detailOverlay(groupId: String, layout: LayoutMetrics) -> some View {
-        let row = viewModel.sourceRows.first { $0.id == groupId }
-        let snapshot = DetailSnapshot(detailText: viewModel.detailText)
+        let detail = viewModel.detailViewData(for: groupId)
         let stacked = layout.detailStacks
         let sidebarWidth = layout.detailSidebarWidth
 
@@ -354,12 +327,12 @@ struct MainView: View {
 
             VStack(spacing: 12) {
                 if stacked {
-                    detailSidebar(groupId: groupId, row: row, snapshot: snapshot, width: sidebarWidth)
-                    detailMain(groupId: groupId, row: row, snapshot: snapshot)
+                    detailSidebar(groupId: groupId, detail: detail, width: sidebarWidth)
+                    detailMain(groupId: groupId, detail: detail)
                 } else {
                     HStack(spacing: 12) {
-                        detailSidebar(groupId: groupId, row: row, snapshot: snapshot, width: sidebarWidth)
-                        detailMain(groupId: groupId, row: row, snapshot: snapshot)
+                        detailSidebar(groupId: groupId, detail: detail, width: sidebarWidth)
+                        detailMain(groupId: groupId, detail: detail)
                     }
                 }
             }
@@ -374,25 +347,24 @@ struct MainView: View {
 
     private func detailSidebar(
         groupId: String,
-        row: MainViewModel.SourceRow?,
-        snapshot: DetailSnapshot?,
+        detail: MainViewModel.DetailViewData?,
         width: CGFloat
     ) -> some View {
-        let skillItems = detailSkillItems(for: row, snapshot: snapshot)
-        let activeIndex = detailActiveIndex(for: snapshot, items: skillItems)
+        let skillItems = detail?.skills ?? []
+        let activeIndex = skillItems.firstIndex(where: \.isEnabled)
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(groupId)
+                    Text(detail?.title ?? groupId)
                         .font(.system(size: 14, weight: .semibold))
                         .lineLimit(1)
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
 
                     HStack(spacing: 6) {
-                        pillText(row?.kind ?? "source", tint: AppTheme.toolbarButtonBackground(for: theme), text: AppTheme.textPrimary(for: theme))
-                        pillText("W\(row?.warningCount ?? 0)", tint: Color.orange.opacity(0.24), text: AppTheme.textPrimary(for: theme))
-                        pillText(projectedNameText(for: snapshot, groupId: groupId), tint: Color.gray.opacity(0.18), text: AppTheme.textPrimary(for: theme))
+                        pillText(detail?.subtitle ?? "source", tint: AppTheme.toolbarButtonBackground(for: theme), text: AppTheme.textPrimary(for: theme))
+                        pillText("W\(detail?.warningCount ?? 0)", tint: Color.orange.opacity(0.24), text: AppTheme.textPrimary(for: theme))
+                        pillText(detail?.health ?? "unknown", tint: Color.gray.opacity(0.18), text: AppTheme.textPrimary(for: theme))
                     }
                 }
 
@@ -414,17 +386,17 @@ struct MainView: View {
                     detailOverviewCard(
                         title: "Overview",
                         lines: [
-                            "Selected leafs: \(snapshot?.selectedLeafIds.count ?? row?.skillCount ?? 0)",
-                            "Enabled targets: \(snapshot?.enabledTargets.count ?? 0)",
-                            "Status: \(row?.status ?? viewModel.healthLabel)",
+                            "Skills: \(detail?.skills.count ?? 0)",
+                            "Enabled agents: \(detail?.enabledTargetLabels.count ?? 0)",
+                            "Status: \(detail?.health ?? viewModel.healthLabel)",
                         ]
                     )
 
                     detailOverviewCard(
-                        title: "Projected",
+                        title: "Source",
                         lines: [
-                            projectedNameText(for: snapshot, groupId: groupId),
-                            snapshot?.selectedLeafIds.first ?? "No selected leaf yet",
+                            detail?.sourceId ?? groupId,
+                            detail?.updatedAt ?? "-",
                         ]
                     )
 
@@ -448,27 +420,27 @@ struct MainView: View {
 
     private func detailMain(
         groupId: String,
-        row: MainViewModel.SourceRow?,
-        snapshot: DetailSnapshot?
+        detail: MainViewModel.DetailViewData?
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Desktop Client")
+                    Text(detail?.title ?? groupId)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text("Preview")
+                    Text(detail?.locator ?? "No source locator")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
                 }
 
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(row?.status ?? viewModel.healthLabel)
+                    Text(detail?.health ?? viewModel.healthLabel)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text("\(snapshot?.enabledTargets.count ?? 0) targets")
+                    Text("\(detail?.enabledTargetLabels.count ?? 0) agents")
                         .font(.system(size: 10, weight: .regular, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                 }
@@ -486,33 +458,34 @@ struct MainView: View {
                     detailOverviewCard(
                         title: "Group",
                         lines: [
-                            groupId,
-                            row?.kind ?? "source",
+                            detail?.sourceId ?? groupId,
+                            detail?.subtitle ?? "source",
                         ]
                     )
                     detailOverviewCard(
                         title: "Warnings",
                         lines: [
-                            "\(row?.warningCount ?? 0)",
-                            "\(viewModel.latestWarnings.count) total",
+                            "\(detail?.warningCount ?? 0)",
+                            "Errors \(detail?.errorCount ?? 0)",
                         ]
                     )
                     detailOverviewCard(
-                        title: "Projected name",
+                        title: "Agents",
                         lines: [
-                            projectedNameText(for: snapshot, groupId: groupId),
-                            snapshot?.selectedLeafIds.first ?? "Pending",
+                            detail?.enabledTargetLabels.joined(separator: ", ").nonEmpty ?? "No agents enabled",
+                            detail?.updatedAt ?? "Pending",
                         ]
                     )
                 }
 
                 ScrollView {
-                    Text(detailBodyText(for: row, snapshot: snapshot))
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .padding(18)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(detail?.skills ?? []) { skill in
+                            detailDocumentRow(skill: skill)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(18)
                 }
                 .background(AppTheme.toolbarButtonBackground(for: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -562,8 +535,8 @@ struct MainView: View {
         )
     }
 
-    private func detailSkillList(items: [DetailSkillItem], activeIndex: Int?, width: CGFloat) -> some View {
-        let lineOffset = activeIndex.map { CGFloat($0) * 56 + 10 } ?? 10
+    private func detailSkillList(items: [MainViewModel.DetailSkill], activeIndex: Int?, width: CGFloat) -> some View {
+        let lineOffset = activeIndex.map { CGFloat($0) * 64 + 10 } ?? 10
         let isActiveVisible = activeIndex != nil
 
         return VStack(alignment: .leading, spacing: 0) {
@@ -607,13 +580,13 @@ struct MainView: View {
         )
     }
 
-    private func detailSkillRow(item: DetailSkillItem, active: Bool) -> some View {
+    private func detailSkillRow(item: MainViewModel.DetailSkill, active: Bool) -> some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text(item.subtitle)
+                Text(item.summary)
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(2)
@@ -621,17 +594,42 @@ struct MainView: View {
 
             Spacer(minLength: 10)
 
-            Text(item.stateLabel)
+            Text(item.isEnabled ? "ON" : "OFF")
                 .font(.system(size: 10, weight: .bold))
                 .padding(.horizontal, 8)
                 .frame(height: 30)
-                .background(item.stateTint)
+                .background(item.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(item.stateText)
+                .foregroundStyle(item.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
         .background(active ? AppTheme.pageBackground(for: theme).opacity(0.5) : Color.clear)
+    }
+
+    private func detailDocumentRow(skill: MainViewModel.DetailSkill) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(skill.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                pillText(skill.isEnabled ? "Enabled" : "Disabled", tint: skill.isEnabled ? Color.green.opacity(0.22) : Color.gray.opacity(0.20), text: AppTheme.textPrimary(for: theme))
+                if skill.warningCount > 0 {
+                    pillText("Warnings \(skill.warningCount)", tint: Color.orange.opacity(0.24), text: AppTheme.textPrimary(for: theme))
+                }
+            }
+            Text(skill.summary)
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(AppTheme.border(for: theme))
+                .frame(height: 1)
+        }
     }
 
     private func sectionShell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -700,70 +698,8 @@ struct MainView: View {
         Array(repeating: GridItem(.fixed(220), spacing: 12), count: layout.gridColumnCount)
     }
 
-    private var filteredSourceRows: [MainViewModel.SourceRow] {
-        viewModel.sourceRows
-    }
-
-    private func detailSkillItems(for row: MainViewModel.SourceRow?, snapshot: DetailSnapshot?) -> [DetailSkillItem] {
-        let leafIds = snapshot?.leafIds ?? defaultLeafIds(for: row)
-        let selectedLeafIds = Set(snapshot?.selectedLeafIds ?? [])
-        let enabledTargets = snapshot?.enabledTargets ?? []
-
-        return leafIds.enumerated().map { index, leafId in
-            let isSelected = selectedLeafIds.contains(leafId)
-            return DetailSkillItem(
-                title: leafId,
-                subtitle: detailSubtitle(for: index, row: row, enabledTargets: enabledTargets),
-                stateLabel: isSelected ? "ON" : "OFF",
-                stateTint: isSelected ? Color.green.opacity(0.25) : Color.gray.opacity(0.24),
-                stateText: isSelected ? Color.green : AppTheme.textPrimary(for: theme)
-            )
-        }
-    }
-
-    private func detailActiveIndex(for snapshot: DetailSnapshot?, items: [DetailSkillItem]) -> Int? {
-        guard let activeLeafId = snapshot?.selectedLeafIds.first else {
-            return items.isEmpty ? nil : 0
-        }
-        return items.firstIndex(where: { $0.title == activeLeafId }) ?? (items.isEmpty ? nil : 0)
-    }
-
-    private func detailSubtitle(for index: Int, row: MainViewModel.SourceRow?, enabledTargets: [String]) -> String {
-        let targetCount = enabledTargets.count
-        let warningCount = row?.warningCount ?? 0
-        return "Target \(index + 1) · \(targetCount) enabled · \(warningCount) warnings"
-    }
-
-    private func defaultLeafIds(for row: MainViewModel.SourceRow?) -> [String] {
-        guard let row else { return [] }
-        return (0..<max(1, row.skillCount)).map { index in
-            "skill-\(String(format: "%02d", index + 1))"
-        }
-    }
-
-    private func projectedNameText(for snapshot: DetailSnapshot?, groupId: String) -> String {
-        if let projected = snapshot?.selectedLeafIds.first, !projected.isEmpty {
-            return projected
-        }
-        return groupId
-    }
-
-    private func detailBodyText(for row: MainViewModel.SourceRow?, snapshot: DetailSnapshot?) -> String {
-        let selectedLeafIds = snapshot?.selectedLeafIds ?? []
-        let enabledTargets = snapshot?.enabledTargets ?? []
-        let leafIds = snapshot?.leafIds ?? defaultLeafIds(for: row)
-
-        return """
-        {
-          "sourceId": "\(row?.id ?? "-")",
-          "kind": "\(row?.kind ?? "source")",
-          "leafIds": \(leafIds.prettyPrintedJSON),
-          "selectedLeafIds": \(selectedLeafIds.prettyPrintedJSON),
-          "enabledTargets": \(enabledTargets.prettyPrintedJSON),
-          "warningCount": \(row?.warningCount ?? 0),
-          "projectedName": "\(projectedNameText(for: snapshot, groupId: row?.id ?? "-"))"
-        }
-        """
+    private var groupCards: [MainViewModel.GroupCardModel] {
+        viewModel.groupCards
     }
 
     private func pillText(_ text: String, tint: Color, text textColor: Color) -> some View {
@@ -775,27 +711,44 @@ struct MainView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .foregroundStyle(textColor)
     }
+
+    private func toastBanner(_ toast: MainViewModel.ToastState) -> some View {
+        Text(toast.message)
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 14)
+            .frame(height: 38)
+            .background(toast.style == .success ? Color.green.opacity(0.22) : Color.red.opacity(0.20))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(toast.style == .success ? Color.green.opacity(0.45) : Color.red.opacity(0.35), lineWidth: 1)
+            )
+            .foregroundStyle(AppTheme.textPrimary(for: theme))
+    }
 }
 
 private struct GroupCardView: View {
-    let row: MainViewModel.SourceRow
+    let card: MainViewModel.GroupCardModel
     let isSelected: Bool
     let theme: DesktopThemeMode
     let onOpenDetail: () -> Void
+    let onToggleSkill: (String, Bool) -> Void
+    let onToggleTarget: (String, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: onOpenDetail) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.id)
+                    Text(card.title)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text("by \(row.kind)")
+                    Text(card.subtitle)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
-                    Text("updated \(row.lastUpdate)")
+                    Text(card.metaLine)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -804,15 +757,20 @@ private struct GroupCardView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Skills")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .textCase(.uppercase)
-                HStack(spacing: 4) {
-                    stateChip("MIX", color: Color.orange.opacity(0.3), text: Color.brown)
-                    stateChip("\(row.skillCount)", color: Color.orange.opacity(0.3), text: AppTheme.textPrimary(for: theme))
-                    stateChip("W\(row.warningCount)", color: Color.gray.opacity(0.3), text: AppTheme.textPrimary(for: theme))
-                    stateChip("E\(row.errorCount)", color: Color.gray.opacity(0.3), text: AppTheme.textPrimary(for: theme))
+                HStack(spacing: 6) {
+                    Text("Skills")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .textCase(.uppercase)
+                    Spacer()
+                    statusLabel
+                }
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(card.skills) { skill in
+                        cardToggle(skill.label, isOn: skill.isEnabled) {
+                            onToggleSkill(skill.id, !skill.isEnabled)
+                        }
+                    }
                 }
             }
 
@@ -821,11 +779,12 @@ private struct GroupCardView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .textCase(.uppercase)
-                HStack(spacing: 4) {
-                    stateChip("ON", color: Color.green.opacity(0.25), text: Color.green)
-                    stateChip("CC", color: Color.orange.opacity(0.35), text: AppTheme.textPrimary(for: theme))
-                    stateChip("CU", color: Color.orange.opacity(0.35), text: AppTheme.textPrimary(for: theme))
-                    stateChip("CX", color: Color.gray.opacity(0.3), text: AppTheme.textMuted(for: theme))
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(card.targets) { target in
+                        cardToggle(target.label, isOn: target.isEnabled) {
+                            onToggleTarget(target.id, !target.isEnabled)
+                        }
+                    }
                 }
             }
         }
@@ -848,14 +807,40 @@ private struct GroupCardView: View {
         }
     }
 
-    private func stateChip(_ text: String, color: Color, text textColor: Color) -> some View {
-        Text(text)
-            .font(.system(size: 10, weight: .bold))
+    private var statusLabel: some View {
+        Text(card.saveState.message ?? card.health)
+            .font(.system(size: 9, weight: .bold))
             .padding(.horizontal, 8)
-            .frame(height: 24)
-            .background(color)
-            .foregroundStyle(textColor)
+            .frame(height: 22)
+            .background(statusBackground)
+            .foregroundStyle(AppTheme.textPrimary(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var statusBackground: Color {
+        switch card.saveState.phase {
+        case .saving:
+            return Color.orange.opacity(0.25)
+        case .saved:
+            return Color.green.opacity(0.22)
+        case .failed:
+            return Color.red.opacity(0.18)
+        case .idle:
+            return Color.gray.opacity(0.18)
+        }
+    }
+
+    private func cardToggle(_ text: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text)
+                .font(.system(size: 10, weight: .bold))
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+                .background(isOn ? Color.orange.opacity(0.22) : Color.gray.opacity(0.16))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -884,44 +869,6 @@ private struct StatsCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppTheme.border(for: theme), lineWidth: 1)
         )
-    }
-}
-
-private struct DetailSkillItem {
-    let title: String
-    let subtitle: String
-    let stateLabel: String
-    let stateTint: Color
-    let stateText: Color
-}
-
-private struct DetailSnapshot {
-    let leafIds: [String]
-    let selectedLeafIds: [String]
-    let enabledTargets: [String]
-
-    init?(detailText: String) {
-        guard let data = detailText.data(using: .utf8),
-              let raw = try? JSONSerialization.jsonObject(with: data, options: []),
-              let dictionary = raw as? [String: Any]
-        else {
-            return nil
-        }
-
-        self.leafIds = Self.extractStrings(from: dictionary["leafIds"])
-        self.selectedLeafIds = Self.extractStrings(from: dictionary["selectedLeafIds"])
-        self.enabledTargets = Self.extractStrings(from: dictionary["enabledTargets"])
-    }
-
-    private static func extractStrings(from value: Any?) -> [String] {
-        guard let value else { return [] }
-        if let strings = value as? [String] {
-            return strings
-        }
-        if let anyArray = value as? [Any] {
-            return anyArray.compactMap { $0 as? String }
-        }
-        return []
     }
 }
 
@@ -962,19 +909,6 @@ private struct LayoutMetrics {
         let spacing = CGFloat(max(gridColumnCount - 1, 0)) * 12
         let available = max(220, width - 32 - spacing)
         return min(920, max(220 * columns + spacing, available))
-    }
-
-    var gridSubtitle: String {
-        switch gridColumnCount {
-        case 4:
-            return "Four-column layout, matching the desktop prototype at wide widths."
-        case 3:
-            return "Three-column layout at mid widths."
-        case 2:
-            return "Two-column layout for narrower windows."
-        default:
-            return "Single-column layout on compact widths."
-        }
     }
 }
 
@@ -1050,13 +984,55 @@ private enum AppTheme {
     }
 }
 
-private extension Array where Element == String {
-    var prettyPrintedJSON: String {
-        guard let data = try? JSONSerialization.data(withJSONObject: self, options: [.prettyPrinted]),
-              let text = String(data: data, encoding: .utf8)
-        else {
-            return "[]"
+private struct FlowLayout: Layout {
+    let spacing: CGFloat
+    let lineSpacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var lineHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentX + size.width > maxWidth, currentX > 0 {
+                currentX = 0
+                currentY += lineHeight + lineSpacing
+                lineHeight = 0
+            }
+            lineHeight = max(lineHeight, size.height)
+            currentX += size.width + spacing
         }
-        return text.replacingOccurrences(of: "\n", with: " ")
+
+        return CGSize(width: maxWidth.isFinite ? maxWidth : currentX, height: currentY + lineHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var currentX = bounds.minX
+        var currentY = bounds.minY
+        var lineHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentX + size.width > bounds.maxX, currentX > bounds.minX {
+                currentX = bounds.minX
+                currentY += lineHeight + lineSpacing
+                lineHeight = 0
+            }
+
+            subview.place(
+                at: CGPoint(x: currentX, y: currentY),
+                proposal: ProposedViewSize(width: size.width, height: size.height)
+            )
+            currentX += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+    }
+}
+
+private extension String {
+    var nonEmpty: String? {
+        isEmpty ? nil : self
     }
 }

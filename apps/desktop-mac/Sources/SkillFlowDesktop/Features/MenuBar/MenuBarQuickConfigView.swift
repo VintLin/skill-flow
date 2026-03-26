@@ -5,9 +5,7 @@ struct MenuBarQuickConfigView: View {
 
     let openMainWindow: () -> Void
 
-    @State private var searchQuery: String = ""
     @State private var showImportInput: Bool = false
-    @State private var isDetailsActive: Bool = false
     @FocusState private var isImportFieldFocused: Bool
 
     var body: some View {
@@ -16,13 +14,18 @@ struct MenuBarQuickConfigView: View {
 
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    ForEach(filteredGroups, id: \.self) { groupId in
+                    ForEach(groupCards) { card in
                         MenuGroupCard(
-                            groupId: groupId,
-                            isSelected: groupId == viewModel.selectedGroupId,
-                            healthLabel: viewModel.healthLabel,
-                            onSelect: {
-                                viewModel.requestGroupSwitch(to: groupId)
+                            card: card,
+                            isSelected: card.id == viewModel.selectedGroupId,
+                            onOpen: {
+                                Task { await viewModel.selectSource(card.id) }
+                            },
+                            onToggleSkill: { skillId, enabled in
+                                Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
+                            },
+                            onToggleTarget: { targetId, enabled in
+                                Task { await viewModel.setTargetEnabled(targetId, enabled: enabled, sourceId: card.id) }
                             }
                         )
                     }
@@ -38,19 +41,6 @@ struct MenuBarQuickConfigView: View {
         .padding(8)
         .background(menuBackground)
         .onDisappear(perform: resetTransientState)
-        .alert("Unsaved changes", isPresented: $viewModel.showGroupSwitchDialog) {
-            Button("Apply") {
-                Task { await viewModel.resolveGroupSwitch(.apply) }
-            }
-            Button("Discard", role: .destructive) {
-                Task { await viewModel.resolveGroupSwitch(.discard) }
-            }
-            Button("Cancel", role: .cancel) {
-                Task { await viewModel.resolveGroupSwitch(.cancel) }
-            }
-        } message: {
-            Text("Current group has unapplied changes. Choose how to continue.")
-        }
         .onChange(of: showImportInput) { _, isVisible in
             guard isVisible else {
                 isImportFieldFocused = false
@@ -68,7 +58,7 @@ struct MenuBarQuickConfigView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                TextField("Search Group / Source", text: $searchQuery)
+                TextField("Search Group / Source", text: $viewModel.searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 10, weight: .medium))
                     .disableAutocorrection(true)
@@ -116,6 +106,9 @@ struct MenuBarQuickConfigView: View {
                         .frame(width: 170, height: 22)
                         .background(Color.white.opacity(0.70))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .onSubmit {
+                            Task { await viewModel.addSource() }
+                        }
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -123,18 +116,14 @@ struct MenuBarQuickConfigView: View {
             Spacer()
 
             Button("Details") {
-                let nextState = !isDetailsActive
-                isDetailsActive = nextState
-                if nextState {
-                    openMainWindow()
-                }
+                openMainWindow()
             }
             .buttonStyle(.plain)
             .font(.system(size: 10, weight: .bold))
             .textCase(.uppercase)
             .padding(.horizontal, 8)
             .frame(height: 22)
-            .background(isDetailsActive ? Color.orange.opacity(0.24) : Color.white.opacity(0.66))
+            .background(Color.white.opacity(0.66))
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .padding(.top, 8)
@@ -154,46 +143,49 @@ struct MenuBarQuickConfigView: View {
             )
     }
 
-    private var filteredGroups: [String] {
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !query.isEmpty else { return viewModel.availableGroups }
-        return viewModel.availableGroups.filter { id in
-            id.lowercased().contains(query)
-                || "github.com/vint/\(id)".lowercased().contains(query)
-        }
+    private var groupCards: [MainViewModel.GroupCardModel] {
+        viewModel.groupCards
     }
 
     private func resetTransientState() {
-        isDetailsActive = false
         showImportInput = false
         isImportFieldFocused = false
     }
 }
 
 private struct MenuGroupCard: View {
-    let groupId: String
+    let card: MainViewModel.GroupCardModel
     let isSelected: Bool
-    let healthLabel: String
-    let onSelect: () -> Void
+    let onOpen: () -> Void
+    let onToggleSkill: (String, Bool) -> Void
+    let onToggleTarget: (String, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Button(action: onSelect) {
+            Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(groupId)
+                    Text(card.title)
                         .font(.system(size: 13, weight: .semibold))
-                    Text("github.com/vint/\(groupId)")
+                    Text(card.metaLine)
                         .font(.system(size: 10, weight: .regular, design: .monospaced))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
 
+            cardRow(title: "Skills", items: card.skills.map { ($0.id, $0.label, $0.isEnabled) }, action: onToggleSkill)
+            cardRow(title: "Agents", items: card.targets.prefix(4).map { ($0.id, $0.label, $0.isEnabled) }, action: onToggleTarget)
+
             HStack(spacing: 5) {
-                tag("MIX", tint: Color.orange.opacity(0.32))
-                tag("ON", tint: Color.green.opacity(0.25))
-                tag(healthLabel.prefix(3).uppercased(), tint: Color.gray.opacity(0.3))
+                tag(card.health, tint: Color.gray.opacity(0.22))
+                if card.warningCount > 0 {
+                    tag("W\(card.warningCount)", tint: Color.orange.opacity(0.22))
+                }
+                if card.errorCount > 0 {
+                    tag("E\(card.errorCount)", tint: Color.red.opacity(0.18))
+                }
             }
         }
         .padding(10)
@@ -203,6 +195,31 @@ private struct MenuGroupCard: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(isSelected ? Color.orange.opacity(0.75) : Color.clear, lineWidth: 1)
         )
+    }
+
+    private func cardRow(
+        title: String,
+        items: [(id: String, label: String, isEnabled: Bool)],
+        action: @escaping (String, Bool) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    ForEach(items, id: \.id) { item in
+                        Button {
+                            action(item.id, !item.isEnabled)
+                        } label: {
+                            tag(item.label, tint: item.isEnabled ? Color.orange.opacity(0.32) : Color.gray.opacity(0.20))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
     }
 
     private func tag(_ text: String, tint: Color) -> some View {
