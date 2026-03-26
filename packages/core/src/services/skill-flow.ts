@@ -25,6 +25,7 @@ import { StateStore } from "../state/store.js";
 import {
   ensureDir,
   hashDirectory,
+  isPathInside,
   pathExists,
   readJsonFile,
   removePath,
@@ -62,6 +63,7 @@ type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: bool
 
 export class SkillFlowApp {
   readonly store: StateStore;
+  readonly adapters;
   readonly inventoryService: InventoryService;
   readonly sourceService: SourceService;
   readonly planner: DeploymentPlanner;
@@ -73,11 +75,13 @@ export class SkillFlowApp {
   private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor() {
+    const adapters = createChannelAdapters();
     this.store = new StateStore();
+    this.adapters = adapters;
     this.inventoryService = new InventoryService();
     this.sourceService = new SourceService(this.store, this.inventoryService);
-    this.planner = new DeploymentPlanner(createChannelAdapters());
-    this.applier = new DeploymentApplier();
+    this.planner = new DeploymentPlanner(adapters);
+    this.applier = new DeploymentApplier(adapters);
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
     this.workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
@@ -746,6 +750,7 @@ export class SkillFlowApp {
   > {
     const { manifest, lockFile } = await this.store.readState();
     const warnings: string[] = [];
+    const targetRoots = await this.getTargetRootMap();
     const removedRefs = sourceIds
       .map((sourceId) => manifest.sources.find((source) => source.id === sourceId))
       .filter((source): source is Manifest["sources"][number] => Boolean(source));
@@ -757,6 +762,17 @@ export class SkillFlowApp {
 
       for (const deployment of deployments) {
         if (!(await pathExists(deployment.targetPath))) {
+          continue;
+        }
+        if (
+          !this.isPathInsideManagedTargetRoot(
+            deployment.target,
+            deployment.targetPath,
+            targetRoots,
+            deployment.targetRootPath,
+          )
+        ) {
+          warnings.push(`Refusing to remove unmanaged target path ${deployment.targetPath}.`);
           continue;
         }
         try {
@@ -814,6 +830,7 @@ export class SkillFlowApp {
     const { manifest, lockFile } = await this.store.readState();
     const removedSourceIds: string[] = [];
     const warnings: Warning[] = [];
+    const targetRoots = await this.getTargetRootMap();
 
     for (const source of lockFile.sources) {
       if (await pathExists(source.checkoutPath)) {
@@ -831,6 +848,20 @@ export class SkillFlowApp {
       );
       for (const deployment of deployments) {
         if (!(await pathExists(deployment.targetPath))) {
+          continue;
+        }
+        if (
+          !this.isPathInsideManagedTargetRoot(
+            deployment.target,
+            deployment.targetPath,
+            targetRoots,
+            deployment.targetRootPath,
+          )
+        ) {
+          warnings.push({
+            code: "SOURCE_CHECKOUT_PRUNE_SKIPPED",
+            message: `Skipped unmanaged deployment path ${deployment.targetPath} while pruning ${source.displayName}.`,
+          });
           continue;
         }
         try {
@@ -863,6 +894,28 @@ export class SkillFlowApp {
     await this.store.writeState(manifest, lockFile);
 
     return ok({ removedSourceIds }, warnings);
+  }
+
+  private async getTargetRootMap(): Promise<Map<DeploymentTargetName, string>> {
+    return new Map(
+      await Promise.all(
+        this.adapters.map(async (adapter) => {
+          const detection = await adapter.detect();
+          return [adapter.target, detection.rootPath] as const;
+        }),
+      ),
+    );
+  }
+
+  private isPathInsideManagedTargetRoot(
+    target: DeploymentTargetName,
+    targetPath: string,
+    targetRoots: Map<DeploymentTargetName, string>,
+    explicitRootPath?: string,
+  ): boolean {
+    return [explicitRootPath, targetRoots.get(target)]
+      .filter((value): value is string => Boolean(value))
+      .some((rootPath) => isPathInside(rootPath, targetPath));
   }
 
   private async persistNormalizedBindings(
@@ -1289,7 +1342,7 @@ export class SkillFlowApp {
           );
           if (!detection.available) {
             if (existing) {
-              nextDeployments.push({
+          nextDeployments.push({
                 ...existing,
                 contentHash: leaf.contentHash,
                 status: "active",
@@ -1389,6 +1442,10 @@ export class SkillFlowApp {
         leafId: leaf.id,
         target,
         targetPath,
+        targetRootPath:
+          targetPath === existing?.targetPath && existing.targetRootPath
+            ? existing.targetRootPath
+            : rootPath,
         strategy,
         status: "active",
         contentHash: leaf.contentHash,

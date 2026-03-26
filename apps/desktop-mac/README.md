@@ -31,8 +31,20 @@ swift build
 export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
 ```
 
+4. Build unsigned local `.app` + `.dmg` (dev distribution only):
+
+```bash
+scripts/release/package-desktop-mac-dev.sh
+```
+
+Artifacts:
+
+- `dist/desktop-mac/SkillFlowDesktop.app`
+- `dist/desktop-mac/SkillFlowDesktop-dev.dmg`
+
 ## Notes
 
 - Release build must bundle a fixed Node runtime + fixed CLI helper.
 - External helper override is debug-only and must not be enabled in release artifacts.
 - Mutating operations are serialized by `MutationCoordinator` to prevent concurrent apply/update/uninstall races.
+- Dev DMG packaging currently requires `node` available in PATH on target machine.

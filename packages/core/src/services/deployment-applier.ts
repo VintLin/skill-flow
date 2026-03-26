@@ -6,21 +6,38 @@ import type {
   LockFile,
   Result,
 } from "../domain/types.js";
-import { copyDirectory, createSymlink, ensureDir, pathExists, removePath } from "../utils/fs.js";
+import type { ChannelAdapter } from "../adapters/channel-adapters.js";
+import { copyDirectory, createSymlink, ensureDir, isPathInside, pathExists, removePath } from "../utils/fs.js";
 import { ok } from "../utils/result.js";
 
 export class DeploymentApplier {
+  constructor(private readonly adapters: ChannelAdapter[] = []) {}
+
   async applyPlan(
     lockFile: LockFile,
     actions: DeploymentAction[],
   ): Promise<Result<{ applied: DeploymentAction[] }>> {
     const applied: DeploymentAction[] = [];
+    const targetRoots = new Map(
+      await Promise.all(
+        this.adapters.map(async (adapter) => {
+          const detection = await adapter.detect();
+          return [adapter.target, detection.rootPath] as const;
+        }),
+      ),
+    );
 
     for (const action of actions) {
       if (action.kind === "blocked" || action.kind === "noop") {
         continue;
       }
 
+      this.assertManagedTargetPath(
+        action.target,
+        action.targetPath,
+        targetRoots,
+        action.targetRootPath,
+      );
       if (action.kind === "remove") {
         if (await pathExists(action.targetPath)) {
           await removePath(action.targetPath);
@@ -43,6 +60,12 @@ export class DeploymentApplier {
         action.previousTargetPath !== action.targetPath &&
         (await pathExists(action.previousTargetPath))
       ) {
+        this.assertManagedTargetPath(
+          action.target,
+          action.previousTargetPath,
+          targetRoots,
+          action.previousTargetRootPath,
+        );
         await removePath(action.previousTargetPath);
       }
 
@@ -50,6 +73,12 @@ export class DeploymentApplier {
         action.relocateExternalToTargetPath &&
         (await pathExists(action.targetPath))
       ) {
+        this.assertManagedTargetPath(
+          action.target,
+          action.relocateExternalToTargetPath,
+          targetRoots,
+          action.targetRootPath,
+        );
         await ensureDir(path.dirname(action.relocateExternalToTargetPath));
         await fs.rename(action.targetPath, action.relocateExternalToTargetPath);
       }
@@ -65,6 +94,7 @@ export class DeploymentApplier {
         leafId: action.leafId,
         target: action.target,
         targetPath: action.targetPath,
+        ...(action.targetRootPath ? { targetRootPath: action.targetRootPath } : {}),
         strategy: action.strategy,
         status: "active",
         contentHash: action.contentHash,
@@ -86,5 +116,24 @@ export class DeploymentApplier {
     }
 
     return ok({ applied });
+  }
+
+  private assertManagedTargetPath(
+    target: DeploymentAction["target"],
+    targetPath: string,
+    targetRoots: Map<DeploymentAction["target"], string>,
+    explicitRootPath?: string,
+  ) {
+    const roots = [
+      explicitRootPath,
+      targetRoots.get(target),
+    ].filter((value): value is string => Boolean(value));
+    if (roots.length === 0) {
+      throw new Error(`Managed target root is unavailable for ${target}.`);
+    }
+
+    if (!roots.some((rootPath) => isPathInside(rootPath, targetPath))) {
+      throw new Error(`Refusing to modify path outside managed root for ${target}: ${targetPath}`);
+    }
   }
 }

@@ -1,9 +1,46 @@
-PRD/
-.gstack/
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Test coverage
 coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+PRD/
 docs/
 .superset/
 .build/
+.gstack/
+
+# Build artifacts
+*.tgz
+
+# Turbo/Turborepo
+.turbo/
+
+# Vercel
+.vercel/

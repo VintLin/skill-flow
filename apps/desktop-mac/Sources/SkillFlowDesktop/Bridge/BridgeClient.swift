@@ -28,6 +28,23 @@ enum BridgeClientError: Error, LocalizedError {
 
 @MainActor
 final class BridgeClient {
+    private final class ThreadSafeBuffer: @unchecked Sendable {
+        private var data = Data()
+        private let lock = NSLock()
+
+        func append(_ chunk: Data) {
+            lock.lock()
+            data.append(chunk)
+            lock.unlock()
+        }
+
+        func snapshot() -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+            return data
+        }
+    }
+
     private let mutationCoordinator = MutationCoordinator()
 
     func bootstrap() async throws -> BridgeResponse {
@@ -72,14 +89,35 @@ final class BridgeClient {
         }
     }
 
+    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(
+                command: .apply,
+                payload: [
+                    "sourceId": AnyCodable(sourceId),
+                    "draft": AnyCodable([
+                        "selectedLeafIds": selectedLeafIds,
+                        "enabledTargets": enabledTargets,
+                    ]),
+                ]
+            )
+        }
+    }
+
     private func send(command: BridgeCommand, payload: [String: AnyCodable]? = nil) async throws -> BridgeResponse {
         let helperURL = try resolveHelperURL()
         let request = BridgeRequest(command: command, payload: payload)
         let requestData = try JSONEncoder().encode(request)
+        let nodeExecutable = resolveNodeExecutable()
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["node", helperURL.path, "bridge", "--json"]
+        if nodeExecutable == "node" {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["node", helperURL.path, "bridge", "--json"]
+        } else {
+            process.executableURL = URL(fileURLWithPath: nodeExecutable)
+            process.arguments = [helperURL.path, "bridge", "--json"]
+        }
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()
@@ -88,16 +126,50 @@ final class BridgeClient {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        let outputBuffer = ThreadSafeBuffer()
+        let errorBuffer = ThreadSafeBuffer()
+
+        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            outputBuffer.append(chunk)
+        }
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            errorBuffer.append(chunk)
+        }
+
         try process.run()
         inputPipe.fileHandleForWriting.write(requestData)
         inputPipe.fileHandleForWriting.closeFile()
 
         process.waitUntilExit()
 
-        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+        errorPipe.fileHandleForReading.readabilityHandler = nil
+
+        // Drain any remaining buffered bytes after process exit.
+        let outputTail = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        if !outputTail.isEmpty {
+            outputBuffer.append(outputTail)
+        }
+        let errorTail = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        if !errorTail.isEmpty {
+            errorBuffer.append(errorTail)
+        }
+
+        let outputData = outputBuffer.snapshot()
+        let errorData = errorBuffer.snapshot()
 
         guard !outputData.isEmpty else {
+            if !errorData.isEmpty {
+                let stderrMessage = String(decoding: errorData, as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !stderrMessage.isEmpty {
+                    throw BridgeClientError.commandFailed(stderrMessage)
+                }
+            }
             throw BridgeClientError.emptyResponse
         }
 
@@ -124,6 +196,10 @@ final class BridgeClient {
         }
         #endif
 
+        if let resourcePath = Bundle.main.path(forResource: "cli", ofType: "js", inDirectory: "helper/dist") {
+            return URL(fileURLWithPath: resourcePath)
+        }
+
         if let resourcePath = Bundle.main.path(forResource: "skill-flow-helper", ofType: nil) {
             return URL(fileURLWithPath: resourcePath)
         }
@@ -136,5 +212,26 @@ final class BridgeClient {
         }
 
         throw BridgeClientError.helperMissing
+    }
+
+    private func resolveNodeExecutable() -> String {
+        #if DEBUG
+        if let override = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_NODE_OVERRIDE"],
+           !override.isEmpty {
+            return override
+        }
+        #endif
+
+        let commonNodePaths = [
+            "/opt/homebrew/bin/node",
+            "/usr/local/bin/node",
+            "/usr/bin/node",
+        ]
+
+        for path in commonNodePaths where FileManager.default.fileExists(atPath: path) {
+            return path
+        }
+
+        return "node"
     }
 }
