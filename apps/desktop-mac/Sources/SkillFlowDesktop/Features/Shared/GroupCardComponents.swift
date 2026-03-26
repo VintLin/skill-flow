@@ -13,8 +13,8 @@ enum GroupCardScale {
 
     var cardSpacing: CGFloat {
         switch self {
-        case .home: return 8
-        case .menu: return 6
+        case .home: return 12
+        case .menu: return 8
         }
     }
 
@@ -90,8 +90,29 @@ enum GroupCardScale {
 
     var rowSpacing: CGFloat {
         switch self {
-        case .home: return 6
-        case .menu: return 4
+        case .home: return 8
+        case .menu: return 5
+        }
+    }
+
+    var headerSpacing: CGFloat {
+        switch self {
+        case .home: return 5
+        case .menu: return 3
+        }
+    }
+
+    var sectionTopPadding: CGFloat {
+        switch self {
+        case .home: return 4
+        case .menu: return 2
+        }
+    }
+
+    var sectionHorizontalPadding: CGFloat {
+        switch self {
+        case .home: return 12
+        case .menu: return 8
         }
     }
 
@@ -148,22 +169,22 @@ struct SharedGroupCard: View {
             Divider()
 
             cardRow(
-                title: "Skills",
-                selection: card.skillSelection,
-                items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
-                compact: false,
-                onToggleAll: onToggleAllSkills,
-                action: onToggleSkill
-            )
-            .padding(.horizontal, -scale.cardInset)
-
-            cardRow(
                 title: "Agents",
                 selection: card.targetSelection,
                 items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled) },
                 compact: true,
                 onToggleAll: onToggleAllTargets,
                 action: onToggleTarget
+            )
+            .padding(.horizontal, -scale.cardInset)
+
+            cardRow(
+                title: "Skills",
+                selection: card.skillSelection,
+                items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
+                compact: false,
+                onToggleAll: onToggleAllSkills,
+                action: onToggleSkill
             )
             .padding(.horizontal, -scale.cardInset)
         }
@@ -187,7 +208,7 @@ struct SharedGroupCard: View {
     }
 
     private var headerText: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: scale.headerSpacing) {
             Text(card.title)
                 .font(.system(size: scale.titleSize, weight: .semibold))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
@@ -215,6 +236,8 @@ struct SharedGroupCard: View {
                 .font(.system(size: scale.sectionLabelSize, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .textCase(.uppercase)
+                .padding(.horizontal, scale.sectionHorizontalPadding)
+                .padding(.top, scale.sectionTopPadding)
 
             cardScroller {
                 HStack(spacing: scale.rowSpacing) {
