@@ -9,6 +9,9 @@ APP_BUNDLE="$OUTPUT_DIR/$APP_NAME.app"
 DMG_PATH="$OUTPUT_DIR/$APP_NAME-dev.dmg"
 HELPER_STAGE="$OUTPUT_DIR/helper-stage"
 DMG_STAGE="$OUTPUT_DIR/dmg-stage"
+BUILD_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "dev")"
+BUILD_TS="$(date +%Y%m%d%H%M%S)"
+BUNDLE_ID="com.skillflow.desktop.dev.${BUILD_SHA}"
 
 mkdir -p "$OUTPUT_DIR"
 rm -rf "$APP_BUNDLE" "$DMG_PATH" "$HELPER_STAGE" "$DMG_STAGE"
@@ -34,6 +37,23 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$APP_BINARY" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
+if [[ -f "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AppIcon.icns" ]]; then
+  cp "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AppIcon.icns" \
+    "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+fi
+
+if [[ -d "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AgentIcons" ]]; then
+  mkdir -p "$APP_BUNDLE/Contents/Resources/AgentIcons"
+  cp -R "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AgentIcons/." \
+    "$APP_BUNDLE/Contents/Resources/AgentIcons/"
+fi
+
+if [[ -d "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/MenuBar" ]]; then
+  mkdir -p "$APP_BUNDLE/Contents/Resources/MenuBar"
+  cp -R "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/MenuBar/." \
+    "$APP_BUNDLE/Contents/Resources/MenuBar/"
+fi
+
 cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -45,9 +65,11 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>SkillFlowDesktop</string>
   <key>CFBundleIdentifier</key>
-  <string>com.skillflow.desktop.dev</string>
+  <string>__BUNDLE_ID__</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleName</key>
   <string>Skill Flow Desktop</string>
   <key>CFBundlePackageType</key>
@@ -55,7 +77,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>__BUILD_TS__</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>
@@ -63,6 +85,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+
+sed -i '' "s/__BUNDLE_ID__/$BUNDLE_ID/g" "$APP_BUNDLE/Contents/Info.plist"
+sed -i '' "s/__BUILD_TS__/$BUILD_TS/g" "$APP_BUNDLE/Contents/Info.plist"
 
 mkdir -p "$HELPER_STAGE/dist" "$HELPER_STAGE/node_modules/@skill-flow"
 cp "$ROOT_DIR/apps/cli/dist/cli.js" "$HELPER_STAGE/dist/cli.js"
@@ -112,4 +137,7 @@ rm -rf "$HELPER_STAGE" "$DMG_STAGE"
 
 echo "App bundle: $APP_BUNDLE"
 echo "DMG: $DMG_PATH"
+echo "Bundle ID: $BUNDLE_ID"
+echo "Build version: $BUILD_TS"
+echo "Binary sha256: $(shasum -a 256 "$APP_BUNDLE/Contents/MacOS/$APP_NAME" | awk '{print $1}')"
 echo "Note: dev package expects 'node' available in PATH at runtime."

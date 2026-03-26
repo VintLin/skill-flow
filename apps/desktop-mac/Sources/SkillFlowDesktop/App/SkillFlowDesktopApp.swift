@@ -8,6 +8,12 @@ struct SkillFlowDesktopApp: App {
 
     @State private var viewModel = MainViewModel(bridgeClient: BridgeClient())
 
+    init() {
+        if let icon = AppIconLibrary.image() {
+            NSApplication.shared.applicationIconImage = icon
+        }
+    }
+
     var body: some Scene {
         Window("Skill Flow", id: "main-window") {
             MainView(viewModel: viewModel) {
@@ -21,10 +27,17 @@ struct SkillFlowDesktopApp: App {
             SettingsView()
         }
 
-        MenuBarExtra("Skill Flow", systemImage: menuIcon) {
+        MenuBarExtra {
             MenuBarQuickConfigView(viewModel: viewModel) {
                 openWindow(id: "main-window")
                 NSApp.activate(ignoringOtherApps: true)
+            }
+        } label: {
+            if let image = MenuBarIcon.image() {
+                Image(nsImage: image)
+                    .renderingMode(.template)
+            } else {
+                Image(systemName: menuIcon)
             }
         }
         .menuBarExtraStyle(.window)
