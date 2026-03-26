@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage("desktop.experimentalExternalHelper") private var experimentalExternalHelper = false
     @AppStorage("desktop.themeMode") private var themeMode = "light"
     @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
+    @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
 
     var body: some View {
         Form {
@@ -24,6 +25,7 @@ struct SettingsView: View {
                     .tag(accent.rawValue)
                 }
             }
+            Toggle("Compact menu cards", isOn: $menuCompactCards)
             Toggle("Launch at login", isOn: $autoLaunch)
             Picker("Log level", selection: $logLevel) {
                 Text("debug").tag("debug")

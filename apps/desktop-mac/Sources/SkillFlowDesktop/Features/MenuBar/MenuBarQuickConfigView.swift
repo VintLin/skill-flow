@@ -6,9 +6,11 @@ struct MenuBarQuickConfigView: View {
     let openMainWindow: () -> Void
 
     @State private var showImportInput: Bool = false
+    @State private var hoveredGroupId: String?
     @FocusState private var isImportFieldFocused: Bool
     @AppStorage("desktop.themeMode") private var themeMode = "light"
     @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
+    @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
 
     private var theme: DesktopThemeMode {
         isDark ? .dark : .light
@@ -27,6 +29,10 @@ struct MenuBarQuickConfigView: View {
     private let menuListMinHeight: CGFloat = 360
     private let menuListMaxHeight: CGFloat = 440
 
+    private var cardDisplayMode: GroupCardDisplayMode {
+        menuCompactCards ? .compactMenu : .standard
+    }
+
     var body: some View {
         ZStack {
             ScrollView {
@@ -36,8 +42,10 @@ struct MenuBarQuickConfigView: View {
                             card: card,
                             theme: theme,
                             accent: accent,
-                            scale: .menu,
+                            displayMode: cardDisplayMode,
+                            skillsCollapsed: menuCompactCards && hoveredGroupId != card.id,
                             onOpen: nil,
+                            onToggleSkillsCollapsed: nil,
                             onToggleSkill: { skillId, enabled in
                                 Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
                             },
@@ -51,6 +59,16 @@ struct MenuBarQuickConfigView: View {
                                 Task { await viewModel.toggleAllTargets(sourceId: card.id) }
                             }
                         )
+                        .onHover { isHovering in
+                            guard menuCompactCards else { return }
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                if isHovering {
+                                    hoveredGroupId = card.id
+                                } else if hoveredGroupId == card.id {
+                                    hoveredGroupId = nil
+                                }
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 8)
@@ -182,6 +200,7 @@ struct MenuBarQuickConfigView: View {
     private func resetTransientState() {
         showImportInput = false
         isImportFieldFocused = false
+        hoveredGroupId = nil
     }
 
     private var menuFill: Color {

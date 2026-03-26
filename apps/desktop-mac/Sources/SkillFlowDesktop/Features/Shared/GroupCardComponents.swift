@@ -101,16 +101,72 @@ enum GroupCardScale {
     }
 }
 
+enum GroupCardDisplayMode: Equatable {
+    case standard
+    case compactMenu
+
+    var scale: GroupCardScale {
+        switch self {
+        case .standard:
+            return .home
+        case .compactMenu:
+            return .menu
+        }
+    }
+
+    var showsSubtitle: Bool {
+        switch self {
+        case .standard:
+            return true
+        case .compactMenu:
+            return true
+        }
+    }
+
+    var showsMetaLine: Bool {
+        switch self {
+        case .standard:
+            return true
+        case .compactMenu:
+            return false
+        }
+    }
+
+    var showsSectionTitles: Bool {
+        switch self {
+        case .standard:
+            return true
+        case .compactMenu:
+            return false
+        }
+    }
+
+    var supportsCollapsedSkills: Bool {
+        switch self {
+        case .standard:
+            return false
+        case .compactMenu:
+            return true
+        }
+    }
+}
+
 struct SharedGroupCard: View {
     let card: MainViewModel.GroupCardModel
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
-    let scale: GroupCardScale
+    let displayMode: GroupCardDisplayMode
+    let skillsCollapsed: Bool
     let onOpen: (() -> Void)?
+    let onToggleSkillsCollapsed: (() -> Void)?
     let onToggleSkill: (String, Bool) -> Void
     let onToggleAllSkills: () -> Void
     let onToggleTarget: (String, Bool) -> Void
     let onToggleAllTargets: () -> Void
+
+    private var scale: GroupCardScale {
+        displayMode.scale
+    }
 
     private var isSaving: Bool {
         card.saveState.phase == .saving
@@ -120,7 +176,9 @@ struct SharedGroupCard: View {
         VStack(alignment: .leading, spacing: scale.cardSpacing) {
             header
 
-            dashedDivider
+            if displayMode.showsMetaLine {
+                dashedDivider
+            }
 
             cardRow(
                 title: "Agents",
@@ -132,21 +190,15 @@ struct SharedGroupCard: View {
             )
             .padding(.horizontal, -scale.cardInset)
 
-            cardRow(
-                title: "Skills",
-                selection: card.skillSelection,
-                items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
-                compact: false,
-                onToggleAll: onToggleAllSkills,
-                action: onToggleSkill
-            )
-            .padding(.horizontal, -scale.cardInset)
+            skillsSection
+                .padding(.horizontal, -scale.cardInset)
         }
         .padding(scale.cardInset)
-        .frame(minHeight: scale.minHeight, alignment: .topLeading)
+        .frame(minHeight: minimumHeight, alignment: .topLeading)
         .background(AppTheme.groupCardFill(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius))
         .shadow(color: AppTheme.cardShadow(for: theme), radius: scale.shadowRadius, x: 0, y: scale.shadowYOffset)
+        .animation(.easeInOut(duration: 0.18), value: skillsCollapsed)
         .overlay {
             if isSaving {
                 HStack(spacing: 8) {
@@ -182,15 +234,19 @@ struct SharedGroupCard: View {
                 Text(card.title)
                     .font(.system(size: scale.titleSize, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text(card.subtitle)
+                if displayMode.showsSubtitle {
+                    Text(card.subtitle)
+                        .font(.system(size: scale.metaSize, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                }
+            }
+            if displayMode.showsMetaLine {
+                Text(card.metaLine)
                     .font(.system(size: scale.metaSize, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(1)
             }
-            Text(card.metaLine)
-                .font(.system(size: scale.metaSize, weight: .regular))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, scale.headerBottomSpacing)
@@ -205,12 +261,14 @@ struct SharedGroupCard: View {
         action: @escaping (String, Bool) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: scale.rowSpacing) {
-            Text(title)
-                .font(.system(size: scale.sectionLabelSize, weight: .semibold))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .textCase(.uppercase)
-                .padding(.horizontal, scale.sectionHorizontalPadding)
-                .padding(.top, scale.sectionTopPadding)
+            if displayMode.showsSectionTitles {
+                Text(title)
+                    .font(.system(size: scale.sectionLabelSize, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .textCase(.uppercase)
+                    .padding(.horizontal, scale.sectionHorizontalPadding)
+                    .padding(.top, scale.sectionTopPadding)
+            }
 
             cardScroller {
                 HStack(spacing: scale.rowSpacing) {
@@ -237,6 +295,32 @@ struct SharedGroupCard: View {
             }
             .opacity(isSaving ? 0.68 : 1.0)
             .allowsHitTesting(!isSaving)
+        }
+    }
+
+    @ViewBuilder
+    private var skillsSection: some View {
+        if !displayMode.supportsCollapsedSkills || !skillsCollapsed {
+            VStack(alignment: .leading, spacing: scale.rowSpacing) {
+                cardRow(
+                    title: "Skills",
+                    selection: card.skillSelection,
+                    items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
+                    compact: false,
+                    onToggleAll: onToggleAllSkills,
+                    action: onToggleSkill
+                )
+            }
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    private var minimumHeight: CGFloat? {
+        switch displayMode {
+        case .standard:
+            return scale.minHeight
+        case .compactMenu:
+            return nil
         }
     }
 

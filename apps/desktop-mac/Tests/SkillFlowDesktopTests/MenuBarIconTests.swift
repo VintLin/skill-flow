@@ -4,6 +4,22 @@ import XCTest
 
 @MainActor
 final class MenuBarIconTests: XCTestCase {
+    func testGroupCardDisplayModeCompactMenuHidesSecondaryChrome() {
+        XCTAssertTrue(GroupCardDisplayMode.compactMenu.showsSubtitle)
+        XCTAssertFalse(GroupCardDisplayMode.compactMenu.showsMetaLine)
+        XCTAssertFalse(GroupCardDisplayMode.compactMenu.showsSectionTitles)
+        XCTAssertTrue(GroupCardDisplayMode.compactMenu.supportsCollapsedSkills)
+        XCTAssertEqual(GroupCardDisplayMode.compactMenu.scale, .menu)
+    }
+
+    func testGroupCardDisplayModeStandardKeepsFullLayout() {
+        XCTAssertTrue(GroupCardDisplayMode.standard.showsSubtitle)
+        XCTAssertTrue(GroupCardDisplayMode.standard.showsMetaLine)
+        XCTAssertTrue(GroupCardDisplayMode.standard.showsSectionTitles)
+        XCTAssertFalse(GroupCardDisplayMode.standard.supportsCollapsedSkills)
+        XCTAssertEqual(GroupCardDisplayMode.standard.scale, .home)
+    }
+
     func testGroupCardTitleSizeDoesNotShrinkInMenuScale() {
         XCTAssertEqual(GroupCardScale.home.titleSize, 17)
         XCTAssertEqual(GroupCardScale.menu.titleSize, 17)

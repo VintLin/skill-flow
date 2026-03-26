@@ -226,11 +226,13 @@ struct MainView: View {
                                 card: card,
                                 theme: theme,
                                 accent: accent,
-                                scale: .home,
+                                displayMode: .standard,
+                                skillsCollapsed: false,
                                 onOpen: {
                                     detailGroupId = card.id
                                     Task { await viewModel.selectSource(card.id) }
                                 },
+                                onToggleSkillsCollapsed: nil,
                                 onToggleSkill: { skillId, enabled in
                                     Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
                                 },
