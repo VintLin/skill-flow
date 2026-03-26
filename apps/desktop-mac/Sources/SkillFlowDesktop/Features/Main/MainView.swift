@@ -968,48 +968,36 @@ private struct HorizontalFadeScroll<Content: View>: View {
                 contentWidth = metrics.width
             }
             .overlay(alignment: .leading) {
-                if showsLeadingFade {
-                    LinearGradient(
-                        stops: [
-                            .init(color: fill, location: 0),
-                            .init(color: fill, location: 0.4),
-                            .init(color: fill.opacity(0), location: 1)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: fadeWidth)
-                    .padding(.leading, contentPadding)
-                    .allowsHitTesting(false)
-                }
+                LinearGradient(
+                    stops: [
+                        .init(color: fill, location: 0),
+                        .init(color: fill, location: 0.4),
+                        .init(color: fill.opacity(0), location: 1)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: fadeWidth)
+                .padding(.leading, contentPadding)
+                .allowsHitTesting(false)
             }
             .overlay(alignment: .trailing) {
-                if showsTrailingFade {
-                    LinearGradient(
-                        stops: [
-                            .init(color: fill.opacity(0), location: 0),
-                            .init(color: fill, location: 0.6),
-                            .init(color: fill, location: 1)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: fadeWidth)
-                    .padding(.trailing, contentPadding)
-                    .allowsHitTesting(false)
-                }
+                LinearGradient(
+                    stops: [
+                        .init(color: fill.opacity(0), location: 0),
+                        .init(color: fill, location: 0.6),
+                        .init(color: fill, location: 1)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: fadeWidth)
+                .padding(.trailing, contentPadding)
+                .allowsHitTesting(false)
             }
             .clipped()
         }
         .frame(height: height)
-    }
-
-    private var showsLeadingFade: Bool {
-        contentMinX < -1
-    }
-
-    private var showsTrailingFade: Bool {
-        (contentMinX + contentWidth) > (viewportWidth + 1)
     }
 }
 
