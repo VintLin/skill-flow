@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 
 @testable import SkillFlowDesktop
@@ -50,5 +52,25 @@ final class MenuBarIconTests: XCTestCase {
 
         XCTAssertNotNil(image)
         XCTAssertEqual(image?.isTemplate, true)
+    }
+
+    func testSurfaceLayerColorsFollowNeutralCardScale() {
+        assertColor(AppTheme.pageBackground(for: .light), equalsGrayscale: 249)
+        assertColor(AppTheme.surface(for: .light), equalsGrayscale: 253)
+        assertColor(AppTheme.groupCardFill(for: .light), equalsGrayscale: 253)
+        assertColor(AppTheme.documentBlock(for: .light), equalsGrayscale: 242)
+
+        assertColor(AppTheme.pageBackground(for: .dark), equalsGrayscale: 21)
+        assertColor(AppTheme.surface(for: .dark), equalsGrayscale: 14)
+        assertColor(AppTheme.groupCardFill(for: .dark), equalsGrayscale: 14)
+        assertColor(AppTheme.documentBlock(for: .dark), equalsGrayscale: 34)
+    }
+
+    private func assertColor(_ color: Color, equalsGrayscale expected: CGFloat, file: StaticString = #filePath, line: UInt = #line) {
+        let resolved = NSColor(color).usingColorSpace(.deviceRGB)
+        XCTAssertNotNil(resolved, file: file, line: line)
+        XCTAssertEqual(resolved?.redComponent ?? -1, expected / 255.0, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(resolved?.greenComponent ?? -1, expected / 255.0, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(resolved?.blueComponent ?? -1, expected / 255.0, accuracy: 0.001, file: file, line: line)
     }
 }

@@ -193,13 +193,8 @@ struct SettingsView: View {
         .padding(14)
         .background {
             RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.toolbarButtonBackground(for: theme))
+                .fill(AppTheme.surface(for: theme))
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppTheme.border(for: theme).opacity(theme == .dark ? 0.35 : 0.12), lineWidth: 0.8)
-        }
-        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 0)
     }
 
     private func settingsRow<Control: View>(title: String, description: String, @ViewBuilder control: () -> Control) -> some View {
@@ -254,13 +249,8 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 10)
             .frame(width: controlColumnWidth, height: 32, alignment: .leading)
-            .background(AppTheme.groupCardFill(for: theme))
+            .background(AppTheme.pageBackground(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(AppTheme.border(for: theme).opacity(theme == .dark ? 0.9 : 0.5), lineWidth: 0.8)
-            }
-            .shadow(color: AppTheme.softShadow(for: theme), radius: 8, x: 0, y: 0)
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {
@@ -300,13 +290,8 @@ struct SettingsView: View {
                     }
                 }
                 .padding(6)
-                .background(AppTheme.groupCardFill(for: theme))
+                .background(AppTheme.pageBackground(for: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(AppTheme.border(for: theme).opacity(theme == .dark ? 0.9 : 0.5), lineWidth: 0.8)
-                }
-                .shadow(color: AppTheme.cardShadow(for: theme), radius: 14, x: 0, y: 0)
                 .offset(y: 38)
             }
         }

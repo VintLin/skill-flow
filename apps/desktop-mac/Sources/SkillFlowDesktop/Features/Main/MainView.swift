@@ -392,7 +392,6 @@ struct MainView: View {
         .frame(minWidth: width, maxWidth: width, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
     }
 
     private func detailMain(
@@ -426,7 +425,6 @@ struct MainView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
     }
 
     private func detailGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
@@ -441,6 +439,9 @@ struct MainView: View {
                         "\(detail?.totalSkillCount ?? 0) total",
                     ]
                 )
+                Rectangle()
+                    .fill(AppTheme.border(for: theme))
+                    .frame(width: 1)
                 detailOverviewCard(
                     title: "Agents",
                     lines: [
@@ -448,6 +449,9 @@ struct MainView: View {
                         detail?.targetSelection == .partial ? "Mixed selection" : "Selection synced",
                     ]
                 )
+                Rectangle()
+                    .fill(AppTheme.border(for: theme))
+                    .frame(width: 1)
                 detailOverviewCard(
                     title: "Health",
                     lines: [
@@ -456,6 +460,8 @@ struct MainView: View {
                     ]
                 )
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
 
             detailPathRow(
                 title: "Path",
@@ -565,11 +571,8 @@ struct MainView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.toolbarButtonBackground(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
     private func detailContentCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -831,10 +834,6 @@ struct MainView: View {
                 }
             }
         }
-        .padding(14)
-        .background(AppTheme.toolbarButtonBackground(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
     private func detailPathRow(title: String, path: String?, fallbackText: String) -> some View {
@@ -1242,7 +1241,6 @@ struct MainView: View {
             .padding(16)
             .background(AppTheme.surface(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
     }
 
     private func sectionHeader(title: String, subtitle: String, badge: String) -> some View {
@@ -1569,48 +1567,23 @@ enum AppTheme {
     }
 
     static func pageBackground(for mode: DesktopThemeMode) -> Color {
-        switch mode {
-        case .light:
-            return .white
-        case .dark:
-            return .black
-        }
+        neutralCardColor(.color2, for: mode)
     }
 
     static func surface(for mode: DesktopThemeMode) -> Color {
-        switch mode {
-        case .light:
-            return Color(red: 241.0 / 255.0, green: 241.0 / 255.0, blue: 241.0 / 255.0)
-        case .dark:
-            return Color(red: 34.0 / 255.0, green: 34.0 / 255.0, blue: 38.0 / 255.0)
-        }
+        neutralCardColor(.color1, for: mode)
     }
 
     static func groupCardFill(for mode: DesktopThemeMode) -> Color {
-        switch mode {
-        case .light:
-            return .white
-        case .dark:
-            return Color(red: 18.0 / 255.0, green: 18.0 / 255.0, blue: 22.0 / 255.0)
-        }
+        neutralCardColor(.color1, for: mode)
     }
 
     static func headerBackground(for mode: DesktopThemeMode) -> Color {
-        switch mode {
-        case .light:
-            return .white
-        case .dark:
-            return .black
-        }
+        neutralCardColor(.color2, for: mode)
     }
 
     static func headerControlFill(for mode: DesktopThemeMode) -> Color {
-        switch mode {
-        case .light:
-            return .white
-        case .dark:
-            return .black
-        }
+        neutralCardColor(.color1, for: mode)
     }
 
     static func toolbarButtonBackground(for mode: DesktopThemeMode) -> Color {
@@ -1713,12 +1686,35 @@ enum AppTheme {
     }
 
     static func documentBlock(for mode: DesktopThemeMode) -> Color {
-        switch mode {
-        case .light:
-            return Color.black.opacity(0.06)
-        case .dark:
-            return Color.black.opacity(0.36)
+        neutralCardColor(.color3, for: mode)
+    }
+
+    private enum NeutralCardColor {
+        case color1
+        case color2
+        case color3
+    }
+
+    private static func neutralCardColor(_ color: NeutralCardColor, for mode: DesktopThemeMode) -> Color {
+        switch (mode, color) {
+        case (.light, .color1):
+            return grayscaleColor(253)
+        case (.light, .color2):
+            return grayscaleColor(249)
+        case (.light, .color3):
+            return grayscaleColor(242)
+        case (.dark, .color1):
+            return grayscaleColor(14)
+        case (.dark, .color2):
+            return grayscaleColor(21)
+        case (.dark, .color3):
+            return grayscaleColor(34)
         }
+    }
+
+    private static func grayscaleColor(_ value: Double) -> Color {
+        let channel = value / 255.0
+        return Color(red: channel, green: channel, blue: channel)
     }
 }
 

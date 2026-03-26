@@ -115,7 +115,6 @@ struct MenuBarQuickConfigView: View {
             .padding(.horizontal, 10)
             .frame(height: 26)
             .background(controlFill)
-            .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             Button("×") {
@@ -127,7 +126,6 @@ struct MenuBarQuickConfigView: View {
             .foregroundStyle(AppTheme.textPrimary(for: theme))
             .frame(width: 28, height: 28)
             .background(controlFill)
-            .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .padding(.horizontal, 8)
@@ -159,7 +157,6 @@ struct MenuBarQuickConfigView: View {
                         .padding(.horizontal, 7)
                         .frame(width: 170, height: 22)
                         .background(controlFill)
-                        .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .onSubmit {
                             Task { await viewModel.addSource() }
@@ -189,7 +186,6 @@ struct MenuBarQuickConfigView: View {
     private var menuBackground: some View {
         RoundedRectangle(cornerRadius: 12)
             .fill(menuFill)
-            .shadow(color: menuShadow, radius: 19, x: 0, y: 10)
     }
 
     private var menuOverlayBackground: some View {
@@ -233,18 +229,10 @@ struct MenuBarQuickConfigView: View {
     }
 
     private var menuFill: Color {
-        AppTheme.groupCardFill(for: theme)
+        AppTheme.pageBackground(for: theme)
     }
 
     private var controlFill: Color {
-        AppTheme.groupCardFill(for: theme)
-    }
-
-    private var controlShadow: Color {
-        isDark ? Color.white.opacity(0.16) : Color.black.opacity(0.12)
-    }
-
-    private var menuShadow: Color {
-        isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.10)
+        AppTheme.surface(for: theme)
     }
 }
