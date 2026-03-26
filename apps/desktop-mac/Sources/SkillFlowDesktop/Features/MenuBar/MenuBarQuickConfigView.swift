@@ -12,36 +12,37 @@ struct MenuBarQuickConfigView: View {
         VStack(spacing: 0) {
             topBar
 
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(groupCards) { card in
-                        MenuGroupCard(
-                            card: card,
-                            isSelected: card.id == viewModel.selectedGroupId,
-                            onOpen: {
-                                Task { await viewModel.selectSource(card.id) }
-                            },
-                            onToggleSkill: { skillId, enabled in
-                                Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
-                            },
-                            onToggleAllSkills: {
-                                Task { await viewModel.toggleAllSkills(sourceId: card.id) }
-                            },
-                            onToggleTarget: { targetId, enabled in
-                                Task { await viewModel.setTargetEnabled(targetId, enabled: enabled, sourceId: card.id) }
-                            },
-                            onToggleAllTargets: {
-                                Task { await viewModel.toggleAllTargets(sourceId: card.id) }
-                            }
-                        )
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(groupCards) { card in
+                            MenuGroupCard(
+                                card: card,
+                                onToggleSkill: { skillId, enabled in
+                                    Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
+                                },
+                                onToggleAllSkills: {
+                                    Task { await viewModel.toggleAllSkills(sourceId: card.id) }
+                                },
+                                onToggleTarget: { targetId, enabled in
+                                    Task { await viewModel.setTargetEnabled(targetId, enabled: enabled, sourceId: card.id) }
+                                },
+                                onToggleAllTargets: {
+                                    Task { await viewModel.toggleAllTargets(sourceId: card.id) }
+                                }
+                            )
+                        }
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.top, 10)
+                    .padding(.bottom, 52)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 10)
-            }
-            .frame(minHeight: 300, maxHeight: 360)
+                .frame(minHeight: 300, maxHeight: 360)
 
-            actionBar
+                actionBar
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 6)
+            }
         }
         .frame(width: 360)
         .padding(8)
@@ -144,12 +145,21 @@ struct MenuBarQuickConfigView: View {
             .shadow(color: Color.black.opacity(0.10), radius: 2, x: 0, y: 1)
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .padding(.top, 8)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.32))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.black.opacity(0.10))
                 .frame(height: 1)
-                .offset(y: -8)
+                .offset(y: -9)
         }
     }
 
@@ -184,8 +194,6 @@ struct MenuBarQuickConfigView: View {
 
 private struct MenuGroupCard: View {
     let card: MainViewModel.GroupCardModel
-    let isSelected: Bool
-    let onOpen: () -> Void
     let onToggleSkill: (String, Bool) -> Void
     let onToggleAllSkills: () -> Void
     let onToggleTarget: (String, Bool) -> Void
@@ -193,18 +201,15 @@ private struct MenuGroupCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(card.title)
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(card.metaLine)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(card.title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(card.metaLine)
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             cardRow(
                 title: "Skills",
@@ -221,25 +226,11 @@ private struct MenuGroupCard: View {
                 onToggleAll: onToggleAllTargets,
                 action: onToggleTarget
             )
-
-            HStack(spacing: 5) {
-                tag(card.health, tint: Color.gray.opacity(0.22))
-                if card.warningCount > 0 {
-                    tag("W\(card.warningCount)", tint: Color.orange.opacity(0.22))
-                }
-                if card.errorCount > 0 {
-                    tag("E\(card.errorCount)", tint: Color.red.opacity(0.18))
-                }
-            }
         }
         .padding(10)
         .background(Color.white.opacity(0.58))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: Color.black.opacity(0.12), radius: 11, x: 0, y: 5)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Color.orange.opacity(0.75) : Color.clear, lineWidth: 1)
-        )
     }
 
     private func cardRow(

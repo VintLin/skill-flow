@@ -223,9 +223,7 @@ struct MainView: View {
     }
 
     private var toolbarHint: some View {
-        Text("Card actions save immediately. Click the card header to open detail.")
-            .font(.system(size: 12, weight: .regular))
-            .foregroundStyle(AppTheme.textMuted(for: theme))
+        EmptyView()
     }
 
     private func content(layout: LayoutMetrics) -> some View {
@@ -749,7 +747,7 @@ struct MainView: View {
     }
 
     private func gridColumns(for layout: LayoutMetrics) -> [GridItem] {
-        Array(repeating: GridItem(.fixed(220), spacing: 12), count: layout.gridColumnCount)
+        Array(repeating: GridItem(.fixed(272), spacing: 14), count: layout.gridColumnCount)
     }
 
     private var groupCards: [MainViewModel.GroupCardModel] {
@@ -865,17 +863,16 @@ private struct GroupCardView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Text("Skills")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .textCase(.uppercase)
                     Spacer()
-                    triStateSwitch(card.skillSelection, size: .desktop, action: onToggleAllSkills)
-                    statusLabel
+                    triStateSwitch(card.skillSelection, size: .desktopWide, action: onToggleAllSkills)
                 }
                 chipScroller {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         ForEach(card.skills) { skill in
                             cardToggle(skill.label, isOn: skill.isEnabled) {
                                 onToggleSkill(skill.id, !skill.isEnabled)
@@ -886,16 +883,16 @@ private struct GroupCardView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Text("Agents")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .textCase(.uppercase)
                     Spacer()
-                    triStateSwitch(card.targetSelection, size: .desktop, action: onToggleAllTargets)
+                    triStateSwitch(card.targetSelection, size: .desktopWide, action: onToggleAllTargets)
                 }
                 chipScroller {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         ForEach(card.targets) { target in
                             agentToggle(target.shortLabel, accessibilityLabel: target.label, isOn: target.isEnabled) {
                                 onToggleTarget(target.id, !target.isEnabled)
@@ -925,34 +922,11 @@ private struct GroupCardView: View {
         }
     }
 
-    private var statusLabel: some View {
-        Text(card.saveState.message ?? card.health)
-            .font(.system(size: 9, weight: .bold))
-            .padding(.horizontal, 8)
-            .frame(height: AppTheme.ControlSize.status.height)
-            .background(statusBackground)
-            .foregroundStyle(AppTheme.textPrimary(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var statusBackground: Color {
-        switch card.saveState.phase {
-        case .saving:
-            return Color.orange.opacity(0.25)
-        case .saved:
-            return Color.green.opacity(0.22)
-        case .failed:
-            return Color.red.opacity(0.18)
-        case .idle:
-            return Color.gray.opacity(0.18)
-        }
-    }
-
     private func cardToggle(_ text: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(text)
-                .font(.system(size: 10, weight: .bold))
-                .padding(.horizontal, 8)
+                .font(.system(size: 11, weight: .bold))
+                .padding(.horizontal, 10)
                 .frame(height: AppTheme.ControlSize.chip.height)
                 .background(isOn ? AppTheme.brand.opacity(0.30) : AppTheme.idleChipFill(for: theme))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
@@ -964,8 +938,8 @@ private struct GroupCardView: View {
     private func agentToggle(_ text: String, accessibilityLabel: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(text)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .frame(width: 30, height: 30)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .frame(width: 34, height: 34)
                 .background(isOn ? AppTheme.brand.opacity(0.30) : AppTheme.idleChipFill(for: theme))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -991,9 +965,28 @@ private struct GroupCardView: View {
         ZStack {
             ScrollView(.horizontal, showsIndicators: false) {
                 content()
-                    .padding(.trailing, 2)
+                    .padding(.horizontal, 14)
             }
-            .scrollClipDisabled()
+            .contentMargins(.horizontal, -14, for: .scrollContent)
+            .clipped()
+            .mask {
+                HStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [Color.clear, Color.white],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 18)
+                    Rectangle()
+                        .fill(Color.white)
+                    LinearGradient(
+                        colors: [Color.white, Color.clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 18)
+                }
+            }
 
             HStack {
                 LinearGradient(
@@ -1012,7 +1005,8 @@ private struct GroupCardView: View {
             }
             .allowsHitTesting(false)
         }
-        .frame(height: 30)
+        .frame(height: 34)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func switchLabel(_ selection: SelectionState) -> String {
@@ -1108,9 +1102,9 @@ private struct LayoutMetrics {
 
     var gridFrameWidth: CGFloat {
         let columns = CGFloat(gridColumnCount)
-        let spacing = CGFloat(max(gridColumnCount - 1, 0)) * 12
-        let available = max(220, width - 32 - spacing)
-        return min(920, max(220 * columns + spacing, available))
+        let spacing = CGFloat(max(gridColumnCount - 1, 0)) * 14
+        let available = max(272, width - 32 - spacing)
+        return min(1150, max(272 * columns + spacing, available))
     }
 }
 
@@ -1129,8 +1123,9 @@ private enum AppTheme {
         let fontSize: CGFloat
 
         static let desktop = ControlSize(width: 30, height: 30, cornerRadius: 8, fontSize: 10)
+        static let desktopWide = ControlSize(width: 42, height: 34, cornerRadius: 8, fontSize: 10)
         static let compact = ControlSize(width: 20, height: 19, cornerRadius: 6, fontSize: 7)
-        static let chip = ControlSize(width: 0, height: 30, cornerRadius: 8, fontSize: 10)
+        static let chip = ControlSize(width: 0, height: 34, cornerRadius: 8, fontSize: 11)
         static let menuChip = ControlSize(width: 0, height: 19, cornerRadius: 6, fontSize: 8)
         static let status = ControlSize(width: 0, height: 22, cornerRadius: 8, fontSize: 9)
     }
