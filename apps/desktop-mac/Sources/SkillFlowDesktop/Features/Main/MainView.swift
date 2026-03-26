@@ -204,6 +204,10 @@ struct MainView: View {
         .background(AppTheme.headerControlFill(for: theme))
         .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
     }
 
     private var importButton: some View {
@@ -216,6 +220,10 @@ struct MainView: View {
         .background(AppTheme.headerControlFill(for: theme))
         .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
         .foregroundStyle(AppTheme.textPrimary(for: theme))
         .font(.system(size: 10, weight: .bold))
         .textCase(.uppercase)
@@ -231,6 +239,10 @@ struct MainView: View {
         .background(AppTheme.headerControlFill(for: theme))
         .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
         .foregroundStyle(AppTheme.textPrimary(for: theme))
         .font(.system(size: 10, weight: .bold))
         .textCase(.uppercase)
@@ -1702,13 +1714,14 @@ enum AppTheme {
     }
 
     static func cardBorder(for mode: DesktopThemeMode) -> Color {
-        neutralCardColor(.color3, for: mode)
+        neutralCardColor(.color5, for: mode)
     }
 
     private enum NeutralCardColor {
         case color1
         case color2
         case color3
+        case color5
     }
 
     private static func neutralCardColor(_ color: NeutralCardColor, for mode: DesktopThemeMode) -> Color {
@@ -1719,18 +1732,26 @@ enum AppTheme {
             return grayscaleColor(249)
         case (.light, .color3):
             return grayscaleColor(242)
+        case (.light, .color5):
+            return rgbColor(184, 179, 176)
         case (.dark, .color1):
             return grayscaleColor(14)
         case (.dark, .color2):
             return grayscaleColor(21)
         case (.dark, .color3):
             return grayscaleColor(34)
+        case (.dark, .color5):
+            return rgbColor(82, 82, 82)
         }
     }
 
     private static func grayscaleColor(_ value: Double) -> Color {
         let channel = value / 255.0
         return Color(red: channel, green: channel, blue: channel)
+    }
+
+    private static func rgbColor(_ red: Double, _ green: Double, _ blue: Double) -> Color {
+        Color(red: red / 255.0, green: green / 255.0, blue: blue / 255.0)
     }
 }
 

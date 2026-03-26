@@ -25,7 +25,7 @@ struct MenuBarQuickConfigView: View {
         themeMode == "dark"
     }
 
-    private let topBarHeight: CGFloat = 34
+    private let topBarHeight: CGFloat = 40
     private let footerHeight: CGFloat = 30
     private let menuListMinHeight: CGFloat = 360
     private let menuListMaxHeight: CGFloat = 440
@@ -116,6 +116,10 @@ struct MenuBarQuickConfigView: View {
             .frame(height: 26)
             .background(controlFill)
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+            }
 
             Button("×") {
                 resetTransientState()
@@ -127,9 +131,14 @@ struct MenuBarQuickConfigView: View {
             .frame(width: 28, height: 28)
             .background(controlFill)
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+            }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
         .frame(height: topBarHeight)
         .background(menuOverlayBackground)
     }
@@ -208,7 +217,7 @@ struct MenuBarQuickConfigView: View {
     private func scheduleHoverExpansion(for groupId: String) {
         hoverExpandTask?.cancel()
         hoverExpandTask = Task {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.18)) {

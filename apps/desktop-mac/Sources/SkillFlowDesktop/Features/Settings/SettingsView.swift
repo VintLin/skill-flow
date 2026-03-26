@@ -255,6 +255,10 @@ struct SettingsView: View {
             .frame(width: controlColumnWidth, height: 32, alignment: .leading)
             .background(AppTheme.pageBackground(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+            }
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {
@@ -296,6 +300,10 @@ struct SettingsView: View {
                 .padding(6)
                 .background(AppTheme.pageBackground(for: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                }
                 .offset(y: 38)
             }
         }
