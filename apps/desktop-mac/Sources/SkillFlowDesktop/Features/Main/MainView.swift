@@ -864,6 +864,7 @@ private struct GroupCardView: View {
             height: 34,
             fadeWidth: 14,
             fill: AppTheme.groupCardFill(for: theme),
+            contentPadding: Self.cardInset,
             content: content
         )
     }
@@ -931,6 +932,7 @@ private struct HorizontalFadeScroll<Content: View>: View {
     let height: CGFloat
     let fadeWidth: CGFloat
     let fill: Color
+    let contentPadding: CGFloat
     @ViewBuilder let content: () -> Content
 
     @State private var viewportWidth: CGFloat = 0
@@ -941,6 +943,7 @@ private struct HorizontalFadeScroll<Content: View>: View {
         GeometryReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 content()
+                    .padding(.horizontal, contentPadding)
                     .background(
                         GeometryReader { contentProxy in
                             Color.clear.preference(
@@ -967,7 +970,11 @@ private struct HorizontalFadeScroll<Content: View>: View {
             .overlay {
                 HStack(spacing: 0) {
                     LinearGradient(
-                        colors: [fill, fill.opacity(0)],
+                        stops: [
+                            .init(color: fill, location: 0),
+                            .init(color: fill, location: 0.45),
+                            .init(color: fill.opacity(0), location: 1)
+                        ],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
@@ -977,7 +984,11 @@ private struct HorizontalFadeScroll<Content: View>: View {
                     Spacer(minLength: 0)
 
                     LinearGradient(
-                        colors: [fill.opacity(0), fill],
+                        stops: [
+                            .init(color: fill.opacity(0), location: 0),
+                            .init(color: fill, location: 0.55),
+                            .init(color: fill, location: 1)
+                        ],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
