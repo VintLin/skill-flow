@@ -158,7 +158,7 @@ struct SharedGroupCard: View {
     let displayMode: GroupCardDisplayMode
     let skillsCollapsed: Bool
     let onOpen: (() -> Void)?
-    let onToggleSkillsCollapsed: (() -> Void)?
+    let onTogglePinned: () -> Void
     let onToggleSkill: (String, Bool) -> Void
     let onToggleAllSkills: () -> Void
     let onToggleTarget: (String, Bool) -> Void
@@ -218,17 +218,21 @@ struct SharedGroupCard: View {
 
     @ViewBuilder
     private var header: some View {
-        if let onOpen {
-            Button(action: onOpen) {
-                headerText
+        HStack(alignment: .top, spacing: 8) {
+            if let onOpen {
+                Button(action: onOpen) {
+                    headerContent
+                }
+                .buttonStyle(.plain)
+            } else {
+                headerContent
             }
-            .buttonStyle(.plain)
-        } else {
-            headerText
+            Spacer(minLength: 0)
+            pinButton
         }
     }
 
-    private var headerText: some View {
+    private var headerContent: some View {
         VStack(alignment: .leading, spacing: scale.headerSpacing) {
             HStack(alignment: .firstTextBaseline, spacing: max(4, scale.cardInset * 0.5)) {
                 Text(card.title)
@@ -250,6 +254,17 @@ struct SharedGroupCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, scale.headerBottomSpacing)
+    }
+
+    private var pinButton: some View {
+        Button(action: onTogglePinned) {
+            Image(systemName: card.isPinned ? "pin.fill" : "pin")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(card.isPinned ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func cardRow(

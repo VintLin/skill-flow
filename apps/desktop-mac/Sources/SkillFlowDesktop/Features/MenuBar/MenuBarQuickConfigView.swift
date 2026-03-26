@@ -45,7 +45,9 @@ struct MenuBarQuickConfigView: View {
                             displayMode: cardDisplayMode,
                             skillsCollapsed: menuCompactCards && hoveredGroupId != card.id,
                             onOpen: nil,
-                            onToggleSkillsCollapsed: nil,
+                            onTogglePinned: {
+                                viewModel.togglePinned(sourceId: card.id)
+                            },
                             onToggleSkill: { skillId, enabled in
                                 Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
                             },
@@ -75,6 +77,7 @@ struct MenuBarQuickConfigView: View {
                 .padding(.top, topBarHeight + 10)
                 .padding(.bottom, footerHeight + 10)
             }
+            .scrollIndicators(.never)
             .frame(minHeight: menuListMinHeight, maxHeight: menuListMaxHeight)
             .scrollClipDisabled()
 
@@ -103,10 +106,11 @@ struct MenuBarQuickConfigView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
                 TextField("Search Group / Source", text: $viewModel.searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .disableAutocorrection(true)
             }
             .padding(.horizontal, 10)
@@ -121,6 +125,7 @@ struct MenuBarQuickConfigView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(AppTheme.textPrimary(for: theme))
             .frame(width: 28, height: 28)
             .background(controlFill)
             .shadow(color: controlShadow, radius: 4, x: 0, y: 2)

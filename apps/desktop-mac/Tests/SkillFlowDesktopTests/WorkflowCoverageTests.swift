@@ -6,6 +6,11 @@ import Darwin
 
 @MainActor
 final class WorkflowCoverageTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: "desktop.pinnedSourceIds")
+    }
+
     func testDismissToastIgnoresStaleIdentifier() {
         let model = MainViewModel(bridgeClient: BridgeClient())
         let firstToast = MainViewModel.ToastState(style: .success, message: "First")
@@ -21,6 +26,18 @@ final class WorkflowCoverageTests: XCTestCase {
         model.dismissToast(id: secondToast.id)
 
         XCTAssertNil(model.toast)
+    }
+
+    func testTogglePinnedPersistsPinnedSourceIds() {
+        let model = MainViewModel(bridgeClient: BridgeClient())
+
+        model.togglePinned(sourceId: "alpha")
+        XCTAssertEqual(model.pinnedSourceIds, ["alpha"])
+        XCTAssertEqual(UserDefaults.standard.stringArray(forKey: "desktop.pinnedSourceIds"), ["alpha"])
+
+        model.togglePinned(sourceId: "alpha")
+        XCTAssertEqual(model.pinnedSourceIds, [])
+        XCTAssertEqual(UserDefaults.standard.stringArray(forKey: "desktop.pinnedSourceIds"), [])
     }
 
     func testV120WorkflowCoverage() async throws {

@@ -203,7 +203,7 @@ struct MainView: View {
     }
 
     private func gridSection(layout: LayoutMetrics) -> some View {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             if groupCards.isEmpty {
                 let loading = {
                     switch viewModel.loadState {
@@ -213,10 +213,14 @@ struct MainView: View {
                         return false
                     }
                 }()
-                emptyState(
-                    title: loading ? "Loading groups" : "No groups matched",
-                    subtitle: loading ? "Waiting for bridge data." : "Try a broader search query."
-                )
+                if loading {
+                    loadingState
+                } else {
+                    emptyState(
+                        title: "No groups matched",
+                        subtitle: "Try a broader search query."
+                    )
+                }
             } else {
                 HStack {
                     Spacer(minLength: 0)
@@ -232,7 +236,9 @@ struct MainView: View {
                                     detailGroupId = card.id
                                     Task { await viewModel.selectSource(card.id) }
                                 },
-                                onToggleSkillsCollapsed: nil,
+                                onTogglePinned: {
+                                    viewModel.togglePinned(sourceId: card.id)
+                                },
                                 onToggleSkill: { skillId, enabled in
                                     Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
                                 },
@@ -253,6 +259,17 @@ struct MainView: View {
                 }
             }
         }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.regular)
+            Text("Loading groups")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
     }
 
     private func detailOverlay(groupId: String, layout: LayoutMetrics) -> some View {

@@ -93,6 +93,7 @@ final class MainViewModel {
         let title: String
         let subtitle: String
         let metaLine: String
+        let isPinned: Bool
         let health: String
         let warningCount: Int
         let errorCount: Int
@@ -235,6 +236,7 @@ final class MainViewModel {
         "kiro": "KI",
     ]
 
+    private let pinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private var baselineDrafts: [String: DraftState] = [:]
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
@@ -268,9 +270,11 @@ final class MainViewModel {
 
     var deploymentFilterTarget: String = "All"
     var deploymentFilterKind: String = "All"
+    var pinnedSourceIds: [String]
 
     init(bridgeClient: BridgeClient) {
         self.bridgeClient = bridgeClient
+        self.pinnedSourceIds = UserDefaults.standard.stringArray(forKey: pinnedSourceIdsKey) ?? []
     }
 
     var availableGroups: [String] {
@@ -317,15 +321,15 @@ final class MainViewModel {
             )
         }
         if query.isEmpty {
-            return rows
+            return sortedSourceRows(rows)
         }
-        return rows.filter { row in
+        return sortedSourceRows(rows.filter { row in
             row.id.lowercased().contains(query)
                 || row.displayName.lowercased().contains(query)
                 || row.locator.lowercased().contains(query)
                 || row.kind.lowercased().contains(query)
                 || row.status.lowercased().contains(query)
-        }
+        })
     }
 
     var groupCards: [GroupCardModel] {
@@ -342,6 +346,7 @@ final class MainViewModel {
                 title: row.displayName,
                 subtitle: subtitleText(locator: row.locator, kind: row.kind),
                 metaLine: "from \(row.locator.isEmpty ? row.kind : row.locator)",
+                isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
                 warningCount: row.warningCount,
                 errorCount: row.errorCount,
@@ -366,6 +371,30 @@ final class MainViewModel {
                 saveState: saveStateBySourceId[row.id] ?? SaveState(phase: .idle, message: nil)
             )
         }
+    }
+
+    func togglePinned(sourceId: String) {
+        if let index = pinnedSourceIds.firstIndex(of: sourceId) {
+            pinnedSourceIds.remove(at: index)
+        } else {
+            pinnedSourceIds.append(sourceId)
+        }
+        UserDefaults.standard.set(pinnedSourceIds, forKey: pinnedSourceIdsKey)
+    }
+
+    private func sortedSourceRows(_ rows: [SourceRow]) -> [SourceRow] {
+        rows.sorted { lhs, rhs in
+            let leftRank = pinRank(for: lhs.id)
+            let rightRank = pinRank(for: rhs.id)
+            if leftRank != rightRank {
+                return leftRank < rightRank
+            }
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+    }
+
+    private func pinRank(for sourceId: String) -> Int {
+        pinnedSourceIds.firstIndex(of: sourceId) ?? Int.max
     }
 
     private func subtitleText(locator: String, kind: String) -> String {
