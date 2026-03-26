@@ -7,6 +7,10 @@ struct MainView: View {
     private let detailSkillRowHeight: CGFloat = 60
     private let detailSkillDividerHeight: CGFloat = 16
     private let detailIndicatorHeight: CGFloat = 36
+    private let detailToggleWidth: CGFloat = 34
+    private let detailToggleHeight: CGFloat = 34
+    private let detailAgentItemHeight: CGFloat = 34
+    private let detailAgentIconSize: CGFloat = 20
 
     private struct RecommendedImport: Identifiable {
         let id: String
@@ -712,7 +716,7 @@ struct MainView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 10, weight: .bold))
-            .frame(width: 36, height: 30)
+            .frame(width: detailToggleWidth, height: detailToggleHeight)
             .background(skill.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .foregroundStyle(skill.isEnabled ? detailSwitchText(.full) : detailSwitchText(.empty))
@@ -793,18 +797,19 @@ struct MainView: View {
                             HStack(spacing: 10) {
                                 if let image = AgentIconLibrary.symbolImage(
                                     for: target.id,
-                                    foreground: agentIconForeground(isEnabled: target.isEnabled)
+                                    foreground: agentIconForeground(isEnabled: target.isEnabled),
+                                    cropToVisibleBounds: true
                                 ) {
                                     Image(nsImage: image)
                                         .renderingMode(.original)
                                         .resizable()
                                         .scaledToFit()
-                                        .frame(width: 28, height: 28)
+                                        .frame(width: detailAgentIconSize, height: detailAgentIconSize)
                                 } else {
                                     Text(target.shortLabel.uppercased())
                                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                        .frame(width: 28, height: 28)
+                                        .frame(width: detailAgentIconSize, height: detailAgentIconSize)
                                 }
 
                                 Text(target.label)
@@ -813,7 +818,7 @@ struct MainView: View {
                                     .lineLimit(1)
                             }
                             .padding(.horizontal, 14)
-                            .frame(height: 46)
+                            .frame(height: detailAgentItemHeight)
                             .background(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.18) : AppTheme.toolbarButtonBackground(for: theme))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
@@ -1094,7 +1099,7 @@ struct MainView: View {
                                         }
                                         .buttonStyle(.plain)
                                         .font(.system(size: 10, weight: .bold))
-                                        .frame(width: 36, height: 28)
+                                        .frame(width: detailToggleWidth, height: detailToggleHeight)
                                         .background(skill.isSelected ? Color.green.opacity(0.25) : Color.gray.opacity(0.20))
                                         .foregroundStyle(skill.isSelected ? Color.green : AppTheme.textPrimary(for: theme))
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -1129,7 +1134,7 @@ struct MainView: View {
                                             }
                                             .buttonStyle(.plain)
                                             .font(.system(size: 10, weight: .bold))
-                                            .frame(width: 36, height: 28)
+                                            .frame(width: detailToggleWidth, height: detailToggleHeight)
                                             .background(isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.22))
                                             .foregroundStyle(isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
                                             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -1394,7 +1399,7 @@ struct MainView: View {
         Button(action: action) {
             Text(detailSwitchLabel(selection))
                 .font(.system(size: 10, weight: .bold))
-                .frame(width: 36, height: 30)
+                .frame(width: detailToggleWidth, height: detailToggleHeight)
                 .background(detailSwitchFill(selection))
                 .foregroundStyle(detailSwitchText(selection))
                 .clipShape(RoundedRectangle(cornerRadius: 8))

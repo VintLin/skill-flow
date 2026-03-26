@@ -49,7 +49,7 @@ enum GroupCardScale {
     }
 
     var triStateWidth: CGFloat {
-        42 * factor
+        34 * factor
     }
 
     var triStateHeight: CGFloat {

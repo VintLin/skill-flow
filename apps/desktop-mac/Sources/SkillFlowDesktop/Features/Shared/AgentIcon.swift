@@ -44,13 +44,17 @@ enum AgentIconLibrary {
         return nil
     }
 
-    static func symbolImage(for targetId: String, foreground: NSColor) -> NSImage? {
+    static func symbolImage(
+        for targetId: String,
+        foreground: NSColor,
+        cropToVisibleBounds: Bool = false
+    ) -> NSImage? {
         guard let baseImage = image(for: targetId), let fileName = fileName(for: targetId) else {
             return nil
         }
 
         let foreground = foreground.usingColorSpace(.deviceRGB) ?? foreground
-        let cacheKey = "\(fileName)#\(colorKey(foreground))"
+        let cacheKey = "\(fileName)#\(colorKey(foreground))#crop:\(cropToVisibleBounds)"
         if let cached = symbolCache.object(forKey: cacheKey as NSString) {
             return cached
         }
@@ -93,7 +97,9 @@ enum AgentIconLibrary {
             return nil
         }
 
-        let finalImage = croppedToVisibleBounds(outputCGImage) ?? outputCGImage
+        let finalImage = cropToVisibleBounds
+            ? (croppedToVisibleBounds(outputCGImage) ?? outputCGImage)
+            : outputCGImage
         let image = NSImage(
             cgImage: finalImage,
             size: NSSize(width: finalImage.width, height: finalImage.height)

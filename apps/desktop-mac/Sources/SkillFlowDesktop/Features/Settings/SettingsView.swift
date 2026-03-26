@@ -294,6 +294,7 @@ struct SettingsView: View {
                             .frame(width: controlColumnWidth, height: 30, alignment: .leading)
                             .background(option.id == selectedId ? AppTheme.toolbarButtonBackground(for: theme) : Color.clear)
                             .clipShape(RoundedRectangle(cornerRadius: 7))
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
