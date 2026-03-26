@@ -7,6 +7,11 @@ struct MenuBarQuickConfigView: View {
 
     @State private var showImportInput: Bool = false
     @FocusState private var isImportFieldFocused: Bool
+    @AppStorage("desktop.themeMode") private var themeMode = "light"
+
+    private var isDark: Bool {
+        themeMode == "dark"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -72,8 +77,8 @@ struct MenuBarQuickConfigView: View {
             }
             .padding(.horizontal, 10)
             .frame(height: 28)
-            .background(Color.white.opacity(0.66))
-            .shadow(color: Color.black.opacity(0.08), radius: 2, x: 0, y: 1)
+            .background(controlFill)
+            .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             Button("×") {
@@ -83,18 +88,12 @@ struct MenuBarQuickConfigView: View {
             .buttonStyle(.plain)
             .font(.system(size: 14, weight: .bold))
             .frame(width: 28, height: 28)
-            .background(Color.white.opacity(0.58))
-            .shadow(color: Color.black.opacity(0.08), radius: 2, x: 0, y: 1)
+            .background(controlFill)
+            .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .padding(.bottom, 8)
         .padding(.horizontal, 0)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.black.opacity(0.10))
-                .frame(height: 1)
-                .offset(y: 8)
-        }
     }
 
     private var actionBar: some View {
@@ -110,8 +109,8 @@ struct MenuBarQuickConfigView: View {
                 .textCase(.uppercase)
                 .padding(.horizontal, 8)
                 .frame(height: 22)
-                .background(showImportInput ? Color.orange.opacity(0.24) : Color.white.opacity(0.66))
-                .shadow(color: Color.black.opacity(0.10), radius: 2, x: 0, y: 1)
+                .background(showImportInput ? Color.orange.opacity(0.24) : controlFill)
+                .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
                 if showImportInput {
@@ -121,8 +120,8 @@ struct MenuBarQuickConfigView: View {
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .padding(.horizontal, 7)
                         .frame(width: 170, height: 22)
-                        .background(Color.white.opacity(0.70))
-                        .shadow(color: Color.black.opacity(0.10), radius: 2, x: 0, y: 1)
+                        .background(controlFill)
+                        .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .onSubmit {
                             Task { await viewModel.addSource() }
@@ -141,53 +140,22 @@ struct MenuBarQuickConfigView: View {
             .textCase(.uppercase)
             .padding(.horizontal, 8)
             .frame(height: 22)
-            .background(Color.white.opacity(0.66))
-            .shadow(color: Color.black.opacity(0.10), radius: 2, x: 0, y: 1)
+            .background(controlFill)
+            .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(.ultraThinMaterial)
-                LinearGradient(
-                    colors: [Color.white.opacity(0.20), Color.white.opacity(0.08)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-        )
-        .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                .fill(menuFooterFill)
         )
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Color.black.opacity(0.10))
-                .frame(height: 1)
-                .offset(y: -9)
-        }
     }
 
     private var menuBackground: some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color(red: 241.0 / 255.0, green: 241.0 / 255.0, blue: 241.0 / 255.0),
-                        Color(red: 235.0 / 255.0, green: 235.0 / 255.0, blue: 235.0 / 255.0)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.26), radius: 19, x: 0, y: 10)
+            .fill(menuFill)
+            .shadow(color: menuShadow, radius: 19, x: 0, y: 10)
     }
 
     private var groupCards: [MainViewModel.GroupCardModel] {
@@ -197,6 +165,26 @@ struct MenuBarQuickConfigView: View {
     private func resetTransientState() {
         showImportInput = false
         isImportFieldFocused = false
+    }
+
+    private var menuFill: Color {
+        isDark ? .black : .white
+    }
+
+    private var controlFill: Color {
+        isDark ? .black : .white
+    }
+
+    private var controlShadow: Color {
+        isDark ? Color.white.opacity(0.16) : Color.black.opacity(0.12)
+    }
+
+    private var menuShadow: Color {
+        isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.18)
+    }
+
+    private var menuFooterFill: Color {
+        isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.78)
     }
 }
 
@@ -236,9 +224,9 @@ private struct MenuGroupCard: View {
             )
         }
         .padding(10)
-        .background(Color.white.opacity(0.58))
+        .background(isDark ? Color.black : Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: Color.black.opacity(0.12), radius: 11, x: 0, y: 5)
+        .shadow(color: isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.12), radius: 11, x: 0, y: 5)
     }
 
     private func cardRow(
@@ -332,5 +320,11 @@ private struct MenuGroupCard: View {
             .frame(height: 19)
             .background(tint)
             .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    @AppStorage("desktop.themeMode") private var themeMode = "light"
+
+    private var isDark: Bool {
+        themeMode == "dark"
     }
 }

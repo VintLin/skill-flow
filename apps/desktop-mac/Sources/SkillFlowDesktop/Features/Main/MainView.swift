@@ -142,6 +142,7 @@ struct MainView: View {
         .padding(.horizontal, 12)
         .frame(width: 320, height: 34, alignment: .leading)
         .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -153,6 +154,7 @@ struct MainView: View {
         .padding(.horizontal, 12)
         .frame(height: 34)
         .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .foregroundStyle(AppTheme.textPrimary(for: theme))
         .font(.system(size: 10, weight: .bold))
@@ -167,6 +169,7 @@ struct MainView: View {
         .padding(.horizontal, 12)
         .frame(height: 34)
         .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .foregroundStyle(AppTheme.textPrimary(for: theme))
         .font(.system(size: 10, weight: .bold))
@@ -855,7 +858,7 @@ private struct GroupCardView: View {
     private func chipScroller<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
         HorizontalFadeScroll(
             height: 34,
-            fadeWidth: 24,
+            fadeWidth: 14,
             fill: AppTheme.groupCardFill(for: theme),
             content: content
         )
@@ -1194,7 +1197,7 @@ private enum AppTheme {
         case .light:
             return Color.black.opacity(0.12)
         case .dark:
-            return Color.black.opacity(0.28)
+            return Color.white.opacity(0.14)
         }
     }
 
@@ -1203,7 +1206,16 @@ private enum AppTheme {
         case .light:
             return Color.black.opacity(0.08)
         case .dark:
-            return Color.black.opacity(0.22)
+            return Color.white.opacity(0.10)
+        }
+    }
+
+    static func controlShadow(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return Color.black.opacity(0.12)
+        case .dark:
+            return Color.white.opacity(0.16)
         }
     }
 
