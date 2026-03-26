@@ -240,23 +240,15 @@ struct MainView: View {
 
     private func configPage(layout: LayoutMetrics) -> some View {
         ScrollView {
-            VStack(spacing: 16) {
-                sectionShell {
-                    gridSection(layout: layout)
-                }
-            }
-            .padding(16)
+            gridSection(layout: layout)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 24)
         }
     }
 
     private func gridSection(layout: LayoutMetrics) -> some View {
             VStack(alignment: .leading, spacing: 12) {
-                sectionHeader(
-                    title: "Groups",
-                    subtitle: "Configure skills and agents directly from each group card.",
-                    badge: "\(groupCards.count)"
-                )
-
             if groupCards.isEmpty {
                 let loading = {
                     switch viewModel.loadState {
@@ -903,7 +895,7 @@ private struct GroupCardView: View {
             }
         }
         .padding(12)
-        .frame(minHeight: 196, alignment: .topLeading)
+        .frame(minHeight: 206, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: AppTheme.cardShadow(for: theme), radius: 14, x: 0, y: 8)
@@ -965,9 +957,9 @@ private struct GroupCardView: View {
         ZStack {
             ScrollView(.horizontal, showsIndicators: false) {
                 content()
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 18)
             }
-            .contentMargins(.horizontal, -14, for: .scrollContent)
+            .contentMargins(.horizontal, -18, for: .scrollContent)
             .clipped()
             .mask {
                 HStack(spacing: 0) {
@@ -976,7 +968,7 @@ private struct GroupCardView: View {
                         startPoint: .leading,
                         endPoint: .trailing
                     )
-                    .frame(width: 18)
+                    .frame(width: 24)
                     Rectangle()
                         .fill(Color.white)
                     LinearGradient(
@@ -984,7 +976,7 @@ private struct GroupCardView: View {
                         startPoint: .leading,
                         endPoint: .trailing
                     )
-                    .frame(width: 18)
+                    .frame(width: 24)
                 }
             }
 
@@ -994,14 +986,14 @@ private struct GroupCardView: View {
                     startPoint: .leading,
                     endPoint: .trailing
                 )
-                .frame(width: 16)
+                .frame(width: 24)
                 Spacer()
                 LinearGradient(
                     colors: [AppTheme.surface(for: theme).opacity(0), AppTheme.surface(for: theme)],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
-                .frame(width: 16)
+                .frame(width: 24)
             }
             .allowsHitTesting(false)
         }

@@ -35,7 +35,7 @@ struct MenuBarQuickConfigView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.top, 10)
-                    .padding(.bottom, 52)
+                    .padding(.bottom, 58)
                 }
                 .frame(minHeight: 300, maxHeight: 360)
 
@@ -148,12 +148,20 @@ struct MenuBarQuickConfigView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.white.opacity(0.32))
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.ultraThinMaterial)
+                LinearGradient(
+                    colors: [Color.white.opacity(0.20), Color.white.opacity(0.08)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                .stroke(Color.white.opacity(0.22), lineWidth: 1)
         )
         .overlay(alignment: .top) {
             Rectangle()
