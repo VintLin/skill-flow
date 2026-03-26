@@ -7,7 +7,7 @@ enum GroupCardScale {
     private var factor: CGFloat {
         switch self {
         case .home: return 1.0
-        case .menu: return 1.0
+        case .menu: return 0.8
         }
     }
 

@@ -17,12 +17,11 @@ struct MenuBarQuickConfigView: View {
         themeMode == "dark"
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            topBar
-            Divider()
-                .overlay(AppTheme.border(for: theme))
+    private let topBarHeight: CGFloat = 44
+    private let footerHeight: CGFloat = 38
 
+    var body: some View {
+        ZStack {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(groupCards) { card in
@@ -46,15 +45,18 @@ struct MenuBarQuickConfigView: View {
                         )
                     }
                 }
-                .padding(.vertical, 10)
+                .padding(.horizontal, 8)
+                .padding(.top, topBarHeight + 10)
+                .padding(.bottom, footerHeight + 10)
             }
             .frame(minHeight: 300, maxHeight: 360)
             .scrollClipDisabled()
 
-            Divider()
-                .overlay(AppTheme.border(for: theme))
-
-            actionBar
+            VStack(spacing: 0) {
+                topBar
+                Spacer(minLength: 0)
+                actionBar
+            }
         }
         .frame(width: 360)
         .background(menuBackground)
@@ -100,7 +102,8 @@ struct MenuBarQuickConfigView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
-        .background(.clear)
+        .frame(height: topBarHeight)
+        .background(menuOverlayBackground)
     }
 
     private var actionBar: some View {
@@ -153,13 +156,24 @@ struct MenuBarQuickConfigView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
-        .background(.clear)
+        .frame(height: footerHeight)
+        .background(menuOverlayBackground)
     }
 
     private var menuBackground: some View {
         RoundedRectangle(cornerRadius: 12)
             .fill(menuFill)
             .shadow(color: menuShadow, radius: 19, x: 0, y: 10)
+    }
+
+    private var menuOverlayBackground: some View {
+        Rectangle()
+            .fill(menuFill)
+            .overlay(
+                Rectangle()
+                    .fill(AppTheme.border(for: theme)),
+                alignment: .bottom
+            )
     }
 
     private var groupCards: [MainViewModel.GroupCardModel] {
