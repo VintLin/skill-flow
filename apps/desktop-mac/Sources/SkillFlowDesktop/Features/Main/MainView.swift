@@ -269,7 +269,6 @@ struct MainView: View {
                         ForEach(groupCards) { card in
                             GroupCardView(
                                 card: card,
-                                isSelected: card.id == viewModel.selectedGroupId,
                                 theme: theme,
                                 onOpenDetail: {
                                     detailGroupId = card.id
@@ -825,7 +824,6 @@ struct MainView: View {
 
 private struct GroupCardView: View {
     let card: MainViewModel.GroupCardModel
-    let isSelected: Bool
     let theme: DesktopThemeMode
     let onOpenDetail: () -> Void
     let onToggleSkill: (String, Bool) -> Void
@@ -860,11 +858,10 @@ private struct GroupCardView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .textCase(.uppercase)
-                    Spacer()
-                    triStateSwitch(card.skillSelection, size: .desktopWide, action: onToggleAllSkills)
                 }
                 chipScroller {
                     HStack(spacing: 6) {
+                        triStateSwitch(card.skillSelection, size: .desktopWide, action: onToggleAllSkills)
                         ForEach(card.skills) { skill in
                             cardToggle(skill.label, isOn: skill.isEnabled) {
                                 onToggleSkill(skill.id, !skill.isEnabled)
@@ -880,11 +877,10 @@ private struct GroupCardView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .textCase(.uppercase)
-                    Spacer()
-                    triStateSwitch(card.targetSelection, size: .desktopWide, action: onToggleAllTargets)
                 }
                 chipScroller {
                     HStack(spacing: 6) {
+                        triStateSwitch(card.targetSelection, size: .desktopWide, action: onToggleAllTargets)
                         ForEach(card.targets) { target in
                             agentToggle(target.shortLabel, accessibilityLabel: target.label, isOn: target.isEnabled) {
                                 onToggleTarget(target.id, !target.isEnabled)
@@ -899,19 +895,6 @@ private struct GroupCardView: View {
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: AppTheme.cardShadow(for: theme), radius: 14, x: 0, y: 8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? AppTheme.brand.opacity(0.8) : AppTheme.border(for: theme), lineWidth: 1)
-        )
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(AppTheme.brand)
-                .frame(width: 4, height: 26)
-                .padding(.leading, 8)
-                .padding(.top, 10)
-                .opacity(isSelected ? 1 : 0)
-                .animation(.easeInOut(duration: 0.15), value: isSelected)
-        }
     }
 
     private func cardToggle(_ text: String, isOn: Bool, action: @escaping () -> Void) -> some View {
