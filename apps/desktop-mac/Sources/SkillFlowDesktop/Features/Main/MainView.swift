@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MainView: View {
@@ -75,8 +76,9 @@ struct MainView: View {
         }
         .task(id: viewModel.toast?.id) {
             guard let toast = viewModel.toast, toast.style != .loading else { return }
+            let toastId = toast.id
             try? await Task.sleep(for: .seconds(2))
-            viewModel.dismissToast()
+            viewModel.dismissToast(id: toastId)
         }
         .task {
             if case .idle = viewModel.loadState {
@@ -119,14 +121,23 @@ struct MainView: View {
 
     private var headerLogoRow: some View {
         HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(AppTheme.textPrimary(for: theme))
-                .frame(width: 30, height: 30)
-                .overlay(
-                    Text("SF")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(AppTheme.pageBackground(for: theme))
-                )
+            if let icon = AppIconLibrary.image() {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 30, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(AppTheme.textPrimary(for: theme))
+                    .frame(width: 30, height: 30)
+                    .overlay(
+                        Text("SF")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(AppTheme.pageBackground(for: theme))
+                    )
+            }
 
             Text("Skill Flow")
                 .font(.system(size: 15, weight: .semibold))

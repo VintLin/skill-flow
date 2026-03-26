@@ -2,10 +2,10 @@ import { describe, expect, test } from "vitest";
 import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
 import { executeBridgeRequest } from "../bridge-command.js";
 import { PROTOCOL_VERSION } from "@skill-flow/shared-types/protocol";
-import { useSkillFlowSandbox } from "./test-helpers.js";
+import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("bridge command dispatcher", () => {
-  useSkillFlowSandbox();
+  const sandbox = useSkillFlowSandbox();
 
   test("returns list envelope", async () => {
     const app = new SkillFlowApp();
@@ -31,5 +31,51 @@ describe.sequential("bridge command dispatcher", () => {
 
     expect(response.ok).toBe(false);
     expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+  });
+
+  test("accepts valid inspect payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "inspect",
+      payload: { sourceId: added.data.manifest.id },
+    });
+
+    expect(response.ok).toBe(true);
+  });
+
+  test("accepts valid apply payload with empty skill selection", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "apply",
+      payload: {
+        sourceId: added.data.manifest.id,
+        draft: {
+          selectedLeafIds: [],
+          enabledTargets: [],
+        },
+      },
+    });
+
+    expect(response.ok).toBe(true);
   });
 });

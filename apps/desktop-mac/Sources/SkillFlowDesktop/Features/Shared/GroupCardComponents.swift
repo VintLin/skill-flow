@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 enum GroupCardScale {
     case home
@@ -148,21 +149,17 @@ struct SharedGroupCard: View {
         .shadow(color: AppTheme.cardShadow(for: theme), radius: scale.shadowRadius, x: 0, y: scale.shadowYOffset)
         .overlay {
             if isSaving {
-                RoundedRectangle(cornerRadius: scale.cornerRadius)
-                    .fill(AppTheme.groupCardFill(for: theme).opacity(theme == .dark ? 0.72 : 0.84))
-                    .overlay {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(card.saveState.message ?? "Applying...")
-                                .font(.system(size: scale.metaSize, weight: .semibold))
-                        }
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(AppTheme.toolbarGlass(for: theme))
-                        .clipShape(Capsule())
-                    }
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(card.saveState.message ?? "Applying...")
+                        .font(.system(size: scale.metaSize, weight: .semibold))
+                }
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(AppTheme.toolbarGlass(for: theme))
+                .clipShape(Capsule())
             }
         }
     }
@@ -214,13 +211,6 @@ struct SharedGroupCard: View {
                 .textCase(.uppercase)
                 .padding(.horizontal, scale.sectionHorizontalPadding)
                 .padding(.top, scale.sectionTopPadding)
-                .overlay(alignment: .trailing) {
-                    if isSaving {
-                        ProgressView()
-                            .controlSize(.small)
-                            .padding(.trailing, scale.sectionHorizontalPadding)
-                    }
-                }
 
             cardScroller {
                 HStack(spacing: scale.rowSpacing) {
@@ -245,6 +235,7 @@ struct SharedGroupCard: View {
                     }
                 }
             }
+            .opacity(isSaving ? 0.68 : 1.0)
             .allowsHitTesting(!isSaving)
         }
     }
@@ -271,13 +262,15 @@ struct SharedGroupCard: View {
             shape
                 .fill(targetBackgroundFill(isOn: isOn))
 
-            if let image = AgentIconLibrary.image(for: targetId) {
+            if let image = AgentIconLibrary.symbolImage(
+                for: targetId,
+                foreground: targetForegroundColor(isOn: isOn)
+            ) {
                 targetIcon(image: image, isOn: isOn)
             } else {
                 Text(fallbackText)
                     .font(.system(size: scale.targetFontSize, weight: .bold, design: .monospaced))
                     .foregroundStyle(targetFallbackTextColor(isOn: isOn))
-                    .opacity(isOn ? 1.0 : 0.75)
             }
         }
         .frame(width: scale.targetSize, height: scale.targetSize)
@@ -287,16 +280,11 @@ struct SharedGroupCard: View {
 
     @ViewBuilder
     private func targetIcon(image: NSImage, isOn: Bool) -> some View {
-        let icon = Image(nsImage: image)
-            .renderingMode(.template)
+        Image(nsImage: image)
+            .renderingMode(.original)
             .resizable()
             .interpolation(.high)
             .scaledToFill()
-            .frame(width: scale.targetSize, height: scale.targetSize)
-
-        icon
-            .foregroundStyle(targetIconTint(isOn: isOn))
-            .background(targetBackgroundFill(isOn: isOn))
     }
 
     private func targetBackgroundFill(isOn: Bool) -> Color {
@@ -305,14 +293,17 @@ struct SharedGroupCard: View {
             : AppTheme.idleChipFill(for: theme)
     }
 
-    private func targetIconTint(isOn: Bool) -> Color {
-        isOn
-            ? (theme == .dark ? Color.white : AppTheme.textPrimary(for: theme))
-            : AppTheme.textMuted(for: theme).opacity(theme == .dark ? 0.88 : 0.74)
+    private func targetForegroundColor(isOn: Bool) -> NSColor {
+        switch theme {
+        case .light:
+            return NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: isOn ? 1.0 : 0.78)
+        case .dark:
+            return NSColor(calibratedRed: 239.0 / 255.0, green: 239.0 / 255.0, blue: 241.0 / 255.0, alpha: isOn ? 1.0 : 0.78)
+        }
     }
 
     private func targetFallbackTextColor(isOn: Bool) -> Color {
-        isOn ? .white : AppTheme.textPrimary(for: theme)
+        AppTheme.textPrimary(for: theme).opacity(isOn ? 1.0 : 0.78)
     }
 
     private func triStateSwitch(_ selection: SelectionState, action: @escaping () -> Void) -> some View {

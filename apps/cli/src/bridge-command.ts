@@ -52,7 +52,7 @@ export async function executeBridgeRequest(
       }
       case "inspect": {
         const payload = expectObjectPayload(request.payload, "inspect");
-        const sourceId = expectString(payload, "sourceId", "inspect");
+        const sourceId = expectString(payload.sourceId, "sourceId", "inspect");
         const result = await app.inspectSource(sourceId);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
@@ -105,7 +105,7 @@ export async function executeBridgeRequest(
       }
       case "apply": {
         const payload = expectObjectPayload(request.payload, "apply");
-        const sourceId = expectString(payload, "sourceId", "apply");
+        const sourceId = expectString(payload.sourceId, "sourceId", "apply");
         const draft = expectDraftBinding(payload.draft);
         const result = await app.applyDraft(sourceId, draft);
         if (!result.ok) {
@@ -251,7 +251,10 @@ function expectDraftBinding(value: JsonValue | undefined): DraftBinding {
   if (!isJsonObject(value)) {
     throw new Error("Bridge command 'apply' requires object field 'draft'.");
   }
-  const selectedLeafIds = parseRequiredStringArray(value.selectedLeafIds, "draft.selectedLeafIds");
+  const selectedLeafIds = parseOptionalStringArray(value.selectedLeafIds, "draft.selectedLeafIds");
+  if (!selectedLeafIds) {
+    throw new Error("Field 'draft.selectedLeafIds' must be a string array.");
+  }
   const enabledTargets = parseOptionalStringArray(value.enabledTargets, "draft.enabledTargets") ?? [];
   return {
     selectedLeafIds,

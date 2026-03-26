@@ -12,7 +12,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "SkillFlowDesktop",
-            path: "Sources/SkillFlowDesktop"
+            path: "Sources/SkillFlowDesktop",
+            resources: [
+                .copy("Resources")
+            ]
         ),
         .testTarget(
             name: "SkillFlowDesktopTests",

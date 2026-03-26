@@ -13,22 +13,22 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertEqual(model.visibleTargets.map(\.id), ["claude-code", "cursor"])
         XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .partial)
-        XCTAssertEqual(model.skillSelectionState(sourceId: "beta"), .full)
+        XCTAssertEqual(model.skillSelectionState(sourceId: "beta"), .empty)
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .partial)
         XCTAssertEqual(model.selectedGroupSourceIds, ["alpha", "beta"])
         XCTAssertTrue(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
         XCTAssertFalse(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
-        XCTAssertTrue(model.isSkillEnabled("beta-a", sourceId: "beta"))
-        XCTAssertTrue(model.isSkillEnabled("beta-b", sourceId: "beta"))
+        XCTAssertFalse(model.isSkillEnabled("beta-a", sourceId: "beta"))
+        XCTAssertFalse(model.isSkillEnabled("beta-b", sourceId: "beta"))
 
         await model.toggleAllSkills(sourceId: "alpha")
         XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
         await model.toggleAllSkills(sourceId: "alpha")
-        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
-        XCTAssertEqual(model.toast?.style, .error)
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .empty)
+        XCTAssertFalse(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
 
         await model.setSkillEnabled("alpha-b", enabled: true, sourceId: "alpha")
-        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .partial)
         XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
 
         await model.toggleAllTargets(sourceId: "alpha")
@@ -57,7 +57,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertEqual(model.selectedGroupSourceIds, ["alpha", "beta"])
         XCTAssertEqual(model.selectedGroupId, "alpha")
-        XCTAssertEqual(model.skillSelectionState(sourceId: "beta"), .full)
+        XCTAssertEqual(model.skillSelectionState(sourceId: "beta"), .empty)
     }
 
     func testDetailViewDataUsesInspectPayload() async throws {
@@ -420,10 +420,17 @@ private struct TestFixture {
       if (request.command === 'bootstrap') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
-          initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => [sourceId, {
-            selectedLeafIds: source.selectedLeafIds || [],
-            enabledTargets: source.enabledTargets || []
-          }]))
+          initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => {
+            const enabledTargets = source.enabledTargets || [];
+            const targetLeafIdsByTarget = source.targetLeafIdsByTarget || {};
+            const selectedLeafIds = (source.selectedLeafIds && source.selectedLeafIds.length > 0)
+              ? source.selectedLeafIds
+              : enabledTargets.flatMap((target) => targetLeafIdsByTarget[target] || []);
+            return [sourceId, {
+              selectedLeafIds,
+              enabledTargets
+            }];
+          }))
         }, [], [])));
         return;
       }

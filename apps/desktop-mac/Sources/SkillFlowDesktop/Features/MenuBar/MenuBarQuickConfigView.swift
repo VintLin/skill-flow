@@ -8,17 +8,22 @@ struct MenuBarQuickConfigView: View {
     @State private var showImportInput: Bool = false
     @FocusState private var isImportFieldFocused: Bool
     @AppStorage("desktop.themeMode") private var themeMode = "light"
+    @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
 
     private var theme: DesktopThemeMode {
         isDark ? .dark : .light
+    }
+
+    private var accent: DesktopAccentColor {
+        DesktopAccentColor(rawValue: themeAccent) ?? .blue
     }
 
     private var isDark: Bool {
         themeMode == "dark"
     }
 
-    private let topBarHeight: CGFloat = 44
-    private let footerHeight: CGFloat = 38
+    private let topBarHeight: CGFloat = 34
+    private let footerHeight: CGFloat = 30
     private let menuListMinHeight: CGFloat = 360
     private let menuListMaxHeight: CGFloat = 440
 
@@ -30,6 +35,7 @@ struct MenuBarQuickConfigView: View {
                         SharedGroupCard(
                             card: card,
                             theme: theme,
+                            accent: accent,
                             scale: .menu,
                             onOpen: nil,
                             onToggleSkill: { skillId, enabled in
@@ -86,7 +92,7 @@ struct MenuBarQuickConfigView: View {
                     .disableAutocorrection(true)
             }
             .padding(.horizontal, 10)
-            .frame(height: 28)
+            .frame(height: 26)
             .background(controlFill)
             .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -103,7 +109,7 @@ struct MenuBarQuickConfigView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
         .frame(height: topBarHeight)
         .background(menuOverlayBackground)
     }
@@ -119,11 +125,9 @@ struct MenuBarQuickConfigView: View {
                 .buttonStyle(.plain)
                 .font(.system(size: 10, weight: .bold))
                 .textCase(.uppercase)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 0)
                 .frame(height: 22)
-                .background(showImportInput ? Color.orange.opacity(0.24) : controlFill)
-                .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(showImportInput ? AppTheme.brand(for: accent) : AppTheme.textPrimary(for: theme))
 
                 if showImportInput {
                     TextField("repo / path", text: $viewModel.newSourceLocator)
@@ -150,14 +154,12 @@ struct MenuBarQuickConfigView: View {
             .buttonStyle(.plain)
             .font(.system(size: 10, weight: .bold))
             .textCase(.uppercase)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 0)
             .frame(height: 22)
-            .background(controlFill)
-            .shadow(color: controlShadow, radius: 4, x: 0, y: 2)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .foregroundStyle(AppTheme.textPrimary(for: theme))
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
         .frame(height: footerHeight)
         .background(menuOverlayBackground)
     }

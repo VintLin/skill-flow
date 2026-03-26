@@ -581,8 +581,7 @@ final class MainViewModel {
         await commitDraftChange(
             sourceId: sourceId,
             nextDraft: draft,
-            pendingMessage: "Applying skill selection for \(groupLabel(for: sourceId))...",
-            successMessage: "Updated all skills for \(groupLabel(for: sourceId)). \(nextState.selectedLeafIds.count) skill\(nextState.selectedLeafIds.count == 1 ? "" : "s") enabled.",
+            successMessage: compactSkillsToastMessage(sourceId: sourceId, enabled: !nextState.selectedLeafIds.isEmpty),
             successStyle: nextState.selectedLeafIds.isEmpty ? .neutral : .success
         )
     }
@@ -618,12 +617,7 @@ final class MainViewModel {
         await commitDraftChange(
             sourceId: sourceId,
             nextDraft: draft,
-            pendingMessage: enabled
-                ? "Enabling skill \(leafLabel(for: leafId, sourceId: sourceId)) in \(groupLabel(for: sourceId))..."
-                : "Disabling skill \(leafLabel(for: leafId, sourceId: sourceId)) in \(groupLabel(for: sourceId))...",
-            successMessage: enabled
-                ? "Skill \(leafLabel(for: leafId, sourceId: sourceId)) is enabled for \(groupLabel(for: sourceId)) and will project to \(draft.enabledTargets.count) agent\(draft.enabledTargets.count == 1 ? "" : "s")."
-                : "Skill \(leafLabel(for: leafId, sourceId: sourceId)) is disabled for \(groupLabel(for: sourceId)). Existing projections are updated.",
+            successMessage: compactSkillToastMessage(sourceId: sourceId, leafId: leafId, enabled: enabled),
             successStyle: enabled ? .success : .neutral
         )
     }
@@ -652,8 +646,7 @@ final class MainViewModel {
         await commitDraftChange(
             sourceId: sourceId,
             nextDraft: draft,
-            pendingMessage: "Applying agent selection for \(groupLabel(for: sourceId))...",
-            successMessage: "Updated agents for \(groupLabel(for: sourceId)). \(draft.enabledTargets.count) agent\(draft.enabledTargets.count == 1 ? "" : "s") enabled.",
+            successMessage: compactAgentsToastMessage(sourceId: sourceId, enabled: !draft.enabledTargets.isEmpty),
             successStyle: draft.enabledTargets.isEmpty ? .neutral : .success
         )
     }
@@ -871,12 +864,7 @@ final class MainViewModel {
         await commitDraftChange(
             sourceId: groupId,
             nextDraft: draft,
-            pendingMessage: enabled
-                ? "Enabling agent \(targetLabel(for: target)) for \(groupLabel(for: groupId))..."
-                : "Disabling agent \(targetLabel(for: target)) for \(groupLabel(for: groupId))...",
-            successMessage: enabled
-                ? "Agent \(targetLabel(for: target)) is enabled for \(groupLabel(for: groupId)). Selected skills will be synced to this agent."
-                : "Agent \(targetLabel(for: target)) is disabled for \(groupLabel(for: groupId)). Existing projections for this agent are being removed.",
+            successMessage: compactAgentToastMessage(sourceId: groupId, targetId: target, enabled: enabled),
             successStyle: enabled ? .success : .neutral
         )
     }
@@ -1174,14 +1162,20 @@ final class MainViewModel {
         )
     }
 
-    func dismissToast() {
+    func dismissToast(id: ToastState.ID? = nil) {
+        guard let id else {
+            toast = nil
+            return
+        }
+        guard toast?.id == id else {
+            return
+        }
         toast = nil
     }
 
     private func commitDraftChange(
         sourceId: String,
         nextDraft: DraftState,
-        pendingMessage: String,
         successMessage: String,
         successStyle: ToastStyle
     ) async {
@@ -1198,7 +1192,6 @@ final class MainViewModel {
         selectedSourceId = sourceId
         workingDrafts[sourceId] = normalizedDraft
         saveStateBySourceId[sourceId] = SaveState(phase: .saving, message: "Applying...")
-        showToast(style: .loading, message: pendingMessage)
 
         do {
             _ = try await bridgeClient.apply(
@@ -1210,11 +1203,11 @@ final class MainViewModel {
             workingDrafts[sourceId] = normalizedDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .saved, message: "saved")
             detailText = "Applied group '\(sourceId)' to \(normalizedDraft.enabledTargets.count) targets."
+            showToast(style: successStyle, message: successMessage)
             await refreshList()
             if selectedGroupId == sourceId {
                 await selectSource(sourceId)
             }
-            showToast(style: successStyle, message: successMessage)
         } catch {
             let firstReason = firstErrorLine(from: error)
             workingDrafts[sourceId] = previousDraft
@@ -1234,6 +1227,22 @@ final class MainViewModel {
 
     private func targetLabel(for targetId: String) -> String {
         Self.targetCatalog[targetId] ?? targetId
+    }
+
+    private func compactSkillToastMessage(sourceId: String, leafId: String, enabled: Bool) -> String {
+        "\(enabled ? "On" : "Off") · \(groupLabel(for: sourceId)) · Skill \(leafLabel(for: leafId, sourceId: sourceId))"
+    }
+
+    private func compactSkillsToastMessage(sourceId: String, enabled: Bool) -> String {
+        "\(enabled ? "On" : "Off") · \(groupLabel(for: sourceId)) · Skills"
+    }
+
+    private func compactAgentToastMessage(sourceId: String, targetId: String, enabled: Bool) -> String {
+        "\(enabled ? "On" : "Off") · \(groupLabel(for: sourceId)) · Agent \(targetLabel(for: targetId))"
+    }
+
+    private func compactAgentsToastMessage(sourceId: String, enabled: Bool) -> String {
+        "\(enabled ? "On" : "Off") · \(groupLabel(for: sourceId)) · Agents"
     }
 
     private func showToast(style: ToastStyle, message: String) {

@@ -24,4 +24,11 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.image(for: "claude-code"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "github-copilot"))
     }
+
+    func testSymbolIconLoaderCanRecolorBundledSvgAssets() {
+        let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
+
+        XCTAssertNotNil(AgentIconLibrary.symbolImage(for: "codex", foreground: foreground))
+        XCTAssertNotNil(AgentIconLibrary.symbolImage(for: "cursor", foreground: foreground))
+    }
 }

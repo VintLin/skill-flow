@@ -6,6 +6,23 @@ import Darwin
 
 @MainActor
 final class WorkflowCoverageTests: XCTestCase {
+    func testDismissToastIgnoresStaleIdentifier() {
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let firstToast = MainViewModel.ToastState(style: .success, message: "First")
+        let secondToast = MainViewModel.ToastState(style: .error, message: "Second")
+
+        model.toast = firstToast
+        model.toast = secondToast
+
+        model.dismissToast(id: firstToast.id)
+
+        XCTAssertEqual(model.toast, secondToast)
+
+        model.dismissToast(id: secondToast.id)
+
+        XCTAssertNil(model.toast)
+    }
+
     func testV120WorkflowCoverage() async throws {
         let fixture = try TestFixture.install()
 
