@@ -24,7 +24,7 @@ struct SettingsView: View {
         let swatch: Color?
     }
 
-    private let controlColumnWidth: CGFloat = 190
+    private let controlColumnWidth: CGFloat = 168
 
     private var colorScheme: ColorScheme {
         theme == .dark ? .dark : .light
@@ -73,7 +73,7 @@ struct SettingsView: View {
                             }
                             .labelsHidden()
                             .pickerStyle(.segmented)
-                            .frame(width: 180)
+                            .frame(width: controlColumnWidth)
                             .environment(\.colorScheme, colorScheme)
                         }
 
@@ -171,8 +171,14 @@ struct SettingsView: View {
             rows()
         }
         .padding(14)
-        .background(AppTheme.toolbarButtonBackground(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.toolbarButtonBackground(for: theme))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(AppTheme.border(for: theme).opacity(theme == .dark ? 0.35 : 0.12), lineWidth: 0.8)
+        }
         .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 0)
     }
 
@@ -188,8 +194,11 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            control()
-                .frame(width: controlColumnWidth, alignment: .trailing)
+            HStack {
+                Spacer(minLength: 0)
+                control()
+            }
+            .frame(width: controlColumnWidth, alignment: .trailing)
         }
     }
 
@@ -202,40 +211,39 @@ struct SettingsView: View {
         selectedId: String,
         onSelect: @escaping (String) -> Void
     ) -> some View {
-        ZStack(alignment: .topTrailing) {
-            Button {
-                openDropdown = openDropdown == kind ? nil : kind
-            } label: {
-                HStack(spacing: 8) {
-                    if let selectionSwatch {
-                        Circle()
-                            .fill(selectionSwatch)
-                            .frame(width: 10, height: 10)
-                    }
-
-                    Text(selectionTitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .lineLimit(1)
-
-                    Spacer(minLength: 8)
-
-                    Image(systemName: openDropdown == kind ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
+        Button {
+            openDropdown = openDropdown == kind ? nil : kind
+        } label: {
+            HStack(spacing: 8) {
+                if let selectionSwatch {
+                    Circle()
+                        .fill(selectionSwatch)
+                        .frame(width: 10, height: 10)
                 }
-                .padding(.horizontal, 10)
-                .frame(width: controlColumnWidth, height: 32, alignment: .leading)
-                .background(AppTheme.groupCardFill(for: theme))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(AppTheme.border(for: theme).opacity(theme == .dark ? 0.9 : 0.5), lineWidth: 0.8)
-                }
-                .shadow(color: AppTheme.softShadow(for: theme), radius: 8, x: 0, y: 0)
+
+                Text(selectionTitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Image(systemName: openDropdown == kind ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
             }
-            .buttonStyle(.plain)
-
+            .padding(.horizontal, 10)
+            .frame(width: controlColumnWidth, height: 32, alignment: .leading)
+            .background(AppTheme.groupCardFill(for: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(AppTheme.border(for: theme).opacity(theme == .dark ? 0.9 : 0.5), lineWidth: 0.8)
+            }
+            .shadow(color: AppTheme.softShadow(for: theme), radius: 8, x: 0, y: 0)
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
             if openDropdown == kind {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(options) { option in
@@ -279,9 +287,9 @@ struct SettingsView: View {
                 }
                 .shadow(color: AppTheme.cardShadow(for: theme), radius: 14, x: 0, y: 0)
                 .offset(y: 38)
-                .zIndex(1)
             }
         }
         .frame(width: controlColumnWidth, alignment: .trailing)
+        .zIndex(openDropdown == kind ? 10 : 0)
     }
 }
