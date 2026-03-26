@@ -2,15 +2,19 @@ import AppKit
 import SwiftUI
 
 struct MainView: View {
+    private struct RecommendedImport: Identifiable {
+        let id: String
+        let title: String
+        let locator: String
+        let summary: String
+    }
+
     @Bindable var viewModel: MainViewModel
 
-    @State private var detailGroupId: String?
     @State private var detailSkillIdByGroup: [String: String] = [:]
-    @State private var showImportSheet: Bool = false
+    @State private var detailShowsGroupOverviewByGroup: [String: Bool] = [:]
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
-
-    let openSettings: () -> Void
 
     private var theme: DesktopThemeMode {
         DesktopThemeMode(rawValue: themeModeRawValue) ?? .light
@@ -30,13 +34,9 @@ struct MainView: View {
 
                 VStack(spacing: 0) {
                     topBar(layout: layout)
-                    configPage(layout: layout)
+                    pageContent(layout: layout)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                if let groupId = detailGroupId {
-                    detailOverlay(groupId: groupId, layout: layout)
-                }
 
                 if let toast = viewModel.toast {
                     toastBanner(toast)
@@ -49,29 +49,19 @@ struct MainView: View {
                 }
             }
         }
-        .sheet(isPresented: $showImportSheet) {
-            ImportSourceSheet(
-                locator: $viewModel.newSourceLocator,
-                onCancel: {
-                    showImportSheet = false
-                },
-                onSubmit: {
-                    Task {
-                        await viewModel.addSource()
-                        showImportSheet = false
-                    }
-                }
-            )
-        }
         .tint(AppTheme.brand(for: accent))
         .onChange(of: viewModel.selectedGroupId) { _, newValue in
-            guard detailGroupId != nil else { return }
-            detailGroupId = newValue
+            guard case .detail = viewModel.currentPage else { return }
+            guard let groupId = newValue else { return }
+            viewModel.currentPage = .detail(sourceId: groupId)
         }
-        .onChange(of: detailGroupId) { _, newValue in
-            guard let groupId = newValue, let detail = viewModel.detailViewData(for: groupId) else { return }
+        .onChange(of: viewModel.currentPage) { _, newValue in
+            guard case .detail(let groupId) = newValue, let detail = viewModel.detailViewData(for: groupId) else { return }
             if detailSkillIdByGroup[groupId] == nil {
                 detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
+            }
+            if detailShowsGroupOverviewByGroup[groupId] == nil {
+                detailShowsGroupOverviewByGroup[groupId] = false
             }
         }
         .task(id: viewModel.toast?.id) {
@@ -94,7 +84,7 @@ struct MainView: View {
         Group {
             if layout.isNarrowTopBar {
                 VStack(alignment: .leading, spacing: 10) {
-                    headerLogoRow
+                    topBarTitleRow
                     HStack(spacing: 8) {
                         searchField
                         importButton
@@ -106,7 +96,7 @@ struct MainView: View {
                 .background(AppTheme.headerBackground(for: theme))
             } else {
                 HStack(spacing: 12) {
-                    headerLogoRow
+                    topBarTitleRow
                     searchField
                     Spacer(minLength: 0)
                     importButton
@@ -115,6 +105,36 @@ struct MainView: View {
                 .padding(.horizontal, 16)
                 .frame(height: 52)
                 .background(AppTheme.headerBackground(for: theme))
+            }
+        }
+    }
+
+    private var topBarTitleRow: some View {
+        HStack(spacing: 10) {
+            if viewModel.currentPage != .home {
+                Button("Home") {
+                    viewModel.currentPage = .home
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+                .background(AppTheme.headerControlFill(for: theme))
+                .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .font(.system(size: 10, weight: .bold))
+                .textCase(.uppercase)
+            }
+            headerLogoRow
+            if viewModel.currentPage != .home {
+                Text(currentPageTitle)
+                    .font(.system(size: 10, weight: .bold))
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.24 : 0.16))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
             }
         }
     }
@@ -165,7 +185,7 @@ struct MainView: View {
 
     private var importButton: some View {
         Button("Import") {
-            showImportSheet = true
+            viewModel.currentPage = .importPage
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 12)
@@ -180,7 +200,7 @@ struct MainView: View {
 
     private var settingsButton: some View {
         Button("Settings") {
-            openSettings()
+            viewModel.currentPage = .settings
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 12)
@@ -191,6 +211,20 @@ struct MainView: View {
         .foregroundStyle(AppTheme.textPrimary(for: theme))
         .font(.system(size: 10, weight: .bold))
         .textCase(.uppercase)
+    }
+
+    @ViewBuilder
+    private func pageContent(layout: LayoutMetrics) -> some View {
+        switch viewModel.currentPage {
+        case .home:
+            configPage(layout: layout)
+        case .importPage:
+            importPage(layout: layout)
+        case .settings:
+            settingsPage(layout: layout)
+        case .detail(let sourceId):
+            detailPage(groupId: sourceId, layout: layout)
+        }
     }
 
     private func configPage(layout: LayoutMetrics) -> some View {
@@ -233,7 +267,7 @@ struct MainView: View {
                                 displayMode: .standard,
                                 skillsCollapsed: false,
                                 onOpen: {
-                                    detailGroupId = card.id
+                                    viewModel.currentPage = .detail(sourceId: card.id)
                                     Task { await viewModel.selectSource(card.id) }
                                 },
                                 onTogglePinned: {
@@ -272,37 +306,40 @@ struct MainView: View {
         .frame(maxWidth: .infinity, minHeight: 220)
     }
 
-    private func detailOverlay(groupId: String, layout: LayoutMetrics) -> some View {
+    private var currentPageTitle: String {
+        switch viewModel.currentPage {
+        case .home:
+            return "Home"
+        case .importPage:
+            return "Import"
+        case .settings:
+            return "Settings"
+        case .detail:
+            return "Group Detail"
+        }
+    }
+
+    private func detailPage(groupId: String, layout: LayoutMetrics) -> some View {
         let detail = viewModel.detailViewData(for: groupId)
-        let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
         let stacked = layout.detailStacks
         let sidebarWidth = layout.detailSidebarWidth
 
-        return ZStack {
-            Color.black.opacity(theme == .light ? 0.02 : 0.1)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    detailGroupId = nil
-                }
-
-            VStack(spacing: 12) {
+        return ScrollView {
+            Group {
                 if stacked {
-                    detailSidebar(groupId: groupId, detail: detail, selectedSkillId: selectedSkill?.id, width: sidebarWidth)
-                    detailMain(groupId: groupId, detail: detail, selectedSkill: selectedSkill)
+                    VStack(spacing: 14) {
+                        detailSidebar(groupId: groupId, detail: detail, selectedSkillId: detailSkillIdByGroup[groupId], width: sidebarWidth)
+                        detailMain(groupId: groupId, detail: detail)
+                    }
                 } else {
-                    HStack(spacing: 12) {
-                        detailSidebar(groupId: groupId, detail: detail, selectedSkillId: selectedSkill?.id, width: sidebarWidth)
-                        detailMain(groupId: groupId, detail: detail, selectedSkill: selectedSkill)
+                    HStack(alignment: .top, spacing: 14) {
+                        detailSidebar(groupId: groupId, detail: detail, selectedSkillId: detailSkillIdByGroup[groupId], width: sidebarWidth)
+                        detailMain(groupId: groupId, detail: detail)
                     }
                 }
             }
-            .padding(12)
-            .background(AppTheme.pageBackground(for: theme))
-            .overlay(alignment: .topTrailing) {
-                EmptyView()
-            }
+            .padding(16)
         }
-        .transition(.move(edge: .trailing))
     }
 
     private func detailSidebar(
@@ -312,94 +349,61 @@ struct MainView: View {
         width: CGFloat
     ) -> some View {
         let skillItems = detail?.skills ?? []
-        let activeIndex = skillItems.firstIndex(where: { $0.id == selectedSkillId })
+        let activeIndex = isShowingGroupOverview(groupId) ? nil : skillItems.firstIndex(where: { $0.id == selectedSkillId })
 
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(detail?.title ?? groupId)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-
-                    HStack(spacing: 6) {
-                        pillText(detail?.subtitle ?? "source", tint: AppTheme.toolbarButtonBackground(for: theme), text: AppTheme.textPrimary(for: theme))
-                        pillText("W\(detail?.warningCount ?? 0)", tint: Color.orange.opacity(0.24), text: AppTheme.textPrimary(for: theme))
-                        pillText(detail?.health ?? "unknown", tint: Color.gray.opacity(0.18), text: AppTheme.textPrimary(for: theme))
+            Button {
+                selectGroupOverview(groupId: groupId, detail: detail)
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(detail?.title ?? groupId)
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        Text(detail?.subtitle ?? "source")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .lineLimit(1)
                     }
-                }
-
-                Spacer()
-
-                HStack(spacing: 8) {
-                    detailTriStateSwitch(detail?.skillSelection ?? .empty)
-                    Button("×") {
-                        detailGroupId = nil
+                    Spacer(minLength: 8)
+                    detailToggleButton(selection: detail?.skillSelection ?? .empty) {
+                        Task { await viewModel.toggleAllSkills(sourceId: groupId) }
                     }
-                    .buttonStyle(.plain)
-                    .frame(width: 30, height: 30)
-                    .background(AppTheme.toolbarButtonBackground(for: theme))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                 }
             }
+            .buttonStyle(.plain)
             .padding(.bottom, 12)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    detailOverviewCard(
-                        title: "Overview",
-                        lines: [
-                            "Skills: \(detail?.skills.count ?? 0)",
-                            "Enabled agents: \(detail?.enabledTargetLabels.count ?? 0)",
-                            "Status: \(detail?.health ?? viewModel.healthLabel)",
-                        ]
-                    )
-
-                    detailOverviewCard(
-                        title: "Source",
-                        lines: [
-                            detail?.sourceId ?? groupId,
-                            detail?.updatedAt ?? "-",
-                        ]
-                    )
-
-                    if let sourceFacts = detail?.sourceFacts, !sourceFacts.isEmpty {
-                        detailOverviewCard(title: "Origin", lines: Array(sourceFacts.prefix(3)))
-                    }
-
-                    detailSkillList(
-                        items: skillItems,
-                        activeIndex: activeIndex,
-                        groupId: groupId,
-                        width: width
-                    )
-                }
-            }
+            detailSkillList(
+                items: skillItems,
+                activeIndex: activeIndex,
+                groupId: groupId,
+                width: width
+            )
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .padding(12)
         .frame(minWidth: width, maxWidth: width, minHeight: 196, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(AppTheme.border(for: theme), lineWidth: 1)
-        )
     }
 
     private func detailMain(
         groupId: String,
-        detail: MainViewModel.DetailViewData?,
-        selectedSkill: MainViewModel.DetailSkill?
+        detail: MainViewModel.DetailViewData?
     ) -> some View {
+        let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
+        let showingGroupOverview = isShowingGroupOverview(groupId)
+
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(selectedSkill?.title ?? detail?.title ?? groupId)
+                    Text(showingGroupOverview ? (detail?.title ?? groupId) : (selectedSkill?.title ?? detail?.title ?? groupId))
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text(selectedSkill?.detailLines.last ?? detail?.locator ?? "No source locator")
+                    Text(showingGroupOverview ? (detail?.locator ?? "No source locator") : (selectedSkill?.detailLines.last ?? detail?.locator ?? "No source locator"))
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .lineLimit(1)
@@ -418,58 +422,22 @@ struct MainView: View {
             }
             .padding(12)
             .background(AppTheme.toolbarGlass(for: theme))
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(AppTheme.border(for: theme))
-                    .frame(height: 1)
-            }
 
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    detailOverviewCard(
-                        title: "Group",
-                        lines: [
-                            detail?.sourceId ?? groupId,
-                            detail?.subtitle ?? "source",
-                        ]
-                    )
-                    detailOverviewCard(
-                        title: "Warnings",
-                        lines: [
-                            "\(detail?.warningCount ?? 0)",
-                            "Errors \(detail?.errorCount ?? 0)",
-                        ]
-                    )
-                    detailOverviewCard(
-                        title: "Agents",
-                        lines: [
-                            detail?.enabledTargetLabels.joined(separator: ", ").nonEmpty ?? "No agents enabled",
-                            detail?.updatedAt ?? "Pending",
-                        ]
-                    )
-                }
-
-                if let deploymentFacts = detail?.deploymentFacts, !deploymentFacts.isEmpty {
-                    detailOverviewCard(title: "Deployments", lines: deploymentFacts)
-                }
-
-                ScrollView {
-                    Group {
-                        if let selectedSkill {
-                            detailDocumentRow(skill: selectedSkill)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        } else {
-                            emptyState(title: "No skill selected", subtitle: "Choose one skill from the left list.")
-                        }
+                if showingGroupOverview {
+                    detailGroupOverview(groupId: groupId, detail: detail)
+                } else if let selectedSkill {
+                    ScrollView {
+                        detailDocumentRow(skill: selectedSkill)
+                            .padding(18)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(18)
+                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
+                } else {
+                    emptyState(title: "No skill selected", subtitle: "Choose one skill from the left list.")
                 }
-                .background(AppTheme.toolbarButtonBackground(for: theme))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(AppTheme.border(for: theme), lineWidth: 1)
-                )
             }
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -480,10 +448,85 @@ struct MainView: View {
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(AppTheme.border(for: theme), lineWidth: 1)
-        )
+    }
+
+    private func detailGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                detailOverviewCard(
+                    title: "Group",
+                    lines: [
+                        detail?.sourceId ?? groupId,
+                        detail?.subtitle ?? "source",
+                    ]
+                )
+                detailOverviewCard(
+                    title: "Warnings",
+                    lines: [
+                        "\(detail?.warningCount ?? 0)",
+                        "Errors \(detail?.errorCount ?? 0)",
+                    ]
+                )
+            }
+
+            if let sourceFacts = detail?.sourceFacts, !sourceFacts.isEmpty {
+                detailOverviewCard(title: "Source", lines: sourceFacts)
+            }
+
+            detailAgentPanel(groupId: groupId, detail: detail)
+
+            if let deploymentFacts = detail?.deploymentFacts, !deploymentFacts.isEmpty {
+                detailOverviewCard(title: "Deployments", lines: deploymentFacts)
+            }
+        }
+    }
+
+    private func detailAgentPanel(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Agents")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    Text(detail?.enabledTargetLabels.joined(separator: ", ").nonEmpty ?? "No agents enabled")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(2)
+                }
+                Spacer()
+                detailToggleButton(selection: detail?.targetSelection ?? .empty) {
+                    Task { await viewModel.toggleAllTargets(sourceId: groupId) }
+                }
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                ForEach(detail?.targets ?? []) { target in
+                    HStack(spacing: 10) {
+                        Text(target.label)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        Button(target.isEnabled ? "ON" : "OFF") {
+                            Task { await viewModel.setTargetEnabled(target.id, enabled: !target.isEnabled, sourceId: groupId) }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 36, height: 28)
+                        .background(target.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.22))
+                        .foregroundStyle(target.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .padding(12)
+                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+            }
+        }
+        .padding(14)
+        .background(AppTheme.toolbarButtonBackground(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
     private func detailOverviewCard(title: String, lines: [String]) -> some View {
@@ -507,11 +550,7 @@ struct MainView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppTheme.toolbarButtonBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: AppTheme.softShadow(for: theme), radius: 5, x: 0, y: 2)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(AppTheme.border(for: theme), lineWidth: 1)
-        )
+        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
     private func detailSkillList(items: [MainViewModel.DetailSkill], activeIndex: Int?, groupId: String, width: CGFloat) -> some View {
@@ -544,6 +583,7 @@ struct MainView: View {
                         ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                             detailSkillRow(item: item, active: index == activeIndex) {
                                 detailSkillIdByGroup[groupId] = item.id
+                                detailShowsGroupOverviewByGroup[groupId] = false
                             }
                         }
                     }
@@ -555,40 +595,40 @@ struct MainView: View {
         .padding(12)
         .background(AppTheme.toolbarButtonBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(AppTheme.border(for: theme), lineWidth: 1)
-        )
+        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
     private func detailSkillRow(item: MainViewModel.DetailSkill, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(alignment: .center, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text(item.summary)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 10)
-
-                Text(item.isEnabled ? "ON" : "OFF")
-                    .font(.system(size: 10, weight: .bold))
-                    .frame(width: 36, height: 30)
-                    .background(item.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .foregroundStyle(item.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                Text(item.summary)
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(2)
             }
-            .padding(.leading, 20)
-            .padding(.trailing, 16)
-            .padding(.vertical, 9)
-            .background(active ? AppTheme.pageBackground(for: theme).opacity(0.5) : Color.clear)
+
+            Spacer(minLength: 10)
+
+            Button(item.isEnabled ? "ON" : "OFF") {
+                guard case .detail(let sourceId) = viewModel.currentPage else { return }
+                Task { await viewModel.setSkillEnabled(item.id, enabled: !item.isEnabled, sourceId: sourceId) }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 10, weight: .bold))
+            .frame(width: 36, height: 30)
+            .background(item.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(item.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
         }
-        .buttonStyle(.plain)
+        .padding(.leading, 20)
+        .padding(.trailing, 16)
+        .padding(.vertical, 9)
+        .background(active ? AppTheme.pageBackground(for: theme).opacity(0.5) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
     }
 
     private func detailDocumentRow(skill: MainViewModel.DetailSkill) -> some View {
@@ -614,7 +654,7 @@ struct MainView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            Text(skill.documentExcerpt)
+            Text(skill.documentContent)
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -625,22 +665,262 @@ struct MainView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 12)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppTheme.border(for: theme))
-                .frame(height: 1)
+    }
+
+    private func importPage(layout: LayoutMetrics) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                pageSectionCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Import Source")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        Text("Enter a repo, local path, or package locator. Recommended repositories are listed below.")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                        TextField("repo / path / clawhub:package", text: $viewModel.newSourceLocator)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .padding(.horizontal, 12)
+                            .frame(height: 42)
+                            .background(AppTheme.toolbarButtonBackground(for: theme))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                        HStack(spacing: 10) {
+                            Button(viewModel.importPreview == nil ? "Preview" : "Refresh Preview") {
+                                Task { await viewModel.prepareImport() }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 14)
+                            .frame(height: 34)
+                            .background(AppTheme.brand(for: accent, in: theme))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .foregroundStyle(AppTheme.pageBackground(for: theme))
+                            .font(.system(size: 11, weight: .bold))
+
+                            Button("Back") {
+                                Task {
+                                    await viewModel.discardPreparedImport()
+                                    viewModel.currentPage = .home
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 14)
+                            .frame(height: 34)
+                            .background(AppTheme.toolbarButtonBackground(for: theme))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            .font(.system(size: 11, weight: .bold))
+                        }
+
+                        if case .preparing = viewModel.importPhase {
+                            Text("Preparing import preview...")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(AppTheme.textMuted(for: theme))
+                        } else if case .importing = viewModel.importPhase {
+                            Text("Importing source...")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(AppTheme.textMuted(for: theme))
+                        } else if case .failed(let message) = viewModel.importPhase {
+                            Text(message)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.red)
+                        }
+                    }
+                }
+
+                if let preview = viewModel.importPreview {
+                    pageSectionCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Preview")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                    Text(preview.locator)
+                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Text(preview.kind.uppercased())
+                                    .font(.system(size: 10, weight: .bold))
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 26)
+                                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            }
+
+                            HStack(spacing: 12) {
+                                detailOverviewCard(title: "Skills", lines: ["\(preview.skills.count) detected", "\(preview.selectedLeafIds.count) selected"])
+                                detailOverviewCard(title: "Agents", lines: ["\(preview.availableTargets.count) available", "\(preview.enabledTargets.count) enabled"])
+                            }
+
+                            if !preview.warnings.isEmpty {
+                                detailOverviewCard(title: "Warnings", lines: preview.warnings)
+                            }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Skills")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                    Spacer()
+                                    detailToggleButton(selection: viewModel.importSkillSelectionState()) {
+                                        viewModel.toggleAllImportSkills()
+                                    }
+                                }
+                                ForEach(preview.skills) { skill in
+                                    HStack(spacing: 10) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(skill.title)
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                            Text(skill.relativePath)
+                                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                                .foregroundStyle(AppTheme.textMuted(for: theme))
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        Button(skill.isSelected ? "ON" : "OFF") {
+                                            viewModel.toggleImportSkill(skill.id)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .font(.system(size: 10, weight: .bold))
+                                        .frame(width: 36, height: 28)
+                                        .background(skill.isSelected ? Color.green.opacity(0.25) : Color.gray.opacity(0.20))
+                                        .foregroundStyle(skill.isSelected ? Color.green : AppTheme.textPrimary(for: theme))
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    }
+                                    .padding(12)
+                                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Agents")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                    Spacer()
+                                    detailToggleButton(selection: viewModel.importTargetSelectionState()) {
+                                        viewModel.toggleAllImportTargets()
+                                    }
+                                }
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                                    ForEach(preview.availableTargets, id: \.self) { targetId in
+                                        let isEnabled = preview.enabledTargets.contains(targetId)
+                                        HStack(spacing: 10) {
+                                            Text(targetLabel(targetId))
+                                                .font(.system(size: 11, weight: .semibold))
+                                                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                                .lineLimit(1)
+                                            Spacer(minLength: 6)
+                                            Button(isEnabled ? "ON" : "OFF") {
+                                                viewModel.toggleImportTarget(targetId)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .font(.system(size: 10, weight: .bold))
+                                            .frame(width: 36, height: 28)
+                                            .background(isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.22))
+                                            .foregroundStyle(isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        }
+                                        .padding(12)
+                                        .background(AppTheme.toolbarButtonBackground(for: theme))
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    }
+                                }
+                            }
+
+                            HStack(spacing: 10) {
+                                Button("Confirm Import") {
+                                    Task { await viewModel.confirmPreparedImport() }
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 14)
+                                .frame(height: 34)
+                                .background(AppTheme.brand(for: accent, in: theme))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(AppTheme.pageBackground(for: theme))
+                                .font(.system(size: 11, weight: .bold))
+
+                                Button("Discard Preview") {
+                                    Task { await viewModel.discardPreparedImport() }
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 14)
+                                .frame(height: 34)
+                                .background(AppTheme.toolbarButtonBackground(for: theme))
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                .font(.system(size: 11, weight: .bold))
+                            }
+                        }
+                    }
+                }
+
+                pageSectionCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Recommended Repositories")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
+                            ForEach(recommendedImports) { item in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(item.title)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                    Text(item.locator)
+                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                                        .lineLimit(1)
+                                    Text(item.summary)
+                                        .font(.system(size: 11, weight: .regular))
+                                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                                        .lineLimit(3)
+                                    Spacer(minLength: 0)
+                                    Button("Use") {
+                                        viewModel.newSourceLocator = item.locator
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 12)
+                                    .frame(height: 30)
+                                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                    .font(.system(size: 10, weight: .bold))
+                                }
+                                .padding(14)
+                                .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+                                .background(AppTheme.toolbarButtonBackground(for: theme))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
         }
     }
 
-    private func sectionShell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func settingsPage(layout: LayoutMetrics) -> some View {
+        ScrollView {
+            pageSectionCard {
+                SettingsView(cardStyle: true)
+            }
+            .padding(16)
+        }
+    }
+
+    private func pageSectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(14)
+            .padding(16)
             .background(AppTheme.surface(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(AppTheme.border(for: theme), lineWidth: 1)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
     }
 
     private func sectionHeader(title: String, subtitle: String, badge: String) -> some View {
@@ -676,22 +956,7 @@ struct MainView: View {
         .frame(maxWidth: .infinity, minHeight: 200)
         .background(AppTheme.toolbarButtonBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(AppTheme.border(for: theme), lineWidth: 1)
-        )
-    }
-
-    private func navButton(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(label, action: action)
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background(selected ? AppTheme.textPrimary(for: theme) : AppTheme.toolbarButtonBackground(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(selected ? AppTheme.pageBackground(for: theme) : AppTheme.textPrimary(for: theme))
-            .font(.system(size: 10, weight: .bold))
-            .textCase(.uppercase)
+        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
     private func gridColumns(for layout: LayoutMetrics) -> [GridItem] {
@@ -702,6 +967,29 @@ struct MainView: View {
         viewModel.groupCards
     }
 
+    private var recommendedImports: [RecommendedImport] {
+        [
+            RecommendedImport(
+                id: "vercel-skills",
+                title: "Vercel Agent Skills",
+                locator: "vercel-labs/agent-skills",
+                summary: "General-purpose curated agent skills for common coding workflows."
+            ),
+            RecommendedImport(
+                id: "gstack",
+                title: "GStack Skills",
+                locator: "garrytan/gstack",
+                summary: "Workflow and review-oriented skills with strong planning and QA helpers."
+            ),
+            RecommendedImport(
+                id: "skill-flow",
+                title: "Skill Flow Samples",
+                locator: "VintLin/skill-flow",
+                summary: "Use the project itself as a reference source while shaping desktop interactions."
+            ),
+        ]
+    }
+
     private func pillText(_ text: String, tint: Color, text textColor: Color) -> some View {
         Text(text)
             .font(.system(size: 9, weight: .bold))
@@ -710,6 +998,10 @@ struct MainView: View {
             .background(tint)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .foregroundStyle(textColor)
+    }
+
+    private func targetLabel(_ targetId: String) -> String {
+        viewModel.visibleTargets.first(where: { $0.id == targetId })?.label ?? targetId
     }
 
     private func toastBanner(_ toast: MainViewModel.ToastState) -> some View {
@@ -774,6 +1066,17 @@ struct MainView: View {
         detail.skills.first(where: \.isEnabled)?.id ?? detail.skills.first?.id
     }
 
+    private func isShowingGroupOverview(_ groupId: String) -> Bool {
+        detailShowsGroupOverviewByGroup[groupId] ?? false
+    }
+
+    private func selectGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) {
+        if detailSkillIdByGroup[groupId] == nil, let detail {
+            detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
+        }
+        detailShowsGroupOverviewByGroup[groupId] = true
+    }
+
     private func selectedDetailSkill(for groupId: String, detail: MainViewModel.DetailViewData?) -> MainViewModel.DetailSkill? {
         guard let detail else { return nil }
         let selectedId = detailSkillIdByGroup[groupId] ?? preferredDetailSkillId(for: detail)
@@ -783,13 +1086,16 @@ struct MainView: View {
         return detail.skills.first(where: { $0.id == selectedId }) ?? detail.skills.first
     }
 
-    private func detailTriStateSwitch(_ selection: SelectionState) -> some View {
-        Text(detailSwitchLabel(selection))
-            .font(.system(size: 10, weight: .bold))
-            .frame(width: 36, height: 30)
-            .background(detailSwitchFill(selection))
-            .foregroundStyle(detailSwitchText(selection))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+    private func detailToggleButton(selection: SelectionState, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(detailSwitchLabel(selection))
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 36, height: 30)
+                .background(detailSwitchFill(selection))
+                .foregroundStyle(detailSwitchText(selection))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 
     private func detailSwitchLabel(_ selection: SelectionState) -> String {
@@ -820,60 +1126,6 @@ struct MainView: View {
         case .full:
             return Color(red: 22.0 / 255.0, green: 101.0 / 255.0, blue: 52.0 / 255.0)
         }
-    }
-}
-
-private struct StatsCard: View {
-    let title: String
-    let value: String
-    let theme: DesktopThemeMode
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .textCase(.uppercase)
-            Text(value)
-                .font(.system(size: 26, weight: .semibold, design: .monospaced))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.surface(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(AppTheme.border(for: theme), lineWidth: 1)
-        )
-    }
-}
-
-private struct ImportSourceSheet: View {
-    @Binding var locator: String
-    let onCancel: () -> Void
-    let onSubmit: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Import Source")
-                .font(.system(size: 15, weight: .semibold))
-
-            TextField("repo / path", text: $locator)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-
-            HStack(spacing: 8) {
-                Spacer()
-                Button("Cancel", action: onCancel)
-                Button("Import", action: onSubmit)
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(16)
-        .frame(width: 420)
     }
 }
 

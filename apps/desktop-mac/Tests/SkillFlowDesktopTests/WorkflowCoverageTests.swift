@@ -40,6 +40,78 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.stringArray(forKey: "desktop.pinnedSourceIds"), [])
     }
 
+    func testPrepareImportCreatesPreviewAndConfirmImportsSource() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        model.newSourceLocator = "acme/prepared"
+
+        await model.prepareImport()
+
+        XCTAssertEqual(model.importPhase, .prepared)
+        XCTAssertEqual(model.importPreview?.title, "prepared")
+        XCTAssertEqual(model.importPreview?.skills.count, 2)
+        XCTAssertEqual(model.importPreview?.enabledTargets, ["claude-code"])
+
+        await model.confirmPreparedImport()
+
+        XCTAssertEqual(model.importPhase, .idle)
+        XCTAssertNil(model.importPreview)
+        XCTAssertEqual(model.currentPage, .detail(sourceId: "prepared"))
+        XCTAssertEqual(model.selectedGroupId, "prepared")
+        XCTAssertTrue(model.sourceIds.contains("prepared"))
+
+        let addRequests = fixture.loggedRequests().filter { $0.command == "add" }
+        XCTAssertEqual(addRequests.count, 1)
+        let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
+        XCTAssertEqual(applyRequests.last?.payload?["sourceId"]?.value as? String, "prepared")
+    }
+
+    func testDiscardPreparedImportRemovesPreparedSource() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        model.newSourceLocator = "acme/prepared"
+
+        await model.prepareImport()
+        XCTAssertEqual(model.importPhase, .prepared)
+        XCTAssertEqual(model.importPreview?.sourceId, "prepared")
+
+        await model.discardPreparedImport()
+
+        XCTAssertEqual(model.importPhase, .idle)
+        XCTAssertNil(model.importPreview)
+        let uninstallRequests = fixture.loggedRequests().filter { $0.command == "uninstall" }
+        XCTAssertEqual(uninstallRequests.count, 1)
+    }
+
+    func testImportPreviewTogglesAffectConfirmedDraft() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        model.newSourceLocator = "acme/prepared"
+
+        await model.prepareImport()
+        XCTAssertEqual(model.importPreview?.selectedLeafIds, ["prepared-leaf-1", "prepared-leaf-2"])
+        XCTAssertEqual(model.importPreview?.enabledTargets, ["claude-code"])
+
+        model.toggleImportSkill("prepared-leaf-2")
+        model.toggleImportTarget("cursor")
+
+        XCTAssertEqual(model.importPreview?.selectedLeafIds, ["prepared-leaf-1"])
+        XCTAssertEqual(model.importPreview?.enabledTargets, ["claude-code", "cursor"])
+
+        await model.confirmPreparedImport()
+
+        let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
+        let lastDraft = applyRequests.last?.payload?["draft"]?.value as? [String: Any]
+        XCTAssertEqual(lastDraft?["selectedLeafIds"] as? [String], ["prepared-leaf-1"])
+        XCTAssertEqual(lastDraft?["enabledTargets"] as? [String], ["claude-code", "cursor"])
+    }
+
     func testV120WorkflowCoverage() async throws {
         let fixture = try TestFixture.install()
 
@@ -62,6 +134,10 @@ final class WorkflowCoverageTests: XCTestCase {
         try fixture.reset(state: .failureBaseline)
 
         try await verifyApplyFailureRollsBack(using: fixture)
+
+        try fixture.reset(state: .baseline)
+
+        try await verifyPreparedImportPreviewAndApply(using: fixture)
     }
 
     private func verifyGroupSelectionIsImmediate(using fixture: TestFixture) async throws {
@@ -153,6 +229,18 @@ final class WorkflowCoverageTests: XCTestCase {
         let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
         XCTAssertEqual(applyRequests.count, 1)
         XCTAssertEqual(applyRequests.first?.payload?["sourceId"]?.value as? String, "alpha")
+    }
+
+    private func verifyPreparedImportPreviewAndApply(using fixture: TestFixture) async throws {
+        let model = try await fixture.makeModel()
+        model.newSourceLocator = "acme/prepared"
+
+        await model.prepareImport()
+        XCTAssertEqual(model.importPhase, .prepared)
+        XCTAssertEqual(model.importPreview?.sourceId, "prepared")
+
+        await model.confirmPreparedImport()
+        XCTAssertEqual(model.currentPage, .detail(sourceId: "prepared"))
     }
 }
 
@@ -438,6 +526,61 @@ private struct TestFixture {
         return;
       }
 
+      if (request.command === 'add') {
+        const locator = request.payload && request.payload.locator;
+        const applyNow = request.payload && request.payload.applyNow === true;
+        const sourceId = 'prepared';
+        if (!state.sources) {
+          state.sources = {};
+        }
+        if (!state.sources[sourceId]) {
+          state.sources[sourceId] = {
+            leafIds: ['prepared-leaf-1', 'prepared-leaf-2'],
+            selectedLeafIds: ['prepared-leaf-1', 'prepared-leaf-2'],
+            enabledTargets: ['claude-code']
+          };
+          writeState(state);
+        }
+
+        if (applyNow) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            manifest: { id: sourceId, locator, kind: 'git' }
+          }, [], [])));
+          return;
+        }
+
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          sourceId,
+          manifest: {
+            id: sourceId,
+            locator,
+            kind: 'git'
+          },
+          availableTargets: state.availableTargets || [],
+          draft: {
+            selectedLeafIds: ['prepared-leaf-1', 'prepared-leaf-2'],
+            enabledTargets: ['claude-code']
+          },
+          leafs: [
+            {
+              id: 'prepared-leaf-1',
+              name: 'browse',
+              linkName: 'browse',
+              relativePath: 'skills/browse',
+              description: 'Browse things.'
+            },
+            {
+              id: 'prepared-leaf-2',
+              name: 'review',
+              linkName: 'review',
+              relativePath: 'skills/review',
+              description: 'Review things.'
+            }
+          ]
+        }, [], [])));
+        return;
+      }
+
       if (request.command === 'apply') {
         const sourceId = request.payload && request.payload.sourceId;
         const draft = request.payload && request.payload.draft ? request.payload.draft : {};
@@ -463,6 +606,20 @@ private struct TestFixture {
         writeState(state);
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           sourceId
+        }, [], [])));
+        return;
+      }
+
+      if (request.command === 'uninstall') {
+        const sourceIds = (request.payload && request.payload.sourceIds) || [];
+        for (const sourceId of sourceIds) {
+          if (state.sources && state.sources[sourceId]) {
+            delete state.sources[sourceId];
+          }
+        }
+        writeState(state);
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          removed: sourceIds
         }, [], [])));
         return;
       }

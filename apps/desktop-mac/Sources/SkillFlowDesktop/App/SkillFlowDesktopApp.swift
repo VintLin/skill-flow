@@ -4,7 +4,6 @@ import AppKit
 @main
 struct SkillFlowDesktopApp: App {
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
 
     @State private var viewModel = MainViewModel(bridgeClient: BridgeClient())
 
@@ -16,15 +15,13 @@ struct SkillFlowDesktopApp: App {
 
     var body: some Scene {
         Window("Skill Flow", id: "main-window") {
-            MainView(viewModel: viewModel) {
-                openSettings()
-            }
+            MainView(viewModel: viewModel)
                 .frame(minWidth: 980, minHeight: 640)
         }
         .windowStyle(.hiddenTitleBar)
 
         Settings {
-            SettingsView()
+            SettingsBridgeView(viewModel: viewModel)
         }
 
         MenuBarExtra {
@@ -54,5 +51,29 @@ struct SkillFlowDesktopApp: App {
         default:
             return "circle"
         }
+    }
+}
+
+private struct SettingsBridgeView: View {
+    @Environment(\.openWindow) private var openWindow
+
+    @Bindable var viewModel: MainViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Settings moved")
+                .font(.system(size: 16, weight: .semibold))
+            Text("Open the main window to configure desktop settings.")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(.secondary)
+            Button("Open Settings") {
+                viewModel.currentPage = .settings
+                openWindow(id: "main-window")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(24)
+        .frame(width: 320)
     }
 }

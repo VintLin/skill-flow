@@ -71,10 +71,27 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.subtitle, "clawhub")
         XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
+        XCTAssertEqual(detail?.targetSelection, .partial)
+        XCTAssertEqual(detail?.targets.map(\.id), ["claude-code", "cursor"])
+        XCTAssertEqual(detail?.targets.first?.isEnabled, true)
+        XCTAssertEqual(detail?.targets.last?.isEnabled, false)
         XCTAssertEqual(detail?.sourceFacts.first, "2026-03-25T12:00:00Z")
         XCTAssertTrue(detail?.deploymentFacts.first?.contains("Claude Code") == true)
         XCTAssertTrue(detail?.skills.first?.detailLines.contains(where: { $0.contains("SKILL.md") }) == true)
-        XCTAssertTrue(detail?.skills.first?.documentExcerpt.contains("# browse") == true)
+        XCTAssertTrue(detail?.skills.first?.documentContent.contains("# browse") == true)
+        XCTAssertTrue(detail?.skills.first?.documentContent.contains("Final verification line.") == true)
+    }
+
+    func testDetailViewDataFallsBackWhenSkillDocumentIsMissing() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        try fixture.removeSkillDocument(sourceId: "alpha", leafId: "alpha-a")
+
+        let model = try await fixture.makeModel()
+
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertEqual(detail?.skills.first?.documentContent, "SKILL.md unavailable.")
     }
 }
 
@@ -303,6 +320,15 @@ private struct TestFixture {
             }
     }
 
+    func removeSkillDocument(sourceId: String, leafId: String) throws {
+        let url = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(leafId, isDirectory: true)
+            .appendingPathComponent("SKILL.md")
+        try FileManager.default.removeItem(at: url)
+    }
+
     private func writeSkillDocuments(state: State) throws {
         let docsRoot = rootURL.appendingPathComponent("docs", isDirectory: true)
         try? FileManager.default.removeItem(at: docsRoot)
@@ -321,6 +347,14 @@ private struct TestFixture {
                 # \(leaf.name)
 
                 \(leaf.description)
+
+                ## Usage
+
+                Run this skill when you need the \(leaf.name) workflow.
+
+                ## Notes
+
+                Final verification line.
                 """
                 try content.write(to: leafDir.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
             }

@@ -4,6 +4,13 @@ import Observation
 @MainActor
 @Observable
 final class MainViewModel {
+    enum Page: Equatable {
+        case home
+        case importPage
+        case settings
+        case detail(sourceId: String)
+    }
+
     enum LoadState {
         case idle
         case loading
@@ -109,9 +116,16 @@ final class MainViewModel {
         let title: String
         let summary: String
         let detailLines: [String]
-        let documentExcerpt: String
+        let documentContent: String
         let isEnabled: Bool
         let warningCount: Int
+    }
+
+    struct DetailTarget: Identifiable {
+        let id: String
+        let label: String
+        let shortLabel: String
+        let isEnabled: Bool
     }
 
     struct DetailViewData {
@@ -124,10 +138,40 @@ final class MainViewModel {
         let warningCount: Int
         let errorCount: Int
         let skillSelection: SelectionState
+        let targetSelection: SelectionState
         let enabledTargetLabels: [String]
         let sourceFacts: [String]
         let deploymentFacts: [String]
+        let targets: [DetailTarget]
         let skills: [DetailSkill]
+    }
+
+    enum ImportPhase: Equatable {
+        case idle
+        case preparing
+        case prepared
+        case importing
+        case failed(String)
+    }
+
+    struct ImportPreviewSkill: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let relativePath: String
+        let summary: String
+        let isSelected: Bool
+    }
+
+    struct ImportPreviewState: Equatable {
+        let sourceId: String
+        let title: String
+        let locator: String
+        let kind: String
+        let availableTargets: [String]
+        let selectedLeafIds: [String]
+        let enabledTargets: [String]
+        let skills: [ImportPreviewSkill]
+        let warnings: [String]
     }
 
     struct DeploymentRow: Identifiable {
@@ -252,6 +296,9 @@ final class MainViewModel {
     var selectedSourceId: String?
     var newSourceLocator: String = ""
     var searchQuery: String = ""
+    var currentPage: Page = .home
+    var importPhase: ImportPhase = .idle
+    var importPreview: ImportPreviewState?
 
     var detailText: String = "Select a source to inspect details."
     var healthLabel: String = "Unknown"
@@ -837,6 +884,221 @@ final class MainViewModel {
         }
     }
 
+    func prepareImport() async {
+        let locator = newSourceLocator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !locator.isEmpty else {
+            importPhase = .failed("Source locator is empty.")
+            showToast(style: .error, message: "Import failed: empty source locator.")
+            return
+        }
+
+        if let preview = importPreview {
+            _ = try? await bridgeClient.uninstall(sourceIds: [preview.sourceId])
+            importPreview = nil
+        }
+
+        importPhase = .preparing
+
+        do {
+            let response = try await bridgeClient.add(locator: locator, applyNow: false)
+            guard let payload = response.data?.value as? [String: Any] else {
+                importPhase = .failed("Invalid prepare response.")
+                return
+            }
+            let preview = parseImportPreview(payload: payload, warnings: response.warnings.map(\.message), fallbackLocator: locator)
+            importPreview = preview
+            importPhase = .prepared
+            showToast(style: .success, message: "Import preview ready.")
+        } catch {
+            importPhase = .failed(error.localizedDescription)
+            showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
+        }
+    }
+
+    func confirmPreparedImport() async {
+        guard let preview = importPreview else {
+            importPhase = .failed("Missing import preview.")
+            return
+        }
+
+        importPhase = .importing
+
+        do {
+            _ = try await bridgeClient.apply(
+                sourceId: preview.sourceId,
+                selectedLeafIds: preview.selectedLeafIds,
+                enabledTargets: preview.enabledTargets
+            )
+            await refreshList()
+            await runDoctor()
+            await selectSource(preview.sourceId)
+            currentPage = .detail(sourceId: preview.sourceId)
+            newSourceLocator = ""
+            importPreview = nil
+            importPhase = .idle
+            showToast(style: .success, message: "Imported source.")
+        } catch {
+            importPhase = .failed(error.localizedDescription)
+            showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
+        }
+    }
+
+    func resetImportState() {
+        importPhase = .idle
+        importPreview = nil
+    }
+
+    func discardPreparedImport() async {
+        if let preview = importPreview {
+            _ = try? await bridgeClient.uninstall(sourceIds: [preview.sourceId])
+        }
+        resetImportState()
+    }
+
+    func importSkillSelectionState() -> SelectionState {
+        guard let preview = importPreview else { return .empty }
+        return selectionState(allIds: preview.skills.map(\.id), selectedIds: preview.selectedLeafIds)
+    }
+
+    func importTargetSelectionState() -> SelectionState {
+        guard let preview = importPreview else { return .empty }
+        return selectionState(allIds: preview.availableTargets, selectedIds: preview.enabledTargets)
+    }
+
+    func toggleImportSkill(_ skillId: String) {
+        guard var preview = importPreview else { return }
+        let currentlySelected = Set(preview.selectedLeafIds)
+        let nextSelected: [String]
+        if currentlySelected.contains(skillId) {
+            nextSelected = preview.skills.map(\.id).filter { currentlySelected.subtracting([skillId]).contains($0) }
+        } else {
+            nextSelected = preview.skills.map(\.id).filter { currentlySelected.union([skillId]).contains($0) }
+        }
+
+        preview = ImportPreviewState(
+            sourceId: preview.sourceId,
+            title: preview.title,
+            locator: preview.locator,
+            kind: preview.kind,
+            availableTargets: preview.availableTargets,
+            selectedLeafIds: nextSelected,
+            enabledTargets: preview.enabledTargets,
+            skills: preview.skills.map {
+                ImportPreviewSkill(
+                    id: $0.id,
+                    title: $0.title,
+                    relativePath: $0.relativePath,
+                    summary: $0.summary,
+                    isSelected: nextSelected.contains($0.id)
+                )
+            },
+            warnings: preview.warnings
+        )
+        importPreview = preview
+    }
+
+    func toggleAllImportSkills() {
+        guard let preview = importPreview else { return }
+        let nextSelected = importSkillSelectionState() == .full ? [] : preview.skills.map(\.id)
+        importPreview = ImportPreviewState(
+            sourceId: preview.sourceId,
+            title: preview.title,
+            locator: preview.locator,
+            kind: preview.kind,
+            availableTargets: preview.availableTargets,
+            selectedLeafIds: nextSelected,
+            enabledTargets: preview.enabledTargets,
+            skills: preview.skills.map {
+                ImportPreviewSkill(
+                    id: $0.id,
+                    title: $0.title,
+                    relativePath: $0.relativePath,
+                    summary: $0.summary,
+                    isSelected: nextSelected.contains($0.id)
+                )
+            },
+            warnings: preview.warnings
+        )
+    }
+
+    func toggleImportTarget(_ targetId: String) {
+        guard let preview = importPreview else { return }
+        let enabled = Set(preview.enabledTargets)
+        let nextTargets = normalizedTargets(
+            enabled.contains(targetId)
+                ? preview.enabledTargets.filter { $0 != targetId }
+                : preview.enabledTargets + [targetId]
+        )
+        importPreview = ImportPreviewState(
+            sourceId: preview.sourceId,
+            title: preview.title,
+            locator: preview.locator,
+            kind: preview.kind,
+            availableTargets: preview.availableTargets,
+            selectedLeafIds: preview.selectedLeafIds,
+            enabledTargets: nextTargets,
+            skills: preview.skills,
+            warnings: preview.warnings
+        )
+    }
+
+    func toggleAllImportTargets() {
+        guard let preview = importPreview else { return }
+        let nextTargets = importTargetSelectionState() == .full ? [] : normalizedTargets(preview.availableTargets)
+        importPreview = ImportPreviewState(
+            sourceId: preview.sourceId,
+            title: preview.title,
+            locator: preview.locator,
+            kind: preview.kind,
+            availableTargets: preview.availableTargets,
+            selectedLeafIds: preview.selectedLeafIds,
+            enabledTargets: nextTargets,
+            skills: preview.skills,
+            warnings: preview.warnings
+        )
+    }
+
+    private func parseImportPreview(
+        payload: [String: Any],
+        warnings: [String],
+        fallbackLocator: String
+    ) -> ImportPreviewState {
+        let manifest = payload["manifest"] as? [String: Any] ?? [:]
+        let draft = payload["draft"] as? [String: Any] ?? [:]
+        let leafs = payload["leafs"] as? [[String: Any]] ?? []
+
+        let sourceId = (payload["sourceId"] as? String)?.nonEmpty
+            ?? (manifest["id"] as? String)?.nonEmpty
+            ?? UUID().uuidString
+        let selectedLeafIds = uniqueSorted(draft["selectedLeafIds"] as? [String] ?? [])
+        let selectedLeafIdSet = Set(selectedLeafIds)
+        let enabledTargets = normalizedTargets(draft["enabledTargets"] as? [String] ?? [])
+
+        let skills = leafs.compactMap { leaf -> ImportPreviewSkill? in
+            guard let leafId = leaf["id"] as? String else { return nil }
+            let title = (leaf["name"] as? String)?.nonEmpty ?? (leaf["linkName"] as? String)?.nonEmpty ?? leafId
+            return ImportPreviewSkill(
+                id: leafId,
+                title: title,
+                relativePath: (leaf["relativePath"] as? String)?.nonEmpty ?? leafId,
+                summary: (leaf["description"] as? String) ?? "",
+                isSelected: selectedLeafIdSet.contains(leafId)
+            )
+        }
+
+        return ImportPreviewState(
+            sourceId: sourceId,
+            title: (manifest["id"] as? String)?.nonEmpty ?? sourceId,
+            locator: (manifest["locator"] as? String)?.nonEmpty ?? fallbackLocator,
+            kind: (manifest["kind"] as? String)?.nonEmpty ?? "source",
+            availableTargets: uniqueSorted(payload["availableTargets"] as? [String] ?? []),
+            selectedLeafIds: selectedLeafIds,
+            enabledTargets: enabledTargets,
+            skills: skills,
+            warnings: warnings
+        )
+    }
+
     func uninstallSelectedSource() async {
         guard let selectedSourceId else {
             detailText = "Uninstall failed: no source selected."
@@ -1121,6 +1383,7 @@ final class MainViewModel {
 
         let selectedLeafIds = Set(draft.selectedLeafIds)
         let enabledTargetLabels = draft.enabledTargets.map { Self.targetCatalog[$0] ?? $0 }
+        let enabledTargets = Set(draft.enabledTargets)
         let inspectedLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
 
@@ -1133,7 +1396,7 @@ final class MainViewModel {
             let relativePath = leafPayload["relativePath"] as? String
             let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
             let title = (leafPayload["title"] as? String)?.nonEmpty ?? leaf.name
-            let documentExcerpt = skillFilePath.flatMap { cachedSkillDocumentExcerpt(path: $0) }
+            let documentContent = skillFilePath.flatMap { cachedSkillDocument(path: $0) }
                 ?? leaf.description
 
             return DetailSkill(
@@ -1145,7 +1408,7 @@ final class MainViewModel {
                     skillFilePath,
                     "Link name: \(linkName)"
                 ].compactMap { $0?.nonEmpty },
-                documentExcerpt: documentExcerpt,
+                documentContent: documentContent,
                 isEnabled: selectedLeafIds.contains(leaf.id),
                 warningCount: leaf.metadataWarnings.count
             )
@@ -1172,6 +1435,15 @@ final class MainViewModel {
             return "\(Self.targetCatalog[target] ?? target) · \(status) · \(leafId)"
         }
 
+        let targets = visibleTargetIds().map { targetId in
+            DetailTarget(
+                id: targetId,
+                label: Self.targetCatalog[targetId] ?? targetId,
+                shortLabel: Self.targetShortLabel[targetId] ?? String((Self.targetCatalog[targetId] ?? targetId).prefix(2)),
+                isEnabled: enabledTargets.contains(targetId)
+            )
+        }
+
         return DetailViewData(
             sourceId: summary.sourceId,
             title: (sourcePayload["displayName"] as? String)?.nonEmpty
@@ -1184,9 +1456,11 @@ final class MainViewModel {
             warningCount: summary.warningCount,
             errorCount: summary.errorCount,
             skillSelection: skillSelectionState(sourceId: sourceId),
+            targetSelection: targetSelectionState(sourceId: sourceId),
             enabledTargetLabels: enabledTargetLabels,
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
+            targets: targets,
             skills: skills
         )
     }
@@ -1285,25 +1559,20 @@ final class MainViewModel {
             .first(where: { !$0.isEmpty }) ?? error.localizedDescription
     }
 
-    private func cachedSkillDocumentExcerpt(path: String) -> String {
+    private func cachedSkillDocument(path: String) -> String {
         if let cached = skillDocumentCache[path] {
             return cached
         }
 
-        let excerpt: String
+        let document: String
         if let raw = try? String(contentsOfFile: path, encoding: .utf8) {
-            excerpt = raw
-                .split(separator: "\n")
-                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty && $0 != "---" }
-                .prefix(8)
-                .joined(separator: "\n")
+            document = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
-            excerpt = "SKILL.md unavailable."
+            document = "SKILL.md unavailable."
         }
 
-        skillDocumentCache[path] = excerpt
-        return excerpt
+        skillDocumentCache[path] = document
+        return document
     }
 
     private func pruneStateMaps(allowedSourceIds: Set<String>) {
