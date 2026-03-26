@@ -373,6 +373,9 @@ struct MainView: View {
                 }
             }
             .buttonStyle(.plain)
+            .padding(12)
+            .background(isShowingGroupOverview(groupId) ? AppTheme.toolbarButtonBackground(for: theme) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
             .padding(.bottom, 12)
 
             detailSkillList(
@@ -415,7 +418,7 @@ struct MainView: View {
                     Text(detail?.health ?? viewModel.healthLabel)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text("\(detail?.enabledTargetLabels.count ?? 0) agents")
+                    Text(detailSaveLabel(detail))
                         .font(.system(size: 10, weight: .regular, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                 }
@@ -454,29 +457,36 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 detailOverviewCard(
-                    title: "Group",
+                    title: "Skills",
                     lines: [
-                        detail?.sourceId ?? groupId,
-                        detail?.subtitle ?? "source",
+                        "\(detail?.enabledSkillCount ?? 0) enabled",
+                        "\(detail?.totalSkillCount ?? 0) total",
                     ]
                 )
                 detailOverviewCard(
-                    title: "Warnings",
+                    title: "Agents",
                     lines: [
-                        "\(detail?.warningCount ?? 0)",
-                        "Errors \(detail?.errorCount ?? 0)",
+                        "\(detail?.enabledTargetCount ?? 0) enabled",
+                        detail?.targetSelection == .partial ? "Mixed selection" : "Selection synced",
+                    ]
+                )
+                detailOverviewCard(
+                    title: "Health",
+                    lines: [
+                        detail?.health ?? "UNKNOWN",
+                        "Warnings \(detail?.warningCount ?? 0) · Errors \(detail?.errorCount ?? 0)",
                     ]
                 )
             }
 
             if let sourceFacts = detail?.sourceFacts, !sourceFacts.isEmpty {
-                detailOverviewCard(title: "Source", lines: sourceFacts)
+                detailOverviewCard(title: "Source", lines: sourceFacts, lineLimit: nil)
             }
 
             detailAgentPanel(groupId: groupId, detail: detail)
 
             if let deploymentFacts = detail?.deploymentFacts, !deploymentFacts.isEmpty {
-                detailOverviewCard(title: "Deployments", lines: deploymentFacts)
+                detailOverviewCard(title: "Deployments", lines: deploymentFacts, lineLimit: nil)
             }
         }
     }
@@ -529,7 +539,7 @@ struct MainView: View {
         .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
-    private func detailOverviewCard(title: String, lines: [String]) -> some View {
+    private func detailOverviewCard(title: String, lines: [String], lineLimit: Int? = 1) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 10, weight: .semibold))
@@ -541,7 +551,7 @@ struct MainView: View {
                     Text(line)
                         .font(.system(size: 11, weight: .regular, design: .monospaced))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .lineLimit(1)
+                        .lineLimit(lineLimit)
                         .truncationMode(.middle)
                 }
             }
@@ -632,7 +642,7 @@ struct MainView: View {
     }
 
     private func detailDocumentRow(skill: MainViewModel.DetailSkill) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text(skill.title)
                     .font(.system(size: 13, weight: .semibold))
@@ -646,25 +656,49 @@ struct MainView: View {
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .frame(maxWidth: .infinity, alignment: .leading)
-            ForEach(Array(skill.detailLines.enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+
+            if !skill.detailLines.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                    ForEach(Array(skill.detailLines.enumerated()), id: \.offset) { _, line in
+                        detailOverviewCard(title: "Meta", lines: [line], lineLimit: 2)
+                    }
+                }
             }
-            Text(skill.documentContent)
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
-                .padding(12)
-                .background(AppTheme.documentBlock(for: theme))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("SKILL.md")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .textCase(.uppercase)
+                Text(skill.documentContent)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                    .padding(12)
+                    .background(AppTheme.documentBlock(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 12)
+    }
+
+    private func detailSaveLabel(_ detail: MainViewModel.DetailViewData?) -> String {
+        guard let detail else {
+            return "No detail"
+        }
+
+        switch detail.saveState.phase {
+        case .idle:
+            return "\(detail.enabledTargetCount) agents"
+        case .saving:
+            return "Applying..."
+        case .saved:
+            return "Saved"
+        case .failed:
+            return "Save failed"
+        }
     }
 
     private func importPage(layout: LayoutMetrics) -> some View {

@@ -137,6 +137,10 @@ final class MainViewModel {
         let health: String
         let warningCount: Int
         let errorCount: Int
+        let enabledSkillCount: Int
+        let totalSkillCount: Int
+        let enabledTargetCount: Int
+        let saveState: SaveState
         let skillSelection: SelectionState
         let targetSelection: SelectionState
         let enabledTargetLabels: [String]
@@ -1455,6 +1459,10 @@ final class MainViewModel {
             health: summary.health,
             warningCount: summary.warningCount,
             errorCount: summary.errorCount,
+            enabledSkillCount: draft.selectedLeafIds.count,
+            totalSkillCount: skills.count,
+            enabledTargetCount: draft.enabledTargets.count,
+            saveState: saveState(for: sourceId),
             skillSelection: skillSelectionState(sourceId: sourceId),
             targetSelection: targetSelectionState(sourceId: sourceId),
             enabledTargetLabels: enabledTargetLabels,
