@@ -5,10 +5,14 @@ struct MainView: View {
 
     @State private var detailGroupId: String?
     @State private var detailSkillIdByGroup: [String: String] = [:]
-    @State private var theme: DesktopThemeMode = .light
     @State private var showImportSheet: Bool = false
+    @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
 
     let openSettings: () -> Void
+
+    private var theme: DesktopThemeMode {
+        DesktopThemeMode(rawValue: themeModeRawValue) ?? .light
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -16,9 +20,6 @@ struct MainView: View {
 
             ZStack {
                 AppTheme.pageBackground(for: theme)
-                    .ignoresSafeArea()
-
-                backgroundTexture
                     .ignoresSafeArea()
 
                 VStack(spacing: 0) {
@@ -80,32 +81,6 @@ struct MainView: View {
                 }
             }
         }
-    }
-
-    private var backgroundTexture: some View {
-        ZStack {
-            RadialGradient(
-                colors: [Color.white.opacity(0.68), Color.clear],
-                center: .topLeading,
-                startRadius: 0,
-                endRadius: 650
-            )
-            RadialGradient(
-                colors: [Color.black.opacity(0.08), Color.clear],
-                center: .bottomTrailing,
-                startRadius: 0,
-                endRadius: 620
-            )
-        }
-        .opacity(theme == .light ? 0.85 : 0.35)
-        .overlay {
-            LinearGradient(
-                colors: [Color.white.opacity(theme == .light ? 0.14 : 0.04), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .allowsHitTesting(false)
     }
 
     private func topBar(layout: LayoutMetrics) -> some View {
@@ -679,7 +654,7 @@ struct MainView: View {
     }
 
     private func gridColumns(for layout: LayoutMetrics) -> [GridItem] {
-        Array(repeating: GridItem(.fixed(272), spacing: 14), count: layout.gridColumnCount)
+        Array(repeating: GridItem(.fixed(304), spacing: 14), count: layout.gridColumnCount)
     }
 
     private var groupCards: [MainViewModel.GroupCardModel] {
@@ -1088,12 +1063,12 @@ private struct LayoutMetrics {
     var gridFrameWidth: CGFloat {
         let columns = CGFloat(gridColumnCount)
         let spacing = CGFloat(max(gridColumnCount - 1, 0)) * 14
-        let available = max(272, width - 32 - spacing)
-        return min(1150, max(272 * columns + spacing, available))
+        let available = max(304, width - 32 - spacing)
+        return min(1260, max(304 * columns + spacing, available))
     }
 }
 
-private enum DesktopThemeMode {
+private enum DesktopThemeMode: String {
     case light
     case dark
 }
@@ -1118,9 +1093,9 @@ private enum AppTheme {
     static func pageBackground(for mode: DesktopThemeMode) -> Color {
         switch mode {
         case .light:
-            return Color(red: 235.0 / 255.0, green: 235.0 / 255.0, blue: 235.0 / 255.0)
+            return .white
         case .dark:
-            return Color(red: 22.0 / 255.0, green: 22.0 / 255.0, blue: 24.0 / 255.0)
+            return .black
         }
     }
 
@@ -1145,9 +1120,9 @@ private enum AppTheme {
     static func headerBackground(for mode: DesktopThemeMode) -> Color {
         switch mode {
         case .light:
-            return Color(red: 235.0 / 255.0, green: 235.0 / 255.0, blue: 235.0 / 255.0)
+            return .white
         case .dark:
-            return Color(red: 22.0 / 255.0, green: 22.0 / 255.0, blue: 24.0 / 255.0)
+            return .black
         }
     }
 
