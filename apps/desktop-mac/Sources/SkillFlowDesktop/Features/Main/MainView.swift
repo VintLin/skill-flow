@@ -392,6 +392,10 @@ struct MainView: View {
         .frame(minWidth: width, maxWidth: width, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
     }
 
     private func detailMain(
@@ -425,6 +429,10 @@ struct MainView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
     }
 
     private func detailGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
@@ -1241,6 +1249,10 @@ struct MainView: View {
             .padding(16)
             .background(AppTheme.surface(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+            }
     }
 
     private func sectionHeader(title: String, subtitle: String, badge: String) -> some View {
@@ -1686,6 +1698,10 @@ enum AppTheme {
     }
 
     static func documentBlock(for mode: DesktopThemeMode) -> Color {
+        neutralCardColor(.color3, for: mode)
+    }
+
+    static func cardBorder(for mode: DesktopThemeMode) -> Color {
         neutralCardColor(.color3, for: mode)
     }
 

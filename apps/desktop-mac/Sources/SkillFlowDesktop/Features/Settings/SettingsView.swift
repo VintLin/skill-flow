@@ -195,6 +195,10 @@ struct SettingsView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.surface(for: theme))
         }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
     }
 
     private func settingsRow<Control: View>(title: String, description: String, @ViewBuilder control: () -> Control) -> some View {

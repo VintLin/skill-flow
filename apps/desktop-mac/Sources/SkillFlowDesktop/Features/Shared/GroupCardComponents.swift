@@ -197,6 +197,10 @@ struct SharedGroupCard: View {
         .frame(minHeight: minimumHeight, alignment: .topLeading)
         .background(AppTheme.groupCardFill(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: scale.cornerRadius)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
         .animation(.easeInOut(duration: 0.18), value: skillsCollapsed)
         .overlay {
             if isSaving {
