@@ -21,15 +21,15 @@ enum GroupCardScale {
     }
 
     var titleSize: CGFloat {
-        14 * factor
+        17
     }
 
     var metaSize: CGFloat {
-        11 * factor
+        11
     }
 
     var sectionLabelSize: CGFloat {
-        12 * factor
+        12
     }
 
     var chipHeight: CGFloat {
@@ -37,7 +37,7 @@ enum GroupCardScale {
     }
 
     var chipFontSize: CGFloat {
-        11 * factor
+        11
     }
 
     var targetSize: CGFloat {
@@ -45,7 +45,7 @@ enum GroupCardScale {
     }
 
     var targetFontSize: CGFloat {
-        11 * factor
+        11
     }
 
     var triStateWidth: CGFloat {
@@ -57,7 +57,7 @@ enum GroupCardScale {
     }
 
     var triStateFontSize: CGFloat {
-        10 * factor
+        10
     }
 
     var rowSpacing: CGFloat {
@@ -245,7 +245,7 @@ struct SharedGroupCard: View {
             .font(.system(size: scale.chipFontSize, weight: .bold))
             .padding(.horizontal, max(6, scale.cardInset - 2))
             .frame(height: scale.chipHeight)
-            .background(isOn ? AppTheme.brand(for: accent).opacity(0.30) : AppTheme.idleChipFill(for: theme))
+            .background(isOn ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30) : AppTheme.idleChipFill(for: theme))
             .foregroundStyle(AppTheme.textPrimary(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
     }
@@ -289,7 +289,7 @@ struct SharedGroupCard: View {
 
     private func targetBackgroundFill(isOn: Bool) -> Color {
         isOn
-            ? AppTheme.brand(for: accent).opacity(0.30)
+            ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30)
             : AppTheme.idleChipFill(for: theme)
     }
 
@@ -349,20 +349,26 @@ struct SharedGroupCard: View {
         case .empty:
             return Color(red: 148.0 / 255.0, green: 163.0 / 255.0, blue: 184.0 / 255.0).opacity(0.30)
         case .partial:
-            return Color(red: 234.0 / 255.0, green: 179.0 / 255.0, blue: 8.0 / 255.0).opacity(0.32)
+            return AppTheme.statusWarning(for: theme).opacity(theme == .dark ? 0.38 : 0.32)
         case .full:
-            return Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0).opacity(0.30)
+            return AppTheme.statusSuccess(for: theme).opacity(theme == .dark ? 0.36 : 0.30)
         }
     }
 
     private func switchText(_ selection: SelectionState) -> Color {
-        switch selection {
-        case .empty:
+        switch (theme, selection) {
+        case (.light, .empty):
             return Color(red: 71.0 / 255.0, green: 85.0 / 255.0, blue: 105.0 / 255.0)
-        case .partial:
-            return Color(red: 146.0 / 255.0, green: 64.0 / 255.0, blue: 14.0 / 255.0)
-        case .full:
-            return Color(red: 22.0 / 255.0, green: 101.0 / 255.0, blue: 52.0 / 255.0)
+        case (.light, .partial):
+            return AppTheme.statusWarning(for: theme)
+        case (.light, .full):
+            return AppTheme.statusSuccess(for: theme)
+        case (.dark, .empty):
+            return Color(red: 226.0 / 255.0, green: 232.0 / 255.0, blue: 240.0 / 255.0)
+        case (.dark, .partial):
+            return AppTheme.statusWarning(for: theme)
+        case (.dark, .full):
+            return AppTheme.statusSuccess(for: theme)
         }
     }
 }

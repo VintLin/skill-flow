@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 
 @testable import SkillFlowDesktop
 
@@ -8,6 +9,36 @@ final class AgentIconTests: XCTestCase {
         XCTAssertEqual(
             DesktopAccentColor.allCases.map(\.rawValue),
             ["blue", "green", "yellow", "pink", "orange", "purple"]
+        )
+    }
+
+    func testDarkModeAccentPaletteUsesBrighterBrandValues() {
+        XCTAssertNotEqual(
+            AppTheme.brand(for: .blue, in: .light).description,
+            AppTheme.brand(for: .blue, in: .dark).description
+        )
+        XCTAssertNotEqual(
+            AppTheme.brand(for: .orange, in: .light).description,
+            AppTheme.brand(for: .orange, in: .dark).description
+        )
+    }
+
+    func testStatusColorsReuseThemeYellowAndGreenTokens() {
+        XCTAssertEqual(
+            AppTheme.statusSuccess(for: .light).description,
+            AppTheme.brand(for: .green, in: .light).description
+        )
+        XCTAssertEqual(
+            AppTheme.statusSuccess(for: .dark).description,
+            AppTheme.brand(for: .green, in: .dark).description
+        )
+        XCTAssertEqual(
+            AppTheme.statusWarning(for: .light).description,
+            AppTheme.brand(for: .yellow, in: .light).description
+        )
+        XCTAssertEqual(
+            AppTheme.statusWarning(for: .dark).description,
+            AppTheme.brand(for: .yellow, in: .dark).description
         )
     }
 

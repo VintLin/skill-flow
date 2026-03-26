@@ -121,13 +121,14 @@ struct MainView: View {
 
     private var headerLogoRow: some View {
         HStack(spacing: 8) {
-            if let icon = AppIconLibrary.image() {
+            if let icon = MenuBarIcon.image() {
                 Image(nsImage: icon)
+                    .renderingMode(.template)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
                     .frame(width: 30, height: 30)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
             } else {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(AppTheme.textPrimary(for: theme))
@@ -928,19 +929,35 @@ enum DesktopAccentColor: String, CaseIterable, Identifiable {
 
 enum AppTheme {
     static func brand(for accent: DesktopAccentColor) -> Color {
-        switch accent {
-        case .blue:
+        brand(for: accent, in: .light)
+    }
+
+    static func brand(for accent: DesktopAccentColor, in mode: DesktopThemeMode) -> Color {
+        switch (accent, mode) {
+        case (.blue, .light):
             return Color(red: 59.0 / 255.0, green: 130.0 / 255.0, blue: 246.0 / 255.0)
-        case .green:
+        case (.blue, .dark):
+            return Color(red: 125.0 / 255.0, green: 176.0 / 255.0, blue: 255.0 / 255.0)
+        case (.green, .light):
             return Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0)
-        case .yellow:
+        case (.green, .dark):
+            return Color(red: 74.0 / 255.0, green: 222.0 / 255.0, blue: 128.0 / 255.0)
+        case (.yellow, .light):
             return Color(red: 234.0 / 255.0, green: 179.0 / 255.0, blue: 8.0 / 255.0)
-        case .pink:
+        case (.yellow, .dark):
+            return Color(red: 250.0 / 255.0, green: 204.0 / 255.0, blue: 21.0 / 255.0)
+        case (.pink, .light):
             return Color(red: 236.0 / 255.0, green: 72.0 / 255.0, blue: 153.0 / 255.0)
-        case .orange:
+        case (.pink, .dark):
+            return Color(red: 244.0 / 255.0, green: 114.0 / 255.0, blue: 182.0 / 255.0)
+        case (.orange, .light):
             return Color(red: 249.0 / 255.0, green: 115.0 / 255.0, blue: 22.0 / 255.0)
-        case .purple:
+        case (.orange, .dark):
+            return Color(red: 251.0 / 255.0, green: 146.0 / 255.0, blue: 60.0 / 255.0)
+        case (.purple, .light):
             return Color(red: 139.0 / 255.0, green: 92.0 / 255.0, blue: 246.0 / 255.0)
+        case (.purple, .dark):
+            return Color(red: 167.0 / 255.0, green: 139.0 / 255.0, blue: 250.0 / 255.0)
         }
     }
 
@@ -1036,6 +1053,24 @@ enum AppTheme {
             return Color(red: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0).opacity(0.62)
         case .dark:
             return Color(red: 229.0 / 255.0, green: 229.0 / 255.0, blue: 231.0 / 255.0).opacity(0.68)
+        }
+    }
+
+    static func statusSuccess(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return brand(for: .green, in: .light)
+        case .dark:
+            return brand(for: .green, in: .dark)
+        }
+    }
+
+    static func statusWarning(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return brand(for: .yellow, in: .light)
+        case .dark:
+            return brand(for: .yellow, in: .dark)
         }
     }
 
