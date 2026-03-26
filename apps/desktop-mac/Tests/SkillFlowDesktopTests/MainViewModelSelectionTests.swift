@@ -81,6 +81,10 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.targets.last?.isEnabled, false)
         XCTAssertEqual(detail?.sourceFacts.first, "2026-03-25T12:00:00Z")
         XCTAssertTrue(detail?.deploymentFacts.first?.contains("Claude Code") == true)
+        XCTAssertEqual(detail?.groupDocuments.map(\.title), ["FILETREE", "README.md", "README.zh.md", "CHANGELOG.md"])
+        XCTAssertEqual(detail?.fileTree.first?.title, "alpha")
+        XCTAssertTrue(detail?.fileTree.dropFirst().contains(where: { $0.prefix.contains("|--") || $0.prefix.contains("`--") }) == true)
+        XCTAssertFalse(detail?.fileTree.contains(where: { $0.title == "SKILL.md" }) == true)
         XCTAssertTrue(detail?.skills.first?.detailLines.contains(where: { $0.contains("SKILL.md") }) == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("# browse") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("Final verification line.") == true)
@@ -96,6 +100,29 @@ final class MainViewModelSelectionTests: XCTestCase {
         let detail = model.detailViewData(for: "alpha")
 
         XCTAssertEqual(detail?.skills.first?.documentContent, "SKILL.md unavailable.")
+    }
+
+    func testDetailSkillTitlePrefersMetadataName() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        try fixture.writeSkillDocument(
+            sourceId: "alpha",
+            leafId: "alpha-a",
+            content: """
+            ---
+            name: Browser Metadata Name
+            description: Browse things.
+            ---
+
+            # browse
+            """
+        )
+
+        let model = try await fixture.makeModel()
+
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertEqual(detail?.skills.first?.title, "Browser Metadata Name")
     }
 }
 
@@ -333,14 +360,41 @@ private struct TestFixture {
         try FileManager.default.removeItem(at: url)
     }
 
+    func writeSkillDocument(sourceId: String, leafId: String, content: String) throws {
+        let url = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(leafId, isDirectory: true)
+            .appendingPathComponent("SKILL.md")
+        try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func writeSkillDocuments(state: State) throws {
         let docsRoot = rootURL.appendingPathComponent("docs", isDirectory: true)
         try? FileManager.default.removeItem(at: docsRoot)
         try FileManager.default.createDirectory(at: docsRoot, withIntermediateDirectories: true)
 
         for (sourceId, source) in state.sources {
+            let sourceRoot = docsRoot.appendingPathComponent(sourceId, isDirectory: true)
+            try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+            try """
+            # \(source.displayName)
+
+            Root README for \(sourceId).
+            """.write(to: sourceRoot.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+            try """
+            # \(source.displayName) README.zh
+
+            Chinese README for \(sourceId).
+            """.write(to: sourceRoot.appendingPathComponent("README.zh.md"), atomically: true, encoding: .utf8)
+            try """
+            # Changelog
+
+            Changes for \(sourceId).
+            """.write(to: sourceRoot.appendingPathComponent("CHANGELOG.md"), atomically: true, encoding: .utf8)
+
             for leaf in source.leafs {
-                let leafDir = docsRoot.appendingPathComponent(sourceId).appendingPathComponent(leaf.id, isDirectory: true)
+                let leafDir = sourceRoot.appendingPathComponent(leaf.id, isDirectory: true)
                 try FileManager.default.createDirectory(at: leafDir, withIntermediateDirectories: true)
                 let content = """
                 ---

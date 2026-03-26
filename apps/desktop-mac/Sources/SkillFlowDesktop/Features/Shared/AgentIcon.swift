@@ -93,7 +93,11 @@ enum AgentIconLibrary {
             return nil
         }
 
-        let image = NSImage(cgImage: outputCGImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        let finalImage = croppedToVisibleBounds(outputCGImage) ?? outputCGImage
+        let image = NSImage(
+            cgImage: finalImage,
+            size: NSSize(width: finalImage.width, height: finalImage.height)
+        )
         symbolCache.setObject(image, forKey: cacheKey as NSString)
         return image
     }
@@ -112,6 +116,51 @@ enum AgentIconLibrary {
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )
+    }
+
+    private static func croppedToVisibleBounds(_ image: CGImage) -> CGImage? {
+        guard let context = bitmapContext(width: image.width, height: image.height) else {
+            return nil
+        }
+
+        let rect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.draw(image, in: rect)
+
+        guard let data = context.data else {
+            return nil
+        }
+
+        let bytes = data.bindMemory(to: UInt8.self, capacity: image.width * image.height * 4)
+        var minX = image.width
+        var minY = image.height
+        var maxX = -1
+        var maxY = -1
+
+        for y in 0..<image.height {
+            for x in 0..<image.width {
+                let index = ((y * image.width) + x) * 4
+                let alpha = bytes[index + 3]
+                if alpha > 12 {
+                    minX = min(minX, x)
+                    minY = min(minY, y)
+                    maxX = max(maxX, x)
+                    maxY = max(maxY, y)
+                }
+            }
+        }
+
+        guard maxX >= minX, maxY >= minY else {
+            return nil
+        }
+
+        let cropRect = CGRect(
+            x: minX,
+            y: minY,
+            width: (maxX - minX) + 1,
+            height: (maxY - minY) + 1
+        )
+
+        return image.cropping(to: cropRect)
     }
 
     private static func colorKey(_ color: NSColor) -> String {

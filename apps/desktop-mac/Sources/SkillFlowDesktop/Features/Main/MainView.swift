@@ -2,6 +2,12 @@ import AppKit
 import SwiftUI
 
 struct MainView: View {
+    private let detailHeaderMinHeight: CGFloat = 76
+    private let detailGroupRowHeight: CGFloat = 72
+    private let detailSkillRowHeight: CGFloat = 60
+    private let detailSkillDividerHeight: CGFloat = 16
+    private let detailIndicatorHeight: CGFloat = 36
+
     private struct RecommendedImport: Identifiable {
         let id: String
         let title: String
@@ -14,6 +20,7 @@ struct MainView: View {
     @State private var detailSkillIdByGroup: [String: String] = [:]
     @State private var detailShowsGroupOverviewByGroup: [String: Bool] = [:]
     @State private var detailHoveredItemIdByGroup: [String: String] = [:]
+    @State private var detailDocumentTabIdByGroup: [String: String] = [:]
     @State private var detailDocumentTabIdBySkill: [String: String] = [:]
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
@@ -64,6 +71,9 @@ struct MainView: View {
             }
             if detailShowsGroupOverviewByGroup[groupId] == nil {
                 detailShowsGroupOverviewByGroup[groupId] = true
+            }
+            if detailDocumentTabIdByGroup[groupId] == nil {
+                detailDocumentTabIdByGroup[groupId] = detail.groupDocuments.first?.id
             }
             for skill in detail.skills where detailDocumentTabIdBySkill[skill.id] == nil {
                 detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
@@ -449,15 +459,28 @@ struct MainView: View {
                 fallbackText: detail?.locator ?? "Path unavailable"
             )
 
-            if let fileTree = detail?.fileTree, !fileTree.isEmpty {
-                detailFileTreeCard(fileTree)
+            if let detail, !detail.groupDocuments.isEmpty {
+                detailGroupDocuments(detail, groupId: groupId)
             }
         }
     }
 
     private func detailSkillOverview(skill: MainViewModel.DetailSkill) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            detailOverviewCard(title: "Skill Description", lines: [skill.summary], lineLimit: nil)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Skill Description")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .textCase(.uppercase)
+
+                detailContentCard {
+                    Text(skill.summary)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+            }
 
             if !skill.metadata.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -506,14 +529,13 @@ struct MainView: View {
                     }
                 }
 
-                Text(selectedDocument(for: skill)?.content ?? skill.documentContent)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(14)
-                    .background(AppTheme.documentBlock(for: theme))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                detailContentCard {
+                    Text(selectedDocument(for: skill)?.content ?? skill.documentContent)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
             }
         }
     }
@@ -542,21 +564,22 @@ struct MainView: View {
         .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
     }
 
+    private func detailContentCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(14)
+            .background(AppTheme.documentBlock(for: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
     private func detailGroupHeader(detail: MainViewModel.DetailViewData?, fallbackGroupId: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
                 Text("\(detail?.title ?? fallbackGroupId) by \(detail?.author ?? "@unknown")")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text("from \(detail?.originLabel ?? "unknown source")")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .lineLimit(1)
-            }
 
-            Spacer(minLength: 12)
+                Spacer(minLength: 12)
 
-            VStack(alignment: .trailing, spacing: 4) {
                 Button("Update") {
                     Task { await viewModel.updateCurrentGroup() }
                 }
@@ -567,6 +590,15 @@ struct MainView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
                 .font(.system(size: 11, weight: .bold))
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("from \(detail?.originLabel ?? "unknown source")")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+
+                Spacer(minLength: 12)
 
                 Text(detail?.updatedRelative ?? "Updated time unavailable")
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
@@ -574,15 +606,25 @@ struct MainView: View {
             }
         }
         .padding(14)
+        .frame(minHeight: detailHeaderMinHeight, alignment: .center)
         .background(AppTheme.toolbarGlass(for: theme))
     }
 
     private func detailSkillHeader(skill: MainViewModel.DetailSkill?, fallbackGroupId: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
                 Text(skill?.title ?? fallbackGroupId)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
+
+                Spacer(minLength: 12)
+
+                Text(skill?.version.map(normalizedVersionText) ?? "")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 if let path = skill?.relativeFolderPath, let folderPath = skill?.folderPath {
                     Button {
                         openPath(folderPath)
@@ -598,15 +640,12 @@ struct MainView: View {
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                 }
+
+                Spacer(minLength: 12)
             }
-
-            Spacer(minLength: 12)
-
-            Text(skill?.version.map(normalizedVersionText) ?? "")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
         }
         .padding(14)
+        .frame(minHeight: detailHeaderMinHeight, alignment: .center)
         .background(AppTheme.toolbarGlass(for: theme))
     }
 
@@ -629,7 +668,7 @@ struct MainView: View {
                 Task { await viewModel.toggleAllSkills(sourceId: groupId) }
             }
         }
-        .frame(height: 72)
+        .frame(height: detailGroupRowHeight)
         .contentShape(Rectangle())
         .onTapGesture {
             selectGroupOverview(groupId: groupId, detail: detail)
@@ -641,27 +680,30 @@ struct MainView: View {
 
     private var detailSkillsLabelRow: some View {
         HStack {
-            Text("Skills")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .textCase(.uppercase)
-            Spacer()
+            Rectangle()
+                .fill(AppTheme.border(for: theme))
+                .frame(height: 1)
         }
-        .frame(height: 28)
+        .frame(height: 16)
     }
 
     private func detailSkillListRow(groupId: String, skill: MainViewModel.DetailSkill) -> some View {
-        HStack(spacing: 10) {
+        let versionText = skill.version.map(normalizedVersionText)
+
+        return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(skill.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .lineLimit(1)
-                Text(skill.version.map(normalizedVersionText) ?? " ")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .lineLimit(1)
+                if let versionText {
+                    Text(versionText)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                }
             }
+            .frame(maxHeight: .infinity, alignment: .center)
 
             Spacer(minLength: 10)
 
@@ -673,9 +715,9 @@ struct MainView: View {
             .frame(width: 36, height: 30)
             .background(skill.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(skill.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
+            .foregroundStyle(skill.isEnabled ? detailSwitchText(.full) : detailSwitchText(.empty))
         }
-        .frame(height: 60)
+        .frame(height: detailSkillRowHeight)
         .contentShape(Rectangle())
         .onTapGesture {
             detailSkillIdByGroup[groupId] = skill.id
@@ -686,6 +728,48 @@ struct MainView: View {
         }
         .onHover { isHovering in
             detailHoveredItemIdByGroup[groupId] = isHovering ? detailSkillItemId(skill.id) : nil
+        }
+    }
+
+    private func detailGroupDocuments(_ detail: MainViewModel.DetailViewData, groupId: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Documents")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(detail.groupDocuments) { document in
+                        Button {
+                            detailDocumentTabIdByGroup[groupId] = document.id
+                        } label: {
+                            Text(document.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.horizontal, 10)
+                                .frame(height: 30)
+                                .background(selectedGroupDocument(for: detail, groupId: groupId)?.id == document.id ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.toolbarButtonBackground(for: theme))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if let selectedDocument = selectedGroupDocument(for: detail, groupId: groupId) {
+                if selectedDocument.id == detail.groupDocuments.first?.id {
+                    detailFileTreeCard(detail.fileTree)
+                } else {
+                    detailContentCard {
+                        Text(selectedDocument.content)
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
         }
     }
 
@@ -706,7 +790,7 @@ struct MainView: View {
                         Button {
                             Task { await viewModel.setTargetEnabled(target.id, enabled: !target.isEnabled, sourceId: groupId) }
                         } label: {
-                            VStack(spacing: 8) {
+                            HStack(spacing: 10) {
                                 if let image = AgentIconLibrary.symbolImage(
                                     for: target.id,
                                     foreground: agentIconForeground(isEnabled: target.isEnabled)
@@ -715,11 +799,12 @@ struct MainView: View {
                                         .renderingMode(.original)
                                         .resizable()
                                         .scaledToFit()
-                                        .frame(width: 22, height: 22)
+                                        .frame(width: 28, height: 28)
                                 } else {
                                     Text(target.shortLabel.uppercased())
                                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                                         .foregroundStyle(AppTheme.textPrimary(for: theme))
+                                        .frame(width: 28, height: 28)
                                 }
 
                                 Text(target.label)
@@ -728,7 +813,7 @@ struct MainView: View {
                                     .lineLimit(1)
                             }
                             .padding(.horizontal, 14)
-                            .frame(height: 72)
+                            .frame(height: 46)
                             .background(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.18) : AppTheme.toolbarButtonBackground(for: theme))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
@@ -772,37 +857,30 @@ struct MainView: View {
     }
 
     private func detailFileTreeCard(_ lines: [MainViewModel.FileTreeLine]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("File Tree")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .textCase(.uppercase)
-
-            VStack(alignment: .leading, spacing: 8) {
+        detailContentCard {
+            VStack(alignment: .leading, spacing: 6) {
                 ForEach(lines) { line in
-                    HStack(spacing: 8) {
-                        Rectangle()
-                            .fill(AppTheme.border(for: theme))
-                            .frame(width: 1, height: 18)
-                            .opacity(line.depth > 0 ? 1 : 0)
-                            .padding(.leading, CGFloat(line.depth) * 14)
-
-                        Text(line.title)
-                            .font(.system(size: 11, weight: line.isFile ? .semibold : .regular, design: .monospaced))
-                            .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    }
+                    Text("\(line.prefix)\(line.title)")
+                        .font(.system(size: 11, weight: line.isFile ? .semibold : .regular, design: .monospaced))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppTheme.toolbarButtonBackground(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
     }
 
     private func selectedDocument(for skill: MainViewModel.DetailSkill) -> MainViewModel.DocumentTab? {
         let selectedId = detailDocumentTabIdBySkill[skill.id] ?? skill.documents.first?.id
         return skill.documents.first(where: { $0.id == selectedId }) ?? skill.documents.first
+    }
+
+    private func selectedGroupDocument(
+        for detail: MainViewModel.DetailViewData,
+        groupId: String
+    ) -> MainViewModel.DocumentTab? {
+        let selectedId = detailDocumentTabIdByGroup[groupId] ?? detail.groupDocuments.first?.id
+        return detail.groupDocuments.first(where: { $0.id == selectedId }) ?? detail.groupDocuments.first
     }
 
     private func detailSelectedItemId(groupId: String, selectedSkillId: String?) -> String {
@@ -828,14 +906,22 @@ struct MainView: View {
             return nil
         }
         if itemId.hasPrefix("group:") {
-            return CGRect(x: 0, y: 12, width: 4, height: 48)
+            return CGRect(
+                x: 0,
+                y: (detailGroupRowHeight - detailIndicatorHeight) / 2,
+                width: 4,
+                height: detailIndicatorHeight
+            )
         }
         guard itemId.hasPrefix("skill:") else {
             return nil
         }
         let index = max(0, detailSkillIndex(from: itemId))
-        let originY = 12 + 72 + 28 + CGFloat(index) * 60 + 10
-        return CGRect(x: 0, y: originY, width: 4, height: 40)
+        let originY = detailGroupRowHeight
+            + detailSkillDividerHeight
+            + CGFloat(index) * detailSkillRowHeight
+            + ((detailSkillRowHeight - detailIndicatorHeight) / 2)
+        return CGRect(x: 0, y: originY, width: 4, height: detailIndicatorHeight)
     }
 
     private func detailSkillIndex(from itemId: String) -> Int {
