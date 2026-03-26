@@ -82,7 +82,7 @@ struct MainView: View {
 
     private func topBar(layout: LayoutMetrics) -> some View {
         Group {
-            if layout.isNarrowTopBar {
+            if isHomePage, layout.isNarrowTopBar {
                 VStack(alignment: .leading, spacing: 10) {
                     topBarTitleRow
                     HStack(spacing: 8) {
@@ -94,7 +94,7 @@ struct MainView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(AppTheme.headerBackground(for: theme))
-            } else {
+            } else if isHomePage {
                 HStack(spacing: 12) {
                     topBarTitleRow
                     searchField
@@ -105,38 +105,42 @@ struct MainView: View {
                 .padding(.horizontal, 16)
                 .frame(height: 52)
                 .background(AppTheme.headerBackground(for: theme))
+            } else {
+                HStack(spacing: 10) {
+                    topBarTitleRow
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 52)
+                .background(AppTheme.headerBackground(for: theme))
             }
         }
     }
 
     private var topBarTitleRow: some View {
         HStack(spacing: 10) {
-            if viewModel.currentPage != .home {
-                Button("Home") {
+            if isHomePage {
+                headerLogoRow
+            } else {
+                Button {
                     viewModel.currentPage = .home
+                } label: {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 12)
-                .frame(height: 30)
-                .background(AppTheme.headerControlFill(for: theme))
-                .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .font(.system(size: 10, weight: .bold))
-                .textCase(.uppercase)
-            }
-            headerLogoRow
-            if viewModel.currentPage != .home {
+                .frame(width: 22, height: 22)
+
                 Text(currentPageTitle)
-                    .font(.system(size: 10, weight: .bold))
-                    .textCase(.uppercase)
-                    .padding(.horizontal, 10)
-                    .frame(height: 26)
-                    .background(AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.24 : 0.16))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
             }
         }
+    }
+
+    private var isHomePage: Bool {
+        viewModel.currentPage == .home
     }
 
     private var headerLogoRow: some View {
@@ -943,7 +947,7 @@ struct MainView: View {
     private func settingsPage(layout: LayoutMetrics) -> some View {
         ScrollView {
             pageSectionCard {
-                SettingsView(cardStyle: true)
+                SettingsView(cardStyle: true, theme: theme)
             }
             .padding(16)
         }
@@ -1303,7 +1307,7 @@ enum AppTheme {
         case .light:
             return .white
         case .dark:
-            return .black
+            return Color(red: 18.0 / 255.0, green: 18.0 / 255.0, blue: 22.0 / 255.0)
         }
     }
 

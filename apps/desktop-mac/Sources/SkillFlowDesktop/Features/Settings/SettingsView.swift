@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
 
     var cardStyle: Bool = false
+    var theme: DesktopThemeMode = .light
 
     var body: some View {
         Group {
@@ -25,9 +26,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Settings")
                     .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                 Text("Configure global desktop preferences. Group-level behavior stays in Home and Group Detail.")
                     .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -132,11 +134,11 @@ struct SettingsView: View {
             Text(title)
                 .font(.system(size: 11, weight: .bold))
                 .textCase(.uppercase)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(AppTheme.textMuted(for: theme))
             rows()
         }
         .padding(14)
-        .background(Color.primary.opacity(0.04))
+        .background(AppTheme.toolbarButtonBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -145,9 +147,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                 Text(description)
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
             }
             Spacer(minLength: 20)
             control()
