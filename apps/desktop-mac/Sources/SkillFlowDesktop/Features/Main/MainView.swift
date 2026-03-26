@@ -967,12 +967,12 @@ private struct HorizontalFadeScroll<Content: View>: View {
                 contentMinX = metrics.minX
                 contentWidth = metrics.width
             }
-            .overlay {
-                HStack(spacing: 0) {
+            .overlay(alignment: .leading) {
+                if showsLeadingFade {
                     LinearGradient(
                         stops: [
                             .init(color: fill, location: 0),
-                            .init(color: fill, location: 0.45),
+                            .init(color: fill, location: 0.4),
                             .init(color: fill.opacity(0), location: 1)
                         ],
                         startPoint: .leading,
@@ -980,14 +980,15 @@ private struct HorizontalFadeScroll<Content: View>: View {
                     )
                     .frame(width: fadeWidth)
                     .padding(.leading, contentPadding)
-                    .opacity(showsLeadingFade ? 1 : 0)
-
-                    Spacer(minLength: 0)
-
+                    .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if showsTrailingFade {
                     LinearGradient(
                         stops: [
                             .init(color: fill.opacity(0), location: 0),
-                            .init(color: fill, location: 0.55),
+                            .init(color: fill, location: 0.6),
                             .init(color: fill, location: 1)
                         ],
                         startPoint: .leading,
@@ -995,9 +996,8 @@ private struct HorizontalFadeScroll<Content: View>: View {
                     )
                     .frame(width: fadeWidth)
                     .padding(.trailing, contentPadding)
-                    .opacity(showsTrailingFade ? 1 : 0)
+                    .allowsHitTesting(false)
                 }
-                .allowsHitTesting(false)
             }
             .clipped()
         }
