@@ -875,7 +875,7 @@ private struct GroupCardView: View {
                     statusLabel
                 }
                 chipScroller {
-                    FlowLayout(spacing: 6, lineSpacing: 6) {
+                    HStack(spacing: 4) {
                         ForEach(card.skills) { skill in
                             cardToggle(skill.label, isOn: skill.isEnabled) {
                                 onToggleSkill(skill.id, !skill.isEnabled)
@@ -895,9 +895,9 @@ private struct GroupCardView: View {
                     triStateSwitch(card.targetSelection, size: .desktop, action: onToggleAllTargets)
                 }
                 chipScroller {
-                    FlowLayout(spacing: 6, lineSpacing: 6) {
+                    HStack(spacing: 4) {
                         ForEach(card.targets) { target in
-                            cardToggle(target.label, isOn: target.isEnabled) {
+                            agentToggle(target.shortLabel, accessibilityLabel: target.label, isOn: target.isEnabled) {
                                 onToggleTarget(target.id, !target.isEnabled)
                             }
                         }
@@ -961,6 +961,19 @@ private struct GroupCardView: View {
         .buttonStyle(.plain)
     }
 
+    private func agentToggle(_ text: String, accessibilityLabel: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .frame(width: 30, height: 30)
+                .background(isOn ? AppTheme.brand.opacity(0.30) : AppTheme.idleChipFill(for: theme))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .help(accessibilityLabel)
+    }
+
     @ViewBuilder
     private func triStateSwitch(_ selection: SelectionState, size: AppTheme.ControlSize, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -978,6 +991,7 @@ private struct GroupCardView: View {
         ZStack {
             ScrollView(.horizontal, showsIndicators: false) {
                 content()
+                    .padding(.trailing, 2)
             }
             .scrollClipDisabled()
 
@@ -998,6 +1012,7 @@ private struct GroupCardView: View {
             }
             .allowsHitTesting(false)
         }
+        .frame(height: 30)
     }
 
     private func switchLabel(_ selection: SelectionState) -> String {
@@ -1225,53 +1240,6 @@ private enum AppTheme {
             return Color.black.opacity(0.06)
         case .dark:
             return Color.black.opacity(0.36)
-        }
-    }
-}
-
-private struct FlowLayout: Layout {
-    let spacing: CGFloat
-    let lineSpacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var currentX: CGFloat = 0
-        var currentY: CGFloat = 0
-        var lineHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if currentX + size.width > maxWidth, currentX > 0 {
-                currentX = 0
-                currentY += lineHeight + lineSpacing
-                lineHeight = 0
-            }
-            lineHeight = max(lineHeight, size.height)
-            currentX += size.width + spacing
-        }
-
-        return CGSize(width: maxWidth.isFinite ? maxWidth : currentX, height: currentY + lineHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var currentX = bounds.minX
-        var currentY = bounds.minY
-        var lineHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if currentX + size.width > bounds.maxX, currentX > bounds.minX {
-                currentX = bounds.minX
-                currentY += lineHeight + lineSpacing
-                lineHeight = 0
-            }
-
-            subview.place(
-                at: CGPoint(x: currentX, y: currentY),
-                proposal: ProposedViewSize(width: size.width, height: size.height)
-            )
-            currentX += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
         }
     }
 }

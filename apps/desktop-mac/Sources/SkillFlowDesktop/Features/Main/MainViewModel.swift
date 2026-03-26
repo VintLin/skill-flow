@@ -82,6 +82,7 @@ final class MainViewModel {
     struct GroupCardTarget: Identifiable {
         let id: String
         let label: String
+        let shortLabel: String
         let isEnabled: Bool
     }
 
@@ -216,6 +217,22 @@ final class MainViewModel {
         "kiro": "Kiro",
     ]
 
+    private static let targetShortLabel: [String: String] = [
+        "claude-code": "CC",
+        "codex": "CX",
+        "cursor": "CU",
+        "github-copilot": "GH",
+        "gemini-cli": "GM",
+        "opencode": "OP",
+        "openclaw": "OC",
+        "pi": "PI",
+        "windsurf": "WS",
+        "roo-code": "RO",
+        "cline": "CL",
+        "amp": "AM",
+        "kiro": "KI",
+    ]
+
     private var baselineDrafts: [String: DraftState] = [:]
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
@@ -340,6 +357,7 @@ final class MainViewModel {
                     GroupCardTarget(
                         id: targetId,
                         label: Self.targetCatalog[targetId] ?? targetId,
+                        shortLabel: Self.targetShortLabel[targetId] ?? String((Self.targetCatalog[targetId] ?? targetId).prefix(2)).uppercased(),
                         isEnabled: enabledTargets.contains(targetId)
                     )
                 },

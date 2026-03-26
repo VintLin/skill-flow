@@ -209,14 +209,15 @@ private struct MenuGroupCard: View {
             cardRow(
                 title: "Skills",
                 selection: card.skillSelection,
-                items: card.skills.map { ($0.id, $0.label, $0.isEnabled) },
+                items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
                 onToggleAll: onToggleAllSkills,
                 action: onToggleSkill
             )
             cardRow(
                 title: "Agents",
                 selection: card.targetSelection,
-                items: card.targets.prefix(4).map { ($0.id, $0.label, $0.isEnabled) },
+                items: card.targets.prefix(6).map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled) },
+                compact: true,
                 onToggleAll: onToggleAllTargets,
                 action: onToggleTarget
             )
@@ -244,7 +245,8 @@ private struct MenuGroupCard: View {
     private func cardRow(
         title: String,
         selection: SelectionState,
-        items: [(id: String, label: String, isEnabled: Bool)],
+        items: [(id: String, label: String, shortLabel: String, isEnabled: Bool)],
+        compact: Bool = false,
         onToggleAll: @escaping () -> Void,
         action: @escaping (String, Bool) -> Void
     ) -> some View {
@@ -260,13 +262,26 @@ private struct MenuGroupCard: View {
                         Button {
                             action(item.id, !item.isEnabled)
                         } label: {
-                            tag(item.label, tint: item.isEnabled ? Color.orange.opacity(0.32) : Color.gray.opacity(0.20))
+                            if compact {
+                                iconTag(item.shortLabel, title: item.label, tint: item.isEnabled ? Color.orange.opacity(0.32) : Color.gray.opacity(0.20))
+                            } else {
+                                tag(item.label, tint: item.isEnabled ? Color.orange.opacity(0.32) : Color.gray.opacity(0.20))
+                            }
                         }
                         .buttonStyle(.plain)
                     }
                 }
             }
         }
+    }
+
+    private func iconTag(_ text: String, title: String, tint: Color) -> some View {
+        Text(text)
+            .font(.system(size: 8, weight: .bold, design: .monospaced))
+            .frame(width: 19, height: 19)
+            .background(tint)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .help(title)
     }
 
     private func compactTriStateSwitch(_ selection: SelectionState, action: @escaping () -> Void) -> some View {
