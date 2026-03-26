@@ -50,6 +50,24 @@ struct SettingsView: View {
         }
     }
 
+    private var appearanceSectionZIndex: Double {
+        switch openDropdown {
+        case .accent:
+            return 20
+        default:
+            return 0
+        }
+    }
+
+    private var generalSectionZIndex: Double {
+        switch openDropdown {
+        case .logLevel:
+            return 20
+        default:
+            return 0
+        }
+    }
+
     var body: some View {
         Group {
             if cardStyle {
@@ -73,7 +91,7 @@ struct SettingsView: View {
                             }
                             .labelsHidden()
                             .pickerStyle(.segmented)
-                            .frame(width: controlColumnWidth)
+                            .frame(width: controlColumnWidth, alignment: .trailing)
                             .environment(\.colorScheme, colorScheme)
                         }
 
@@ -89,6 +107,7 @@ struct SettingsView: View {
                         }
                     }
                 )
+                .zIndex(appearanceSectionZIndex)
 
                 settingsSection(
                     title: "Menu Bar",
@@ -120,6 +139,7 @@ struct SettingsView: View {
                         }
                     }
                 )
+                .zIndex(generalSectionZIndex)
 
                 settingsSection(
                     title: "Advanced",
