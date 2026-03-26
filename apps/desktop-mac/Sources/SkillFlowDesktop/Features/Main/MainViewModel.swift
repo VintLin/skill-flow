@@ -102,6 +102,8 @@ final class MainViewModel {
         let id: String
         let title: String
         let summary: String
+        let detailLines: [String]
+        let documentExcerpt: String
         let isEnabled: Bool
         let warningCount: Int
     }
@@ -116,6 +118,8 @@ final class MainViewModel {
         let warningCount: Int
         let errorCount: Int
         let enabledTargetLabels: [String]
+        let sourceFacts: [String]
+        let deploymentFacts: [String]
         let skills: [DetailSkill]
     }
 
@@ -213,6 +217,7 @@ final class MainViewModel {
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
+    private var skillDocumentCache: [String: String] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -999,34 +1004,81 @@ final class MainViewModel {
             return nil
         }
 
+        let payload = inspectedPayloadBySourceId[sourceId] ?? [:]
+        let sourcePayload = payload["source"] as? [String: Any] ?? [:]
+        let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
+        let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
+        let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
+        let deploymentsPayload = payload["deployments"] as? [[String: Any]] ?? []
+        let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
+
         let selectedLeafIds = Set(draft.selectedLeafIds)
         let enabledTargetLabels = draft.enabledTargets.map { Self.targetCatalog[$0] ?? $0 }
-        let inspectedLeafIds = uniqueSorted(inspectedPayloadBySourceId[sourceId]?["leafIds"] as? [String] ?? [])
+        let inspectedLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
 
         let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId in
             guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
                 return nil
             }
+            let leafPayload = leafPayloads.first(where: { ($0["id"] as? String) == leafId }) ?? [:]
+            let skillFilePath = leafPayload["skillFilePath"] as? String
+            let relativePath = leafPayload["relativePath"] as? String
+            let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
+            let title = (leafPayload["title"] as? String)?.nonEmpty ?? leaf.name
+            let documentExcerpt = skillFilePath.flatMap { cachedSkillDocumentExcerpt(path: $0) }
+                ?? leaf.description
+
             return DetailSkill(
                 id: leaf.id,
-                title: leaf.name,
-                summary: leaf.description.isEmpty ? leaf.linkName : leaf.description,
+                title: title,
+                summary: leaf.description.isEmpty ? linkName : leaf.description,
+                detailLines: [
+                    relativePath,
+                    skillFilePath,
+                    "Link name: \(linkName)"
+                ].compactMap { $0?.nonEmpty },
+                documentExcerpt: documentExcerpt,
                 isEnabled: selectedLeafIds.contains(leaf.id),
                 warningCount: leaf.metadataWarnings.count
             )
         }
 
+        let sourceFacts = [
+            sourcePayload["addedAt"] as? String,
+            sourcePayload["originLocator"] as? String,
+            sourcePayload["requestedPath"] as? String,
+            sourcePayload["selectionMode"] as? String,
+            lockPayload["checkoutPath"] as? String,
+            lockPayload["commitSha"] as? String,
+            lockPayload["resolvedVersion"] as? String,
+        ]
+        .compactMap { $0?.nonEmpty }
+
+        let deploymentFacts = deploymentsPayload.prefix(4).compactMap { deployment -> String? in
+            guard let target = deployment["target"] as? String,
+                  let status = deployment["status"] as? String
+            else {
+                return nil
+            }
+            let leafId = (deployment["leafId"] as? String)?.nonEmpty ?? "unknown"
+            return "\(Self.targetCatalog[target] ?? target) · \(status) · \(leafId)"
+        }
+
         return DetailViewData(
             sourceId: summary.sourceId,
-            title: summary.sourceDisplayName,
-            subtitle: summary.sourceKind,
-            locator: summary.sourceLocator,
-            updatedAt: summary.updatedAt,
+            title: (sourcePayload["displayName"] as? String)?.nonEmpty
+                ?? (summarySourcePayload["displayName"] as? String)?.nonEmpty
+                ?? summary.sourceDisplayName,
+            subtitle: (sourcePayload["kind"] as? String)?.nonEmpty ?? summary.sourceKind,
+            locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
+            updatedAt: (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt,
             health: summary.health,
             warningCount: summary.warningCount,
             errorCount: summary.errorCount,
             enabledTargetLabels: enabledTargetLabels,
+            sourceFacts: sourceFacts,
+            deploymentFacts: deploymentFacts,
             skills: skills
         )
     }
@@ -1080,6 +1132,27 @@ final class MainViewModel {
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .first(where: { !$0.isEmpty }) ?? error.localizedDescription
+    }
+
+    private func cachedSkillDocumentExcerpt(path: String) -> String {
+        if let cached = skillDocumentCache[path] {
+            return cached
+        }
+
+        let excerpt: String
+        if let raw = try? String(contentsOfFile: path, encoding: .utf8) {
+            excerpt = raw
+                .split(separator: "\n")
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty && $0 != "---" }
+                .prefix(8)
+                .joined(separator: "\n")
+        } else {
+            excerpt = "SKILL.md unavailable."
+        }
+
+        skillDocumentCache[path] = excerpt
+        return excerpt
     }
 
     private func pruneStateMaps(allowedSourceIds: Set<String>) {
@@ -1157,5 +1230,11 @@ final class MainViewModel {
             return String(describing: value)
         }
         return text
+    }
+}
+
+private extension String {
+    var nonEmpty: String? {
+        isEmpty ? nil : self
     }
 }

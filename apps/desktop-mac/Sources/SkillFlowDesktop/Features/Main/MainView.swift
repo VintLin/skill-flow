@@ -400,6 +400,10 @@ struct MainView: View {
                         ]
                     )
 
+                    if let sourceFacts = detail?.sourceFacts, !sourceFacts.isEmpty {
+                        detailOverviewCard(title: "Origin", lines: Array(sourceFacts.prefix(3)))
+                    }
+
                     detailSkillList(
                         items: skillItems,
                         activeIndex: activeIndex,
@@ -476,6 +480,10 @@ struct MainView: View {
                             detail?.updatedAt ?? "Pending",
                         ]
                     )
+                }
+
+                if let deploymentFacts = detail?.deploymentFacts, !deploymentFacts.isEmpty {
+                    detailOverviewCard(title: "Deployments", lines: deploymentFacts)
                 }
 
                 ScrollView {
@@ -622,6 +630,19 @@ struct MainView: View {
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(Array(skill.detailLines.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Text(skill.documentExcerpt)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 10)

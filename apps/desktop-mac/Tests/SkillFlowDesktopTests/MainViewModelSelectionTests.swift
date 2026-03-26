@@ -59,6 +59,23 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.selectedGroupId, "alpha")
         XCTAssertEqual(model.skillSelectionState(sourceId: "beta"), .full)
     }
+
+    func testDetailViewDataUsesInspectPayload() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertEqual(detail?.title, "AlphaHub")
+        XCTAssertEqual(detail?.subtitle, "clawhub")
+        XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
+        XCTAssertEqual(detail?.sourceFacts.first, "2026-03-25T12:00:00Z")
+        XCTAssertTrue(detail?.deploymentFacts.first?.contains("Claude Code") == true)
+        XCTAssertTrue(detail?.skills.first?.detailLines.contains(where: { $0.contains("SKILL.md") }) == true)
+        XCTAssertTrue(detail?.skills.first?.documentExcerpt.contains("# browse") == true)
+    }
 }
 
 @MainActor
@@ -228,6 +245,7 @@ private struct TestFixture {
 
     private let stateURL: URL
     private let logURL: URL
+    private let rootURL: URL
 
     static func install() throws -> TestFixture {
         let rootURL = FileManager.default.temporaryDirectory
@@ -244,8 +262,9 @@ private struct TestFixture {
         setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
         setenv("SKILL_FLOW_DESKTOP_TEST_STATE", stateURL.path, 1)
         setenv("SKILL_FLOW_DESKTOP_TEST_LOG", logURL.path, 1)
+        setenv("SKILL_FLOW_DESKTOP_TEST_ROOT", rootURL.path, 1)
 
-        return TestFixture(stateURL: stateURL, logURL: logURL)
+        return TestFixture(stateURL: stateURL, logURL: logURL, rootURL: rootURL)
     }
 
     func reset(state: State) throws {
@@ -254,6 +273,7 @@ private struct TestFixture {
         let data = try encoder.encode(state)
         try data.write(to: stateURL)
         try Data("".utf8).write(to: logURL)
+        try writeSkillDocuments(state: state)
     }
 
     func makeModel() async throws -> MainViewModel {
@@ -283,11 +303,37 @@ private struct TestFixture {
             }
     }
 
+    private func writeSkillDocuments(state: State) throws {
+        let docsRoot = rootURL.appendingPathComponent("docs", isDirectory: true)
+        try? FileManager.default.removeItem(at: docsRoot)
+        try FileManager.default.createDirectory(at: docsRoot, withIntermediateDirectories: true)
+
+        for (sourceId, source) in state.sources {
+            for leaf in source.leafs {
+                let leafDir = docsRoot.appendingPathComponent(sourceId).appendingPathComponent(leaf.id, isDirectory: true)
+                try FileManager.default.createDirectory(at: leafDir, withIntermediateDirectories: true)
+                let content = """
+                ---
+                name: \(leaf.name)
+                description: \(leaf.description)
+                ---
+
+                # \(leaf.name)
+
+                \(leaf.description)
+                """
+                try content.write(to: leafDir.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+            }
+        }
+    }
+
     private static let helperScript = """
     const fs = require('fs');
+    const path = require('path');
 
     const statePath = process.env.SKILL_FLOW_DESKTOP_TEST_STATE;
     const logPath = process.env.SKILL_FLOW_DESKTOP_TEST_LOG;
+    const rootPath = process.env.SKILL_FLOW_DESKTOP_TEST_ROOT;
 
     function readState() {
       try {
@@ -392,11 +438,46 @@ private struct TestFixture {
       if (request.command === 'inspect') {
         const sourceId = request.payload && request.payload.sourceId;
         const source = (state.sources || {})[sourceId] || {};
+        const targetIds = state.availableTargets || [];
+        const bindingsTargets = {};
+        for (const targetId of targetIds) {
+          bindingsTargets[targetId] = {
+            enabled: (source.enabledTargets || []).includes(targetId),
+            leafIds: (source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[targetId]) || []
+          };
+        }
         process.stdout.write(JSON.stringify(responseFor(request, true, {
-          sourceId,
-          leafIds: (source.leafs || []).map((leaf) => leaf.id),
-          selectedLeafIds: source.selectedLeafIds || [],
-          enabledTargets: source.enabledTargets || []
+          summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
+          source: {
+            id: sourceId,
+            kind: source.kind,
+            displayName: source.displayName,
+            locator: source.locator,
+            addedAt: '2026-03-25T12:00:00Z',
+            selectionMode: 'partial'
+          },
+          binding: {
+            selectedLeafIds: source.selectedLeafIds || [],
+            targets: bindingsTargets
+          },
+          leafs: (source.leafs || []).map((leaf) => ({
+            id: leaf.id,
+            sourceId,
+            title: leaf.name,
+            name: leaf.name,
+            linkName: leaf.linkName,
+            description: leaf.description,
+            relativePath: `${leaf.id}`,
+            absolutePath: path.join(rootPath, 'docs', sourceId, leaf.id),
+            skillFilePath: path.join(rootPath, 'docs', sourceId, leaf.id, 'SKILL.md'),
+            metadataWarnings: leaf.metadataWarnings || []
+          })),
+          deployments: (source.enabledTargets || []).map((target) => ({
+            sourceId,
+            leafId: ((source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[target]) || [])[0] || null,
+            target,
+            status: 'active'
+          }))
         }, [], [])));
         return;
       }
