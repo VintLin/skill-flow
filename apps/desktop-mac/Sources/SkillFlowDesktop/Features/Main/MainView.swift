@@ -5,6 +5,7 @@ struct MainView: View {
 
     @State private var activePage: Page = .config
     @State private var detailGroupId: String?
+    @State private var detailSkillIdByGroup: [String: String] = [:]
     @State private var theme: DesktopThemeMode = .light
 
     private enum Page {
@@ -50,6 +51,12 @@ struct MainView: View {
         .onChange(of: viewModel.selectedGroupId) { _, newValue in
             guard detailGroupId != nil else { return }
             detailGroupId = newValue
+        }
+        .onChange(of: detailGroupId) { _, newValue in
+            guard let groupId = newValue, let detail = viewModel.detailViewData(for: groupId) else { return }
+            if detailSkillIdByGroup[groupId] == nil {
+                detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
+            }
         }
         .task(id: viewModel.toast?.id) {
             guard viewModel.toast != nil else { return }
@@ -321,6 +328,7 @@ struct MainView: View {
 
     private func detailOverlay(groupId: String, layout: LayoutMetrics) -> some View {
         let detail = viewModel.detailViewData(for: groupId)
+        let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
         let stacked = layout.detailStacks
         let sidebarWidth = layout.detailSidebarWidth
 
@@ -333,12 +341,12 @@ struct MainView: View {
 
             VStack(spacing: 12) {
                 if stacked {
-                    detailSidebar(groupId: groupId, detail: detail, width: sidebarWidth)
-                    detailMain(groupId: groupId, detail: detail)
+                    detailSidebar(groupId: groupId, detail: detail, selectedSkillId: selectedSkill?.id, width: sidebarWidth)
+                    detailMain(groupId: groupId, detail: detail, selectedSkill: selectedSkill)
                 } else {
                     HStack(spacing: 12) {
-                        detailSidebar(groupId: groupId, detail: detail, width: sidebarWidth)
-                        detailMain(groupId: groupId, detail: detail)
+                        detailSidebar(groupId: groupId, detail: detail, selectedSkillId: selectedSkill?.id, width: sidebarWidth)
+                        detailMain(groupId: groupId, detail: detail, selectedSkill: selectedSkill)
                     }
                 }
             }
@@ -354,10 +362,11 @@ struct MainView: View {
     private func detailSidebar(
         groupId: String,
         detail: MainViewModel.DetailViewData?,
+        selectedSkillId: String?,
         width: CGFloat
     ) -> some View {
         let skillItems = detail?.skills ?? []
-        let activeIndex = skillItems.firstIndex(where: \.isEnabled)
+        let activeIndex = skillItems.firstIndex(where: { $0.id == selectedSkillId })
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
@@ -416,6 +425,7 @@ struct MainView: View {
                     detailSkillList(
                         items: skillItems,
                         activeIndex: activeIndex,
+                        groupId: groupId,
                         width: width
                     )
                 }
@@ -434,16 +444,16 @@ struct MainView: View {
 
     private func detailMain(
         groupId: String,
-        detail: MainViewModel.DetailViewData?
+        detail: MainViewModel.DetailViewData?,
+        selectedSkill: MainViewModel.DetailSkill?
     ) -> some View {
-        let primarySkill = detail?.skills.first
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(primarySkill?.title ?? detail?.title ?? groupId)
+                    Text(selectedSkill?.title ?? detail?.title ?? groupId)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text(primarySkill?.detailLines.last ?? detail?.locator ?? "No source locator")
+                    Text(selectedSkill?.detailLines.last ?? detail?.locator ?? "No source locator")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .lineLimit(1)
@@ -498,12 +508,14 @@ struct MainView: View {
                 }
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(detail?.skills ?? []) { skill in
-                            detailDocumentRow(skill: skill)
+                    Group {
+                        if let selectedSkill {
+                            detailDocumentRow(skill: selectedSkill)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            emptyState(title: "No skill selected", subtitle: "Choose one skill from the left list.")
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(18)
                 }
                 .background(AppTheme.toolbarButtonBackground(for: theme))
@@ -556,7 +568,7 @@ struct MainView: View {
         )
     }
 
-    private func detailSkillList(items: [MainViewModel.DetailSkill], activeIndex: Int?, width: CGFloat) -> some View {
+    private func detailSkillList(items: [MainViewModel.DetailSkill], activeIndex: Int?, groupId: String, width: CGFloat) -> some View {
         let lineOffset = activeIndex.map { CGFloat($0) * 64 + 10 } ?? 10
         let isActiveVisible = activeIndex != nil
 
@@ -584,7 +596,9 @@ struct MainView: View {
 
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                            detailSkillRow(item: item, active: index == activeIndex)
+                            detailSkillRow(item: item, active: index == activeIndex) {
+                                detailSkillIdByGroup[groupId] = item.id
+                            }
                         }
                     }
                 }
@@ -601,31 +615,34 @@ struct MainView: View {
         )
     }
 
-    private func detailSkillRow(item: MainViewModel.DetailSkill, active: Bool) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text(item.summary)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .lineLimit(2)
+    private func detailSkillRow(item: MainViewModel.DetailSkill, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    Text(item.summary)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 10)
+
+                Text(item.isEnabled ? "ON" : "OFF")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 36, height: 30)
+                    .background(item.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(item.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
             }
-
-            Spacer(minLength: 10)
-
-            Text(item.isEnabled ? "ON" : "OFF")
-                .font(.system(size: 10, weight: .bold))
-                .frame(width: 36, height: 30)
-                .background(item.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(item.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
+            .padding(.leading, 20)
+            .padding(.trailing, 16)
+            .padding(.vertical, 9)
+            .background(active ? AppTheme.pageBackground(for: theme).opacity(0.5) : Color.clear)
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 16)
-        .padding(.vertical, 9)
-        .background(active ? AppTheme.pageBackground(for: theme).opacity(0.5) : Color.clear)
+        .buttonStyle(.plain)
     }
 
     private func detailDocumentRow(skill: MainViewModel.DetailSkill) -> some View {
@@ -761,6 +778,19 @@ struct MainView: View {
                     .stroke(toast.style == .success ? Color.green.opacity(0.45) : Color.red.opacity(0.35), lineWidth: 1)
             )
             .foregroundStyle(AppTheme.textPrimary(for: theme))
+    }
+
+    private func preferredDetailSkillId(for detail: MainViewModel.DetailViewData) -> String? {
+        detail.skills.first(where: \.isEnabled)?.id ?? detail.skills.first?.id
+    }
+
+    private func selectedDetailSkill(for groupId: String, detail: MainViewModel.DetailViewData?) -> MainViewModel.DetailSkill? {
+        guard let detail else { return nil }
+        let selectedId = detailSkillIdByGroup[groupId] ?? preferredDetailSkillId(for: detail)
+        if detailSkillIdByGroup[groupId] == nil, let selectedId {
+            detailSkillIdByGroup[groupId] = selectedId
+        }
+        return detail.skills.first(where: { $0.id == selectedId }) ?? detail.skills.first
     }
 
     private func detailTriStateSwitch(_ selection: SelectionState) -> some View {
