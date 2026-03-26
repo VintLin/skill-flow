@@ -93,6 +93,8 @@ final class MainViewModel {
         let health: String
         let warningCount: Int
         let errorCount: Int
+        let skillSelection: SelectionState
+        let targetSelection: SelectionState
         let skills: [GroupCardSkill]
         let targets: [GroupCardTarget]
         let saveState: SaveState
@@ -323,6 +325,8 @@ final class MainViewModel {
                 health: row.status,
                 warningCount: row.warningCount,
                 errorCount: row.errorCount,
+                skillSelection: skillSelectionState(sourceId: row.id),
+                targetSelection: targetSelectionState(sourceId: row.id),
                 skills: summary.leafs.map { leaf in
                     GroupCardSkill(
                         id: leaf.id,

@@ -281,8 +281,14 @@ struct MainView: View {
                                 onToggleSkill: { skillId, enabled in
                                     Task { await viewModel.setSkillEnabled(skillId, enabled: enabled, sourceId: card.id) }
                                 },
+                                onToggleAllSkills: {
+                                    Task { await viewModel.toggleAllSkills(sourceId: card.id) }
+                                },
                                 onToggleTarget: { targetId, enabled in
                                     Task { await viewModel.setTargetEnabled(targetId, enabled: enabled, sourceId: card.id) }
+                                },
+                                onToggleAllTargets: {
+                                    Task { await viewModel.toggleAllTargets(sourceId: card.id) }
                                 }
                             )
                         }
@@ -754,7 +760,9 @@ private struct GroupCardView: View {
     let theme: DesktopThemeMode
     let onOpenDetail: () -> Void
     let onToggleSkill: (String, Bool) -> Void
+    let onToggleAllSkills: () -> Void
     let onToggleTarget: (String, Bool) -> Void
+    let onToggleAllTargets: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -784,6 +792,7 @@ private struct GroupCardView: View {
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .textCase(.uppercase)
                     Spacer()
+                    triStateSwitch(card.skillSelection, size: .desktop, action: onToggleAllSkills)
                     statusLabel
                 }
                 FlowLayout(spacing: 6, lineSpacing: 6) {
@@ -796,10 +805,14 @@ private struct GroupCardView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Agents")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .textCase(.uppercase)
+                HStack(spacing: 6) {
+                    Text("Agents")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .textCase(.uppercase)
+                    Spacer()
+                    triStateSwitch(card.targetSelection, size: .desktop, action: onToggleAllTargets)
+                }
                 FlowLayout(spacing: 6, lineSpacing: 6) {
                     ForEach(card.targets) { target in
                         cardToggle(target.label, isOn: target.isEnabled) {
@@ -813,6 +826,7 @@ private struct GroupCardView: View {
         .frame(minHeight: 196, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: AppTheme.cardShadow(for: theme), radius: 14, x: 0, y: 8)
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(isSelected ? AppTheme.brand.opacity(0.8) : AppTheme.border(for: theme), lineWidth: 1)
@@ -832,7 +846,7 @@ private struct GroupCardView: View {
         Text(card.saveState.message ?? card.health)
             .font(.system(size: 9, weight: .bold))
             .padding(.horizontal, 8)
-            .frame(height: 22)
+            .frame(height: AppTheme.ControlSize.status.height)
             .background(statusBackground)
             .foregroundStyle(AppTheme.textPrimary(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -856,12 +870,55 @@ private struct GroupCardView: View {
             Text(text)
                 .font(.system(size: 10, weight: .bold))
                 .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(isOn ? Color.orange.opacity(0.22) : Color.gray.opacity(0.16))
+                .frame(height: AppTheme.ControlSize.chip.height)
+                .background(isOn ? AppTheme.brand.opacity(0.30) : AppTheme.idleChipFill(for: theme))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func triStateSwitch(_ selection: SelectionState, size: AppTheme.ControlSize, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(switchLabel(selection))
+                .font(.system(size: size.fontSize, weight: .bold))
+                .frame(width: size.width, height: size.height)
+                .background(switchFill(selection))
+                .foregroundStyle(switchText(selection))
+                .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func switchLabel(_ selection: SelectionState) -> String {
+        switch selection {
+        case .empty: return "OFF"
+        case .partial: return "MIX"
+        case .full: return "ON"
+        }
+    }
+
+    private func switchFill(_ selection: SelectionState) -> Color {
+        switch selection {
+        case .empty:
+            return Color(red: 148.0 / 255.0, green: 163.0 / 255.0, blue: 184.0 / 255.0).opacity(0.30)
+        case .partial:
+            return Color(red: 234.0 / 255.0, green: 179.0 / 255.0, blue: 8.0 / 255.0).opacity(0.32)
+        case .full:
+            return Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0).opacity(0.30)
+        }
+    }
+
+    private func switchText(_ selection: SelectionState) -> Color {
+        switch selection {
+        case .empty:
+            return Color(red: 71.0 / 255.0, green: 85.0 / 255.0, blue: 105.0 / 255.0)
+        case .partial:
+            return Color(red: 146.0 / 255.0, green: 64.0 / 255.0, blue: 14.0 / 255.0)
+        case .full:
+            return Color(red: 22.0 / 255.0, green: 101.0 / 255.0, blue: 52.0 / 255.0)
+        }
     }
 }
 
@@ -941,6 +998,19 @@ private enum DesktopThemeMode {
 private enum AppTheme {
     static let brand = Color(red: 255.0 / 255.0, green: 97.0 / 255.0, blue: 26.0 / 255.0)
 
+    struct ControlSize {
+        let width: CGFloat
+        let height: CGFloat
+        let cornerRadius: CGFloat
+        let fontSize: CGFloat
+
+        static let desktop = ControlSize(width: 30, height: 30, cornerRadius: 8, fontSize: 10)
+        static let compact = ControlSize(width: 20, height: 19, cornerRadius: 6, fontSize: 7)
+        static let chip = ControlSize(width: 0, height: 30, cornerRadius: 8, fontSize: 10)
+        static let menuChip = ControlSize(width: 0, height: 19, cornerRadius: 6, fontSize: 8)
+        static let status = ControlSize(width: 0, height: 22, cornerRadius: 8, fontSize: 9)
+    }
+
     static func pageBackground(for mode: DesktopThemeMode) -> Color {
         switch mode {
         case .light:
@@ -1001,6 +1071,24 @@ private enum AppTheme {
             return Color.black.opacity(0.12)
         case .dark:
             return Color.white.opacity(0.12)
+        }
+    }
+
+    static func idleChipFill(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return Color(red: 170.0 / 255.0, green: 170.0 / 255.0, blue: 170.0 / 255.0).opacity(0.35)
+        case .dark:
+            return Color.white.opacity(0.12)
+        }
+    }
+
+    static func cardShadow(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return Color.black.opacity(0.12)
+        case .dark:
+            return Color.black.opacity(0.28)
         }
     }
 }
