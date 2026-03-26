@@ -376,14 +376,17 @@ struct MainView: View {
 
                 Spacer()
 
-                Button("×") {
-                    detailGroupId = nil
+                HStack(spacing: 8) {
+                    detailTriStateSwitch(detail?.skillSelection ?? .empty)
+                    Button("×") {
+                        detailGroupId = nil
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 30, height: 30)
+                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                 }
-                .buttonStyle(.plain)
-                .frame(width: 30, height: 30)
-                .background(AppTheme.toolbarButtonBackground(for: theme))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
             }
             .padding(.bottom, 12)
 
@@ -422,6 +425,7 @@ struct MainView: View {
         .frame(minWidth: width, maxWidth: width, minHeight: 196, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppTheme.border(for: theme), lineWidth: 1)
@@ -432,13 +436,14 @@ struct MainView: View {
         groupId: String,
         detail: MainViewModel.DetailViewData?
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let primarySkill = detail?.skills.first
+        return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(detail?.title ?? groupId)
+                    Text(primarySkill?.title ?? detail?.title ?? groupId)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text(detail?.locator ?? "No source locator")
+                    Text(primarySkill?.detailLines.last ?? detail?.locator ?? "No source locator")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .lineLimit(1)
@@ -456,12 +461,12 @@ struct MainView: View {
                 }
             }
             .padding(12)
-            .background(AppTheme.toolbarButtonBackground(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(AppTheme.border(for: theme), lineWidth: 1)
-            )
+            .background(AppTheme.toolbarGlass(for: theme))
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(AppTheme.border(for: theme))
+                    .frame(height: 1)
+            }
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
@@ -516,6 +521,7 @@ struct MainView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: AppTheme.cardShadow(for: theme), radius: 12, x: 0, y: 8)
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppTheme.border(for: theme), lineWidth: 1)
@@ -543,6 +549,7 @@ struct MainView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppTheme.toolbarButtonBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: AppTheme.softShadow(for: theme), radius: 5, x: 0, y: 2)
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppTheme.border(for: theme), lineWidth: 1)
@@ -610,13 +617,13 @@ struct MainView: View {
 
             Text(item.isEnabled ? "ON" : "OFF")
                 .font(.system(size: 10, weight: .bold))
-                .padding(.horizontal, 8)
-                .frame(height: 30)
+                .frame(width: 36, height: 30)
                 .background(item.isEnabled ? Color.green.opacity(0.25) : Color.gray.opacity(0.24))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .foregroundStyle(item.isEnabled ? Color.green : AppTheme.textPrimary(for: theme))
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 20)
+        .padding(.trailing, 16)
         .padding(.vertical, 9)
         .background(active ? AppTheme.pageBackground(for: theme).opacity(0.5) : Color.clear)
     }
@@ -649,9 +656,12 @@ struct MainView: View {
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 4)
+                .padding(12)
+                .background(AppTheme.documentBlock(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 10)
+        .padding(.bottom, 12)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(AppTheme.border(for: theme))
@@ -752,6 +762,45 @@ struct MainView: View {
             )
             .foregroundStyle(AppTheme.textPrimary(for: theme))
     }
+
+    private func detailTriStateSwitch(_ selection: SelectionState) -> some View {
+        Text(detailSwitchLabel(selection))
+            .font(.system(size: 10, weight: .bold))
+            .frame(width: 36, height: 30)
+            .background(detailSwitchFill(selection))
+            .foregroundStyle(detailSwitchText(selection))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func detailSwitchLabel(_ selection: SelectionState) -> String {
+        switch selection {
+        case .empty: return "OFF"
+        case .partial: return "MIX"
+        case .full: return "ON"
+        }
+    }
+
+    private func detailSwitchFill(_ selection: SelectionState) -> Color {
+        switch selection {
+        case .empty:
+            return Color(red: 148.0 / 255.0, green: 163.0 / 255.0, blue: 184.0 / 255.0).opacity(0.30)
+        case .partial:
+            return Color(red: 234.0 / 255.0, green: 179.0 / 255.0, blue: 8.0 / 255.0).opacity(0.32)
+        case .full:
+            return Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0).opacity(0.26)
+        }
+    }
+
+    private func detailSwitchText(_ selection: SelectionState) -> Color {
+        switch selection {
+        case .empty:
+            return Color(red: 71.0 / 255.0, green: 85.0 / 255.0, blue: 105.0 / 255.0)
+        case .partial:
+            return Color(red: 146.0 / 255.0, green: 64.0 / 255.0, blue: 14.0 / 255.0)
+        case .full:
+            return Color(red: 22.0 / 255.0, green: 101.0 / 255.0, blue: 52.0 / 255.0)
+        }
+    }
 }
 
 private struct GroupCardView: View {
@@ -795,10 +844,12 @@ private struct GroupCardView: View {
                     triStateSwitch(card.skillSelection, size: .desktop, action: onToggleAllSkills)
                     statusLabel
                 }
-                FlowLayout(spacing: 6, lineSpacing: 6) {
-                    ForEach(card.skills) { skill in
-                        cardToggle(skill.label, isOn: skill.isEnabled) {
-                            onToggleSkill(skill.id, !skill.isEnabled)
+                chipScroller {
+                    FlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(card.skills) { skill in
+                            cardToggle(skill.label, isOn: skill.isEnabled) {
+                                onToggleSkill(skill.id, !skill.isEnabled)
+                            }
                         }
                     }
                 }
@@ -813,10 +864,12 @@ private struct GroupCardView: View {
                     Spacer()
                     triStateSwitch(card.targetSelection, size: .desktop, action: onToggleAllTargets)
                 }
-                FlowLayout(spacing: 6, lineSpacing: 6) {
-                    ForEach(card.targets) { target in
-                        cardToggle(target.label, isOn: target.isEnabled) {
-                            onToggleTarget(target.id, !target.isEnabled)
+                chipScroller {
+                    FlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(card.targets) { target in
+                            cardToggle(target.label, isOn: target.isEnabled) {
+                                onToggleTarget(target.id, !target.isEnabled)
+                            }
                         }
                     }
                 }
@@ -889,6 +942,32 @@ private struct GroupCardView: View {
                 .clipShape(RoundedRectangle(cornerRadius: size.cornerRadius))
         }
         .buttonStyle(.plain)
+    }
+
+    private func chipScroller<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ZStack {
+            ScrollView(.horizontal, showsIndicators: false) {
+                content()
+            }
+            .scrollClipDisabled()
+
+            HStack {
+                LinearGradient(
+                    colors: [AppTheme.surface(for: theme), AppTheme.surface(for: theme).opacity(0)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
+                Spacer()
+                LinearGradient(
+                    colors: [AppTheme.surface(for: theme).opacity(0), AppTheme.surface(for: theme)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
+            }
+            .allowsHitTesting(false)
+        }
     }
 
     private func switchLabel(_ selection: SelectionState) -> String {
@@ -1047,6 +1126,15 @@ private enum AppTheme {
         }
     }
 
+    static func toolbarGlass(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return Color.white.opacity(0.44)
+        case .dark:
+            return Color.white.opacity(0.08)
+        }
+    }
+
     static func textPrimary(for mode: DesktopThemeMode) -> Color {
         switch mode {
         case .light:
@@ -1089,6 +1177,24 @@ private enum AppTheme {
             return Color.black.opacity(0.12)
         case .dark:
             return Color.black.opacity(0.28)
+        }
+    }
+
+    static func softShadow(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return Color.black.opacity(0.08)
+        case .dark:
+            return Color.black.opacity(0.22)
+        }
+    }
+
+    static func documentBlock(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return Color.black.opacity(0.06)
+        case .dark:
+            return Color.black.opacity(0.36)
         }
     }
 }

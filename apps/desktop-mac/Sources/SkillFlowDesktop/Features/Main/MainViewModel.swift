@@ -119,6 +119,7 @@ final class MainViewModel {
         let health: String
         let warningCount: Int
         let errorCount: Int
+        let skillSelection: SelectionState
         let enabledTargetLabels: [String]
         let sourceFacts: [String]
         let deploymentFacts: [String]
@@ -1080,6 +1081,7 @@ final class MainViewModel {
             health: summary.health,
             warningCount: summary.warningCount,
             errorCount: summary.errorCount,
+            skillSelection: skillSelectionState(sourceId: sourceId),
             enabledTargetLabels: enabledTargetLabels,
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
