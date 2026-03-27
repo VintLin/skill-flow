@@ -102,51 +102,68 @@ enum GroupCardScale {
 }
 
 enum GroupCardDisplayMode: Equatable {
-    case standard
-    case compactMenu
+    case home
+    case menu
+    case importPage
 
     var scale: GroupCardScale {
         switch self {
-        case .standard:
+        case .home, .importPage:
             return .home
-        case .compactMenu:
+        case .menu:
             return .menu
         }
     }
 
     var showsSubtitle: Bool {
         switch self {
-        case .standard:
-            return true
-        case .compactMenu:
+        case .home, .menu, .importPage:
             return true
         }
     }
 
     var showsMetaLine: Bool {
         switch self {
-        case .standard:
+        case .home, .importPage:
             return true
-        case .compactMenu:
+        case .menu:
             return false
         }
     }
 
     var showsSectionTitles: Bool {
         switch self {
-        case .standard:
+        case .home, .importPage:
             return true
-        case .compactMenu:
+        case .menu:
             return false
         }
     }
 
     var supportsCollapsedSkills: Bool {
         switch self {
-        case .standard:
+        case .home, .importPage:
             return false
-        case .compactMenu:
+        case .menu:
             return true
+        }
+    }
+
+    var usesPlainPrimaryActionIcon: Bool {
+        switch self {
+        case .importPage:
+            return true
+        case .home, .menu:
+            return false
+        }
+    }
+
+    var showsSourceFacts: Bool {
+        switch self {
+        case .importPage:
+            return true
+        case .home, .menu:
+            return false
         }
     }
 }
@@ -228,14 +245,19 @@ struct SharedGroupCard: View {
     }
 
     private var showsPrimaryActionButton: Bool {
-        onActionButton != nil && actionButtonTitle != nil
+        onActionButton != nil
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: scale.cardSpacing) {
             header
 
-            if displayMode.showsMetaLine {
+            if displayMode.showsMetaLine || (displayMode.showsSourceFacts && !card.sourceFacts.isEmpty) {
+                dashedDivider
+            }
+
+            if displayMode.showsSourceFacts && !card.sourceFacts.isEmpty {
+                sourceFactsSection
                 dashedDivider
             }
 
@@ -386,21 +408,44 @@ struct SharedGroupCard: View {
             guard !isBusy else { return }
             onActionButton?()
         } label: {
-            HStack(spacing: 6) {
-                actionIcon(actionButtonIcon, size: 11)
-                    .foregroundStyle(AppTheme.pageBackground(for: theme))
+            if displayMode.usesPlainPrimaryActionIcon {
+                actionIcon(actionButtonIcon, size: 12)
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            } else {
+                HStack(spacing: 6) {
+                    actionIcon(actionButtonIcon, size: 11)
+                        .foregroundStyle(AppTheme.pageBackground(for: theme))
 
-                Text(actionButtonTitle ?? "Import")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(AppTheme.pageBackground(for: theme))
+                    Text(actionButtonTitle ?? "Import")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(AppTheme.pageBackground(for: theme))
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 24)
+                .background(AppTheme.brand(for: accent, in: theme))
+                .clipShape(Capsule())
             }
-            .padding(.horizontal, 10)
-            .frame(height: 24)
-            .background(AppTheme.brand(for: accent, in: theme))
-            .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .disabled(isBusy)
+    }
+
+    private var sourceFactsSection: some View {
+        VStack(alignment: .leading, spacing: max(6, scale.rowSpacing - 2)) {
+            Text("Source")
+                .font(.system(size: scale.sectionLabelSize, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+
+            Text(card.sourceFacts.joined(separator: " · "))
+                .font(.system(size: scale.metaSize, weight: .medium))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var loadingMessage: String {
@@ -475,9 +520,9 @@ struct SharedGroupCard: View {
 
     private var minimumHeight: CGFloat? {
         switch displayMode {
-        case .standard:
+        case .home, .importPage:
             return scale.minHeight
-        case .compactMenu:
+        case .menu:
             return nil
         }
     }

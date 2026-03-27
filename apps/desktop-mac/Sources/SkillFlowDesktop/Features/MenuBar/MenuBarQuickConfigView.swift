@@ -30,7 +30,7 @@ struct MenuBarQuickConfigView: View {
     private let menuListMaxHeight: CGFloat = 440
 
     private var cardDisplayMode: GroupCardDisplayMode {
-        menuCompactCards ? .compactMenu : .standard
+        menuCompactCards ? .menu : .home
     }
 
     var body: some View {
