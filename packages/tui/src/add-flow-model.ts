@@ -4,10 +4,10 @@ import type {
   DraftBinding,
   LeafRecord,
   SourceManifestRecord,
-} from "@skill-flow/core/domain/types.js";
-import { TARGET_DEFINITIONS, TARGET_LABELS, TARGET_ORDER } from "@skill-flow/core/utils/constants.js";
-import { countActions, formatActionSummary, formatTargetName } from "@skill-flow/core/utils/format.js";
-import { formatGroupRef } from "@skill-flow/core/utils/naming.js";
+} from "@skill-flow/domain/types";
+import { TARGET_DEFINITIONS, TARGET_LABELS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
+import { countActions, formatActionSummary, formatTargetName } from "@skill-flow/integration/utils/format";
+import { formatGroupRef } from "@skill-flow/integration/utils/naming";
 
 export type AddFlowRequest = {
   locator: string;

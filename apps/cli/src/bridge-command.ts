@@ -6,8 +6,8 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@skill-flow/shared-types/protocol";
-import type { DraftBinding, ImportDraft } from "@skill-flow/core/domain/types.js";
-import type { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
+import type { DraftBinding, ImportDraft } from "@skill-flow/domain/types";
+import type { SkillFlowApp } from "@skill-flow/query/runtime";
 
 type BridgeFailure = {
   code: string;

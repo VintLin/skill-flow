@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
-import * as githubCatalog from "@skill-flow/core/utils/github-catalog.js";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
+import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { executeBridgeRequest } from "../bridge-command.js";
 import { PROTOCOL_VERSION } from "@skill-flow/shared-types/protocol";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";

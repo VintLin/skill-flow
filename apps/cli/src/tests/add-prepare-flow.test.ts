@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("add prepare flow", () => {

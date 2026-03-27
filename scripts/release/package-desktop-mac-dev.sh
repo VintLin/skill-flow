@@ -41,20 +41,20 @@ chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 find "$APP_BUILD_DIR" -maxdepth 1 -type d -name '*.bundle' -exec cp -R {} "$APP_BUNDLE/Contents/Resources/" \;
 
-if [[ -f "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AppIcon.icns" ]]; then
-  cp "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AppIcon.icns" \
+if [[ -f "$DESKTOP_DIR/Sources/DesktopApp/Resources/AppIcon.icns" ]]; then
+  cp "$DESKTOP_DIR/Sources/DesktopApp/Resources/AppIcon.icns" \
     "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 fi
 
-if [[ -d "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AgentIcons" ]]; then
+if [[ -d "$DESKTOP_DIR/Sources/DesktopApp/Resources/AgentIcons" ]]; then
   mkdir -p "$APP_BUNDLE/Contents/Resources/AgentIcons"
-  cp -R "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AgentIcons/." \
+  cp -R "$DESKTOP_DIR/Sources/DesktopApp/Resources/AgentIcons/." \
     "$APP_BUNDLE/Contents/Resources/AgentIcons/"
 fi
 
-if [[ -d "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/MenuBar" ]]; then
+if [[ -d "$DESKTOP_DIR/Sources/DesktopApp/Resources/MenuBar" ]]; then
   mkdir -p "$APP_BUNDLE/Contents/Resources/MenuBar"
-  cp -R "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/MenuBar/." \
+  cp -R "$DESKTOP_DIR/Sources/DesktopApp/Resources/MenuBar/." \
     "$APP_BUNDLE/Contents/Resources/MenuBar/"
 fi
 

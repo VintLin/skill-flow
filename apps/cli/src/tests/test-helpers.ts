@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, vi } from "vitest";
-import * as builtinGitSources from "@skill-flow/core/utils/builtin-git-sources.js";
-import { deriveSourceId } from "@skill-flow/core/utils/source-id.js";
-import type { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
+import * as builtinGitSources from "@skill-flow/integration/utils/builtin-git-sources";
+import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
+import type { SkillFlowApp } from "@skill-flow/query/runtime";
 
 export type SandboxContext = {
   sandboxRoot: string;

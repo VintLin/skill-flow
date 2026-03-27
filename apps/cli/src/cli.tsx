@@ -3,19 +3,19 @@ import React from "react";
 import { Command } from "commander";
 import { render } from "ink";
 import packageJson from "../package.json" with { type: "json" };
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
 import { ConfigBootstrapApp } from "@skill-flow/tui/config-app.js";
 import { FindApp } from "@skill-flow/tui/find-app.js";
 import { AddFlowApp, runAddFlowNonInteractive, type AddFlowExitResult } from "@skill-flow/tui/add-flow.js";
-import { formatGroupRef } from "@skill-flow/core/utils/naming.js";
+import { formatGroupRef } from "@skill-flow/integration/utils/naming";
 import {
   formatActionSummary,
   formatDoctorIssue,
   formatSkillCandidates,
   formatWorkflowList,
-} from "@skill-flow/core/utils/format.js";
-import { filterAddWarnings, resolveAddSourceLocator } from "@skill-flow/core/utils/cli.js";
-import { buildFindCommand } from "@skill-flow/core/utils/find-command.js";
+} from "@skill-flow/integration/utils/format";
+import { filterAddWarnings, resolveAddSourceLocator } from "@skill-flow/integration/utils/cli";
+import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import {
   buildBridgeResponse,
   parseBridgeRequest,

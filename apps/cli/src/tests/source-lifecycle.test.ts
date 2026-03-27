@@ -1,15 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { InventoryService } from "@skill-flow/core/services/inventory-service.js";
-import { SourceService } from "@skill-flow/core/services/source-service.js";
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
-import { StateStore } from "@skill-flow/core/state/store.js";
-import * as clawhubUtils from "@skill-flow/core/utils/clawhub.js";
-import * as builtinGitSources from "@skill-flow/core/utils/builtin-git-sources.js";
-import * as githubCatalog from "@skill-flow/core/utils/github-catalog.js";
-import { buildFindCommand } from "@skill-flow/core/utils/find-command.js";
-import { deriveSourceId } from "@skill-flow/core/utils/source-id.js";
+import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
+import { SourceService } from "@skill-flow/core-engine/services/source-service";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
+import { StateStore } from "@skill-flow/storage/store";
+import * as clawhubUtils from "@skill-flow/integration/utils/clawhub";
+import * as builtinGitSources from "@skill-flow/integration/utils/builtin-git-sources";
+import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
+import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
+import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import {
   createRepo,
   pathExists,

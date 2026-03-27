@@ -8,7 +8,7 @@ import {
   TARGET_COMPAT_READ_CANDIDATES,
   TARGET_DEFINITIONS,
   TARGET_PATH_CANDIDATES,
-} from "@skill-flow/core/utils/constants.js";
+} from "@skill-flow/integration/utils/constants";
 
 describe("target definitions", () => {
   test("includes config-based OpenCode skills directory in default detection paths", () => {

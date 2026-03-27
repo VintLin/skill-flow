@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import type { SkillCandidate } from "@skill-flow/core/domain/types.js";
-import type { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
+import type { SkillCandidate } from "@skill-flow/domain/types";
+import type { SkillFlowApp } from "@skill-flow/query/runtime";
 import { AddFlowApp, type AddFlowExitResult } from "./add-flow.js";
-import { buildFindCommand } from "@skill-flow/core/utils/find-command.js";
+import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 
 type FindAppProps = {
   app: SkillFlowApp;

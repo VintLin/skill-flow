@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { DoctorService } from "@skill-flow/core/services/doctor-service.js";
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
+import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
 import {
   createBareRemote,
   createRepo,

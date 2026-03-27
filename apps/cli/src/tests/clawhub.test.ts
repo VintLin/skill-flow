@@ -2,7 +2,7 @@ import { describe, expect, test, vi, beforeEach } from "vitest";
 import {
   installClawHubSkill,
   searchClawHubSkills,
-} from "@skill-flow/core/utils/clawhub.js";
+} from "@skill-flow/integration/utils/clawhub";
 
 const execFileMock = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({

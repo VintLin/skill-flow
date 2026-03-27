@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { LeafRecord } from "@skill-flow/core/domain/types.js";
+import type { LeafRecord } from "@skill-flow/domain/types";
 import {
   ALL_AGENTS_CHOICE_ID,
   ALL_SKILLS_CHOICE_ID,

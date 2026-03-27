@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { buildFindCommand } from "@skill-flow/core/utils/find-command.js";
-import { buildProjectedSkillName, formatGroupLabel, resolveProjectedSkillNames } from "@skill-flow/core/utils/naming.js";
-import { deriveSourceId } from "@skill-flow/core/utils/source-id.js";
+import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
+import { buildProjectedSkillName, formatGroupLabel, resolveProjectedSkillNames } from "@skill-flow/integration/utils/naming";
+import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 
 describe("find and naming utils", () => {
   test("normalizes GitHub locators to the same source id across supported formats", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { InventoryService } from "@skill-flow/core/services/inventory-service.js";
+import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
 import {
   createRepo,
   skillDoc,

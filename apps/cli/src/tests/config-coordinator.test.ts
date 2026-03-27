@@ -5,8 +5,8 @@ import type {
   LockFile,
   Manifest,
   WorkflowSummary,
-} from "@skill-flow/core/domain/types.js";
-import { ConfigCoordinator } from "@skill-flow/core/services/config-coordinator.js";
+} from "@skill-flow/domain/types";
+import { ConfigCoordinator } from "@skill-flow/query/config-coordinator";
 
 const manifest: Manifest = {
   schemaVersion: 1,

@@ -6,8 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run -w @skill-flow/shared-types build && npm run -w @skill-flow/core build && npm run -w @skill-flow/tui build && npm run -w @skill-flow/bridge build && npm run -w skill-flow build",
-    "test": "npm run -w @skill-flow/shared-types test && npm run -w @skill-flow/core test && npm run -w @skill-flow/tui test && npm run -w @skill-flow/bridge test && npm run -w skill-flow test",
+    "build": "npm run -w @skill-flow/domain build && npm run -w @skill-flow/shared-types build && npm run -w @skill-flow/integration build && npm run -w @skill-flow/storage build && npm run -w @skill-flow/core-engine build && npm run -w @skill-flow/query build && npm run -w @skill-flow/tui build && npm run -w skill-flow build",
+    "test": "npm run -w @skill-flow/domain test && npm run -w @skill-flow/shared-types test && npm run -w @skill-flow/integration test && npm run -w @skill-flow/storage test && npm run -w @skill-flow/core-engine test && npm run -w @skill-flow/query test && npm run -w @skill-flow/tui test && npm run -w skill-flow test",
     "test:watch": "npm run -w skill-flow test:watch"
   }
 }

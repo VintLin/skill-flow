@@ -21,7 +21,7 @@ let package = Package(
                 .product(name: "Textual", package: "textual"),
                 .product(name: "Yams", package: "Yams"),
             ],
-            path: "Sources/SkillFlowDesktop",
+            path: "Sources/DesktopApp",
             resources: [
                 .process("Resources")
             ]

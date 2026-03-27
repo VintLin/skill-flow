@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
-import * as githubCatalog from "@skill-flow/core/utils/github-catalog.js";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
+import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("import page flow", () => {

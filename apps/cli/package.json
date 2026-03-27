@@ -45,7 +45,11 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@skill-flow/core": "1.1.5",
+    "@skill-flow/core-engine": "1.1.5",
+    "@skill-flow/domain": "1.1.5",
+    "@skill-flow/integration": "1.1.5",
+    "@skill-flow/query": "1.1.5",
+    "@skill-flow/storage": "1.1.5",
     "@skill-flow/tui": "1.1.5",
     "commander": "^14.0.3",
     "ink": "^6.8.0",

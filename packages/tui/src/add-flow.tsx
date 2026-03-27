@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import type { DeploymentPlan, DeploymentTargetName, DraftBinding } from "@skill-flow/core/domain/types.js";
-import type { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
-import { filterAddWarnings } from "@skill-flow/core/utils/cli.js";
+import type { DeploymentPlan, DeploymentTargetName, DraftBinding } from "@skill-flow/domain/types";
+import type { SkillFlowApp } from "@skill-flow/query/runtime";
+import { filterAddWarnings } from "@skill-flow/integration/utils/cli";
 import {
   ALL_AGENTS_CHOICE_ID,
   ALL_SKILLS_CHOICE_ID,

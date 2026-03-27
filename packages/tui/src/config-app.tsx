@@ -7,15 +7,15 @@ import type {
   DoctorReport,
   DraftBinding,
   WorkflowSummary,
-} from "@skill-flow/core/domain/types.js";
-import type { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
-import { TARGET_LABELS, TARGET_ORDER } from "@skill-flow/core/utils/constants.js";
+} from "@skill-flow/domain/types";
+import type { SkillFlowApp } from "@skill-flow/query/runtime";
+import { TARGET_LABELS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
 import {
   buildProjectedSkillName,
   formatGroupLabel,
   parseGitHubRepo,
   resolveProjectedSkillNames,
-} from "@skill-flow/core/utils/naming.js";
+} from "@skill-flow/integration/utils/naming";
 import {
   getParentSelectionState,
   toggleChild,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
-import { buildFindCommand } from "@skill-flow/core/utils/find-command.js";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
+import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("add selection and find command regression", () => {

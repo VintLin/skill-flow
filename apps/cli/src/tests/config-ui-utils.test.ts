@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { DraftBinding, WorkflowSummary } from "@skill-flow/core/domain/types.js";
+import type { DraftBinding, WorkflowSummary } from "@skill-flow/domain/types";
 import {
   buildActionRows,
   buildCommandBar,

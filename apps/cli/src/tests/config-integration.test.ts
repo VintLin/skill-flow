@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import type { DraftBinding } from "@skill-flow/core/domain/types.js";
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
+import type { DraftBinding } from "@skill-flow/domain/types";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
 import {
   createRepo,
   pathExists,

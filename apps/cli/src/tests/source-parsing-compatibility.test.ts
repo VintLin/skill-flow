@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { InventoryService } from "@skill-flow/core/services/inventory-service.js";
-import { SourceService } from "@skill-flow/core/services/source-service.js";
-import { StateStore } from "@skill-flow/core/state/store.js";
-import { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
-import { resolveAddSourceLocator } from "@skill-flow/core/utils/cli.js";
+import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
+import { SourceService } from "@skill-flow/core-engine/services/source-service";
+import { StateStore } from "@skill-flow/storage/store";
+import { SkillFlowApp } from "@skill-flow/query/runtime";
+import { resolveAddSourceLocator } from "@skill-flow/integration/utils/cli";
 import { useSkillFlowSandbox } from "./test-helpers.js";
 
 type ResolvedSource = {

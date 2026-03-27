@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { filterAddWarnings, resolveAddSourceLocator } from "@skill-flow/core/utils/cli.js";
+import { filterAddWarnings, resolveAddSourceLocator } from "@skill-flow/integration/utils/cli";
 
 describe("cli utils", () => {
   test("leaves direct source locators unchanged without a catalog override", () => {

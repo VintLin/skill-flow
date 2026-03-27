@@ -13,7 +13,9 @@
     "test:watch": "vitest --passWithNoTests"
   },
   "dependencies": {
-    "@skill-flow/core": "1.1.5",
+    "@skill-flow/domain": "1.1.5",
+    "@skill-flow/integration": "1.1.5",
+    "@skill-flow/query": "1.1.5",
     "ink": "^6.8.0",
     "react": "^19.2.0"
   },
