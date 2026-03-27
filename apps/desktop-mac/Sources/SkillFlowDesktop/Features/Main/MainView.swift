@@ -1659,7 +1659,7 @@ struct MainView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 10)
                     .padding(.trailing, externalURL == nil ? 10 : 30)
-                    .frame(height: 30)
+                    .frame(height: detailAgentItemHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
