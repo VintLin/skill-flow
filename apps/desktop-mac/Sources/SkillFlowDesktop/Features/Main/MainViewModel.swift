@@ -52,11 +52,6 @@ final class MainViewModel {
         var message: String?
     }
 
-    private struct UpdateFeedback: Equatable {
-        let message: String
-        let tone: GroupCardModel.StatusTone
-    }
-
     enum ToastStyle {
         case loading
         case success
@@ -102,18 +97,10 @@ final class MainViewModel {
     }
 
     struct GroupCardModel: Identifiable {
-        enum StatusTone {
-            case neutral
-            case success
-            case warning
-        }
-
         let id: String
         let title: String
         let subtitle: String
         let metaLine: String
-        let statusMessage: String?
-        let statusTone: StatusTone?
         let isPinned: Bool
         let health: String
         let warningCount: Int
@@ -488,7 +475,6 @@ final class MainViewModel {
     private var importPreviewTokenSeed: UInt64 = 0
     @ObservationIgnored private var deferredDraftSyncTask: Task<Void, Never>?
     private var pendingDraftSyncSourceIds: Set<String> = []
-    @ObservationIgnored private var updateFeedbackDismissTasksBySourceId: [String: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -516,7 +502,6 @@ final class MainViewModel {
     var isRefreshing: Bool = false
     var updatingSourceIds: Set<String> = []
     var saveStateBySourceId: [String: SaveState] = [:]
-    private var updateFeedbackBySourceId: [String: UpdateFeedback] = [:]
     var toast: ToastState?
 
     var doctorIssues: [DoctorIssueRow] = []
@@ -621,8 +606,6 @@ final class MainViewModel {
                 title: row.displayName,
                 subtitle: subtitleText(locator: row.locator, kind: row.kind),
                 metaLine: "from \(row.locator.isEmpty ? row.kind : row.locator)",
-                statusMessage: updateFeedbackBySourceId[row.id]?.message,
-                statusTone: updateFeedbackBySourceId[row.id]?.tone,
                 isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
                 warningCount: row.warningCount,
@@ -1087,7 +1070,6 @@ final class MainViewModel {
         do {
             cancelDeferredDraftSync()
             let response = try await bridgeClient.updateAll()
-            applyUpdateFeedback(response.data?.value)
             await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
             showToast(style: .success, message: updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count))
         } catch {
@@ -1111,7 +1093,6 @@ final class MainViewModel {
         do {
             cancelDeferredDraftSync()
             let response = try await bridgeClient.updateSources(sourceIds)
-            applyUpdateFeedback(response.data?.value)
             await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
             showToast(style: .success, message: updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count))
         } catch {
@@ -1155,7 +1136,6 @@ final class MainViewModel {
         do {
             let response = try await bridgeClient.updateSources([sourceId])
             cancelDeferredDraftSync()
-            applyUpdateFeedback(response.data?.value)
             let shouldInspect = selectedGroupId == sourceId || selectedSourceId == sourceId
             await synchronizeState(
                 refreshDoctor: true,
@@ -2322,52 +2302,6 @@ final class MainViewModel {
         deferredDraftSyncTask?.cancel()
         deferredDraftSyncTask = nil
         pendingDraftSyncSourceIds.removeAll()
-    }
-
-    private func applyUpdateFeedback(_ value: Any?) {
-        guard let payload = value as? [String: Any] else {
-            return
-        }
-        let items = payload["updated"] as? [[String: Any]] ?? []
-        for item in items {
-            guard let sourceId = (item["sourceId"] as? String)?.nonEmpty else {
-                continue
-            }
-            let changed = item["changed"] as? Bool ?? false
-            let invalidatedLeafCount = (item["invalidatedLeafIds"] as? [String])?.count ?? 0
-            let addedLeafCount = (item["addedLeafIds"] as? [String])?.count ?? 0
-            let removedLeafCount = (item["removedLeafIds"] as? [String])?.count ?? 0
-
-            let feedback: UpdateFeedback
-            if invalidatedLeafCount > 0 {
-                feedback = UpdateFeedback(
-                    message: "Needs review",
-                    tone: .warning
-                )
-            } else if changed || addedLeafCount > 0 || removedLeafCount > 0 {
-                feedback = UpdateFeedback(
-                    message: "Updated",
-                    tone: .success
-                )
-            } else {
-                feedback = UpdateFeedback(
-                    message: "Up to date",
-                    tone: .neutral
-                )
-            }
-            setUpdateFeedback(feedback, for: sourceId)
-        }
-    }
-
-    private func setUpdateFeedback(_ feedback: UpdateFeedback, for sourceId: String) {
-        updateFeedbackBySourceId[sourceId] = feedback
-        updateFeedbackDismissTasksBySourceId[sourceId]?.cancel()
-        updateFeedbackDismissTasksBySourceId[sourceId] = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled else { return }
-            updateFeedbackBySourceId.removeValue(forKey: sourceId)
-            updateFeedbackDismissTasksBySourceId.removeValue(forKey: sourceId)
-        }
     }
 
     private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {

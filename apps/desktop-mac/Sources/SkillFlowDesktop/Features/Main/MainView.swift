@@ -1498,8 +1498,6 @@ struct MainView: View {
             title: item.title,
             subtitle: importCardSubtitle(for: item),
             metaLine: "from \(item.locator)",
-            statusMessage: nil,
-            statusTone: nil,
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,
