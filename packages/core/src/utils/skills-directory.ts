@@ -3,6 +3,7 @@ import { fetchGitHubRepoDetails } from "./github-catalog.js";
 import { parseGitHubRepo } from "./naming.js";
 
 const SKILLS_DIRECTORY_BASE_URL = "https://skills.sh";
+export const IMPORT_DIRECTORY_CACHE_TTL_MS = 8 * 60 * 60_000;
 const IMPORT_REPO_ALIASES = new Map<string, string>([
   ["anthropic/skills", "anthropics/skills"],
 ]);
@@ -41,6 +42,12 @@ export type SkillsDirectoryGroupDetails = {
   totalInstalls?: number;
   starCount?: number;
   skillCount?: number;
+};
+
+export type SkillsDirectoryPreviewSkill = {
+  id: string;
+  title: string;
+  summary: string;
 };
 
 export function normalizeImportCanonicalRepo(input: string): string | undefined {
@@ -198,6 +205,49 @@ export async function fetchSkillsDirectoryGroupDetails(
   };
 }
 
+export async function fetchSkillsDirectoryPreviewSkills(
+  locator: string,
+): Promise<{
+  canonicalRepo: string;
+  locator: string;
+  skills: SkillsDirectoryPreviewSkill[];
+}> {
+  const canonicalRepo = normalizeImportCanonicalRepo(locator);
+  if (!canonicalRepo) {
+    throw createProviderError("SKILLS_SOURCE_NOT_SUPPORTED", `Unsupported locator '${locator}'.`);
+  }
+
+  const sourceUrl = `${SKILLS_DIRECTORY_BASE_URL}/${canonicalRepo}`;
+  const response = await fetch(sourceUrl);
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw createProviderError(
+        "SKILLS_SOURCE_NOT_FOUND",
+        `skills.sh source page request failed with ${response.status}.`,
+      );
+    }
+    throw createProviderError(
+      response.status === 429 ? "SKILLS_SOURCE_RATE_LIMITED" : "SKILLS_SOURCE_REQUEST_FAILED",
+      `skills.sh source page request failed with ${response.status}.`,
+    );
+  }
+
+  const html = await response.text();
+  const skills = parseSkillsSourceSkillList(html, canonicalRepo);
+  if (skills.length === 0) {
+    throw createProviderError(
+      "SKILLS_SOURCE_PARSE_FAILED",
+      "skills.sh source page payload was missing skill entries.",
+    );
+  }
+
+  return {
+    canonicalRepo,
+    locator: canonicalRepo,
+    skills,
+  };
+}
+
 export function buildImportGroupCandidate(
   args: {
     canonicalRepo: string;
@@ -254,6 +304,32 @@ export function parseSkillsSourcePage(html: string): {
     ...(repoUrl ? { repoUrl } : {}),
     ...(repo ? { repoLabel: `${repo.owner}/${repo.repo}`.toLowerCase() } : {}),
   };
+}
+
+export function parseSkillsSourceSkillList(
+  html: string,
+  canonicalRepo: string,
+): SkillsDirectoryPreviewSkill[] {
+  const escapedRepo = canonicalRepo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`href="/${escapedRepo}/([^"/?#]+)"`, "gi");
+  const seen = new Set<string>();
+  const skills: SkillsDirectoryPreviewSkill[] = [];
+
+  for (const match of html.matchAll(regex)) {
+    const slug = match[1]?.trim();
+    if (!slug || slug === "opengraph-image" || seen.has(slug)) {
+      continue;
+    }
+
+    seen.add(slug);
+    skills.push({
+      id: slug,
+      title: slug,
+      summary: "",
+    });
+  }
+
+  return skills;
 }
 
 function applyImportRepoAlias(repo: string): string {

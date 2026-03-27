@@ -380,12 +380,17 @@ export type ImportPreviewTarget = {
   selectedByDefault: boolean;
 };
 
+export type ImportDraft = {
+  selectedSkillIds: string[];
+  enabledTargets: DeploymentTargetName[];
+};
+
 export type ImportPreviewResult =
   | {
       status: "ready";
       locator: string;
       canonicalRepo: string;
-      selectedLeafIds: string[];
+      selectedSkillIds: string[];
       enabledTargets: DeploymentTargetName[];
       skills: ImportPreviewSkill[];
       targets: ImportPreviewTarget[];
@@ -407,3 +412,43 @@ export type ImportSourceResult =
       reasonCode: string;
       retryable: boolean;
     };
+
+export type ImportGroupCacheEntry = {
+  canonicalRepo: string;
+  status: "ready" | "failed";
+  checkedAt: string;
+  expiresAt: string;
+  reasonCode?: ImportReasonCode;
+  retryable?: boolean;
+  data?: {
+    aliases: string[];
+    title: string;
+    summary?: string;
+    sourceUrl?: string;
+    repoUrl?: string;
+    starCount?: number;
+    totalInstalls?: number;
+    skillCount?: number;
+  };
+};
+
+export type ImportPreviewCacheEntry = {
+  canonicalRepo: string;
+  status: ImportPreviewResult["status"];
+  checkedAt: string;
+  expiresAt: string;
+  reasonCode?: ImportReasonCode;
+  retryable?: boolean;
+  data?: {
+    locator: string;
+    selectedSkillIds: string[];
+    enabledTargets: DeploymentTargetName[];
+    skills: ImportPreviewSkill[];
+    targets: ImportPreviewTarget[];
+  };
+};
+
+export type ImportDirectoryCache = {
+  groups: Record<string, ImportGroupCacheEntry>;
+  previews: Record<string, ImportPreviewCacheEntry>;
+};
