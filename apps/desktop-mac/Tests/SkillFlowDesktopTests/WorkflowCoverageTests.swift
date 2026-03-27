@@ -111,6 +111,20 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(updateRequests.first?.payload?["sourceIds"]?.value as? [String], ["beta"])
     }
 
+    func testBootstrapUsesBootstrapPayloadWithoutImmediateListOrDoctor() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+
+        XCTAssertEqual(model.selectedGroupId, "alpha")
+        XCTAssertEqual(model.sourceIds, ["alpha", "beta"])
+
+        let commands = fixture.loggedRequests().map(\.command)
+        XCTAssertEqual(commands, ["bootstrap"])
+    }
+
     func testPinnedWriteFailureRollsBack() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -147,7 +161,7 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(updateRequests.first?.payload?["sourceIds"]?.value as? [String], ["alpha"])
         XCTAssertFalse(model.isUpdatingSource("alpha"))
         XCTAssertEqual(model.toast?.style, .success)
-        XCTAssertEqual(model.toast?.message, "Updated alpha.")
+        XCTAssertEqual(model.toast?.message, "Updated 1 group.")
     }
 
     func testUpdateAllGroupsFromHomeUpdatesEverySourceAndClearsBusyState() async throws {
@@ -159,12 +173,12 @@ final class WorkflowCoverageTests: XCTestCase {
         await model.updateAllGroupsFromHome()
 
         let updateRequests = fixture.loggedRequests().filter { $0.command == "update" }
-        XCTAssertEqual(updateRequests.count, 2)
-        XCTAssertEqual(updateRequests.compactMap { $0.payload?["sourceIds"]?.value as? [String] }, [["alpha"], ["beta"]])
+        XCTAssertEqual(updateRequests.count, 1)
+        XCTAssertEqual(updateRequests.first?.payload?["sourceIds"]?.value as? [String], ["alpha", "beta"])
         XCTAssertFalse(model.isUpdatingSource("alpha"))
         XCTAssertFalse(model.isUpdatingSource("beta"))
         XCTAssertEqual(model.toast?.style, .success)
-        XCTAssertEqual(model.toast?.message, "Updated beta.")
+        XCTAssertEqual(model.toast?.message, "Updated 2 groups.")
     }
 
     func testImportPageLoadsRecommendationsAndPreview() async throws {
@@ -837,6 +851,10 @@ private struct TestFixture {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
           pinnedSourceIds: state.pinnedSourceIds || [],
+          summaries: buildSummaries(state),
+          audit: {
+            issues: []
+          },
           initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => [sourceId, sourceDraft(source)]))
         }, [], [])));
         return;

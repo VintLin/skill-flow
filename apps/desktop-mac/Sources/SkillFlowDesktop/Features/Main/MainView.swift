@@ -55,6 +55,7 @@ struct MainView: View {
     @State private var importPlaceholderIndex: Int = 0
     @State private var importDraftsByItemId: [String: ImportDraftState] = [:]
     @State private var updateButtonRotation: Double = 0
+    private let importAutoPreviewLimit = 4
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
 
@@ -100,18 +101,23 @@ struct MainView: View {
         .onChange(of: viewModel.currentPage) { _, newValue in
             switch newValue {
             case .detail(let groupId):
-                guard let detail = viewModel.detailViewData(for: groupId) else { return }
-                if detailSkillIdByGroup[groupId] == nil {
-                    detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
+                Task {
+                    await viewModel.selectSource(groupId)
                 }
                 if detailShowsGroupOverviewByGroup[groupId] == nil {
                     detailShowsGroupOverviewByGroup[groupId] = true
                 }
-                if detailDocumentTabIdByGroup[groupId] == nil {
-                    detailDocumentTabIdByGroup[groupId] = detail.groupDocuments.first?.id
-                }
-                for skill in detail.skills where detailDocumentTabIdBySkill[skill.id] == nil {
-                    detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
+                if viewModel.hasInspectPayload(for: groupId),
+                   let detail = viewModel.detailViewData(for: groupId) {
+                    if detailSkillIdByGroup[groupId] == nil {
+                        detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
+                    }
+                    if detailDocumentTabIdByGroup[groupId] == nil {
+                        detailDocumentTabIdByGroup[groupId] = detail.groupDocuments.first?.id
+                    }
+                    for skill in detail.skills where detailDocumentTabIdBySkill[skill.id] == nil {
+                        detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
+                    }
                 }
             case .importPage:
                 Task {
@@ -140,9 +146,6 @@ struct MainView: View {
         .task {
             if case .idle = viewModel.loadState {
                 await viewModel.bootstrap()
-                if let first = viewModel.sourceIds.first {
-                    await viewModel.selectSource(first)
-                }
             }
         }
         .onChange(of: viewModel.isUpdatingCurrentGroup) { _, isUpdating in
@@ -370,7 +373,6 @@ struct MainView: View {
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
                                     viewModel.currentPage = .detail(sourceId: card.id)
-                                    Task { await viewModel.selectSource(card.id) }
                                 },
                                 onUpdate: {
                                     Task { await viewModel.updateSource(card.id) }
@@ -428,12 +430,15 @@ struct MainView: View {
     }
 
     private func detailPage(groupId: String, layout: LayoutMetrics) -> some View {
-        let detail = viewModel.detailViewData(for: groupId)
+        let detail = viewModel.hasInspectPayload(for: groupId)
+            ? viewModel.detailViewData(for: groupId)
+            : nil
+        let fallbackRow = viewModel.sourceRows.first(where: { $0.id == groupId })
         let sidebarWidth = layout.detailSidebarWidth
 
         return HStack(alignment: .top, spacing: 14) {
-            detailSidebar(groupId: groupId, detail: detail, selectedSkillId: detailSkillIdByGroup[groupId], width: sidebarWidth)
-            detailMain(groupId: groupId, detail: detail)
+            detailSidebar(groupId: groupId, detail: detail, fallbackRow: fallbackRow, selectedSkillId: detailSkillIdByGroup[groupId], width: sidebarWidth)
+            detailMain(groupId: groupId, detail: detail, fallbackRow: fallbackRow)
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -442,6 +447,7 @@ struct MainView: View {
     private func detailSidebar(
         groupId: String,
         detail: MainViewModel.DetailViewData?,
+        fallbackRow: MainViewModel.SourceRow?,
         selectedSkillId: String?,
         width: CGFloat
     ) -> some View {
@@ -462,7 +468,7 @@ struct MainView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 0) {
-                        detailGroupListRow(groupId: groupId, detail: detail)
+                        detailGroupListRow(groupId: groupId, detail: detail, fallbackRow: fallbackRow)
                         detailSkillsLabelRow
                         ForEach(skills) { skill in
                             detailSkillListRow(groupId: groupId, skill: skill)
@@ -487,7 +493,8 @@ struct MainView: View {
 
     private func detailMain(
         groupId: String,
-        detail: MainViewModel.DetailViewData?
+        detail: MainViewModel.DetailViewData?,
+        fallbackRow: MainViewModel.SourceRow?
     ) -> some View {
         let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
         let showingGroupOverview = isShowingGroupOverview(groupId)
@@ -495,7 +502,7 @@ struct MainView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             if showingGroupOverview {
-                detailGroupHeader(detail: detail, fallbackGroupId: groupId)
+                detailGroupHeader(detail: detail, fallbackTitle: fallbackRow?.displayName ?? groupId, fallbackOriginLabel: fallbackRow?.locator)
             } else {
                 detailSkillHeader(skill: selectedSkill, fallbackGroupId: groupId)
             }
@@ -503,11 +510,13 @@ struct MainView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if showingGroupOverview {
-                        detailGroupOverview(groupId: groupId, detail: detail)
+                        detailGroupOverview(groupId: groupId, detail: detail, fallbackRow: fallbackRow)
                     } else if isSkillLoading {
                         detailSkillLoadingPlaceholder()
                     } else if let selectedSkill {
                         detailSkillOverview(skill: selectedSkill)
+                    } else if detail == nil {
+                        detailSkillLoadingPlaceholder()
                     } else {
                         emptyState(title: t("detail.empty.no_skill_title"), subtitle: t("detail.empty.no_skill.subtitle"))
                     }
@@ -526,12 +535,16 @@ struct MainView: View {
         }
     }
 
-    private func detailGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
+    private func detailGroupOverview(
+        groupId: String,
+        detail: MainViewModel.DetailViewData?,
+        fallbackRow: MainViewModel.SourceRow?
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             detailPathRow(
                 title: t("detail.section.path"),
                 path: detail?.groupPath,
-                fallbackText: detail?.locator ?? t("detail.path.unavailable")
+                fallbackText: detail?.locator ?? fallbackRow?.locator ?? t("detail.path.unavailable")
             )
 
             if let detail, !detail.sourceDetailLines.isEmpty {
@@ -540,12 +553,16 @@ struct MainView: View {
                     lines: detail.sourceDetailLines,
                     externalURL: detail.sourceRepositoryURL
                 )
+            } else {
+                detailLoadingSection(title: "Source")
             }
 
             detailAgentRail(groupId: groupId, detail: detail)
 
             if let detail, !detail.groupDocuments.isEmpty {
                 detailGroupDocuments(detail, groupId: groupId)
+            } else {
+                detailLoadingSection(title: "Documents")
             }
         }
     }
@@ -634,13 +651,17 @@ struct MainView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func detailGroupHeader(detail: MainViewModel.DetailViewData?, fallbackGroupId: String) -> some View {
+    private func detailGroupHeader(
+        detail: MainViewModel.DetailViewData?,
+        fallbackTitle: String,
+        fallbackOriginLabel: String?
+    ) -> some View {
         let isUpdating = viewModel.isUpdatingCurrentGroup
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(detail?.title ?? fallbackGroupId)
+                    Text(detail?.title ?? fallbackTitle)
                         .font(.system(size: detailHeaderTitleSize, weight: .semibold))
                         .foregroundStyle(AppTheme.brand(for: accent, in: theme))
 
@@ -679,7 +700,7 @@ struct MainView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 detailOriginRow(
-                    originLabel: detail?.originLabel ?? t("detail.meta.unknown_source"),
+                    originLabel: detail?.originLabel ?? fallbackOriginLabel ?? t("detail.meta.unknown_source"),
                     starCount: detail?.starCount
                 )
 
@@ -732,10 +753,14 @@ struct MainView: View {
         .background(AppTheme.toolbarGlass(for: theme))
     }
 
-    private func detailGroupListRow(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
+    private func detailGroupListRow(
+        groupId: String,
+        detail: MainViewModel.DetailViewData?,
+        fallbackRow: MainViewModel.SourceRow?
+    ) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(detail?.title ?? groupId)
+                Text(detail?.title ?? fallbackRow?.displayName ?? groupId)
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .lineLimit(1)
@@ -933,8 +958,77 @@ struct MainView: View {
                         }
                         .buttonStyle(.plain)
                     }
+
+                    if detail == nil {
+                        ForEach(0..<3, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(AppTheme.documentBlock(for: theme))
+                                .frame(width: 120, height: detailAgentItemHeight)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                                }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    private func detailLoadingSection(title: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+
+            detailContentCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(0..<3, id: \.self) { index in
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(AppTheme.toolbarButtonBackground(for: theme))
+                            .frame(width: index == 2 ? 180 : nil, height: 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+
+    private func importLoadingGrid(layout: LayoutMetrics) -> some View {
+        HStack {
+            Spacer(minLength: 0)
+            LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
+                ForEach(0..<4, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(AppTheme.surface(for: theme))
+                        .frame(height: 264)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                        }
+                        .overlay(alignment: .topLeading) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(AppTheme.toolbarButtonBackground(for: theme))
+                                    .frame(width: 120, height: 16)
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(AppTheme.toolbarButtonBackground(for: theme))
+                                    .frame(width: 160, height: 12)
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(AppTheme.toolbarButtonBackground(for: theme))
+                                    .frame(height: 52)
+                                Spacer()
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(AppTheme.toolbarButtonBackground(for: theme))
+                                    .frame(height: 40)
+                            }
+                            .padding(14)
+                        }
+                }
+            }
+            .frame(maxWidth: layout.gridFrameWidth, alignment: .center)
+            Spacer(minLength: 0)
         }
     }
 
@@ -1167,10 +1261,7 @@ struct MainView: View {
                     )
 
                     if case .loading = viewModel.importSearchPhase, importDisplayItems.isEmpty {
-                        emptyState(
-                            title: t("common.loading.groups"),
-                            subtitle: t("import.loading.subtitle")
-                        )
+                        importLoadingGrid(layout: layout)
                     } else if case .failed(let message) = viewModel.importSearchPhase, importDisplayItems.isEmpty {
                         emptyState(
                             title: t("import.failed.title"),
@@ -1225,9 +1316,12 @@ struct MainView: View {
                                             }
                                         }
                                     )
-                                    .task(id: item.id) {
-                                        await viewModel.previewImportGroupIfNeeded(item.id)
-                                    }
+                                }
+                            }
+                            .task(id: importAutoPreviewTaskKey) {
+                                let previewIds = Array(importDisplayItems.prefix(importAutoPreviewLimit).map(\.id))
+                                for groupId in previewIds {
+                                    await viewModel.previewImportGroupIfNeeded(groupId)
                                 }
                             }
                             .frame(maxWidth: layout.gridFrameWidth, alignment: .center)
@@ -1386,6 +1480,11 @@ struct MainView: View {
         }
     }
 
+    private var importAutoPreviewTaskKey: String {
+        let prefixIds = importDisplayItems.prefix(importAutoPreviewLimit).map(\.id)
+        return ([viewModel.importSubmittedQuery] + prefixIds).joined(separator: "|")
+    }
+
     private func importDraft(for item: RecommendedImport) -> ImportDraftState {
         importDraftsByItemId[item.id]
             ?? ImportDraftState(
@@ -1404,6 +1503,8 @@ struct MainView: View {
             title: item.title,
             subtitle: importCardSubtitle(for: item),
             metaLine: t("common.meta.from", item.locator),
+            statusMessage: nil,
+            statusTone: nil,
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,

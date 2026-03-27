@@ -98,6 +98,11 @@
 "toast.update.loading" = "正在更新 %@...";
 "toast.update.success" = "已更新 %@。";
 "toast.update.failed" = "更新失败：%@";
+"toast.update.summary.single" = "已更新 1 个分组。";
+"toast.update.summary.multiple" = "已更新 %@ 个分组。";
+"toast.update.summary.updated_count" = "已更新 %@";
+"toast.update.summary.up_to_date_count" = "已最新 %@";
+"toast.update.summary.needs_review_count" = "待复核 %@";
 "toast.uninstall.no_group_selected" = "卸载失败：未选择分组。";
 "toast.uninstall.success" = "已移除 %@。";
 "toast.uninstall.failed" = "卸载失败：%@";
@@ -110,6 +115,9 @@
 "toast.compact.skills" = "%@ · %@ · 技能";
 "toast.compact.agent" = "%@ · %@ · 代理 %@";
 "toast.compact.agents" = "%@ · %@ · 代理";
+"update.feedback.needs_review" = "待复核";
+"update.feedback.updated" = "已更新";
+"update.feedback.up_to_date" = "已最新";
 "import.error.load_recommendations" = "无法加载推荐内容。";
 "import.error.search_groups" = "无法搜索可导入分组。";
 "import.error.invalid_preview_response" = "预览响应无效。";

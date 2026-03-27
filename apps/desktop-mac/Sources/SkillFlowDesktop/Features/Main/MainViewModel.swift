@@ -52,6 +52,11 @@ final class MainViewModel {
         var detail: String?
     }
 
+    private struct UpdateFeedback: Equatable {
+        let message: String
+        let tone: GroupCardModel.StatusTone
+    }
+
     enum ToastStyle {
         case loading
         case success
@@ -147,10 +152,18 @@ final class MainViewModel {
     }
 
     struct GroupCardModel: Identifiable {
+        enum StatusTone {
+            case neutral
+            case success
+            case warning
+        }
+
         let id: String
         let title: String
         let subtitle: String
         let metaLine: String
+        let statusMessage: String?
+        let statusTone: StatusTone?
         let isPinned: Bool
         let health: String
         let warningCount: Int
@@ -506,6 +519,7 @@ final class MainViewModel {
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
+    private let deferredDraftSyncDelay: Duration = .milliseconds(250)
     private var baselineDrafts: [String: DraftState] = [:]
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
@@ -513,6 +527,24 @@ final class MainViewModel {
     private var skillDocumentCache: [String: String] = [:]
     private var parsedDocumentCache: [String: ParsedDocument] = [:]
     private var documentTabsCache: [String: [DocumentTab]] = [:]
+    @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
+    private var listRequestToken: UInt64 = 0
+    private var activeListRequestToken: UInt64?
+    @ObservationIgnored private var doctorRequestTask: Task<BridgeResponse, Error>?
+    private var doctorRequestToken: UInt64 = 0
+    private var activeDoctorRequestToken: UInt64?
+    @ObservationIgnored private var inspectRequestTasksBySourceId: [String: Task<BridgeResponse, Error>] = [:]
+    private var inspectRequestTokensBySourceId: [String: UInt64] = [:]
+    private var inspectRequestTokenSeed: UInt64 = 0
+    @ObservationIgnored private var importSearchTasksByQuery: [String: Task<BridgeResponse, Error>] = [:]
+    private var importSearchTokensByQuery: [String: UInt64] = [:]
+    private var importSearchTokenSeed: UInt64 = 0
+    @ObservationIgnored private var importPreviewTasksByGroupId: [String: Task<BridgeResponse, Error>] = [:]
+    private var importPreviewTokensByGroupId: [String: UInt64] = [:]
+    private var importPreviewTokenSeed: UInt64 = 0
+    @ObservationIgnored private var deferredDraftSyncTask: Task<Void, Never>?
+    private var pendingDraftSyncSourceIds: Set<String> = []
+    @ObservationIgnored private var updateFeedbackDismissTasksBySourceId: [String: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -539,6 +571,7 @@ final class MainViewModel {
     var isRefreshing: Bool = false
     var updatingSourceIds: Set<String> = []
     var saveStateBySourceId: [String: SaveState] = [:]
+    private var updateFeedbackBySourceId: [String: UpdateFeedback] = [:]
     var toast: ToastState?
 
     var doctorIssues: [DoctorIssueRow] = []
@@ -566,6 +599,13 @@ final class MainViewModel {
             return false
         }
         return updatingSourceIds.contains(selectedSourceId)
+    }
+
+    private var selectedDetailInspectSourceId: String? {
+        guard case .detail(let sourceId) = currentPage else {
+            return nil
+        }
+        return sourceId
     }
 
     var selectedGroupSourceIds: [String] {
@@ -636,6 +676,8 @@ final class MainViewModel {
                 title: row.displayName,
                 subtitle: subtitleText(locator: row.locator, kind: row.kind),
                 metaLine: "from \(row.locator.isEmpty ? row.kind : row.locator)",
+                statusMessage: updateFeedbackBySourceId[row.id]?.message,
+                statusTone: updateFeedbackBySourceId[row.id]?.tone,
                 isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
                 warningCount: row.warningCount,
@@ -1037,17 +1079,10 @@ final class MainViewModel {
             let bootstrap = try await bridgeClient.bootstrap()
             latestWarnings = bootstrap.warnings
             parseBootstrapData(bootstrap.data?.value)
-
-            let list = try await bridgeClient.list()
-            applyList(list)
             await migrateLegacyPinnedSourceIdsIfNeeded()
 
             loadState = .ready
-            healthStatus = list.warnings.isEmpty ? .healthy : .warnings
-
-            Task {
-                await runDoctor()
-            }
+            healthStatus = bootstrap.warnings.isEmpty ? .healthy : .warnings
         } catch {
             loadState = .failed(error.localizedDescription)
             healthStatus = .error
@@ -1059,7 +1094,7 @@ final class MainViewModel {
         defer { isRefreshing = false }
 
         do {
-            let response = try await bridgeClient.list()
+            let response = try await fetchListResponse()
             applyList(response)
             latestWarnings = response.warnings
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
@@ -1071,7 +1106,7 @@ final class MainViewModel {
     func selectSource(_ sourceId: String) async {
         selectedSourceId = sourceId
         do {
-            let response = try await bridgeClient.inspect(sourceId: sourceId)
+            let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
                 inspectedPayloadBySourceId[sourceId] = payload
             }
@@ -1083,7 +1118,7 @@ final class MainViewModel {
 
     func runDoctor() async {
         do {
-            let response = try await bridgeClient.doctor()
+            let response = try await fetchDoctorResponse()
             latestWarnings = response.warnings
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
             lastDoctorError = nil
@@ -1096,10 +1131,14 @@ final class MainViewModel {
 
     func updateAll() async {
         do {
-            _ = try await bridgeClient.updateAll()
-            await refreshList()
-            await runDoctor()
-        } catch {}
+            cancelDeferredDraftSync()
+            let response = try await bridgeClient.updateAll()
+            applyUpdateFeedback(response.data?.value)
+            await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
+            showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count)))
+        } catch {
+            showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
+        }
     }
 
     func updateAllGroupsFromHome() async {
@@ -1113,9 +1152,16 @@ final class MainViewModel {
         }
 
         updatingSourceIds.formUnion(sourceIds)
+        defer { updatingSourceIds.subtract(sourceIds) }
 
-        for sourceId in sourceIds {
-            await updateSource(sourceId, showLoadingToast: false)
+        do {
+            cancelDeferredDraftSync()
+            let response = try await bridgeClient.updateSources(sourceIds)
+            applyUpdateFeedback(response.data?.value)
+            await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
+            showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count)))
+        } catch {
+            showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
         }
     }
 
@@ -1150,13 +1196,15 @@ final class MainViewModel {
         defer { updatingSourceIds.remove(sourceId) }
 
         do {
-            _ = try await bridgeClient.updateSources([sourceId])
-            await refreshList()
-            await runDoctor()
-            if selectedGroupId == sourceId || selectedSourceId == sourceId {
-                await selectSource(sourceId)
-            }
-            showToast(style: .success, text: localizedText("toast.update.success", sourceId))
+            let response = try await bridgeClient.updateSources([sourceId])
+            cancelDeferredDraftSync()
+            applyUpdateFeedback(response.data?.value)
+            let shouldInspect = selectedGroupId == sourceId || selectedSourceId == sourceId
+            await synchronizeState(
+                refreshDoctor: true,
+                inspectSourceId: shouldInspect ? sourceId : nil
+            )
+            showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: 1)))
         } catch {
             showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
         }
@@ -1178,7 +1226,7 @@ final class MainViewModel {
     func loadRecommendedImportGroups() async {
         importSearchPhase = .loading
         do {
-            let response = try await bridgeClient.searchImportGroups(query: nil)
+            let response = try await fetchImportSearchResponse(query: nil)
             let payload = response.data?.value as? [String: Any] ?? [:]
             recommendedImportGroups = parseImportGroupsPayload(payload: payload)
             importSubmittedQuery = ""
@@ -1201,7 +1249,7 @@ final class MainViewModel {
 
         importSearchPhase = .loading
         do {
-            let response = try await bridgeClient.searchImportGroups(query: submitted)
+            let response = try await fetchImportSearchResponse(query: submitted)
             let payload = response.data?.value as? [String: Any] ?? [:]
             searchImportGroups = parseImportGroupsPayload(payload: payload)
             importSearchPhase = .ready
@@ -1217,7 +1265,7 @@ final class MainViewModel {
 
         setPreviewPhase(.loading, for: groupId)
         do {
-            let response = try await bridgeClient.previewImportSource(locator: item.locator)
+            let response = try await fetchImportPreviewResponse(groupId: groupId, locator: item.locator)
             let payload = response.data?.value as? [String: Any] ?? [:]
             applyImportPreviewPayload(payload, for: groupId, fallbackLocator: item.locator)
         } catch {
@@ -1268,10 +1316,12 @@ final class MainViewModel {
             }
 
             let sourceId = payload["sourceId"] as? String ?? ""
-            await refreshList()
-            await runDoctor()
-            if !sourceId.isEmpty {
-                await selectSource(sourceId)
+            cancelDeferredDraftSync()
+            await synchronizeState(
+                refreshDoctor: true,
+                inspectSourceId: sourceId.nonEmpty
+            )
+            if let sourceId = sourceId.nonEmpty {
                 currentPage = .detail(sourceId: sourceId)
             }
             recommendedImportGroups.removeAll(where: { $0.id == groupId })
@@ -1599,9 +1649,8 @@ final class MainViewModel {
             }
             baselineDrafts.removeValue(forKey: sourceId)
             workingDrafts.removeValue(forKey: sourceId)
-
-            await refreshList()
-            await runDoctor()
+            cancelDeferredDraftSync()
+            await synchronizeState(refreshDoctor: true)
 
             if let first = sourceIds.first {
                 await selectSource(first)
@@ -1655,6 +1704,7 @@ final class MainViewModel {
         guard let data = value as? [String: Any] else { return }
 
         applyPinnedSourceIds(data)
+        applySummaries(parseSummariesPayload(data))
 
         if let availableTargets = data["availableTargets"] as? [String] {
             detectedTargets.formUnion(availableTargets)
@@ -1670,35 +1720,25 @@ final class MainViewModel {
                 workingDrafts[sourceId] = draft
             }
         }
+
+        if let audit = data["audit"] {
+            doctorIssues = parseDoctorIssues(audit)
+            lastDoctorError = nil
+        }
     }
 
     private func applyList(_ response: BridgeResponse) {
         applyPinnedSourceIds(response.data?.value)
-        allSummaries = parseSummaries(response)
-        sourceIds = allSummaries.map(\.sourceId)
-        pruneStateMaps(allowedSourceIds: Set(sourceIds))
-
-        if selectedSourceId == nil || !sourceIds.contains(selectedSourceId ?? "") {
-            selectedSourceId = sourceIds.first
-        }
-
-        for summary in allSummaries {
-            if baselineDrafts[summary.sourceId] == nil {
-                baselineDrafts[summary.sourceId] = buildInitialDraftFromSummary(summary)
-            }
-            if workingDrafts[summary.sourceId] == nil {
-                workingDrafts[summary.sourceId] = baselineDrafts[summary.sourceId] ?? buildInitialDraftFromSummary(summary)
-            }
-
-            detectedTargets.formUnion(summary.enabledTargets)
-
-        }
-
+        applySummaries(parseSummariesPayload(response.data?.value))
     }
 
     private func parseSummaries(_ response: BridgeResponse) -> [WorkflowSummary] {
+        parseSummariesPayload(response.data?.value)
+    }
+
+    private func parseSummariesPayload(_ value: Any?) -> [WorkflowSummary] {
         guard
-            let data = response.data?.value as? [String: Any],
+            let data = value as? [String: Any],
             let summaries = data["summaries"] as? [[String: Any]]
         else {
             return []
@@ -1770,6 +1810,29 @@ final class MainViewModel {
                 updatedAt: updatedAt
             )
         }
+    }
+
+    private func applySummaries(_ summaries: [WorkflowSummary]) {
+        allSummaries = summaries
+        sourceIds = summaries.map(\.sourceId)
+        pruneStateMaps(allowedSourceIds: Set(sourceIds))
+
+        if selectedSourceId == nil || !sourceIds.contains(selectedSourceId ?? "") {
+            selectedSourceId = sourceIds.first
+        }
+
+        for summary in summaries {
+            if baselineDrafts[summary.sourceId] == nil {
+                baselineDrafts[summary.sourceId] = buildInitialDraftFromSummary(summary)
+            }
+            if workingDrafts[summary.sourceId] == nil {
+                workingDrafts[summary.sourceId] = baselineDrafts[summary.sourceId]
+                    ?? buildInitialDraftFromSummary(summary)
+            }
+
+            detectedTargets.formUnion(summary.enabledTargets)
+        }
+
     }
 
     private func parseDoctorIssues(_ value: Any?) -> [DoctorIssueRow] {
@@ -2029,6 +2092,10 @@ final class MainViewModel {
         )
     }
 
+    func hasInspectPayload(for sourceId: String) -> Bool {
+        inspectedPayloadBySourceId[sourceId] != nil
+    }
+
     func dismissToast(id: ToastState.ID? = nil) {
         guard let id else {
             toast = nil
@@ -2069,16 +2136,302 @@ final class MainViewModel {
             workingDrafts[sourceId] = normalizedDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
             showToast(style: successStyle, text: successMessage)
-            await refreshList()
-            if selectedGroupId == sourceId {
-                await selectSource(sourceId)
-            }
+            scheduleDeferredDraftSync(for: sourceId)
         } catch {
             let firstReason = firstErrorLine(from: error)
             workingDrafts[sourceId] = previousDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .failed, detail: firstReason)
             showToast(style: .error, text: localizedText("toast.save.failed", firstReason))
         }
+    }
+
+    private func fetchListResponse() async throws -> BridgeResponse {
+        if let existingTask = listRequestTask {
+            return try await existingTask.value
+        }
+
+        listRequestToken &+= 1
+        let token = listRequestToken
+        let task = Task { try await bridgeClient.list() }
+        listRequestTask = task
+        activeListRequestToken = token
+
+        do {
+            let response = try await task.value
+            if activeListRequestToken == token {
+                listRequestTask = nil
+                activeListRequestToken = nil
+            }
+            return response
+        } catch {
+            if activeListRequestToken == token {
+                listRequestTask = nil
+                activeListRequestToken = nil
+            }
+            throw error
+        }
+    }
+
+    private func fetchDoctorResponse() async throws -> BridgeResponse {
+        if let existingTask = doctorRequestTask {
+            return try await existingTask.value
+        }
+
+        doctorRequestToken &+= 1
+        let token = doctorRequestToken
+        let task = Task { try await bridgeClient.doctor() }
+        doctorRequestTask = task
+        activeDoctorRequestToken = token
+
+        do {
+            let response = try await task.value
+            if activeDoctorRequestToken == token {
+                doctorRequestTask = nil
+                activeDoctorRequestToken = nil
+            }
+            return response
+        } catch {
+            if activeDoctorRequestToken == token {
+                doctorRequestTask = nil
+                activeDoctorRequestToken = nil
+            }
+            throw error
+        }
+    }
+
+    private func fetchInspectResponse(sourceId: String) async throws -> BridgeResponse {
+        if let existingTask = inspectRequestTasksBySourceId[sourceId] {
+            return try await existingTask.value
+        }
+
+        inspectRequestTokenSeed &+= 1
+        let token = inspectRequestTokenSeed
+        let task = Task { try await bridgeClient.inspect(sourceId: sourceId) }
+        inspectRequestTasksBySourceId[sourceId] = task
+        inspectRequestTokensBySourceId[sourceId] = token
+
+        do {
+            let response = try await task.value
+            if inspectRequestTokensBySourceId[sourceId] == token {
+                inspectRequestTasksBySourceId.removeValue(forKey: sourceId)
+                inspectRequestTokensBySourceId.removeValue(forKey: sourceId)
+            }
+            return response
+        } catch {
+            if inspectRequestTokensBySourceId[sourceId] == token {
+                inspectRequestTasksBySourceId.removeValue(forKey: sourceId)
+                inspectRequestTokensBySourceId.removeValue(forKey: sourceId)
+            }
+            throw error
+        }
+    }
+
+    private func fetchImportSearchResponse(query: String?) async throws -> BridgeResponse {
+        let normalizedQuery = query?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? "__recommended__"
+
+        if let existingTask = importSearchTasksByQuery[normalizedQuery] {
+            return try await existingTask.value
+        }
+
+        importSearchTokenSeed &+= 1
+        let token = importSearchTokenSeed
+        let task = Task { try await bridgeClient.searchImportGroups(query: query) }
+        importSearchTasksByQuery[normalizedQuery] = task
+        importSearchTokensByQuery[normalizedQuery] = token
+
+        do {
+            let response = try await task.value
+            if importSearchTokensByQuery[normalizedQuery] == token {
+                importSearchTasksByQuery.removeValue(forKey: normalizedQuery)
+                importSearchTokensByQuery.removeValue(forKey: normalizedQuery)
+            }
+            return response
+        } catch {
+            if importSearchTokensByQuery[normalizedQuery] == token {
+                importSearchTasksByQuery.removeValue(forKey: normalizedQuery)
+                importSearchTokensByQuery.removeValue(forKey: normalizedQuery)
+            }
+            throw error
+        }
+    }
+
+    private func fetchImportPreviewResponse(
+        groupId: String,
+        locator: String
+    ) async throws -> BridgeResponse {
+        if let existingTask = importPreviewTasksByGroupId[groupId] {
+            return try await existingTask.value
+        }
+
+        importPreviewTokenSeed &+= 1
+        let token = importPreviewTokenSeed
+        let task = Task { try await bridgeClient.previewImportSource(locator: locator) }
+        importPreviewTasksByGroupId[groupId] = task
+        importPreviewTokensByGroupId[groupId] = token
+
+        do {
+            let response = try await task.value
+            if importPreviewTokensByGroupId[groupId] == token {
+                importPreviewTasksByGroupId.removeValue(forKey: groupId)
+                importPreviewTokensByGroupId.removeValue(forKey: groupId)
+            }
+            return response
+        } catch {
+            if importPreviewTokensByGroupId[groupId] == token {
+                importPreviewTasksByGroupId.removeValue(forKey: groupId)
+                importPreviewTokensByGroupId.removeValue(forKey: groupId)
+            }
+            throw error
+        }
+    }
+
+    private func synchronizeState(
+        refreshDoctor: Bool,
+        inspectSourceId: String? = nil
+    ) async {
+        await refreshList()
+        if refreshDoctor {
+            await runDoctor()
+        }
+
+        guard let inspectSourceId = inspectSourceId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !inspectSourceId.isEmpty,
+              sourceIds.contains(inspectSourceId)
+        else {
+            return
+        }
+
+        await selectSource(inspectSourceId)
+    }
+
+    private func scheduleDeferredDraftSync(for sourceId: String) {
+        pendingDraftSyncSourceIds.insert(sourceId)
+        deferredDraftSyncTask?.cancel()
+        deferredDraftSyncTask = Task { @MainActor in
+            try? await Task.sleep(for: deferredDraftSyncDelay)
+            guard !Task.isCancelled else { return }
+
+            let pendingSourceIds = pendingDraftSyncSourceIds
+            pendingDraftSyncSourceIds.removeAll()
+            deferredDraftSyncTask = nil
+            await refreshList()
+
+            guard let selectedSourceId,
+                  pendingSourceIds.contains(selectedSourceId),
+                  case .detail(let detailSourceId) = currentPage,
+                  detailSourceId == selectedSourceId
+            else {
+                return
+            }
+
+            await selectSource(selectedSourceId)
+        }
+    }
+
+    private func cancelDeferredDraftSync() {
+        deferredDraftSyncTask?.cancel()
+        deferredDraftSyncTask = nil
+        pendingDraftSyncSourceIds.removeAll()
+    }
+
+    private func applyUpdateFeedback(_ value: Any?) {
+        guard let payload = value as? [String: Any] else {
+            return
+        }
+        let items = payload["updated"] as? [[String: Any]] ?? []
+        for item in items {
+            guard let sourceId = (item["sourceId"] as? String)?.nonEmpty else {
+                continue
+            }
+            let changed = item["changed"] as? Bool ?? false
+            let invalidatedLeafCount = (item["invalidatedLeafIds"] as? [String])?.count ?? 0
+            let addedLeafCount = (item["addedLeafIds"] as? [String])?.count ?? 0
+            let removedLeafCount = (item["removedLeafIds"] as? [String])?.count ?? 0
+
+            let feedback: UpdateFeedback
+            if invalidatedLeafCount > 0 {
+                feedback = UpdateFeedback(
+                    message: localized("update.feedback.needs_review"),
+                    tone: .warning
+                )
+            } else if changed || addedLeafCount > 0 || removedLeafCount > 0 {
+                feedback = UpdateFeedback(
+                    message: localized("update.feedback.updated"),
+                    tone: .success
+                )
+            } else {
+                feedback = UpdateFeedback(
+                    message: localized("update.feedback.up_to_date"),
+                    tone: .neutral
+                )
+            }
+            setUpdateFeedback(feedback, for: sourceId)
+        }
+    }
+
+    private func setUpdateFeedback(_ feedback: UpdateFeedback, for sourceId: String) {
+        updateFeedbackBySourceId[sourceId] = feedback
+        updateFeedbackDismissTasksBySourceId[sourceId]?.cancel()
+        updateFeedbackDismissTasksBySourceId[sourceId] = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            updateFeedbackBySourceId.removeValue(forKey: sourceId)
+            updateFeedbackDismissTasksBySourceId.removeValue(forKey: sourceId)
+        }
+    }
+
+    private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {
+        guard let payload = value as? [String: Any] else {
+            return fallbackCount == 1
+                ? localized("toast.update.summary.single")
+                : localized("toast.update.summary.multiple", String(fallbackCount))
+        }
+        let items = payload["updated"] as? [[String: Any]] ?? []
+        if items.isEmpty {
+            return fallbackCount == 1
+                ? localized("toast.update.summary.single")
+                : localized("toast.update.summary.multiple", String(fallbackCount))
+        }
+
+        var changedCount = 0
+        var upToDateCount = 0
+        var reviewCount = 0
+
+        for item in items {
+            let changed = item["changed"] as? Bool ?? false
+            let invalidatedLeafCount = (item["invalidatedLeafIds"] as? [String])?.count ?? 0
+            let addedLeafCount = (item["addedLeafIds"] as? [String])?.count ?? 0
+            let removedLeafCount = (item["removedLeafIds"] as? [String])?.count ?? 0
+
+            if invalidatedLeafCount > 0 {
+                reviewCount += 1
+            } else if changed || addedLeafCount > 0 || removedLeafCount > 0 {
+                changedCount += 1
+            } else {
+                upToDateCount += 1
+            }
+        }
+
+        var parts: [String] = []
+        if changedCount > 0 {
+            parts.append(localized("toast.update.summary.updated_count", String(changedCount)))
+        }
+        if upToDateCount > 0 {
+            parts.append(localized("toast.update.summary.up_to_date_count", String(upToDateCount)))
+        }
+        if reviewCount > 0 {
+            parts.append(localized("toast.update.summary.needs_review_count", String(reviewCount)))
+        }
+
+        guard !parts.isEmpty else {
+            return items.count == 1
+                ? localized("toast.update.summary.single")
+                : localized("toast.update.summary.multiple", String(items.count))
+        }
+
+        return parts.joined(separator: " · ")
     }
 
     private func groupLabel(for sourceId: String) -> String {
@@ -2992,5 +3345,12 @@ final class MainViewModel {
 private extension String {
     var nonEmpty: String? {
         isEmpty ? nil : self
+    }
+
+    var capitalizedSentence: String {
+        guard let first else {
+            return self
+        }
+        return String(first).uppercased() + dropFirst()
     }
 }

@@ -98,6 +98,11 @@
 "toast.update.loading" = "Updating %@...";
 "toast.update.success" = "Updated %@.";
 "toast.update.failed" = "Update failed: %@";
+"toast.update.summary.single" = "Updated 1 group.";
+"toast.update.summary.multiple" = "Updated %@ groups.";
+"toast.update.summary.updated_count" = "Updated %@";
+"toast.update.summary.up_to_date_count" = "Up to date %@";
+"toast.update.summary.needs_review_count" = "Needs review %@";
 "toast.uninstall.no_group_selected" = "Uninstall failed: no group selected.";
 "toast.uninstall.success" = "Removed %@.";
 "toast.uninstall.failed" = "Uninstall failed: %@";
@@ -110,6 +115,9 @@
 "toast.compact.skills" = "%@ · %@ · Skills";
 "toast.compact.agent" = "%@ · %@ · Agent %@";
 "toast.compact.agents" = "%@ · %@ · Agents";
+"update.feedback.needs_review" = "Needs review";
+"update.feedback.updated" = "Updated";
+"update.feedback.up_to_date" = "Up to date";
 "import.error.load_recommendations" = "Unable to load recommendations.";
 "import.error.search_groups" = "Unable to search import groups.";
 "import.error.invalid_preview_response" = "Invalid preview response.";

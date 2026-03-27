@@ -98,6 +98,11 @@
 "toast.update.loading" = "%@ を更新中...";
 "toast.update.success" = "%@ を更新しました。";
 "toast.update.failed" = "更新失敗: %@";
+"toast.update.summary.single" = "1 グループを更新しました。";
+"toast.update.summary.multiple" = "%@ グループを更新しました。";
+"toast.update.summary.updated_count" = "更新済み %@";
+"toast.update.summary.up_to_date_count" = "最新 %@";
+"toast.update.summary.needs_review_count" = "要確認 %@";
 "toast.uninstall.no_group_selected" = "アンインストール失敗: グループが選択されていません。";
 "toast.uninstall.success" = "%@ を削除しました。";
 "toast.uninstall.failed" = "アンインストール失敗: %@";
@@ -110,6 +115,9 @@
 "toast.compact.skills" = "%@ · %@ · スキル";
 "toast.compact.agent" = "%@ · %@ · エージェント %@";
 "toast.compact.agents" = "%@ · %@ · エージェント";
+"update.feedback.needs_review" = "要確認";
+"update.feedback.updated" = "更新済み";
+"update.feedback.up_to_date" = "最新";
 "import.error.load_recommendations" = "おすすめを読み込めませんでした。";
 "import.error.search_groups" = "インポート可能なグループを検索できませんでした。";
 "import.error.invalid_preview_response" = "プレビュー応答が無効です。";

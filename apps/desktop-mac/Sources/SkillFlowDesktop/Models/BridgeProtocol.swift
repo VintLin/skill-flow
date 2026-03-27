@@ -1,6 +1,6 @@
 import Foundation
 
-enum BridgeCommand: String, Codable {
+enum BridgeCommand: String, Codable, Sendable {
     case bootstrap
     case list
     case inspect
@@ -15,7 +15,7 @@ enum BridgeCommand: String, Codable {
     case uninstall
 }
 
-struct BridgeRequest: Codable {
+struct BridgeRequest: Codable, Sendable {
     let protocolVersion: String
     let requestId: String
     let command: BridgeCommand
@@ -29,13 +29,13 @@ struct BridgeRequest: Codable {
     }
 }
 
-struct BridgeIssue: Codable, Identifiable {
+struct BridgeIssue: Codable, Identifiable, Sendable {
     var id: String { "\(code):\(message)" }
     let code: String
     let message: String
 }
 
-struct BridgeResponse: Codable {
+struct BridgeResponse: Codable, Sendable {
     let protocolVersion: String
     let requestId: String?
     let command: BridgeCommand
@@ -45,7 +45,7 @@ struct BridgeResponse: Codable {
     let errors: [BridgeIssue]
 }
 
-struct AnyCodable: Codable {
+struct AnyCodable: Codable, @unchecked Sendable {
     let value: Any
 
     init(_ value: Any) {
