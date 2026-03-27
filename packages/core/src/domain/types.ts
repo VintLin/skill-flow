@@ -306,7 +306,9 @@ export type SourceMetadataProvider = "github" | "skills" | "clawhub";
 export type SourceMetadataReasonCode =
   | "provider_not_supported"
   | "provider_data_unavailable"
-  | "provider_request_failed";
+  | "provider_request_failed"
+  | "provider_rate_limited"
+  | "provider_response_invalid";
 
 export type SourceMetadataResult =
   | { status: "ready"; provider: SourceMetadataProvider; data: SourceStats }

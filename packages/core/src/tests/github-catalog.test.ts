@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { fetchGitHubRepoStarCount } from "../utils/github-catalog.js";
+import {
+  fetchGitHubRepoStarCount,
+} from "../utils/github-catalog.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("fetchGitHubRepoStarCount", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   test("returns stargazer count from the GitHub repo endpoint", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers(),
       json: async () => ({ stargazers_count: 321 }),
     });
     vi.stubGlobal("fetch", fetchMock);

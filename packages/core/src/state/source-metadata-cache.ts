@@ -214,6 +214,8 @@ function isSourceMetadataReasonCode(value: unknown): value is SourceMetadataReas
   return (
     value === "provider_not_supported" ||
     value === "provider_data_unavailable" ||
-    value === "provider_request_failed"
+    value === "provider_request_failed" ||
+    value === "provider_rate_limited" ||
+    value === "provider_response_invalid"
   );
 }

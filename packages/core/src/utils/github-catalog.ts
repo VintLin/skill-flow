@@ -54,10 +54,29 @@ export async function fetchGitHubRepoDetails(locator: string): Promise<SourceSta
   );
 
   if (!response.ok) {
-    throw new Error(`GitHub repo request failed with ${response.status}.`);
+    if (response.status === 403) {
+      throw createProviderError(
+        "GITHUB_RATE_LIMITED",
+        `GitHub repo request failed with ${response.status}.`,
+      );
+    }
+
+    throw createProviderError(
+      "GITHUB_REPO_REQUEST_FAILED",
+      `GitHub repo request failed with ${response.status}.`,
+    );
   }
 
-  const payload = await response.json() as GitHubRepoResponse;
+  let payload: GitHubRepoResponse;
+  try {
+    payload = await response.json() as GitHubRepoResponse;
+  } catch {
+    throw createProviderError(
+      "GITHUB_REPO_RESPONSE_INVALID",
+      "GitHub repo response payload was invalid.",
+    );
+  }
+
   const starCount = typeof payload.stargazers_count === "number"
     ? payload.stargazers_count
     : undefined;
@@ -77,4 +96,8 @@ function buildGitHubHeaders(): Record<string, string> {
       ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
       : {}),
   };
+}
+
+function createProviderError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
 }

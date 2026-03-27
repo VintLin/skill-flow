@@ -65,6 +65,32 @@ describe("buildFailedSourceMetadataResult", () => {
       retryable: true,
     });
   });
+
+  test("maps provider-specific error codes to stable metadata reasons", () => {
+    expect(
+      buildFailedSourceMetadataResult(
+        "github",
+        Object.assign(new Error("limited"), { code: "GITHUB_RATE_LIMITED" }),
+      ),
+    ).toEqual({
+      status: "failed",
+      provider: "github",
+      reasonCode: "provider_rate_limited",
+      retryable: true,
+    });
+
+    expect(
+      buildFailedSourceMetadataResult(
+        "skills",
+        Object.assign(new Error("invalid"), { code: "SKILLS_SOURCE_PARSE_FAILED" }),
+      ),
+    ).toEqual({
+      status: "failed",
+      provider: "skills",
+      reasonCode: "provider_response_invalid",
+      retryable: false,
+    });
+  });
 });
 
 describe("fetchFreshSourceMetadata", () => {
@@ -170,6 +196,45 @@ describe("fetchFreshSourceMetadata", () => {
     });
   });
 
+  test("keeps skills metadata ready when github stars cannot be fetched", async () => {
+    vi.resetModules();
+    vi.doMock("../utils/github-catalog.js", () => ({
+      fetchGitHubRepoDetails: async () => {
+        throw Object.assign(new Error("limited"), { code: "GITHUB_RATE_LIMITED" });
+      },
+    }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => `
+        <span>179.8K<!-- --> total installs</span>
+        <a href="https://github.com/vercel-labs/agent-browser">GitHub</a>
+      `,
+    }));
+    const { fetchFreshSourceMetadata } = await import("../utils/source-details.js");
+
+    await expect(fetchFreshSourceMetadata(
+      {
+        id: "agent-browser",
+        locator: "https://github.com/vercel-labs/agent-browser",
+        kind: "git",
+        displayName: "agent-browser",
+        addedAt: "2026-03-27T00:00:00.000Z",
+      },
+      undefined,
+    )).resolves.toEqual({
+      status: "ready",
+      provider: "skills",
+      data: {
+        provider: "skills",
+        repoLabel: "vercel-labs/agent-browser",
+        repoUrl: "https://github.com/vercel-labs/agent-browser",
+        sourceUrl: "https://skills.sh/vercel-labs/agent-browser",
+        totalInstalls: 179800,
+      },
+    });
+  });
+
   test("falls back to github when the skills.sh page is missing", async () => {
     vi.resetModules();
     vi.doMock("../utils/github-catalog.js", () => ({
@@ -211,6 +276,70 @@ describe("fetchFreshSourceMetadata", () => {
         repoUrl: "https://github.com/acme/alpha",
         starCount: 321,
       },
+    });
+  });
+
+  test("returns a rate-limited failure when github rejects the repo request", async () => {
+    vi.resetModules();
+    vi.doMock("../utils/github-catalog.js", () => ({
+      fetchGitHubRepoDetails: async () => {
+        throw Object.assign(new Error("limited"), { code: "GITHUB_RATE_LIMITED" });
+      },
+    }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+    }));
+    const { fetchFreshSourceMetadata } = await import("../utils/source-details.js");
+
+    await expect(fetchFreshSourceMetadata(
+      {
+        id: "alpha",
+        locator: "https://github.com/acme/alpha",
+        kind: "git",
+        displayName: "alpha",
+        addedAt: "2026-03-27T00:00:00.000Z",
+      },
+      undefined,
+    )).resolves.toEqual({
+      status: "failed",
+      provider: "github",
+      reasonCode: "provider_rate_limited",
+      retryable: true,
+    });
+  });
+
+  test("returns a parse failure when the skills page exists but installs cannot be parsed", async () => {
+    vi.resetModules();
+    vi.doMock("../utils/github-catalog.js", () => ({
+      fetchGitHubRepoDetails: async () => ({
+        provider: "github",
+        repoLabel: "vercel-labs/agent-browser",
+        repoUrl: "https://github.com/vercel-labs/agent-browser",
+        starCount: 25087,
+      }),
+    }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => `<a href="https://github.com/vercel-labs/agent-browser">GitHub</a>`,
+    }));
+    const { fetchFreshSourceMetadata } = await import("../utils/source-details.js");
+
+    await expect(fetchFreshSourceMetadata(
+      {
+        id: "agent-browser",
+        locator: "https://github.com/vercel-labs/agent-browser",
+        kind: "git",
+        displayName: "agent-browser",
+        addedAt: "2026-03-27T00:00:00.000Z",
+      },
+      undefined,
+    )).resolves.toEqual({
+      status: "failed",
+      provider: "skills",
+      reasonCode: "provider_response_invalid",
+      retryable: false,
     });
   });
 });

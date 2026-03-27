@@ -1,6 +1,7 @@
 import type {
   SourceManifestRecord,
   SourceMetadataProvider,
+  SourceMetadataReasonCode,
   SourceMetadataResult,
   SourceStats,
   WorkflowSummary,
@@ -141,12 +142,20 @@ export async function fetchSkillsDirectorySourceDetails(locator: string): Promis
 
   const html = await response.text();
   const parsed = parseSkillsSourcePage(html);
-  const repoDetails = await fetchGitHubRepoDetails(locator);
+  if (parsed.totalInstalls === undefined) {
+    throw createProviderError(
+      "SKILLS_SOURCE_PARSE_FAILED",
+      "skills.sh source page payload was missing total installs.",
+    );
+  }
+  const repoDetails: SourceStats = await fetchGitHubRepoDetails(locator).catch(() => ({}));
+  const repoLabel = parsed.repoLabel ?? `${repo.owner}/${repo.repo}`;
+  const repoUrl = parsed.repoUrl ?? `https://github.com/${repo.owner}/${repo.repo}`;
 
   return {
     provider: "skills",
-    ...((parsed.repoLabel ?? repoDetails.repoLabel) ? { repoLabel: parsed.repoLabel ?? repoDetails.repoLabel } : {}),
-    ...((parsed.repoUrl ?? repoDetails.repoUrl) ? { repoUrl: parsed.repoUrl ?? repoDetails.repoUrl } : {}),
+    repoLabel,
+    repoUrl,
     sourceUrl,
     ...(repoDetails.starCount !== undefined ? { starCount: repoDetails.starCount } : {}),
     ...(parsed.totalInstalls !== undefined ? { totalInstalls: parsed.totalInstalls } : {}),
@@ -204,13 +213,14 @@ export function buildSourceMetadataResult(
 
 export function buildFailedSourceMetadataResult(
   provider: SourceMetadataProvider | undefined,
-  _error: unknown,
+  error: unknown,
 ): SourceMetadataResult {
+  const reasonCode = inferFailedReasonCode(error);
   return {
     status: "failed",
     ...(provider ? { provider } : {}),
-    reasonCode: "provider_request_failed",
-    retryable: true,
+    reasonCode,
+    retryable: reasonCode !== "provider_response_invalid",
   };
 }
 
@@ -246,6 +256,21 @@ function resolveGitHubLocatorForMetadata(source: SourceManifestRecord): string |
   return undefined;
 }
 
+function inferFailedReasonCode(error: unknown): SourceMetadataReasonCode {
+  if (hasProviderErrorCode(error, "GITHUB_RATE_LIMITED")) {
+    return "provider_rate_limited";
+  }
+
+  if (
+    hasProviderErrorCode(error, "GITHUB_REPO_RESPONSE_INVALID") ||
+    hasProviderErrorCode(error, "SKILLS_SOURCE_PARSE_FAILED")
+  ) {
+    return "provider_response_invalid";
+  }
+
+  return "provider_request_failed";
+}
+
 function parseCompactNumber(value: string): number {
   const trimmed = value.trim().toUpperCase();
   const suffix = trimmed.slice(-1);
@@ -278,4 +303,8 @@ function hasSourceStatsData(sourceStats: SourceStats): boolean {
 
 function createProviderError(code: string, message: string): Error & { code: string } {
   return Object.assign(new Error(message), { code });
+}
+
+function hasProviderErrorCode(error: unknown, code: string): error is Error & { code: string } {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
