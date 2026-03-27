@@ -52,6 +52,11 @@ final class MainViewModel {
         var message: String?
     }
 
+    private struct UpdateFeedback: Equatable {
+        let message: String
+        let tone: GroupCardModel.StatusTone
+    }
+
     enum ToastStyle {
         case loading
         case success
@@ -97,10 +102,18 @@ final class MainViewModel {
     }
 
     struct GroupCardModel: Identifiable {
+        enum StatusTone {
+            case neutral
+            case success
+            case warning
+        }
+
         let id: String
         let title: String
         let subtitle: String
         let metaLine: String
+        let statusMessage: String?
+        let statusTone: StatusTone?
         let isPinned: Bool
         let health: String
         let warningCount: Int
@@ -474,6 +487,7 @@ final class MainViewModel {
     private var importPreviewTokenSeed: UInt64 = 0
     @ObservationIgnored private var deferredDraftSyncTask: Task<Void, Never>?
     private var pendingDraftSyncSourceIds: Set<String> = []
+    @ObservationIgnored private var updateFeedbackDismissTasksBySourceId: [String: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -501,6 +515,7 @@ final class MainViewModel {
     var isRefreshing: Bool = false
     var updatingSourceIds: Set<String> = []
     var saveStateBySourceId: [String: SaveState] = [:]
+    private var updateFeedbackBySourceId: [String: UpdateFeedback] = [:]
     var toast: ToastState?
 
     var doctorIssues: [DoctorIssueRow] = []
@@ -528,6 +543,13 @@ final class MainViewModel {
             return false
         }
         return updatingSourceIds.contains(selectedSourceId)
+    }
+
+    private var selectedDetailInspectSourceId: String? {
+        guard case .detail(let sourceId) = currentPage else {
+            return nil
+        }
+        return sourceId
     }
 
     var selectedGroupSourceIds: [String] {
@@ -598,6 +620,8 @@ final class MainViewModel {
                 title: row.displayName,
                 subtitle: subtitleText(locator: row.locator, kind: row.kind),
                 metaLine: "from \(row.locator.isEmpty ? row.kind : row.locator)",
+                statusMessage: updateFeedbackBySourceId[row.id]?.message,
+                statusTone: updateFeedbackBySourceId[row.id]?.tone,
                 isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
                 warningCount: row.warningCount,
@@ -1064,9 +1088,11 @@ final class MainViewModel {
 
     func updateAll() async {
         do {
-            _ = try await bridgeClient.updateAll()
-            await refreshList()
-            await runDoctor()
+            cancelDeferredDraftSync()
+            let response = try await bridgeClient.updateAll()
+            applyUpdateFeedback(response.data?.value)
+            await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
+            showToast(style: .success, message: updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count))
         } catch {
             detailText = "Update failed: \(error.localizedDescription)"
         }
@@ -1083,9 +1109,17 @@ final class MainViewModel {
         }
 
         updatingSourceIds.formUnion(sourceIds)
+        defer { updatingSourceIds.subtract(sourceIds) }
 
-        for sourceId in sourceIds {
-            await updateSource(sourceId, showLoadingToast: false)
+        do {
+            cancelDeferredDraftSync()
+            let response = try await bridgeClient.updateSources(sourceIds)
+            applyUpdateFeedback(response.data?.value)
+            await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
+            showToast(style: .success, message: updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count))
+        } catch {
+            detailText = "Update failed: \(error.localizedDescription)"
+            showToast(style: .error, message: "Update failed: \(error.localizedDescription)")
         }
     }
 
@@ -1122,14 +1156,15 @@ final class MainViewModel {
         defer { updatingSourceIds.remove(sourceId) }
 
         do {
-            _ = try await bridgeClient.updateSources([sourceId])
+            let response = try await bridgeClient.updateSources([sourceId])
             cancelDeferredDraftSync()
+            applyUpdateFeedback(response.data?.value)
             let shouldInspect = selectedGroupId == sourceId || selectedSourceId == sourceId
             await synchronizeState(
                 refreshDoctor: true,
                 inspectSourceId: shouldInspect ? sourceId : nil
             )
-            showToast(style: .success, message: "Updated \(sourceId).")
+            showToast(style: .success, message: updateSummaryMessage(from: response.data?.value, fallbackCount: 1))
         } catch {
             detailText = "Update failed: \(error.localizedDescription)"
             showToast(style: .error, message: "Update failed: \(error.localizedDescription)")
@@ -2259,6 +2294,98 @@ final class MainViewModel {
         pendingDraftSyncSourceIds.removeAll()
     }
 
+    private func applyUpdateFeedback(_ value: Any?) {
+        guard let payload = value as? [String: Any] else {
+            return
+        }
+        let items = payload["updated"] as? [[String: Any]] ?? []
+        for item in items {
+            guard let sourceId = (item["sourceId"] as? String)?.nonEmpty else {
+                continue
+            }
+            let changed = item["changed"] as? Bool ?? false
+            let invalidatedLeafCount = (item["invalidatedLeafIds"] as? [String])?.count ?? 0
+            let addedLeafCount = (item["addedLeafIds"] as? [String])?.count ?? 0
+            let removedLeafCount = (item["removedLeafIds"] as? [String])?.count ?? 0
+
+            let feedback: UpdateFeedback
+            if invalidatedLeafCount > 0 {
+                feedback = UpdateFeedback(
+                    message: "Needs review",
+                    tone: .warning
+                )
+            } else if changed || addedLeafCount > 0 || removedLeafCount > 0 {
+                feedback = UpdateFeedback(
+                    message: "Updated",
+                    tone: .success
+                )
+            } else {
+                feedback = UpdateFeedback(
+                    message: "Up to date",
+                    tone: .neutral
+                )
+            }
+            setUpdateFeedback(feedback, for: sourceId)
+        }
+    }
+
+    private func setUpdateFeedback(_ feedback: UpdateFeedback, for sourceId: String) {
+        updateFeedbackBySourceId[sourceId] = feedback
+        updateFeedbackDismissTasksBySourceId[sourceId]?.cancel()
+        updateFeedbackDismissTasksBySourceId[sourceId] = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            updateFeedbackBySourceId.removeValue(forKey: sourceId)
+            updateFeedbackDismissTasksBySourceId.removeValue(forKey: sourceId)
+        }
+    }
+
+    private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {
+        guard let payload = value as? [String: Any] else {
+            return fallbackCount == 1 ? "Updated 1 group." : "Updated \(fallbackCount) groups."
+        }
+        let items = payload["updated"] as? [[String: Any]] ?? []
+        if items.isEmpty {
+            return fallbackCount == 1 ? "Updated 1 group." : "Updated \(fallbackCount) groups."
+        }
+
+        var changedCount = 0
+        var upToDateCount = 0
+        var reviewCount = 0
+
+        for item in items {
+            let changed = item["changed"] as? Bool ?? false
+            let invalidatedLeafCount = (item["invalidatedLeafIds"] as? [String])?.count ?? 0
+            let addedLeafCount = (item["addedLeafIds"] as? [String])?.count ?? 0
+            let removedLeafCount = (item["removedLeafIds"] as? [String])?.count ?? 0
+
+            if invalidatedLeafCount > 0 {
+                reviewCount += 1
+            } else if changed || addedLeafCount > 0 || removedLeafCount > 0 {
+                changedCount += 1
+            } else {
+                upToDateCount += 1
+            }
+        }
+
+        var parts: [String] = []
+        if changedCount > 0 {
+            parts.append("updated \(changedCount)")
+        }
+        if upToDateCount > 0 {
+            parts.append("up to date \(upToDateCount)")
+        }
+        if reviewCount > 0 {
+            parts.append("needs review \(reviewCount)")
+        }
+
+        guard !parts.isEmpty else {
+            return items.count == 1 ? "Updated 1 group." : "Updated \(items.count) groups."
+        }
+
+        return parts.joined(separator: " · ").capitalizedSentence + "."
+    }
+
     private func groupLabel(for sourceId: String) -> String {
         summary(for: sourceId)?.sourceDisplayName ?? sourceId
     }
@@ -3164,5 +3291,12 @@ final class MainViewModel {
 private extension String {
     var nonEmpty: String? {
         isEmpty ? nil : self
+    }
+
+    var capitalizedSentence: String {
+        guard let first else {
+            return self
+        }
+        return String(first).uppercased() + dropFirst()
     }
 }

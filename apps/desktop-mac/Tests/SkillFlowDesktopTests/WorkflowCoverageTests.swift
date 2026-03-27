@@ -146,7 +146,7 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(updateRequests.first?.payload?["sourceIds"]?.value as? [String], ["alpha"])
         XCTAssertFalse(model.isUpdatingSource("alpha"))
         XCTAssertEqual(model.toast?.style, .success)
-        XCTAssertEqual(model.toast?.message, "Updated alpha.")
+        XCTAssertEqual(model.toast?.message, "Updated 1 group.")
     }
 
     func testUpdateAllGroupsFromHomeUpdatesEverySourceAndClearsBusyState() async throws {
@@ -158,12 +158,12 @@ final class WorkflowCoverageTests: XCTestCase {
         await model.updateAllGroupsFromHome()
 
         let updateRequests = fixture.loggedRequests().filter { $0.command == "update" }
-        XCTAssertEqual(updateRequests.count, 2)
-        XCTAssertEqual(updateRequests.compactMap { $0.payload?["sourceIds"]?.value as? [String] }, [["alpha"], ["beta"]])
+        XCTAssertEqual(updateRequests.count, 1)
+        XCTAssertEqual(updateRequests.first?.payload?["sourceIds"]?.value as? [String], ["alpha", "beta"])
         XCTAssertFalse(model.isUpdatingSource("alpha"))
         XCTAssertFalse(model.isUpdatingSource("beta"))
         XCTAssertEqual(model.toast?.style, .success)
-        XCTAssertEqual(model.toast?.message, "Updated beta.")
+        XCTAssertEqual(model.toast?.message, "Updated 2 groups.")
     }
 
     func testImportPageLoadsRecommendationsAndPreview() async throws {
