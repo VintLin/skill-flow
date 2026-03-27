@@ -319,9 +319,13 @@ struct MainView: View {
                                 accent: accent,
                                 displayMode: .standard,
                                 skillsCollapsed: false,
+                                isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
                                     viewModel.currentPage = .detail(sourceId: card.id)
                                     Task { await viewModel.selectSource(card.id) }
+                                },
+                                onUpdate: {
+                                    Task { await viewModel.updateSource(card.id) }
                                 },
                                 onTogglePinned: {
                                     viewModel.togglePinned(sourceId: card.id)

@@ -157,7 +157,9 @@ struct SharedGroupCard: View {
     let accent: DesktopAccentColor
     let displayMode: GroupCardDisplayMode
     let skillsCollapsed: Bool
+    let isUpdating: Bool
     let onOpen: (() -> Void)?
+    let onUpdate: () -> Void
     let onTogglePinned: () -> Void
     let onDelete: () -> Void
     let onToggleSkill: (String, Bool) -> Void
@@ -174,6 +176,10 @@ struct SharedGroupCard: View {
 
     private var isSaving: Bool {
         card.saveState.phase == .saving
+    }
+
+    private var isBusy: Bool {
+        isSaving || isUpdating
     }
 
     private var shouldShowPinnedIcon: Bool {
@@ -210,12 +216,13 @@ struct SharedGroupCard: View {
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
         }
         .animation(.easeInOut(duration: 0.18), value: skillsCollapsed)
+        .allowsHitTesting(!isBusy)
         .overlay {
-            if isSaving {
+            if isBusy {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text(card.saveState.message ?? "Applying...")
+                    Text(loadingMessage)
                         .font(.system(size: scale.metaSize, weight: .semibold))
                 }
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
@@ -269,6 +276,7 @@ struct SharedGroupCard: View {
 
     private var pinButton: some View {
         Button {
+            guard !isBusy else { return }
             isActionMenuOpen.toggle()
         } label: {
             actionIcon(shouldShowPinnedIcon ? .pin : .more, size: 12)
@@ -277,11 +285,25 @@ struct SharedGroupCard: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(isBusy)
         .onHover { isHovering in
             isActionButtonHovered = isHovering
         }
+        .onChange(of: isBusy) { _, busy in
+            if busy {
+                isActionMenuOpen = false
+            }
+        }
         .popover(isPresented: $isActionMenuOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 4) {
+                actionMenuButton(
+                    title: "更新",
+                    icon: .update,
+                    foreground: AppTheme.textMuted(for: theme)
+                ) {
+                    isActionMenuOpen = false
+                    onUpdate()
+                }
                 actionMenuButton(
                     title: card.isPinned ? "取消置顶" : "置顶",
                     icon: .pin,
@@ -303,6 +325,13 @@ struct SharedGroupCard: View {
             .background(AppTheme.pageBackground(for: theme))
             .frame(width: 136)
         }
+    }
+
+    private var loadingMessage: String {
+        if isSaving {
+            return card.saveState.message ?? "Applying..."
+        }
+        return "Updating..."
     }
 
     private func cardRow(
@@ -342,12 +371,12 @@ struct SharedGroupCard: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .disabled(isSaving)
+                        .disabled(isBusy)
                     }
                 }
             }
-            .opacity(isSaving ? 0.68 : 1.0)
-            .allowsHitTesting(!isSaving)
+            .opacity(isBusy ? 0.68 : 1.0)
+            .allowsHitTesting(!isBusy)
         }
     }
 

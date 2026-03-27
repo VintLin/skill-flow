@@ -44,7 +44,11 @@ struct MenuBarQuickConfigView: View {
                             accent: accent,
                             displayMode: cardDisplayMode,
                             skillsCollapsed: menuCompactCards && hoveredGroupId != card.id,
+                            isUpdating: viewModel.isUpdatingSource(card.id),
                             onOpen: nil,
+                            onUpdate: {
+                                Task { await viewModel.updateSource(card.id) }
+                            },
                             onTogglePinned: {
                                 viewModel.togglePinned(sourceId: card.id)
                             },

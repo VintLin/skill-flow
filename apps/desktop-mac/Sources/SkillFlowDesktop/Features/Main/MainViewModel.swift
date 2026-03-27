@@ -381,7 +381,7 @@ final class MainViewModel {
     var showAllTargets: Bool = false
 
     var isRefreshing: Bool = false
-    var isUpdatingCurrentGroup: Bool = false
+    var updatingSourceIds: Set<String> = []
     var saveStateBySourceId: [String: SaveState] = [:]
     var toast: ToastState?
 
@@ -403,6 +403,13 @@ final class MainViewModel {
 
     var selectedGroupId: String? {
         selectedSourceId
+    }
+
+    var isUpdatingCurrentGroup: Bool {
+        guard let selectedSourceId else {
+            return false
+        }
+        return updatingSourceIds.contains(selectedSourceId)
     }
 
     var selectedGroupSourceIds: [String] {
@@ -948,14 +955,32 @@ final class MainViewModel {
             return
         }
 
-        isUpdatingCurrentGroup = true
-        defer { isUpdatingCurrentGroup = false }
+        await updateSource(sourceId)
+    }
+
+    func isUpdatingSource(_ sourceId: String) -> Bool {
+        updatingSourceIds.contains(sourceId)
+    }
+
+    func updateSource(_ sourceId: String) async {
+        let sourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sourceId.isEmpty else {
+            detailText = "Update failed: missing source id."
+            showToast(style: .error, message: "Update failed: no group selected.")
+            return
+        }
+
+        updatingSourceIds.insert(sourceId)
+        showToast(style: .loading, message: "Updating \(groupLabel(for: sourceId))...")
+        defer { updatingSourceIds.remove(sourceId) }
 
         do {
             _ = try await bridgeClient.updateSources([sourceId])
             await refreshList()
             await runDoctor()
-            await selectSource(sourceId)
+            if selectedGroupId == sourceId || selectedSourceId == sourceId {
+                await selectSource(sourceId)
+            }
             showToast(style: .success, message: "Updated \(sourceId).")
         } catch {
             detailText = "Update failed: \(error.localizedDescription)"
