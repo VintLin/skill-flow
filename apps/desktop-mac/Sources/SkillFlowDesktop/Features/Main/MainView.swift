@@ -54,6 +54,7 @@ struct MainView: View {
     @State private var importPlaceholderIndex: Int = 0
     @State private var importDraftsByItemId: [String: ImportDraftState] = [:]
     @State private var updateButtonRotation: Double = 0
+    private let importAutoPreviewLimit = 4
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
 
@@ -1223,9 +1224,12 @@ struct MainView: View {
                                             }
                                         }
                                     )
-                                    .task(id: item.id) {
-                                        await viewModel.previewImportGroupIfNeeded(item.id)
-                                    }
+                                }
+                            }
+                            .task(id: importAutoPreviewTaskKey) {
+                                let previewIds = Array(importDisplayItems.prefix(importAutoPreviewLimit).map(\.id))
+                                for groupId in previewIds {
+                                    await viewModel.previewImportGroupIfNeeded(groupId)
                                 }
                             }
                             .frame(maxWidth: layout.gridFrameWidth, alignment: .center)
@@ -1382,6 +1386,11 @@ struct MainView: View {
                 targets: item.targets.map(\.id)
             )
         }
+    }
+
+    private var importAutoPreviewTaskKey: String {
+        let prefixIds = importDisplayItems.prefix(importAutoPreviewLimit).map(\.id)
+        return ([viewModel.importSubmittedQuery] + prefixIds).joined(separator: "|")
     }
 
     private func importDraft(for item: RecommendedImport) -> ImportDraftState {
