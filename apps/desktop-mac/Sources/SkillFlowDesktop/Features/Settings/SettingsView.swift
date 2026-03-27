@@ -10,7 +10,6 @@ struct SettingsView: View {
 
     @State private var openDropdown: DropdownKind?
 
-    var cardStyle: Bool = false
     var theme: DesktopThemeMode = .light
 
     private enum DropdownKind: Hashable {
@@ -69,13 +68,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Group {
-            if cardStyle {
-                customContent
-            } else {
-                fallbackForm
-            }
-        }
+        customContent
     }
 
     private var customContent: some View {
@@ -154,32 +147,6 @@ struct SettingsView: View {
         }
         .frame(maxWidth: 900, alignment: .leading)
         .environment(\.colorScheme, colorScheme)
-    }
-
-    private var fallbackForm: some View {
-        Form {
-            Picker("Theme", selection: $themeMode) {
-                Text("Light").tag("light")
-                Text("Dark").tag("dark")
-            }
-            Picker("Accent", selection: $themeAccent) {
-                ForEach(DesktopAccentColor.allCases) { accent in
-                    Text(accent.title).tag(accent.rawValue)
-                }
-            }
-            Toggle("Compact menu cards", isOn: $menuCompactCards)
-            Toggle("Launch at login", isOn: $autoLaunch)
-            Picker("Log level", selection: $logLevel) {
-                Text("debug").tag("debug")
-                Text("info").tag("info")
-                Text("warn").tag("warn")
-                Text("error").tag("error")
-            }
-            Toggle("Enable external helper override (debug only)", isOn: $experimentalExternalHelper)
-                .help("This setting is for local debug only and is ignored in release builds.")
-        }
-        .padding()
-        .frame(width: 420)
     }
 
     private func settingsSection<Rows: View>(title: String, @ViewBuilder rows: () -> Rows) -> some View {

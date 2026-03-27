@@ -1269,7 +1269,7 @@ struct MainView: View {
 
     private func settingsPage(layout: LayoutMetrics) -> some View {
         ScrollView {
-            SettingsView(cardStyle: true, theme: theme)
+            SettingsView(theme: theme)
                 .padding(16)
         }
     }
