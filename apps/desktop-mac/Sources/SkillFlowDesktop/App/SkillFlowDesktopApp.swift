@@ -49,16 +49,7 @@ struct SkillFlowDesktopApp: App {
     }
 
     private var menuIcon: String {
-        switch viewModel.healthLabel {
-        case "Healthy":
-            return "checkmark.circle"
-        case "Warnings":
-            return "exclamationmark.triangle"
-        case "Error":
-            return "xmark.circle"
-        default:
-            return "circle"
-        }
+        viewModel.healthStatus.menuIconSystemName
     }
 }
 

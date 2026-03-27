@@ -32,6 +32,13 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(GroupCardDisplayMode.importPage.scale, .home)
     }
 
+    func testHealthStatusUsesStableMenuBarIcons() {
+        XCTAssertEqual(MainViewModel.HealthStatus.healthy.menuIconSystemName, "checkmark.circle")
+        XCTAssertEqual(MainViewModel.HealthStatus.warnings.menuIconSystemName, "exclamationmark.triangle")
+        XCTAssertEqual(MainViewModel.HealthStatus.error.menuIconSystemName, "xmark.circle")
+        XCTAssertEqual(MainViewModel.HealthStatus.unknown.menuIconSystemName, "circle")
+    }
+
     func testGroupCardTitleSizeDoesNotShrinkInMenuScale() {
         XCTAssertEqual(GroupCardScale.home.titleSize, 17)
         XCTAssertEqual(GroupCardScale.menu.titleSize, 17)

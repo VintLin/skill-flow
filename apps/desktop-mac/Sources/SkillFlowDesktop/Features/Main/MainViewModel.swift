@@ -59,6 +59,26 @@ final class MainViewModel {
         case error
     }
 
+    enum HealthStatus: Equatable {
+        case unknown
+        case healthy
+        case warnings
+        case error
+
+        var menuIconSystemName: String {
+            switch self {
+            case .healthy:
+                return "checkmark.circle"
+            case .warnings:
+                return "exclamationmark.triangle"
+            case .error:
+                return "xmark.circle"
+            case .unknown:
+                return "circle"
+            }
+        }
+    }
+
     struct ToastState: Identifiable, Equatable {
         let id = UUID()
         let style: ToastStyle
@@ -397,6 +417,7 @@ final class MainViewModel {
 
     var detailText: String = "Select a source to inspect details."
     var healthLabel: String = "Unknown"
+    var healthStatus: HealthStatus = .unknown
     var latestWarnings: [BridgeIssue] = []
 
     var inspectorVisible: Bool = true
@@ -911,6 +932,7 @@ final class MainViewModel {
 
             loadState = .ready
             healthLabel = list.warnings.isEmpty ? "Healthy" : "Warnings"
+            healthStatus = list.warnings.isEmpty ? .healthy : .warnings
 
             Task {
                 await runDoctor()
@@ -918,6 +940,7 @@ final class MainViewModel {
         } catch {
             loadState = .failed(error.localizedDescription)
             healthLabel = "Error"
+            healthStatus = .error
             detailText = "Bootstrap failed: \(error.localizedDescription)"
         }
     }
@@ -931,6 +954,7 @@ final class MainViewModel {
             applyList(response)
             latestWarnings = response.warnings
             healthLabel = response.warnings.isEmpty ? "Healthy" : "Warnings"
+            healthStatus = response.warnings.isEmpty ? .healthy : .warnings
         } catch {
             loadState = .failed(error.localizedDescription)
             detailText = "Refresh failed: \(error.localizedDescription)"
@@ -958,11 +982,13 @@ final class MainViewModel {
             detailText = prettyPrint(response.data?.value) ?? "No doctor data"
             latestWarnings = response.warnings
             healthLabel = response.warnings.isEmpty ? "Healthy" : "Warnings"
+            healthStatus = response.warnings.isEmpty ? .healthy : .warnings
             lastDoctorError = nil
             doctorIssues = parseDoctorIssues(response.data?.value)
         } catch {
             detailText = "Doctor failed: \(error.localizedDescription)"
             healthLabel = "Error"
+            healthStatus = .error
             lastDoctorError = error.localizedDescription
         }
     }
