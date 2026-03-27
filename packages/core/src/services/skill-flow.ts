@@ -102,6 +102,8 @@ type SkillFlowAddOptions = AddSourceOptions &
 type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: boolean };
 
 export class SkillFlowApp {
+  private static readonly importGroupResolveConcurrency = 3;
+
   readonly store: StateStore;
   readonly adapters;
   readonly inventoryService: InventoryService;
@@ -114,8 +116,9 @@ export class SkillFlowApp {
   readonly configCoordinator: ConfigCoordinator;
   private mutationQueue: Promise<void> = Promise.resolve();
   private metadataRefreshesBySourceId = new Map<string, Promise<void>>();
-  private importSourceRefreshesByRepo = new Map<string, Promise<void>>();
-  private importRecommendationRefreshesByFeed = new Map<ImportRecommendationFeedId, Promise<void>>();
+  private importSearchRefreshesByQuery = new Map<string, Promise<ImportSearchSnapshot>>();
+  private importSourceRefreshesByKey = new Map<string, Promise<UnifiedSourceSnapshot>>();
+  private importRecommendationRefreshesByFeed = new Map<ImportRecommendationFeedId, Promise<ImportRecommendationFeed>>();
 
   constructor() {
     const adapters = createChannelAdapters();
@@ -369,17 +372,17 @@ export class SkillFlowApp {
   }
 
   async listRecommendedImportGroups(): Promise<Result<{ groups: ImportGroupCandidate[] }>> {
-    return this.runSerializedMutation(() => this.listRecommendedImportGroupsImpl());
+    return this.listRecommendedImportGroupsImpl();
   }
 
   async searchImportGroups(
     query: string,
   ): Promise<Result<{ groups: ImportGroupCandidate[]; exact: boolean }>> {
-    return this.runSerializedMutation(() => this.searchImportGroupsImpl(query));
+    return this.searchImportGroupsImpl(query);
   }
 
   async previewImportSource(locator: string): Promise<Result<ImportPreviewResult>> {
-    return this.runSerializedMutation(() => this.previewImportSourceImpl(locator));
+    return this.previewImportSourceImpl(locator);
   }
 
   async importSource(
@@ -390,7 +393,7 @@ export class SkillFlowApp {
   }
 
   async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[]; pinnedSourceIds: string[] }>> {
-    return this.runSerializedMutation(() => this.listWorkflowsImpl());
+    return this.listWorkflowsImpl();
   }
 
   async inspectSource(
@@ -406,7 +409,7 @@ export class SkillFlowApp {
       sourceSnapshot?: UnifiedSourceSnapshot;
     }>
   > {
-    return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId));
+    return this.inspectSourceImpl(sourceId);
   }
 
   private async inspectSourceImpl(
@@ -447,14 +450,16 @@ export class SkillFlowApp {
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
     const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
     const deployments = lockFile.deployments.filter((deployment) => deployment.sourceId === sourceId);
-    const sourceMetadata = await this.resolveSourceMetadata(source, summary.lock);
     const canonicalRepo = normalizeImportCanonicalRepo(source.locator)
       ?? (source.originLocator ? normalizeImportCanonicalRepo(source.originLocator) : undefined);
-    const sourceSnapshot = canonicalRepo
-      ? await this.resolveImportSourceSnapshot(canonicalRepo, {
-          enrichSkillIds: leafs.map((leaf) => leaf.linkName),
-        }).catch(() => undefined)
-      : undefined;
+    const [sourceMetadata, sourceSnapshot] = await Promise.all([
+      this.resolveSourceMetadata(source, summary.lock),
+      canonicalRepo
+        ? this.resolveImportSourceSnapshot(canonicalRepo, {
+            enrichSkillIds: leafs.map((leaf) => leaf.linkName),
+          }).catch(() => undefined)
+        : Promise.resolve(undefined),
+    ]);
 
     return ok(
       { summary, source, binding, leafs, deployments, sourceMetadata, ...(sourceSnapshot ? { sourceSnapshot } : {}) },
@@ -466,14 +471,16 @@ export class SkillFlowApp {
     const { manifest } = await this.store.readState();
     const installedRepos = this.installedCanonicalRepos(manifest);
     const recommendedRepos = await this.resolveRecommendedImportRepos();
-    const groups = await Promise.all(recommendedRepos
-      .filter((canonicalRepo) => !installedRepos.has(canonicalRepo))
-      .slice(0, 8)
-      .map((canonicalRepo) =>
+    const groups = await this.mapConcurrent(
+      recommendedRepos
+        .filter((canonicalRepo) => !installedRepos.has(canonicalRepo))
+        .slice(0, 8),
+      SkillFlowApp.importGroupResolveConcurrency,
+      (canonicalRepo) =>
         this.resolveImportGroupCandidate(canonicalRepo, {
           installed: false,
-        })
-      ));
+        }),
+    );
 
     return ok({
       groups: groups.filter((candidate) => !candidate.installed),
@@ -512,13 +519,14 @@ export class SkillFlowApp {
 
       const searchSnapshot = await this.resolveImportSearchSnapshot(normalizedQuery);
       const grouped = groupSkillsDirectorySearchHits(searchSnapshot.hits).slice(0, 8);
-      const groups = await Promise.all(
-        grouped.map((group) =>
+      const groups = await this.mapConcurrent(
+        grouped,
+        SkillFlowApp.importGroupResolveConcurrency,
+        (group) =>
           this.resolveImportGroupCandidate(group.canonicalRepo, {
             installed: installedRepos.has(group.canonicalRepo),
             matchedSkills: group.matchedSkills,
-          })
-        ),
+          }),
       );
 
       return ok({
@@ -780,7 +788,7 @@ export class SkillFlowApp {
       return cached.groups;
     }
 
-    return (await this.refreshImportRecommendationFeed(feedId)).groups;
+    return (await this.refreshImportRecommendationFeedTracked(feedId)).groups;
   }
 
   private refreshImportRecommendationFeedInBackground(feedId: ImportRecommendationFeedId): void {
@@ -788,14 +796,7 @@ export class SkillFlowApp {
       return;
     }
 
-    const refresh = this.refreshImportRecommendationFeed(feedId)
-      .then(() => undefined)
-      .catch(() => undefined)
-      .finally(() => {
-        this.importRecommendationRefreshesByFeed.delete(feedId);
-      });
-
-    this.importRecommendationRefreshesByFeed.set(feedId, refresh);
+    void this.refreshImportRecommendationFeedTracked(feedId).catch(() => undefined);
   }
 
   private async refreshImportRecommendationFeed(
@@ -823,11 +824,12 @@ export class SkillFlowApp {
       return cached;
     }
 
-    return this.refreshImportSearchSnapshot(query);
+    return this.refreshImportSearchSnapshotTracked(normalizedQuery, query);
   }
 
   private refreshImportSearchSnapshotInBackground(query: string): void {
-    void this.refreshImportSearchSnapshot(query).catch(() => undefined);
+    const normalizedQuery = query.trim().toLowerCase();
+    void this.refreshImportSearchSnapshotTracked(normalizedQuery, query).catch(() => undefined);
   }
 
   private async refreshImportSearchSnapshot(query: string): Promise<ImportSearchSnapshot> {
@@ -869,7 +871,7 @@ export class SkillFlowApp {
         ...(options?.enrichSkillIds ? { enrichSkillIds: options.enrichSkillIds } : {}),
         ...(cached?.data ? { cachedSnapshot: cached.data } : {}),
       };
-      return await this.refreshImportSourceSnapshot(normalizedRepo, {
+      return await this.refreshImportSourceSnapshotTracked(normalizedRepo, {
         ...refreshOptions,
       });
     } catch (error) {
@@ -881,18 +883,63 @@ export class SkillFlowApp {
   }
 
   private refreshImportSourceSnapshotInBackground(canonicalRepo: string): void {
-    if (this.importSourceRefreshesByRepo.has(canonicalRepo)) {
+    const refreshKey = this.importSourceRefreshKey(canonicalRepo);
+    if (this.importSourceRefreshesByKey.has(refreshKey)) {
       return;
     }
 
-    const refresh = this.refreshImportSourceSnapshot(canonicalRepo)
-      .then(() => undefined)
-      .catch(() => undefined)
-      .finally(() => {
-        this.importSourceRefreshesByRepo.delete(canonicalRepo);
-      });
+    void this.refreshImportSourceSnapshotTracked(canonicalRepo).catch(() => undefined);
+  }
 
-    this.importSourceRefreshesByRepo.set(canonicalRepo, refresh);
+  private refreshImportRecommendationFeedTracked(
+    feedId: ImportRecommendationFeedId,
+  ): Promise<ImportRecommendationFeed> {
+    const inFlight = this.importRecommendationRefreshesByFeed.get(feedId);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const refresh = this.refreshImportRecommendationFeed(feedId).finally(() => {
+      this.importRecommendationRefreshesByFeed.delete(feedId);
+    });
+    this.importRecommendationRefreshesByFeed.set(feedId, refresh);
+    return refresh;
+  }
+
+  private refreshImportSearchSnapshotTracked(
+    normalizedQuery: string,
+    query: string,
+  ): Promise<ImportSearchSnapshot> {
+    const inFlight = this.importSearchRefreshesByQuery.get(normalizedQuery);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const refresh = this.refreshImportSearchSnapshot(query).finally(() => {
+      this.importSearchRefreshesByQuery.delete(normalizedQuery);
+    });
+    this.importSearchRefreshesByQuery.set(normalizedQuery, refresh);
+    return refresh;
+  }
+
+  private refreshImportSourceSnapshotTracked(
+    canonicalRepo: string,
+    options?: {
+      enrichSkillIds?: string[];
+      cachedSnapshot?: UnifiedSourceSnapshot;
+    },
+  ): Promise<UnifiedSourceSnapshot> {
+    const refreshKey = this.importSourceRefreshKey(canonicalRepo, options?.enrichSkillIds);
+    const inFlight = this.importSourceRefreshesByKey.get(refreshKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const refresh = this.refreshImportSourceSnapshot(canonicalRepo, options).finally(() => {
+      this.importSourceRefreshesByKey.delete(refreshKey);
+    });
+    this.importSourceRefreshesByKey.set(refreshKey, refresh);
+    return refresh;
   }
 
   private async refreshImportSourceSnapshot(
@@ -982,6 +1029,40 @@ export class SkillFlowApp {
         ...(next.trust ?? {}),
       },
     };
+  }
+
+  private importSourceRefreshKey(canonicalRepo: string, enrichSkillIds?: string[]): string {
+    const normalizedSkillIds = [...new Set((enrichSkillIds ?? []).filter(Boolean))].sort();
+    if (normalizedSkillIds.length === 0) {
+      return canonicalRepo;
+    }
+    return `${canonicalRepo}::${normalizedSkillIds.join(",")}`;
+  }
+
+  private async mapConcurrent<T, R>(
+    items: readonly T[],
+    concurrency: number,
+    worker: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) {
+      return [];
+    }
+
+    const limit = Math.max(1, Math.min(concurrency, items.length));
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    await Promise.all(
+      Array.from({ length: limit }, async () => {
+        while (nextIndex < items.length) {
+          const currentIndex = nextIndex;
+          nextIndex += 1;
+          results[currentIndex] = await worker(items[currentIndex]!, currentIndex);
+        }
+      }),
+    );
+
+    return results;
   }
 
   private inferImportReasonCode(error: unknown): ImportReasonCode {

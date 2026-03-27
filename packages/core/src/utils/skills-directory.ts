@@ -17,6 +17,7 @@ export const IMPORT_SOURCE_CACHE_TTL_MS = 5 * 60_000;
 export const IMPORT_RECOMMENDATION_CACHE_TTL_MS = 5 * 60_000;
 export const IMPORT_GITHUB_ENRICH_TTL_MS = 30 * 60_000;
 export const IMPORT_DIRECTORY_CACHE_TTL_MS = IMPORT_SOURCE_CACHE_TTL_MS;
+const SKILL_DETAIL_ENRICH_CONCURRENCY = 3;
 
 const IMPORT_REPO_ALIASES = new Map<string, string>([
   ["anthropic/skills", "anthropics/skills"],
@@ -238,15 +239,17 @@ export async function fetchSkillsDirectorySourceSnapshot(
 
   const owner = parseSkillsOwnerPage(ownerHtml, ownerSlug);
   const skillIdsToEnrich = resolveSkillIdsToEnrich(sourcePage.skills, options?.enrichSkillIds);
-  const enrichedSkillDetails = await Promise.all(
-    skillIdsToEnrich.map(async (skillId) => {
+  const enrichedSkillDetails = await mapConcurrent(
+    skillIdsToEnrich,
+    SKILL_DETAIL_ENRICH_CONCURRENCY,
+    async (skillId) => {
       try {
         const html = await fetchSkillsDirectoryHtml(`${sourceUrl}/${encodeURIComponent(skillId)}`, "skill");
         return parseSkillsSkillPage(html, canonicalRepo, skillId);
       } catch {
         return undefined;
       }
-    }),
+    },
   );
 
   const enrichedSkillMap = new Map(
@@ -580,6 +583,32 @@ function decodeJsonString(value: string): string {
 
 function hasTrustSignals(trust: UnifiedSourceTrust): boolean {
   return trust.official === true || trust.trending === true || trust.hot === true || trust.audited === true;
+}
+
+async function mapConcurrent<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: limit }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex]!, currentIndex);
+      }
+    }),
+  );
+
+  return results;
 }
 
 function createProviderError(code: string, message: string): Error & { code: string } {
