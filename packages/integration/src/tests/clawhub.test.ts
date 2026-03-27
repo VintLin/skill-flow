@@ -1,8 +1,8 @@
-import { describe, expect, test, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   installClawHubSkill,
   searchClawHubSkills,
-} from "@skill-flow/integration/utils/clawhub";
+} from "../utils/clawhub.js";
 
 const execFileMock = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({
@@ -93,7 +93,8 @@ describe("clawhub utils", () => {
 
     await expect(result).rejects.toMatchObject({
       name: "ClawHubSecurityBlockError",
-      message: "ClawHub security block: 'agent-browser' is flagged as suspicious. Use --force to install suspicious skills in non-interactive mode.",
+      message:
+        "ClawHub security block: 'agent-browser' is flagged as suspicious. Use --force to install suspicious skills in non-interactive mode.",
     });
   });
 });

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
-import { buildProjectedSkillName, formatGroupLabel, resolveProjectedSkillNames } from "@skill-flow/integration/utils/naming";
-import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
+import { buildFindCommand } from "../utils/find-command.js";
+import {
+  buildProjectedSkillName,
+  formatGroupLabel,
+  resolveProjectedSkillNames,
+} from "../utils/naming.js";
+import { deriveSourceId } from "../utils/source-id.js";
 
 describe("find and naming utils", () => {
   test("normalizes GitHub locators to the same source id across supported formats", () => {
@@ -26,48 +30,54 @@ describe("find and naming utils", () => {
   });
 
   test("builds follow-up commands for search candidates", () => {
-    expect(buildFindCommand({
-      id: "builtin:1",
-      title: "find-skills",
-      description: "Find skills",
-      source: "builtin-git",
-      sourceLabel: "skills(@anthropics)",
-      sourceId: "anthropics-skills",
-      sourceKind: "git",
-      locator: "https://github.com/anthropics/skills.git",
-      relativePath: "skills/find-skills",
-      installed: false,
-      action: {
-        type: "add-git",
+    expect(
+      buildFindCommand({
+        id: "builtin:1",
+        title: "find-skills",
+        description: "Find skills",
+        source: "builtin-git",
+        sourceLabel: "skills(@anthropics)",
+        sourceId: "anthropics-skills",
+        sourceKind: "git",
         locator: "https://github.com/anthropics/skills.git",
-        requestedPath: "skills/find-skills",
-      },
-    })).toBe("skill-flow add https://github.com/anthropics/skills.git --path skills/find-skills");
+        relativePath: "skills/find-skills",
+        installed: false,
+        action: {
+          type: "add-git",
+          locator: "https://github.com/anthropics/skills.git",
+          requestedPath: "skills/find-skills",
+        },
+      }),
+    ).toBe("skill-flow add https://github.com/anthropics/skills.git --path skills/find-skills");
 
-    expect(buildFindCommand({
-      id: "clawhub:1",
-      title: "Find Skills",
-      description: "Find skills",
-      source: "clawhub",
-      sourceLabel: "ClawHub",
-      sourceId: "clawhub-find-skills",
-      sourceKind: "clawhub",
-      locator: "clawhub:find-skills",
-      installed: false,
-      action: {
-        type: "add-clawhub",
-        slug: "find-skills",
-        version: "1.2.3",
-      },
-    })).toBe("skill-flow add clawhub:find-skills@1.2.3");
+    expect(
+      buildFindCommand({
+        id: "clawhub:1",
+        title: "Find Skills",
+        description: "Find skills",
+        source: "clawhub",
+        sourceLabel: "ClawHub",
+        sourceId: "clawhub-find-skills",
+        sourceKind: "clawhub",
+        locator: "clawhub:find-skills",
+        installed: false,
+        action: {
+          type: "add-clawhub",
+          slug: "find-skills",
+          version: "1.2.3",
+        },
+      }),
+    ).toBe("skill-flow add clawhub:find-skills@1.2.3");
   });
 
   test("formats GitHub groups as groupName(@owner)", () => {
-    expect(formatGroupLabel({
-      id: "garrytan-gstack",
-      locator: "git@github.com:garrytan/gstack.git",
-      displayName: "gstack",
-    })).toBe("gstack@garrytan");
+    expect(
+      formatGroupLabel({
+        id: "garrytan-gstack",
+        locator: "git@github.com:garrytan/gstack.git",
+        displayName: "gstack",
+      }),
+    ).toBe("gstack@garrytan");
   });
 
   test("prefers groupName-skillName for projected collisions", () => {
@@ -88,8 +98,12 @@ describe("find and naming utils", () => {
       },
     ]);
 
-    expect(projected.get("a:browse")).toBe(buildProjectedSkillName("gstack", "browse", "garrytan"));
-    expect(projected.get("b:browse")).toBe(buildProjectedSkillName("toolkit", "browse", "alice"));
+    expect(projected.get("a:browse")).toBe(
+      buildProjectedSkillName("gstack", "browse", "garrytan"),
+    );
+    expect(projected.get("b:browse")).toBe(
+      buildProjectedSkillName("toolkit", "browse", "alice"),
+    );
   });
 
   test("falls back to groupId-skillName when projected names still collide", () => {
