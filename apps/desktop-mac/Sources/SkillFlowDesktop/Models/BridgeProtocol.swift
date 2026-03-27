@@ -4,6 +4,7 @@ enum BridgeCommand: String, Codable {
     case bootstrap
     case list
     case inspect
+    case togglePin = "toggle-pin"
     case doctor
     case add
     case apply

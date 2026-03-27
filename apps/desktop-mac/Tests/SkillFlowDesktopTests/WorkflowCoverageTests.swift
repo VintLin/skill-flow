@@ -9,6 +9,7 @@ final class WorkflowCoverageTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: "desktop.pinnedSourceIds")
+        UserDefaults.standard.removeObject(forKey: "desktop.pinnedSourceIds.migratedToSharedPreferences")
     }
 
     func testDismissToastIgnoresStaleIdentifier() {
@@ -28,24 +29,60 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertNil(model.toast)
     }
 
-    func testTogglePinnedPersistsPinnedSourceIds() {
-        let model = MainViewModel(bridgeClient: BridgeClient())
-
-        model.togglePinned(sourceId: "alpha")
-        XCTAssertEqual(model.pinnedSourceIds, ["alpha"])
-        XCTAssertEqual(UserDefaults.standard.stringArray(forKey: "desktop.pinnedSourceIds"), ["alpha"])
-
-        model.togglePinned(sourceId: "alpha")
-        XCTAssertEqual(model.pinnedSourceIds, [])
-        XCTAssertEqual(UserDefaults.standard.stringArray(forKey: "desktop.pinnedSourceIds"), [])
-    }
-
-    func testDeleteSourceRemovesPinnedStateAndReturnsHomeWhenDetailIsDeleted() async throws {
+    func testPinPersistsAcrossRelaunch() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
         let model = try await fixture.makeModel()
-        model.togglePinned(sourceId: "alpha")
+
+        await model.togglePinned(sourceId: "alpha")
+
+        XCTAssertEqual(model.pinnedSourceIds, ["alpha"])
+
+        let relaunched = try await fixture.makeModel()
+        XCTAssertEqual(relaunched.pinnedSourceIds, ["alpha"])
+    }
+
+    func testUnpinPersistsAcrossRelaunch() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.pinnedSourceIds = ["alpha"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        XCTAssertEqual(model.pinnedSourceIds, ["alpha"])
+
+        await model.togglePinned(sourceId: "alpha")
+
+        XCTAssertEqual(model.pinnedSourceIds, [])
+
+        let relaunched = try await fixture.makeModel()
+        XCTAssertEqual(relaunched.pinnedSourceIds, [])
+    }
+
+    func testPinnedSourceMigrationRunsOnlyOnce() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        UserDefaults.standard.set(["beta"], forKey: "desktop.pinnedSourceIds")
+
+        let migrated = try await fixture.makeModel()
+        XCTAssertEqual(migrated.pinnedSourceIds, ["beta"])
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: "desktop.pinnedSourceIds.migratedToSharedPreferences"))
+        XCTAssertNil(UserDefaults.standard.stringArray(forKey: "desktop.pinnedSourceIds"))
+
+        UserDefaults.standard.set(["alpha"], forKey: "desktop.pinnedSourceIds")
+
+        let relaunched = try await fixture.makeModel()
+        XCTAssertEqual(relaunched.pinnedSourceIds, ["beta"])
+    }
+
+    func testDeleteSourceRemovesPinnedStateAndReturnsHomeWhenDetailIsDeleted() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.pinnedSourceIds = ["alpha"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
         model.currentPage = .detail(sourceId: "alpha")
 
         await model.deleteSource(sourceId: "alpha")
@@ -71,6 +108,29 @@ final class WorkflowCoverageTests: XCTestCase {
         let updateRequests = fixture.loggedRequests().filter { $0.command == "update" }
         XCTAssertEqual(updateRequests.count, 1)
         XCTAssertEqual(updateRequests.first?.payload?["sourceIds"]?.value as? [String], ["beta"])
+    }
+
+    func testPinnedWriteFailureRollsBack() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.pinFailures = [
+            "alpha": [
+                "Shared preferences unavailable."
+            ]
+        ]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        await model.togglePinned(sourceId: "alpha")
+
+        XCTAssertEqual(model.pinnedSourceIds, [])
+        XCTAssertEqual(model.toast?.style, .error)
+        XCTAssertEqual(model.toast?.message, "Pin failed: Shared preferences unavailable.")
+
+        let pinRequests = fixture.loggedRequests().filter { $0.command == "toggle-pin" }
+        XCTAssertEqual(pinRequests.count, 1)
+        XCTAssertEqual(pinRequests.first?.payload?["sourceId"]?.value as? String, "alpha")
     }
 
     func testUpdateSourceUsesExplicitSourceIdAndClearsBusyState() async throws {
@@ -322,6 +382,8 @@ private struct TestFixture {
         var availableTargets: [String]
         var sources: [String: SourceState]
         var applyFailures: [String: [String]]
+        var pinnedSourceIds: [String]
+        var pinFailures: [String: [String]]
 
         static let baseline = State(
             availableTargets: ["claude-code", "cursor"],
@@ -337,7 +399,9 @@ private struct TestFixture {
                     enabledTargets: ["cursor"]
                 )
             ],
-            applyFailures: [:]
+            applyFailures: [:],
+            pinnedSourceIds: [],
+            pinFailures: [:]
         )
 
         static let failureBaseline = State(
@@ -359,7 +423,9 @@ private struct TestFixture {
                     "Primary cause: missing leaf mapping",
                     "Secondary cause: stale target state"
                 ]
-            ]
+            ],
+            pinnedSourceIds: [],
+            pinFailures: [:]
         )
     }
 
@@ -568,6 +634,7 @@ private struct TestFixture {
       if (request.command === 'bootstrap') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
+          pinnedSourceIds: state.pinnedSourceIds || [],
           initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => [sourceId, sourceDraft(source)]))
         }, [], [])));
         return;
@@ -575,7 +642,8 @@ private struct TestFixture {
 
       if (request.command === 'list') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
-          summaries: buildSummaries(state)
+          summaries: buildSummaries(state),
+          pinnedSourceIds: state.pinnedSourceIds || []
         }, [], [])));
         return;
       }
@@ -588,6 +656,31 @@ private struct TestFixture {
           leafIds: source.leafIds || [],
           selectedLeafIds: source.selectedLeafIds || [],
           enabledTargets: source.enabledTargets || []
+        }, [], [])));
+        return;
+      }
+
+      if (request.command === 'toggle-pin') {
+        const sourceId = request.payload && request.payload.sourceId;
+        const failures = (state.pinFailures && state.pinFailures[sourceId]) || [];
+        if (failures.length > 0) {
+          process.stdout.write(JSON.stringify(responseFor(request, false, null, [], failures.map((message) => ({
+            code: 'pin_failed',
+            message
+          })))));
+          return;
+        }
+
+        const pinnedSourceIds = Array.isArray(state.pinnedSourceIds) ? state.pinnedSourceIds.slice() : [];
+        if (pinnedSourceIds.includes(sourceId)) {
+          state.pinnedSourceIds = pinnedSourceIds.filter((candidate) => candidate !== sourceId);
+        } else {
+          state.pinnedSourceIds = [...pinnedSourceIds, sourceId];
+        }
+        writeState(state);
+
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          pinnedSourceIds: state.pinnedSourceIds
         }, [], [])));
         return;
       }
@@ -683,6 +776,7 @@ private struct TestFixture {
             delete state.sources[sourceId];
           }
         }
+        state.pinnedSourceIds = (state.pinnedSourceIds || []).filter((sourceId) => !sourceIds.includes(sourceId));
         writeState(state);
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           removed: sourceIds

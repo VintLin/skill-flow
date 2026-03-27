@@ -50,7 +50,7 @@ struct MenuBarQuickConfigView: View {
                                 Task { await viewModel.updateSource(card.id) }
                             },
                             onTogglePinned: {
-                                viewModel.togglePinned(sourceId: card.id)
+                                Task { await viewModel.togglePinned(sourceId: card.id) }
                             },
                             onDelete: {
                                 Task { await viewModel.deleteSource(sourceId: card.id) }

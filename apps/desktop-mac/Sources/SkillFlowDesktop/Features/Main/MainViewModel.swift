@@ -356,7 +356,8 @@ final class MainViewModel {
         "kiro": "KI",
     ]
 
-    private let pinnedSourceIdsKey = "desktop.pinnedSourceIds"
+    private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
+    private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
     private var baselineDrafts: [String: DraftState] = [:]
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
@@ -400,7 +401,7 @@ final class MainViewModel {
 
     init(bridgeClient: BridgeClient) {
         self.bridgeClient = bridgeClient
-        self.pinnedSourceIds = UserDefaults.standard.stringArray(forKey: pinnedSourceIdsKey) ?? []
+        self.pinnedSourceIds = []
     }
 
     var availableGroups: [String] {
@@ -513,13 +514,17 @@ final class MainViewModel {
         }
     }
 
-    func togglePinned(sourceId: String) {
-        if let index = pinnedSourceIds.firstIndex(of: sourceId) {
-            pinnedSourceIds.remove(at: index)
-        } else {
-            pinnedSourceIds.append(sourceId)
+    func togglePinned(sourceId: String) async {
+        let previousPinnedSourceIds = pinnedSourceIds
+        pinnedSourceIds = toggledPinnedSourceIds(from: pinnedSourceIds, sourceId: sourceId)
+
+        do {
+            let response = try await bridgeClient.togglePinnedSource(sourceId: sourceId)
+            applyPinnedSourceIds(response.data?.value)
+        } catch {
+            pinnedSourceIds = previousPinnedSourceIds
+            showToast(style: .error, message: "Pin failed: \(firstErrorLine(from: error))")
         }
-        UserDefaults.standard.set(pinnedSourceIds, forKey: pinnedSourceIdsKey)
     }
 
     private func sortedSourceRows(_ rows: [SourceRow]) -> [SourceRow] {
@@ -885,6 +890,7 @@ final class MainViewModel {
 
             let list = try await bridgeClient.list()
             applyList(list)
+            await migrateLegacyPinnedSourceIdsIfNeeded()
 
             loadState = .ready
             healthLabel = list.warnings.isEmpty ? "Healthy" : "Warnings"
@@ -1268,8 +1274,6 @@ final class MainViewModel {
             }
             baselineDrafts.removeValue(forKey: sourceId)
             workingDrafts.removeValue(forKey: sourceId)
-            pinnedSourceIds.removeAll { $0 == sourceId }
-            UserDefaults.standard.set(pinnedSourceIds, forKey: pinnedSourceIdsKey)
 
             await refreshList()
             await runDoctor()
@@ -1327,6 +1331,8 @@ final class MainViewModel {
     private func parseBootstrapData(_ value: Any?) {
         guard let data = value as? [String: Any] else { return }
 
+        applyPinnedSourceIds(data)
+
         if let availableTargets = data["availableTargets"] as? [String] {
             detectedTargets.formUnion(availableTargets)
         }
@@ -1344,6 +1350,7 @@ final class MainViewModel {
     }
 
     private func applyList(_ response: BridgeResponse) {
+        applyPinnedSourceIds(response.data?.value)
         allSummaries = parseSummaries(response)
         sourceIds = allSummaries.map(\.sourceId)
         pruneStateMaps(allowedSourceIds: Set(sourceIds))
@@ -1788,6 +1795,88 @@ final class MainViewModel {
 
     private func showToast(style: ToastStyle, message: String) {
         toast = ToastState(style: style, message: message)
+    }
+
+    private func applyPinnedSourceIds(_ value: Any?) {
+        guard
+            let data = value as? [String: Any],
+            let pinnedSourceIds = data["pinnedSourceIds"] as? [String]
+        else {
+            return
+        }
+
+        self.pinnedSourceIds = normalizedPinnedSourceIds(pinnedSourceIds)
+    }
+
+    private func normalizedPinnedSourceIds(_ sourceIds: [String]) -> [String] {
+        var seen = Set<String>()
+        var normalized: [String] = []
+
+        for sourceId in sourceIds {
+            let trimmed = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !seen.contains(trimmed) else {
+                continue
+            }
+            seen.insert(trimmed)
+            normalized.append(trimmed)
+        }
+
+        return normalized
+    }
+
+    private func toggledPinnedSourceIds(from sourceIds: [String], sourceId: String) -> [String] {
+        if let index = sourceIds.firstIndex(of: sourceId) {
+            var next = sourceIds
+            next.remove(at: index)
+            return next
+        }
+
+        return sourceIds + [sourceId]
+    }
+
+    private func migrateLegacyPinnedSourceIdsIfNeeded() async {
+        guard !UserDefaults.standard.bool(forKey: pinnedSourceIdsMigrationKey) else {
+            return
+        }
+
+        let legacyPinnedSourceIds = normalizedPinnedSourceIds(
+            UserDefaults.standard.stringArray(forKey: legacyPinnedSourceIdsKey) ?? []
+        )
+
+        guard pinnedSourceIds.isEmpty, !legacyPinnedSourceIds.isEmpty else {
+            completePinnedSourceIdsMigration()
+            return
+        }
+
+        let eligiblePinnedSourceIds = legacyPinnedSourceIds.filter { sourceIds.contains($0) }
+        guard !eligiblePinnedSourceIds.isEmpty else {
+            completePinnedSourceIdsMigration()
+            return
+        }
+
+        let previousPinnedSourceIds = pinnedSourceIds
+        var migratedSourceIds: [String] = []
+
+        do {
+            for sourceId in eligiblePinnedSourceIds {
+                let response = try await bridgeClient.togglePinnedSource(sourceId: sourceId)
+                applyPinnedSourceIds(response.data?.value)
+                migratedSourceIds.append(sourceId)
+            }
+            completePinnedSourceIdsMigration()
+        } catch {
+            for migratedSourceId in migratedSourceIds.reversed() {
+                _ = try? await bridgeClient.togglePinnedSource(sourceId: migratedSourceId)
+            }
+            pinnedSourceIds = previousPinnedSourceIds
+            detailText = "Pinned groups migration failed: \(error.localizedDescription)"
+            showToast(style: .error, message: "Pinned groups migration failed: \(firstErrorLine(from: error))")
+        }
+    }
+
+    private func completePinnedSourceIdsMigration() {
+        UserDefaults.standard.set(true, forKey: pinnedSourceIdsMigrationKey)
+        UserDefaults.standard.removeObject(forKey: legacyPinnedSourceIdsKey)
     }
 
     private func firstErrorLine(from error: Error) -> String {

@@ -59,6 +59,12 @@ final class BridgeClient {
         try await send(command: .inspect, payload: ["sourceId": AnyCodable(sourceId)])
     }
 
+    func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(command: .togglePin, payload: ["sourceId": AnyCodable(sourceId)])
+        }
+    }
+
     func doctor() async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(command: .doctor)
