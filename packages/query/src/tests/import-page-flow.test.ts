@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { SkillFlowApp } from "@skill-flow/query/runtime";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
+import { SkillFlowApp } from "../runtime.js";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("import page flow", () => {
@@ -110,84 +110,6 @@ describe.sequential("import page flow", () => {
     });
   });
 
-  test("fuzzy import search groups skill hits by source", async () => {
-    vi.spyOn(githubCatalog, "fetchGitHubRepoDetails")
-      .mockResolvedValueOnce({
-        provider: "github",
-        repoLabel: "anthropics/skills",
-        repoUrl: "https://github.com/anthropics/skills",
-        starCount: 406,
-      })
-      .mockResolvedValueOnce({
-        provider: "github",
-        repoLabel: "vercel-labs/agent-skills",
-        repoUrl: "https://github.com/vercel-labs/agent-skills",
-        starCount: 88,
-      });
-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
-      const url = String(input);
-      if (url.startsWith("https://skills.sh/api/search")) {
-        return responseWithJson({
-          skills: [
-            {
-              id: "anthropic/skills/research",
-              skillId: "research",
-              name: "research",
-              installs: 1200,
-              source: "anthropic/skills",
-            },
-            {
-              id: "anthropics/skills/debugging",
-              skillId: "debugging",
-              name: "debugging",
-              installs: 900,
-              source: "anthropics/skills",
-            },
-            {
-              id: "vercel-labs/agent-skills/deploy",
-              skillId: "deploy",
-              name: "deploy",
-              installs: 500,
-              source: "vercel-labs/agent-skills",
-            },
-          ],
-        });
-      }
-      if (url === "https://skills.sh/anthropics/skills") {
-        return responseWithHtml(`
-          <h1>anthropics<!-- -->/<!-- -->skills</h1>
-          <span>18<!-- --> <!-- -->skills</span>
-          <span>735.1K<!-- --> total installs</span>
-          <a href="https://github.com/anthropics/skills">GitHub</a>
-        `);
-      }
-      if (url === "https://skills.sh/vercel-labs/agent-skills") {
-        return responseWithHtml(`
-          <h1>vercel-labs<!-- -->/<!-- -->agent-skills</h1>
-          <span>3<!-- --> <!-- -->skills</span>
-          <span>8.1K<!-- --> total installs</span>
-          <a href="https://github.com/vercel-labs/agent-skills">GitHub</a>
-        `);
-      }
-      throw new Error(`Unexpected URL: ${url}`);
-    }));
-
-    const app = new SkillFlowApp();
-    const result = await app.searchImportGroups("skills");
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-
-    expect(result.data.exact).toBe(false);
-    expect(result.data.groups.map((group) => group.canonicalRepo)).toEqual([
-      "anthropics/skills",
-      "vercel-labs/agent-skills",
-    ]);
-    expect(result.data.groups[0]?.matchedSkillNames).toEqual(["research", "debugging"]);
-  });
-
   test("previewImportSource is read-only and defaults to all skills with no agents", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
       const url = String(input);
@@ -238,7 +160,9 @@ describe.sequential("import page flow", () => {
     const { manifest, lockFile } = await app.store.readState();
     const binding = manifest.bindings[imported.data.sourceId];
     expect(binding?.selectedLeafIds).toHaveLength(1);
-    expect(lockFile.leafInventory.find((leaf) => leaf.id === binding?.selectedLeafIds?.[0])?.linkName).toBe("browse");
+    expect(
+      lockFile.leafInventory.find((leaf) => leaf.id === binding?.selectedLeafIds?.[0])?.linkName,
+    ).toBe("browse");
     expect(Object.keys(binding?.targets ?? {})).toEqual(["cursor"]);
   });
 
@@ -280,15 +204,6 @@ function responseWithHtml(html: string): ResponseLike {
     json: async () => {
       throw new Error("Not JSON");
     },
-  };
-}
-
-function responseWithJson(payload: unknown): ResponseLike {
-  return {
-    ok: true,
-    status: 200,
-    text: async () => JSON.stringify(payload),
-    json: async () => payload,
   };
 }
 

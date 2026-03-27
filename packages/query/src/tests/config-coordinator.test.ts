@@ -6,7 +6,7 @@ import type {
   Manifest,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
-import { ConfigCoordinator } from "@skill-flow/query/config-coordinator";
+import { ConfigCoordinator } from "../config-coordinator.js";
 
 const manifest: Manifest = {
   schemaVersion: 1,
