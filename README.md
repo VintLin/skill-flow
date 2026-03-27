@@ -197,11 +197,14 @@ npm run -w skill-flow dev  # CLI dev mode
 Workspace layout:
 
 - `apps/cli`: published npm CLI package (`skill-flow`)
-- `packages/core`: shared domain/services/state logic
+- `packages/domain`: shared domain models and type definitions
+- `packages/storage`: state store, caches, and local persistence
+- `packages/integration`: Git, GitHub, ClawHub, and filesystem integrations
+- `packages/core-engine`: deployment, inventory, doctor, and workflow services
+- `packages/query`: shared runtime and query orchestration for CLI/TUI/desktop
 - `packages/tui`: Ink UI modules
 - `packages/shared-types`: bridge protocol contract
-- `packages/bridge`: desktop process bridge client
-- `apps/desktop-mac`: SwiftUI desktop shell (macOS 15+)
+- `apps/desktop-mac`: SwiftUI desktop shell (macOS 15+), active sources in `Sources/DesktopApp`
 
 Machine bridge command (for desktop/helper use):
 

@@ -196,11 +196,14 @@ npm run -w skill-flow dev  # CLI 开发模式
 工作区结构：
 
 - `apps/cli`：对外发布的 npm CLI 包（`skill-flow`）
-- `packages/core`：共享领域模型 / 服务 / 状态逻辑
+- `packages/domain`：共享领域模型与类型定义
+- `packages/storage`：状态存储、缓存与本地持久化
+- `packages/integration`：Git、GitHub、ClawHub、文件系统等外部集成
+- `packages/core-engine`：部署、inventory、doctor、workflow 等核心服务
+- `packages/query`：CLI / TUI / desktop 共享的运行时与查询编排
 - `packages/tui`：Ink 终端 UI 模块
 - `packages/shared-types`：bridge 协议契约
-- `packages/bridge`：桌面端进程调用 bridge client
-- `apps/desktop-mac`：SwiftUI 桌面壳（macOS 15+）
+- `apps/desktop-mac`：SwiftUI 桌面壳（macOS 15+），活动源码位于 `Sources/DesktopApp`
 
 桌面/辅助进程机器协议入口：
 
