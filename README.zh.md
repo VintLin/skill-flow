@@ -205,6 +205,16 @@ npm run -w skill-flow dev  # CLI 开发模式
 - `packages/shared-types`：bridge 协议契约
 - `apps/desktop-mac`：SwiftUI 桌面壳（macOS 15+），活动源码位于 `Sources/DesktopApp`
 
+当前测试归属：
+
+- `packages/shared-types`：bridge 协议解析与响应契约
+- `packages/storage`：preferences、cache 与状态存储持久化
+- `packages/integration`：ClawHub / search naming / source locator 等工具逻辑
+- `packages/core-engine`：inventory 与 source service 行为
+- `packages/query`：runtime lifecycle、import flow、config bootstrap 行为
+- `packages/tui`：add-flow 与 selection-state 模型
+- `apps/cli`：命令入口与跨包集成路径
+
 桌面/辅助进程机器协议入口：
 
 ```bash

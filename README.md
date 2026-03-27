@@ -206,6 +206,16 @@ Workspace layout:
 - `packages/shared-types`: bridge protocol contract
 - `apps/desktop-mac`: SwiftUI desktop shell (macOS 15+), active sources in `Sources/DesktopApp`
 
+Current test ownership:
+
+- `packages/shared-types`: bridge protocol parsing and response contract
+- `packages/storage`: preferences, caches, and state store persistence
+- `packages/integration`: ClawHub/search naming and source locator utilities
+- `packages/core-engine`: inventory and source service behavior
+- `packages/query`: runtime lifecycle, import flow, and config bootstrap behavior
+- `packages/tui`: add-flow and selection-state models
+- `apps/cli`: command entrypoints and cross-package integration paths
+
 Machine bridge command (for desktop/helper use):
 
 ```bash

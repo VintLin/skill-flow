@@ -67,7 +67,12 @@
   - `npm test`
 - 单包开发时优先运行最小必要范围的测试，不默认全量重跑。
 - CLI 改动至少覆盖命令入口或集成路径。
-- `packages/query`、`packages/core-engine`、`packages/storage` 改动优先补单元测试和状态/投影相关回归测试。
+- `packages/shared-types` 改动优先补协议解析与响应契约测试。
+- `packages/storage` 改动优先补 preferences / cache / store 持久化测试。
+- `packages/integration` 改动优先补解析器、locator、外部集成工具测试。
+- `packages/core-engine` 改动优先补 inventory / source service / workflow 行为测试。
+- `packages/query` 改动优先补 runtime lifecycle、import、config 协调测试。
+- `packages/tui` 改动优先补纯模型与状态测试；交互渲染验证作为补充。
 - TUI 改动除测试外，应尽量验证真实交互入口。
 - bridge 机器协议或 `packages/shared-types` 改动必须检查协议兼容性与调用方影响。
 
