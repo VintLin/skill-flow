@@ -1,4 +1,10 @@
 "app.name" = "Skill Flow";
+"bridge.error.helper_missing" = "同梱 helper が見つかりません。Skill Flow Desktop を再インストールしてください。";
+"bridge.error.invalid_response" = "Bridge helper から無効な応答が返されました。";
+"bridge.error.timeout" = "%@ms 後に操作がタイムアウトしました。";
+"bridge.error.empty_response" = "Bridge helper から空の応答が返されました。";
+"bridge.error.concurrent_mutation" = "別の書き込みタスクがすでに実行中です。";
+"bridge.error.command_failed_default" = "不明な bridge コマンド失敗です。";
 "page.home.title" = "ホーム";
 "page.import.title" = "インポート";
 "page.settings.title" = "設定";

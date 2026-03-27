@@ -39,4 +39,19 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("source.metadata.status_value.unsupported", locale: Locale(identifier: "ja")), "非対応")
         XCTAssertEqual(L10n.string("detail.updated.unavailable", locale: Locale(identifier: "ja")), "更新時刻を取得できません")
     }
+
+    func testBridgeClientErrorsUseSelectedDesktopLanguage() {
+        UserDefaults.standard.set(DesktopLanguage.ja.rawValue, forKey: DesktopLanguage.storageKey)
+        XCTAssertEqual(
+            BridgeClientError.helperMissing.errorDescription,
+            "同梱 helper が見つかりません。Skill Flow Desktop を再インストールしてください。"
+        )
+        XCTAssertEqual(BridgeClientError.timeout(250).errorDescription, "250ms 後に操作がタイムアウトしました。")
+
+        UserDefaults.standard.set(DesktopLanguage.en.rawValue, forKey: DesktopLanguage.storageKey)
+        XCTAssertEqual(
+            BridgeClientError.concurrentMutationRejected.errorDescription,
+            "Another write task is already running."
+        )
+    }
 }

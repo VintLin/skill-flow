@@ -8,20 +8,25 @@ enum BridgeClientError: Error, LocalizedError {
     case emptyResponse
     case concurrentMutationRejected
 
+    private var locale: Locale {
+        let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
+        return DesktopLanguage(storageValue: rawValue).locale
+    }
+
     var errorDescription: String? {
         switch self {
         case .helperMissing:
-            return "Bundled helper is missing. Reinstall Skill Flow Desktop."
+            return L10n.string("bridge.error.helper_missing", locale: locale)
         case .invalidResponse:
-            return "Bridge helper returned an invalid response."
+            return L10n.string("bridge.error.invalid_response", locale: locale)
         case .commandFailed(let message):
             return message
         case .timeout(let timeoutMs):
-            return "Operation timed out after \(timeoutMs)ms."
+            return L10n.string("bridge.error.timeout", locale: locale, arguments: [String(timeoutMs)])
         case .emptyResponse:
-            return "Bridge helper returned an empty response."
+            return L10n.string("bridge.error.empty_response", locale: locale)
         case .concurrentMutationRejected:
-            return "Another write task is already running."
+            return L10n.string("bridge.error.concurrent_mutation", locale: locale)
         }
     }
 }
@@ -217,7 +222,9 @@ final class BridgeClient {
         } else if !errorData.isEmpty {
             message = String(decoding: errorData, as: UTF8.self)
         } else {
-            message = "Unknown bridge command failure."
+            let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
+            let locale = DesktopLanguage(storageValue: rawValue).locale
+            message = L10n.string("bridge.error.command_failed_default", locale: locale)
         }
         throw BridgeClientError.commandFailed(message)
     }

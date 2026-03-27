@@ -1,4 +1,10 @@
 "app.name" = "Skill Flow";
+"bridge.error.helper_missing" = "Bundled helper is missing. Reinstall Skill Flow Desktop.";
+"bridge.error.invalid_response" = "Bridge helper returned an invalid response.";
+"bridge.error.timeout" = "Operation timed out after %@ms.";
+"bridge.error.empty_response" = "Bridge helper returned an empty response.";
+"bridge.error.concurrent_mutation" = "Another write task is already running.";
+"bridge.error.command_failed_default" = "Unknown bridge command failure.";
 "page.home.title" = "Home";
 "page.import.title" = "Import";
 "page.settings.title" = "Settings";

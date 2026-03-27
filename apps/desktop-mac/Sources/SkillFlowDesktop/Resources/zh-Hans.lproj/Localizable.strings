@@ -1,4 +1,10 @@
 "app.name" = "Skill Flow";
+"bridge.error.helper_missing" = "内置 helper 缺失。请重新安装 Skill Flow Desktop。";
+"bridge.error.invalid_response" = "Bridge helper 返回了无效响应。";
+"bridge.error.timeout" = "操作在 %@ms 后超时。";
+"bridge.error.empty_response" = "Bridge helper 返回了空响应。";
+"bridge.error.concurrent_mutation" = "已有另一个写入任务正在运行。";
+"bridge.error.command_failed_default" = "未知的 bridge 命令失败。";
 "page.home.title" = "主页";
 "page.import.title" = "导入";
 "page.settings.title" = "设置";
