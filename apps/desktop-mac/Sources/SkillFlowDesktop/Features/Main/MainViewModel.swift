@@ -2622,17 +2622,6 @@ final class MainViewModel {
         }
     }
 
-    func projectionWarningMap(for sourceId: String? = nil) -> [String: [String]] {
-        guard let sourceId = resolveSourceId(sourceId) else {
-            return [:]
-        }
-        return buildProjectionWarningMap(
-            summaries: projectionSummaries(),
-            drafts: projectionDrafts(),
-            sourceId: sourceId
-        )
-    }
-
     func projectionNameMap(for sourceId: String? = nil) -> [String: String] {
         guard let sourceId = resolveSourceId(sourceId) else {
             return [:]

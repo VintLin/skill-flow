@@ -3,7 +3,7 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class ProjectionRulesTests: XCTestCase {
-    func testProjectionRulesDetectExactDuplicatesAndRenameConflicts() {
+    func testProjectionRulesResolveProjectedNamesForDuplicatesAndConflicts() {
         let summaries = makeSummaries()
         let drafts: [String: ProjectionDraftState] = [
             "alpha": ProjectionDraftState(
@@ -16,19 +16,12 @@ final class ProjectionRulesTests: XCTestCase {
             )
         ]
 
-        let warnings = buildProjectionWarningMap(
-            summaries: summaries,
-            drafts: drafts,
-            sourceId: "alpha"
-        )
         let names = buildProjectionNameMap(
             summaries: summaries,
             drafts: drafts,
             sourceId: "alpha"
         )
 
-        XCTAssertEqual(warnings["alpha-a"]?.first, "identical skill already selected in BetaHub, this one will be skipped")
-        XCTAssertEqual(warnings["alpha-b"]?.first, "conflicts with BetaHub, will deploy as AlphaHub-browse")
         XCTAssertEqual(names["alpha-a"], "browse")
         XCTAssertEqual(names["alpha-b"], "AlphaHub-browse")
         XCTAssertEqual(names["beta-a"], "BetaHub-browse")
@@ -48,10 +41,6 @@ final class ProjectionRulesTests: XCTestCase {
             )
         ]
 
-        XCTAssertEqual(
-            buildProjectionWarningMap(summaries: summaries, drafts: drafts, sourceId: "alpha"),
-            [:]
-        )
         XCTAssertEqual(
             buildProjectionNameMap(summaries: summaries, drafts: drafts, sourceId: "alpha"),
             [:]
