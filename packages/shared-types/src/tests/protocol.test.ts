@@ -10,11 +10,11 @@ describe("protocol", () => {
     const request = parseBridgeRequest({
       protocolVersion: PROTOCOL_VERSION,
       requestId: "req-1",
-      command: "list",
+      command: "toggle-pin",
       payload: { include: "all" },
     });
 
-    expect(request.command).toBe("list");
+    expect(request.command).toBe("toggle-pin");
     expect(request.requestId).toBe("req-1");
   });
 

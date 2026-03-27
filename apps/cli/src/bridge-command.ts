@@ -67,6 +67,23 @@ export async function executeBridgeRequest(
           })),
         });
       }
+      case "toggle-pin": {
+        const payload = expectObjectPayload(request.payload, "toggle-pin");
+        const sourceId = expectString(payload.sourceId, "sourceId", "toggle-pin");
+        const result = await app.togglePinnedSource(sourceId);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
       case "doctor": {
         const result = await app.doctor();
         if (!result.ok) {

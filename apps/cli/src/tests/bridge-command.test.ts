@@ -19,6 +19,28 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.command).toBe("list");
     expect(response.requestId).toBe("r1");
     expect(response.data).toHaveProperty("summaries");
+    expect(response.data).toHaveProperty("pinnedSourceIds");
+  });
+
+  test("returns pinned source ids in bootstrap payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+    await app.store.togglePinnedSource(added.data.manifest.id);
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "bootstrap",
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("pinnedSourceIds", [added.data.manifest.id]);
   });
 
   test("rejects invalid apply payload", async () => {
@@ -70,6 +92,41 @@ describe.sequential("bridge command dispatcher", () => {
 
     expect(response.ok).toBe(true);
     expect(response.data).toHaveProperty("sourceId");
+  });
+
+  test("accepts valid toggle-pin payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "toggle-pin",
+      payload: {
+        sourceId: added.data.manifest.id,
+      },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("pinnedSourceIds", [added.data.manifest.id]);
+  });
+
+  test("rejects invalid toggle-pin payload", async () => {
+    const app = new SkillFlowApp();
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "toggle-pin",
+      payload: {},
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
   });
 
   test("accepts valid apply payload with empty skill selection", async () => {

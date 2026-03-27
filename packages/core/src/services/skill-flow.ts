@@ -327,7 +327,7 @@ export class SkillFlowApp {
     return ok({ candidates }, warnings);
   }
 
-  async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[] }>> {
+  async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[]; pinnedSourceIds: string[] }>> {
     return this.runSerializedMutation(() => this.listWorkflowsImpl());
   }
 
@@ -399,7 +399,9 @@ export class SkillFlowApp {
     }
   }
 
-  private async listWorkflowsImpl(): Promise<Result<{ summaries: WorkflowSummary[] }>> {
+  private async listWorkflowsImpl(): Promise<
+    Result<{ summaries: WorkflowSummary[]; pinnedSourceIds: string[] }>
+  > {
     const pruned = await this.pruneMissingCheckoutsImpl();
     if (!pruned.ok) {
       return fail(pruned.errors, pruned.warnings);
@@ -412,9 +414,11 @@ export class SkillFlowApp {
     }
     const { manifest, lockFile } = await this.store.readState();
     await this.persistNormalizedBindings(manifest, lockFile);
+    const preferences = await this.store.pruneMissingSourceIds();
     return ok(
       {
         summaries: this.workflowService.getSummaries(manifest, lockFile),
+        pinnedSourceIds: preferences.pinnedSourceIds,
       },
       pruned.warnings,
     );
@@ -462,6 +466,7 @@ export class SkillFlowApp {
       initialDrafts: Record<string, DraftBinding>;
       audit: DoctorReport;
       importedSourceIds: string[];
+      pinnedSourceIds: string[];
     }>
   > {
     return this.runSerializedMutation(() => this.bootstrapWorkspaceStateImpl(onEvent));
@@ -478,12 +483,14 @@ export class SkillFlowApp {
       initialDrafts: Record<string, DraftBinding>;
       audit: DoctorReport;
       importedSourceIds: string[];
+      pinnedSourceIds: string[];
     }>
   > {
     const boot = await this.configCoordinator.bootstrapWorkspaceState(onEvent);
     if (!boot.ok) {
       return fail(boot.errors, boot.warnings);
     }
+    const preferences = await this.store.pruneMissingSourceIds();
 
     return ok({
       availableTargets: boot.data.availableTargets,
@@ -493,7 +500,27 @@ export class SkillFlowApp {
       initialDrafts: boot.data.initialDrafts,
       audit: boot.data.audit,
       importedSourceIds: [],
+      pinnedSourceIds: preferences.pinnedSourceIds,
     });
+  }
+
+  async togglePinnedSource(sourceId: string): Promise<Result<{ pinnedSourceIds: string[] }>> {
+    return this.runSerializedMutation(() => this.togglePinnedSourceImpl(sourceId));
+  }
+
+  private async togglePinnedSourceImpl(
+    sourceId: string,
+  ): Promise<Result<{ pinnedSourceIds: string[] }>> {
+    const manifest = await this.store.readManifest();
+    if (!manifest.sources.some((source) => source.id === sourceId)) {
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Skills group id '${sourceId}' is not registered.`,
+      });
+    }
+
+    const preferences = await this.store.togglePinnedSource(sourceId);
+    return ok({ pinnedSourceIds: preferences.pinnedSourceIds });
   }
 
   async getAvailableTargets(): Promise<DeploymentTargetName[]> {
