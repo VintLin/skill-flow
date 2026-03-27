@@ -169,6 +169,7 @@ enum GroupCardDisplayMode: Equatable {
 }
 
 struct SharedGroupCard: View {
+    @Environment(\.locale) private var locale
     let card: MainViewModel.GroupCardModel
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
@@ -262,7 +263,7 @@ struct SharedGroupCard: View {
             }
 
             cardRow(
-                title: "Agents",
+                title: t("group_card.section.agents"),
                 selection: card.targetSelection,
                 items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled) },
                 compact: true,
@@ -373,7 +374,7 @@ struct SharedGroupCard: View {
         .popover(isPresented: $isActionMenuOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 actionMenuButton(
-                    title: card.isPinned ? "取消置顶" : "置顶",
+                    title: card.isPinned ? t("group_card.action.unpin") : t("group_card.action.pin"),
                     icon: .pin,
                     foreground: card.isPinned ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme)
                 ) {
@@ -381,7 +382,7 @@ struct SharedGroupCard: View {
                     onTogglePinned()
                 }
                 actionMenuButton(
-                    title: "更新",
+                    title: t("group_card.action.update"),
                     icon: .update,
                     foreground: AppTheme.textMuted(for: theme)
                 ) {
@@ -389,7 +390,7 @@ struct SharedGroupCard: View {
                     onUpdate()
                 }
                 actionMenuButton(
-                    title: "删除",
+                    title: t("group_card.action.delete"),
                     icon: .delete,
                     foreground: AppTheme.statusError(for: theme)
                 ) {
@@ -418,7 +419,7 @@ struct SharedGroupCard: View {
                     actionIcon(actionButtonIcon, size: 11)
                         .foregroundStyle(AppTheme.pageBackground(for: theme))
 
-                    Text(actionButtonTitle ?? "Import")
+                    Text(actionButtonTitle ?? t("group_card.action.import"))
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(AppTheme.pageBackground(for: theme))
                 }
@@ -434,7 +435,7 @@ struct SharedGroupCard: View {
 
     private var sourceFactsSection: some View {
         VStack(alignment: .leading, spacing: max(6, scale.rowSpacing - 2)) {
-            Text("Source")
+            Text(t("group_card.section.source"))
                 .font(.system(size: scale.sectionLabelSize, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .textCase(.uppercase)
@@ -450,9 +451,9 @@ struct SharedGroupCard: View {
 
     private var loadingMessage: String {
         if isSaving {
-            return card.saveState.message ?? "Applying..."
+            return card.saveState.message ?? t("group_card.loading.applying")
         }
-        return "Updating..."
+        return t("group_card.loading.updating")
     }
 
     private func cardRow(
@@ -506,7 +507,7 @@ struct SharedGroupCard: View {
         if !displayMode.supportsCollapsedSkills || !skillsCollapsed {
             VStack(alignment: .leading, spacing: scale.rowSpacing) {
                 cardRow(
-                    title: "Skills",
+                    title: t("group_card.section.skills"),
                     selection: card.skillSelection,
                     items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
                     compact: false,
@@ -625,9 +626,9 @@ struct SharedGroupCard: View {
 
     private func switchLabel(_ selection: SelectionState) -> String {
         switch selection {
-        case .empty: return "OFF"
-        case .partial: return "MIX"
-        case .full: return "ON"
+        case .empty: return t("group_card.selection.off")
+        case .partial: return t("group_card.selection.partial")
+        case .full: return t("group_card.selection.on")
         }
     }
 
@@ -678,6 +679,10 @@ struct SharedGroupCard: View {
         } else {
             Color.clear.frame(width: size, height: size)
         }
+    }
+
+    private func t(_ key: String, _ arguments: CVarArg...) -> String {
+        L10n.string(key, locale: locale, arguments: arguments)
     }
 }
 

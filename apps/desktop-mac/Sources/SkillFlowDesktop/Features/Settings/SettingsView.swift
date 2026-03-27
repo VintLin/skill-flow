@@ -1,9 +1,11 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @Environment(\.locale) private var locale
     @AppStorage("desktop.autoLaunch") private var autoLaunch = false
     @AppStorage("desktop.logLevel") private var logLevel = "info"
     @AppStorage("desktop.experimentalExternalHelper") private var experimentalExternalHelper = false
+    @AppStorage(DesktopLanguage.storageKey) private var desktopLanguageRawValue = DesktopLanguage.system.rawValue
     @AppStorage("desktop.themeMode") private var themeMode = "light"
     @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
     @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
@@ -14,6 +16,7 @@ struct SettingsView: View {
 
     private enum DropdownKind: Hashable {
         case accent
+        case language
         case logLevel
     }
 
@@ -33,25 +36,39 @@ struct SettingsView: View {
         DesktopAccentColor(rawValue: themeAccent) ?? .blue
     }
 
+    private var currentLanguage: DesktopLanguage {
+        DesktopLanguage(storageValue: desktopLanguageRawValue)
+    }
+
     private var accentOptions: [DropdownOption] {
         DesktopAccentColor.allCases.map { accent in
             DropdownOption(
                 id: accent.rawValue,
-                title: accent.title,
+                title: t("settings.option.accent.\(accent.rawValue)"),
                 swatch: AppTheme.brand(for: accent, in: theme)
+            )
+        }
+    }
+
+    private var languageOptions: [DropdownOption] {
+        DesktopLanguage.allCases.map { language in
+            DropdownOption(
+                id: language.rawValue,
+                title: t("settings.option.language.\(language.rawValue)"),
+                swatch: nil
             )
         }
     }
 
     private var logLevelOptions: [DropdownOption] {
         ["debug", "info", "warn", "error"].map { level in
-            DropdownOption(id: level, title: level, swatch: nil)
+            DropdownOption(id: level, title: t("settings.option.log_level.\(level)"), swatch: nil)
         }
     }
 
     private var appearanceSectionZIndex: Double {
         switch openDropdown {
-        case .accent:
+        case .accent, .language:
             return 20
         default:
             return 0
@@ -75,12 +92,12 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 12) {
                 settingsSection(
-                    title: "Appearance",
+                    title: t("settings.section.appearance"),
                     rows: {
-                        settingsRow(title: "Theme", description: "Choose the app theme.") {
-                            Picker("Theme", selection: $themeMode) {
-                                Text("Light").tag("light")
-                                Text("Dark").tag("dark")
+                        settingsRow(title: t("settings.row.theme.title"), description: t("settings.row.theme.description")) {
+                            Picker(t("settings.row.theme.title"), selection: $themeMode) {
+                                Text(t("settings.option.theme.light")).tag("light")
+                                Text(t("settings.option.theme.dark")).tag("dark")
                             }
                             .labelsHidden()
                             .pickerStyle(.segmented)
@@ -88,14 +105,25 @@ struct SettingsView: View {
                             .environment(\.colorScheme, colorScheme)
                         }
 
-                        settingsRow(title: "Accent", description: "Use one accent color across desktop surfaces.") {
+                        settingsRow(title: t("settings.row.accent.title"), description: t("settings.row.accent.description")) {
                             dropdownControl(
                                 kind: .accent,
-                                selectionTitle: currentAccent.title,
+                                selectionTitle: t("settings.option.accent.\(currentAccent.rawValue)"),
                                 selectionSwatch: AppTheme.brand(for: currentAccent, in: theme),
                                 options: accentOptions,
                                 selectedId: themeAccent,
                                 onSelect: { themeAccent = $0 }
+                            )
+                        }
+
+                        settingsRow(title: t("settings.row.language.title"), description: t("settings.row.language.description")) {
+                            dropdownControl(
+                                kind: .language,
+                                selectionTitle: t("settings.option.language.\(currentLanguage.rawValue)"),
+                                selectionSwatch: nil,
+                                options: languageOptions,
+                                selectedId: desktopLanguageRawValue,
+                                onSelect: { desktopLanguageRawValue = $0 }
                             )
                         }
                     }
@@ -103,9 +131,9 @@ struct SettingsView: View {
                 .zIndex(appearanceSectionZIndex)
 
                 settingsSection(
-                    title: "Menu Bar",
+                    title: t("settings.section.menu_bar"),
                     rows: {
-                        settingsRow(title: "Compact menu cards", description: "Collapse secondary skill details in the menu bar list.") {
+                        settingsRow(title: t("settings.row.menu_compact_cards.title"), description: t("settings.row.menu_compact_cards.description")) {
                             Toggle("", isOn: $menuCompactCards)
                                 .labelsHidden()
                         }
@@ -113,17 +141,17 @@ struct SettingsView: View {
                 )
 
                 settingsSection(
-                    title: "General",
+                    title: t("settings.section.general"),
                     rows: {
-                        settingsRow(title: "Launch at login", description: "Open the desktop app automatically when the system starts.") {
+                        settingsRow(title: t("settings.row.launch_at_login.title"), description: t("settings.row.launch_at_login.description")) {
                             Toggle("", isOn: $autoLaunch)
                                 .labelsHidden()
                         }
 
-                        settingsRow(title: "Log level", description: "Choose how verbose local desktop logs should be.") {
+                        settingsRow(title: t("settings.row.log_level.title"), description: t("settings.row.log_level.description")) {
                             dropdownControl(
                                 kind: .logLevel,
-                                selectionTitle: logLevel,
+                                selectionTitle: t("settings.option.log_level.\(logLevel)"),
                                 selectionSwatch: nil,
                                 options: logLevelOptions,
                                 selectedId: logLevel,
@@ -135,9 +163,9 @@ struct SettingsView: View {
                 .zIndex(generalSectionZIndex)
 
                 settingsSection(
-                    title: "Advanced",
+                    title: t("settings.section.advanced"),
                     rows: {
-                        settingsRow(title: "External helper override", description: "Debug-only local override. Ignored in release builds.") {
+                        settingsRow(title: t("settings.row.external_helper_override.title"), description: t("settings.row.external_helper_override.description")) {
                             Toggle("", isOn: $experimentalExternalHelper)
                                 .labelsHidden()
                         }
@@ -147,6 +175,10 @@ struct SettingsView: View {
         }
         .frame(maxWidth: 900, alignment: .leading)
         .environment(\.colorScheme, colorScheme)
+    }
+
+    private func t(_ key: String, _ arguments: CVarArg...) -> String {
+        L10n.string(key, locale: locale, arguments: arguments)
     }
 
     private func settingsSection<Rows: View>(title: String, @ViewBuilder rows: () -> Rows) -> some View {

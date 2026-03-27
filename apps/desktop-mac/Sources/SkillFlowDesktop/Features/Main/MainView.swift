@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct MainView: View {
+    @Environment(\.locale) private var locale
     private let detailHeaderMinHeight: CGFloat = 76
     private let detailGroupRowHeight: CGFloat = 64
     private let detailSkillRowHeight: CGFloat = 60
@@ -249,7 +250,7 @@ struct MainView: View {
             }
             .buttonStyle(.plain)
 
-            Text("Skill Flow")
+            Text(t("app.name"))
                 .font(.system(size: topBarTitleSize, weight: .semibold))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
         }
@@ -261,7 +262,7 @@ struct MainView: View {
                 .foregroundStyle(AppTheme.textMuted(for: theme))
             ZStack(alignment: .leading) {
                 if viewModel.searchQuery.isEmpty {
-                    Text("Search Group / Author")
+                    Text(t("placeholder.home.search_group_author"))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
                         .textCase(.uppercase)
@@ -350,8 +351,8 @@ struct MainView: View {
                     loadingState
                 } else {
                     emptyState(
-                        title: "No groups matched",
-                        subtitle: "Try a broader search query.",
+                        title: t("home.empty.title"),
+                        subtitle: t("home.empty.subtitle"),
                         chromed: false
                     )
                 }
@@ -406,7 +407,7 @@ struct MainView: View {
         VStack(spacing: 10) {
             ProgressView()
                 .controlSize(.regular)
-            Text("Loading groups")
+            Text(t("home.loading.title"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
         }
@@ -416,13 +417,13 @@ struct MainView: View {
     private var currentPageTitle: String {
         switch viewModel.currentPage {
         case .home:
-            return "Home"
+            return t("page.home.title")
         case .importPage:
-            return "Import"
+            return t("page.import.title")
         case .settings:
-            return "Settings"
+            return t("page.settings.title")
         case .detail:
-            return "Group Detail"
+            return t("page.detail.title")
         }
     }
 
@@ -1147,7 +1148,7 @@ struct MainView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Import Now ?")
+                    Text(t("import.page.title"))
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
 
@@ -1159,27 +1160,27 @@ struct MainView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader(
-                        title: viewModel.importSubmittedQuery.isEmpty ? "Recommended" : "Search Result",
+                        title: viewModel.importSubmittedQuery.isEmpty ? t("import.section.recommended") : t("import.section.search_results"),
                         subtitle: "",
                         badge: "\(importDisplayItems.count)"
                     )
 
                     if case .loading = viewModel.importSearchPhase, importDisplayItems.isEmpty {
                         emptyState(
-                            title: "Loading groups",
-                            subtitle: "Fetching import data..."
+                            title: t("import.loading.title"),
+                            subtitle: t("import.loading.subtitle")
                         )
                     } else if case .failed(let message) = viewModel.importSearchPhase, importDisplayItems.isEmpty {
                         emptyState(
-                            title: "Import search failed",
+                            title: t("import.failed.title"),
                             subtitle: message
                         )
                     } else if importDisplayItems.isEmpty {
                         emptyState(
-                            title: "No groups matched",
+                            title: t("home.empty.title"),
                             subtitle: viewModel.importSubmittedQuery.isEmpty
-                                ? "No recommended groups are available to import."
-                                : "Try another keyword."
+                                ? t("import.empty.recommended")
+                                : t("import.empty.search")
                         )
                     } else {
                         HStack {
@@ -1401,7 +1402,7 @@ struct MainView: View {
             id: item.id,
             title: item.title,
             subtitle: importCardSubtitle(for: item),
-            metaLine: "from \(item.locator)",
+            metaLine: t("common.meta.from", item.locator),
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,
@@ -1438,27 +1439,27 @@ struct MainView: View {
         }
         switch item.previewPhase {
         case .loading:
-            return "Loading skills..."
+            return t("import.card.summary.loading_skills")
         case .failed(let message):
             return message
         default:
-            return "Import from \(item.canonicalRepo)"
+            return t("import.card.summary.import_from", item.canonicalRepo)
         }
     }
 
     private func importSourceFacts(for item: MainViewModel.ImportGroupItem) -> [String] {
         var facts: [String] = []
         if let totalInstalls = item.totalInstalls, totalInstalls > 0 {
-            facts.append("Installs \(formattedStarCount(totalInstalls))")
+            facts.append(t("import.card.facts.installs", formattedStarCount(totalInstalls)))
         }
         if let starCount = item.starCount, starCount > 0 {
-            facts.append("Stars \(formattedStarCount(starCount))")
+            facts.append(t("import.card.facts.stars", formattedStarCount(starCount)))
         }
         if let skillCount = item.skillCount, skillCount > 0 {
-            facts.append("Skills \(skillCount)")
+            facts.append(t("import.card.facts.skills", String(skillCount)))
         }
         if !item.matchedSkillNames.isEmpty {
-            facts.append("Matches \(item.matchedSkillNames.joined(separator: ", "))")
+            facts.append(t("import.card.facts.matches", item.matchedSkillNames.joined(separator: ", ")))
         }
         return facts
     }
@@ -1481,10 +1482,10 @@ struct MainView: View {
                 continue
             }
 
-            return "by @\(locator[ownerRange])"
+            return t("import.card.subtitle.by_owner", String(locator[ownerRange]))
         }
 
-        return "recommended"
+        return t("import.card.subtitle.recommended")
     }
 
     private func importSelectionState(allIds: [String], selectedIds: [String]) -> SelectionState {
@@ -1562,6 +1563,10 @@ struct MainView: View {
             .background(tint)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .foregroundStyle(textColor)
+    }
+
+    private func t(_ key: String, _ arguments: CVarArg...) -> String {
+        L10n.string(key, locale: locale, arguments: arguments)
     }
 
     private func targetLabel(_ targetId: String) -> String {

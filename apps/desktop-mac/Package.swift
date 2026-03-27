@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "SkillFlowDesktop",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v15)
     ],
@@ -22,7 +23,7 @@ let package = Package(
             ],
             path: "Sources/SkillFlowDesktop",
             resources: [
-                .copy("Resources")
+                .process("Resources")
             ]
         ),
         .testTarget(

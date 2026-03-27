@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MenuBarQuickConfigView: View {
+    @Environment(\.locale) private var locale
     @Bindable var viewModel: MainViewModel
 
     let openMainWindow: () -> Void
@@ -104,7 +105,7 @@ struct MenuBarQuickConfigView: View {
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                 ZStack(alignment: .leading) {
                     if viewModel.searchQuery.isEmpty {
-                        Text("Search Group / Source")
+                        Text(t("menu.placeholder.search_group_source"))
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
                             .allowsHitTesting(false)
@@ -196,6 +197,10 @@ struct MenuBarQuickConfigView: View {
 
     private var groupCards: [MainViewModel.GroupCardModel] {
         viewModel.groupCards
+    }
+
+    private func t(_ key: String, _ arguments: CVarArg...) -> String {
+        L10n.string(key, locale: locale, arguments: arguments)
     }
 
     private func resetTransientState() {
