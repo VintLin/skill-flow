@@ -1427,7 +1427,7 @@ struct MainView: View {
                     isEnabled: enabledTargetIds.contains(targetId)
                 )
             },
-            saveState: MainViewModel.SaveState(phase: .idle, message: nil)
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
         )
     }
 

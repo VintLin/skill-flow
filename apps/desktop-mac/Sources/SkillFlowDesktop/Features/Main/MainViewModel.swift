@@ -49,7 +49,7 @@ final class MainViewModel {
 
     struct SaveState: Equatable {
         var phase: SavePhase
-        var message: String?
+        var detail: String?
     }
 
     enum ToastStyle {
@@ -547,7 +547,7 @@ final class MainViewModel {
                         isEnabled: enabledTargets.contains(targetId)
                     )
                 },
-                saveState: saveStateBySourceId[row.id] ?? SaveState(phase: .idle, message: nil)
+                saveState: saveStateBySourceId[row.id] ?? SaveState(phase: .idle, detail: nil)
             )
         }
     }
@@ -735,13 +735,13 @@ final class MainViewModel {
 
     var currentSaveState: SaveState {
         guard let groupId = selectedGroupId else {
-            return SaveState(phase: .idle, message: nil)
+            return SaveState(phase: .idle, detail: nil)
         }
-        return saveStateBySourceId[groupId] ?? SaveState(phase: .idle, message: nil)
+        return saveStateBySourceId[groupId] ?? SaveState(phase: .idle, detail: nil)
     }
 
     func saveState(for sourceId: String) -> SaveState {
-        saveStateBySourceId[sourceId] ?? SaveState(phase: .idle, message: nil)
+        saveStateBySourceId[sourceId] ?? SaveState(phase: .idle, detail: nil)
     }
 
     func isSaving(sourceId: String? = nil) -> Bool {
@@ -1831,7 +1831,7 @@ final class MainViewModel {
         let previousDraft = workingDrafts[sourceId] ?? baselineDrafts[sourceId] ?? normalizedDraft
         selectedSourceId = sourceId
         workingDrafts[sourceId] = normalizedDraft
-        saveStateBySourceId[sourceId] = SaveState(phase: .saving, message: "Applying...")
+        saveStateBySourceId[sourceId] = SaveState(phase: .saving, detail: nil)
 
         do {
             _ = try await bridgeClient.apply(
@@ -1841,7 +1841,7 @@ final class MainViewModel {
             )
             baselineDrafts[sourceId] = normalizedDraft
             workingDrafts[sourceId] = normalizedDraft
-            saveStateBySourceId[sourceId] = SaveState(phase: .saved, message: "saved")
+            saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
             detailText = "Applied group '\(sourceId)' to \(normalizedDraft.enabledTargets.count) targets."
             showToast(style: successStyle, message: successMessage)
             await refreshList()
@@ -1851,7 +1851,7 @@ final class MainViewModel {
         } catch {
             let firstReason = firstErrorLine(from: error)
             workingDrafts[sourceId] = previousDraft
-            saveStateBySourceId[sourceId] = SaveState(phase: .failed, message: firstReason)
+            saveStateBySourceId[sourceId] = SaveState(phase: .failed, detail: firstReason)
             detailText = "Apply failed: \(firstReason)"
             showToast(style: .error, message: "Save failed: \(firstReason)")
         }

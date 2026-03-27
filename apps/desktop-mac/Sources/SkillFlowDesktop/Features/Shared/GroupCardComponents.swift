@@ -451,7 +451,7 @@ struct SharedGroupCard: View {
 
     private var loadingMessage: String {
         if isSaving {
-            return card.saveState.message ?? t("group_card.loading.applying")
+            return t("group_card.loading.applying")
         }
         return t("group_card.loading.updating")
     }
