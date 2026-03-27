@@ -67,6 +67,17 @@ final class DesktopNavigationTests: XCTestCase {
         XCTAssertEqual(navigator.currentRoute, .settings)
     }
 
+    func testBoundNavigatorTracksAppStateRouteChanges() async {
+        let state = DesktopAppState()
+        let navigator = DesktopNavigator(appState: state)
+
+        state.view.currentRoute = .settings
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(navigator.currentRoute, .settings)
+    }
+
     func testDesktopAppStateStartsWithHomeViewStateAndIdleBootstrapPhase() {
         let state = DesktopAppState()
 
