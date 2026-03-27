@@ -1,19 +1,19 @@
 import path from "node:path";
 import type {
-  ImportDirectoryCache,
-  ImportGroupCacheEntry,
-  ImportPreviewCacheEntry,
+  ImportDataCache,
+  ImportRecommendationFeed,
   LockFile,
   Manifest,
   SharedPreferences,
   SourceMetadataCache,
   SourceMetadataCacheEntry,
   SourceKind,
+  UnifiedSourceSnapshotCacheEntry,
 } from "../domain/types.js";
 import {
-  createEmptyImportDirectoryCache,
-  normalizeImportDirectoryCache,
-} from "./import-directory-cache.js";
+  createEmptyImportDataCache,
+  normalizeImportDataCache,
+} from "./import-data-cache.js";
 import {
   createEmptySharedPreferences,
   normalizeSharedPreferences,
@@ -82,8 +82,8 @@ export class StateStore {
     return path.join(this.catalogStateRoot, "source-metadata.json");
   }
 
-  get importDirectoryPath(): string {
-    return path.join(this.catalogStateRoot, "import-directory.json");
+  get importDataPath(): string {
+    return path.join(this.catalogStateRoot, "import-data.json");
   }
 
   get mutationLockPath(): string {
@@ -203,35 +203,47 @@ export class StateStore {
     });
   }
 
-  async readImportDirectoryCache(): Promise<ImportDirectoryCache> {
+  async readImportDataCache(): Promise<ImportDataCache> {
     return this.withIoLock(async () => {
       await this.init();
-      return this.readImportDirectoryCacheRaw();
+      return this.readImportDataCacheRaw();
     });
   }
 
-  async writeImportDirectoryCache(cache: ImportDirectoryCache): Promise<void> {
+  async writeImportDataCache(cache: ImportDataCache): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      await writeJsonFile(this.importDirectoryPath, normalizeImportDirectoryCache(cache));
+      await writeJsonFile(this.importDataPath, normalizeImportDataCache(cache));
     });
   }
 
-  async writeImportGroupCacheEntry(entry: ImportGroupCacheEntry): Promise<void> {
+  async writeImportSourceSnapshotEntry(entry: UnifiedSourceSnapshotCacheEntry): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      const cache = await this.readImportDirectoryCacheRaw();
-      cache.groups[entry.canonicalRepo] = entry;
-      await writeJsonFile(this.importDirectoryPath, cache);
+      const cache = await this.readImportDataCacheRaw();
+      cache.sources[entry.canonicalRepo] = entry;
+      await writeJsonFile(this.importDataPath, cache);
     });
   }
 
-  async writeImportPreviewCacheEntry(entry: ImportPreviewCacheEntry): Promise<void> {
+  async writeImportSearchSnapshotEntry(
+    query: string,
+    entry: ImportDataCache["searches"][string],
+  ): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      const cache = await this.readImportDirectoryCacheRaw();
-      cache.previews[entry.canonicalRepo] = entry;
-      await writeJsonFile(this.importDirectoryPath, cache);
+      const cache = await this.readImportDataCacheRaw();
+      cache.searches[query] = entry;
+      await writeJsonFile(this.importDataPath, cache);
+    });
+  }
+
+  async writeImportRecommendationFeedEntry(entry: ImportRecommendationFeed): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      const cache = await this.readImportDataCacheRaw();
+      cache.recommendations[entry.id] = entry;
+      await writeJsonFile(this.importDataPath, cache);
     });
   }
 
@@ -317,11 +329,11 @@ export class StateStore {
     );
   }
 
-  private async readImportDirectoryCacheRaw(): Promise<ImportDirectoryCache> {
-    return normalizeImportDirectoryCache(
+  private async readImportDataCacheRaw(): Promise<ImportDataCache> {
+    return normalizeImportDataCache(
       await readJsonFile<unknown>(
-        this.importDirectoryPath,
-        createEmptyImportDirectoryCache(),
+        this.importDataPath,
+        createEmptyImportDataCache(),
       ),
     );
   }

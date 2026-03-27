@@ -10,7 +10,6 @@ import { inspectClawHubSkill } from "./clawhub.js";
 import { fetchGitHubRepoDetails } from "./github-catalog.js";
 import { parseGitHubRepo } from "./naming.js";
 import {
-  fetchSkillsDirectoryGroupDetails,
   parseSkillsSourcePage,
 } from "./skills-directory.js";
 
@@ -129,14 +128,44 @@ export async function fetchSkillsDirectorySourceDetails(locator: string): Promis
     return {};
   }
 
-  const details = await fetchSkillsDirectoryGroupDetails(locator);
+  const canonicalRepo = `${repo.owner}/${repo.repo}`.toLowerCase();
+  const sourceUrl = `https://skills.sh/${canonicalRepo}`;
+  const response = await fetch(sourceUrl);
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw createProviderError(
+        "SKILLS_SOURCE_NOT_FOUND",
+        `skills.sh source page request failed with ${response.status}.`,
+      );
+    }
+    throw createProviderError(
+      response.status === 429 ? "SKILLS_SOURCE_RATE_LIMITED" : "SKILLS_SOURCE_REQUEST_FAILED",
+      `skills.sh source page request failed with ${response.status}.`,
+    );
+  }
+
+  const details = parseSkillsSourcePage(await response.text());
+  if (details.totalInstalls === undefined) {
+    throw createProviderError(
+      "SKILLS_SOURCE_PARSE_FAILED",
+      "skills.sh source page payload was missing total installs.",
+    );
+  }
+  const githubDetails: SourceStats = await fetchGitHubRepoDetails(canonicalRepo)
+    .catch(() => ({} as SourceStats));
   return {
     provider: "skills",
-    repoLabel: details.repoLabel,
-    repoUrl: details.repoUrl,
-    sourceUrl: details.sourceUrl,
-    ...(details.starCount !== undefined ? { starCount: details.starCount } : {}),
+    ...(details.repoLabel ? { repoLabel: details.repoLabel } : { repoLabel: canonicalRepo }),
+    ...(details.repoUrl ? { repoUrl: details.repoUrl } : githubDetails.repoUrl ? { repoUrl: githubDetails.repoUrl } : { repoUrl: `https://github.com/${canonicalRepo}` }),
+    sourceUrl,
     ...(details.totalInstalls !== undefined ? { totalInstalls: details.totalInstalls } : {}),
+    ...(githubDetails.starCount !== undefined ? { starCount: githubDetails.starCount } : {}),
+    ...(githubDetails.forkCount !== undefined ? { forkCount: githubDetails.forkCount } : {}),
+    ...(githubDetails.description ? { description: githubDetails.description } : {}),
+    ...(githubDetails.topics?.length ? { topics: githubDetails.topics } : {}),
+    ...(githubDetails.language ? { language: githubDetails.language } : {}),
+    ...(githubDetails.defaultBranch ? { defaultBranch: githubDetails.defaultBranch } : {}),
+    ...(githubDetails.pushedAt ? { pushedAt: githubDetails.pushedAt } : {}),
   };
 }
 
@@ -246,10 +275,10 @@ function hasSourceStatsData(sourceStats: SourceStats): boolean {
   return Object.entries(sourceStats).some(([key, value]) => key !== "provider" && value !== undefined);
 }
 
-function createProviderError(code: string, message: string): Error & { code: string } {
-  return Object.assign(new Error(message), { code });
-}
-
 function hasProviderErrorCode(error: unknown, code: string): error is Error & { code: string } {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
+function createProviderError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
 }

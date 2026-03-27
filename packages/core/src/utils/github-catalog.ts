@@ -10,6 +10,13 @@ type GitHubTreeResponse = {
 
 type GitHubRepoResponse = {
   stargazers_count?: number;
+  forks_count?: number;
+  html_url?: string;
+  description?: string;
+  topics?: string[];
+  language?: string | null;
+  default_branch?: string;
+  pushed_at?: string;
 };
 
 export async function fetchGitHubSkillPaths(
@@ -80,18 +87,39 @@ export async function fetchGitHubRepoDetails(locator: string): Promise<SourceSta
   const starCount = typeof payload.stargazers_count === "number"
     ? payload.stargazers_count
     : undefined;
+  const forkCount = typeof payload.forks_count === "number"
+    ? payload.forks_count
+    : undefined;
+  const repoUrl = typeof payload.html_url === "string" && payload.html_url.length > 0
+    ? payload.html_url
+    : `https://github.com/${repo.owner}/${repo.repo}`;
 
   return {
     provider: "github",
     repoLabel: `${repo.owner}/${repo.repo}`,
-    repoUrl: `https://github.com/${repo.owner}/${repo.repo}`,
+    repoUrl,
     ...(starCount !== undefined ? { starCount } : {}),
+    ...(forkCount !== undefined ? { forkCount } : {}),
+    ...(typeof payload.description === "string" && payload.description.length > 0
+      ? { description: payload.description }
+      : {}),
+    ...(Array.isArray(payload.topics) ? { topics: payload.topics.filter((item): item is string => typeof item === "string" && item.length > 0) } : {}),
+    ...(typeof payload.language === "string" && payload.language.length > 0
+      ? { language: payload.language }
+      : {}),
+    ...(typeof payload.default_branch === "string" && payload.default_branch.length > 0
+      ? { defaultBranch: payload.default_branch }
+      : {}),
+    ...(typeof payload.pushed_at === "string" && payload.pushed_at.length > 0
+      ? { pushedAt: payload.pushed_at }
+      : {}),
   };
 }
 
 function buildGitHubHeaders(): Record<string, string> {
   return {
     Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2026-03-10",
     ...(process.env.GITHUB_TOKEN
       ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
       : {}),

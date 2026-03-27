@@ -170,12 +170,20 @@ function normalizeSourceStats(value: unknown): SourceStats | undefined {
   const repoUrl = normalizeString(candidate.repoUrl);
   const sourceUrl = normalizeString(candidate.sourceUrl);
   const starCount = normalizeNumber(candidate.starCount);
+  const forkCount = normalizeNumber(candidate.forkCount);
   const totalInstalls = normalizeNumber(candidate.totalInstalls);
   const weeklyInstalls = normalizeNumber(candidate.weeklyInstalls);
   const downloadCount = normalizeNumber(candidate.downloadCount);
   const ownerHandle = normalizeString(candidate.ownerHandle);
   const ownerDisplayName = normalizeString(candidate.ownerDisplayName);
   const summary = normalizeString(candidate.summary);
+  const description = normalizeString(candidate.description);
+  const topics = Array.isArray(candidate.topics)
+    ? candidate.topics.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  const language = normalizeString(candidate.language);
+  const defaultBranch = normalizeString(candidate.defaultBranch);
+  const pushedAt = normalizeString(candidate.pushedAt);
 
   const normalized = {
     ...(provider ? { provider } : {}),
@@ -183,12 +191,18 @@ function normalizeSourceStats(value: unknown): SourceStats | undefined {
     ...(repoUrl ? { repoUrl } : {}),
     ...(sourceUrl ? { sourceUrl } : {}),
     ...(starCount !== undefined ? { starCount } : {}),
+    ...(forkCount !== undefined ? { forkCount } : {}),
     ...(totalInstalls !== undefined ? { totalInstalls } : {}),
     ...(weeklyInstalls !== undefined ? { weeklyInstalls } : {}),
     ...(downloadCount !== undefined ? { downloadCount } : {}),
     ...(ownerHandle ? { ownerHandle } : {}),
     ...(ownerDisplayName ? { ownerDisplayName } : {}),
     ...(summary ? { summary } : {}),
+    ...(description ? { description } : {}),
+    ...(topics.length > 0 ? { topics } : {}),
+    ...(language ? { language } : {}),
+    ...(defaultBranch ? { defaultBranch } : {}),
+    ...(pushedAt ? { pushedAt } : {}),
   } satisfies SourceStats;
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
