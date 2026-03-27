@@ -609,6 +609,10 @@ private struct TestFixture {
       if (request.command === 'bootstrap') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
+          summaries: buildSummaries(state),
+          audit: {
+            issues: []
+          },
           initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => {
             const enabledTargets = source.enabledTargets || [];
             const targetLeafIdsByTarget = source.targetLeafIdsByTarget || {};

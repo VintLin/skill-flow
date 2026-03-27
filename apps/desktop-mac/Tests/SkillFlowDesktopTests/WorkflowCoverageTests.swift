@@ -110,6 +110,20 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(updateRequests.first?.payload?["sourceIds"]?.value as? [String], ["beta"])
     }
 
+    func testBootstrapUsesBootstrapPayloadWithoutImmediateListOrDoctor() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+
+        XCTAssertEqual(model.selectedGroupId, "alpha")
+        XCTAssertEqual(model.sourceIds, ["alpha", "beta"])
+
+        let commands = fixture.loggedRequests().map(\.command)
+        XCTAssertEqual(commands, ["bootstrap"])
+    }
+
     func testPinnedWriteFailureRollsBack() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -837,6 +851,10 @@ private struct TestFixture {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
           pinnedSourceIds: state.pinnedSourceIds || [],
+          summaries: buildSummaries(state),
+          audit: {
+            issues: []
+          },
           initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => [sourceId, sourceDraft(source)]))
         }, [], [])));
         return;

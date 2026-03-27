@@ -140,9 +140,6 @@ struct MainView: View {
         .task {
             if case .idle = viewModel.loadState {
                 await viewModel.bootstrap()
-                if let first = viewModel.sourceIds.first {
-                    await viewModel.selectSource(first)
-                }
             }
         }
         .onChange(of: viewModel.isUpdatingCurrentGroup) { _, isUpdating in

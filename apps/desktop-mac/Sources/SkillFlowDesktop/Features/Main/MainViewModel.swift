@@ -1023,17 +1023,10 @@ final class MainViewModel {
             let bootstrap = try await bridgeClient.bootstrap()
             latestWarnings = bootstrap.warnings
             parseBootstrapData(bootstrap.data?.value)
-
-            let list = try await bridgeClient.list()
-            applyList(list)
             await migrateLegacyPinnedSourceIdsIfNeeded()
 
             loadState = .ready
-            healthLabel = list.warnings.isEmpty ? "Healthy" : "Warnings"
-
-            Task {
-                await runDoctor()
-            }
+            healthLabel = bootstrap.warnings.isEmpty ? "Healthy" : "Warnings"
         } catch {
             loadState = .failed(error.localizedDescription)
             healthLabel = "Error"
@@ -1668,6 +1661,7 @@ final class MainViewModel {
         guard let data = value as? [String: Any] else { return }
 
         applyPinnedSourceIds(data)
+        applySummaries(parseSummariesPayload(data))
 
         if let availableTargets = data["availableTargets"] as? [String] {
             detectedTargets.formUnion(availableTargets)
@@ -1683,44 +1677,25 @@ final class MainViewModel {
                 workingDrafts[sourceId] = draft
             }
         }
+
+        if let audit = data["audit"] {
+            doctorIssues = parseDoctorIssues(audit)
+            lastDoctorError = nil
+        }
     }
 
     private func applyList(_ response: BridgeResponse) {
         applyPinnedSourceIds(response.data?.value)
-        allSummaries = parseSummaries(response)
-        sourceIds = allSummaries.map(\.sourceId)
-        pruneStateMaps(allowedSourceIds: Set(sourceIds))
-
-        if selectedSourceId == nil || !sourceIds.contains(selectedSourceId ?? "") {
-            selectedSourceId = sourceIds.first
-        }
-
-        for summary in allSummaries {
-            if baselineDrafts[summary.sourceId] == nil {
-                baselineDrafts[summary.sourceId] = buildInitialDraftFromSummary(summary)
-            }
-            if workingDrafts[summary.sourceId] == nil {
-                workingDrafts[summary.sourceId] = baselineDrafts[summary.sourceId] ?? buildInitialDraftFromSummary(summary)
-            }
-
-            detectedTargets.formUnion(summary.enabledTargets)
-
-        }
-
-        if let selected = selectedSourceId, let summary = allSummaries.first(where: { $0.sourceId == selected }) {
-            detailText = prettyPrint([
-                "sourceId": summary.sourceId,
-                "selectedLeafIds": summary.selectedLeafIds,
-                "enabledTargets": summary.enabledTargets,
-                "leafCount": summary.leafs.count,
-                "health": summary.health,
-            ]) ?? detailText
-        }
+        applySummaries(parseSummariesPayload(response.data?.value))
     }
 
     private func parseSummaries(_ response: BridgeResponse) -> [WorkflowSummary] {
+        parseSummariesPayload(response.data?.value)
+    }
+
+    private func parseSummariesPayload(_ value: Any?) -> [WorkflowSummary] {
         guard
-            let data = response.data?.value as? [String: Any],
+            let data = value as? [String: Any],
             let summaries = data["summaries"] as? [[String: Any]]
         else {
             return []
@@ -1791,6 +1766,38 @@ final class MainViewModel {
                 errorCount: errorCount,
                 updatedAt: updatedAt
             )
+        }
+    }
+
+    private func applySummaries(_ summaries: [WorkflowSummary]) {
+        allSummaries = summaries
+        sourceIds = summaries.map(\.sourceId)
+        pruneStateMaps(allowedSourceIds: Set(sourceIds))
+
+        if selectedSourceId == nil || !sourceIds.contains(selectedSourceId ?? "") {
+            selectedSourceId = sourceIds.first
+        }
+
+        for summary in summaries {
+            if baselineDrafts[summary.sourceId] == nil {
+                baselineDrafts[summary.sourceId] = buildInitialDraftFromSummary(summary)
+            }
+            if workingDrafts[summary.sourceId] == nil {
+                workingDrafts[summary.sourceId] = baselineDrafts[summary.sourceId]
+                    ?? buildInitialDraftFromSummary(summary)
+            }
+
+            detectedTargets.formUnion(summary.enabledTargets)
+        }
+
+        if let selected = selectedSourceId, let summary = summaries.first(where: { $0.sourceId == selected }) {
+            detailText = prettyPrint([
+                "sourceId": summary.sourceId,
+                "selectedLeafIds": summary.selectedLeafIds,
+                "enabledTargets": summary.enabledTargets,
+                "leafCount": summary.leafs.count,
+                "health": summary.health,
+            ]) ?? detailText
         }
     }
 
