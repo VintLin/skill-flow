@@ -346,27 +346,9 @@ struct SharedGroupCard: View {
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(1)
             }
-
-            if let statusMessage = card.statusMessage {
-                Text(statusMessage)
-                    .font(.system(size: scale.metaSize, weight: .semibold))
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, scale.headerBottomSpacing)
-    }
-
-    private var statusColor: Color {
-        switch card.statusTone {
-        case .success:
-            return AppTheme.statusSuccess(for: theme)
-        case .warning:
-            return AppTheme.statusWarning(for: theme)
-        case .neutral, .none:
-            return AppTheme.textMuted(for: theme)
-        }
     }
 
     private var pinButton: some View {

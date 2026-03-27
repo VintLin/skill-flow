@@ -165,6 +165,7 @@
 "import.card.facts.owner_sources" = "%@ sources";
 "import.card.facts.owner_skills" = "%@ skills";
 "import.card.facts.trust" = "Trust %@";
+"import.card.facts.source_loading" = "Source loading...";
 "import.card.subtitle.by_owner" = "by @%@";
 "import.card.subtitle.recommended" = "recommended";
 "detail.save.no_detail" = "No detail";

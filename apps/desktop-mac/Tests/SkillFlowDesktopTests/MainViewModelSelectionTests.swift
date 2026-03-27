@@ -111,6 +111,24 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.skills.first?.starCount, 1200)
     }
 
+    func testDetailViewDataBuildsLocalContentBeforeInspectPayloadArrives() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+
+        XCTAssertFalse(model.hasInspectPayload(for: "alpha"))
+
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertEqual(detail?.title, "AlphaHub")
+        XCTAssertEqual(detail?.skills.map(\.id), ["alpha-a", "alpha-b"])
+        XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
+        XCTAssertTrue(detail?.sourceDetailLines.isEmpty == true)
+        XCTAssertEqual(detail?.targets.map(\.id), ["claude-code", "cursor"])
+    }
+
     func testDetailViewDataShowsUnsupportedMetadataState() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -248,6 +266,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let model = try await fixture.makeModel()
         await model.selectSource("beta")
+        try await fixture.waitForDetailHydration(model, sourceId: "beta")
 
         let detail = model.detailViewData(for: "beta")
 
@@ -484,7 +503,26 @@ private struct TestFixture {
         }
         XCTAssertEqual(model.selectedGroupId, "alpha")
         await model.selectSource("alpha")
+        try await waitForDetailHydration(model, sourceId: "alpha")
         return model
+    }
+
+    func waitForDetailHydration(
+        _ model: MainViewModel,
+        sourceId: String,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async throws {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
+        while Date() < deadline {
+            if let detail = model.detailViewData(for: sourceId),
+               !detail.groupDocuments.isEmpty,
+               !detail.fileTree.isEmpty,
+               detail.skills.allSatisfy({ !$0.documents.isEmpty }) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("Timed out waiting for detail hydration for \(sourceId)")
     }
 
     func loggedRequests() -> [LoggedRequest] {

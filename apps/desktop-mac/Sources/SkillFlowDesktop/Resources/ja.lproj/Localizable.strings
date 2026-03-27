@@ -165,6 +165,7 @@
 "import.card.facts.owner_sources" = "%@ ソース";
 "import.card.facts.owner_skills" = "%@ スキル";
 "import.card.facts.trust" = "信頼 %@";
+"import.card.facts.source_loading" = "ソースを読み込み中...";
 "import.card.subtitle.by_owner" = "@%@ 作成";
 "import.card.subtitle.recommended" = "おすすめ";
 "detail.save.no_detail" = "詳細なし";

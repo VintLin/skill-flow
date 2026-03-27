@@ -107,8 +107,7 @@ struct MainView: View {
                 if detailShowsGroupOverviewByGroup[groupId] == nil {
                     detailShowsGroupOverviewByGroup[groupId] = true
                 }
-                if viewModel.hasInspectPayload(for: groupId),
-                   let detail = viewModel.detailViewData(for: groupId) {
+                if let detail = viewModel.detailViewData(for: groupId) {
                     if detailSkillIdByGroup[groupId] == nil {
                         detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
                     }
@@ -430,9 +429,7 @@ struct MainView: View {
     }
 
     private func detailPage(groupId: String, layout: LayoutMetrics) -> some View {
-        let detail = viewModel.hasInspectPayload(for: groupId)
-            ? viewModel.detailViewData(for: groupId)
-            : nil
+        let detail = viewModel.detailViewData(for: groupId)
         let fallbackRow = viewModel.sourceRows.first(where: { $0.id == groupId })
         let sidebarWidth = layout.detailSidebarWidth
 
@@ -1503,8 +1500,6 @@ struct MainView: View {
             title: item.title,
             subtitle: importCardSubtitle(for: item),
             metaLine: t("common.meta.from", item.locator),
-            statusMessage: nil,
-            statusTone: nil,
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,
@@ -1598,6 +1593,16 @@ struct MainView: View {
             facts.append(t("import.card.facts.matches", matches.joined(separator: ", ")))
         } else if !item.matchedSkillNames.isEmpty {
             facts.append(t("import.card.facts.matches", item.matchedSkillNames.joined(separator: ", ")))
+        }
+        if facts.isEmpty {
+            switch item.enrichPhase {
+            case .loading:
+                return [t("import.card.facts.source_loading")]
+            case .failed(let message):
+                return [message.resolve(locale: locale)]
+            case .ready, .idle:
+                break
+            }
         }
         return facts
     }

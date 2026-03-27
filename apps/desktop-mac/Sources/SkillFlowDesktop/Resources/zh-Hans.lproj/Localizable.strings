@@ -165,6 +165,7 @@
 "import.card.facts.owner_sources" = "%@ 个来源";
 "import.card.facts.owner_skills" = "%@ 个技能";
 "import.card.facts.trust" = "可信度 %@";
+"import.card.facts.source_loading" = "来源加载中...";
 "import.card.subtitle.by_owner" = "作者 @%@";
 "import.card.subtitle.recommended" = "推荐";
 "detail.save.no_detail" = "无详情";
