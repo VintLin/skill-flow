@@ -60,4 +60,15 @@ describe.sequential("inventory discovery precedence", () => {
     expect(scanned.leafs).toHaveLength(1);
     expect(scanned.leafs[0]?.relativePath).toBe(".agents/skills/gstack-browse");
   });
+
+  test("uses repository display name for a root-level skill link name", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "SKILL.md": skillDoc("gstack", "Root skill."),
+    });
+    const inventory = new InventoryService();
+
+    const scanned = await inventory.scanSource("garrytan-gstack", repoPath, "gstack");
+
+    expect(scanned.leafs[0]?.linkName).toBe("gstack");
+  });
 });
