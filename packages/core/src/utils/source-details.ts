@@ -10,7 +10,7 @@ import { inspectClawHubSkill } from "./clawhub.js";
 import { fetchGitHubRepoDetails } from "./github-catalog.js";
 import { parseGitHubRepo } from "./naming.js";
 
-export const SOURCE_METADATA_CACHE_TTL_MS = 15 * 60_000;
+export const SOURCE_METADATA_CACHE_TTL_MS = 8 * 60 * 60_000;
 
 export async function fetchSourceDetails(
   source: SourceManifestRecord,
