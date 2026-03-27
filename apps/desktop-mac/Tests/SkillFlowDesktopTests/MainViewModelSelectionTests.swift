@@ -5,6 +5,11 @@ import XCTest
 
 @MainActor
 final class MainViewModelSelectionTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.set(DesktopLanguage.en.rawValue, forKey: DesktopLanguage.storageKey)
+    }
+
     func testSelectionFallbackTriStateAndGroupSourceIds() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

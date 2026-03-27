@@ -59,6 +59,20 @@ final class MainViewModel {
         case error
     }
 
+    enum PresentationText: Equatable {
+        case plain(String)
+        case localized(String, [String] = [])
+
+        func resolve(locale: Locale) -> String {
+            switch self {
+            case .plain(let value):
+                return value
+            case .localized(let key, let arguments):
+                return L10n.string(key, locale: locale, arguments: arguments.map { $0 as CVarArg })
+            }
+        }
+    }
+
     enum HealthStatus: Equatable {
         case unknown
         case healthy
@@ -80,9 +94,25 @@ final class MainViewModel {
     }
 
     struct ToastState: Identifiable, Equatable {
-        let id = UUID()
+        let id: UUID
         let style: ToastStyle
-        let message: String
+        let text: PresentationText
+
+        var message: String {
+            text.resolve(locale: MainViewModel.presentationLocale)
+        }
+
+        init(id: UUID = UUID(), style: ToastStyle, message: String) {
+            self.id = id
+            self.style = style
+            self.text = .plain(message)
+        }
+
+        init(id: UUID = UUID(), style: ToastStyle, text: PresentationText) {
+            self.id = id
+            self.style = style
+            self.text = text
+        }
     }
 
     struct TargetOption: Identifiable {
@@ -222,7 +252,7 @@ final class MainViewModel {
         case idle
         case loading
         case ready
-        case failed(String)
+        case failed(PresentationText)
     }
 
     struct ImportGroupSkill: Identifiable, Equatable {
@@ -341,6 +371,11 @@ final class MainViewModel {
     }
 
     private let bridgeClient: BridgeClient
+
+    nonisolated private static var presentationLocale: Locale {
+        let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
+        return DesktopLanguage(storageValue: rawValue).locale
+    }
 
     private static let targetOrder: [String] = [
         "claude-code",
@@ -1088,8 +1123,8 @@ final class MainViewModel {
             importSubmittedQuery = ""
             importSearchPhase = .ready
         } catch {
-            importSearchPhase = .failed("Unable to load recommendations.")
-            showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
+            importSearchPhase = .failed(localizedText("import.error.load_recommendations"))
+            showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
         }
     }
 
@@ -1110,8 +1145,8 @@ final class MainViewModel {
             searchImportGroups = parseImportGroupsPayload(payload: payload)
             importSearchPhase = .ready
         } catch {
-            importSearchPhase = .failed("Unable to search import groups.")
-            showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
+            importSearchPhase = .failed(localizedText("import.error.search_groups"))
+            showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
         }
     }
 
@@ -1125,7 +1160,7 @@ final class MainViewModel {
             let payload = response.data?.value as? [String: Any] ?? [:]
             applyImportPreviewPayload(payload, for: groupId, fallbackLocator: item.locator)
         } catch {
-            setPreviewPhase(.failed(error.localizedDescription), for: groupId)
+            setPreviewPhase(.failed(.plain(error.localizedDescription)), for: groupId)
         }
     }
 
@@ -1161,13 +1196,13 @@ final class MainViewModel {
             guard let payload = response.data?.value as? [String: Any],
                   let status = payload["status"] as? String
             else {
-                showToast(style: .error, message: "Import failed: invalid response.")
+                showToast(style: .error, text: localizedText("toast.import.invalid_response"))
                 return
             }
 
             if status != "ready" {
                 let reasonCode = payload["reasonCode"] as? String ?? "unknown"
-                showToast(style: .error, message: "Import failed: \(reasonCode)")
+                showToast(style: .error, text: localizedText("toast.import.failed", reasonCode))
                 return
             }
 
@@ -1180,9 +1215,9 @@ final class MainViewModel {
             }
             recommendedImportGroups.removeAll(where: { $0.id == groupId })
             searchImportGroups.removeAll(where: { $0.id == groupId })
-            showToast(style: .success, message: "Imported source.")
+            showToast(style: .success, text: localizedText("toast.import.success"))
         } catch {
-            showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
+            showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
         }
     }
 
@@ -1229,7 +1264,7 @@ final class MainViewModel {
         case "ready":
             return .ready
         case "failed":
-            return .failed(importReasonMessage(reasonCode: payload["reasonCode"] as? String))
+            return .failed(importReasonText(reasonCode: payload["reasonCode"] as? String))
         default:
             return .idle
         }
@@ -1241,12 +1276,12 @@ final class MainViewModel {
         fallbackLocator: String
     ) {
         guard let status = payload["status"] as? String else {
-            setPreviewPhase(.failed("Invalid preview response."), for: groupId)
+            setPreviewPhase(.failed(localizedText("import.error.invalid_preview_response")), for: groupId)
             return
         }
 
         if status != "ready" {
-            setPreviewPhase(.failed(importReasonMessage(reasonCode: payload["reasonCode"] as? String)), for: groupId)
+            setPreviewPhase(.failed(importReasonText(reasonCode: payload["reasonCode"] as? String)), for: groupId)
             return
         }
 
@@ -1334,18 +1369,18 @@ final class MainViewModel {
         }
     }
 
-    private func importReasonMessage(reasonCode: String?) -> String {
+    private func importReasonText(reasonCode: String?) -> PresentationText {
         switch reasonCode {
         case "provider_not_supported":
-            return "Current source is not supported."
+            return localizedText("import.reason.provider_not_supported")
         case "provider_data_unavailable":
-            return "Current source has no readable metadata."
+            return localizedText("import.reason.provider_data_unavailable")
         case "provider_rate_limited":
-            return "Source data is temporarily rate-limited."
+            return localizedText("import.reason.provider_rate_limited")
         case "provider_response_invalid":
-            return "Source response was invalid."
+            return localizedText("import.reason.provider_response_invalid")
         default:
-            return "Source request failed."
+            return localizedText("import.reason.request_failed")
         }
     }
 
@@ -1887,6 +1922,18 @@ final class MainViewModel {
 
     private func showToast(style: ToastStyle, message: String) {
         toast = ToastState(style: style, message: message)
+    }
+
+    private func showToast(style: ToastStyle, text: PresentationText) {
+        toast = ToastState(style: style, text: text)
+    }
+
+    private func localizedText(_ key: String, _ arguments: String...) -> PresentationText {
+        .localized(key, arguments)
+    }
+
+    private func localized(_ key: String, _ arguments: String...) -> String {
+        PresentationText.localized(key, arguments).resolve(locale: Self.presentationLocale)
     }
 
     private func applyPinnedSourceIds(_ value: Any?) {
@@ -2453,31 +2500,32 @@ final class MainViewModel {
         var lines: [String] = []
 
         if let provider = (sourceStatsPayload["provider"] as? String)?.nonEmpty {
-            lines.append("Provider: \(provider)")
+            lines.append(localized("source.metadata.provider", provider))
         }
         if let repoLabel = (sourceStatsPayload["repoLabel"] as? String)?.nonEmpty {
-            lines.append("Repository: \(repoLabel)")
+            lines.append(localized("source.metadata.repository", repoLabel))
         }
         if let totalInstalls = sourceStatsPayload["totalInstalls"] as? Int {
-            lines.append("Total installs: \(formattedCount(totalInstalls))")
+            lines.append(localized("source.metadata.total_installs", formattedCount(totalInstalls)))
         }
         if let weeklyInstalls = sourceStatsPayload["weeklyInstalls"] as? Int {
-            lines.append("Current installs: \(formattedCount(weeklyInstalls))")
+            lines.append(localized("source.metadata.current_installs", formattedCount(weeklyInstalls)))
         }
         if let downloadCount = sourceStatsPayload["downloadCount"] as? Int {
-            lines.append("Downloads: \(formattedCount(downloadCount))")
+            lines.append(localized("source.metadata.downloads", formattedCount(downloadCount)))
         }
         if let starCount = sourceStatsPayload["starCount"] as? Int {
-            lines.append("Stars: \(formattedCount(starCount))")
+            lines.append(localized("source.metadata.stars", formattedCount(starCount)))
         }
         if let ownerHandle = (sourceStatsPayload["ownerHandle"] as? String)?.nonEmpty {
             let ownerDisplayName = (sourceStatsPayload["ownerDisplayName"] as? String)?.nonEmpty
             lines.append(
-                ownerDisplayName.map { "Owner: \(ownerHandle) (\($0))" } ?? "Owner: \(ownerHandle)"
+                ownerDisplayName.map { localized("source.metadata.owner_with_name", ownerHandle, $0) }
+                    ?? localized("source.metadata.owner", ownerHandle)
             )
         }
         if let repoURL = (sourceStatsPayload["repoUrl"] as? String)?.nonEmpty {
-            lines.append("Repo URL: \(repoURL)")
+            lines.append(localized("source.metadata.repo_url", repoURL))
         }
 
         return lines
@@ -2490,10 +2538,10 @@ final class MainViewModel {
     ) -> [String] {
         var lines: [String] = []
         if let provider {
-            lines.append("Provider: \(provider)")
+            lines.append(localized("source.metadata.provider", provider))
         }
 
-        lines.append("Status: \(status.capitalized)")
+        lines.append(localized("source.metadata.status", status.capitalized))
         lines.append(sourceMetadataExplanation(status: status, reasonCode: reasonCode))
         return lines
     }
@@ -2501,20 +2549,20 @@ final class MainViewModel {
     private func sourceMetadataExplanation(status: String, reasonCode: String?) -> String {
         switch status {
         case "unsupported":
-            return "Current source has no readable metadata."
+            return localized("source.metadata.explanation.unsupported")
         case "disabled":
-            return "This source provider is reserved but not enabled in this build."
+            return localized("source.metadata.explanation.disabled")
         case "failed":
             switch reasonCode {
             case "provider_rate_limited":
-                return "Source metadata is temporarily rate-limited. Try again later."
+                return localized("source.metadata.explanation.failed_rate_limited")
             case "provider_response_invalid":
-                return "Source metadata response format changed."
+                return localized("source.metadata.explanation.failed_response_invalid")
             default:
-                return "Could not fetch source metadata. Try again later."
+                return localized("source.metadata.explanation.failed_default")
             }
         default:
-            return "Current source has no readable metadata."
+            return localized("source.metadata.explanation.unsupported")
         }
     }
 

@@ -10,6 +10,7 @@ final class WorkflowCoverageTests: XCTestCase {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: "desktop.pinnedSourceIds")
         UserDefaults.standard.removeObject(forKey: "desktop.pinnedSourceIds.migratedToSharedPreferences")
+        UserDefaults.standard.set(DesktopLanguage.en.rawValue, forKey: DesktopLanguage.storageKey)
     }
 
     func testDismissToastIgnoresStaleIdentifier() {

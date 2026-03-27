@@ -1174,7 +1174,7 @@ struct MainView: View {
                     } else if case .failed(let message) = viewModel.importSearchPhase, importDisplayItems.isEmpty {
                         emptyState(
                             title: t("import.failed.title"),
-                            subtitle: message
+                            subtitle: message.resolve(locale: locale)
                         )
                     } else if importDisplayItems.isEmpty {
                         emptyState(
@@ -1442,7 +1442,7 @@ struct MainView: View {
         case .loading:
             return t("import.card.summary.loading_skills")
         case .failed(let message):
-            return message
+            return message.resolve(locale: locale)
         default:
             return t("import.card.summary.import_from", item.canonicalRepo)
         }
