@@ -73,6 +73,7 @@ describe.sequential("bridge command dispatcher", () => {
     });
 
     expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("sourceMetadata");
   });
 
   test("accepts valid add payload", async () => {

@@ -1549,7 +1549,7 @@ final class MainViewModel {
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
         let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
-        let sourceStatsPayload = payload["sourceStats"] as? [String: Any] ?? [:]
+        let sourceStatsPayload = readySourceStatsPayload(from: payload)
         let deploymentsPayload = payload["deployments"] as? [[String: Any]] ?? []
         let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
 
@@ -1806,6 +1806,19 @@ final class MainViewModel {
         }
 
         self.pinnedSourceIds = normalizedPinnedSourceIds(pinnedSourceIds)
+    }
+
+    private func readySourceStatsPayload(from payload: [String: Any]) -> [String: Any] {
+        guard
+            let sourceMetadata = payload["sourceMetadata"] as? [String: Any],
+            let status = (sourceMetadata["status"] as? String)?.nonEmpty,
+            status == "ready",
+            let data = sourceMetadata["data"] as? [String: Any]
+        else {
+            return payload["sourceStats"] as? [String: Any] ?? [:]
+        }
+
+        return data
     }
 
     private func normalizedPinnedSourceIds(_ sourceIds: [String]) -> [String] {

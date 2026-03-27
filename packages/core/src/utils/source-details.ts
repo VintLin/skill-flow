@@ -1,4 +1,10 @@
-import type { SourceManifestRecord, SourceStats, WorkflowSummary } from "../domain/types.js";
+import type {
+  SourceManifestRecord,
+  SourceMetadataProvider,
+  SourceMetadataResult,
+  SourceStats,
+  WorkflowSummary,
+} from "../domain/types.js";
 import { inspectClawHubSkill } from "./clawhub.js";
 import { fetchGitHubRepoDetails } from "./github-catalog.js";
 import { parseGitHubRepo } from "./naming.js";
@@ -90,6 +96,65 @@ export function parseSkillsSourcePage(html: string): {
   };
 }
 
+export function buildSourceMetadataResult(
+  sourceStats: SourceStats,
+  providerHint?: SourceMetadataProvider,
+): SourceMetadataResult {
+  const provider = sourceStats.provider ?? providerHint;
+  if (!provider) {
+    return {
+      status: "unsupported",
+      reasonCode: "provider_not_supported",
+    };
+  }
+
+  const normalizedSourceStats = {
+    ...sourceStats,
+    provider,
+  };
+
+  if (!hasSourceStatsData(normalizedSourceStats)) {
+    return {
+      status: "unsupported",
+      provider,
+      reasonCode: "provider_data_unavailable",
+    };
+  }
+
+  return {
+    status: "ready",
+    provider,
+    data: normalizedSourceStats,
+  };
+}
+
+export function buildFailedSourceMetadataResult(
+  provider: SourceMetadataProvider | undefined,
+  _error: unknown,
+): SourceMetadataResult {
+  return {
+    status: "failed",
+    ...(provider ? { provider } : {}),
+    reasonCode: "provider_request_failed",
+    retryable: true,
+  };
+}
+
+export function inferSourceMetadataProvider(
+  source: SourceManifestRecord,
+): SourceMetadataProvider | undefined {
+  if (source.kind === "clawhub") {
+    return "clawhub";
+  }
+
+  const skillsOriginLocator = resolveSkillsOriginLocator(source);
+  if (skillsOriginLocator) {
+    return "skills";
+  }
+
+  return parseGitHubRepo(source.locator) ? "github" : undefined;
+}
+
 function parseCompactNumber(value: string): number {
   const trimmed = value.trim().toUpperCase();
   const suffix = trimmed.slice(-1);
@@ -123,4 +188,8 @@ function resolveSkillsOriginLocator(source: SourceManifestRecord): string | unde
 function parseClawHubSlug(locator: string): string | undefined {
   const match = locator.match(/^clawhub:([^@\s]+)(?:@.+)?$/);
   return match?.[1];
+}
+
+function hasSourceStatsData(sourceStats: SourceStats): boolean {
+  return Object.entries(sourceStats).some(([key, value]) => key !== "provider" && value !== undefined);
 }

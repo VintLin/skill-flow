@@ -288,7 +288,7 @@ export type SkillCandidate = {
 };
 
 export type SourceStats = {
-  provider?: "github" | "skills" | "clawhub";
+  provider?: SourceMetadataProvider;
   repoLabel?: string;
   repoUrl?: string;
   sourceUrl?: string;
@@ -300,3 +300,24 @@ export type SourceStats = {
   ownerDisplayName?: string;
   summary?: string;
 };
+
+export type SourceMetadataProvider = "github" | "skills" | "clawhub";
+
+export type SourceMetadataReasonCode =
+  | "provider_not_supported"
+  | "provider_data_unavailable"
+  | "provider_request_failed";
+
+export type SourceMetadataResult =
+  | { status: "ready"; provider: SourceMetadataProvider; data: SourceStats }
+  | {
+      status: "unsupported";
+      provider?: SourceMetadataProvider;
+      reasonCode: SourceMetadataReasonCode;
+    }
+  | {
+      status: "failed";
+      provider?: SourceMetadataProvider;
+      reasonCode: SourceMetadataReasonCode;
+      retryable: boolean;
+    };

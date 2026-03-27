@@ -14,6 +14,7 @@ import type {
   Manifest,
   Result,
   SkillCandidate,
+  SourceMetadataResult,
   SourceStats,
   SourceBinding,
   SourceUpdateResult,
@@ -43,6 +44,11 @@ import { fail, ok } from "../utils/result.js";
 import { searchClawHubSkills } from "../utils/clawhub.js";
 import { deriveDisplayName, deriveSourceId } from "../utils/source-id.js";
 import { fetchSourceDetails } from "../utils/source-details.js";
+import {
+  buildFailedSourceMetadataResult,
+  buildSourceMetadataResult,
+  inferSourceMetadataProvider,
+} from "../utils/source-details.js";
 import { DeploymentApplier } from "./deployment-applier.js";
 import { ConfigCoordinator } from "./config-coordinator.js";
 import { DeploymentPlanner } from "./deployment-planner.js";
@@ -340,7 +346,7 @@ export class SkillFlowApp {
       binding: SourceBinding;
       leafs: LeafRecord[];
       deployments: LockFile["deployments"];
-      sourceStats: SourceStats;
+      sourceMetadata: SourceMetadataResult;
     }>
   > {
     return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId));
@@ -355,7 +361,7 @@ export class SkillFlowApp {
       binding: SourceBinding;
       leafs: LeafRecord[];
       deployments: LockFile["deployments"];
-      sourceStats: SourceStats;
+      sourceMetadata: SourceMetadataResult;
     }>
   > {
     const listed = await this.listWorkflowsImpl();
@@ -383,19 +389,24 @@ export class SkillFlowApp {
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
     const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
     const deployments = lockFile.deployments.filter((deployment) => deployment.sourceId === sourceId);
-    const sourceStats = await this.resolveSourceStats(source, summary.lock);
+    const sourceMetadata = await this.resolveSourceMetadata(source, summary.lock);
 
-    return ok({ summary, source, binding, leafs, deployments, sourceStats }, listed.warnings);
+    return ok({ summary, source, binding, leafs, deployments, sourceMetadata }, listed.warnings);
   }
 
-  private async resolveSourceStats(
+  private async resolveSourceMetadata(
     source: Manifest["sources"][number],
     lock: WorkflowSummary["lock"],
-  ): Promise<SourceStats> {
+  ): Promise<SourceMetadataResult> {
+    const providerHint = inferSourceMetadataProvider(source);
+
     try {
-      return await fetchSourceDetails(source, lock);
-    } catch {
-      return {};
+      return buildSourceMetadataResult(
+        await fetchSourceDetails(source, lock),
+        providerHint,
+      );
+    } catch (error) {
+      return buildFailedSourceMetadataResult(providerHint, error);
     }
   }
 

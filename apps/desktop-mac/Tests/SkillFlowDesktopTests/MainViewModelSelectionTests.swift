@@ -591,14 +591,18 @@ private struct TestFixture {
             addedAt: '2026-03-25T12:00:00Z',
             selectionMode: 'partial'
           },
-          sourceStats: {
+          sourceMetadata: {
+            status: 'ready',
             provider: 'clawhub',
-            starCount: source.starCount ?? null,
-            totalInstalls: 5045,
-            weeklyInstalls: 4921,
-            downloadCount: 211898,
-            ownerHandle: '@steipete',
-            ownerDisplayName: 'Peter Steinberger'
+            data: {
+              provider: 'clawhub',
+              starCount: source.starCount ?? null,
+              totalInstalls: 5045,
+              weeklyInstalls: 4921,
+              downloadCount: 211898,
+              ownerHandle: '@steipete',
+              ownerDisplayName: 'Peter Steinberger'
+            }
           },
           binding: {
             selectedLeafIds: source.selectedLeafIds || [],
