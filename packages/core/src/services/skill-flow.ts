@@ -10,6 +10,7 @@ import type {
   DeploymentTargetName,
   DoctorReport,
   ImportDraft,
+  ImportDataCache,
   ImportGroupCandidate,
   ImportRecommendationFeed,
   ImportRecommendationFeedId,
@@ -471,16 +472,15 @@ export class SkillFlowApp {
     const { manifest } = await this.store.readState();
     const installedRepos = this.installedCanonicalRepos(manifest);
     const recommendedRepos = await this.resolveRecommendedImportRepos();
-    const groups = await this.mapConcurrent(
-      recommendedRepos
-        .filter((canonicalRepo) => !installedRepos.has(canonicalRepo))
-        .slice(0, 8),
-      SkillFlowApp.importGroupResolveConcurrency,
-      (canonicalRepo) =>
-        this.resolveImportGroupCandidate(canonicalRepo, {
+    const importCache = await this.store.readImportDataCache();
+    const groups = recommendedRepos
+      .filter((canonicalRepo) => !installedRepos.has(canonicalRepo))
+      .slice(0, 8)
+      .map((canonicalRepo) =>
+        this.buildImmediateImportGroupCandidate(importCache, canonicalRepo, {
           installed: false,
         }),
-    );
+      );
 
     return ok({
       groups: groups.filter((candidate) => !candidate.installed),
@@ -502,14 +502,16 @@ export class SkillFlowApp {
 
       const { manifest } = await this.store.readState();
       const installedRepos = this.installedCanonicalRepos(manifest);
+      const importCache = await this.store.readImportDataCache();
       const exactRepo = normalizeImportCanonicalRepo(normalizedQuery);
       if (exactRepo) {
-        const exactCandidate = await this.resolveImportGroupCandidate(exactRepo, {
+        const exactCandidate = this.buildImmediateImportGroupCandidate(importCache, exactRepo, {
           installed: installedRepos.has(exactRepo),
         });
 
         if (
           exactCandidate.enrichState.status === "ready" ||
+          exactCandidate.enrichState.status === "loading" ||
           exactCandidate.enrichState.status === "failed" &&
             exactCandidate.enrichState.reasonCode !== "provider_data_unavailable"
         ) {
@@ -519,14 +521,11 @@ export class SkillFlowApp {
 
       const searchSnapshot = await this.resolveImportSearchSnapshot(normalizedQuery);
       const grouped = groupSkillsDirectorySearchHits(searchSnapshot.hits).slice(0, 8);
-      const groups = await this.mapConcurrent(
-        grouped,
-        SkillFlowApp.importGroupResolveConcurrency,
-        (group) =>
-          this.resolveImportGroupCandidate(group.canonicalRepo, {
-            installed: installedRepos.has(group.canonicalRepo),
-            matchedSkills: group.matchedSkills,
-          }),
+      const groups = grouped.map((group) =>
+        this.buildImmediateImportGroupCandidate(importCache, group.canonicalRepo, {
+          installed: installedRepos.has(group.canonicalRepo),
+          matchedSkills: group.matchedSkills,
+        }),
       );
 
       return ok({
@@ -710,7 +709,8 @@ export class SkillFlowApp {
     );
   }
 
-  private async resolveImportGroupCandidate(
+  private buildImmediateImportGroupCandidate(
+    importCache: ImportDataCache,
     canonicalRepo: string,
     options: {
       installed: boolean;
@@ -720,43 +720,35 @@ export class SkillFlowApp {
         installs?: number;
       }>;
     },
-  ): Promise<ImportGroupCandidate> {
+  ): ImportGroupCandidate {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
-    try {
-      const enrichSkillIds = options.matchedSkills?.map((skill) => skill.skillId);
-      const snapshot = await this.resolveImportSourceSnapshot(
-        normalizedRepo,
-        enrichSkillIds ? { enrichSkillIds } : undefined,
-      );
+    const cachedSnapshot = importCache.sources[normalizedRepo]?.data;
+
+    if (cachedSnapshot) {
       return buildImportGroupCandidate({
         canonicalRepo: normalizedRepo,
         installed: options.installed,
-        snapshot,
+        snapshot: cachedSnapshot,
         ...(options.matchedSkills ? { matchedSkills: options.matchedSkills } : {}),
       });
-    } catch (error) {
-      const fallbackTitle = normalizedRepo.split("/")[1] ?? normalizedRepo;
-      return {
-        id: normalizedRepo,
-        provider: "skills",
-        locator: normalizedRepo,
-        canonicalRepo: normalizedRepo,
-        aliases: buildImportGroupCandidate({
-          canonicalRepo: normalizedRepo,
-          installed: options.installed,
-        }).aliases,
-        title: fallbackTitle,
-        installed: options.installed,
-        ...(options.matchedSkills?.length ? { matchedSkillNames: options.matchedSkills.map((skill) => skill.title) } : {}),
-        ...(options.matchedSkills?.length ? { matchedSkills: options.matchedSkills } : {}),
-        enrichState: {
-          status: "failed",
-          reasonCode: this.inferImportReasonCode(error),
-          retryable: this.importFailureRetryable(error),
-        },
-        previewState: { status: "idle" },
-      };
     }
+
+    return {
+      id: normalizedRepo,
+      provider: "skills",
+      locator: normalizedRepo,
+      canonicalRepo: normalizedRepo,
+      aliases: buildImportGroupCandidate({
+        canonicalRepo: normalizedRepo,
+        installed: options.installed,
+      }).aliases,
+      title: normalizedRepo.split("/")[1] ?? normalizedRepo,
+      installed: options.installed,
+      ...(options.matchedSkills?.length ? { matchedSkillNames: options.matchedSkills.map((skill) => skill.title) } : {}),
+      ...(options.matchedSkills?.length ? { matchedSkills: options.matchedSkills } : {}),
+      enrichState: { status: "loading" },
+      previewState: { status: "idle" },
+    };
   }
 
   private async resolveRecommendedImportRepos(): Promise<string[]> {
@@ -788,7 +780,12 @@ export class SkillFlowApp {
       return cached.groups;
     }
 
-    return (await this.refreshImportRecommendationFeedTracked(feedId)).groups;
+    if (feedId === "seed") {
+      return (await this.refreshImportRecommendationFeedTracked(feedId)).groups;
+    }
+
+    this.refreshImportRecommendationFeedInBackground(feedId);
+    return [];
   }
 
   private refreshImportRecommendationFeedInBackground(feedId: ImportRecommendationFeedId): void {
