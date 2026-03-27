@@ -596,7 +596,7 @@ final class MainViewModel {
             applyPinnedSourceIds(response.data?.value)
         } catch {
             pinnedSourceIds = previousPinnedSourceIds
-            showToast(style: .error, message: "Pin failed: \(firstErrorLine(from: error))")
+            showToast(style: .error, text: localizedText("toast.pin.failed", firstErrorLine(from: error)))
         }
     }
 
@@ -1007,7 +1007,7 @@ final class MainViewModel {
             latestWarnings = response.warnings
         } catch {
             detailText = "Inspect failed: \(error.localizedDescription)"
-            showToast(style: .error, message: "Failed to load \(sourceId) details.")
+            showToast(style: .error, text: localizedText("toast.details.load_failed", sourceId))
         }
     }
 
@@ -1044,7 +1044,7 @@ final class MainViewModel {
             .filter { !$0.isEmpty }
 
         guard !sourceIds.isEmpty else {
-            showToast(style: .neutral, message: "No groups to update.")
+            showToast(style: .neutral, text: localizedText("toast.update.none"))
             return
         }
 
@@ -1058,7 +1058,7 @@ final class MainViewModel {
     func updateCurrentGroup() async {
         guard let sourceId = selectedSourceId else {
             detailText = "Update failed: no source selected."
-            showToast(style: .error, message: "Update failed: no group selected.")
+            showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
             return
         }
 
@@ -1077,13 +1077,13 @@ final class MainViewModel {
         let sourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sourceId.isEmpty else {
             detailText = "Update failed: missing source id."
-            showToast(style: .error, message: "Update failed: no group selected.")
+            showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
             return
         }
 
         updatingSourceIds.insert(sourceId)
         if showLoadingToast {
-            showToast(style: .loading, message: "Updating \(groupLabel(for: sourceId))...")
+            showToast(style: .loading, text: localizedText("toast.update.loading", groupLabel(for: sourceId)))
         }
         defer { updatingSourceIds.remove(sourceId) }
 
@@ -1094,10 +1094,10 @@ final class MainViewModel {
             if selectedGroupId == sourceId || selectedSourceId == sourceId {
                 await selectSource(sourceId)
             }
-            showToast(style: .success, message: "Updated \(sourceId).")
+            showToast(style: .success, text: localizedText("toast.update.success", sourceId))
         } catch {
             detailText = "Update failed: \(error.localizedDescription)"
-            showToast(style: .error, message: "Update failed: \(error.localizedDescription)")
+            showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
         }
     }
 
@@ -1387,7 +1387,7 @@ final class MainViewModel {
     func uninstallSelectedSource() async {
         guard let selectedSourceId else {
             detailText = "Uninstall failed: no source selected."
-            showToast(style: .error, message: "Uninstall failed: no group selected.")
+            showToast(style: .error, text: localizedText("toast.uninstall.no_group_selected"))
             return
         }
         await deleteSource(sourceId: selectedSourceId)
@@ -1414,10 +1414,10 @@ final class MainViewModel {
             if case .detail(let detailSourceId) = currentPage, detailSourceId == sourceId {
                 currentPage = .home
             }
-            showToast(style: .success, message: "Removed \(sourceId).")
+            showToast(style: .success, text: localizedText("toast.uninstall.success", sourceId))
         } catch {
             detailText = "Uninstall failed: \(error.localizedDescription)"
-            showToast(style: .error, message: "Uninstall failed: \(error.localizedDescription)")
+            showToast(style: .error, text: localizedText("toast.uninstall.failed", error.localizedDescription))
         }
     }
 
@@ -1851,13 +1851,13 @@ final class MainViewModel {
     private func commitDraftChange(
         sourceId: String,
         nextDraft: DraftState,
-        successMessage: String,
+        successMessage: PresentationText,
         successStyle: ToastStyle
     ) async {
         let sourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sourceId.isEmpty else {
             detailText = "Apply failed: missing source id."
-            showToast(style: .error, message: "Save failed: missing source id.")
+            showToast(style: .error, text: localizedText("toast.save.no_source_id"))
             return
         }
 
@@ -1878,7 +1878,7 @@ final class MainViewModel {
             workingDrafts[sourceId] = normalizedDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
             detailText = "Applied group '\(sourceId)' to \(normalizedDraft.enabledTargets.count) targets."
-            showToast(style: successStyle, message: successMessage)
+            showToast(style: successStyle, text: successMessage)
             await refreshList()
             if selectedGroupId == sourceId {
                 await selectSource(sourceId)
@@ -1888,7 +1888,7 @@ final class MainViewModel {
             workingDrafts[sourceId] = previousDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .failed, detail: firstReason)
             detailText = "Apply failed: \(firstReason)"
-            showToast(style: .error, message: "Save failed: \(firstReason)")
+            showToast(style: .error, text: localizedText("toast.save.failed", firstReason))
         }
     }
 
@@ -1904,20 +1904,38 @@ final class MainViewModel {
         Self.targetCatalog[targetId] ?? targetId
     }
 
-    private func compactSkillToastMessage(sourceId: String, leafId: String, enabled: Bool) -> String {
-        "\(enabled ? "On" : "Off") · \(groupLabel(for: sourceId)) · Skill \(leafLabel(for: leafId, sourceId: sourceId))"
+    private func compactSkillToastMessage(sourceId: String, leafId: String, enabled: Bool) -> PresentationText {
+        localizedText(
+            "toast.compact.skill",
+            enabled ? localized("toast.compact.on") : localized("toast.compact.off"),
+            groupLabel(for: sourceId),
+            leafLabel(for: leafId, sourceId: sourceId)
+        )
     }
 
-    private func compactSkillsToastMessage(sourceId: String, enabled: Bool) -> String {
-        "\(enabled ? "On" : "Off") · \(groupLabel(for: sourceId)) · Skills"
+    private func compactSkillsToastMessage(sourceId: String, enabled: Bool) -> PresentationText {
+        localizedText(
+            "toast.compact.skills",
+            enabled ? localized("toast.compact.on") : localized("toast.compact.off"),
+            groupLabel(for: sourceId)
+        )
     }
 
-    private func compactAgentToastMessage(sourceId: String, targetId: String, enabled: Bool) -> String {
-        "\(enabled ? "On" : "Off") · \(groupLabel(for: sourceId)) · Agent \(targetLabel(for: targetId))"
+    private func compactAgentToastMessage(sourceId: String, targetId: String, enabled: Bool) -> PresentationText {
+        localizedText(
+            "toast.compact.agent",
+            enabled ? localized("toast.compact.on") : localized("toast.compact.off"),
+            groupLabel(for: sourceId),
+            targetLabel(for: targetId)
+        )
     }
 
-    private func compactAgentsToastMessage(sourceId: String, enabled: Bool) -> String {
-        "\(enabled ? "On" : "Off") · \(groupLabel(for: sourceId)) · Agents"
+    private func compactAgentsToastMessage(sourceId: String, enabled: Bool) -> PresentationText {
+        localizedText(
+            "toast.compact.agents",
+            enabled ? localized("toast.compact.on") : localized("toast.compact.off"),
+            groupLabel(for: sourceId)
+        )
     }
 
     private func showToast(style: ToastStyle, message: String) {
@@ -2041,7 +2059,7 @@ final class MainViewModel {
             }
             pinnedSourceIds = previousPinnedSourceIds
             detailText = "Pinned groups migration failed: \(error.localizedDescription)"
-            showToast(style: .error, message: "Pinned groups migration failed: \(firstErrorLine(from: error))")
+            showToast(style: .error, text: localizedText("toast.pinned_migration.failed", firstErrorLine(from: error)))
         }
     }
 
