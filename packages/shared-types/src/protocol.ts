@@ -4,6 +4,9 @@ export type BridgeCommandName =
   | "bootstrap"
   | "list"
   | "inspect"
+  | "search-import-groups"
+  | "preview-import-source"
+  | "import-source"
   | "toggle-pin"
   | "doctor"
   | "add"
@@ -56,7 +59,7 @@ export function parseBridgeRequest(input: unknown): BridgeRequest {
 
   if (!isBridgeCommandName(command)) {
     throw new Error(
-      "Bridge request 'command' must be one of: bootstrap, list, inspect, toggle-pin, doctor, add, apply, update, uninstall.",
+      "Bridge request 'command' must be one of: bootstrap, list, inspect, search-import-groups, preview-import-source, import-source, toggle-pin, doctor, add, apply, update, uninstall.",
     );
   }
 
@@ -122,6 +125,9 @@ export function isBridgeCommandName(value: unknown): value is BridgeCommandName 
     value === "bootstrap" ||
     value === "list" ||
     value === "inspect" ||
+    value === "search-import-groups" ||
+    value === "preview-import-source" ||
+    value === "import-source" ||
     value === "toggle-pin" ||
     value === "doctor" ||
     value === "add" ||
