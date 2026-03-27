@@ -87,9 +87,9 @@
 "group_card.action.delete" = "删除";
 "group_card.loading.applying" = "正在应用...";
 "group_card.loading.updating" = "正在更新...";
-"group_card.selection.off" = "关";
-"group_card.selection.partial" = "混";
-"group_card.selection.on" = "开";
+"group_card.selection.off" = "OFF";
+"group_card.selection.partial" = "MIX";
+"group_card.selection.on" = "ON";
 "common.meta.from" = "来自 %@";
 "toast.import.failed" = "导入失败：%@";
 "toast.import.invalid_response" = "导入失败：响应无效。";
