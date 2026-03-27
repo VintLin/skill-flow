@@ -641,7 +641,26 @@ private struct TestFixture {
         let selectedGroup = model.selectedGroupId
         XCTAssertEqual(selectedGroup, "alpha")
         await model.selectSource("alpha")
+        try await waitForDetailHydration(model, sourceId: "alpha")
         return model
+    }
+
+    func waitForDetailHydration(
+        _ model: MainViewModel,
+        sourceId: String,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async throws {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
+        while Date() < deadline {
+            if let detail = model.detailViewData(for: sourceId),
+               !detail.groupDocuments.isEmpty,
+               !detail.fileTree.isEmpty,
+               detail.skills.allSatisfy({ !$0.documents.isEmpty }) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("Timed out waiting for detail hydration for \(sourceId)")
     }
 
     func loggedRequests() -> [LoggedRequest] {

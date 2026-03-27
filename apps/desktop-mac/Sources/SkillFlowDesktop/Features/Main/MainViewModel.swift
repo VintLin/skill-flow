@@ -398,6 +398,22 @@ final class MainViewModel {
         let revision: String
     }
 
+    private struct PreparedDetailSkillContent {
+        let title: String
+        let version: String?
+        let folderPath: String?
+        let relativeFolderPath: String?
+        let documents: [DocumentTab]
+        let documentContent: String
+    }
+
+    private struct PreparedDetailContent {
+        let groupPath: String?
+        let fileTree: [FileTreeLine]
+        let groupDocuments: [DocumentTab]
+        let skillsByLeafId: [String: PreparedDetailSkillContent]
+    }
+
     private let bridgeClient: BridgeClient
 
     private static let targetOrder: [String] = [
@@ -455,6 +471,7 @@ final class MainViewModel {
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
+    private var preparedDetailContentBySourceId: [String: PreparedDetailContent] = [:]
     private var skillDocumentCache: [String: String] = [:]
     private var parsedDocumentCache: [String: ParsedDocument] = [:]
     private var documentTabsCache: [String: [DocumentTab]] = [:]
@@ -467,6 +484,7 @@ final class MainViewModel {
     @ObservationIgnored private var inspectRequestTasksBySourceId: [String: Task<BridgeResponse, Error>] = [:]
     private var inspectRequestTokensBySourceId: [String: UInt64] = [:]
     private var inspectRequestTokenSeed: UInt64 = 0
+    @ObservationIgnored private var detailWarmupTasksBySourceId: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var importSearchTasksByQuery: [String: Task<BridgeResponse, Error>] = [:]
     private var importSearchTokensByQuery: [String: UInt64] = [:]
     private var importSearchTokenSeed: UInt64 = 0
@@ -1042,6 +1060,8 @@ final class MainViewModel {
             let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
                 inspectedPayloadBySourceId[sourceId] = payload
+                preparedDetailContentBySourceId.removeValue(forKey: sourceId)
+                scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
             }
             detailText = prettyPrint(response.data?.value) ?? "No details"
             latestWarnings = response.warnings
@@ -1157,7 +1177,12 @@ final class MainViewModel {
     }
 
     func loadImportPageIfNeeded() async {
-        guard recommendedImportGroups.isEmpty else { return }
+        guard recommendedImportGroups.isEmpty else {
+            if importSearchPhase == .idle {
+                importSearchPhase = .ready
+            }
+            return
+        }
         await loadRecommendedImportGroups()
     }
 
@@ -1895,17 +1920,14 @@ final class MainViewModel {
         let sourceMetadataPresentation = sourceMetadataPresentation(from: payload, sourceSnapshot: sourceSnapshot)
         let deploymentsPayload = payload["deployments"] as? [[String: Any]] ?? []
         let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
+        let preparedDetailContent = preparedDetailContentBySourceId[sourceId]
 
         let selectedLeafIds = Set(draft.selectedLeafIds)
         let enabledTargetLabels = draft.enabledTargets.map { Self.targetCatalog[$0] ?? $0 }
         let enabledTargets = Set(draft.enabledTargets)
         let inspectedLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
-        let groupPath = preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
-        let gitHubRepoContext = gitHubRepoContext(
-            locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
-            lockPayload: lockPayload
-        )
+        let groupPath = preparedDetailContent?.groupPath ?? preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
         let author = sourceSnapshot.map { "@\($0.owner.slug)" }
             ?? authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
             ?? "@\(summary.sourceKind.lowercased())"
@@ -1916,72 +1938,48 @@ final class MainViewModel {
         let sourceDetailLines = sourceMetadataPresentation.lines
         let projectedNamesByLeafId = projectionNameMap(for: sourceId)
 
+        if preparedDetailContent == nil, !payload.isEmpty {
+            scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
+        }
+
         let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId -> DetailSkill? in
             guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
                 return nil
             }
             let leafPayload = leafPayloads.first(where: { ($0["id"] as? String) == leafId }) ?? [:]
+            let preparedSkill = preparedDetailContent?.skillsByLeafId[leafId]
             let skillFilePath = leafPayload["skillFilePath"] as? String
             let leafRelativePath = leafPayload["relativePath"] as? String
-            let folderPath = (leafPayload["absolutePath"] as? String)?.nonEmpty
-                ?? skillFilePath.flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty }
-            let documentContent = skillFilePath
-                .map { parsedDocument(path: $0).body }
-                .flatMap(\.nonEmpty)
-                ?? leaf.description
-            let parsedMetadata = skillFilePath.map { parsedDocument(path: $0) }
-            let metadata = parsedMetadata?.metadata ?? []
-            let metadataName = parsedMetadata?.frontMatter?.name?.nonEmpty
-            let version = parsedMetadata?.frontMatter?.version
-            let documents = skillFilePath.flatMap { documentTabs(for: $0) }
-                .map { tabs in
-                    enrichDocumentTabs(tabs, groupPath: groupPath, gitHubRepoContext: gitHubRepoContext)
-                }
-                ?? [
-                    DocumentTab(
-                        id: "inline-skill-md",
-                        title: "SKILL.md",
-                        path: "SKILL.md",
-                        metadata: metadata,
-                        content: documentContent,
-                        renderCacheKey: "inline-skill-md:\(documentContent.hashValue)",
-                        externalURL: nil
-                    )
-                ]
             let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
             let snapshotSkill = sourceSnapshot?.skills.first(where: { $0.skillId == linkName })
             let projectedName = projectedNamesByLeafId[leaf.id]
-            let title = metadataName
-                ?? folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
+            let title = preparedSkill?.title
                 ?? (leafPayload["title"] as? String)?.nonEmpty
                 ?? leaf.name.nonEmpty
                 ?? linkName
-            let relativeFolderPath = groupPath.flatMap { basePath in
-                folderPath.flatMap { relativePath(from: basePath, to: $0) }
-            } ?? leafRelativePath
 
             return DetailSkill(
                 id: leaf.id,
                 title: title,
                 summary: leaf.description.isEmpty ? linkName : leaf.description,
-                version: version,
+                version: preparedSkill?.version,
                 author: author,
                 originLabel: originLabel,
                 starCount: starCount,
-                folderPath: folderPath,
+                folderPath: preparedSkill?.folderPath,
                 relativeFolderPath: projectedRelativeFolderPath(
-                    relativeFolderPath,
+                    preparedSkill?.relativeFolderPath ?? leafRelativePath,
                     projectedName: projectedName,
                     fallbackName: linkName
                 ),
-                documents: documents,
+                documents: preparedSkill?.documents ?? [],
                 detailLines: buildSkillDetailLines(
                     leafRelativePath: leafRelativePath,
                     skillFilePath: skillFilePath,
                     linkName: linkName,
                     snapshotSkill: snapshotSkill
                 ),
-                documentContent: documentContent,
+                documentContent: preparedSkill?.documentContent ?? (leaf.description.isEmpty ? "Loading skill document..." : leaf.description),
                 isEnabled: selectedLeafIds.contains(leaf.id),
                 warningCount: leaf.metadataWarnings.count
             )
@@ -2017,7 +2015,7 @@ final class MainViewModel {
             )
         }
 
-        let fileTree = buildFileTreeLines(groupPath: groupPath, skills: skills)
+        let fileTree = preparedDetailContent?.fileTree ?? []
 
         return DetailViewData(
             sourceId: summary.sourceId,
@@ -2047,11 +2045,7 @@ final class MainViewModel {
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
-            groupDocuments: groupDocumentTabs(
-                groupPath: groupPath,
-                fileTree: fileTree,
-                gitHubRepoContext: gitHubRepoContext
-            ),
+            groupDocuments: preparedDetailContent?.groupDocuments ?? [],
             targets: targets,
             skills: skills
         )
@@ -2059,6 +2053,142 @@ final class MainViewModel {
 
     func hasInspectPayload(for sourceId: String) -> Bool {
         inspectedPayloadBySourceId[sourceId] != nil
+    }
+
+    private func scheduleDetailContentWarmupIfNeeded(sourceId: String) {
+        guard detailWarmupTasksBySourceId[sourceId] == nil else {
+            return
+        }
+        guard let summary = summary(for: sourceId), let payload = inspectedPayloadBySourceId[sourceId], !payload.isEmpty else {
+            return
+        }
+
+        let task = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(40))
+            guard let self, !Task.isCancelled else { return }
+            let prepared = self.prepareDetailContent(sourceId: sourceId, summary: summary, payload: payload)
+            self.preparedDetailContentBySourceId[sourceId] = prepared
+            self.detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
+        }
+        detailWarmupTasksBySourceId[sourceId] = task
+    }
+
+    private func prepareDetailContent(
+        sourceId: String,
+        summary: WorkflowSummary,
+        payload: [String: Any]
+    ) -> PreparedDetailContent {
+        let sourcePayload = payload["source"] as? [String: Any] ?? [:]
+        let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
+        let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
+        let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
+        let sourceSnapshot = parseSourceSnapshot(payload["sourceSnapshot"] as? [String: Any])
+        let preferredLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String }).isEmpty
+            ? summary.leafs.map(\.id)
+            : uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
+        let groupPath = preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
+        let gitHubRepoContext = gitHubRepoContext(
+            locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
+            lockPayload: lockPayload
+        )
+        let projectedNamesByLeafId = projectionNameMap(for: sourceId)
+
+        var skillsByLeafId: [String: PreparedDetailSkillContent] = [:]
+        var lightweightSkills: [DetailSkill] = []
+
+        for leafId in preferredLeafIds {
+            guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
+                continue
+            }
+
+            let leafPayload = leafPayloads.first(where: { ($0["id"] as? String) == leafId }) ?? [:]
+            let skillFilePath = leafPayload["skillFilePath"] as? String
+            let leafRelativePath = leafPayload["relativePath"] as? String
+            let folderPath = (leafPayload["absolutePath"] as? String)?.nonEmpty
+                ?? skillFilePath.flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty }
+            let documentContent = skillFilePath
+                .map { parsedDocument(path: $0).body }
+                .flatMap(\.nonEmpty)
+                ?? leaf.description
+            let parsedMetadata = skillFilePath.map { parsedDocument(path: $0) }
+            let metadata = parsedMetadata?.metadata ?? []
+            let metadataName = parsedMetadata?.frontMatter?.name?.nonEmpty
+            let version = parsedMetadata?.frontMatter?.version
+            let documents = skillFilePath.flatMap { documentTabs(for: $0) }
+                .map { tabs in
+                    enrichDocumentTabs(tabs, groupPath: groupPath, gitHubRepoContext: gitHubRepoContext)
+                }
+                ?? [
+                    DocumentTab(
+                        id: "inline-skill-md",
+                        title: "SKILL.md",
+                        path: "SKILL.md",
+                        metadata: metadata,
+                        content: documentContent,
+                        renderCacheKey: "inline-skill-md:\(documentContent.hashValue)",
+                        externalURL: nil
+                    )
+                ]
+            let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
+            let projectedName = projectedNamesByLeafId[leaf.id]
+            let title = metadataName
+                ?? folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
+                ?? (leafPayload["title"] as? String)?.nonEmpty
+                ?? leaf.name.nonEmpty
+                ?? linkName
+            let relativeFolderPath = groupPath.flatMap { basePath in
+                folderPath.flatMap { relativePath(from: basePath, to: $0) }
+            } ?? leafRelativePath
+
+            skillsByLeafId[leaf.id] = PreparedDetailSkillContent(
+                title: title,
+                version: version,
+                folderPath: folderPath,
+                relativeFolderPath: relativeFolderPath,
+                documents: documents,
+                documentContent: documentContent
+            )
+
+            lightweightSkills.append(
+                DetailSkill(
+                    id: leaf.id,
+                    title: title,
+                    summary: leaf.description.isEmpty ? linkName : leaf.description,
+                    version: version,
+                    author: sourceSnapshot.map { "@\($0.owner.slug)" }
+                        ?? authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
+                        ?? "@\(summary.sourceKind.lowercased())",
+                    originLabel: sourceSnapshot.flatMap { displayOriginLabel(from: $0.sourceURL) }
+                        ?? displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator),
+                    starCount: sourceSnapshot?.repoStars,
+                    folderPath: folderPath,
+                    relativeFolderPath: projectedRelativeFolderPath(
+                        relativeFolderPath,
+                        projectedName: projectedName,
+                        fallbackName: linkName
+                    ),
+                    documents: documents,
+                    detailLines: [],
+                    documentContent: documentContent,
+                    isEnabled: false,
+                    warningCount: leaf.metadataWarnings.count
+                )
+            )
+        }
+
+        let fileTree = buildFileTreeLines(groupPath: groupPath, skills: lightweightSkills)
+        let groupDocuments = groupDocumentTabs(
+            groupPath: groupPath,
+            fileTree: fileTree,
+            gitHubRepoContext: gitHubRepoContext
+        )
+
+        return PreparedDetailContent(
+            groupPath: groupPath,
+            fileTree: fileTree,
+            groupDocuments: groupDocuments,
+            skillsByLeafId: skillsByLeafId
+        )
     }
 
     func dismissToast(id: ToastState.ID? = nil) {
