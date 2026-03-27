@@ -306,6 +306,7 @@ export class SourceService {
     }
 
     await this.store.writeState(manifest, lockFile);
+    await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
     return ok({ removed });
   }
 

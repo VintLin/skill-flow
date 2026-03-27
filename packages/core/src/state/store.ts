@@ -3,12 +3,18 @@ import type {
   LockFile,
   Manifest,
   SharedPreferences,
+  SourceMetadataCache,
+  SourceMetadataCacheEntry,
   SourceKind,
 } from "../domain/types.js";
 import {
   createEmptySharedPreferences,
   normalizeSharedPreferences,
 } from "./preferences-store.js";
+import {
+  createEmptySourceMetadataCache,
+  normalizeSourceMetadataCache,
+} from "./source-metadata-cache.js";
 import { SCHEMA_VERSION, getStateRoot } from "../utils/constants.js";
 import {
   ensureDir,
@@ -41,7 +47,11 @@ export class StateStore {
   }
 
   get catalogRoot(): string {
-    return path.join(this.stateRoot, "catalog", "git");
+    return path.join(this.catalogStateRoot, "git");
+  }
+
+  get catalogStateRoot(): string {
+    return path.join(this.stateRoot, "catalog");
   }
 
   getCatalogCheckoutPath(sourceId: string): string {
@@ -62,6 +72,10 @@ export class StateStore {
 
   get preferencesPath(): string {
     return path.join(this.stateRoot, "preferences.json");
+  }
+
+  get sourceMetadataPath(): string {
+    return path.join(this.catalogStateRoot, "source-metadata.json");
   }
 
   get mutationLockPath(): string {
@@ -174,6 +188,49 @@ export class StateStore {
     });
   }
 
+  async readSourceMetadataCache(): Promise<SourceMetadataCache> {
+    return this.withIoLock(async () => {
+      await this.init();
+      return this.readSourceMetadataCacheRaw();
+    });
+  }
+
+  async writeSourceMetadataCache(cache: SourceMetadataCache): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      await writeJsonFile(
+        this.sourceMetadataPath,
+        normalizeSourceMetadataCache(cache),
+      );
+    });
+  }
+
+  async writeSourceMetadataEntry(entry: SourceMetadataCacheEntry): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      const cache = await this.readSourceMetadataCacheRaw();
+      cache[entry.sourceId] = entry;
+      await writeJsonFile(this.sourceMetadataPath, cache);
+    });
+  }
+
+  async pruneSourceMetadataCache(sourceIds: string[]): Promise<SourceMetadataCache> {
+    return this.withIoLock(async () => {
+      await this.init();
+      const cache = await this.readSourceMetadataCacheRaw();
+      const allowedSourceIds = new Set(sourceIds);
+      const nextCache = Object.fromEntries(
+        Object.entries(cache).filter(([sourceId]) => allowedSourceIds.has(sourceId)),
+      ) satisfies SourceMetadataCache;
+
+      if (Object.keys(nextCache).length !== Object.keys(cache).length) {
+        await writeJsonFile(this.sourceMetadataPath, nextCache);
+      }
+
+      return nextCache;
+    });
+  }
+
   async withMutationLock<T>(task: () => Promise<T>): Promise<T> {
     await this.init();
     return withFileLock(this.mutationLockPath, task);
@@ -183,6 +240,7 @@ export class StateStore {
     await ensureDir(this.getSourceRoot("local"));
     await ensureDir(this.getSourceRoot("git"));
     await ensureDir(this.getSourceRoot("clawhub"));
+    await ensureDir(this.catalogStateRoot);
     await ensureDir(this.catalogRoot);
 
     if (!(await pathExists(this.manifestPath))) {
@@ -206,6 +264,15 @@ export class StateStore {
       await readJsonFile<unknown>(
         this.preferencesPath,
         createEmptySharedPreferences(),
+      ),
+    );
+  }
+
+  private async readSourceMetadataCacheRaw(): Promise<SourceMetadataCache> {
+    return normalizeSourceMetadataCache(
+      await readJsonFile<unknown>(
+        this.sourceMetadataPath,
+        createEmptySourceMetadataCache(),
       ),
     );
   }

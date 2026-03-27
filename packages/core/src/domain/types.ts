@@ -321,3 +321,16 @@ export type SourceMetadataResult =
       reasonCode: SourceMetadataReasonCode;
       retryable: boolean;
     };
+
+export type SourceMetadataCacheEntry = {
+  sourceId: string;
+  provider?: SourceMetadataProvider;
+  status: SourceMetadataResult["status"];
+  reasonCode?: SourceMetadataReasonCode;
+  retryable?: boolean;
+  checkedAt: string;
+  expiresAt: string;
+  data?: SourceStats;
+};
+
+export type SourceMetadataCache = Record<string, SourceMetadataCacheEntry>;

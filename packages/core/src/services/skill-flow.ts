@@ -25,6 +25,11 @@ import type {
 } from "../domain/types.js";
 import { StateStore } from "../state/store.js";
 import {
+  isSourceMetadataCacheExpired,
+  sourceMetadataCacheEntryToResult,
+  sourceMetadataResultToCacheEntry,
+} from "../state/source-metadata-cache.js";
+import {
   ensureDir,
   hashDirectory,
   isPathInside,
@@ -47,7 +52,9 @@ import { fetchSourceDetails } from "../utils/source-details.js";
 import {
   buildFailedSourceMetadataResult,
   buildSourceMetadataResult,
+  fetchFreshSourceMetadata,
   inferSourceMetadataProvider,
+  SOURCE_METADATA_CACHE_TTL_MS,
 } from "../utils/source-details.js";
 import { DeploymentApplier } from "./deployment-applier.js";
 import { ConfigCoordinator } from "./config-coordinator.js";
@@ -81,6 +88,7 @@ export class SkillFlowApp {
   readonly workspaceBootstrapService: WorkspaceBootstrapService;
   readonly configCoordinator: ConfigCoordinator;
   private mutationQueue: Promise<void> = Promise.resolve();
+  private metadataRefreshesBySourceId = new Map<string, Promise<void>>();
 
   constructor() {
     const adapters = createChannelAdapters();
@@ -398,15 +406,65 @@ export class SkillFlowApp {
     source: Manifest["sources"][number],
     lock: WorkflowSummary["lock"],
   ): Promise<SourceMetadataResult> {
-    const providerHint = inferSourceMetadataProvider(source);
+    const cachedEntry = (await this.store.readSourceMetadataCache())[source.id];
+    if (cachedEntry) {
+      if (!isSourceMetadataCacheExpired(cachedEntry)) {
+        return sourceMetadataCacheEntryToResult(cachedEntry);
+      }
 
+      this.refreshSourceMetadataInBackground(source, lock, cachedEntry.provider);
+      return sourceMetadataCacheEntryToResult(cachedEntry);
+    }
+
+    return this.refreshSourceMetadata(source, lock, inferSourceMetadataProvider(source));
+  }
+
+  private refreshSourceMetadataInBackground(
+    source: Manifest["sources"][number],
+    lock: WorkflowSummary["lock"],
+    providerHint?: SourceMetadataResult["provider"],
+  ): void {
+    if (this.metadataRefreshesBySourceId.has(source.id)) {
+      return;
+    }
+
+    const refresh = this.refreshSourceMetadata(source, lock, providerHint)
+      .then(() => undefined)
+      .catch(() => undefined)
+      .finally(() => {
+        this.metadataRefreshesBySourceId.delete(source.id);
+      });
+
+    this.metadataRefreshesBySourceId.set(source.id, refresh);
+  }
+
+  private async refreshSourceMetadata(
+    source: Manifest["sources"][number],
+    lock: WorkflowSummary["lock"],
+    providerHint?: SourceMetadataResult["provider"],
+  ): Promise<SourceMetadataResult> {
     try {
-      return buildSourceMetadataResult(
-        await fetchSourceDetails(source, lock),
-        providerHint,
+      const sourceMetadata = await fetchFreshSourceMetadata(source, lock, providerHint);
+      await this.store.writeSourceMetadataEntry(
+        sourceMetadataResultToCacheEntry({
+          sourceId: source.id,
+          result: sourceMetadata,
+          checkedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + SOURCE_METADATA_CACHE_TTL_MS).toISOString(),
+        }),
       );
+      return sourceMetadata;
     } catch (error) {
-      return buildFailedSourceMetadataResult(providerHint, error);
+      const failedMetadata = buildFailedSourceMetadataResult(providerHint, error);
+      await this.store.writeSourceMetadataEntry(
+        sourceMetadataResultToCacheEntry({
+          sourceId: source.id,
+          result: failedMetadata,
+          checkedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + SOURCE_METADATA_CACHE_TTL_MS).toISOString(),
+        }),
+      );
+      return failedMetadata;
     }
   }
 
@@ -424,6 +482,7 @@ export class SkillFlowApp {
       return fail(reconciled.errors, reconciled.warnings);
     }
     const { manifest, lockFile } = await this.store.readState();
+    await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
     await this.persistNormalizedBindings(manifest, lockFile);
     const preferences = await this.store.pruneMissingSourceIds();
     return ok(
@@ -946,6 +1005,7 @@ export class SkillFlowApp {
     );
 
     await this.store.writeState(manifest, lockFile);
+    await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
 
     return ok({ removedSourceIds }, warnings);
   }

@@ -9,6 +9,8 @@ import { inspectClawHubSkill } from "./clawhub.js";
 import { fetchGitHubRepoDetails } from "./github-catalog.js";
 import { parseGitHubRepo } from "./naming.js";
 
+export const SOURCE_METADATA_CACHE_TTL_MS = 15 * 60_000;
+
 export async function fetchSourceDetails(
   source: SourceManifestRecord,
   lock: WorkflowSummary["lock"],
@@ -40,17 +42,80 @@ export async function fetchSourceDetails(
     };
   }
 
-  const skillsOriginLocator = resolveSkillsOriginLocator(source);
-  if (skillsOriginLocator) {
-    const skillsDetails = await fetchSkillsDirectorySourceDetails(skillsOriginLocator);
+  const githubLocator = resolveGitHubLocatorForMetadata(source);
+  if (!githubLocator) {
+    return {};
+  }
+
+  const skillsDetails = await fetchSkillsDirectorySourceDetails(githubLocator);
+  return {
+    provider: "skills",
+    ...skillsDetails,
+  };
+}
+
+export async function fetchFreshSourceMetadata(
+  source: SourceManifestRecord,
+  lock: WorkflowSummary["lock"],
+  providerHint?: SourceMetadataProvider,
+): Promise<SourceMetadataResult> {
+  if (source.kind === "clawhub") {
+    try {
+      return buildSourceMetadataResult(await fetchSourceDetails(source, lock), "clawhub");
+    } catch (error) {
+      return buildFailedSourceMetadataResult("clawhub", error);
+    }
+  }
+
+  const githubLocator = resolveGitHubLocatorForMetadata(source);
+  if (!githubLocator) {
     return {
-      provider: "skills",
-      ...skillsDetails,
+      status: "unsupported",
+      reasonCode: "provider_not_supported",
     };
   }
 
-  const gitHubDetails = await fetchGitHubRepoDetails(source.locator);
-  return gitHubDetails;
+  if (providerHint === "skills") {
+    try {
+      return buildSourceMetadataResult(
+        await fetchSkillsDirectorySourceDetails(githubLocator),
+        "skills",
+      );
+    } catch (error) {
+      return buildFailedSourceMetadataResult("skills", error);
+    }
+  }
+
+  if (providerHint === "github") {
+    try {
+      return buildSourceMetadataResult(
+        await fetchGitHubRepoDetails(githubLocator),
+        "github",
+      );
+    } catch (error) {
+      return buildFailedSourceMetadataResult("github", error);
+    }
+  }
+
+  try {
+    return buildSourceMetadataResult(
+      await fetchSkillsDirectorySourceDetails(githubLocator),
+      "skills",
+    );
+  } catch (error) {
+    if (!isSkillsSourceNotFoundError(error)) {
+      return buildFailedSourceMetadataResult("skills", error);
+    }
+  }
+
+  try {
+    return buildSourceMetadataResult(
+      await fetchGitHubRepoDetails(githubLocator),
+      "github",
+    );
+  } catch (error) {
+    return buildFailedSourceMetadataResult("github", error);
+  }
 }
 
 export async function fetchSkillsDirectorySourceDetails(locator: string): Promise<SourceStats> {
@@ -62,7 +127,16 @@ export async function fetchSkillsDirectorySourceDetails(locator: string): Promis
   const sourceUrl = `https://skills.sh/${repo.owner}/${repo.repo}`;
   const response = await fetch(sourceUrl);
   if (!response.ok) {
-    throw new Error(`skills.sh source page request failed with ${response.status}.`);
+    if (response.status === 404) {
+      throw createProviderError(
+        "SKILLS_SOURCE_NOT_FOUND",
+        `skills.sh source page request failed with ${response.status}.`,
+      );
+    }
+    throw createProviderError(
+      "SKILLS_SOURCE_REQUEST_FAILED",
+      `skills.sh source page request failed with ${response.status}.`,
+    );
   }
 
   const html = await response.text();
@@ -147,12 +221,29 @@ export function inferSourceMetadataProvider(
     return "clawhub";
   }
 
-  const skillsOriginLocator = resolveSkillsOriginLocator(source);
-  if (skillsOriginLocator) {
-    return "skills";
+  return resolveGitHubLocatorForMetadata(source) ? "github" : undefined;
+}
+
+export function isSkillsSourceNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "SKILLS_SOURCE_NOT_FOUND"
+  );
+}
+
+function resolveGitHubLocatorForMetadata(source: SourceManifestRecord): string | undefined {
+  if (parseGitHubRepo(source.locator)) {
+    return source.locator;
   }
 
-  return parseGitHubRepo(source.locator) ? "github" : undefined;
+  const originLocator = source.originLocator?.trim();
+  if (originLocator && parseGitHubRepo(originLocator)) {
+    return originLocator;
+  }
+
+  return undefined;
 }
 
 function parseCompactNumber(value: string): number {
@@ -176,15 +267,6 @@ function parseCompactNumber(value: string): number {
   }
 }
 
-function resolveSkillsOriginLocator(source: SourceManifestRecord): string | undefined {
-  const originLocator = source.originLocator?.trim();
-  if (!originLocator || source.kind !== "local") {
-    return undefined;
-  }
-
-  return parseGitHubRepo(originLocator) ? originLocator : undefined;
-}
-
 function parseClawHubSlug(locator: string): string | undefined {
   const match = locator.match(/^clawhub:([^@\s]+)(?:@.+)?$/);
   return match?.[1];
@@ -192,4 +274,8 @@ function parseClawHubSlug(locator: string): string | undefined {
 
 function hasSourceStatsData(sourceStats: SourceStats): boolean {
   return Object.entries(sourceStats).some(([key, value]) => key !== "provider" && value !== undefined);
+}
+
+function createProviderError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
 }
