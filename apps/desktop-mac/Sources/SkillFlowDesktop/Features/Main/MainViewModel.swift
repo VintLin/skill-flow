@@ -952,6 +952,23 @@ final class MainViewModel {
         }
     }
 
+    func updateAllGroupsFromHome() async {
+        let sourceIds = self.sourceIds
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !sourceIds.isEmpty else {
+            showToast(style: .neutral, message: "No groups to update.")
+            return
+        }
+
+        updatingSourceIds.formUnion(sourceIds)
+
+        for sourceId in sourceIds {
+            await updateSource(sourceId, showLoadingToast: false)
+        }
+    }
+
     func updateCurrentGroup() async {
         guard let sourceId = selectedSourceId else {
             detailText = "Update failed: no source selected."
@@ -967,6 +984,10 @@ final class MainViewModel {
     }
 
     func updateSource(_ sourceId: String) async {
+        await updateSource(sourceId, showLoadingToast: true)
+    }
+
+    private func updateSource(_ sourceId: String, showLoadingToast: Bool) async {
         let sourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sourceId.isEmpty else {
             detailText = "Update failed: missing source id."
@@ -975,7 +996,9 @@ final class MainViewModel {
         }
 
         updatingSourceIds.insert(sourceId)
-        showToast(style: .loading, message: "Updating \(groupLabel(for: sourceId))...")
+        if showLoadingToast {
+            showToast(style: .loading, message: "Updating \(groupLabel(for: sourceId))...")
+        }
         defer { updatingSourceIds.remove(sourceId) }
 
         do {

@@ -297,20 +297,20 @@ struct SharedGroupCard: View {
         .popover(isPresented: $isActionMenuOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 actionMenuButton(
-                    title: "更新",
-                    icon: .update,
-                    foreground: AppTheme.textMuted(for: theme)
-                ) {
-                    isActionMenuOpen = false
-                    onUpdate()
-                }
-                actionMenuButton(
                     title: card.isPinned ? "取消置顶" : "置顶",
                     icon: .pin,
                     foreground: card.isPinned ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme)
                 ) {
                     isActionMenuOpen = false
                     onTogglePinned()
+                }
+                actionMenuButton(
+                    title: "更新",
+                    icon: .update,
+                    foreground: AppTheme.textMuted(for: theme)
+                ) {
+                    isActionMenuOpen = false
+                    onUpdate()
                 }
                 actionMenuButton(
                     title: "删除",

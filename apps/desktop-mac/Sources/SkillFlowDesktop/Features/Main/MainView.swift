@@ -128,6 +128,7 @@ struct MainView: View {
                     HStack(spacing: 8) {
                         searchField
                         importButton
+                        homeUpdateButton
                         settingsButton
                     }
                 }
@@ -140,6 +141,7 @@ struct MainView: View {
                     searchField
                     Spacer(minLength: 0)
                     importButton
+                    homeUpdateButton
                     settingsButton
                 }
                 .padding(.horizontal, 16)
@@ -250,6 +252,12 @@ struct MainView: View {
     private var importButton: some View {
         toolbarIconButton(.import) {
             viewModel.currentPage = .importPage
+        }
+    }
+
+    private var homeUpdateButton: some View {
+        toolbarIconButton(.update) {
+            Task { await viewModel.updateAllGroupsFromHome() }
         }
     }
 
