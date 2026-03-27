@@ -1,3 +1,5 @@
 import Foundation
 
-struct WorkspaceState {}
+struct WorkspaceState {
+    var sourceIds: [String] = []
+}
