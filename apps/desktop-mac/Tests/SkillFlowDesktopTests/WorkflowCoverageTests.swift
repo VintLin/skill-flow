@@ -187,6 +187,11 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(previewed?.skills.filter(\.selectedByDefault).map(\.id), ["research", "debugging"])
         XCTAssertEqual(previewed?.targets.map(\.id), ["claude-code", "cursor"])
         XCTAssertEqual(previewed?.targets.filter(\.selectedByDefault).map(\.id), [])
+        XCTAssertEqual(previewed?.snapshot?.owner.slug, "anthropics")
+        XCTAssertEqual(previewed?.snapshot?.repoStars, 406)
+        XCTAssertEqual(previewed?.snapshot?.trust?.labels, ["Official", "Trending"])
+        XCTAssertEqual(previewed?.matchedSkills.first?.skillId, "research")
+        XCTAssertEqual(previewed?.matchedSkills.first?.installs, 207800)
 
         let requests = fixture.loggedRequests().map(\.command)
         XCTAssertTrue(requests.contains("search-import-groups"))
@@ -733,6 +738,48 @@ private struct TestFixture {
         totalInstalls: group.totalInstalls || 0,
         skillCount: group.skillCount || ((group.skills || []).length),
         matchedSkillNames: group.matchedSkillNames || [],
+        matchedSkills: (group.skills || []).map((skill) => ({
+          skillId: skill.id,
+          title: skill.title,
+          installs: skill.id === 'research' ? 207800 : 52600
+        })),
+        snapshot: {
+          canonicalRepo: group.canonicalRepo,
+          aliases: group.aliases || [],
+          title: group.title,
+          provider: 'skills',
+          sourceUrl: `https://skills.sh/${group.canonicalRepo}`,
+          repoUrl: `https://github.com/${group.canonicalRepo}`,
+          repoLabel: group.canonicalRepo,
+          totalInstalls: group.totalInstalls || 0,
+          skillCount: group.skillCount || ((group.skills || []).length),
+          repoStars: group.starCount || 0,
+          forkCount: 11475,
+          description: group.summary || '',
+          topics: ['agent-skills'],
+          language: 'Python',
+          defaultBranch: 'main',
+          pushedAt: '2026-03-25T15:10:49Z',
+          owner: {
+            slug: group.canonicalRepo.split('/')[0],
+            sourceUrl: `https://skills.sh/${group.canonicalRepo.split('/')[0]}`,
+            githubUrl: `https://github.com/${group.canonicalRepo.split('/')[0]}`,
+            sourceCount: 11,
+            skillCount: 256,
+            totalInstalls: 874400
+          },
+          trust: {
+            official: group.id === 'anthropics-skills',
+            trending: true
+          },
+          skills: (group.skills || []).map((skill, index) => ({
+            skillId: skill.id,
+            title: skill.title,
+            installs: index === 0 ? 207800 : 52600,
+            weeklyInstalls: index === 0 ? 102000 : 12800,
+            summary: skill.summary || ''
+          }))
+        },
         installed,
         enrichState: { status: 'ready' },
         previewState: { status: 'idle' }
@@ -904,6 +951,7 @@ private struct TestFixture {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           status: 'ready',
           locator: group.locator,
+          snapshot: serializeImportGroup(group, false).snapshot,
           skills: (group.skills || []).map((skill) => ({
             id: skill.id,
             title: skill.title,
