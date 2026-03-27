@@ -9,8 +9,8 @@ export type Failure = {
 };
 
 export type Result<T> =
-  | { ok: true; data: T; warnings: Warning[] }
-  | { ok: false; errors: Failure[]; warnings: Warning[] };
+  | { ok: true; data: T; warnings: Warning[]; errors: [] }
+  | { ok: false; data?: T; warnings: Warning[]; errors: Failure[] };
 
 export type SourceKind = "local" | "git" | "clawhub";
 
