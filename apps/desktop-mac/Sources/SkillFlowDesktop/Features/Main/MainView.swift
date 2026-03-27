@@ -50,10 +50,8 @@ struct MainView: View {
     @State private var detailDocumentSelectionTokenByGroup: [String: UInt64] = [:]
     @State private var detailDocumentSelectionTokenBySkill: [String: UInt64] = [:]
     @State private var importSearchText: String = ""
-    @State private var importSubmittedQuery: String = ""
     @State private var importPlaceholderIndex: Int = 0
     @State private var importDraftsByItemId: [String: ImportDraftState] = [:]
-    @State private var importFeedbackMessage: String?
     @State private var updateButtonRotation: Double = 0
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
@@ -98,18 +96,27 @@ struct MainView: View {
             viewModel.currentPage = .detail(sourceId: groupId)
         }
         .onChange(of: viewModel.currentPage) { _, newValue in
-            guard case .detail(let groupId) = newValue, let detail = viewModel.detailViewData(for: groupId) else { return }
-            if detailSkillIdByGroup[groupId] == nil {
-                detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
-            }
-            if detailShowsGroupOverviewByGroup[groupId] == nil {
-                detailShowsGroupOverviewByGroup[groupId] = true
-            }
-            if detailDocumentTabIdByGroup[groupId] == nil {
-                detailDocumentTabIdByGroup[groupId] = detail.groupDocuments.first?.id
-            }
-            for skill in detail.skills where detailDocumentTabIdBySkill[skill.id] == nil {
-                detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
+            switch newValue {
+            case .detail(let groupId):
+                guard let detail = viewModel.detailViewData(for: groupId) else { return }
+                if detailSkillIdByGroup[groupId] == nil {
+                    detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
+                }
+                if detailShowsGroupOverviewByGroup[groupId] == nil {
+                    detailShowsGroupOverviewByGroup[groupId] = true
+                }
+                if detailDocumentTabIdByGroup[groupId] == nil {
+                    detailDocumentTabIdByGroup[groupId] = detail.groupDocuments.first?.id
+                }
+                for skill in detail.skills where detailDocumentTabIdBySkill[skill.id] == nil {
+                    detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
+                }
+            case .importPage:
+                Task {
+                    await viewModel.loadImportPageIfNeeded()
+                }
+            default:
+                break
             }
         }
         .task(id: viewModel.toast?.id) {
@@ -1143,7 +1150,7 @@ struct MainView: View {
                         Text("Import Now ?")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        Text("Search a skills group by owner, repo URL, or git locator. Recommended groups are shown below.")
+                        Text("Search a skills group by owner, repo URL, or git locator.")
                             .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(AppTheme.textMuted(for: theme))
 
@@ -1151,30 +1158,32 @@ struct MainView: View {
                             importSearchField
                             importSearchButton
                         }
-
-                        if let importFeedbackMessage {
-                            Text(importFeedbackMessage)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(AppTheme.textMuted(for: theme))
-                        }
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader(
-                        title: importSubmittedQuery.isEmpty ? "Recommended Groups" : "Search Results",
-                        subtitle: importSubmittedQuery.isEmpty
-                            ? "Showing suggested groups that are not installed locally."
-                            : "The new layout is ready. Remote search and import persistence will be wired in the next refactor.",
+                        title: viewModel.importSubmittedQuery.isEmpty ? "Recommended Groups" : "Search Results",
+                        subtitle: importSectionSubtitle,
                         badge: "\(importDisplayItems.count)"
                     )
 
-                    if importDisplayItems.isEmpty {
+                    if case .loading = viewModel.importSearchPhase, importDisplayItems.isEmpty {
+                        emptyState(
+                            title: "Loading groups",
+                            subtitle: "Fetching import data..."
+                        )
+                    } else if case .failed(let message) = viewModel.importSearchPhase, importDisplayItems.isEmpty {
+                        emptyState(
+                            title: "Import search failed",
+                            subtitle: message
+                        )
+                    } else if importDisplayItems.isEmpty {
                         emptyState(
                             title: "No groups matched",
-                            subtitle: importSubmittedQuery.isEmpty
+                            subtitle: viewModel.importSubmittedQuery.isEmpty
                                 ? "No recommended groups are available to import."
-                                : "Try another keyword. Remote search will be connected next."
+                                : "Try another keyword."
                         )
                     } else {
                         HStack {
@@ -1187,7 +1196,7 @@ struct MainView: View {
                                         accent: accent,
                                         displayMode: .standard,
                                         skillsCollapsed: false,
-                                        isUpdating: false,
+                                        isUpdating: viewModel.isImportingImportGroup(item.id),
                                         onOpen: nil,
                                         onUpdate: {},
                                         onTogglePinned: {},
@@ -1207,9 +1216,20 @@ struct MainView: View {
                                         actionButtonTitle: "导入",
                                         actionButtonIcon: ActionIcon.import,
                                         onActionButton: {
-                                            importFeedbackMessage = "导入按钮已切换到卡片头部，真实导入逻辑会在后续数据层重构后接入。"
+                                            let draft = importDraft(for: item)
+                                            Task {
+                                                await viewModel.importImportGroup(
+                                                    groupId: item.id,
+                                                    locator: item.locator,
+                                                    selectedSkillIds: draft.selectedSkillIds,
+                                                    enabledTargets: draft.enabledTargetIds
+                                                )
+                                            }
                                         }
                                     )
+                                    .task(id: item.id) {
+                                        await viewModel.previewImportGroupIfNeeded(item.id)
+                                    }
                                 }
                             }
                             .frame(maxWidth: layout.gridFrameWidth, alignment: .center)
@@ -1240,7 +1260,9 @@ struct MainView: View {
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .onSubmit {
-                        submitImportSearch()
+                        Task {
+                            await viewModel.submitImportSearch(importSearchText)
+                        }
                     }
             }
         }
@@ -1256,7 +1278,9 @@ struct MainView: View {
 
     private var importSearchButton: some View {
         Button {
-            submitImportSearch()
+            Task {
+                await viewModel.submitImportSearch(importSearchText)
+            }
         } label: {
             actionIcon(.search, size: 12)
                 .foregroundStyle(AppTheme.pageBackground(for: theme))
@@ -1342,143 +1366,23 @@ struct MainView: View {
     }
 
     private var importDisplayItems: [RecommendedImport] {
-        let availableItems = recommendedImports.filter { !isImportItemInstalled($0) }
-        let query = normalizedImportQuery(importSubmittedQuery)
-        guard !query.isEmpty else {
-            return availableItems
+        viewModel.importDisplayGroups.map { item in
+            RecommendedImport(
+                id: item.id,
+                title: item.title,
+                locator: item.locator,
+                summary: importCardSummary(for: item),
+                aliases: item.aliases,
+                skills: item.skills.map { skill in
+                    ImportSkill(
+                        id: skill.id,
+                        title: skill.title,
+                        summary: skill.summary
+                    )
+                },
+                targets: item.targets.map(\.id)
+            )
         }
-
-        let exactMatches = availableItems.filter { importNormalizedTokens(for: $0).contains(query) }
-        if !exactMatches.isEmpty {
-            return exactMatches.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        }
-
-        return availableItems
-            .filter { item in
-                importNormalizedTokens(for: item).contains { $0.contains(query) }
-            }
-            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-    }
-
-    private var recommendedImports: [RecommendedImport] {
-        [
-            RecommendedImport(
-                id: "anthropic-skills",
-                title: "Anthropic Skills",
-                locator: "anthropic/skills",
-                summary: "Official Anthropic skill collection covering research, coding, and agent workflows.",
-                aliases: [
-                    "anthropic/skills",
-                    "https://github.com/anthropics/skills",
-                    "https://github.com/anthropics/skills.git",
-                    "git@github.com:anthropics/skills.git",
-                ],
-                skills: [
-                    ImportSkill(id: "anthropic-prompting", title: "prompting", summary: "Prompt engineering and instruction writing."),
-                    ImportSkill(id: "anthropic-research", title: "research", summary: "Research and synthesis workflows."),
-                    ImportSkill(id: "anthropic-debugging", title: "debugging", summary: "Debugging and investigation workflows."),
-                ],
-                targets: importRecommendedTargetIds
-            ),
-            RecommendedImport(
-                id: "gstack",
-                title: "GStack Skills",
-                locator: "garrytan/gstack",
-                summary: "Workflow and review-oriented skills with strong planning, QA, and deploy helpers.",
-                aliases: [
-                    "garrytan/gstack",
-                    "https://github.com/garrytan/gstack",
-                    "https://github.com/garrytan/gstack.git",
-                    "git@github.com:garrytan/gstack.git",
-                ],
-                skills: [
-                    ImportSkill(id: "gstack-qa", title: "qa", summary: "Systematic QA testing and fix loop."),
-                    ImportSkill(id: "gstack-review", title: "review", summary: "Pre-landing diff review."),
-                    ImportSkill(id: "gstack-ship", title: "ship", summary: "Ship workflow with tests and PR automation."),
-                ],
-                targets: importRecommendedTargetIds
-            ),
-            RecommendedImport(
-                id: "vercel-agent-skills",
-                title: "Vercel Agent Skills",
-                locator: "vercel-labs/agent-skills",
-                summary: "General-purpose curated agent skills for common coding workflows.",
-                aliases: [
-                    "vercel-labs/agent-skills",
-                    "https://github.com/vercel-labs/agent-skills",
-                    "https://github.com/vercel-labs/agent-skills.git",
-                    "git@github.com:vercel-labs/agent-skills.git",
-                ],
-                skills: [
-                    ImportSkill(id: "vercel-plan", title: "plan", summary: "Plan work before implementation."),
-                    ImportSkill(id: "vercel-refactor", title: "refactor", summary: "Refactor with focused constraints."),
-                    ImportSkill(id: "vercel-deploy", title: "deploy", summary: "Deployment-oriented workflows."),
-                ],
-                targets: importRecommendedTargetIds
-            ),
-            RecommendedImport(
-                id: "skill-flow",
-                title: "Skill Flow Samples",
-                locator: "VintLin/skill-flow",
-                summary: "Reference repository for the desktop product itself and related workflow samples.",
-                aliases: [
-                    "VintLin/skill-flow",
-                    "https://github.com/VintLin/skill-flow",
-                    "https://github.com/VintLin/skill-flow.git",
-                    "git@github.com:VintLin/skill-flow.git",
-                ],
-                skills: [
-                    ImportSkill(id: "skillflow-design", title: "design-review", summary: "UI review and design QA."),
-                    ImportSkill(id: "skillflow-investigate", title: "investigate", summary: "Root cause investigation workflow."),
-                    ImportSkill(id: "skillflow-release", title: "document-release", summary: "Post-ship documentation sync."),
-                ],
-                targets: importRecommendedTargetIds
-            ),
-        ]
-    }
-
-    private var importRecommendedTargetIds: [String] {
-        let detectedTargets = viewModel.visibleTargets.map(\.id)
-        if !detectedTargets.isEmpty {
-            return detectedTargets
-        }
-        return ["claude-code", "codex", "cursor", "github-copilot"]
-    }
-
-    private func isImportItemInstalled(_ item: RecommendedImport) -> Bool {
-        let installedTokens = Set(
-            viewModel.sourceRows.flatMap { row in
-                [
-                    normalizedImportQuery(row.id),
-                    normalizedImportQuery(row.displayName),
-                    normalizedImportQuery(row.locator),
-                ]
-            }
-        )
-
-        return importNormalizedTokens(for: item).contains { installedTokens.contains($0) }
-    }
-
-    private func importNormalizedTokens(for item: RecommendedImport) -> [String] {
-        let values = [
-            item.id,
-            item.title,
-            item.locator,
-            item.summary,
-        ] + item.aliases + item.skills.map(\.title)
-
-        return Array(Set(values.map(normalizedImportQuery).filter { !$0.isEmpty }))
-    }
-
-    private func normalizedImportQuery(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-    }
-
-    private func submitImportSearch() {
-        importSubmittedQuery = importSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        importFeedbackMessage = nil
     }
 
     private func importDraft(for item: RecommendedImport) -> ImportDraftState {
@@ -1523,6 +1427,36 @@ struct MainView: View {
             },
             saveState: MainViewModel.SaveState(phase: .idle, message: nil)
         )
+    }
+
+    private var importSectionSubtitle: String {
+        switch viewModel.importSearchPhase {
+        case .idle, .ready:
+            return viewModel.importSubmittedQuery.isEmpty
+                ? "Showing suggested groups that are not installed locally."
+                : "Showing grouped results from skills.sh."
+        case .loading:
+            return "Fetching import data..."
+        case .failed(let message):
+            return message
+        }
+    }
+
+    private func importCardSummary(for item: MainViewModel.ImportGroupItem) -> String {
+        if !item.summary.isEmpty {
+            return item.summary
+        }
+        if !item.matchedSkillNames.isEmpty {
+            return item.matchedSkillNames.joined(separator: ", ")
+        }
+        switch item.previewPhase {
+        case .loading:
+            return "Loading skills..."
+        case .failed(let message):
+            return message
+        default:
+            return "Import from \(item.canonicalRepo)"
+        }
     }
 
     private func importCardSubtitle(for item: RecommendedImport) -> String {
