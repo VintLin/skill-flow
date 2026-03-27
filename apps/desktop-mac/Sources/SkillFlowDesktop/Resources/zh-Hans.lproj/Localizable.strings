@@ -23,6 +23,8 @@
 "detail.loading.document" = "正在加载文档...";
 "detail.document.file_tree" = "文件树";
 "detail.document.skill_unavailable" = "SKILL.md 不可用。";
+"detail.updated.relative" = "更新于 %@";
+"detail.updated.unavailable" = "更新时间不可用";
 "import.page.title" = "立即导入？";
 "import.section.recommended" = "推荐";
 "import.section.search_results" = "搜索结果";

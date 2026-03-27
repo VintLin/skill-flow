@@ -10,6 +10,14 @@ final class MainViewModelSelectionTests: XCTestCase {
         UserDefaults.standard.set(DesktopLanguage.en.rawValue, forKey: DesktopLanguage.storageKey)
     }
 
+    override func tearDown() {
+        MainActor.assumeIsolated {
+            MainViewModel.currentDateProvider = Date.init
+        }
+        UserDefaults.standard.set(DesktopLanguage.en.rawValue, forKey: DesktopLanguage.storageKey)
+        super.tearDown()
+    }
+
     func testSelectionFallbackTriStateAndGroupSourceIds() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -176,6 +184,26 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.originLabel, "不明なソース")
         XCTAssertTrue(detail?.sourceDetailLines.contains("状態: 非対応") == true)
         XCTAssertEqual(detail?.groupDocuments.first?.title, "ファイルツリー")
+    }
+
+    func testDetailViewDataLocalizesUpdatedRelativeWithSelectedLanguage() async throws {
+        let formatter = ISO8601DateFormatter()
+        MainViewModel.currentDateProvider = {
+            formatter.date(from: "2026-03-27T00:00:00Z")!
+        }
+
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+
+        XCTAssertEqual(model.detailViewData(for: "alpha")?.updatedRelative, "Updated 1 day ago")
+
+        UserDefaults.standard.set(DesktopLanguage.ja.rawValue, forKey: DesktopLanguage.storageKey)
+
+        let localizedRelative = model.detailViewData(for: "alpha")?.updatedRelative
+        XCTAssertTrue(localizedRelative?.contains("更新") == true)
+        XCTAssertFalse(localizedRelative?.contains("Updated") == true)
     }
 
     func testDetailSkillTitlePrefersMetadataName() async throws {

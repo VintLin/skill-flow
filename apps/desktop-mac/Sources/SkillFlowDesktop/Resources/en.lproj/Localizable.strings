@@ -23,6 +23,8 @@
 "detail.loading.document" = "Loading document...";
 "detail.document.file_tree" = "File Tree";
 "detail.document.skill_unavailable" = "SKILL.md unavailable.";
+"detail.updated.relative" = "Updated %@";
+"detail.updated.unavailable" = "Updated time unavailable";
 "import.page.title" = "Import Now ?";
 "import.section.recommended" = "Recommended";
 "import.section.search_results" = "Search Result";

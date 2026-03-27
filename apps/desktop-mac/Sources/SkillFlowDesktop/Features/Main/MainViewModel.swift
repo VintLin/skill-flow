@@ -377,6 +377,8 @@ final class MainViewModel {
         return DesktopLanguage(storageValue: rawValue).locale
     }
 
+    @MainActor static var currentDateProvider: () -> Date = Date.init
+
     private static let targetOrder: [String] = [
         "claude-code",
         "codex",
@@ -2601,39 +2603,24 @@ final class MainViewModel {
 
     private func formattedCount(_ value: Int) -> String {
         let formatter = NumberFormatter()
+        formatter.locale = Self.presentationLocale
         formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
     private func relativeUpdateLabel(_ rawValue: String) -> String {
         guard let date = ISO8601DateFormatter().date(from: rawValue) else {
-            return "Updated time unavailable"
+            return localized("detail.updated.unavailable")
         }
 
-        let seconds = max(0, Int(Date().timeIntervalSince(date)))
-        if seconds < 60 {
-            return "Updated just now"
-        }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Self.presentationLocale
+        formatter.unitsStyle = .full
 
-        let minute = 60
-        let hour = 60 * minute
-        let day = 24 * hour
-        let week = 7 * day
-
-        switch seconds {
-        case ..<hour:
-            let value = seconds / minute
-            return "Updated \(value) minute\(value == 1 ? "" : "s") ago"
-        case ..<day:
-            let value = seconds / hour
-            return "Updated \(value) hour\(value == 1 ? "" : "s") ago"
-        case ..<week:
-            let value = seconds / day
-            return "Updated \(value) day\(value == 1 ? "" : "s") ago"
-        default:
-            let value = seconds / week
-            return "Updated \(value) week\(value == 1 ? "" : "s") ago"
-        }
+        let referenceDate = Self.currentDateProvider()
+        let effectiveDate = date > referenceDate ? referenceDate : date
+        let relativeValue = formatter.localizedString(for: effectiveDate, relativeTo: referenceDate)
+        return localized("detail.updated.relative", relativeValue)
     }
 
     private func pruneStateMaps(allowedSourceIds: Set<String>) {

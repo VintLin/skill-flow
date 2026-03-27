@@ -23,6 +23,8 @@
 "detail.loading.document" = "ドキュメントを読み込み中...";
 "detail.document.file_tree" = "ファイルツリー";
 "detail.document.skill_unavailable" = "SKILL.md を利用できません。";
+"detail.updated.relative" = "%@に更新";
+"detail.updated.unavailable" = "更新時刻を取得できません";
 "import.page.title" = "今すぐインポート？";
 "import.section.recommended" = "おすすめ";
 "import.section.search_results" = "検索結果";
