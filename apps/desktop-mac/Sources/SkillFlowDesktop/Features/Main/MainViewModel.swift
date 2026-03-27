@@ -453,7 +453,6 @@ final class MainViewModel {
     var currentPage: Page = .home
 
     var detailText: String = "Select a source to inspect details."
-    var healthLabel: String = "Unknown"
     var healthStatus: HealthStatus = .unknown
     var latestWarnings: [BridgeIssue] = []
 
@@ -968,7 +967,6 @@ final class MainViewModel {
             await migrateLegacyPinnedSourceIdsIfNeeded()
 
             loadState = .ready
-            healthLabel = list.warnings.isEmpty ? "Healthy" : "Warnings"
             healthStatus = list.warnings.isEmpty ? .healthy : .warnings
 
             Task {
@@ -976,7 +974,6 @@ final class MainViewModel {
             }
         } catch {
             loadState = .failed(error.localizedDescription)
-            healthLabel = "Error"
             healthStatus = .error
             detailText = "Bootstrap failed: \(error.localizedDescription)"
         }
@@ -990,7 +987,6 @@ final class MainViewModel {
             let response = try await bridgeClient.list()
             applyList(response)
             latestWarnings = response.warnings
-            healthLabel = response.warnings.isEmpty ? "Healthy" : "Warnings"
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
         } catch {
             loadState = .failed(error.localizedDescription)
@@ -1018,13 +1014,11 @@ final class MainViewModel {
             let response = try await bridgeClient.doctor()
             detailText = prettyPrint(response.data?.value) ?? "No doctor data"
             latestWarnings = response.warnings
-            healthLabel = response.warnings.isEmpty ? "Healthy" : "Warnings"
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
             lastDoctorError = nil
             doctorIssues = parseDoctorIssues(response.data?.value)
         } catch {
             detailText = "Doctor failed: \(error.localizedDescription)"
-            healthLabel = "Error"
             healthStatus = .error
             lastDoctorError = error.localizedDescription
         }
