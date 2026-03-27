@@ -33,9 +33,13 @@ if [[ -z "$APP_BINARY" ]]; then
   exit 1
 fi
 
+APP_BUILD_DIR="$(cd "$(dirname "$APP_BINARY")" && pwd)"
+
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$APP_BINARY" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+
+find "$APP_BUILD_DIR" -maxdepth 1 -type d -name '*.bundle' -exec cp -R {} "$APP_BUNDLE/Contents/Resources/" \;
 
 if [[ -f "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AppIcon.icns" ]]; then
   cp "$DESKTOP_DIR/Sources/SkillFlowDesktop/Resources/AppIcon.icns" \
