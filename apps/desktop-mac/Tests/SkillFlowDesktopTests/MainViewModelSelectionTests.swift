@@ -97,6 +97,52 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.skills.first?.starCount, 1200)
     }
 
+    func testDetailViewDataShowsUnsupportedMetadataState() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.metadataStatus = "unsupported"
+        state.sources["alpha"]?.metadataReasonCode = "provider_data_unavailable"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertNil(detail?.starCount)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("Provider: clawhub") == true)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("Status: Unsupported") == true)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("Current source has no readable metadata.") == true)
+    }
+
+    func testDetailViewDataShowsFailedMetadataState() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.metadataStatus = "failed"
+        state.sources["alpha"]?.metadataReasonCode = "provider_rate_limited"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertNil(detail?.starCount)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("Status: Failed") == true)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("Source metadata is temporarily rate-limited. Try again later.") == true)
+    }
+
+    func testDetailViewDataShowsDisabledMetadataState() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.metadataStatus = "disabled"
+        state.sources["alpha"]?.metadataReasonCode = nil
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertNil(detail?.starCount)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("Status: Disabled") == true)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("This source provider is reserved but not enabled in this build.") == true)
+    }
+
     func testDetailViewDataFallsBackWhenSkillDocumentIsMissing() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -172,6 +218,9 @@ private struct TestFixture {
         var displayName: String
         var locator: String
         var starCount: Int?
+        var metadataStatus: String?
+        var metadataProvider: String?
+        var metadataReasonCode: String?
         var health: String
         var updatedAt: String
         var leafs: [LeafState]
@@ -193,6 +242,9 @@ private struct TestFixture {
                     displayName: "AlphaHub",
                     locator: "https://github.com/acme/alpha-hub",
                     starCount: 1200,
+                    metadataStatus: "ready",
+                    metadataProvider: "clawhub",
+                    metadataReasonCode: nil,
                     health: "HEALTHY",
                     updatedAt: "2026-03-26T00:00:00Z",
                     leafs: [
@@ -212,6 +264,9 @@ private struct TestFixture {
                     displayName: "BetaHub",
                     locator: "https://github.com/acme/beta-hub",
                     starCount: 88,
+                    metadataStatus: "ready",
+                    metadataProvider: "clawhub",
+                    metadataReasonCode: nil,
                     health: "HEALTHY",
                     updatedAt: "2026-03-26T00:00:00Z",
                     leafs: [
@@ -234,6 +289,9 @@ private struct TestFixture {
                     displayName: "AlphaHub",
                     locator: "https://github.com/acme/alpha-hub",
                     starCount: 1200,
+                    metadataStatus: "ready",
+                    metadataProvider: "clawhub",
+                    metadataReasonCode: nil,
                     health: "HEALTHY",
                     updatedAt: "2026-03-26T00:00:00Z",
                     leafs: [
@@ -256,6 +314,9 @@ private struct TestFixture {
                     displayName: "BetaHub",
                     locator: "https://github.com/acme/beta-hub",
                     starCount: 88,
+                    metadataStatus: "ready",
+                    metadataProvider: "clawhub",
+                    metadataReasonCode: nil,
                     health: "HEALTHY",
                     updatedAt: "2026-03-26T00:00:00Z",
                     leafs: [
@@ -581,6 +642,37 @@ private struct TestFixture {
             leafIds: (source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[targetId]) || []
           };
         }
+        const sourceMetadata = (() => {
+          const status = source.metadataStatus || 'ready';
+          const provider = source.metadataProvider || 'clawhub';
+          if (status === 'ready') {
+            return {
+              status: 'ready',
+              provider,
+              data: {
+                provider,
+                starCount: source.starCount ?? null,
+                totalInstalls: 5045,
+                weeklyInstalls: 4921,
+                downloadCount: 211898,
+                ownerHandle: '@steipete',
+                ownerDisplayName: 'Peter Steinberger'
+              }
+            };
+          }
+
+          const metadata = {
+            status,
+            provider
+          };
+          if (source.metadataReasonCode) {
+            metadata.reasonCode = source.metadataReasonCode;
+          }
+          if (status === 'failed') {
+            metadata.retryable = true;
+          }
+          return metadata;
+        })();
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
           source: {
@@ -591,19 +683,7 @@ private struct TestFixture {
             addedAt: '2026-03-25T12:00:00Z',
             selectionMode: 'partial'
           },
-          sourceMetadata: {
-            status: 'ready',
-            provider: 'clawhub',
-            data: {
-              provider: 'clawhub',
-              starCount: source.starCount ?? null,
-              totalInstalls: 5045,
-              weeklyInstalls: 4921,
-              downloadCount: 211898,
-              ownerHandle: '@steipete',
-              ownerDisplayName: 'Peter Steinberger'
-            }
-          },
+          sourceMetadata,
           binding: {
             selectedLeafIds: source.selectedLeafIds || [],
             targets: bindingsTargets

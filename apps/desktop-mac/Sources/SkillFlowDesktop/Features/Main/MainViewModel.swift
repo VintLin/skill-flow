@@ -160,6 +160,12 @@ final class MainViewModel {
         let isFile: Bool
     }
 
+    private struct SourceMetadataPresentation {
+        let lines: [String]
+        let starCount: Int?
+        let repositoryURL: String?
+    }
+
     struct DetailViewData {
         let sourceId: String
         let title: String
@@ -1549,7 +1555,7 @@ final class MainViewModel {
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
         let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
-        let sourceStatsPayload = readySourceStatsPayload(from: payload)
+        let sourceMetadataPresentation = sourceMetadataPresentation(from: payload)
         let deploymentsPayload = payload["deployments"] as? [[String: Any]] ?? []
         let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
 
@@ -1566,9 +1572,9 @@ final class MainViewModel {
         let author = authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
             ?? "@\(summary.sourceKind.lowercased())"
         let originLabel = displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
-        let starCount = sourceStatsPayload["starCount"] as? Int
-        let sourceRepositoryURL = (sourceStatsPayload["repoUrl"] as? String)?.nonEmpty
-        let sourceDetailLines = buildSourceDetailLines(sourceStatsPayload: sourceStatsPayload)
+        let starCount = sourceMetadataPresentation.starCount
+        let sourceRepositoryURL = sourceMetadataPresentation.repositoryURL
+        let sourceDetailLines = sourceMetadataPresentation.lines
         let projectedNamesByLeafId = projectionNameMap(for: sourceId)
 
         let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId -> DetailSkill? in
@@ -1808,17 +1814,36 @@ final class MainViewModel {
         self.pinnedSourceIds = normalizedPinnedSourceIds(pinnedSourceIds)
     }
 
-    private func readySourceStatsPayload(from payload: [String: Any]) -> [String: Any] {
+    private func sourceMetadataPresentation(from payload: [String: Any]) -> SourceMetadataPresentation {
         guard
             let sourceMetadata = payload["sourceMetadata"] as? [String: Any],
-            let status = (sourceMetadata["status"] as? String)?.nonEmpty,
-            status == "ready",
-            let data = sourceMetadata["data"] as? [String: Any]
+            let status = (sourceMetadata["status"] as? String)?.nonEmpty
         else {
-            return payload["sourceStats"] as? [String: Any] ?? [:]
+            let legacySourceStats = payload["sourceStats"] as? [String: Any] ?? [:]
+            return SourceMetadataPresentation(
+                lines: buildReadySourceDetailLines(sourceStatsPayload: legacySourceStats),
+                starCount: legacySourceStats["starCount"] as? Int,
+                repositoryURL: (legacySourceStats["repoUrl"] as? String)?.nonEmpty
+            )
         }
 
-        return data
+        if status == "ready", let data = sourceMetadata["data"] as? [String: Any] {
+            return SourceMetadataPresentation(
+                lines: buildReadySourceDetailLines(sourceStatsPayload: data),
+                starCount: data["starCount"] as? Int,
+                repositoryURL: (data["repoUrl"] as? String)?.nonEmpty
+            )
+        }
+
+        return SourceMetadataPresentation(
+            lines: buildSourceMetadataStatusLines(
+                status: status,
+                provider: (sourceMetadata["provider"] as? String)?.nonEmpty,
+                reasonCode: (sourceMetadata["reasonCode"] as? String)?.nonEmpty
+            ),
+            starCount: nil,
+            repositoryURL: nil
+        )
     }
 
     private func normalizedPinnedSourceIds(_ sourceIds: [String]) -> [String] {
@@ -2338,7 +2363,7 @@ final class MainViewModel {
         return trimmed
     }
 
-    private func buildSourceDetailLines(sourceStatsPayload: [String: Any]) -> [String] {
+    private func buildReadySourceDetailLines(sourceStatsPayload: [String: Any]) -> [String] {
         var lines: [String] = []
 
         if let provider = (sourceStatsPayload["provider"] as? String)?.nonEmpty {
@@ -2370,6 +2395,41 @@ final class MainViewModel {
         }
 
         return lines
+    }
+
+    private func buildSourceMetadataStatusLines(
+        status: String,
+        provider: String?,
+        reasonCode: String?
+    ) -> [String] {
+        var lines: [String] = []
+        if let provider {
+            lines.append("Provider: \(provider)")
+        }
+
+        lines.append("Status: \(status.capitalized)")
+        lines.append(sourceMetadataExplanation(status: status, reasonCode: reasonCode))
+        return lines
+    }
+
+    private func sourceMetadataExplanation(status: String, reasonCode: String?) -> String {
+        switch status {
+        case "unsupported":
+            return "Current source has no readable metadata."
+        case "disabled":
+            return "This source provider is reserved but not enabled in this build."
+        case "failed":
+            switch reasonCode {
+            case "provider_rate_limited":
+                return "Source metadata is temporarily rate-limited. Try again later."
+            case "provider_response_invalid":
+                return "Source metadata response format changed."
+            default:
+                return "Could not fetch source metadata. Try again later."
+            }
+        default:
+            return "Current source has no readable metadata."
+        }
     }
 
     private func formattedCount(_ value: Int) -> String {
