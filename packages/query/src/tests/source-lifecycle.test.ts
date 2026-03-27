@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { SkillFlowApp } from "@skill-flow/query/runtime";
 import * as clawhubUtils from "@skill-flow/integration/utils/clawhub";
 import * as builtinGitSources from "@skill-flow/integration/utils/builtin-git-sources";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
+import { SkillFlowApp } from "../runtime.js";
 import {
   createRepo,
   pathExists,
@@ -608,5 +608,4 @@ description: |
     ).toContain("Browser flow, refreshed upstream.");
     expect(await fs.readFile(path.join(targetPath, "SKILL.md"), "utf8")).toBe(targetBefore);
   });
-
 });

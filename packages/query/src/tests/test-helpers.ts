@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, beforeEach, vi } from "vitest";
+import * as builtinGitSources from "@skill-flow/integration/utils/builtin-git-sources";
+import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
+import type { SkillFlowApp } from "../runtime.js";
 
 export type SandboxContext = {
   sandboxRoot: string;
@@ -98,6 +101,23 @@ export async function writeRepoFiles(root: string, files: Record<string, string>
     const absolutePath = path.join(root, relativePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, content, "utf8");
+  }
+}
+
+export async function pathExists(targetPath: string) {
+  try {
+    await fs.lstat(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function seedBuiltinCatalog(app: SkillFlowApp): Promise<void> {
+  for (const builtin of builtinGitSources.getBuiltinGitSources()) {
+    await fs.mkdir(app.store.getCatalogCheckoutPath(deriveSourceId(builtin.locator)), {
+      recursive: true,
+    });
   }
 }
 
