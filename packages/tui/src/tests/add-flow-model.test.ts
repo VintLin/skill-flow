@@ -10,7 +10,7 @@ import {
   resolveRequestedLeafIds,
   toggleAllSelections,
   withAllChoice,
-} from "@skill-flow/tui/add-flow-model.js";
+} from "../add-flow-model.js";
 
 function createLeaf(params: {
   id: string;
