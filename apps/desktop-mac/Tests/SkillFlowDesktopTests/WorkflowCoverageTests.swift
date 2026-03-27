@@ -364,10 +364,9 @@ final class WorkflowCoverageTests: XCTestCase {
 
         await model.setTargetEnabled("claude-code", enabled: false)
 
-        let detailText = model.detailText
         XCTAssertTrue(model.isTargetEnabled("claude-code"))
         XCTAssertEqual(model.saveState(for: "alpha").phase, .failed)
-        XCTAssertEqual(detailText, "Apply failed: Primary cause: missing leaf mapping")
+        XCTAssertEqual(model.saveState(for: "alpha").detail, "Primary cause: missing leaf mapping")
         XCTAssertEqual(model.toast?.style, .error)
 
         let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }

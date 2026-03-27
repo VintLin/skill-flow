@@ -58,8 +58,9 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         await model.setTargetEnabled("cursor", enabled: true)
         XCTAssertEqual(model.saveState(for: "alpha").phase, .failed)
+        XCTAssertEqual(model.saveState(for: "alpha").detail, "Primary cause: missing leaf mapping")
         XCTAssertFalse(model.isTargetEnabled("cursor"))
-        XCTAssertEqual(model.detailText, "Apply failed: Primary cause: missing leaf mapping")
+        XCTAssertEqual(model.toast?.style, .error)
     }
 
     func testClawhubGroupSelectionIncludesAllClawhubSources() async throws {

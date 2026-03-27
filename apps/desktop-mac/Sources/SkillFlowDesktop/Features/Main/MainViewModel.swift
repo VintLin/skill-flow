@@ -452,7 +452,6 @@ final class MainViewModel {
     var importingImportGroupId: String?
     var currentPage: Page = .home
 
-    var detailText: String = "Select a source to inspect details."
     var healthStatus: HealthStatus = .unknown
     var latestWarnings: [BridgeIssue] = []
 
@@ -975,7 +974,6 @@ final class MainViewModel {
         } catch {
             loadState = .failed(error.localizedDescription)
             healthStatus = .error
-            detailText = "Bootstrap failed: \(error.localizedDescription)"
         }
     }
 
@@ -990,7 +988,6 @@ final class MainViewModel {
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
         } catch {
             loadState = .failed(error.localizedDescription)
-            detailText = "Refresh failed: \(error.localizedDescription)"
         }
     }
 
@@ -1001,10 +998,8 @@ final class MainViewModel {
             if let payload = response.data?.value as? [String: Any] {
                 inspectedPayloadBySourceId[sourceId] = payload
             }
-            detailText = prettyPrint(response.data?.value) ?? "No details"
             latestWarnings = response.warnings
         } catch {
-            detailText = "Inspect failed: \(error.localizedDescription)"
             showToast(style: .error, text: localizedText("toast.details.load_failed", sourceId))
         }
     }
@@ -1012,13 +1007,11 @@ final class MainViewModel {
     func runDoctor() async {
         do {
             let response = try await bridgeClient.doctor()
-            detailText = prettyPrint(response.data?.value) ?? "No doctor data"
             latestWarnings = response.warnings
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
             lastDoctorError = nil
             doctorIssues = parseDoctorIssues(response.data?.value)
         } catch {
-            detailText = "Doctor failed: \(error.localizedDescription)"
             healthStatus = .error
             lastDoctorError = error.localizedDescription
         }
@@ -1029,9 +1022,7 @@ final class MainViewModel {
             _ = try await bridgeClient.updateAll()
             await refreshList()
             await runDoctor()
-        } catch {
-            detailText = "Update failed: \(error.localizedDescription)"
-        }
+        } catch {}
     }
 
     func updateAllGroupsFromHome() async {
@@ -1053,7 +1044,6 @@ final class MainViewModel {
 
     func updateCurrentGroup() async {
         guard let sourceId = selectedSourceId else {
-            detailText = "Update failed: no source selected."
             showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
             return
         }
@@ -1072,7 +1062,6 @@ final class MainViewModel {
     private func updateSource(_ sourceId: String, showLoadingToast: Bool) async {
         let sourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sourceId.isEmpty else {
-            detailText = "Update failed: missing source id."
             showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
             return
         }
@@ -1092,7 +1081,6 @@ final class MainViewModel {
             }
             showToast(style: .success, text: localizedText("toast.update.success", sourceId))
         } catch {
-            detailText = "Update failed: \(error.localizedDescription)"
             showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
         }
     }
@@ -1382,7 +1370,6 @@ final class MainViewModel {
 
     func uninstallSelectedSource() async {
         guard let selectedSourceId else {
-            detailText = "Uninstall failed: no source selected."
             showToast(style: .error, text: localizedText("toast.uninstall.no_group_selected"))
             return
         }
@@ -1404,7 +1391,6 @@ final class MainViewModel {
             if let first = sourceIds.first {
                 await selectSource(first)
             } else {
-                detailText = "No sources installed."
                 currentPage = .home
             }
             if case .detail(let detailSourceId) = currentPage, detailSourceId == sourceId {
@@ -1412,7 +1398,6 @@ final class MainViewModel {
             }
             showToast(style: .success, text: localizedText("toast.uninstall.success", sourceId))
         } catch {
-            detailText = "Uninstall failed: \(error.localizedDescription)"
             showToast(style: .error, text: localizedText("toast.uninstall.failed", error.localizedDescription))
         }
     }
@@ -1494,15 +1479,6 @@ final class MainViewModel {
 
         }
 
-        if let selected = selectedSourceId, let summary = allSummaries.first(where: { $0.sourceId == selected }) {
-            detailText = prettyPrint([
-                "sourceId": summary.sourceId,
-                "selectedLeafIds": summary.selectedLeafIds,
-                "enabledTargets": summary.enabledTargets,
-                "leafCount": summary.leafs.count,
-                "health": summary.health,
-            ]) ?? detailText
-        }
     }
 
     private func parseSummaries(_ response: BridgeResponse) -> [WorkflowSummary] {
@@ -1852,7 +1828,6 @@ final class MainViewModel {
     ) async {
         let sourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sourceId.isEmpty else {
-            detailText = "Apply failed: missing source id."
             showToast(style: .error, text: localizedText("toast.save.no_source_id"))
             return
         }
@@ -1873,7 +1848,6 @@ final class MainViewModel {
             baselineDrafts[sourceId] = normalizedDraft
             workingDrafts[sourceId] = normalizedDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
-            detailText = "Applied group '\(sourceId)' to \(normalizedDraft.enabledTargets.count) targets."
             showToast(style: successStyle, text: successMessage)
             await refreshList()
             if selectedGroupId == sourceId {
@@ -1883,7 +1857,6 @@ final class MainViewModel {
             let firstReason = firstErrorLine(from: error)
             workingDrafts[sourceId] = previousDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .failed, detail: firstReason)
-            detailText = "Apply failed: \(firstReason)"
             showToast(style: .error, text: localizedText("toast.save.failed", firstReason))
         }
     }
@@ -2054,7 +2027,6 @@ final class MainViewModel {
                 _ = try? await bridgeClient.togglePinnedSource(sourceId: migratedSourceId)
             }
             pinnedSourceIds = previousPinnedSourceIds
-            detailText = "Pinned groups migration failed: \(error.localizedDescription)"
             showToast(style: .error, text: localizedText("toast.pinned_migration.failed", firstErrorLine(from: error)))
         }
     }
@@ -2680,19 +2652,6 @@ final class MainViewModel {
         Dictionary(uniqueKeysWithValues: sourceMap.filter { allowedSourceIds.contains($0.key) })
     }
 
-    private func prettyPrint(_ value: Any?) -> String? {
-        guard let value else { return nil }
-        guard JSONSerialization.isValidJSONObject(value) else {
-            return String(describing: value)
-        }
-        guard
-            let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted]),
-            let text = String(data: data, encoding: .utf8)
-        else {
-            return String(describing: value)
-        }
-        return text
-    }
 }
 
 private extension String {
