@@ -20,7 +20,7 @@ describe.sequential("import page flow", () => {
       repoUrl: "https://github.com/garrytan/gstack",
       starCount: 12,
     });
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
       const url = String(input);
       if (url === "https://skills.sh/garrytan/gstack") {
         return responseWithHtml(`
@@ -79,7 +79,7 @@ describe.sequential("import page flow", () => {
       repoUrl: "https://github.com/anthropics/skills",
       starCount: 406,
     });
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
       const url = String(input);
       if (url === "https://skills.sh/anthropics/skills") {
         return responseWithHtml(`
@@ -124,7 +124,7 @@ describe.sequential("import page flow", () => {
         repoUrl: "https://github.com/vercel-labs/agent-skills",
         starCount: 88,
       });
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
       const url = String(input);
       if (url.startsWith("https://skills.sh/api/search")) {
         return responseWithJson({
@@ -189,7 +189,7 @@ describe.sequential("import page flow", () => {
   });
 
   test("previewImportSource is read-only and defaults to all skills with no agents", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
       const url = String(input);
       if (url === "https://skills.sh/anthropics/skills") {
         return responseWithHtml(`
