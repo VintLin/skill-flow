@@ -261,9 +261,14 @@ function inferFailedReasonCode(error: unknown): SourceMetadataReasonCode {
     return "provider_rate_limited";
   }
 
+  if (hasProviderErrorCode(error, "CLAWHUB_RATE_LIMITED")) {
+    return "provider_rate_limited";
+  }
+
   if (
     hasProviderErrorCode(error, "GITHUB_REPO_RESPONSE_INVALID") ||
-    hasProviderErrorCode(error, "SKILLS_SOURCE_PARSE_FAILED")
+    hasProviderErrorCode(error, "SKILLS_SOURCE_PARSE_FAILED") ||
+    hasProviderErrorCode(error, "CLAWHUB_RESPONSE_INVALID")
   ) {
     return "provider_response_invalid";
   }

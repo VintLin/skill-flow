@@ -146,6 +146,44 @@ describe("fetchFreshSourceMetadata", () => {
     });
   });
 
+  test("returns a rate-limited failure when clawhub metadata is throttled", async () => {
+    vi.resetModules();
+    vi.doMock("../utils/clawhub.js", () => ({
+      inspectClawHubSkill: async () => {
+        throw Object.assign(new Error("limited"), { code: "CLAWHUB_RATE_LIMITED" });
+      },
+    }));
+    const { fetchFreshSourceMetadata } = await import("../utils/source-details.js");
+
+    await expect(
+      fetchFreshSourceMetadata(
+        {
+          id: "ontology",
+          locator: "clawhub:ontology",
+          kind: "clawhub",
+          displayName: "ontology",
+          addedAt: "2026-03-27T00:00:00.000Z",
+        },
+        {
+          id: "ontology",
+          locator: "clawhub:ontology",
+          kind: "clawhub",
+          displayName: "ontology",
+          checkoutPath: "/tmp/ontology",
+          updatedAt: "2026-03-27T00:00:00.000Z",
+          leafIds: [],
+          invalidLeafs: [],
+          packageSlug: "ontology",
+        },
+      ),
+    ).resolves.toEqual({
+      status: "failed",
+      provider: "clawhub",
+      reasonCode: "provider_rate_limited",
+      retryable: true,
+    });
+  });
+
   test("prefers skills metadata when a skills.sh page exists", async () => {
     vi.resetModules();
     vi.doMock("../utils/github-catalog.js", () => ({

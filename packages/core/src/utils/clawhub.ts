@@ -110,21 +110,40 @@ export async function inspectClawHubSkill(
   slug: string,
   options: { version?: string; files?: boolean } = {},
 ): Promise<ClawHubInspectResult> {
-  const args = ["inspect", slug, "--json"];
+  const query = new URLSearchParams();
   if (options.version) {
-    args.push("--version", options.version);
+    query.set("version", options.version);
   }
   if (options.files) {
-    args.push("--files");
+    query.set("files", "true");
+  }
+  const queryString = query.toString();
+  const response = await fetch(
+    `https://clawhub.ai/api/v1/skills/${encodeURIComponent(slug)}${queryString ? `?${queryString}` : ""}`,
+  );
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw createProviderError(
+        "CLAWHUB_RATE_LIMITED",
+        `ClawHub skill request failed with ${response.status}.`,
+      );
+    }
+
+    throw createProviderError(
+      "CLAWHUB_SKILL_REQUEST_FAILED",
+      `ClawHub skill request failed with ${response.status}.`,
+    );
   }
 
-  const output = await clawhub(args);
-  const jsonStart = output.indexOf("{");
-  if (jsonStart < 0) {
-    throw new Error(`Unable to parse clawhub inspect output for '${slug}'.`);
+  try {
+    return await response.json() as ClawHubInspectResult;
+  } catch {
+    throw createProviderError(
+      "CLAWHUB_RESPONSE_INVALID",
+      `Unable to parse ClawHub skill payload for '${slug}'.`,
+    );
   }
-
-  return JSON.parse(output.slice(jsonStart)) as ClawHubInspectResult;
 }
 
 export async function searchClawHubSkills(
@@ -168,4 +187,8 @@ function getClawHubErrorMessage(error: unknown): string {
   }
 
   return String(error);
+}
+
+function createProviderError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
 }
