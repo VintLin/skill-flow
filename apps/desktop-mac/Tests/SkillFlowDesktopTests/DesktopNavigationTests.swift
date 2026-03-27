@@ -1,0 +1,27 @@
+import XCTest
+
+@testable import SkillFlowDesktop
+
+@MainActor
+final class DesktopNavigationTests: XCTestCase {
+    func testNavigatorStartsOnHomeRoute() {
+        let navigator = DesktopNavigator()
+
+        XCTAssertEqual(navigator.currentRoute, .home)
+    }
+
+    func testNavigatorOpensDetailRouteForSourceId() {
+        let navigator = DesktopNavigator()
+
+        navigator.showDetail(sourceId: "alpha")
+
+        XCTAssertEqual(navigator.currentRoute, .detail(sourceId: "alpha"))
+    }
+
+    func testDesktopAppStateStartsWithHomeViewStateAndIdleBootstrapPhase() {
+        let state = DesktopAppState()
+
+        XCTAssertEqual(state.view.currentRoute, .home)
+        XCTAssertEqual(state.asyncResources.homeBootstrapPhase, .idle)
+    }
+}
