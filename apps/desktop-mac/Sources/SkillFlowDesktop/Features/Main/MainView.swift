@@ -490,43 +490,19 @@ struct MainView: View {
 
     private func detailGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                detailOverviewCard(
-                    title: "Skills",
-                    lines: [
-                        "\(detail?.enabledSkillCount ?? 0) enabled",
-                        "\(detail?.totalSkillCount ?? 0) total",
-                    ]
-                )
-                Rectangle()
-                    .fill(AppTheme.border(for: theme))
-                    .frame(width: 1)
-                detailOverviewCard(
-                    title: "Agents",
-                    lines: [
-                        "\(detail?.enabledTargetCount ?? 0) enabled",
-                        detail?.targetSelection == .partial ? "Mixed selection" : "Selection synced",
-                    ]
-                )
-                Rectangle()
-                    .fill(AppTheme.border(for: theme))
-                    .frame(width: 1)
-                detailOverviewCard(
-                    title: "Health",
-                    lines: [
-                        detail?.health ?? "UNKNOWN",
-                        "Warnings \(detail?.warningCount ?? 0) · Errors \(detail?.errorCount ?? 0)",
-                    ]
-                )
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-
             detailPathRow(
                 title: "Path",
                 path: detail?.groupPath,
                 fallbackText: detail?.locator ?? "Path unavailable"
             )
+
+            if let detail, !detail.sourceDetailLines.isEmpty {
+                detailMetadataSection(
+                    title: "Source",
+                    lines: detail.sourceDetailLines,
+                    externalURL: detail.sourceRepositoryURL
+                )
+            }
 
             detailAgentRail(groupId: groupId, detail: detail)
 
@@ -670,10 +646,6 @@ struct MainView: View {
                 )
 
                 Spacer(minLength: 12)
-
-                Text(detail?.updatedRelative ?? "Updated time unavailable")
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
             }
         }
         .padding(14)
@@ -726,8 +698,8 @@ struct MainView: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(detail?.title ?? groupId)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .lineLimit(1)
                 Text("by \(detail?.author ?? "@unknown")")
                     .font(.system(size: 11, weight: .regular))
@@ -767,8 +739,8 @@ struct MainView: View {
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(skill.title)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .lineLimit(1)
                 if let versionText {
                     Text(versionText)
@@ -949,6 +921,43 @@ struct MainView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private func detailMetadataSection(
+        title: String,
+        lines: [String],
+        externalURL: String? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .textCase(.uppercase)
+
+                if let externalURL {
+                    Button {
+                        openExternalURL(externalURL)
+                    } label: {
+                        actionIcon(.externalLink, size: 10)
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            detailContentCard {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(lines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
         }
     }
 

@@ -33,15 +33,16 @@ import {
   writeJsonFile,
 } from "../utils/fs.js";
 import { getBuiltinGitSources } from "../utils/builtin-git-sources.js";
-import { fetchGitHubRepoStarCount, fetchGitHubSkillPaths } from "../utils/github-catalog.js";
+import { fetchGitHubSkillPaths } from "../utils/github-catalog.js";
 import {
   buildProjectedSkillNameCandidates,
   parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "../utils/naming.js";
 import { fail, ok } from "../utils/result.js";
-import { inspectClawHubSkill, searchClawHubSkills } from "../utils/clawhub.js";
+import { searchClawHubSkills } from "../utils/clawhub.js";
 import { deriveDisplayName, deriveSourceId } from "../utils/source-id.js";
+import { fetchSourceDetails } from "../utils/source-details.js";
 import { DeploymentApplier } from "./deployment-applier.js";
 import { ConfigCoordinator } from "./config-coordinator.js";
 import { DeploymentPlanner } from "./deployment-planner.js";
@@ -392,26 +393,10 @@ export class SkillFlowApp {
     lock: WorkflowSummary["lock"],
   ): Promise<SourceStats> {
     try {
-      if (source.kind === "clawhub") {
-        const slug = lock?.packageSlug ?? this.parseClawHubSlug(source.locator);
-        if (!slug) {
-          return {};
-        }
-        const inspected = await inspectClawHubSkill(slug);
-        const stars = inspected.skill.stats?.stars;
-        return typeof stars === "number" ? { starCount: stars } : {};
-      }
-
-      const starCount = await fetchGitHubRepoStarCount(source.locator);
-      return typeof starCount === "number" ? { starCount } : {};
+      return await fetchSourceDetails(source, lock);
     } catch {
       return {};
     }
-  }
-
-  private parseClawHubSlug(locator: string): string | undefined {
-    const match = locator.match(/^clawhub:([^@\s]+)(?:@.+)?$/);
-    return match?.[1];
   }
 
   private async listWorkflowsImpl(): Promise<Result<{ summaries: WorkflowSummary[] }>> {

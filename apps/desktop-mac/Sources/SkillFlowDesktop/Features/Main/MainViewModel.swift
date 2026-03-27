@@ -167,6 +167,8 @@ final class MainViewModel {
         let author: String
         let originLabel: String
         let starCount: Int?
+        let sourceDetailLines: [String]
+        let sourceRepositoryURL: String?
         let locator: String
         let groupPath: String?
         let updatedAt: String
@@ -1558,6 +1560,8 @@ final class MainViewModel {
             ?? "@\(summary.sourceKind.lowercased())"
         let originLabel = displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
         let starCount = sourceStatsPayload["starCount"] as? Int
+        let sourceRepositoryURL = (sourceStatsPayload["repoUrl"] as? String)?.nonEmpty
+        let sourceDetailLines = buildSourceDetailLines(sourceStatsPayload: sourceStatsPayload)
         let projectedNamesByLeafId = projectionNameMap(for: sourceId)
 
         let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId -> DetailSkill? in
@@ -1670,6 +1674,8 @@ final class MainViewModel {
             author: author,
             originLabel: originLabel,
             starCount: starCount,
+            sourceDetailLines: sourceDetailLines,
+            sourceRepositoryURL: sourceRepositoryURL,
             locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
             groupPath: groupPath,
             updatedAt: (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt,
@@ -2228,6 +2234,46 @@ final class MainViewModel {
         }
 
         return trimmed
+    }
+
+    private func buildSourceDetailLines(sourceStatsPayload: [String: Any]) -> [String] {
+        var lines: [String] = []
+
+        if let provider = (sourceStatsPayload["provider"] as? String)?.nonEmpty {
+            lines.append("Provider: \(provider)")
+        }
+        if let repoLabel = (sourceStatsPayload["repoLabel"] as? String)?.nonEmpty {
+            lines.append("Repository: \(repoLabel)")
+        }
+        if let totalInstalls = sourceStatsPayload["totalInstalls"] as? Int {
+            lines.append("Total installs: \(formattedCount(totalInstalls))")
+        }
+        if let weeklyInstalls = sourceStatsPayload["weeklyInstalls"] as? Int {
+            lines.append("Current installs: \(formattedCount(weeklyInstalls))")
+        }
+        if let downloadCount = sourceStatsPayload["downloadCount"] as? Int {
+            lines.append("Downloads: \(formattedCount(downloadCount))")
+        }
+        if let starCount = sourceStatsPayload["starCount"] as? Int {
+            lines.append("Stars: \(formattedCount(starCount))")
+        }
+        if let ownerHandle = (sourceStatsPayload["ownerHandle"] as? String)?.nonEmpty {
+            let ownerDisplayName = (sourceStatsPayload["ownerDisplayName"] as? String)?.nonEmpty
+            lines.append(
+                ownerDisplayName.map { "Owner: \(ownerHandle) (\($0))" } ?? "Owner: \(ownerHandle)"
+            )
+        }
+        if let repoURL = (sourceStatsPayload["repoUrl"] as? String)?.nonEmpty {
+            lines.append("Repo URL: \(repoURL)")
+        }
+
+        return lines
+    }
+
+    private func formattedCount(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
     private func relativeUpdateLabel(_ rawValue: String) -> String {

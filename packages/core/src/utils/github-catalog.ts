@@ -1,3 +1,4 @@
+import type { SourceStats } from "../domain/types.js";
 import { parseGitHubRepo } from "./naming.js";
 
 type GitHubTreeResponse = {
@@ -37,9 +38,14 @@ export async function fetchGitHubSkillPaths(
 }
 
 export async function fetchGitHubRepoStarCount(locator: string): Promise<number | undefined> {
+  const details = await fetchGitHubRepoDetails(locator);
+  return details.starCount;
+}
+
+export async function fetchGitHubRepoDetails(locator: string): Promise<SourceStats> {
   const repo = parseGitHubRepo(locator);
   if (!repo) {
-    return undefined;
+    return {};
   }
 
   const response = await fetch(
@@ -52,9 +58,16 @@ export async function fetchGitHubRepoStarCount(locator: string): Promise<number 
   }
 
   const payload = await response.json() as GitHubRepoResponse;
-  return typeof payload.stargazers_count === "number"
+  const starCount = typeof payload.stargazers_count === "number"
     ? payload.stargazers_count
     : undefined;
+
+  return {
+    provider: "github",
+    repoLabel: `${repo.owner}/${repo.repo}`,
+    repoUrl: `https://github.com/${repo.owner}/${repo.repo}`,
+    ...(starCount !== undefined ? { starCount } : {}),
+  };
 }
 
 function buildGitHubHeaders(): Record<string, string> {

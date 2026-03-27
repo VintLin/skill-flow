@@ -283,5 +283,15 @@ export type SkillCandidate = {
 };
 
 export type SourceStats = {
+  provider?: "github" | "skills" | "clawhub";
+  repoLabel?: string;
+  repoUrl?: string;
+  sourceUrl?: string;
   starCount?: number;
+  totalInstalls?: number;
+  weeklyInstalls?: number;
+  downloadCount?: number;
+  ownerHandle?: string;
+  ownerDisplayName?: string;
+  summary?: string;
 };

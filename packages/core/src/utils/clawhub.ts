@@ -39,8 +39,13 @@ export type ClawHubInspectResult = {
     stats?: {
       installsAllTime?: number;
       installsCurrent?: number;
+      downloads?: number;
       stars?: number;
     };
+  };
+  owner?: {
+    handle?: string;
+    displayName?: string;
   };
   latestVersion?: {
     version: string;

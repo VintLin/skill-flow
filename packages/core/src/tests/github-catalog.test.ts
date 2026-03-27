@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { fetchGitHubRepoStarCount } from "../../../../packages/core/src/utils/github-catalog.js";
+import { fetchGitHubRepoStarCount } from "../utils/github-catalog.js";
 
 describe("fetchGitHubRepoStarCount", () => {
   afterEach(() => {

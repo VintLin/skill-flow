@@ -71,6 +71,8 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.subtitle, "clawhub")
         XCTAssertEqual(detail?.starCount, 1200)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("Provider: clawhub") == true)
+        XCTAssertTrue(detail?.sourceDetailLines.contains("Downloads: 211,898") == true)
         XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
         XCTAssertEqual(detail?.enabledSkillCount, 1)
         XCTAssertEqual(detail?.totalSkillCount, 2)
@@ -590,7 +592,13 @@ private struct TestFixture {
             selectionMode: 'partial'
           },
           sourceStats: {
-            starCount: source.starCount ?? null
+            provider: 'clawhub',
+            starCount: source.starCount ?? null,
+            totalInstalls: 5045,
+            weeklyInstalls: 4921,
+            downloadCount: 211898,
+            ownerHandle: '@steipete',
+            ownerDisplayName: 'Peter Steinberger'
           },
           binding: {
             selectedLeafIds: source.selectedLeafIds || [],
