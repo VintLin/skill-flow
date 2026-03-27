@@ -106,8 +106,7 @@ struct MainView: View {
                 if detailShowsGroupOverviewByGroup[groupId] == nil {
                     detailShowsGroupOverviewByGroup[groupId] = true
                 }
-                if viewModel.hasInspectPayload(for: groupId),
-                   let detail = viewModel.detailViewData(for: groupId) {
+                if let detail = viewModel.detailViewData(for: groupId) {
                     if detailSkillIdByGroup[groupId] == nil {
                         detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
                     }
@@ -429,9 +428,7 @@ struct MainView: View {
     }
 
     private func detailPage(groupId: String, layout: LayoutMetrics) -> some View {
-        let detail = viewModel.hasInspectPayload(for: groupId)
-            ? viewModel.detailViewData(for: groupId)
-            : nil
+        let detail = viewModel.detailViewData(for: groupId)
         let fallbackRow = viewModel.sourceRows.first(where: { $0.id == groupId })
         let sidebarWidth = layout.detailSidebarWidth
 
@@ -1596,6 +1593,16 @@ struct MainView: View {
             facts.append("Matches \(matches.joined(separator: ", "))")
         } else if !item.matchedSkillNames.isEmpty {
             facts.append("Matches \(item.matchedSkillNames.joined(separator: ", "))")
+        }
+        if facts.isEmpty {
+            switch item.enrichPhase {
+            case .loading:
+                return ["Source loading..."]
+            case .failed(let message):
+                return [message]
+            case .ready, .idle:
+                break
+            }
         }
         return facts
     }

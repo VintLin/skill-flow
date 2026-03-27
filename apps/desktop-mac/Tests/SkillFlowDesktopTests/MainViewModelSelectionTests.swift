@@ -97,6 +97,24 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.skills.first?.starCount, 1200)
     }
 
+    func testDetailViewDataBuildsLocalContentBeforeInspectPayloadArrives() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+
+        XCTAssertFalse(model.hasInspectPayload(for: "alpha"))
+
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertEqual(detail?.title, "AlphaHub")
+        XCTAssertEqual(detail?.skills.map(\.id), ["alpha-a", "alpha-b"])
+        XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
+        XCTAssertTrue(detail?.sourceDetailLines.isEmpty == true)
+        XCTAssertEqual(detail?.targets.map(\.id), ["claude-code", "cursor"])
+    }
+
     func testDetailViewDataShowsUnsupportedMetadataState() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline

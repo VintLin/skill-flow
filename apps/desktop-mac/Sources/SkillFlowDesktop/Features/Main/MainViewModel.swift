@@ -318,6 +318,7 @@ final class MainViewModel {
         let matchedSkillNames: [String]
         let matchedSkills: [ImportMatchedSkill]
         let snapshot: SourceSnapshotData?
+        let enrichPhase: ImportLoadPhase
         let previewPhase: ImportLoadPhase
         let skills: [ImportGroupSkill]
         let targets: [ImportGroupTarget]
@@ -1027,6 +1028,9 @@ final class MainViewModel {
 
             loadState = .ready
             healthLabel = bootstrap.warnings.isEmpty ? "Healthy" : "Warnings"
+            Task { [weak self] in
+                await self?.prefetchRecommendedImportGroupsIfNeeded()
+            }
         } catch {
             loadState = .failed(error.localizedDescription)
             healthLabel = "Error"
@@ -1318,6 +1322,7 @@ final class MainViewModel {
                 matchedSkillNames: matchedSkillNames,
                 matchedSkills: matchedSkills,
                 snapshot: snapshot,
+                enrichPhase: parseImportLoadPhase(group["enrichState"] as? [String: Any]),
                 previewPhase: parseImportLoadPhase(group["previewState"] as? [String: Any]),
                 skills: [],
                 targets: []
@@ -1527,6 +1532,7 @@ final class MainViewModel {
                 matchedSkillNames: item.matchedSkillNames,
                 matchedSkills: item.matchedSkills,
                 snapshot: snapshot ?? item.snapshot,
+                enrichPhase: snapshot != nil ? .ready : item.enrichPhase,
                 previewPhase: .ready,
                 skills: skills,
                 targets: targets
@@ -1549,6 +1555,7 @@ final class MainViewModel {
                 matchedSkillNames: item.matchedSkillNames,
                 matchedSkills: item.matchedSkills,
                 snapshot: item.snapshot,
+                enrichPhase: item.enrichPhase,
                 previewPhase: phase,
                 skills: item.skills,
                 targets: item.targets
@@ -1681,6 +1688,18 @@ final class MainViewModel {
         if let audit = data["audit"] {
             doctorIssues = parseDoctorIssues(audit)
             lastDoctorError = nil
+        }
+    }
+
+    private func prefetchRecommendedImportGroupsIfNeeded() async {
+        guard recommendedImportGroups.isEmpty else { return }
+
+        do {
+            let response = try await fetchImportSearchResponse(query: nil)
+            let payload = response.data?.value as? [String: Any] ?? [:]
+            recommendedImportGroups = parseImportGroupsPayload(payload: payload)
+        } catch {
+            // Recommendation prefetch should never block bootstrap or emit global errors.
         }
     }
 

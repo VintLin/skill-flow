@@ -121,7 +121,9 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(model.sourceIds, ["alpha", "beta"])
 
         let commands = fixture.loggedRequests().map(\.command)
-        XCTAssertEqual(commands, ["bootstrap"])
+        XCTAssertEqual(commands.first, "bootstrap")
+        XCTAssertFalse(commands.contains("list"))
+        XCTAssertFalse(commands.contains("doctor"))
     }
 
     func testPinnedWriteFailureRollsBack() async throws {
