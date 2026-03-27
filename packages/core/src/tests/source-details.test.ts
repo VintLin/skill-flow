@@ -24,6 +24,7 @@ describe("parseSkillsSourcePage", () => {
       totalInstalls: 735100,
       repoUrl: "https://github.com/vercel-labs/skills",
       repoLabel: "vercel-labs/skills",
+      skills: [],
     });
   });
 });

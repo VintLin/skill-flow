@@ -217,6 +217,81 @@ final class MainViewModel {
         let repositoryURL: String?
     }
 
+    struct SnapshotTrust: Equatable {
+        let official: Bool
+        let trending: Bool
+        let hot: Bool
+        let audited: Bool
+
+        var labels: [String] {
+            var values: [String] = []
+            if official { values.append("Official") }
+            if trending { values.append("Trending") }
+            if hot { values.append("Hot") }
+            if audited { values.append("Audited") }
+            return values
+        }
+    }
+
+    struct SnapshotOwner: Equatable {
+        let slug: String
+        let sourceURL: String
+        let githubURL: String?
+        let sourceCount: Int?
+        let skillCount: Int?
+        let totalInstalls: Int?
+    }
+
+    struct SnapshotInstalledOn: Equatable {
+        let agent: String
+        let installs: Int?
+    }
+
+    struct SnapshotAudits: Equatable {
+        let gen: String?
+        let socket: String?
+        let snyk: String?
+        let riskLevel: String?
+    }
+
+    struct SnapshotSkill: Equatable {
+        let skillId: String
+        let title: String
+        let installs: Int?
+        let weeklyInstalls: Int?
+        let firstSeen: String?
+        let summary: String
+        let installedOn: [SnapshotInstalledOn]
+        let audits: SnapshotAudits?
+    }
+
+    struct SourceSnapshotData: Equatable {
+        let canonicalRepo: String
+        let title: String
+        let provider: String
+        let sourceURL: String
+        let repoURL: String
+        let repoLabel: String
+        let totalInstalls: Int?
+        let skillCount: Int?
+        let repoStars: Int?
+        let forkCount: Int?
+        let description: String
+        let topics: [String]
+        let language: String?
+        let defaultBranch: String?
+        let pushedAt: String?
+        let owner: SnapshotOwner
+        let skills: [SnapshotSkill]
+        let trust: SnapshotTrust?
+    }
+
+    struct ImportMatchedSkill: Equatable {
+        let skillId: String
+        let title: String
+        let installs: Int?
+    }
+
     struct DetailViewData {
         let sourceId: String
         let title: String
@@ -278,6 +353,8 @@ final class MainViewModel {
         let totalInstalls: Int?
         let skillCount: Int?
         let matchedSkillNames: [String]
+        let matchedSkills: [ImportMatchedSkill]
+        let snapshot: SourceSnapshotData?
         let previewPhase: ImportLoadPhase
         let skills: [ImportGroupSkill]
         let targets: [ImportGroupTarget]
@@ -1218,6 +1295,11 @@ final class MainViewModel {
 
             let aliases = uniqueSorted(group["aliases"] as? [String] ?? [])
             let matchedSkillNames = uniqueSorted(group["matchedSkillNames"] as? [String] ?? [])
+            let matchedSkills = parseMatchedSkills(group["matchedSkills"] as? [[String: Any]])
+            let snapshot = parseSourceSnapshot(group["snapshot"] as? [String: Any])
+            let summary = (group["summary"] as? String)?.nonEmpty
+                ?? snapshot?.description.nonEmpty
+                ?? ""
 
             return ImportGroupItem(
                 id: id,
@@ -1225,11 +1307,13 @@ final class MainViewModel {
                 locator: locator,
                 canonicalRepo: canonicalRepo,
                 aliases: aliases,
-                summary: (group["summary"] as? String) ?? "",
-                starCount: group["starCount"] as? Int,
-                totalInstalls: group["totalInstalls"] as? Int,
-                skillCount: group["skillCount"] as? Int,
+                summary: summary,
+                starCount: group["starCount"] as? Int ?? snapshot?.repoStars,
+                totalInstalls: group["totalInstalls"] as? Int ?? snapshot?.totalInstalls,
+                skillCount: group["skillCount"] as? Int ?? snapshot?.skillCount,
                 matchedSkillNames: matchedSkillNames,
+                matchedSkills: matchedSkills,
+                snapshot: snapshot,
                 previewPhase: parseImportLoadPhase(group["previewState"] as? [String: Any]),
                 skills: [],
                 targets: []
@@ -1254,6 +1338,132 @@ final class MainViewModel {
         }
     }
 
+    private func parseMatchedSkills(_ payload: [[String: Any]]?) -> [ImportMatchedSkill] {
+        (payload ?? []).compactMap { skill in
+            guard let skillId = (skill["skillId"] as? String)?.nonEmpty,
+                  let title = (skill["title"] as? String)?.nonEmpty else {
+                return nil
+            }
+
+            return ImportMatchedSkill(
+                skillId: skillId,
+                title: title,
+                installs: skill["installs"] as? Int
+            )
+        }
+    }
+
+    private func parseSourceSnapshot(_ payload: [String: Any]?) -> SourceSnapshotData? {
+        guard let payload,
+              let canonicalRepo = (payload["canonicalRepo"] as? String)?.nonEmpty,
+              let title = (payload["title"] as? String)?.nonEmpty,
+              let provider = (payload["provider"] as? String)?.nonEmpty,
+              let sourceURL = (payload["sourceUrl"] as? String)?.nonEmpty,
+              let repoURL = (payload["repoUrl"] as? String)?.nonEmpty,
+              let repoLabel = (payload["repoLabel"] as? String)?.nonEmpty,
+              let owner = parseSourceOwner(payload["owner"] as? [String: Any]) else {
+            return nil
+        }
+
+        return SourceSnapshotData(
+            canonicalRepo: canonicalRepo,
+            title: title,
+            provider: provider,
+            sourceURL: sourceURL,
+            repoURL: repoURL,
+            repoLabel: repoLabel,
+            totalInstalls: payload["totalInstalls"] as? Int,
+            skillCount: payload["skillCount"] as? Int,
+            repoStars: payload["repoStars"] as? Int,
+            forkCount: payload["forkCount"] as? Int,
+            description: (payload["description"] as? String) ?? "",
+            topics: uniqueSorted(payload["topics"] as? [String] ?? []),
+            language: (payload["language"] as? String)?.nonEmpty,
+            defaultBranch: (payload["defaultBranch"] as? String)?.nonEmpty,
+            pushedAt: (payload["pushedAt"] as? String)?.nonEmpty,
+            owner: owner,
+            skills: parseSnapshotSkills(payload["skills"] as? [[String: Any]]),
+            trust: parseSnapshotTrust(payload["trust"] as? [String: Any])
+        )
+    }
+
+    private func parseSourceOwner(_ payload: [String: Any]?) -> SnapshotOwner? {
+        guard let payload,
+              let slug = (payload["slug"] as? String)?.nonEmpty,
+              let sourceURL = (payload["sourceUrl"] as? String)?.nonEmpty else {
+            return nil
+        }
+
+        return SnapshotOwner(
+            slug: slug,
+            sourceURL: sourceURL,
+            githubURL: (payload["githubUrl"] as? String)?.nonEmpty,
+            sourceCount: payload["sourceCount"] as? Int,
+            skillCount: payload["skillCount"] as? Int,
+            totalInstalls: payload["totalInstalls"] as? Int
+        )
+    }
+
+    private func parseSnapshotSkills(_ payload: [[String: Any]]?) -> [SnapshotSkill] {
+        (payload ?? []).compactMap { skill in
+            guard let skillId = (skill["skillId"] as? String)?.nonEmpty,
+                  let title = (skill["title"] as? String)?.nonEmpty else {
+                return nil
+            }
+
+            return SnapshotSkill(
+                skillId: skillId,
+                title: title,
+                installs: skill["installs"] as? Int,
+                weeklyInstalls: skill["weeklyInstalls"] as? Int,
+                firstSeen: (skill["firstSeen"] as? String)?.nonEmpty,
+                summary: (skill["summary"] as? String) ?? "",
+                installedOn: parseSnapshotInstalledOn(skill["installedOn"] as? [[String: Any]]),
+                audits: parseSnapshotAudits(skill["audits"] as? [String: Any])
+            )
+        }
+    }
+
+    private func parseSnapshotInstalledOn(_ payload: [[String: Any]]?) -> [SnapshotInstalledOn] {
+        (payload ?? []).compactMap { item in
+            guard let agent = (item["agent"] as? String)?.nonEmpty else {
+                return nil
+            }
+            return SnapshotInstalledOn(agent: agent, installs: item["installs"] as? Int)
+        }
+    }
+
+    private func parseSnapshotAudits(_ payload: [String: Any]?) -> SnapshotAudits? {
+        guard let payload else {
+            return nil
+        }
+
+        let audits = SnapshotAudits(
+            gen: (payload["gen"] as? String)?.nonEmpty,
+            socket: (payload["socket"] as? String)?.nonEmpty,
+            snyk: (payload["snyk"] as? String)?.nonEmpty,
+            riskLevel: (payload["riskLevel"] as? String)?.nonEmpty
+        )
+
+        return audits.gen != nil || audits.socket != nil || audits.snyk != nil || audits.riskLevel != nil
+            ? audits
+            : nil
+    }
+
+    private func parseSnapshotTrust(_ payload: [String: Any]?) -> SnapshotTrust? {
+        guard let payload else {
+            return nil
+        }
+
+        let trust = SnapshotTrust(
+            official: payload["official"] as? Bool ?? false,
+            trending: payload["trending"] as? Bool ?? false,
+            hot: payload["hot"] as? Bool ?? false,
+            audited: payload["audited"] as? Bool ?? false
+        )
+        return trust.labels.isEmpty ? nil : trust
+    }
+
     private func applyImportPreviewPayload(
         _ payload: [String: Any],
         for groupId: String,
@@ -1273,6 +1483,7 @@ final class MainViewModel {
         let targetsPayload = payload["targets"] as? [[String: Any]] ?? []
         let selectedSkillIds = Set(payload["selectedSkillIds"] as? [String] ?? [])
         let enabledTargets = Set(payload["enabledTargets"] as? [String] ?? [])
+        let snapshot = parseSourceSnapshot(payload["snapshot"] as? [String: Any])
 
         let skills = skillsPayload.compactMap { skill -> ImportGroupSkill? in
             guard let id = (skill["id"] as? String)?.nonEmpty,
@@ -1310,6 +1521,8 @@ final class MainViewModel {
                 totalInstalls: item.totalInstalls,
                 skillCount: item.skillCount,
                 matchedSkillNames: item.matchedSkillNames,
+                matchedSkills: item.matchedSkills,
+                snapshot: snapshot ?? item.snapshot,
                 previewPhase: .ready,
                 skills: skills,
                 targets: targets
@@ -1330,6 +1543,8 @@ final class MainViewModel {
                 totalInstalls: item.totalInstalls,
                 skillCount: item.skillCount,
                 matchedSkillNames: item.matchedSkillNames,
+                matchedSkills: item.matchedSkills,
+                snapshot: item.snapshot,
                 previewPhase: phase,
                 skills: item.skills,
                 targets: item.targets
@@ -1648,7 +1863,8 @@ final class MainViewModel {
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
         let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
-        let sourceMetadataPresentation = sourceMetadataPresentation(from: payload)
+        let sourceSnapshot = parseSourceSnapshot(payload["sourceSnapshot"] as? [String: Any])
+        let sourceMetadataPresentation = sourceMetadataPresentation(from: payload, sourceSnapshot: sourceSnapshot)
         let deploymentsPayload = payload["deployments"] as? [[String: Any]] ?? []
         let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
 
@@ -1662,9 +1878,11 @@ final class MainViewModel {
             locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
             lockPayload: lockPayload
         )
-        let author = authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
+        let author = sourceSnapshot.map { "@\($0.owner.slug)" }
+            ?? authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
             ?? "@\(summary.sourceKind.lowercased())"
-        let originLabel = displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
+        let originLabel = sourceSnapshot.flatMap { displayOriginLabel(from: $0.sourceURL) }
+            ?? displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
         let starCount = sourceMetadataPresentation.starCount
         let sourceRepositoryURL = sourceMetadataPresentation.repositoryURL
         let sourceDetailLines = sourceMetadataPresentation.lines
@@ -1703,6 +1921,7 @@ final class MainViewModel {
                     )
                 ]
             let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
+            let snapshotSkill = sourceSnapshot?.skills.first(where: { $0.skillId == linkName })
             let projectedName = projectedNamesByLeafId[leaf.id]
             let title = metadataName
                 ?? folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
@@ -1728,11 +1947,12 @@ final class MainViewModel {
                     fallbackName: linkName
                 ),
                 documents: documents,
-                detailLines: [
-                    leafRelativePath,
-                    skillFilePath,
-                    "Link name: \(linkName)"
-                ].compactMap { $0?.nonEmpty },
+                detailLines: buildSkillDetailLines(
+                    leafRelativePath: leafRelativePath,
+                    skillFilePath: skillFilePath,
+                    linkName: linkName,
+                    snapshotSkill: snapshotSkill
+                ),
                 documentContent: documentContent,
                 isEnabled: selectedLeafIds.contains(leaf.id),
                 warningCount: leaf.metadataWarnings.count
@@ -1934,16 +2154,38 @@ final class MainViewModel {
         self.pinnedSourceIds = normalizedPinnedSourceIds(pinnedSourceIds)
     }
 
-    private func sourceMetadataPresentation(from payload: [String: Any]) -> SourceMetadataPresentation {
+    private func sourceMetadataPresentation(
+        from payload: [String: Any],
+        sourceSnapshot: SourceSnapshotData?
+    ) -> SourceMetadataPresentation {
         guard
             let sourceMetadata = payload["sourceMetadata"] as? [String: Any],
             let status = (sourceMetadata["status"] as? String)?.nonEmpty
         else {
+            if let sourceSnapshot {
+                return SourceMetadataPresentation(
+                    lines: buildSnapshotSourceDetailLines(sourceSnapshot: sourceSnapshot),
+                    starCount: sourceSnapshot.repoStars,
+                    repositoryURL: sourceSnapshot.repoURL
+                )
+            }
             let legacySourceStats = payload["sourceStats"] as? [String: Any] ?? [:]
             return SourceMetadataPresentation(
                 lines: buildReadySourceDetailLines(sourceStatsPayload: legacySourceStats),
                 starCount: legacySourceStats["starCount"] as? Int,
                 repositoryURL: (legacySourceStats["repoUrl"] as? String)?.nonEmpty
+            )
+        }
+
+        if let sourceSnapshot {
+            var lines = buildSnapshotSourceDetailLines(sourceSnapshot: sourceSnapshot)
+            if status != "ready" {
+                lines.append("Refresh: \(sourceMetadataExplanation(status: status, reasonCode: (sourceMetadata["reasonCode"] as? String)?.nonEmpty))")
+            }
+            return SourceMetadataPresentation(
+                lines: lines,
+                starCount: sourceSnapshot.repoStars,
+                repositoryURL: sourceSnapshot.repoURL
             )
         }
 
@@ -1964,6 +2206,51 @@ final class MainViewModel {
             starCount: nil,
             repositoryURL: nil
         )
+    }
+
+    private func buildSkillDetailLines(
+        leafRelativePath: String?,
+        skillFilePath: String?,
+        linkName: String,
+        snapshotSkill: SnapshotSkill?
+    ) -> [String] {
+        var lines = [
+            leafRelativePath,
+            skillFilePath,
+            "Link name: \(linkName)"
+        ].compactMap { $0?.nonEmpty }
+
+        if let installs = snapshotSkill?.installs {
+            lines.append("Installs: \(formattedCount(installs))")
+        }
+        if let weeklyInstalls = snapshotSkill?.weeklyInstalls {
+            lines.append("Weekly installs: \(formattedCount(weeklyInstalls))")
+        }
+        if let firstSeen = snapshotSkill?.firstSeen {
+            lines.append("First seen: \(firstSeen)")
+        }
+        if let snapshotSkill, !snapshotSkill.installedOn.isEmpty {
+            let installs = snapshotSkill.installedOn.map { item in
+                if let installs = item.installs {
+                    return "\(item.agent) \(formattedCount(installs))"
+                }
+                return item.agent
+            }
+            lines.append("Installed on: \(installs.joined(separator: ", "))")
+        }
+        if let audits = snapshotSkill?.audits {
+            let auditParts = [
+                audits.gen.map { "Gen \($0)" },
+                audits.socket.map { "Socket \($0)" },
+                audits.snyk.map { "Snyk \($0)" },
+                audits.riskLevel.map { "Risk \($0)" }
+            ].compactMap { $0 }
+            if !auditParts.isEmpty {
+                lines.append("Audit: \(auditParts.joined(separator: " · "))")
+            }
+        }
+
+        return lines
     }
 
     private func normalizedPinnedSourceIds(_ sourceIds: [String]) -> [String] {
@@ -2514,6 +2801,65 @@ final class MainViewModel {
             lines.append(localized("source.metadata.repo_url", repoURL))
         }
 
+        return lines
+    }
+
+    private func buildSnapshotSourceDetailLines(sourceSnapshot: SourceSnapshotData) -> [String] {
+        var lines: [String] = [
+            localized("source.metadata.provider", sourceSnapshot.provider),
+            localized("source.metadata.repository", sourceSnapshot.repoLabel)
+        ]
+
+        lines.append(localized("source.metadata.owner", sourceSnapshot.owner.slug))
+        if let sourceCount = sourceSnapshot.owner.sourceCount {
+            lines.append(localized("source.snapshot.owner_sources", formattedCount(sourceCount)))
+        }
+        if let skillCount = sourceSnapshot.owner.skillCount {
+            lines.append(localized("source.snapshot.owner_skills", formattedCount(skillCount)))
+        }
+        if let totalInstalls = sourceSnapshot.owner.totalInstalls {
+            lines.append(localized("source.snapshot.owner_installs", formattedCount(totalInstalls)))
+        }
+
+        if let totalInstalls = sourceSnapshot.totalInstalls {
+            lines.append(localized("source.metadata.total_installs", formattedCount(totalInstalls)))
+        }
+        if let skillCount = sourceSnapshot.skillCount {
+            lines.append(localized("source.snapshot.skills", formattedCount(skillCount)))
+        }
+        if let repoStars = sourceSnapshot.repoStars {
+            lines.append(localized("source.snapshot.repo_stars", formattedCount(repoStars)))
+        }
+        if let forkCount = sourceSnapshot.forkCount {
+            lines.append(localized("source.snapshot.forks", formattedCount(forkCount)))
+        }
+        if let language = sourceSnapshot.language {
+            lines.append(localized("source.snapshot.language", language))
+        }
+        if let pushedAt = sourceSnapshot.pushedAt {
+            lines.append(localized("source.snapshot.repo_updated", relativeUpdateLabel(pushedAt)))
+        }
+        if !sourceSnapshot.topics.isEmpty {
+            lines.append(localized("source.snapshot.topics", sourceSnapshot.topics.joined(separator: ", ")))
+        }
+        if let trust = sourceSnapshot.trust, !trust.labels.isEmpty {
+            lines.append(localized("source.snapshot.trust", trust.labels.joined(separator: " · ")))
+        }
+
+        let topSkills = sourceSnapshot.skills
+            .sorted { lhs, rhs in (lhs.installs ?? 0) > (rhs.installs ?? 0) }
+            .prefix(3)
+            .map { skill -> String in
+                if let installs = skill.installs {
+                    return "\(skill.title) \(formattedCount(installs))"
+                }
+                return skill.title
+            }
+        if !topSkills.isEmpty {
+            lines.append(localized("source.snapshot.top_skills", topSkills.joined(separator: ", ")))
+        }
+
+        lines.append(localized("source.metadata.repo_url", sourceSnapshot.repoURL))
         return lines
     }
 

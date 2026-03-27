@@ -1435,6 +1435,17 @@ struct MainView: View {
         if !item.summary.isEmpty {
             return item.summary
         }
+        if let snapshot = item.snapshot, !snapshot.description.isEmpty {
+            return snapshot.description
+        }
+        if !item.matchedSkills.isEmpty {
+            return item.matchedSkills.map { skill in
+                if let installs = skill.installs {
+                    return "\(skill.title) \(formattedStarCount(installs))"
+                }
+                return skill.title
+            }.joined(separator: ", ")
+        }
         if !item.matchedSkillNames.isEmpty {
             return item.matchedSkillNames.joined(separator: ", ")
         }
@@ -1450,16 +1461,41 @@ struct MainView: View {
 
     private func importSourceFacts(for item: MainViewModel.ImportGroupItem) -> [String] {
         var facts: [String] = []
-        if let totalInstalls = item.totalInstalls, totalInstalls > 0 {
+        let totalInstalls = item.snapshot?.totalInstalls ?? item.totalInstalls
+        let starCount = item.snapshot?.repoStars ?? item.starCount
+        let skillCount = item.snapshot?.skillCount ?? item.skillCount
+
+        if let totalInstalls, totalInstalls > 0 {
             facts.append(t("import.card.facts.installs", formattedStarCount(totalInstalls)))
         }
-        if let starCount = item.starCount, starCount > 0 {
+        if let starCount, starCount > 0 {
             facts.append(t("import.card.facts.stars", formattedStarCount(starCount)))
         }
-        if let skillCount = item.skillCount, skillCount > 0 {
+        if let skillCount, skillCount > 0 {
             facts.append(t("import.card.facts.skills", String(skillCount)))
         }
-        if !item.matchedSkillNames.isEmpty {
+        if let owner = item.snapshot?.owner {
+            var ownerFacts: [String] = [t("import.card.facts.owner", owner.slug)]
+            if let sourceCount = owner.sourceCount {
+                ownerFacts.append(t("import.card.facts.owner_sources", String(sourceCount)))
+            }
+            if let skillCount = owner.skillCount {
+                ownerFacts.append(t("import.card.facts.owner_skills", String(skillCount)))
+            }
+            facts.append(ownerFacts.joined(separator: " · "))
+        }
+        if let trust = item.snapshot?.trust, !trust.labels.isEmpty {
+            facts.append(t("import.card.facts.trust", trust.labels.joined(separator: " · ")))
+        }
+        if !item.matchedSkills.isEmpty {
+            let matches = item.matchedSkills.map { skill in
+                if let installs = skill.installs {
+                    return "\(skill.title) \(formattedStarCount(installs))"
+                }
+                return skill.title
+            }
+            facts.append(t("import.card.facts.matches", matches.joined(separator: ", ")))
+        } else if !item.matchedSkillNames.isEmpty {
             facts.append(t("import.card.facts.matches", item.matchedSkillNames.joined(separator: ", ")))
         }
         return facts

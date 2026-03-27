@@ -293,12 +293,18 @@ export type SourceStats = {
   repoUrl?: string;
   sourceUrl?: string;
   starCount?: number;
+  forkCount?: number;
   totalInstalls?: number;
   weeklyInstalls?: number;
   downloadCount?: number;
   ownerHandle?: string;
   ownerDisplayName?: string;
   summary?: string;
+  description?: string;
+  topics?: string[];
+  language?: string;
+  defaultBranch?: string;
+  pushedAt?: string;
 };
 
 export type SourceMetadataProvider = "github" | "skills" | "clawhub";
@@ -339,6 +345,111 @@ export type SourceMetadataCache = Record<string, SourceMetadataCacheEntry>;
 
 export type ImportReasonCode = SourceMetadataReasonCode;
 
+export type UnifiedSourceTrust = {
+  official?: boolean;
+  trending?: boolean;
+  hot?: boolean;
+  audited?: boolean;
+};
+
+export type UnifiedSourceOwner = {
+  slug: string;
+  sourceUrl: string;
+  githubUrl?: string;
+  sourceCount?: number;
+  skillCount?: number;
+  totalInstalls?: number;
+};
+
+export type UnifiedSourceSkillInstalledOn = {
+  agent: string;
+  installs?: number;
+};
+
+export type UnifiedSourceSkillAudits = {
+  gen?: string;
+  socket?: string;
+  snyk?: string;
+  riskLevel?: string;
+};
+
+export type UnifiedSourceSkill = {
+  skillId: string;
+  title: string;
+  installs?: number;
+  weeklyInstalls?: number;
+  firstSeen?: string;
+  summary?: string;
+  installedOn?: UnifiedSourceSkillInstalledOn[];
+  audits?: UnifiedSourceSkillAudits;
+};
+
+export type UnifiedSourceSnapshot = {
+  canonicalRepo: string;
+  aliases: string[];
+  title: string;
+  provider: "skills";
+  sourceUrl: string;
+  repoUrl: string;
+  repoLabel: string;
+  totalInstalls?: number;
+  skillCount?: number;
+  repoStars?: number;
+  forkCount?: number;
+  description?: string;
+  topics?: string[];
+  language?: string;
+  defaultBranch?: string;
+  pushedAt?: string;
+  owner: UnifiedSourceOwner;
+  skills: UnifiedSourceSkill[];
+  trust?: UnifiedSourceTrust;
+};
+
+export type UnifiedSourceSnapshotCacheEntry = {
+  canonicalRepo: string;
+  checkedAt: string;
+  expiresAt: string;
+  data: UnifiedSourceSnapshot;
+};
+
+export type ImportSearchHit = {
+  id: string;
+  skillId: string;
+  title: string;
+  installs?: number;
+  source: string;
+  canonicalRepo: string;
+};
+
+export type ImportSearchSnapshot = {
+  query: string;
+  checkedAt: string;
+  expiresAt: string;
+  hits: ImportSearchHit[];
+  groups: string[];
+};
+
+export type ImportRecommendationFeedId =
+  | "seed"
+  | "official"
+  | "trending"
+  | "hot"
+  | "audits";
+
+export type ImportRecommendationFeed = {
+  id: ImportRecommendationFeedId;
+  checkedAt: string;
+  expiresAt: string;
+  groups: string[];
+};
+
+export type ImportDataCache = {
+  searches: Record<string, ImportSearchSnapshot>;
+  sources: Record<string, UnifiedSourceSnapshotCacheEntry>;
+  recommendations: Record<string, ImportRecommendationFeed>;
+};
+
 export type ImportAsyncState =
   | { status: "idle" }
   | { status: "loading" }
@@ -364,6 +475,12 @@ export type ImportGroupCandidate = {
   totalInstalls?: number;
   skillCount?: number;
   matchedSkillNames?: string[];
+  matchedSkills?: Array<{
+    skillId: string;
+    title: string;
+    installs?: number;
+  }>;
+  snapshot?: UnifiedSourceSnapshot;
   enrichState: ImportAsyncState;
   previewState: ImportAsyncState;
 };
@@ -390,6 +507,7 @@ export type ImportPreviewResult =
       status: "ready";
       locator: string;
       canonicalRepo: string;
+      snapshot?: UnifiedSourceSnapshot;
       selectedSkillIds: string[];
       enabledTargets: DeploymentTargetName[];
       skills: ImportPreviewSkill[];
@@ -412,43 +530,3 @@ export type ImportSourceResult =
       reasonCode: string;
       retryable: boolean;
     };
-
-export type ImportGroupCacheEntry = {
-  canonicalRepo: string;
-  status: "ready" | "failed";
-  checkedAt: string;
-  expiresAt: string;
-  reasonCode?: ImportReasonCode;
-  retryable?: boolean;
-  data?: {
-    aliases: string[];
-    title: string;
-    summary?: string;
-    sourceUrl?: string;
-    repoUrl?: string;
-    starCount?: number;
-    totalInstalls?: number;
-    skillCount?: number;
-  };
-};
-
-export type ImportPreviewCacheEntry = {
-  canonicalRepo: string;
-  status: ImportPreviewResult["status"];
-  checkedAt: string;
-  expiresAt: string;
-  reasonCode?: ImportReasonCode;
-  retryable?: boolean;
-  data?: {
-    locator: string;
-    selectedSkillIds: string[];
-    enabledTargets: DeploymentTargetName[];
-    skills: ImportPreviewSkill[];
-    targets: ImportPreviewTarget[];
-  };
-};
-
-export type ImportDirectoryCache = {
-  groups: Record<string, ImportGroupCacheEntry>;
-  previews: Record<string, ImportPreviewCacheEntry>;
-};
