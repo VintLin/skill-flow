@@ -106,7 +106,8 @@ struct MainView: View {
                 if detailShowsGroupOverviewByGroup[groupId] == nil {
                     detailShowsGroupOverviewByGroup[groupId] = true
                 }
-                if let detail = viewModel.detailViewData(for: groupId) {
+                if viewModel.hasInspectPayload(for: groupId),
+                   let detail = viewModel.detailViewData(for: groupId) {
                     if detailSkillIdByGroup[groupId] == nil {
                         detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
                     }
@@ -371,7 +372,6 @@ struct MainView: View {
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
                                     viewModel.currentPage = .detail(sourceId: card.id)
-                                    Task { await viewModel.selectSource(card.id) }
                                 },
                                 onUpdate: {
                                     Task { await viewModel.updateSource(card.id) }
@@ -429,7 +429,9 @@ struct MainView: View {
     }
 
     private func detailPage(groupId: String, layout: LayoutMetrics) -> some View {
-        let detail = viewModel.detailViewData(for: groupId)
+        let detail = viewModel.hasInspectPayload(for: groupId)
+            ? viewModel.detailViewData(for: groupId)
+            : nil
         let fallbackRow = viewModel.sourceRows.first(where: { $0.id == groupId })
         let sidebarWidth = layout.detailSidebarWidth
 

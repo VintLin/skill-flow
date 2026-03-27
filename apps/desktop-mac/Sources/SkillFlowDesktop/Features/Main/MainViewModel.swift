@@ -2058,6 +2058,10 @@ final class MainViewModel {
         )
     }
 
+    func hasInspectPayload(for sourceId: String) -> Bool {
+        inspectedPayloadBySourceId[sourceId] != nil
+    }
+
     func dismissToast(id: ToastState.ID? = nil) {
         guard let id else {
             toast = nil
