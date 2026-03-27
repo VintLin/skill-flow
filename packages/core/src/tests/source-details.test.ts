@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   buildFailedSourceMetadataResult,
   buildSourceMetadataResult,
-  parseSkillsSourcePage,
 } from "../utils/source-details.js";
+import { parseSkillsSourcePage } from "../utils/skills-directory.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
