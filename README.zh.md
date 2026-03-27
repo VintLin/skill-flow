@@ -200,7 +200,7 @@ npm run -w skill-flow dev  # CLI 开发模式
 - `packages/tui`：Ink 终端 UI 模块
 - `packages/shared-types`：bridge 协议契约
 - `packages/bridge`：桌面端进程调用 bridge client
-- `apps/desktop-mac`：SwiftUI 桌面壳（macOS 14+）
+- `apps/desktop-mac`：SwiftUI 桌面壳（macOS 15+）
 
 桌面/辅助进程机器协议入口：
 

@@ -66,8 +66,18 @@ final class BridgeClient {
     }
 
     func updateAll() async throws -> BridgeResponse {
+        try await updateSources(nil)
+    }
+
+    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
-            try await self.send(command: .update, payload: ["sourceIds": AnyCodable([String]())])
+            let payload: [String: AnyCodable]
+            if let sourceIds {
+                payload = ["sourceIds": AnyCodable(sourceIds)]
+            } else {
+                payload = ["sourceIds": AnyCodable([String]())]
+            }
+            return try await self.send(command: .update, payload: payload)
         }
     }
 
@@ -196,22 +206,37 @@ final class BridgeClient {
         }
         #endif
 
-        if let resourcePath = Bundle.main.path(forResource: "cli", ofType: "js", inDirectory: "helper/dist") {
-            return URL(fileURLWithPath: resourcePath)
+        if let bundledHelperURL = existingURL(at: Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Resources/helper/dist/cli.js")) {
+            return bundledHelperURL
         }
 
-        if let resourcePath = Bundle.main.path(forResource: "skill-flow-helper", ofType: nil) {
-            return URL(fileURLWithPath: resourcePath)
+        if let resourcePath = Bundle.main.path(forResource: "cli", ofType: "js", inDirectory: "helper/dist"),
+           let bundledHelperURL = existingURL(at: URL(fileURLWithPath: resourcePath)) {
+            return bundledHelperURL
         }
 
-        // Development fallback for local runs outside bundled app.
-        let cwdFallback = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appending(path: "apps/cli/dist/cli.js")
-        if FileManager.default.fileExists(atPath: cwdFallback.path) {
-            return cwdFallback
+        let fallbackCandidates = [
+            Bundle.main.bundleURL
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appending(path: "apps/cli/dist/cli.js"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appending(path: "apps/cli/dist/cli.js"),
+        ]
+
+        for candidate in fallbackCandidates {
+            if let existing = existingURL(at: candidate) {
+                return existing
+            }
         }
 
         throw BridgeClientError.helperMissing
+    }
+
+    private func existingURL(at url: URL) -> URL? {
+        FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     private func resolveNodeExecutable() -> String {

@@ -4,19 +4,21 @@ import PackageDescription
 let package = Package(
     name: "SkillFlowDesktop",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v15)
     ],
     products: [
         .executable(name: "SkillFlowDesktop", targets: ["SkillFlowDesktop"])
     ],
     dependencies: [
-        .package(url: "https://github.com/Lakr233/MarkdownView", from: "3.6.0")
+        .package(url: "https://github.com/gonzalezreal/textual", from: "0.1.0"),
+        .package(url: "https://github.com/jpsim/Yams.git", from: "6.0.1")
     ],
     targets: [
         .executableTarget(
             name: "SkillFlowDesktop",
             dependencies: [
-                "MarkdownView",
+                .product(name: "Textual", package: "textual"),
+                .product(name: "Yams", package: "Yams"),
             ],
             path: "Sources/SkillFlowDesktop",
             resources: [

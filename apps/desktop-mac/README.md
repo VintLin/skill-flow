@@ -4,7 +4,7 @@ SwiftUI menu bar + main window desktop shell for `skill-flow`.
 
 ## Scope
 
-- macOS 14+
+- macOS 15+
 - Menu bar entry with quick actions
 - Main window (`NavigationSplitView`) for source detail + operations
 - Local bridge invocation (`skill-flow bridge --json`)

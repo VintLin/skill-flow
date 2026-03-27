@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Yams
 
 @MainActor
 @Observable
@@ -118,7 +119,6 @@ final class MainViewModel {
         let version: String?
         let folderPath: String?
         let relativeFolderPath: String?
-        let metadata: [MetadataEntry]
         let documents: [DocumentTab]
         let detailLines: [String]
         let documentContent: String
@@ -126,19 +126,20 @@ final class MainViewModel {
         let warningCount: Int
     }
 
-    struct MetadataEntry: Identifiable {
+    struct MetadataEntry: Identifiable, Equatable {
         let id: String
         let key: String
         let value: String
     }
 
-    struct DocumentTab: Identifiable {
+    struct DocumentTab: Identifiable, Equatable {
         let id: String
         let title: String
         let path: String
         let metadata: [MetadataEntry]
         let content: String
         let renderCacheKey: String
+        let externalURL: String?
     }
 
     struct DetailTarget: Identifiable {
@@ -281,8 +282,22 @@ final class MainViewModel {
     }
 
     private struct ParsedDocument {
+        let frontMatter: SkillFrontMatter?
         let metadata: [MetadataEntry]
         let body: String
+    }
+
+    private struct SkillFrontMatter: Decodable {
+        let name: String?
+        let description: String?
+        let version: String?
+        let enabled: Bool?
+    }
+
+    private struct GitHubRepoContext {
+        let owner: String
+        let repo: String
+        let revision: String
     }
 
     private let bridgeClient: BridgeClient
@@ -366,6 +381,7 @@ final class MainViewModel {
     var showAllTargets: Bool = false
 
     var isRefreshing: Bool = false
+    var isUpdatingCurrentGroup: Bool = false
     var saveStateBySourceId: [String: SaveState] = [:]
     var toast: ToastState?
 
@@ -411,7 +427,20 @@ final class MainViewModel {
 
     var sourceRows: [SourceRow] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let rows = allSummaries.map { summary in
+        let summaries = query.isEmpty
+            ? allSummaries
+            : allSummaries.filter { summary in
+                summary.sourceId.lowercased().contains(query)
+                    || summary.sourceDisplayName.lowercased().contains(query)
+                    || summary.sourceLocator.lowercased().contains(query)
+                    || summary.sourceKind.lowercased().contains(query)
+                    || summary.health.lowercased().contains(query)
+                    || summary.leafs.contains(where: { leaf in
+                        leaf.name.lowercased().contains(query)
+                            || leaf.linkName.lowercased().contains(query)
+                    })
+            }
+        let rows = summaries.map { summary in
             SourceRow(
                 id: summary.sourceId,
                 displayName: summary.sourceDisplayName,
@@ -427,13 +456,7 @@ final class MainViewModel {
         if query.isEmpty {
             return sortedSourceRows(rows)
         }
-        return sortedSourceRows(rows.filter { row in
-            row.id.lowercased().contains(query)
-                || row.displayName.lowercased().contains(query)
-                || row.locator.lowercased().contains(query)
-                || row.kind.lowercased().contains(query)
-                || row.status.lowercased().contains(query)
-        })
+        return sortedSourceRows(rows)
     }
 
     var groupCards: [GroupCardModel] {
@@ -919,7 +942,25 @@ final class MainViewModel {
     }
 
     func updateCurrentGroup() async {
-        await updateAll()
+        guard let sourceId = selectedSourceId else {
+            detailText = "Update failed: no source selected."
+            showToast(style: .error, message: "Update failed: no group selected.")
+            return
+        }
+
+        isUpdatingCurrentGroup = true
+        defer { isUpdatingCurrentGroup = false }
+
+        do {
+            _ = try await bridgeClient.updateSources([sourceId])
+            await refreshList()
+            await runDoctor()
+            await selectSource(sourceId)
+            showToast(style: .success, message: "Updated \(sourceId).")
+        } catch {
+            detailText = "Update failed: \(error.localizedDescription)"
+            showToast(style: .error, message: "Update failed: \(error.localizedDescription)")
+        }
     }
 
     func addSource() async {
@@ -1456,6 +1497,11 @@ final class MainViewModel {
         let inspectedLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
         let groupPath = preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
+        let gitHubRepoContext = gitHubRepoContext(
+            locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
+            lockPayload: lockPayload
+        )
+        let projectedNamesByLeafId = projectionNameMap(for: sourceId)
 
         let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId -> DetailSkill? in
             guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
@@ -1470,21 +1516,27 @@ final class MainViewModel {
                 .map { parsedDocument(path: $0).body }
                 .flatMap(\.nonEmpty)
                 ?? leaf.description
-            let metadata = skillFilePath.flatMap { parsedDocument(path: $0).metadata } ?? []
-            let metadataName = metadata.first(where: { $0.key.lowercased() == "name" })?.value.nonEmpty
-            let version = metadata.first(where: { $0.key.lowercased() == "version" })?.value
+            let parsedMetadata = skillFilePath.map { parsedDocument(path: $0) }
+            let metadata = parsedMetadata?.metadata ?? []
+            let metadataName = parsedMetadata?.frontMatter?.name?.nonEmpty
+            let version = parsedMetadata?.frontMatter?.version
             let documents = skillFilePath.flatMap { documentTabs(for: $0) }
+                .map { tabs in
+                    enrichDocumentTabs(tabs, groupPath: groupPath, gitHubRepoContext: gitHubRepoContext)
+                }
                 ?? [
                     DocumentTab(
                         id: "inline-skill-md",
                         title: "SKILL.md",
                         path: "SKILL.md",
-                        metadata: [],
+                        metadata: metadata,
                         content: documentContent,
-                        renderCacheKey: "inline-skill-md:\(documentContent.hashValue)"
+                        renderCacheKey: "inline-skill-md:\(documentContent.hashValue)",
+                        externalURL: nil
                     )
                 ]
             let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
+            let projectedName = projectedNamesByLeafId[leaf.id]
             let title = metadataName
                 ?? folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
                 ?? (leafPayload["title"] as? String)?.nonEmpty
@@ -1494,19 +1546,17 @@ final class MainViewModel {
                 folderPath.flatMap { relativePath(from: basePath, to: $0) }
             } ?? leafRelativePath
 
-            let filteredMetadata = metadata.filter { metadata in
-                let lowered = metadata.key.lowercased()
-                return lowered != "name" && lowered != "enabled" && lowered != "description"
-            }
-
             return DetailSkill(
                 id: leaf.id,
                 title: title,
                 summary: leaf.description.isEmpty ? linkName : leaf.description,
                 version: version,
                 folderPath: folderPath,
-                relativeFolderPath: relativeFolderPath,
-                metadata: filteredMetadata,
+                relativeFolderPath: projectedRelativeFolderPath(
+                    relativeFolderPath,
+                    projectedName: projectedName,
+                    fallbackName: linkName
+                ),
                 documents: documents,
                 detailLines: [
                     leafRelativePath,
@@ -1577,7 +1627,11 @@ final class MainViewModel {
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
-            groupDocuments: groupDocumentTabs(groupPath: groupPath, fileTree: fileTree),
+            groupDocuments: groupDocumentTabs(
+                groupPath: groupPath,
+                fileTree: fileTree,
+                gitHubRepoContext: gitHubRepoContext
+            ),
             targets: targets,
             skills: skills
         )
@@ -1745,46 +1799,72 @@ final class MainViewModel {
             path: path,
             metadata: parsed.metadata,
             content: parsed.body,
-            renderCacheKey: "\(path):\(rawContent.hashValue)"
+            renderCacheKey: "\(path):\(rawContent.hashValue)",
+            externalURL: nil
         )
     }
 
     private func parseDocument(_ content: String) -> ParsedDocument {
         let lines = content.components(separatedBy: .newlines)
         guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
-            return ParsedDocument(metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
+            return ParsedDocument(frontMatter: nil, metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
         guard let closingIndex = lines.dropFirst().firstIndex(where: {
             $0.trimmingCharacters(in: .whitespacesAndNewlines) == "---"
         }) else {
-            return ParsedDocument(metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
+            return ParsedDocument(frontMatter: nil, metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
-        let metadata = parseFrontmatterEntries(lines: Array(lines[1..<closingIndex]))
+        let frontMatterText = Array(lines[1..<closingIndex]).joined(separator: "\n")
+        let metadata = parseFrontmatterEntries(frontMatterText)
+        let frontMatter = parseFrontMatter(frontMatterText)
         let bodyLines = closingIndex + 1 < lines.count ? Array(lines[(closingIndex + 1)...]) : []
         let body = bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        return ParsedDocument(metadata: metadata, body: body)
+        return ParsedDocument(frontMatter: frontMatter, metadata: metadata, body: body)
     }
 
-    private func parseFrontmatterEntries(lines: [String]) -> [MetadataEntry] {
-        var entries: [MetadataEntry] = []
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let separator = trimmed.firstIndex(of: ":") else {
-                continue
-            }
-            let key = String(trimmed[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let value = String(trimmed[trimmed.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !key.isEmpty, !value.isEmpty else {
-                continue
-            }
-            entries.append(MetadataEntry(id: "\(key):\(value)", key: key, value: value))
+    private func parseFrontMatter(_ frontMatterText: String) -> SkillFrontMatter? {
+        try? YAMLDecoder().decode(SkillFrontMatter.self, from: frontMatterText)
+    }
+
+    private func parseFrontmatterEntries(_ frontMatterText: String) -> [MetadataEntry] {
+        guard let dictionary = (try? Yams.load(yaml: frontMatterText)) as? [String: Any] else {
+            return []
         }
-        return entries
+
+        return dictionary.keys.sorted().compactMap { key in
+            guard let value = dictionary[key] else {
+                return nil
+            }
+
+            let renderedValue = stringifyMetadataValue(value)
+            return MetadataEntry(id: "\(key):\(renderedValue)", key: key, value: renderedValue)
+        }
     }
 
-    private func groupDocumentTabs(groupPath: String?, fileTree: [FileTreeLine]) -> [DocumentTab] {
+    private func stringifyMetadataValue(_ value: Any) -> String {
+        switch value {
+        case let string as String:
+            return string
+        case let number as NSNumber:
+            return number.stringValue
+        case let values as [Any]:
+            return values.map(stringifyMetadataValue).joined(separator: ", ")
+        case let dictionary as [String: Any]:
+            return dictionary.keys.sorted()
+                .map { "\($0): \(stringifyMetadataValue(dictionary[$0] as Any))" }
+                .joined(separator: ", ")
+        default:
+            return String(describing: value)
+        }
+    }
+
+    private func groupDocumentTabs(
+        groupPath: String?,
+        fileTree: [FileTreeLine],
+        gitHubRepoContext: GitHubRepoContext?
+    ) -> [DocumentTab] {
         var tabs: [DocumentTab] = [
             DocumentTab(
                 id: "group:filetree",
@@ -1792,7 +1872,8 @@ final class MainViewModel {
                 path: groupPath ?? ".",
                 metadata: [],
                 content: renderFileTree(fileTree),
-                renderCacheKey: "group:filetree:\(groupPath ?? ".")"
+                renderCacheKey: "group:filetree:\(groupPath ?? ".")",
+                externalURL: nil
             )
         ]
 
@@ -1817,7 +1898,7 @@ final class MainViewModel {
             )
         }
 
-        return tabs
+        return enrichDocumentTabs(tabs, groupPath: groupPath, gitHubRepoContext: gitHubRepoContext)
     }
 
     private func compareRootDocumentNames(_ lhs: String, _ rhs: String) -> Bool {
@@ -1888,6 +1969,25 @@ final class MainViewModel {
         }
         let suffix = String(standardizedTarget.dropFirst(standardizedBase.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return suffix.isEmpty ? "." : suffix
+    }
+
+    private func projectedRelativeFolderPath(
+        _ relativeFolderPath: String?,
+        projectedName: String?,
+        fallbackName: String
+    ) -> String? {
+        guard let relativeFolderPath, let projectedName, projectedName != fallbackName else {
+            return relativeFolderPath
+        }
+
+        let trimmed = relativeFolderPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !trimmed.isEmpty, trimmed != "." else {
+            return projectedName
+        }
+
+        var components = trimmed.split(separator: "/").map(String.init)
+        components[components.count - 1] = projectedName
+        return components.joined(separator: "/")
     }
 
     private func buildFileTreeLines(groupPath: String?, skills: [DetailSkill]) -> [FileTreeLine] {
@@ -1970,6 +2070,87 @@ final class MainViewModel {
 
     private func renderFileTree(_ lines: [FileTreeLine]) -> String {
         lines.map { "\($0.prefix)\($0.title)" }.joined(separator: "\n")
+    }
+
+    private func enrichDocumentTabs(
+        _ tabs: [DocumentTab],
+        groupPath: String?,
+        gitHubRepoContext: GitHubRepoContext?
+    ) -> [DocumentTab] {
+        tabs.map { document in
+            DocumentTab(
+                id: document.id,
+                title: document.title,
+                path: document.path,
+                metadata: document.metadata,
+                content: document.content,
+                renderCacheKey: document.renderCacheKey,
+                externalURL: gitHubDocumentURL(
+                    path: document.path,
+                    groupPath: groupPath,
+                    gitHubRepoContext: gitHubRepoContext
+                )
+            )
+        }
+    }
+
+    private func gitHubRepoContext(locator: String, lockPayload: [String: Any]) -> GitHubRepoContext? {
+        guard let repo = parseGitHubRepo(locator) else {
+            return nil
+        }
+        let revision = (lockPayload["commitSha"] as? String)?.nonEmpty
+            ?? (lockPayload["resolvedVersion"] as? String)?.nonEmpty
+            ?? "HEAD"
+        return GitHubRepoContext(owner: repo.owner, repo: repo.repo, revision: revision)
+    }
+
+    private func parseGitHubRepo(_ locator: String) -> (owner: String, repo: String)? {
+        let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        let patterns = [
+            #"^https?://github\.com/([^/\s]+)/([^/\s]+?)(?:\.git)?(?:/)?$"#,
+            #"^git@github\.com:([^/\s]+)/([^/\s]+?)(?:\.git)?$"#
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                continue
+            }
+            let nsRange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+            guard let match = regex.firstMatch(in: trimmed, options: [], range: nsRange),
+                  match.numberOfRanges == 3,
+                  let ownerRange = Range(match.range(at: 1), in: trimmed),
+                  let repoRange = Range(match.range(at: 2), in: trimmed)
+            else {
+                continue
+            }
+            return (String(trimmed[ownerRange]), String(trimmed[repoRange]))
+        }
+
+        return nil
+    }
+
+    private func gitHubDocumentURL(
+        path: String,
+        groupPath: String?,
+        gitHubRepoContext: GitHubRepoContext?
+    ) -> String? {
+        guard let groupPath,
+              let gitHubRepoContext,
+              let relativePath = relativePath(from: groupPath, to: path),
+              relativePath != "."
+        else {
+            return nil
+        }
+
+        let normalizedPath = relativePath
+            .split(separator: "/")
+            .map(String.init)
+            .joined(separator: "/")
+        return "https://github.com/\(gitHubRepoContext.owner)/\(gitHubRepoContext.repo)/blob/\(gitHubRepoContext.revision)/\(normalizedPath)"
     }
 
     private func displayOriginLabel(from locator: String) -> String {

@@ -82,11 +82,12 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.sourceFacts.first, "2026-03-25T12:00:00Z")
         XCTAssertTrue(detail?.deploymentFacts.first?.contains("Claude Code") == true)
         XCTAssertEqual(detail?.groupDocuments.map(\.title), ["FILETREE", "README.md", "README.zh.md", "CHANGELOG.md"])
+        XCTAssertEqual(detail?.groupDocuments.first(where: { $0.title == "README.md" })?.externalURL, "https://github.com/acme/alpha-hub/blob/HEAD/README.md")
         XCTAssertEqual(detail?.fileTree.first?.title, "alpha")
         XCTAssertTrue(detail?.fileTree.dropFirst().contains(where: { $0.prefix.contains("|--") || $0.prefix.contains("`--") }) == true)
         XCTAssertFalse(detail?.fileTree.contains(where: { $0.title == "SKILL.md" }) == true)
         XCTAssertTrue(detail?.skills.first?.detailLines.contains(where: { $0.contains("SKILL.md") }) == true)
-        XCTAssertEqual(detail?.skills.first?.documents.first?.metadata.map(\.key), ["name", "description"])
+        XCTAssertEqual(detail?.skills.first?.documents.first?.metadata.map(\.key), ["description", "name"])
         XCTAssertFalse(detail?.skills.first?.documents.first?.content.contains("---") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("# browse") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("Final verification line.") == true)
@@ -125,6 +126,30 @@ final class MainViewModelSelectionTests: XCTestCase {
         let detail = model.detailViewData(for: "alpha")
 
         XCTAssertEqual(detail?.skills.first?.title, "Browser Metadata Name")
+    }
+
+    func testFileTreeUsesProjectedNameWhenSkillWouldBeDeduped() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["beta"]?.leafs = [
+            TestFixture.LeafState(
+                id: "beta-a",
+                linkName: "browse",
+                name: "browse",
+                description: "Browse elsewhere.",
+                metadataWarnings: []
+            )
+        ]
+        state.sources["beta"]?.enabledTargets = ["claude-code"]
+        state.sources["beta"]?.targetLeafIdsByTarget = ["claude-code": ["beta-a"]]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        await model.selectSource("beta")
+
+        let detail = model.detailViewData(for: "beta")
+
+        XCTAssertTrue(detail?.fileTree.contains(where: { $0.title == "BetaHub-browse" }) == true)
     }
 }
 

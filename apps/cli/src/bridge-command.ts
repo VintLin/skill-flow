@@ -84,7 +84,7 @@ export async function executeBridgeRequest(
       }
       case "add": {
         const payload = expectObjectPayload(request.payload, "add");
-        const locator = expectString(payload, "locator", "add");
+        const locator = expectString(payload.locator, "locator", "add");
         const options = expectOptionalObject(payload.options, "add.options");
         const applyNow = payload.applyNow === true;
         const result = applyNow

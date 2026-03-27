@@ -11,6 +11,7 @@ struct MainView: View {
     private let detailToggleHeight: CGFloat = 34
     private let detailAgentItemHeight: CGFloat = 34
     private let detailAgentIconSize: CGFloat = 20
+    private let topBarTitleSize: CGFloat = 17
 
     private struct RecommendedImport: Identifiable {
         let id: String
@@ -26,6 +27,13 @@ struct MainView: View {
     @State private var detailHoveredItemIdByGroup: [String: String] = [:]
     @State private var detailDocumentTabIdByGroup: [String: String] = [:]
     @State private var detailDocumentTabIdBySkill: [String: String] = [:]
+    @State private var pendingDetailSkillIdByGroup: [String: String] = [:]
+    @State private var pendingDetailDocumentIdByGroup: [String: String] = [:]
+    @State private var pendingDetailDocumentIdBySkill: [String: String] = [:]
+    @State private var detailSkillSelectionTokenByGroup: [String: UInt64] = [:]
+    @State private var detailDocumentSelectionTokenByGroup: [String: UInt64] = [:]
+    @State private var detailDocumentSelectionTokenBySkill: [String: UInt64] = [:]
+    @State private var updateButtonRotation: Double = 0
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
 
@@ -97,6 +105,17 @@ struct MainView: View {
                 }
             }
         }
+        .onChange(of: viewModel.isUpdatingCurrentGroup) { _, isUpdating in
+            if isUpdating {
+                withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
+                    updateButtonRotation = 360
+                }
+            } else {
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    updateButtonRotation = 0
+                }
+            }
+        }
     }
 
     private func topBar(layout: LayoutMetrics) -> some View {
@@ -151,7 +170,7 @@ struct MainView: View {
                 .frame(width: 22, height: 22)
 
                 Text(currentPageTitle)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: topBarTitleSize, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
             }
         }
@@ -163,27 +182,34 @@ struct MainView: View {
 
     private var headerLogoRow: some View {
         HStack(spacing: 8) {
-            if let icon = MenuBarIcon.image() {
-                Image(nsImage: icon)
-                    .renderingMode(.template)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 30, height: 30)
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-            } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(AppTheme.textPrimary(for: theme))
-                    .frame(width: 30, height: 30)
-                    .overlay(
-                        Text("SF")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(AppTheme.pageBackground(for: theme))
-                    )
+            Button {
+                openExternalURL("https://github.com/VintLin/skill-flow")
+            } label: {
+                Group {
+                    if let icon = MenuBarIcon.image() {
+                        Image(nsImage: icon)
+                            .renderingMode(.template)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 30, height: 30)
+                            .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    } else {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.textPrimary(for: theme))
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                Text("SF")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(AppTheme.pageBackground(for: theme))
+                            )
+                    }
+                }
             }
+            .buttonStyle(.plain)
 
             Text("Skill Flow")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: topBarTitleSize, weight: .semibold))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
         }
     }
@@ -246,11 +272,19 @@ struct MainView: View {
     }
 
     private func configPage(layout: LayoutMetrics) -> some View {
-        ScrollView {
-            gridSection(layout: layout)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
+        Group {
+            if groupCards.isEmpty {
+                gridSection(layout: layout)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                ScrollView {
+                    gridSection(layout: layout)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 24)
+                }
+            }
         }
     }
 
@@ -270,7 +304,8 @@ struct MainView: View {
                 } else {
                     emptyState(
                         title: "No groups matched",
-                        subtitle: "Try a broader search query."
+                        subtitle: "Try a broader search query.",
+                        chromed: false
                     )
                 }
             } else {
@@ -404,6 +439,7 @@ struct MainView: View {
     ) -> some View {
         let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
         let showingGroupOverview = isShowingGroupOverview(groupId)
+        let isSkillLoading = pendingDetailSkillIdByGroup[groupId] != nil
 
         return VStack(alignment: .leading, spacing: 0) {
             if showingGroupOverview {
@@ -416,6 +452,8 @@ struct MainView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if showingGroupOverview {
                         detailGroupOverview(groupId: groupId, detail: detail)
+                    } else if isSkillLoading {
+                        detailSkillLoadingPlaceholder()
                     } else if let selectedSkill {
                         detailSkillOverview(skill: selectedSkill)
                     } else {
@@ -485,7 +523,9 @@ struct MainView: View {
     }
 
     private func detailSkillOverview(skill: MainViewModel.DetailSkill) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let isDocumentLoading = pendingDetailDocumentIdBySkill[skill.id] != nil
+
+        return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Skill Description")
                     .font(.system(size: 10, weight: .semibold))
@@ -501,29 +541,6 @@ struct MainView: View {
                 }
             }
 
-            if !skill.metadata.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Skill Metadata")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .textCase(.uppercase)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(skill.metadata) { entry in
-                                Text("\(entry.key): \(entry.value)")
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                    .padding(.horizontal, 10)
-                                    .frame(height: 30)
-                                    .background(AppTheme.toolbarButtonBackground(for: theme))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
-                        }
-                    }
-                }
-            }
-
             VStack(alignment: .leading, spacing: 10) {
                 Text("Documents")
                     .font(.system(size: 10, weight: .semibold))
@@ -533,24 +550,21 @@ struct MainView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(skill.documents) { document in
-                            Button {
-                                detailDocumentTabIdBySkill[skill.id] = document.id
-                            } label: {
-                                Text(document.title)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .padding(.horizontal, 10)
-                                    .frame(height: 30)
-                                    .background(selectedDocument(for: skill)?.id == document.id ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.documentBlock(for: theme))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            documentTabChip(
+                                title: document.title,
+                                isSelected: selectedDocument(for: skill)?.id == document.id,
+                                externalURL: document.externalURL
+                            ) {
+                                scheduleSkillDocumentSelection(skillId: skill.id, documentId: document.id)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
 
                 detailContentCard {
-                    if let document = selectedDocument(for: skill) {
+                    if isDocumentLoading {
+                        detailDocumentLoadingPlaceholder()
+                    } else if let document = selectedDocument(for: skill) {
                         detailDocumentContent(document: document)
                     } else {
                         Text(skill.documentContent)
@@ -593,7 +607,9 @@ struct MainView: View {
     }
 
     private func detailGroupHeader(detail: MainViewModel.DetailViewData?, fallbackGroupId: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let isUpdating = viewModel.isUpdatingCurrentGroup
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
                 Text("\(detail?.title ?? fallbackGroupId) by \(detail?.author ?? "@unknown")")
                     .font(.system(size: 15, weight: .semibold))
@@ -604,13 +620,36 @@ struct MainView: View {
                 Button {
                     Task { await viewModel.updateCurrentGroup() }
                 } label: {
-                    actionIcon(.update, size: 14)
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .frame(width: 32, height: 32)
+                    Group {
+                        if isUpdating {
+                            actionIcon(
+                                .update,
+                                size: 14,
+                                foreground: AppTheme.updateButtonActiveNSColor(for: theme)
+                            )
+                        } else {
+                            actionIcon(.update, size: 14)
+                                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        }
+                    }
+                    .rotationEffect(.degrees(updateButtonRotation))
+                    .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
-                .background(AppTheme.toolbarButtonBackground(for: theme))
+                .background(
+                    isUpdating
+                        ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.24 : 0.18)
+                        : AppTheme.toolbarButtonBackground(for: theme)
+                )
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(
+                            isUpdating ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : AppTheme.cardBorder(for: theme),
+                            lineWidth: 0.5
+                        )
+                }
+                .animation(.easeInOut(duration: 0.24), value: isUpdating)
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -710,6 +749,7 @@ struct MainView: View {
 
     private func detailSkillListRow(groupId: String, skill: MainViewModel.DetailSkill) -> some View {
         let versionText = skill.version.map(normalizedVersionText)
+        let isPending = pendingDetailSkillIdByGroup[groupId] == skill.id
 
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
@@ -739,13 +779,10 @@ struct MainView: View {
             .foregroundStyle(AppTheme.selectionControlText(skill.isEnabled ? .full : .empty, for: theme))
         }
         .frame(height: detailSkillRowHeight)
+        .opacity(isPending ? 0.72 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
-            detailSkillIdByGroup[groupId] = skill.id
-            detailShowsGroupOverviewByGroup[groupId] = false
-            if detailDocumentTabIdBySkill[skill.id] == nil {
-                detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
-            }
+            scheduleSkillSelection(groupId: groupId, skill: skill)
         }
         .onHover { isHovering in
             detailHoveredItemIdByGroup[groupId] = isHovering ? detailSkillItemId(skill.id) : nil
@@ -753,7 +790,9 @@ struct MainView: View {
     }
 
     private func detailGroupDocuments(_ detail: MainViewModel.DetailViewData, groupId: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let isDocumentLoading = pendingDetailDocumentIdByGroup[groupId] != nil
+
+        return VStack(alignment: .leading, spacing: 10) {
             Text("Documents")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
@@ -762,23 +801,22 @@ struct MainView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(detail.groupDocuments) { document in
-                        Button {
-                            detailDocumentTabIdByGroup[groupId] = document.id
-                        } label: {
-                                Text(document.title)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .padding(.horizontal, 10)
-                                    .frame(height: 30)
-                                    .background(selectedGroupDocument(for: detail, groupId: groupId)?.id == document.id ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.documentBlock(for: theme))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        documentTabChip(
+                            title: document.title,
+                            isSelected: selectedGroupDocument(for: detail, groupId: groupId)?.id == document.id,
+                            externalURL: document.externalURL
+                        ) {
+                            scheduleGroupDocumentSelection(groupId: groupId, documentId: document.id)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
 
-            if let selectedDocument = selectedGroupDocument(for: detail, groupId: groupId) {
+            if isDocumentLoading {
+                detailContentCard {
+                    detailDocumentLoadingPlaceholder()
+                }
+            } else if let selectedDocument = selectedGroupDocument(for: detail, groupId: groupId) {
                 if selectedDocument.id == detail.groupDocuments.first?.id {
                     detailFileTreeCard(detail.fileTree)
                 } else {
@@ -888,18 +926,23 @@ struct MainView: View {
     private func detailDocumentContent(document: MainViewModel.DocumentTab) -> some View {
         if document.isMarkdown {
             MarkdownDocumentView(document: document, theme: theme)
-                .frame(maxWidth: AppTheme.detailMarkdownWidth, alignment: .leading)
+                .equatable()
+                .id(document.renderCacheKey)
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Text(document.content)
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .id(document.renderCacheKey)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
         }
     }
 
     private func selectedDocument(for skill: MainViewModel.DetailSkill) -> MainViewModel.DocumentTab? {
-        let selectedId = detailDocumentTabIdBySkill[skill.id] ?? skill.documents.first?.id
+        let selectedId = pendingDetailDocumentIdBySkill[skill.id]
+            ?? detailDocumentTabIdBySkill[skill.id]
+            ?? skill.documents.first?.id
         return skill.documents.first(where: { $0.id == selectedId }) ?? skill.documents.first
     }
 
@@ -907,7 +950,9 @@ struct MainView: View {
         for detail: MainViewModel.DetailViewData,
         groupId: String
     ) -> MainViewModel.DocumentTab? {
-        let selectedId = detailDocumentTabIdByGroup[groupId] ?? detail.groupDocuments.first?.id
+        let selectedId = pendingDetailDocumentIdByGroup[groupId]
+            ?? detailDocumentTabIdByGroup[groupId]
+            ?? detail.groupDocuments.first?.id
         return detail.groupDocuments.first(where: { $0.id == selectedId }) ?? detail.groupDocuments.first
     }
 
@@ -964,6 +1009,13 @@ struct MainView: View {
 
     private func openPath(_ path: String) {
         let url = URL(fileURLWithPath: path)
+        NSWorkspace.shared.open(url)
+    }
+
+    private func openExternalURL(_ rawValue: String) {
+        guard let url = URL(string: rawValue) else {
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 
@@ -1279,7 +1331,7 @@ struct MainView: View {
         }
     }
 
-    private func emptyState(title: String, subtitle: String) -> some View {
+    private func emptyState(title: String, subtitle: String, chromed: Bool = true) -> some View {
         VStack(spacing: 6) {
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
@@ -1289,9 +1341,7 @@ struct MainView: View {
                 .foregroundStyle(AppTheme.textMuted(for: theme))
         }
         .frame(maxWidth: .infinity, minHeight: 200)
-        .background(AppTheme.toolbarButtonBackground(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
+        .modifier(EmptyStateChrome(theme: theme, enabled: chromed))
     }
 
     private func gridColumns(for layout: LayoutMetrics) -> [GridItem] {
@@ -1414,11 +1464,103 @@ struct MainView: View {
 
     private func selectedDetailSkill(for groupId: String, detail: MainViewModel.DetailViewData?) -> MainViewModel.DetailSkill? {
         guard let detail else { return nil }
-        let selectedId = detailSkillIdByGroup[groupId] ?? preferredDetailSkillId(for: detail)
+        let selectedId = pendingDetailSkillIdByGroup[groupId]
+            ?? detailSkillIdByGroup[groupId]
+            ?? preferredDetailSkillId(for: detail)
         if detailSkillIdByGroup[groupId] == nil, let selectedId {
             detailSkillIdByGroup[groupId] = selectedId
         }
         return detail.skills.first(where: { $0.id == selectedId }) ?? detail.skills.first
+    }
+
+    private func scheduleSkillSelection(groupId: String, skill: MainViewModel.DetailSkill) {
+        pendingDetailSkillIdByGroup[groupId] = skill.id
+        let token = nextSelectionToken(detailSkillSelectionTokenByGroup[groupId])
+        detailSkillSelectionTokenByGroup[groupId] = token
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(40))
+            guard detailSkillSelectionTokenByGroup[groupId] == token else { return }
+            detailSkillIdByGroup[groupId] = skill.id
+            detailShowsGroupOverviewByGroup[groupId] = false
+            if detailDocumentTabIdBySkill[skill.id] == nil {
+                detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
+            }
+            pendingDetailSkillIdByGroup[groupId] = nil
+        }
+    }
+
+    private func scheduleSkillDocumentSelection(skillId: String, documentId: String) {
+        pendingDetailDocumentIdBySkill[skillId] = documentId
+        let token = nextSelectionToken(detailDocumentSelectionTokenBySkill[skillId])
+        detailDocumentSelectionTokenBySkill[skillId] = token
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(40))
+            guard detailDocumentSelectionTokenBySkill[skillId] == token else { return }
+            detailDocumentTabIdBySkill[skillId] = documentId
+            pendingDetailDocumentIdBySkill[skillId] = nil
+        }
+    }
+
+    private func scheduleGroupDocumentSelection(groupId: String, documentId: String) {
+        pendingDetailDocumentIdByGroup[groupId] = documentId
+        let token = nextSelectionToken(detailDocumentSelectionTokenByGroup[groupId])
+        detailDocumentSelectionTokenByGroup[groupId] = token
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(40))
+            guard detailDocumentSelectionTokenByGroup[groupId] == token else { return }
+            detailDocumentTabIdByGroup[groupId] = documentId
+            pendingDetailDocumentIdByGroup[groupId] = nil
+        }
+    }
+
+    private func nextSelectionToken(_ current: UInt64?) -> UInt64 {
+        (current ?? 0) &+ 1
+    }
+
+    private func detailSkillLoadingPlaceholder() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            detailLoadingBlock(width: 160)
+            detailContentCard {
+                detailDocumentLoadingPlaceholder(lineCount: 6)
+            }
+            detailLoadingBlock(width: 110)
+            detailContentCard {
+                detailDocumentLoadingPlaceholder(lineCount: 14)
+            }
+        }
+    }
+
+    private func detailDocumentLoadingPlaceholder(lineCount: Int = 10) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading document...")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+            }
+
+            ForEach(0..<lineCount, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(AppTheme.toolbarButtonBackground(for: theme))
+                    .frame(width: placeholderLineWidth(for: index), height: 10)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func detailLoadingBlock(width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 5)
+            .fill(AppTheme.toolbarButtonBackground(for: theme))
+            .frame(width: width, height: 10)
+    }
+
+    private func placeholderLineWidth(for index: Int) -> CGFloat {
+        let widths: [CGFloat] = [520, 460, 560, 430, 540, 390]
+        return widths[index % widths.count]
     }
 
     private func detailToggleButton(selection: SelectionState, action: @escaping () -> Void) -> some View {
@@ -1449,9 +1591,52 @@ struct MainView: View {
         AppTheme.selectionControlText(selection, for: theme)
     }
 
+    private func documentTabChip(
+        title: String,
+        isSelected: Bool,
+        externalURL: String?,
+        onSelect: @escaping () -> Void
+    ) -> some View {
+        ZStack(alignment: .trailing) {
+            Button(action: onSelect) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 10)
+                    .padding(.trailing, externalURL == nil ? 10 : 30)
+                    .frame(height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if let externalURL {
+                Button {
+                    openExternalURL(externalURL)
+                } label: {
+                    actionIcon(.externalLink, size: 10)
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 6)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.documentBlock(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
     @ViewBuilder
-    private func actionIcon(_ icon: ActionIcon, size: CGFloat) -> some View {
-        if let image = icon.image(size: size) {
+    private func actionIcon(_ icon: ActionIcon, size: CGFloat, foreground: NSColor? = nil) -> some View {
+        if let foreground, let image = icon.symbolImage(size: size, foreground: foreground) {
+            Image(nsImage: image)
+                .renderingMode(.original)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else if let image = icon.image(size: size) {
             Image(nsImage: image)
                 .renderingMode(.template)
                 .resizable()
@@ -1513,6 +1698,23 @@ private struct LayoutMetrics {
         let spacing = CGFloat(max(gridColumnCount - 1, 0)) * 14
         let available = max(304, width - 32 - spacing)
         return min(1260, max(304 * columns + spacing, available))
+    }
+}
+
+private struct EmptyStateChrome: ViewModifier {
+    let theme: DesktopThemeMode
+    let enabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .background(AppTheme.toolbarButtonBackground(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .shadow(color: AppTheme.softShadow(for: theme), radius: 10, x: 0, y: 6)
+        } else {
+            content
+        }
     }
 }
 
@@ -1738,9 +1940,6 @@ enum AppTheme {
         neutralCardColor(.color3, for: mode)
     }
 
-    private static let detailDefaultWindowWidth: CGFloat = 980
-    static let detailMarkdownWidth: CGFloat = floor(detailDefaultWindowWidth * 0.694)
-
     static func cardBorder(for mode: DesktopThemeMode) -> Color {
         neutralCardColor(.color3, for: mode)
     }
@@ -1764,6 +1963,24 @@ enum AppTheme {
             return statusWarning(for: mode)
         case .full:
             return statusSuccess(for: mode)
+        }
+    }
+
+    static func updateButtonActiveIcon(for mode: DesktopThemeMode) -> Color {
+        switch mode {
+        case .light:
+            return Color.white.opacity(0.98)
+        case .dark:
+            return Color.white.opacity(0.96)
+        }
+    }
+
+    static func updateButtonActiveNSColor(for mode: DesktopThemeMode) -> NSColor {
+        switch mode {
+        case .light:
+            return NSColor(calibratedWhite: 1.0, alpha: 0.98)
+        case .dark:
+            return NSColor(calibratedWhite: 1.0, alpha: 0.96)
         }
     }
 

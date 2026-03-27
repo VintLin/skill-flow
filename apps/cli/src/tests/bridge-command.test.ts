@@ -53,6 +53,25 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.ok).toBe(true);
   });
 
+  test("accepts valid add payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "add",
+      payload: {
+        locator: repoPath,
+        applyNow: false,
+      },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("sourceId");
+  });
+
   test("accepts valid apply payload with empty skill selection", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),

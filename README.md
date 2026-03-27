@@ -201,7 +201,7 @@ Workspace layout:
 - `packages/tui`: Ink UI modules
 - `packages/shared-types`: bridge protocol contract
 - `packages/bridge`: desktop process bridge client
-- `apps/desktop-mac`: SwiftUI desktop shell (macOS 14+)
+- `apps/desktop-mac`: SwiftUI desktop shell (macOS 15+)
 
 Machine bridge command (for desktop/helper use):
 

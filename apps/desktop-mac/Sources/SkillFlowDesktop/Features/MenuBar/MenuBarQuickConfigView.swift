@@ -11,6 +11,7 @@ struct MenuBarQuickConfigView: View {
     @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
     @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
 
+    private let hoverExpandDelay: Duration = .milliseconds(500)
     private var theme: DesktopThemeMode {
         isDark ? .dark : .light
     }
@@ -202,7 +203,7 @@ struct MenuBarQuickConfigView: View {
     private func scheduleHoverExpansion(for groupId: String) {
         hoverExpandTask?.cancel()
         hoverExpandTask = Task {
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: hoverExpandDelay)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.18)) {
