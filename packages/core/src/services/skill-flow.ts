@@ -949,22 +949,11 @@ export class SkillFlowApp {
       cachedSnapshot?: UnifiedSourceSnapshot;
     },
   ): Promise<UnifiedSourceSnapshot> {
-    const [officialGroups, trendingGroups, hotGroups, auditedGroups] = await Promise.all([
-      this.resolveImportRecommendationFeed("official"),
-      this.resolveImportRecommendationFeed("trending"),
-      this.resolveImportRecommendationFeed("hot"),
-      this.resolveImportRecommendationFeed("audits"),
-    ]);
-    const trust: UnifiedSourceTrust = {
-      ...(officialGroups.includes(canonicalRepo) ? { official: true } : {}),
-      ...(trendingGroups.includes(canonicalRepo) ? { trending: true } : {}),
-      ...(hotGroups.includes(canonicalRepo) ? { hot: true } : {}),
-      ...(auditedGroups.includes(canonicalRepo) ? { audited: true } : {}),
-    };
+    const trust = await this.resolveCachedImportSourceTrust(canonicalRepo);
 
     const snapshot = await fetchSkillsDirectorySourceSnapshot(canonicalRepo, {
       ...(options?.enrichSkillIds ? { enrichSkillIds: options.enrichSkillIds } : {}),
-      trust,
+      ...(this.hasUnifiedSourceTrust(trust) ? { trust } : {}),
     });
     const mergedSnapshot = options?.cachedSnapshot
       ? this.mergeSourceSnapshots(options.cachedSnapshot, snapshot)
@@ -976,6 +965,35 @@ export class SkillFlowApp {
       data: mergedSnapshot,
     });
     return mergedSnapshot;
+  }
+
+  private async resolveCachedImportSourceTrust(
+    canonicalRepo: string,
+  ): Promise<UnifiedSourceTrust> {
+    const recommendations = (await this.store.readImportDataCache()).recommendations;
+    const trust: UnifiedSourceTrust = {};
+
+    for (const feedId of ["official", "trending", "hot", "audits"] as const) {
+      const cachedFeed = recommendations[feedId];
+      if (cachedFeed && !isImportDataCacheExpired(cachedFeed)) {
+        if (cachedFeed.groups.includes(canonicalRepo)) {
+          if (feedId === "official") {
+            trust.official = true;
+          } else if (feedId === "trending") {
+            trust.trending = true;
+          } else if (feedId === "hot") {
+            trust.hot = true;
+          } else if (feedId === "audits") {
+            trust.audited = true;
+          }
+        }
+        continue;
+      }
+
+      this.refreshImportRecommendationFeedInBackground(feedId);
+    }
+
+    return trust;
   }
 
   private snapshotNeedsSkillRefresh(
@@ -1037,6 +1055,13 @@ export class SkillFlowApp {
       return canonicalRepo;
     }
     return `${canonicalRepo}::${normalizedSkillIds.join(",")}`;
+  }
+
+  private hasUnifiedSourceTrust(trust: UnifiedSourceTrust): boolean {
+    return trust.official === true ||
+      trust.trending === true ||
+      trust.hot === true ||
+      trust.audited === true;
   }
 
   private async mapConcurrent<T, R>(
