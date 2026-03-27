@@ -20,6 +20,20 @@ struct MainView: View {
         let title: String
         let locator: String
         let summary: String
+        let aliases: [String]
+        let skills: [ImportSkill]
+        let targets: [String]
+    }
+
+    private struct ImportSkill: Identifiable {
+        let id: String
+        let title: String
+        let summary: String
+    }
+
+    private struct ImportDraftState {
+        let selectedSkillIds: [String]
+        let enabledTargetIds: [String]
     }
 
     @Bindable var viewModel: MainViewModel
@@ -35,6 +49,11 @@ struct MainView: View {
     @State private var detailSkillSelectionTokenByGroup: [String: UInt64] = [:]
     @State private var detailDocumentSelectionTokenByGroup: [String: UInt64] = [:]
     @State private var detailDocumentSelectionTokenBySkill: [String: UInt64] = [:]
+    @State private var importSearchText: String = ""
+    @State private var importSubmittedQuery: String = ""
+    @State private var importPlaceholderIndex: Int = 0
+    @State private var importDraftsByItemId: [String: ImportDraftState] = [:]
+    @State private var importFeedbackMessage: String?
     @State private var updateButtonRotation: Double = 0
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
@@ -98,6 +117,16 @@ struct MainView: View {
             let toastId = toast.id
             try? await Task.sleep(for: .seconds(2))
             viewModel.dismissToast(id: toastId)
+        }
+        .task(id: viewModel.currentPage) {
+            guard case .importPage = viewModel.currentPage else { return }
+            while case .importPage = viewModel.currentPage {
+                try? await Task.sleep(for: .seconds(2.2))
+                guard !importSearchPrompts.isEmpty, case .importPage = viewModel.currentPage else { break }
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                    importPlaceholderIndex = (importPlaceholderIndex + 1) % importSearchPrompts.count
+                }
+            }
         }
         .task {
             if case .idle = viewModel.loadState {
@@ -1108,241 +1137,134 @@ struct MainView: View {
 
     private func importPage(layout: LayoutMetrics) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 pageSectionCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Import Source")
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Import Now ?")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        Text("Enter a repo, local path, or package locator. Recommended repositories are listed below.")
+                        Text("Search a skills group by owner, repo URL, or git locator. Recommended groups are shown below.")
                             .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(AppTheme.textMuted(for: theme))
-                        TextField("repo / path / clawhub:package", text: $viewModel.newSourceLocator)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .padding(.horizontal, 12)
-                            .frame(height: 42)
-                            .background(AppTheme.toolbarButtonBackground(for: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
 
                         HStack(spacing: 10) {
-                            Button(viewModel.importPreview == nil ? "Preview" : "Refresh Preview") {
-                                Task { await viewModel.prepareImport() }
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 14)
-                            .frame(height: 34)
-                            .background(AppTheme.brand(for: accent, in: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .foregroundStyle(AppTheme.pageBackground(for: theme))
-                            .font(.system(size: 11, weight: .bold))
-
-                            Button("Back") {
-                                Task {
-                                    await viewModel.discardPreparedImport()
-                                    viewModel.currentPage = .home
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 14)
-                            .frame(height: 34)
-                            .background(AppTheme.toolbarButtonBackground(for: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .foregroundStyle(AppTheme.textPrimary(for: theme))
-                            .font(.system(size: 11, weight: .bold))
+                            importSearchField
+                            importSearchButton
                         }
 
-                        if case .preparing = viewModel.importPhase {
-                            Text("Preparing import preview...")
+                        if let importFeedbackMessage {
+                            Text(importFeedbackMessage)
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(AppTheme.textMuted(for: theme))
-                        } else if case .importing = viewModel.importPhase {
-                            Text("Importing source...")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(AppTheme.textMuted(for: theme))
-                        } else if case .failed(let message) = viewModel.importPhase {
-                            Text(message)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Color.red)
                         }
                     }
                 }
 
-                if let preview = viewModel.importPreview {
-                    pageSectionCard {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Preview")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                    Text(preview.locator)
-                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                                        .lineLimit(1)
-                                }
-                                Spacer()
-                                Text(preview.kind.uppercased())
-                                    .font(.system(size: 10, weight: .bold))
-                                    .padding(.horizontal, 10)
-                                    .frame(height: 26)
-                                    .background(AppTheme.toolbarButtonBackground(for: theme))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                            }
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionHeader(
+                        title: importSubmittedQuery.isEmpty ? "Recommended Groups" : "Search Results",
+                        subtitle: importSubmittedQuery.isEmpty
+                            ? "Showing suggested groups that are not installed locally."
+                            : "The new layout is ready. Remote search and import persistence will be wired in the next refactor.",
+                        badge: "\(importDisplayItems.count)"
+                    )
 
-                            HStack(spacing: 12) {
-                                detailOverviewCard(title: "Skills", lines: ["\(preview.skills.count) detected", "\(preview.selectedLeafIds.count) selected"])
-                                detailOverviewCard(title: "Agents", lines: ["\(preview.availableTargets.count) available", "\(preview.enabledTargets.count) enabled"])
-                            }
-
-                            if !preview.warnings.isEmpty {
-                                detailOverviewCard(title: "Warnings", lines: preview.warnings)
-                            }
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text("Skills")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                    Spacer()
-                                    detailToggleButton(selection: viewModel.importSkillSelectionState()) {
-                                        viewModel.toggleAllImportSkills()
-                                    }
-                                }
-                                ForEach(preview.skills) { skill in
-                                    HStack(spacing: 10) {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(skill.title)
-                                                .font(.system(size: 12, weight: .semibold))
-                                                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                            Text(skill.relativePath)
-                                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                                .foregroundStyle(AppTheme.textMuted(for: theme))
-                                                .lineLimit(1)
+                    if importDisplayItems.isEmpty {
+                        emptyState(
+                            title: "No groups matched",
+                            subtitle: importSubmittedQuery.isEmpty
+                                ? "No recommended groups are available to import."
+                                : "Try another keyword. Remote search will be connected next."
+                        )
+                    } else {
+                        HStack {
+                            Spacer(minLength: 0)
+                            LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
+                                ForEach(importDisplayItems) { item in
+                                    SharedGroupCard(
+                                        card: importCardModel(for: item),
+                                        theme: theme,
+                                        accent: accent,
+                                        displayMode: .standard,
+                                        skillsCollapsed: false,
+                                        isUpdating: false,
+                                        onOpen: nil,
+                                        onUpdate: {},
+                                        onTogglePinned: {},
+                                        onDelete: {},
+                                        onToggleSkill: { skillId, enabled in
+                                            setImportSkill(skillId, enabled: enabled, for: item)
+                                        },
+                                        onToggleAllSkills: {
+                                            toggleAllImportSkills(for: item)
+                                        },
+                                        onToggleTarget: { targetId, enabled in
+                                            setImportTarget(targetId, enabled: enabled, for: item)
+                                        },
+                                        onToggleAllTargets: {
+                                            toggleAllImportTargets(for: item)
+                                        },
+                                        actionButtonTitle: "导入",
+                                        actionButtonIcon: ActionIcon.import,
+                                        onActionButton: {
+                                            importFeedbackMessage = "导入按钮已切换到卡片头部，真实导入逻辑会在后续数据层重构后接入。"
                                         }
-                                        Spacer()
-                                        Button(skill.isSelected ? "ON" : "OFF") {
-                                            viewModel.toggleImportSkill(skill.id)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .font(.system(size: 10, weight: .bold))
-                                        .frame(width: detailToggleWidth, height: detailToggleHeight)
-                                        .background(AppTheme.selectionControlFill(skill.isSelected ? .full : .empty, for: theme))
-                                        .foregroundStyle(AppTheme.selectionControlText(skill.isSelected ? .full : .empty, for: theme))
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    }
-                                    .padding(12)
-                                    .background(AppTheme.toolbarButtonBackground(for: theme))
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    )
                                 }
                             }
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text("Agents")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                    Spacer()
-                                    detailToggleButton(selection: viewModel.importTargetSelectionState()) {
-                                        viewModel.toggleAllImportTargets()
-                                    }
-                                }
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
-                                    ForEach(preview.availableTargets, id: \.self) { targetId in
-                                        let isEnabled = preview.enabledTargets.contains(targetId)
-                                        HStack(spacing: 10) {
-                                            Text(targetLabel(targetId))
-                                                .font(.system(size: 11, weight: .semibold))
-                                                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                                .lineLimit(1)
-                                            Spacer(minLength: 6)
-                                            Button(isEnabled ? "ON" : "OFF") {
-                                                viewModel.toggleImportTarget(targetId)
-                                            }
-                                            .buttonStyle(.plain)
-                                            .font(.system(size: 10, weight: .bold))
-                                            .frame(width: detailToggleWidth, height: detailToggleHeight)
-                                            .background(AppTheme.selectionControlFill(isEnabled ? .full : .empty, for: theme))
-                                            .foregroundStyle(AppTheme.selectionControlText(isEnabled ? .full : .empty, for: theme))
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        }
-                                        .padding(12)
-                                        .background(AppTheme.toolbarButtonBackground(for: theme))
-                                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    }
-                                }
-                            }
-
-                            HStack(spacing: 10) {
-                                Button("Confirm Import") {
-                                    Task { await viewModel.confirmPreparedImport() }
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 14)
-                                .frame(height: 34)
-                                .background(AppTheme.brand(for: accent, in: theme))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .foregroundStyle(AppTheme.pageBackground(for: theme))
-                                .font(.system(size: 11, weight: .bold))
-
-                                Button("Discard Preview") {
-                                    Task { await viewModel.discardPreparedImport() }
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 14)
-                                .frame(height: 34)
-                                .background(AppTheme.toolbarButtonBackground(for: theme))
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                .font(.system(size: 11, weight: .bold))
-                            }
-                        }
-                    }
-                }
-
-                pageSectionCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Recommended Repositories")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
-                            ForEach(recommendedImports) { item in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(item.title)
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                    Text(item.locator)
-                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                                        .lineLimit(1)
-                                    Text(item.summary)
-                                        .font(.system(size: 11, weight: .regular))
-                                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                                        .lineLimit(3)
-                                    Spacer(minLength: 0)
-                                    Button("Use") {
-                                        viewModel.newSourceLocator = item.locator
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.horizontal, 12)
-                                    .frame(height: 30)
-                                    .background(AppTheme.toolbarButtonBackground(for: theme))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                                    .font(.system(size: 10, weight: .bold))
-                                }
-                                .padding(14)
-                                .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
-                                .background(AppTheme.toolbarButtonBackground(for: theme))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                            }
+                            .frame(maxWidth: layout.gridFrameWidth, alignment: .center)
+                            Spacer(minLength: 0)
                         }
                     }
                 }
             }
             .padding(16)
         }
+    }
+
+    private var importSearchField: some View {
+        HStack(spacing: 8) {
+            ZStack(alignment: .leading) {
+                if importSearchText.isEmpty {
+                    Text(activeImportSearchPrompt)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
+                        .lineLimit(1)
+                        .id(activeImportSearchPrompt)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .allowsHitTesting(false)
+                }
+
+                TextField("", text: $importSearchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .onSubmit {
+                        submitImportSearch()
+                    }
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+        .background(AppTheme.headerControlFill(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    private var importSearchButton: some View {
+        Button {
+            submitImportSearch()
+        } label: {
+            actionIcon(.search, size: 12)
+                .foregroundStyle(AppTheme.pageBackground(for: theme))
+                .frame(width: 42, height: 42)
+                .background(AppTheme.brand(for: accent, in: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
     }
 
     private func settingsPage(layout: LayoutMetrics) -> some View {
@@ -1405,27 +1327,293 @@ struct MainView: View {
         viewModel.groupCards
     }
 
+    private var activeImportSearchPrompt: String {
+        guard !importSearchPrompts.isEmpty else { return "" }
+        return importSearchPrompts[importPlaceholderIndex % importSearchPrompts.count]
+    }
+
+    private var importSearchPrompts: [String] {
+        [
+            "anthropic/skills",
+            "https://github.com/anthropics/skills",
+            "https://github.com/anthropics/skills.git",
+            "git@github.com:anthropics/skills.git",
+        ]
+    }
+
+    private var importDisplayItems: [RecommendedImport] {
+        let availableItems = recommendedImports.filter { !isImportItemInstalled($0) }
+        let query = normalizedImportQuery(importSubmittedQuery)
+        guard !query.isEmpty else {
+            return availableItems
+        }
+
+        let exactMatches = availableItems.filter { importNormalizedTokens(for: $0).contains(query) }
+        if !exactMatches.isEmpty {
+            return exactMatches.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        }
+
+        return availableItems
+            .filter { item in
+                importNormalizedTokens(for: item).contains { $0.contains(query) }
+            }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
     private var recommendedImports: [RecommendedImport] {
         [
             RecommendedImport(
-                id: "vercel-skills",
-                title: "Vercel Agent Skills",
-                locator: "vercel-labs/agent-skills",
-                summary: "General-purpose curated agent skills for common coding workflows."
+                id: "anthropic-skills",
+                title: "Anthropic Skills",
+                locator: "anthropic/skills",
+                summary: "Official Anthropic skill collection covering research, coding, and agent workflows.",
+                aliases: [
+                    "anthropic/skills",
+                    "https://github.com/anthropics/skills",
+                    "https://github.com/anthropics/skills.git",
+                    "git@github.com:anthropics/skills.git",
+                ],
+                skills: [
+                    ImportSkill(id: "anthropic-prompting", title: "prompting", summary: "Prompt engineering and instruction writing."),
+                    ImportSkill(id: "anthropic-research", title: "research", summary: "Research and synthesis workflows."),
+                    ImportSkill(id: "anthropic-debugging", title: "debugging", summary: "Debugging and investigation workflows."),
+                ],
+                targets: importRecommendedTargetIds
             ),
             RecommendedImport(
                 id: "gstack",
                 title: "GStack Skills",
                 locator: "garrytan/gstack",
-                summary: "Workflow and review-oriented skills with strong planning and QA helpers."
+                summary: "Workflow and review-oriented skills with strong planning, QA, and deploy helpers.",
+                aliases: [
+                    "garrytan/gstack",
+                    "https://github.com/garrytan/gstack",
+                    "https://github.com/garrytan/gstack.git",
+                    "git@github.com:garrytan/gstack.git",
+                ],
+                skills: [
+                    ImportSkill(id: "gstack-qa", title: "qa", summary: "Systematic QA testing and fix loop."),
+                    ImportSkill(id: "gstack-review", title: "review", summary: "Pre-landing diff review."),
+                    ImportSkill(id: "gstack-ship", title: "ship", summary: "Ship workflow with tests and PR automation."),
+                ],
+                targets: importRecommendedTargetIds
+            ),
+            RecommendedImport(
+                id: "vercel-agent-skills",
+                title: "Vercel Agent Skills",
+                locator: "vercel-labs/agent-skills",
+                summary: "General-purpose curated agent skills for common coding workflows.",
+                aliases: [
+                    "vercel-labs/agent-skills",
+                    "https://github.com/vercel-labs/agent-skills",
+                    "https://github.com/vercel-labs/agent-skills.git",
+                    "git@github.com:vercel-labs/agent-skills.git",
+                ],
+                skills: [
+                    ImportSkill(id: "vercel-plan", title: "plan", summary: "Plan work before implementation."),
+                    ImportSkill(id: "vercel-refactor", title: "refactor", summary: "Refactor with focused constraints."),
+                    ImportSkill(id: "vercel-deploy", title: "deploy", summary: "Deployment-oriented workflows."),
+                ],
+                targets: importRecommendedTargetIds
             ),
             RecommendedImport(
                 id: "skill-flow",
                 title: "Skill Flow Samples",
                 locator: "VintLin/skill-flow",
-                summary: "Use the project itself as a reference source while shaping desktop interactions."
+                summary: "Reference repository for the desktop product itself and related workflow samples.",
+                aliases: [
+                    "VintLin/skill-flow",
+                    "https://github.com/VintLin/skill-flow",
+                    "https://github.com/VintLin/skill-flow.git",
+                    "git@github.com:VintLin/skill-flow.git",
+                ],
+                skills: [
+                    ImportSkill(id: "skillflow-design", title: "design-review", summary: "UI review and design QA."),
+                    ImportSkill(id: "skillflow-investigate", title: "investigate", summary: "Root cause investigation workflow."),
+                    ImportSkill(id: "skillflow-release", title: "document-release", summary: "Post-ship documentation sync."),
+                ],
+                targets: importRecommendedTargetIds
             ),
         ]
+    }
+
+    private var importRecommendedTargetIds: [String] {
+        let detectedTargets = viewModel.visibleTargets.map(\.id)
+        if !detectedTargets.isEmpty {
+            return detectedTargets
+        }
+        return ["claude-code", "codex", "cursor", "github-copilot"]
+    }
+
+    private func isImportItemInstalled(_ item: RecommendedImport) -> Bool {
+        let installedTokens = Set(
+            viewModel.sourceRows.flatMap { row in
+                [
+                    normalizedImportQuery(row.id),
+                    normalizedImportQuery(row.displayName),
+                    normalizedImportQuery(row.locator),
+                ]
+            }
+        )
+
+        return importNormalizedTokens(for: item).contains { installedTokens.contains($0) }
+    }
+
+    private func importNormalizedTokens(for item: RecommendedImport) -> [String] {
+        let values = [
+            item.id,
+            item.title,
+            item.locator,
+            item.summary,
+        ] + item.aliases + item.skills.map(\.title)
+
+        return Array(Set(values.map(normalizedImportQuery).filter { !$0.isEmpty }))
+    }
+
+    private func normalizedImportQuery(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private func submitImportSearch() {
+        importSubmittedQuery = importSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        importFeedbackMessage = nil
+    }
+
+    private func importDraft(for item: RecommendedImport) -> ImportDraftState {
+        importDraftsByItemId[item.id]
+            ?? ImportDraftState(
+                selectedSkillIds: item.skills.map(\.id),
+                enabledTargetIds: []
+            )
+    }
+
+    private func importCardModel(for item: RecommendedImport) -> MainViewModel.GroupCardModel {
+        let draft = importDraft(for: item)
+        let selectedSkillIds = Set(draft.selectedSkillIds)
+        let enabledTargetIds = Set(draft.enabledTargetIds)
+
+        return MainViewModel.GroupCardModel(
+            id: item.id,
+            title: item.title,
+            subtitle: importCardSubtitle(for: item),
+            metaLine: "from \(item.locator)",
+            isPinned: false,
+            health: "DISCOVER",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: importSelectionState(allIds: item.skills.map(\.id), selectedIds: draft.selectedSkillIds),
+            targetSelection: importSelectionState(allIds: item.targets, selectedIds: draft.enabledTargetIds),
+            skills: item.skills.map { skill in
+                MainViewModel.GroupCardSkill(
+                    id: skill.id,
+                    label: skill.title,
+                    description: skill.summary,
+                    isEnabled: selectedSkillIds.contains(skill.id)
+                )
+            },
+            targets: item.targets.map { targetId in
+                MainViewModel.GroupCardTarget(
+                    id: targetId,
+                    label: targetLabel(targetId),
+                    shortLabel: String(targetLabel(targetId).prefix(2)).uppercased(),
+                    isEnabled: enabledTargetIds.contains(targetId)
+                )
+            },
+            saveState: MainViewModel.SaveState(phase: .idle, message: nil)
+        )
+    }
+
+    private func importCardSubtitle(for item: RecommendedImport) -> String {
+        let locator = item.locator.trimmingCharacters(in: .whitespacesAndNewlines)
+        let patterns = [
+            #"github\.com/([^/\s]+)/"#,
+            #"git@github\.com:([^/\s]+)/"#,
+            #"^([^/\s]+)/"#,
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let range = NSRange(locator.startIndex..<locator.endIndex, in: locator)
+            guard let match = regex.firstMatch(in: locator, range: range),
+                  match.numberOfRanges > 1,
+                  let ownerRange = Range(match.range(at: 1), in: locator)
+            else {
+                continue
+            }
+
+            return "by @\(locator[ownerRange])"
+        }
+
+        return "recommended"
+    }
+
+    private func importSelectionState(allIds: [String], selectedIds: [String]) -> SelectionState {
+        guard !allIds.isEmpty else { return .empty }
+        let selected = Set(selectedIds)
+        let selectedCount = allIds.filter { selected.contains($0) }.count
+
+        switch selectedCount {
+        case 0:
+            return .empty
+        case allIds.count:
+            return .full
+        default:
+            return .partial
+        }
+    }
+
+    private func setImportSkill(_ skillId: String, enabled: Bool, for item: RecommendedImport) {
+        let current = importDraft(for: item)
+        let selected = Set(current.selectedSkillIds)
+        let nextSelected: [String]
+
+        if enabled {
+            nextSelected = item.skills.map(\.id).filter { selected.union([skillId]).contains($0) }
+        } else {
+            nextSelected = item.skills.map(\.id).filter { selected.subtracting([skillId]).contains($0) }
+        }
+
+        importDraftsByItemId[item.id] = ImportDraftState(
+            selectedSkillIds: nextSelected,
+            enabledTargetIds: current.enabledTargetIds
+        )
+    }
+
+    private func toggleAllImportSkills(for item: RecommendedImport) {
+        let current = importDraft(for: item)
+        let nextSelected = current.selectedSkillIds.count == item.skills.count ? [] : item.skills.map(\.id)
+        importDraftsByItemId[item.id] = ImportDraftState(
+            selectedSkillIds: nextSelected,
+            enabledTargetIds: current.enabledTargetIds
+        )
+    }
+
+    private func setImportTarget(_ targetId: String, enabled: Bool, for item: RecommendedImport) {
+        let current = importDraft(for: item)
+        let enabledTargets = Set(current.enabledTargetIds)
+        let nextTargets: [String]
+
+        if enabled {
+            nextTargets = item.targets.filter { enabledTargets.union([targetId]).contains($0) }
+        } else {
+            nextTargets = item.targets.filter { enabledTargets.subtracting([targetId]).contains($0) }
+        }
+
+        importDraftsByItemId[item.id] = ImportDraftState(
+            selectedSkillIds: current.selectedSkillIds,
+            enabledTargetIds: nextTargets
+        )
+    }
+
+    private func toggleAllImportTargets(for item: RecommendedImport) {
+        let current = importDraft(for: item)
+        let nextTargets = current.enabledTargetIds.count == item.targets.count ? [] : item.targets
+        importDraftsByItemId[item.id] = ImportDraftState(
+            selectedSkillIds: current.selectedSkillIds,
+            enabledTargetIds: nextTargets
+        )
     }
 
     private func pillText(_ text: String, tint: Color, text textColor: Color) -> some View {

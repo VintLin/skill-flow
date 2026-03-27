@@ -166,9 +166,50 @@ struct SharedGroupCard: View {
     let onToggleAllSkills: () -> Void
     let onToggleTarget: (String, Bool) -> Void
     let onToggleAllTargets: () -> Void
+    let actionButtonTitle: String?
+    let actionButtonIcon: ActionIcon
+    let onActionButton: (() -> Void)?
 
     @State private var isActionMenuOpen = false
     @State private var isActionButtonHovered = false
+
+    init(
+        card: MainViewModel.GroupCardModel,
+        theme: DesktopThemeMode,
+        accent: DesktopAccentColor,
+        displayMode: GroupCardDisplayMode,
+        skillsCollapsed: Bool,
+        isUpdating: Bool,
+        onOpen: (() -> Void)?,
+        onUpdate: @escaping () -> Void,
+        onTogglePinned: @escaping () -> Void,
+        onDelete: @escaping () -> Void,
+        onToggleSkill: @escaping (String, Bool) -> Void,
+        onToggleAllSkills: @escaping () -> Void,
+        onToggleTarget: @escaping (String, Bool) -> Void,
+        onToggleAllTargets: @escaping () -> Void,
+        actionButtonTitle: String? = nil,
+        actionButtonIcon: ActionIcon = .import,
+        onActionButton: (() -> Void)? = nil
+    ) {
+        self.card = card
+        self.theme = theme
+        self.accent = accent
+        self.displayMode = displayMode
+        self.skillsCollapsed = skillsCollapsed
+        self.isUpdating = isUpdating
+        self.onOpen = onOpen
+        self.onUpdate = onUpdate
+        self.onTogglePinned = onTogglePinned
+        self.onDelete = onDelete
+        self.onToggleSkill = onToggleSkill
+        self.onToggleAllSkills = onToggleAllSkills
+        self.onToggleTarget = onToggleTarget
+        self.onToggleAllTargets = onToggleAllTargets
+        self.actionButtonTitle = actionButtonTitle
+        self.actionButtonIcon = actionButtonIcon
+        self.onActionButton = onActionButton
+    }
 
     private var scale: GroupCardScale {
         displayMode.scale
@@ -184,6 +225,10 @@ struct SharedGroupCard: View {
 
     private var shouldShowPinnedIcon: Bool {
         card.isPinned && !isActionButtonHovered && !isActionMenuOpen
+    }
+
+    private var showsPrimaryActionButton: Bool {
+        onActionButton != nil && actionButtonTitle != nil
     }
 
     var body: some View {
@@ -246,6 +291,15 @@ struct SharedGroupCard: View {
                 headerContent
             }
             Spacer(minLength: 0)
+            headerAction
+        }
+    }
+
+    @ViewBuilder
+    private var headerAction: some View {
+        if showsPrimaryActionButton {
+            importButton
+        } else {
             pinButton
         }
     }
@@ -325,6 +379,28 @@ struct SharedGroupCard: View {
             .background(AppTheme.pageBackground(for: theme))
             .frame(width: 136)
         }
+    }
+
+    private var importButton: some View {
+        Button {
+            guard !isBusy else { return }
+            onActionButton?()
+        } label: {
+            HStack(spacing: 6) {
+                actionIcon(actionButtonIcon, size: 11)
+                    .foregroundStyle(AppTheme.pageBackground(for: theme))
+
+                Text(actionButtonTitle ?? "Import")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(AppTheme.pageBackground(for: theme))
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(AppTheme.brand(for: accent, in: theme))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
     }
 
     private var loadingMessage: String {
