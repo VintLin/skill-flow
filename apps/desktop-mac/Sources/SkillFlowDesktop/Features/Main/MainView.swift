@@ -407,7 +407,7 @@ struct MainView: View {
         VStack(spacing: 10) {
             ProgressView()
                 .controlSize(.regular)
-            Text(t("home.loading.title"))
+            Text(t("common.loading.groups"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
         }
@@ -536,7 +536,7 @@ struct MainView: View {
 
             if let detail, !detail.sourceDetailLines.isEmpty {
                 detailMetadataSection(
-                    title: t("detail.section.source"),
+                    title: t("common.section.source"),
                     lines: detail.sourceDetailLines,
                     externalURL: detail.sourceRepositoryURL
                 )
@@ -791,7 +791,7 @@ struct MainView: View {
 
             Spacer(minLength: 10)
 
-            Button(skill.isEnabled ? t("group_card.selection.on") : t("group_card.selection.off")) {
+            Button(skill.isEnabled ? t("common.selection.on") : t("common.selection.off")) {
                 Task { await viewModel.setSkillEnabled(skill.id, enabled: !skill.isEnabled, sourceId: groupId) }
             }
             .buttonStyle(.plain)
@@ -814,7 +814,7 @@ struct MainView: View {
 
     private func detailOriginRow(originLabel: String, starCount: Int?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(t("detail.meta.from", originLabel))
+            Text(t("common.meta.from", originLabel))
                 .font(.system(size: detailHeaderMetaSize, weight: .regular))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .lineLimit(1)
@@ -884,7 +884,7 @@ struct MainView: View {
 
     private func detailAgentRail(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(t("detail.section.agents"))
+                Text(t("common.section.agents"))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .textCase(.uppercase)
@@ -1137,7 +1137,7 @@ struct MainView: View {
         case .idle:
             return t("detail.save.agents", String(detail.enabledTargetCount))
         case .saving:
-            return t("detail.save.applying")
+            return t("common.status.applying")
         case .saved:
             return t("detail.save.saved")
         case .failed:
@@ -1168,7 +1168,7 @@ struct MainView: View {
 
                     if case .loading = viewModel.importSearchPhase, importDisplayItems.isEmpty {
                         emptyState(
-                            title: t("import.loading.title"),
+                            title: t("common.loading.groups"),
                             subtitle: t("import.loading.subtitle")
                         )
                     } else if case .failed(let message) = viewModel.importSearchPhase, importDisplayItems.isEmpty {
@@ -1762,9 +1762,9 @@ struct MainView: View {
 
     private func detailSwitchLabel(_ selection: SelectionState) -> String {
         switch selection {
-        case .empty: return t("group_card.selection.off")
-        case .partial: return t("group_card.selection.partial")
-        case .full: return t("group_card.selection.on")
+        case .empty: return t("common.selection.off")
+        case .partial: return t("common.selection.partial")
+        case .full: return t("common.selection.on")
         }
     }
 

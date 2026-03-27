@@ -263,7 +263,7 @@ struct SharedGroupCard: View {
             }
 
             cardRow(
-                title: t("group_card.section.agents"),
+                title: t("common.section.agents"),
                 selection: card.targetSelection,
                 items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled) },
                 compact: true,
@@ -435,7 +435,7 @@ struct SharedGroupCard: View {
 
     private var sourceFactsSection: some View {
         VStack(alignment: .leading, spacing: max(6, scale.rowSpacing - 2)) {
-            Text(t("group_card.section.source"))
+            Text(t("common.section.source"))
                 .font(.system(size: scale.sectionLabelSize, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .textCase(.uppercase)
@@ -451,7 +451,7 @@ struct SharedGroupCard: View {
 
     private var loadingMessage: String {
         if isSaving {
-            return t("group_card.loading.applying")
+            return t("common.status.applying")
         }
         return t("group_card.loading.updating")
     }
@@ -626,9 +626,9 @@ struct SharedGroupCard: View {
 
     private func switchLabel(_ selection: SelectionState) -> String {
         switch selection {
-        case .empty: return t("group_card.selection.off")
-        case .partial: return t("group_card.selection.partial")
-        case .full: return t("group_card.selection.on")
+        case .empty: return t("common.selection.off")
+        case .partial: return t("common.selection.partial")
+        case .full: return t("common.selection.on")
         }
     }
 

@@ -1358,7 +1358,7 @@ final class MainViewModel {
         case "provider_not_supported":
             return localizedText("import.reason.provider_not_supported")
         case "provider_data_unavailable":
-            return localizedText("import.reason.provider_data_unavailable")
+            return localizedText("common.source_metadata.unavailable")
         case "provider_rate_limited":
             return localizedText("import.reason.provider_rate_limited")
         case "provider_response_invalid":
@@ -2550,7 +2550,7 @@ final class MainViewModel {
     private func sourceMetadataExplanation(status: String, reasonCode: String?) -> String {
         switch status {
         case "unsupported":
-            return localized("source.metadata.explanation.unsupported")
+            return localized("common.source_metadata.unavailable")
         case "disabled":
             return localized("source.metadata.explanation.disabled")
         case "failed":
@@ -2563,7 +2563,7 @@ final class MainViewModel {
                 return localized("source.metadata.explanation.failed_default")
             }
         default:
-            return localized("source.metadata.explanation.unsupported")
+            return localized("common.source_metadata.unavailable")
         }
     }
 
