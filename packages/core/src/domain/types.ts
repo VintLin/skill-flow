@@ -89,6 +89,11 @@ export type Manifest = {
   bindings: Record<string, SourceBinding>;
 };
 
+export type SharedPreferences = {
+  schemaVersion: 1;
+  pinnedSourceIds: string[];
+};
+
 export type InvalidLeafRecord = {
   path: string;
   reason: string;

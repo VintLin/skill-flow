@@ -1,5 +1,14 @@
 import path from "node:path";
-import type { LockFile, Manifest, SourceKind } from "../domain/types.js";
+import type {
+  LockFile,
+  Manifest,
+  SharedPreferences,
+  SourceKind,
+} from "../domain/types.js";
+import {
+  createEmptySharedPreferences,
+  normalizeSharedPreferences,
+} from "./preferences-store.js";
 import { SCHEMA_VERSION, getStateRoot } from "../utils/constants.js";
 import {
   ensureDir,
@@ -49,6 +58,10 @@ export class StateStore {
 
   get lockPath(): string {
     return path.join(this.stateRoot, "lock.json");
+  }
+
+  get preferencesPath(): string {
+    return path.join(this.stateRoot, "preferences.json");
   }
 
   get mutationLockPath(): string {
@@ -107,6 +120,60 @@ export class StateStore {
     });
   }
 
+  async readPreferences(): Promise<SharedPreferences> {
+    return this.withIoLock(async () => {
+      await this.init();
+      return this.readPreferencesRaw();
+    });
+  }
+
+  async writePreferences(preferences: SharedPreferences): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      await writeJsonFile(
+        this.preferencesPath,
+        normalizeSharedPreferences(preferences),
+      );
+    });
+  }
+
+  async togglePinnedSource(sourceId: string): Promise<SharedPreferences> {
+    return this.withIoLock(async () => {
+      await this.init();
+      const preferences = await this.readPreferencesRaw();
+      const pinnedSourceIds = preferences.pinnedSourceIds.includes(sourceId)
+        ? preferences.pinnedSourceIds.filter((pinnedSourceId) => pinnedSourceId !== sourceId)
+        : [...preferences.pinnedSourceIds, sourceId];
+      const nextPreferences = normalizeSharedPreferences({
+        ...preferences,
+        pinnedSourceIds,
+      });
+      await writeJsonFile(this.preferencesPath, nextPreferences);
+      return nextPreferences;
+    });
+  }
+
+  async pruneMissingSourceIds(): Promise<SharedPreferences> {
+    return this.withIoLock(async () => {
+      await this.init();
+      const manifest = await this.readManifestRaw();
+      const preferences = await this.readPreferencesRaw();
+      const existingSourceIds = new Set(manifest.sources.map((source) => source.id));
+      const nextPreferences = normalizeSharedPreferences({
+        ...preferences,
+        pinnedSourceIds: preferences.pinnedSourceIds.filter((sourceId) =>
+          existingSourceIds.has(sourceId),
+        ),
+      });
+
+      if (!hasSameEntries(preferences.pinnedSourceIds, nextPreferences.pinnedSourceIds)) {
+        await writeJsonFile(this.preferencesPath, nextPreferences);
+      }
+
+      return nextPreferences;
+    });
+  }
+
   async withMutationLock<T>(task: () => Promise<T>): Promise<T> {
     await this.init();
     return withFileLock(this.mutationLockPath, task);
@@ -132,6 +199,15 @@ export class StateStore {
 
   private readLockRaw(): Promise<LockFile> {
     return readJsonFile<LockFile>(this.lockPath, this.createEmptyLockFile());
+  }
+
+  private async readPreferencesRaw(): Promise<SharedPreferences> {
+    return normalizeSharedPreferences(
+      await readJsonFile<unknown>(
+        this.preferencesPath,
+        createEmptySharedPreferences(),
+      ),
+    );
   }
 
   private normalizeLockFile(lockFile: LockFile): LockFile {
@@ -180,4 +256,11 @@ export class StateStore {
       release?.();
     }
   }
+}
+
+function hasSameEntries(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => entry === right[index])
+  );
 }
