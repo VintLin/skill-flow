@@ -32,4 +32,10 @@ final class DesktopLocalizationTests: XCTestCase {
     func testL10nFallsBackToEnglishBundleWhenKeyMissingInSelectedLocale() {
         XCTAssertEqual(L10n.string("test.fallback.only_en", locale: Locale(identifier: "ja")), "Only English")
     }
+
+    func testL10nLoadsDetailDerivedLocalizationKeys() {
+        XCTAssertEqual(L10n.string("detail.document.file_tree", locale: Locale(identifier: "en")), "File Tree")
+        XCTAssertEqual(L10n.string("detail.document.file_tree", locale: Locale(identifier: "zh-Hans")), "文件树")
+        XCTAssertEqual(L10n.string("source.metadata.status_value.unsupported", locale: Locale(identifier: "ja")), "非対応")
+    }
 }

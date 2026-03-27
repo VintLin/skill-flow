@@ -21,6 +21,8 @@
 "detail.meta.star" = "Star %@";
 "detail.version" = "版本 %@";
 "detail.loading.document" = "正在加载文档...";
+"detail.document.file_tree" = "文件树";
+"detail.document.skill_unavailable" = "SKILL.md 不可用。";
 "import.page.title" = "立即导入？";
 "import.section.recommended" = "推荐";
 "import.section.search_results" = "搜索结果";
@@ -121,6 +123,11 @@
 "source.metadata.owner_with_name" = "所有者：%@（%@）";
 "source.metadata.repo_url" = "仓库 URL：%@";
 "source.metadata.status" = "状态：%@";
+"source.metadata.status_value.ready" = "就绪";
+"source.metadata.status_value.unsupported" = "不支持";
+"source.metadata.status_value.disabled" = "已禁用";
+"source.metadata.status_value.failed" = "失败";
+"source.metadata.status_value.unknown" = "未知";
 "source.metadata.explanation.unsupported" = "当前来源没有可读取的元数据。";
 "source.metadata.explanation.disabled" = "该来源提供方已预留，但当前构建未启用。";
 "source.metadata.explanation.failed_rate_limited" = "来源元数据暂时受到限流，请稍后再试。";

@@ -2084,7 +2084,7 @@ final class MainViewModel {
         if let raw = try? String(contentsOfFile: path, encoding: .utf8) {
             document = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
-            document = "SKILL.md unavailable."
+            document = localized("detail.document.skill_unavailable")
         }
 
         skillDocumentCache[path] = document
@@ -2212,7 +2212,7 @@ final class MainViewModel {
         var tabs: [DocumentTab] = [
             DocumentTab(
                 id: "group:filetree",
-                title: "FILETREE",
+                title: localized("detail.document.file_tree"),
                 path: groupPath ?? ".",
                 metadata: [],
                 content: renderFileTree(fileTree),
@@ -2500,7 +2500,7 @@ final class MainViewModel {
     private func displayOriginLabel(from locator: String) -> String {
         let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return "unknown source"
+            return localized("detail.meta.unknown_source")
         }
 
         if let url = URL(string: trimmed), let host = url.host?.nonEmpty {
@@ -2559,9 +2559,24 @@ final class MainViewModel {
             lines.append(localized("source.metadata.provider", provider))
         }
 
-        lines.append(localized("source.metadata.status", status.capitalized))
+        lines.append(localized("source.metadata.status", localizedSourceMetadataStatus(status)))
         lines.append(sourceMetadataExplanation(status: status, reasonCode: reasonCode))
         return lines
+    }
+
+    private func localizedSourceMetadataStatus(_ status: String) -> String {
+        switch status {
+        case "ready":
+            return localized("source.metadata.status_value.ready")
+        case "unsupported":
+            return localized("source.metadata.status_value.unsupported")
+        case "disabled":
+            return localized("source.metadata.status_value.disabled")
+        case "failed":
+            return localized("source.metadata.status_value.failed")
+        default:
+            return localized("source.metadata.status_value.unknown")
+        }
     }
 
     private func sourceMetadataExplanation(status: String, reasonCode: String?) -> String {

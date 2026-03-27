@@ -89,7 +89,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.targets.last?.isEnabled, false)
         XCTAssertEqual(detail?.sourceFacts.first, "2026-03-25T12:00:00Z")
         XCTAssertTrue(detail?.deploymentFacts.first?.contains("Claude Code") == true)
-        XCTAssertEqual(detail?.groupDocuments.map(\.title), ["FILETREE", "README.md", "README.zh.md", "CHANGELOG.md"])
+        XCTAssertEqual(detail?.groupDocuments.map(\.title), ["File Tree", "README.md", "README.zh.md", "CHANGELOG.md"])
         XCTAssertEqual(detail?.groupDocuments.first(where: { $0.title == "README.md" })?.externalURL, "https://github.com/acme/alpha-hub/blob/HEAD/README.md")
         XCTAssertEqual(detail?.fileTree.first?.title, "alpha")
         XCTAssertTrue(detail?.fileTree.dropFirst().contains(where: { $0.prefix.contains("|--") || $0.prefix.contains("`--") }) == true)
@@ -158,6 +158,24 @@ final class MainViewModelSelectionTests: XCTestCase {
         let detail = model.detailViewData(for: "alpha")
 
         XCTAssertEqual(detail?.skills.first?.documentContent, "SKILL.md unavailable.")
+    }
+
+    func testDetailViewDataLocalizesDerivedDetailCopyForJapanese() async throws {
+        UserDefaults.standard.set(DesktopLanguage.ja.rawValue, forKey: DesktopLanguage.storageKey)
+
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.locator = ""
+        state.sources["alpha"]?.metadataStatus = "unsupported"
+        state.sources["alpha"]?.metadataReasonCode = "provider_data_unavailable"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        let detail = model.detailViewData(for: "alpha")
+
+        XCTAssertEqual(detail?.originLabel, "不明なソース")
+        XCTAssertTrue(detail?.sourceDetailLines.contains("状態: 非対応") == true)
+        XCTAssertEqual(detail?.groupDocuments.first?.title, "ファイルツリー")
     }
 
     func testDetailSkillTitlePrefersMetadataName() async throws {
