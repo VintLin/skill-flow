@@ -509,7 +509,7 @@ struct MainView: View {
                     } else if let selectedSkill {
                         detailSkillOverview(skill: selectedSkill)
                     } else {
-                        emptyState(title: "No skill selected", subtitle: "Choose one skill from the left list.")
+                        emptyState(title: t("detail.empty.no_skill_title"), subtitle: t("detail.empty.no_skill.subtitle"))
                     }
                 }
                 .padding(14)
@@ -529,14 +529,14 @@ struct MainView: View {
     private func detailGroupOverview(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             detailPathRow(
-                title: "Path",
+                title: t("detail.section.path"),
                 path: detail?.groupPath,
-                fallbackText: detail?.locator ?? "Path unavailable"
+                fallbackText: detail?.locator ?? t("detail.path.unavailable")
             )
 
             if let detail, !detail.sourceDetailLines.isEmpty {
                 detailMetadataSection(
-                    title: "Source",
+                    title: t("detail.section.source"),
                     lines: detail.sourceDetailLines,
                     externalURL: detail.sourceRepositoryURL
                 )
@@ -555,7 +555,7 @@ struct MainView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Skill Description")
+                Text(t("detail.section.skill_description"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .textCase(.uppercase)
@@ -570,7 +570,7 @@ struct MainView: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Documents")
+                Text(t("detail.section.documents"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .textCase(.uppercase)
@@ -644,7 +644,7 @@ struct MainView: View {
                         .font(.system(size: detailHeaderTitleSize, weight: .semibold))
                         .foregroundStyle(AppTheme.brand(for: accent, in: theme))
 
-                    Text("by \(detail?.author ?? "@unknown")")
+                    Text(t("detail.meta.by", detail?.author ?? "@unknown"))
                         .font(.system(size: detailHeaderMetaSize, weight: .regular))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .lineLimit(1)
@@ -679,7 +679,7 @@ struct MainView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 detailOriginRow(
-                    originLabel: detail?.originLabel ?? "unknown source",
+                    originLabel: detail?.originLabel ?? t("detail.meta.unknown_source"),
                     starCount: detail?.starCount
                 )
 
@@ -699,7 +699,7 @@ struct MainView: View {
                         .font(.system(size: detailHeaderTitleSize, weight: .semibold))
                         .foregroundStyle(AppTheme.brand(for: accent, in: theme))
 
-                    Text("by \(skill?.author ?? "@unknown")")
+                    Text(t("detail.meta.by", skill?.author ?? "@unknown"))
                         .font(.system(size: detailHeaderMetaSize, weight: .regular))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .lineLimit(1)
@@ -739,7 +739,7 @@ struct MainView: View {
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .lineLimit(1)
-                Text("by \(detail?.author ?? "@unknown")")
+                Text(t("detail.meta.by", detail?.author ?? "@unknown"))
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(1)
@@ -791,7 +791,7 @@ struct MainView: View {
 
             Spacer(minLength: 10)
 
-            Button(skill.isEnabled ? "ON" : "OFF") {
+            Button(skill.isEnabled ? t("group_card.selection.on") : t("group_card.selection.off")) {
                 Task { await viewModel.setSkillEnabled(skill.id, enabled: !skill.isEnabled, sourceId: groupId) }
             }
             .buttonStyle(.plain)
@@ -814,13 +814,13 @@ struct MainView: View {
 
     private func detailOriginRow(originLabel: String, starCount: Int?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("from \(originLabel)")
+            Text(t("detail.meta.from", originLabel))
                 .font(.system(size: detailHeaderMetaSize, weight: .regular))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .lineLimit(1)
 
             if let starCount {
-                Text("star \(formattedStarCount(starCount))")
+                Text(t("detail.meta.star", formattedStarCount(starCount)))
                     .font(.system(size: detailHeaderMetaSize, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(1)
@@ -847,7 +847,7 @@ struct MainView: View {
         let isDocumentLoading = pendingDetailDocumentIdByGroup[groupId] != nil
 
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Documents")
+            Text(t("detail.section.documents"))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .textCase(.uppercase)
@@ -884,7 +884,7 @@ struct MainView: View {
 
     private func detailAgentRail(groupId: String, detail: MainViewModel.DetailViewData?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Agents")
+            Text(t("detail.section.agents"))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .textCase(.uppercase)
@@ -1111,7 +1111,8 @@ struct MainView: View {
     }
 
     private func normalizedVersionText(_ version: String) -> String {
-        version.lowercased().hasPrefix("v") ? "Version \(version)" : "Version v\(version)"
+        let normalizedVersion = version.lowercased().hasPrefix("v") ? version : "v\(version)"
+        return t("detail.version", normalizedVersion)
     }
 
     private func agentIconForeground(isEnabled: Bool) -> NSColor {
@@ -1129,18 +1130,18 @@ struct MainView: View {
 
     private func detailSaveLabel(_ detail: MainViewModel.DetailViewData?) -> String {
         guard let detail else {
-            return "No detail"
+            return t("detail.save.no_detail")
         }
 
         switch detail.saveState.phase {
         case .idle:
-            return "\(detail.enabledTargetCount) agents"
+            return t("detail.save.agents", String(detail.enabledTargetCount))
         case .saving:
-            return "Applying..."
+            return t("detail.save.applying")
         case .saved:
-            return "Saved"
+            return t("detail.save.saved")
         case .failed:
-            return "Save failed"
+            return t("detail.save.failed")
         }
     }
 
@@ -1722,7 +1723,7 @@ struct MainView: View {
             HStack(spacing: 10) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Loading document...")
+                Text(t("detail.loading.document"))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
             }
@@ -1761,9 +1762,9 @@ struct MainView: View {
 
     private func detailSwitchLabel(_ selection: SelectionState) -> String {
         switch selection {
-        case .empty: return "OFF"
-        case .partial: return "MIX"
-        case .full: return "ON"
+        case .empty: return t("group_card.selection.off")
+        case .partial: return t("group_card.selection.partial")
+        case .full: return t("group_card.selection.on")
         }
     }
 
