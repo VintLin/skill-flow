@@ -107,6 +107,7 @@ final class MainViewModel {
         let errorCount: Int
         let skillSelection: SelectionState
         let targetSelection: SelectionState
+        let sourceFacts: [String]
         let skills: [GroupCardSkill]
         let targets: [GroupCardTarget]
         let saveState: SaveState
@@ -223,6 +224,9 @@ final class MainViewModel {
         let canonicalRepo: String
         let aliases: [String]
         let summary: String
+        let starCount: Int?
+        let totalInstalls: Int?
+        let skillCount: Int?
         let matchedSkillNames: [String]
         let previewPhase: ImportLoadPhase
         let skills: [ImportGroupSkill]
@@ -505,6 +509,7 @@ final class MainViewModel {
                 errorCount: row.errorCount,
                 skillSelection: skillSelectionState(sourceId: row.id),
                 targetSelection: targetSelectionState(sourceId: row.id),
+                sourceFacts: [],
                 skills: summary.leafs.map { leaf in
                     GroupCardSkill(
                         id: leaf.id,
@@ -1176,6 +1181,9 @@ final class MainViewModel {
                 canonicalRepo: canonicalRepo,
                 aliases: aliases,
                 summary: (group["summary"] as? String) ?? "",
+                starCount: group["starCount"] as? Int,
+                totalInstalls: group["totalInstalls"] as? Int,
+                skillCount: group["skillCount"] as? Int,
                 matchedSkillNames: matchedSkillNames,
                 previewPhase: parseImportLoadPhase(group["previewState"] as? [String: Any]),
                 skills: [],
@@ -1253,6 +1261,9 @@ final class MainViewModel {
                 canonicalRepo: item.canonicalRepo,
                 aliases: item.aliases,
                 summary: item.summary,
+                starCount: item.starCount,
+                totalInstalls: item.totalInstalls,
+                skillCount: item.skillCount,
                 matchedSkillNames: item.matchedSkillNames,
                 previewPhase: .ready,
                 skills: skills,
@@ -1270,6 +1281,9 @@ final class MainViewModel {
                 canonicalRepo: item.canonicalRepo,
                 aliases: item.aliases,
                 summary: item.summary,
+                starCount: item.starCount,
+                totalInstalls: item.totalInstalls,
+                skillCount: item.skillCount,
                 matchedSkillNames: item.matchedSkillNames,
                 previewPhase: phase,
                 skills: item.skills,

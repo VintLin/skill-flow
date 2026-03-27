@@ -6,20 +6,30 @@ import XCTest
 
 @MainActor
 final class MenuBarIconTests: XCTestCase {
-    func testGroupCardDisplayModeCompactMenuHidesSecondaryChrome() {
-        XCTAssertTrue(GroupCardDisplayMode.compactMenu.showsSubtitle)
-        XCTAssertFalse(GroupCardDisplayMode.compactMenu.showsMetaLine)
-        XCTAssertFalse(GroupCardDisplayMode.compactMenu.showsSectionTitles)
-        XCTAssertTrue(GroupCardDisplayMode.compactMenu.supportsCollapsedSkills)
-        XCTAssertEqual(GroupCardDisplayMode.compactMenu.scale, .menu)
+    func testGroupCardDisplayModeMenuHidesSecondaryChrome() {
+        XCTAssertTrue(GroupCardDisplayMode.menu.showsSubtitle)
+        XCTAssertFalse(GroupCardDisplayMode.menu.showsMetaLine)
+        XCTAssertFalse(GroupCardDisplayMode.menu.showsSectionTitles)
+        XCTAssertTrue(GroupCardDisplayMode.menu.supportsCollapsedSkills)
+        XCTAssertEqual(GroupCardDisplayMode.menu.scale, .menu)
     }
 
-    func testGroupCardDisplayModeStandardKeepsFullLayout() {
-        XCTAssertTrue(GroupCardDisplayMode.standard.showsSubtitle)
-        XCTAssertTrue(GroupCardDisplayMode.standard.showsMetaLine)
-        XCTAssertTrue(GroupCardDisplayMode.standard.showsSectionTitles)
-        XCTAssertFalse(GroupCardDisplayMode.standard.supportsCollapsedSkills)
-        XCTAssertEqual(GroupCardDisplayMode.standard.scale, .home)
+    func testGroupCardDisplayModeHomeKeepsFullLayout() {
+        XCTAssertTrue(GroupCardDisplayMode.home.showsSubtitle)
+        XCTAssertTrue(GroupCardDisplayMode.home.showsMetaLine)
+        XCTAssertTrue(GroupCardDisplayMode.home.showsSectionTitles)
+        XCTAssertFalse(GroupCardDisplayMode.home.supportsCollapsedSkills)
+        XCTAssertEqual(GroupCardDisplayMode.home.scale, .home)
+    }
+
+    func testGroupCardDisplayModeImportUsesDedicatedChrome() {
+        XCTAssertTrue(GroupCardDisplayMode.importPage.showsSubtitle)
+        XCTAssertTrue(GroupCardDisplayMode.importPage.showsMetaLine)
+        XCTAssertTrue(GroupCardDisplayMode.importPage.showsSectionTitles)
+        XCTAssertFalse(GroupCardDisplayMode.importPage.supportsCollapsedSkills)
+        XCTAssertTrue(GroupCardDisplayMode.importPage.usesPlainPrimaryActionIcon)
+        XCTAssertTrue(GroupCardDisplayMode.importPage.showsSourceFacts)
+        XCTAssertEqual(GroupCardDisplayMode.importPage.scale, .home)
     }
 
     func testGroupCardTitleSizeDoesNotShrinkInMenuScale() {

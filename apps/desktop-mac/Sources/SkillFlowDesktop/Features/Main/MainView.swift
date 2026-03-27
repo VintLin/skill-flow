@@ -21,6 +21,7 @@ struct MainView: View {
         let locator: String
         let summary: String
         let aliases: [String]
+        let sourceFacts: [String]
         let skills: [ImportSkill]
         let targets: [String]
     }
@@ -359,11 +360,11 @@ struct MainView: View {
                     Spacer(minLength: 0)
                     LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
                         ForEach(groupCards) { card in
-                            SharedGroupCard(
-                                card: card,
-                                theme: theme,
-                                accent: accent,
-                                displayMode: .standard,
+                                SharedGroupCard(
+                                    card: card,
+                                    theme: theme,
+                                    accent: accent,
+                                    displayMode: .home,
                                 skillsCollapsed: false,
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
@@ -1145,26 +1146,21 @@ struct MainView: View {
     private func importPage(layout: LayoutMetrics) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                pageSectionCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Import Now ?")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        Text("Search a skills group by owner, repo URL, or git locator.")
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Import Now ?")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
 
-                        HStack(spacing: 10) {
-                            importSearchField
-                            importSearchButton
-                        }
+                    HStack(spacing: 10) {
+                        importSearchField
+                        importSearchButton
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader(
-                        title: viewModel.importSubmittedQuery.isEmpty ? "Recommended Groups" : "Search Results",
-                        subtitle: importSectionSubtitle,
+                        title: viewModel.importSubmittedQuery.isEmpty ? "Recommended" : "Search Result",
+                        subtitle: "",
                         badge: "\(importDisplayItems.count)"
                     )
 
@@ -1194,7 +1190,7 @@ struct MainView: View {
                                         card: importCardModel(for: item),
                                         theme: theme,
                                         accent: accent,
-                                        displayMode: .standard,
+                                        displayMode: .importPage,
                                         skillsCollapsed: false,
                                         isUpdating: viewModel.isImportingImportGroup(item.id),
                                         onOpen: nil,
@@ -1213,7 +1209,7 @@ struct MainView: View {
                                         onToggleAllTargets: {
                                             toggleAllImportTargets(for: item)
                                         },
-                                        actionButtonTitle: "导入",
+                                        actionButtonTitle: nil,
                                         actionButtonIcon: ActionIcon.import,
                                         onActionButton: {
                                             let draft = importDraft(for: item)
@@ -1267,7 +1263,7 @@ struct MainView: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: detailAgentItemHeight, alignment: .leading)
         .background(AppTheme.headerControlFill(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay {
@@ -1284,7 +1280,7 @@ struct MainView: View {
         } label: {
             actionIcon(.search, size: 12)
                 .foregroundStyle(AppTheme.pageBackground(for: theme))
-                .frame(width: 42, height: 42)
+                .frame(width: detailAgentItemHeight, height: detailAgentItemHeight)
                 .background(AppTheme.brand(for: accent, in: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
         }
@@ -1315,9 +1311,11 @@ struct MainView: View {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text(subtitle)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                }
             }
             Spacer()
             Text(badge)
@@ -1373,6 +1371,7 @@ struct MainView: View {
                 locator: item.locator,
                 summary: importCardSummary(for: item),
                 aliases: item.aliases,
+                sourceFacts: importSourceFacts(for: item),
                 skills: item.skills.map { skill in
                     ImportSkill(
                         id: skill.id,
@@ -1409,6 +1408,7 @@ struct MainView: View {
             errorCount: 0,
             skillSelection: importSelectionState(allIds: item.skills.map(\.id), selectedIds: draft.selectedSkillIds),
             targetSelection: importSelectionState(allIds: item.targets, selectedIds: draft.enabledTargetIds),
+            sourceFacts: item.sourceFacts,
             skills: item.skills.map { skill in
                 MainViewModel.GroupCardSkill(
                     id: skill.id,
@@ -1429,19 +1429,6 @@ struct MainView: View {
         )
     }
 
-    private var importSectionSubtitle: String {
-        switch viewModel.importSearchPhase {
-        case .idle, .ready:
-            return viewModel.importSubmittedQuery.isEmpty
-                ? "Showing suggested groups that are not installed locally."
-                : "Showing grouped results from skills.sh."
-        case .loading:
-            return "Fetching import data..."
-        case .failed(let message):
-            return message
-        }
-    }
-
     private func importCardSummary(for item: MainViewModel.ImportGroupItem) -> String {
         if !item.summary.isEmpty {
             return item.summary
@@ -1457,6 +1444,23 @@ struct MainView: View {
         default:
             return "Import from \(item.canonicalRepo)"
         }
+    }
+
+    private func importSourceFacts(for item: MainViewModel.ImportGroupItem) -> [String] {
+        var facts: [String] = []
+        if let totalInstalls = item.totalInstalls, totalInstalls > 0 {
+            facts.append("Installs \(formattedStarCount(totalInstalls))")
+        }
+        if let starCount = item.starCount, starCount > 0 {
+            facts.append("Stars \(formattedStarCount(starCount))")
+        }
+        if let skillCount = item.skillCount, skillCount > 0 {
+            facts.append("Skills \(skillCount)")
+        }
+        if !item.matchedSkillNames.isEmpty {
+            facts.append("Matches \(item.matchedSkillNames.joined(separator: ", "))")
+        }
+        return facts
     }
 
     private func importCardSubtitle(for item: RecommendedImport) -> String {
