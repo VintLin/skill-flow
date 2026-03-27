@@ -28,6 +28,7 @@ struct MarkdownDocumentView: View, Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .environment(\.colorScheme, colorScheme)
     }
 
     private func metadataTable(_ metadata: [MainViewModel.MetadataEntry]) -> some View {
@@ -68,6 +69,10 @@ struct MarkdownDocumentView: View, Equatable {
             return .systemAction
             #endif
         }
+    }
+
+    private var colorScheme: ColorScheme {
+        theme == .dark ? .dark : .light
     }
 }
 

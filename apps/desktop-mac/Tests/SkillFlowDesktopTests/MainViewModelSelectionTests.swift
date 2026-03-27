@@ -70,6 +70,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.subtitle, "clawhub")
+        XCTAssertEqual(detail?.starCount, 1200)
         XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
         XCTAssertEqual(detail?.enabledSkillCount, 1)
         XCTAssertEqual(detail?.totalSkillCount, 2)
@@ -91,6 +92,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertFalse(detail?.skills.first?.documents.first?.content.contains("---") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("# browse") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("Final verification line.") == true)
+        XCTAssertEqual(detail?.skills.first?.starCount, 1200)
     }
 
     func testDetailViewDataFallsBackWhenSkillDocumentIsMissing() async throws {
@@ -167,6 +169,7 @@ private struct TestFixture {
         var kind: String
         var displayName: String
         var locator: String
+        var starCount: Int?
         var health: String
         var updatedAt: String
         var leafs: [LeafState]
@@ -187,6 +190,7 @@ private struct TestFixture {
                     kind: "clawhub",
                     displayName: "AlphaHub",
                     locator: "https://github.com/acme/alpha-hub",
+                    starCount: 1200,
                     health: "HEALTHY",
                     updatedAt: "2026-03-26T00:00:00Z",
                     leafs: [
@@ -205,6 +209,7 @@ private struct TestFixture {
                     kind: "clawhub",
                     displayName: "BetaHub",
                     locator: "https://github.com/acme/beta-hub",
+                    starCount: 88,
                     health: "HEALTHY",
                     updatedAt: "2026-03-26T00:00:00Z",
                     leafs: [
@@ -226,6 +231,7 @@ private struct TestFixture {
                     kind: "clawhub",
                     displayName: "AlphaHub",
                     locator: "https://github.com/acme/alpha-hub",
+                    starCount: 1200,
                     health: "HEALTHY",
                     updatedAt: "2026-03-26T00:00:00Z",
                     leafs: [
@@ -247,6 +253,7 @@ private struct TestFixture {
                     kind: "clawhub",
                     displayName: "BetaHub",
                     locator: "https://github.com/acme/beta-hub",
+                    starCount: 88,
                     health: "HEALTHY",
                     updatedAt: "2026-03-26T00:00:00Z",
                     leafs: [
@@ -581,6 +588,9 @@ private struct TestFixture {
             locator: source.locator,
             addedAt: '2026-03-25T12:00:00Z',
             selectionMode: 'partial'
+          },
+          sourceStats: {
+            starCount: source.starCount ?? null
           },
           binding: {
             selectedLeafIds: source.selectedLeafIds || [],

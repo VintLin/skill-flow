@@ -117,6 +117,9 @@ final class MainViewModel {
         let title: String
         let summary: String
         let version: String?
+        let author: String
+        let originLabel: String
+        let starCount: Int?
         let folderPath: String?
         let relativeFolderPath: String?
         let documents: [DocumentTab]
@@ -163,6 +166,7 @@ final class MainViewModel {
         let subtitle: String
         let author: String
         let originLabel: String
+        let starCount: Int?
         let locator: String
         let groupPath: String?
         let updatedAt: String
@@ -1513,6 +1517,7 @@ final class MainViewModel {
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
         let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
+        let sourceStatsPayload = payload["sourceStats"] as? [String: Any] ?? [:]
         let deploymentsPayload = payload["deployments"] as? [[String: Any]] ?? []
         let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
 
@@ -1526,6 +1531,10 @@ final class MainViewModel {
             locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
             lockPayload: lockPayload
         )
+        let author = authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
+            ?? "@\(summary.sourceKind.lowercased())"
+        let originLabel = displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
+        let starCount = sourceStatsPayload["starCount"] as? Int
         let projectedNamesByLeafId = projectionNameMap(for: sourceId)
 
         let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId -> DetailSkill? in
@@ -1576,6 +1585,9 @@ final class MainViewModel {
                 title: title,
                 summary: leaf.description.isEmpty ? linkName : leaf.description,
                 version: version,
+                author: author,
+                originLabel: originLabel,
+                starCount: starCount,
                 folderPath: folderPath,
                 relativeFolderPath: projectedRelativeFolderPath(
                     relativeFolderPath,
@@ -1632,9 +1644,9 @@ final class MainViewModel {
                 ?? (summarySourcePayload["displayName"] as? String)?.nonEmpty
                 ?? summary.sourceDisplayName,
             subtitle: (sourcePayload["kind"] as? String)?.nonEmpty ?? summary.sourceKind,
-            author: authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
-                ?? "@\(summary.sourceKind.lowercased())",
-            originLabel: displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator),
+            author: author,
+            originLabel: originLabel,
+            starCount: starCount,
             locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
             groupPath: groupPath,
             updatedAt: (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt,

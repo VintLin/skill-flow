@@ -14,6 +14,7 @@ enum ActionIcon: String {
     case pin
     case search
     case settings
+    case star
     case update
 
     func image(size: CGFloat? = nil, isTemplate: Bool = true) -> NSImage? {

@@ -12,6 +12,8 @@ struct MainView: View {
     private let detailAgentItemHeight: CGFloat = 34
     private let detailAgentIconSize: CGFloat = 20
     private let topBarTitleSize: CGFloat = 17
+    private let detailHeaderTitleSize: CGFloat = 17
+    private let detailHeaderMetaSize: CGFloat = 11
 
     private struct RecommendedImport: Identifiable {
         let id: String
@@ -615,27 +617,24 @@ struct MainView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
-                Text("\(detail?.title ?? fallbackGroupId) by \(detail?.author ?? "@unknown")")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(detail?.title ?? fallbackGroupId)
+                        .font(.system(size: detailHeaderTitleSize, weight: .semibold))
+                        .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+
+                    Text("by \(detail?.author ?? "@unknown")")
+                        .font(.system(size: detailHeaderMetaSize, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 12)
 
                 Button {
                     Task { await viewModel.updateCurrentGroup() }
                 } label: {
-                    Group {
-                        if isUpdating {
-                            actionIcon(
-                                .update,
-                                size: 14,
-                                foreground: AppTheme.updateButtonActiveNSColor(for: theme)
-                            )
-                        } else {
-                            actionIcon(.update, size: 14)
-                                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        }
-                    }
+                    actionIcon(.update, size: 14)
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .rotationEffect(.degrees(updateButtonRotation))
                     .frame(width: 32, height: 32)
                 }
@@ -657,10 +656,10 @@ struct MainView: View {
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("from \(detail?.originLabel ?? "unknown source")")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .lineLimit(1)
+                detailOriginRow(
+                    originLabel: detail?.originLabel ?? "unknown source",
+                    starCount: detail?.starCount
+                )
 
                 Spacer(minLength: 12)
 
@@ -677,9 +676,16 @@ struct MainView: View {
     private func detailSkillHeader(skill: MainViewModel.DetailSkill?, fallbackGroupId: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
-                Text(skill?.title ?? fallbackGroupId)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(skill?.title ?? fallbackGroupId)
+                        .font(.system(size: detailHeaderTitleSize, weight: .semibold))
+                        .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+
+                    Text("by \(skill?.author ?? "@unknown")")
+                        .font(.system(size: detailHeaderMetaSize, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 12)
 
@@ -693,16 +699,11 @@ struct MainView: View {
                     Button {
                         openPath(folderPath)
                     } label: {
-                        Text("from \(path)")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(AppTheme.textMuted(for: theme))
-                            .lineLimit(1)
+                        detailOriginRow(originLabel: path, starCount: skill?.starCount)
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Text("from .")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                    detailOriginRow(originLabel: skill?.originLabel ?? ".", starCount: skill?.starCount)
                 }
 
                 Spacer(minLength: 12)
@@ -717,11 +718,11 @@ struct MainView: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(detail?.title ?? groupId)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                     .lineLimit(1)
                 Text("by \(detail?.author ?? "@unknown")")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(1)
             }
@@ -758,8 +759,8 @@ struct MainView: View {
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(skill.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                     .lineLimit(1)
                 if let versionText {
                     Text(versionText)
@@ -791,6 +792,37 @@ struct MainView: View {
         .onHover { isHovering in
             detailHoveredItemIdByGroup[groupId] = isHovering ? detailSkillItemId(skill.id) : nil
         }
+    }
+
+    private func detailOriginRow(originLabel: String, starCount: Int?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("from \(originLabel)")
+                .font(.system(size: detailHeaderMetaSize, weight: .regular))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .lineLimit(1)
+
+            if let starCount {
+                Text("star \(formattedStarCount(starCount))")
+                    .font(.system(size: detailHeaderMetaSize, weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+
+                if let image = ActionIcon.star.symbolImage(
+                    size: detailHeaderMetaSize,
+                    foreground: AppTheme.textMutedNSColor(for: theme)
+                ) {
+                    Image(nsImage: image)
+                        .interpolation(.high)
+                        .antialiased(true)
+                }
+            }
+        }
+    }
+
+    private func formattedStarCount(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
     private func detailGroupDocuments(_ detail: MainViewModel.DetailViewData, groupId: String) -> some View {
@@ -1859,6 +1891,25 @@ enum AppTheme {
         }
     }
 
+    static func textMutedNSColor(for mode: DesktopThemeMode) -> NSColor {
+        switch mode {
+        case .light:
+            return NSColor(
+                calibratedRed: 38.0 / 255.0,
+                green: 38.0 / 255.0,
+                blue: 38.0 / 255.0,
+                alpha: 0.62
+            )
+        case .dark:
+            return NSColor(
+                calibratedRed: 229.0 / 255.0,
+                green: 229.0 / 255.0,
+                blue: 231.0 / 255.0,
+                alpha: 0.68
+            )
+        }
+    }
+
     static func searchPlaceholder(for mode: DesktopThemeMode) -> Color {
         switch mode {
         case .light:
@@ -1967,24 +2018,6 @@ enum AppTheme {
             return statusWarning(for: mode)
         case .full:
             return statusSuccess(for: mode)
-        }
-    }
-
-    static func updateButtonActiveIcon(for mode: DesktopThemeMode) -> Color {
-        switch mode {
-        case .light:
-            return Color.white.opacity(0.98)
-        case .dark:
-            return Color.white.opacity(0.96)
-        }
-    }
-
-    static func updateButtonActiveNSColor(for mode: DesktopThemeMode) -> NSColor {
-        switch mode {
-        case .light:
-            return NSColor(calibratedWhite: 1.0, alpha: 0.98)
-        case .dark:
-            return NSColor(calibratedWhite: 1.0, alpha: 0.96)
         }
     }
 

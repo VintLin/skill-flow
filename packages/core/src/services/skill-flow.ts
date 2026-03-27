@@ -14,6 +14,7 @@ import type {
   Manifest,
   Result,
   SkillCandidate,
+  SourceStats,
   SourceBinding,
   SourceUpdateResult,
   SourceUpdateResultItem,
@@ -32,14 +33,14 @@ import {
   writeJsonFile,
 } from "../utils/fs.js";
 import { getBuiltinGitSources } from "../utils/builtin-git-sources.js";
-import { fetchGitHubSkillPaths } from "../utils/github-catalog.js";
+import { fetchGitHubRepoStarCount, fetchGitHubSkillPaths } from "../utils/github-catalog.js";
 import {
   buildProjectedSkillNameCandidates,
   parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "../utils/naming.js";
 import { fail, ok } from "../utils/result.js";
-import { searchClawHubSkills } from "../utils/clawhub.js";
+import { inspectClawHubSkill, searchClawHubSkills } from "../utils/clawhub.js";
 import { deriveDisplayName, deriveSourceId } from "../utils/source-id.js";
 import { DeploymentApplier } from "./deployment-applier.js";
 import { ConfigCoordinator } from "./config-coordinator.js";
@@ -338,6 +339,7 @@ export class SkillFlowApp {
       binding: SourceBinding;
       leafs: LeafRecord[];
       deployments: LockFile["deployments"];
+      sourceStats: SourceStats;
     }>
   > {
     return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId));
@@ -352,6 +354,7 @@ export class SkillFlowApp {
       binding: SourceBinding;
       leafs: LeafRecord[];
       deployments: LockFile["deployments"];
+      sourceStats: SourceStats;
     }>
   > {
     const listed = await this.listWorkflowsImpl();
@@ -379,8 +382,36 @@ export class SkillFlowApp {
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
     const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
     const deployments = lockFile.deployments.filter((deployment) => deployment.sourceId === sourceId);
+    const sourceStats = await this.resolveSourceStats(source, summary.lock);
 
-    return ok({ summary, source, binding, leafs, deployments }, listed.warnings);
+    return ok({ summary, source, binding, leafs, deployments, sourceStats }, listed.warnings);
+  }
+
+  private async resolveSourceStats(
+    source: Manifest["sources"][number],
+    lock: WorkflowSummary["lock"],
+  ): Promise<SourceStats> {
+    try {
+      if (source.kind === "clawhub") {
+        const slug = lock?.packageSlug ?? this.parseClawHubSlug(source.locator);
+        if (!slug) {
+          return {};
+        }
+        const inspected = await inspectClawHubSkill(slug);
+        const stars = inspected.skill.stats?.stars;
+        return typeof stars === "number" ? { starCount: stars } : {};
+      }
+
+      const starCount = await fetchGitHubRepoStarCount(source.locator);
+      return typeof starCount === "number" ? { starCount } : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private parseClawHubSlug(locator: string): string | undefined {
+    const match = locator.match(/^clawhub:([^@\s]+)(?:@.+)?$/);
+    return match?.[1];
   }
 
   private async listWorkflowsImpl(): Promise<Result<{ summaries: WorkflowSummary[] }>> {

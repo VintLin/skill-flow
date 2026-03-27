@@ -281,3 +281,7 @@ export type SkillCandidate = {
   installed: boolean;
   action: SkillCandidateAction;
 };
+
+export type SourceStats = {
+  starCount?: number;
+};
