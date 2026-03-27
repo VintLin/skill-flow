@@ -1,9 +1,14 @@
 import XCTest
+import Observation
 
 @testable import SkillFlowDesktop
 
 @MainActor
 final class DesktopNavigationTests: XCTestCase {
+    private final class InvalidationBox: @unchecked Sendable {
+        var didInvalidate = false
+    }
+
     func testNavigatorStartsOnHomeRoute() {
         let navigator = DesktopNavigator()
 
@@ -18,6 +23,22 @@ final class DesktopNavigationTests: XCTestCase {
         XCTAssertEqual(navigator.currentRoute, .detail(sourceId: "alpha"))
     }
 
+    func testStandaloneNavigatorPublishesRouteChangesThroughObservation() {
+        let navigator = DesktopNavigator()
+        let box = InvalidationBox()
+
+        withObservationTracking {
+            _ = navigator.currentRoute
+        } onChange: {
+            box.didInvalidate = true
+        }
+
+        navigator.showSettings()
+
+        XCTAssertTrue(box.didInvalidate)
+        XCTAssertEqual(navigator.currentRoute, .settings)
+    }
+
     func testBoundNavigatorWritesDetailRouteIntoAppStateViewState() {
         let state = DesktopAppState()
         let navigator = DesktopNavigator(appState: state)
@@ -26,6 +47,24 @@ final class DesktopNavigationTests: XCTestCase {
 
         XCTAssertEqual(state.view.currentRoute, .detail(sourceId: "alpha"))
         XCTAssertEqual(navigator.currentRoute, .detail(sourceId: "alpha"))
+    }
+
+    func testBoundNavigatorWritesRemainingRoutesIntoAppStateViewState() {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "seed")
+        let navigator = DesktopNavigator(appState: state)
+
+        navigator.showHome()
+        XCTAssertEqual(state.view.currentRoute, .home)
+        XCTAssertEqual(navigator.currentRoute, .home)
+
+        navigator.showImportPage()
+        XCTAssertEqual(state.view.currentRoute, .importPage)
+        XCTAssertEqual(navigator.currentRoute, .importPage)
+
+        navigator.showSettings()
+        XCTAssertEqual(state.view.currentRoute, .settings)
+        XCTAssertEqual(navigator.currentRoute, .settings)
     }
 
     func testDesktopAppStateStartsWithHomeViewStateAndIdleBootstrapPhase() {
