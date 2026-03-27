@@ -27,6 +27,7 @@ struct SettingsView: View {
     }
 
     private let controlColumnWidth: CGFloat = 168
+    private let dropdownControlWidth: CGFloat = 148
 
     private var colorScheme: ColorScheme {
         theme == .dark ? .dark : .light
@@ -75,7 +76,7 @@ struct SettingsView: View {
         }
     }
 
-    private var generalSectionZIndex: Double {
+    private var advancedSectionZIndex: Double {
         switch openDropdown {
         case .logLevel:
             return 20
@@ -147,7 +148,12 @@ struct SettingsView: View {
                             Toggle("", isOn: $autoLaunch)
                                 .labelsHidden()
                         }
+                    }
+                )
 
+                settingsSection(
+                    title: t("settings.section.advanced"),
+                    rows: {
                         settingsRow(title: t("settings.row.log_level.title"), description: t("settings.row.log_level.description")) {
                             dropdownControl(
                                 kind: .logLevel,
@@ -158,19 +164,14 @@ struct SettingsView: View {
                                 onSelect: { logLevel = $0 }
                             )
                         }
-                    }
-                )
-                .zIndex(generalSectionZIndex)
 
-                settingsSection(
-                    title: t("settings.section.advanced"),
-                    rows: {
                         settingsRow(title: t("settings.row.external_helper_override.title"), description: t("settings.row.external_helper_override.description")) {
                             Toggle("", isOn: $experimentalExternalHelper)
                                 .labelsHidden()
                         }
                     }
                 )
+                .zIndex(advancedSectionZIndex)
             }
         }
         .frame(maxWidth: 900, alignment: .leading)
@@ -251,7 +252,7 @@ struct SettingsView: View {
                     .foregroundStyle(AppTheme.textMuted(for: theme))
             }
             .padding(.horizontal, 10)
-            .frame(width: controlColumnWidth, height: 32, alignment: .leading)
+            .frame(width: dropdownControlWidth, height: 32, alignment: .leading)
             .background(AppTheme.pageBackground(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
@@ -288,7 +289,7 @@ struct SettingsView: View {
                                 }
                             }
                             .padding(.horizontal, 10)
-                            .frame(width: controlColumnWidth, height: 30, alignment: .leading)
+                            .frame(width: dropdownControlWidth, height: 30, alignment: .leading)
                             .background(option.id == selectedId ? AppTheme.toolbarButtonBackground(for: theme) : Color.clear)
                             .clipShape(RoundedRectangle(cornerRadius: 7))
                             .contentShape(Rectangle())
@@ -306,7 +307,7 @@ struct SettingsView: View {
                 .offset(y: 38)
             }
         }
-        .frame(width: controlColumnWidth, alignment: .trailing)
+        .frame(width: dropdownControlWidth, alignment: .trailing)
         .zIndex(openDropdown == kind ? 10 : 0)
     }
 }
