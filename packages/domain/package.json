@@ -5,8 +5,12 @@
   "private": true,
   "main": "dist/index.js",
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
   },
+  "types": "./src/index.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
