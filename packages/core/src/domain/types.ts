@@ -336,3 +336,119 @@ export type SourceMetadataCacheEntry = {
 };
 
 export type SourceMetadataCache = Record<string, SourceMetadataCacheEntry>;
+
+export type ImportReasonCode = SourceMetadataReasonCode;
+
+export type ImportAsyncState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready" }
+  | {
+      status: "failed";
+      reasonCode: ImportReasonCode;
+      retryable: boolean;
+    };
+
+export type ImportGroupCandidate = {
+  id: string;
+  provider: "skills";
+  locator: string;
+  canonicalRepo: string;
+  aliases: string[];
+  title: string;
+  installed: boolean;
+  summary?: string;
+  sourceUrl?: string;
+  repoUrl?: string;
+  starCount?: number;
+  totalInstalls?: number;
+  skillCount?: number;
+  matchedSkillNames?: string[];
+  enrichState: ImportAsyncState;
+  previewState: ImportAsyncState;
+};
+
+export type ImportPreviewSkill = {
+  id: string;
+  title: string;
+  summary: string;
+  selectedByDefault: boolean;
+};
+
+export type ImportPreviewTarget = {
+  id: DeploymentTargetName;
+  selectedByDefault: boolean;
+};
+
+export type ImportDraft = {
+  selectedSkillIds: string[];
+  enabledTargets: DeploymentTargetName[];
+};
+
+export type ImportPreviewResult =
+  | {
+      status: "ready";
+      locator: string;
+      canonicalRepo: string;
+      selectedSkillIds: string[];
+      enabledTargets: DeploymentTargetName[];
+      skills: ImportPreviewSkill[];
+      targets: ImportPreviewTarget[];
+    }
+  | {
+      status: "failed";
+      reasonCode: ImportReasonCode;
+      retryable: boolean;
+    };
+
+export type ImportSourceResult =
+  | {
+      status: "ready";
+      sourceId: string;
+      canonicalRepo: string;
+    }
+  | {
+      status: "failed";
+      reasonCode: string;
+      retryable: boolean;
+    };
+
+export type ImportGroupCacheEntry = {
+  canonicalRepo: string;
+  status: "ready" | "failed";
+  checkedAt: string;
+  expiresAt: string;
+  reasonCode?: ImportReasonCode;
+  retryable?: boolean;
+  data?: {
+    aliases: string[];
+    title: string;
+    summary?: string;
+    sourceUrl?: string;
+    repoUrl?: string;
+    starCount?: number;
+    totalInstalls?: number;
+    skillCount?: number;
+  };
+};
+
+export type ImportPreviewCacheEntry = {
+  canonicalRepo: string;
+  status: ImportPreviewResult["status"];
+  checkedAt: string;
+  expiresAt: string;
+  reasonCode?: ImportReasonCode;
+  retryable?: boolean;
+  data?: {
+    locator: string;
+    selectedSkillIds: string[];
+    enabledTargets: DeploymentTargetName[];
+    skills: ImportPreviewSkill[];
+    targets: ImportPreviewTarget[];
+  };
+};
+
+export type ImportDirectoryCache = {
+  groups: Record<string, ImportGroupCacheEntry>;
+  previews: Record<string, ImportPreviewCacheEntry>;
+};

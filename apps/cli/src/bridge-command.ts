@@ -6,7 +6,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@skill-flow/shared-types/protocol";
-import type { DraftBinding } from "@skill-flow/core/domain/types.js";
+import type { DraftBinding, ImportDraft } from "@skill-flow/core/domain/types.js";
 import type { SkillFlowApp } from "@skill-flow/core/services/skill-flow.js";
 
 type BridgeFailure = {
@@ -54,6 +54,58 @@ export async function executeBridgeRequest(
         const payload = expectObjectPayload(request.payload, "inspect");
         const sourceId = expectString(payload.sourceId, "sourceId", "inspect");
         const result = await app.inspectSource(sourceId);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
+      case "search-import-groups": {
+        const payload = expectOptionalObject(request.payload, "search-import-groups");
+        const query = payload ? expectOptionalString(payload.query, "query", "search-import-groups") : undefined;
+        const result = await app.searchImportGroups(query ?? "");
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
+      case "preview-import-source": {
+        const payload = expectObjectPayload(request.payload, "preview-import-source");
+        const locator = expectString(payload.locator, "locator", "preview-import-source");
+        const result = await app.previewImportSource(locator);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
+      case "import-source": {
+        const payload = expectObjectPayload(request.payload, "import-source");
+        const locator = expectString(payload.locator, "locator", "import-source");
+        const draft = expectOptionalImportDraft(payload.draft);
+        const result = await app.importSource(locator, draft);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
         }
@@ -246,6 +298,20 @@ function expectString(value: JsonValue | undefined, field: string, command: stri
   return value;
 }
 
+function expectOptionalString(
+  value: JsonValue | undefined,
+  field: string,
+  command: string,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new Error(`Bridge command '${command}' requires string field '${field}' when provided.`);
+  }
+  return value;
+}
+
 function parseRequiredStringArray(value: JsonValue | undefined, field: string): string[] {
   const parsed = parseOptionalStringArray(value, field);
   if (!parsed || parsed.length === 0) {
@@ -276,6 +342,27 @@ function expectDraftBinding(value: JsonValue | undefined): DraftBinding {
   return {
     selectedLeafIds,
     enabledTargets: enabledTargets as DraftBinding["enabledTargets"],
+  };
+}
+
+function expectOptionalImportDraft(value: JsonValue | undefined): ImportDraft | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isJsonObject(value)) {
+    throw new Error("Field 'draft' must be a JSON object when provided.");
+  }
+
+  const selectedSkillIds = parseOptionalStringArray(value.selectedSkillIds, "draft.selectedSkillIds");
+  if (!selectedSkillIds) {
+    throw new Error("Field 'draft.selectedSkillIds' must be a string array.");
+  }
+
+  const enabledTargets = parseOptionalStringArray(value.enabledTargets, "draft.enabledTargets") ?? [];
+
+  return {
+    selectedSkillIds,
+    enabledTargets: enabledTargets as ImportDraft["enabledTargets"],
   };
 }
 

@@ -197,32 +197,36 @@ final class MainViewModel {
         let skills: [DetailSkill]
     }
 
-    enum ImportPhase: Equatable {
+    enum ImportLoadPhase: Equatable {
         case idle
-        case preparing
-        case prepared
-        case importing
+        case loading
+        case ready
         case failed(String)
     }
 
-    struct ImportPreviewSkill: Identifiable, Equatable {
+    struct ImportGroupSkill: Identifiable, Equatable {
         let id: String
         let title: String
-        let relativePath: String
         let summary: String
-        let isSelected: Bool
+        let selectedByDefault: Bool
     }
 
-    struct ImportPreviewState: Equatable {
-        let sourceId: String
+    struct ImportGroupTarget: Identifiable, Equatable {
+        let id: String
+        let selectedByDefault: Bool
+    }
+
+    struct ImportGroupItem: Identifiable, Equatable {
+        let id: String
         let title: String
         let locator: String
-        let kind: String
-        let availableTargets: [String]
-        let selectedLeafIds: [String]
-        let enabledTargets: [String]
-        let skills: [ImportPreviewSkill]
-        let warnings: [String]
+        let canonicalRepo: String
+        let aliases: [String]
+        let summary: String
+        let matchedSkillNames: [String]
+        let previewPhase: ImportLoadPhase
+        let skills: [ImportGroupSkill]
+        let targets: [ImportGroupTarget]
     }
 
     struct DeploymentRow: Identifiable {
@@ -379,11 +383,13 @@ final class MainViewModel {
 
     var sourceIds: [String] = []
     var selectedSourceId: String?
-    var newSourceLocator: String = ""
     var searchQuery: String = ""
+    var importSubmittedQuery: String = ""
+    var importSearchPhase: ImportLoadPhase = .idle
+    var recommendedImportGroups: [ImportGroupItem] = []
+    var searchImportGroups: [ImportGroupItem] = []
+    var importingImportGroupId: String?
     var currentPage: Page = .home
-    var importPhase: ImportPhase = .idle
-    var importPreview: ImportPreviewState?
 
     var detailText: String = "Select a source to inspect details."
     var healthLabel: String = "Unknown"
@@ -1029,238 +1035,278 @@ final class MainViewModel {
         }
     }
 
-    func addSource() async {
-        let locator = newSourceLocator.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !locator.isEmpty else {
-            detailText = "Add failed: source locator is empty."
-            showToast(style: .error, message: "Import failed: empty source locator.")
-            return
-        }
+    var importDisplayGroups: [ImportGroupItem] {
+        importSubmittedQuery.isEmpty ? recommendedImportGroups : searchImportGroups
+    }
+
+    func isImportingImportGroup(_ groupId: String) -> Bool {
+        importingImportGroupId == groupId
+    }
+
+    func loadImportPageIfNeeded() async {
+        guard recommendedImportGroups.isEmpty else { return }
+        await loadRecommendedImportGroups()
+    }
+
+    func loadRecommendedImportGroups() async {
+        importSearchPhase = .loading
         do {
-            _ = try await bridgeClient.add(locator: locator, applyNow: true)
-            newSourceLocator = ""
-            await refreshList()
-            await runDoctor()
-            showToast(style: .success, message: "Imported source.")
+            let response = try await bridgeClient.searchImportGroups(query: nil)
+            let payload = response.data?.value as? [String: Any] ?? [:]
+            recommendedImportGroups = parseImportGroupsPayload(payload: payload)
+            importSubmittedQuery = ""
+            importSearchPhase = .ready
         } catch {
-            detailText = "Add failed: \(error.localizedDescription)"
+            importSearchPhase = .failed("Unable to load recommendations.")
             showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
         }
     }
 
-    func prepareImport() async {
-        let locator = newSourceLocator.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !locator.isEmpty else {
-            importPhase = .failed("Source locator is empty.")
-            showToast(style: .error, message: "Import failed: empty source locator.")
+    func submitImportSearch(_ query: String) async {
+        let submitted = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        importSubmittedQuery = submitted
+
+        if submitted.isEmpty {
+            searchImportGroups = []
+            await loadRecommendedImportGroups()
             return
         }
 
-        if let preview = importPreview {
-            _ = try? await bridgeClient.uninstall(sourceIds: [preview.sourceId])
-            importPreview = nil
+        importSearchPhase = .loading
+        do {
+            let response = try await bridgeClient.searchImportGroups(query: submitted)
+            let payload = response.data?.value as? [String: Any] ?? [:]
+            searchImportGroups = parseImportGroupsPayload(payload: payload)
+            importSearchPhase = .ready
+        } catch {
+            importSearchPhase = .failed("Unable to search import groups.")
+            showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
+        }
+    }
+
+    func previewImportGroupIfNeeded(_ groupId: String) async {
+        guard let item = importGroupItem(id: groupId) else { return }
+        guard item.previewPhase == .idle else { return }
+
+        setPreviewPhase(.loading, for: groupId)
+        do {
+            let response = try await bridgeClient.previewImportSource(locator: item.locator)
+            let payload = response.data?.value as? [String: Any] ?? [:]
+            applyImportPreviewPayload(payload, for: groupId, fallbackLocator: item.locator)
+        } catch {
+            setPreviewPhase(.failed(error.localizedDescription), for: groupId)
+        }
+    }
+
+    func importImportGroup(
+        groupId: String,
+        locator: String,
+        selectedSkillIds: [String],
+        enabledTargets: [String]
+    ) async {
+        guard importingImportGroupId == nil else { return }
+        importingImportGroupId = groupId
+        defer { importingImportGroupId = nil }
+
+        var finalSelectedSkillIds = selectedSkillIds
+        var finalEnabledTargets = enabledTargets
+
+        if finalSelectedSkillIds.isEmpty,
+           let item = importGroupItem(id: groupId),
+           item.skills.isEmpty {
+            await previewImportGroupIfNeeded(groupId)
+            if let refreshed = importGroupItem(id: groupId) {
+                finalSelectedSkillIds = refreshed.skills.filter(\.selectedByDefault).map(\.id)
+                finalEnabledTargets = refreshed.targets.filter(\.selectedByDefault).map(\.id)
+            }
         }
 
-        importPhase = .preparing
-
         do {
-            let response = try await bridgeClient.add(locator: locator, applyNow: false)
-            guard let payload = response.data?.value as? [String: Any] else {
-                importPhase = .failed("Invalid prepare response.")
+            let response = try await bridgeClient.importSource(
+                locator: locator,
+                selectedSkillIds: finalSelectedSkillIds,
+                enabledTargets: finalEnabledTargets
+            )
+            guard let payload = response.data?.value as? [String: Any],
+                  let status = payload["status"] as? String
+            else {
+                showToast(style: .error, message: "Import failed: invalid response.")
                 return
             }
-            let preview = parseImportPreview(payload: payload, warnings: response.warnings.map(\.message), fallbackLocator: locator)
-            importPreview = preview
-            importPhase = .prepared
-            showToast(style: .success, message: "Import preview ready.")
+
+            if status != "ready" {
+                let reasonCode = payload["reasonCode"] as? String ?? "unknown"
+                showToast(style: .error, message: "Import failed: \(reasonCode)")
+                return
+            }
+
+            let sourceId = payload["sourceId"] as? String ?? ""
+            await refreshList()
+            await runDoctor()
+            if !sourceId.isEmpty {
+                await selectSource(sourceId)
+                currentPage = .detail(sourceId: sourceId)
+            }
+            recommendedImportGroups.removeAll(where: { $0.id == groupId })
+            searchImportGroups.removeAll(where: { $0.id == groupId })
+            showToast(style: .success, message: "Imported source.")
         } catch {
-            importPhase = .failed(error.localizedDescription)
             showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
         }
     }
 
-    func confirmPreparedImport() async {
-        guard let preview = importPreview else {
-            importPhase = .failed("Missing import preview.")
+    private func parseImportGroupsPayload(payload: [String: Any]) -> [ImportGroupItem] {
+        let groups = payload["groups"] as? [[String: Any]] ?? []
+        return groups.compactMap { group in
+            guard let id = (group["id"] as? String)?.nonEmpty,
+                  let title = (group["title"] as? String)?.nonEmpty,
+                  let locator = (group["locator"] as? String)?.nonEmpty,
+                  let canonicalRepo = (group["canonicalRepo"] as? String)?.nonEmpty
+            else {
+                return nil
+            }
+
+            let aliases = uniqueSorted(group["aliases"] as? [String] ?? [])
+            let matchedSkillNames = uniqueSorted(group["matchedSkillNames"] as? [String] ?? [])
+
+            return ImportGroupItem(
+                id: id,
+                title: title,
+                locator: locator,
+                canonicalRepo: canonicalRepo,
+                aliases: aliases,
+                summary: (group["summary"] as? String) ?? "",
+                matchedSkillNames: matchedSkillNames,
+                previewPhase: parseImportLoadPhase(group["previewState"] as? [String: Any]),
+                skills: [],
+                targets: []
+            )
+        }
+    }
+
+    private func parseImportLoadPhase(_ payload: [String: Any]?) -> ImportLoadPhase {
+        guard let payload, let status = payload["status"] as? String else {
+            return .idle
+        }
+
+        switch status {
+        case "loading":
+            return .loading
+        case "ready":
+            return .ready
+        case "failed":
+            return .failed(importReasonMessage(reasonCode: payload["reasonCode"] as? String))
+        default:
+            return .idle
+        }
+    }
+
+    private func applyImportPreviewPayload(
+        _ payload: [String: Any],
+        for groupId: String,
+        fallbackLocator: String
+    ) {
+        guard let status = payload["status"] as? String else {
+            setPreviewPhase(.failed("Invalid preview response."), for: groupId)
             return
         }
 
-        importPhase = .importing
-
-        do {
-            _ = try await bridgeClient.apply(
-                sourceId: preview.sourceId,
-                selectedLeafIds: preview.selectedLeafIds,
-                enabledTargets: preview.enabledTargets
-            )
-            await refreshList()
-            await runDoctor()
-            await selectSource(preview.sourceId)
-            currentPage = .detail(sourceId: preview.sourceId)
-            newSourceLocator = ""
-            importPreview = nil
-            importPhase = .idle
-            showToast(style: .success, message: "Imported source.")
-        } catch {
-            importPhase = .failed(error.localizedDescription)
-            showToast(style: .error, message: "Import failed: \(error.localizedDescription)")
-        }
-    }
-
-    func resetImportState() {
-        importPhase = .idle
-        importPreview = nil
-    }
-
-    func discardPreparedImport() async {
-        if let preview = importPreview {
-            _ = try? await bridgeClient.uninstall(sourceIds: [preview.sourceId])
-        }
-        resetImportState()
-    }
-
-    func importSkillSelectionState() -> SelectionState {
-        guard let preview = importPreview else { return .empty }
-        return selectionState(allIds: preview.skills.map(\.id), selectedIds: preview.selectedLeafIds)
-    }
-
-    func importTargetSelectionState() -> SelectionState {
-        guard let preview = importPreview else { return .empty }
-        return selectionState(allIds: preview.availableTargets, selectedIds: preview.enabledTargets)
-    }
-
-    func toggleImportSkill(_ skillId: String) {
-        guard var preview = importPreview else { return }
-        let currentlySelected = Set(preview.selectedLeafIds)
-        let nextSelected: [String]
-        if currentlySelected.contains(skillId) {
-            nextSelected = preview.skills.map(\.id).filter { currentlySelected.subtracting([skillId]).contains($0) }
-        } else {
-            nextSelected = preview.skills.map(\.id).filter { currentlySelected.union([skillId]).contains($0) }
+        if status != "ready" {
+            setPreviewPhase(.failed(importReasonMessage(reasonCode: payload["reasonCode"] as? String)), for: groupId)
+            return
         }
 
-        preview = ImportPreviewState(
-            sourceId: preview.sourceId,
-            title: preview.title,
-            locator: preview.locator,
-            kind: preview.kind,
-            availableTargets: preview.availableTargets,
-            selectedLeafIds: nextSelected,
-            enabledTargets: preview.enabledTargets,
-            skills: preview.skills.map {
-                ImportPreviewSkill(
-                    id: $0.id,
-                    title: $0.title,
-                    relativePath: $0.relativePath,
-                    summary: $0.summary,
-                    isSelected: nextSelected.contains($0.id)
-                )
-            },
-            warnings: preview.warnings
-        )
-        importPreview = preview
-    }
+        let skillsPayload = payload["skills"] as? [[String: Any]] ?? []
+        let targetsPayload = payload["targets"] as? [[String: Any]] ?? []
+        let selectedSkillIds = Set(payload["selectedSkillIds"] as? [String] ?? [])
+        let enabledTargets = Set(payload["enabledTargets"] as? [String] ?? [])
 
-    func toggleAllImportSkills() {
-        guard let preview = importPreview else { return }
-        let nextSelected = importSkillSelectionState() == .full ? [] : preview.skills.map(\.id)
-        importPreview = ImportPreviewState(
-            sourceId: preview.sourceId,
-            title: preview.title,
-            locator: preview.locator,
-            kind: preview.kind,
-            availableTargets: preview.availableTargets,
-            selectedLeafIds: nextSelected,
-            enabledTargets: preview.enabledTargets,
-            skills: preview.skills.map {
-                ImportPreviewSkill(
-                    id: $0.id,
-                    title: $0.title,
-                    relativePath: $0.relativePath,
-                    summary: $0.summary,
-                    isSelected: nextSelected.contains($0.id)
-                )
-            },
-            warnings: preview.warnings
-        )
-    }
-
-    func toggleImportTarget(_ targetId: String) {
-        guard let preview = importPreview else { return }
-        let enabled = Set(preview.enabledTargets)
-        let nextTargets = normalizedTargets(
-            enabled.contains(targetId)
-                ? preview.enabledTargets.filter { $0 != targetId }
-                : preview.enabledTargets + [targetId]
-        )
-        importPreview = ImportPreviewState(
-            sourceId: preview.sourceId,
-            title: preview.title,
-            locator: preview.locator,
-            kind: preview.kind,
-            availableTargets: preview.availableTargets,
-            selectedLeafIds: preview.selectedLeafIds,
-            enabledTargets: nextTargets,
-            skills: preview.skills,
-            warnings: preview.warnings
-        )
-    }
-
-    func toggleAllImportTargets() {
-        guard let preview = importPreview else { return }
-        let nextTargets = importTargetSelectionState() == .full ? [] : normalizedTargets(preview.availableTargets)
-        importPreview = ImportPreviewState(
-            sourceId: preview.sourceId,
-            title: preview.title,
-            locator: preview.locator,
-            kind: preview.kind,
-            availableTargets: preview.availableTargets,
-            selectedLeafIds: preview.selectedLeafIds,
-            enabledTargets: nextTargets,
-            skills: preview.skills,
-            warnings: preview.warnings
-        )
-    }
-
-    private func parseImportPreview(
-        payload: [String: Any],
-        warnings: [String],
-        fallbackLocator: String
-    ) -> ImportPreviewState {
-        let manifest = payload["manifest"] as? [String: Any] ?? [:]
-        let draft = payload["draft"] as? [String: Any] ?? [:]
-        let leafs = payload["leafs"] as? [[String: Any]] ?? []
-
-        let sourceId = (payload["sourceId"] as? String)?.nonEmpty
-            ?? (manifest["id"] as? String)?.nonEmpty
-            ?? UUID().uuidString
-        let selectedLeafIds = uniqueSorted(draft["selectedLeafIds"] as? [String] ?? [])
-        let selectedLeafIdSet = Set(selectedLeafIds)
-        let enabledTargets = normalizedTargets(draft["enabledTargets"] as? [String] ?? [])
-
-        let skills = leafs.compactMap { leaf -> ImportPreviewSkill? in
-            guard let leafId = leaf["id"] as? String else { return nil }
-            let title = (leaf["name"] as? String)?.nonEmpty ?? (leaf["linkName"] as? String)?.nonEmpty ?? leafId
-            return ImportPreviewSkill(
-                id: leafId,
+        let skills = skillsPayload.compactMap { skill -> ImportGroupSkill? in
+            guard let id = (skill["id"] as? String)?.nonEmpty,
+                  let title = (skill["title"] as? String)?.nonEmpty
+            else {
+                return nil
+            }
+            return ImportGroupSkill(
+                id: id,
                 title: title,
-                relativePath: (leaf["relativePath"] as? String)?.nonEmpty ?? leafId,
-                summary: (leaf["description"] as? String) ?? "",
-                isSelected: selectedLeafIdSet.contains(leafId)
+                summary: (skill["summary"] as? String) ?? "",
+                selectedByDefault: selectedSkillIds.contains(id)
             )
         }
 
-        return ImportPreviewState(
-            sourceId: sourceId,
-            title: (manifest["id"] as? String)?.nonEmpty ?? sourceId,
-            locator: (manifest["locator"] as? String)?.nonEmpty ?? fallbackLocator,
-            kind: (manifest["kind"] as? String)?.nonEmpty ?? "source",
-            availableTargets: uniqueSorted(payload["availableTargets"] as? [String] ?? []),
-            selectedLeafIds: selectedLeafIds,
-            enabledTargets: enabledTargets,
-            skills: skills,
-            warnings: warnings
-        )
+        let targets = targetsPayload.compactMap { target -> ImportGroupTarget? in
+            guard let id = (target["id"] as? String)?.nonEmpty else {
+                return nil
+            }
+            return ImportGroupTarget(
+                id: id,
+                selectedByDefault: enabledTargets.contains(id)
+            )
+        }
+
+        mutateImportGroup(groupId) { item in
+            ImportGroupItem(
+                id: item.id,
+                title: item.title,
+                locator: (payload["locator"] as? String)?.nonEmpty ?? fallbackLocator,
+                canonicalRepo: item.canonicalRepo,
+                aliases: item.aliases,
+                summary: item.summary,
+                matchedSkillNames: item.matchedSkillNames,
+                previewPhase: .ready,
+                skills: skills,
+                targets: targets
+            )
+        }
+    }
+
+    private func setPreviewPhase(_ phase: ImportLoadPhase, for groupId: String) {
+        mutateImportGroup(groupId) { item in
+            ImportGroupItem(
+                id: item.id,
+                title: item.title,
+                locator: item.locator,
+                canonicalRepo: item.canonicalRepo,
+                aliases: item.aliases,
+                summary: item.summary,
+                matchedSkillNames: item.matchedSkillNames,
+                previewPhase: phase,
+                skills: item.skills,
+                targets: item.targets
+            )
+        }
+    }
+
+    private func importGroupItem(id groupId: String) -> ImportGroupItem? {
+        if let group = recommendedImportGroups.first(where: { $0.id == groupId }) {
+            return group
+        }
+        return searchImportGroups.first(where: { $0.id == groupId })
+    }
+
+    private func mutateImportGroup(_ groupId: String, transform: (ImportGroupItem) -> ImportGroupItem) {
+        if let index = recommendedImportGroups.firstIndex(where: { $0.id == groupId }) {
+            recommendedImportGroups[index] = transform(recommendedImportGroups[index])
+        }
+        if let index = searchImportGroups.firstIndex(where: { $0.id == groupId }) {
+            searchImportGroups[index] = transform(searchImportGroups[index])
+        }
+    }
+
+    private func importReasonMessage(reasonCode: String?) -> String {
+        switch reasonCode {
+        case "provider_not_supported":
+            return "Current source is not supported."
+        case "provider_data_unavailable":
+            return "Current source has no readable metadata."
+        case "provider_rate_limited":
+            return "Source data is temporarily rate-limited."
+        case "provider_response_invalid":
+            return "Source response was invalid."
+        default:
+            return "Source request failed."
+        }
     }
 
     func uninstallSelectedSource() async {

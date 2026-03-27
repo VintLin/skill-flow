@@ -166,76 +166,96 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(model.toast?.message, "Updated beta.")
     }
 
-    func testPrepareImportCreatesPreviewAndConfirmImportsSource() async throws {
+    func testImportPageLoadsRecommendationsAndPreview() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
         let model = try await fixture.makeModel()
-        model.newSourceLocator = "acme/prepared"
+        model.currentPage = .importPage
 
-        await model.prepareImport()
+        await model.loadImportPageIfNeeded()
 
-        XCTAssertEqual(model.importPhase, .prepared)
-        XCTAssertEqual(model.importPreview?.title, "prepared")
-        XCTAssertEqual(model.importPreview?.skills.count, 2)
-        XCTAssertEqual(model.importPreview?.enabledTargets, ["claude-code"])
+        XCTAssertEqual(model.importSearchPhase, .ready)
+        XCTAssertEqual(model.importSubmittedQuery, "")
+        XCTAssertEqual(model.importDisplayGroups.map(\.id), ["anthropics-skills", "garrytan-gstack"])
 
-        await model.confirmPreparedImport()
+        await model.previewImportGroupIfNeeded("anthropics-skills")
 
-        XCTAssertEqual(model.importPhase, .idle)
-        XCTAssertNil(model.importPreview)
-        XCTAssertEqual(model.currentPage, .detail(sourceId: "prepared"))
-        XCTAssertEqual(model.selectedGroupId, "prepared")
-        XCTAssertTrue(model.sourceIds.contains("prepared"))
+        let previewed = model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" })
+        XCTAssertEqual(previewed?.previewPhase, .ready)
+        XCTAssertEqual(previewed?.skills.map(\.id), ["research", "debugging"])
+        XCTAssertEqual(previewed?.skills.filter(\.selectedByDefault).map(\.id), ["research", "debugging"])
+        XCTAssertEqual(previewed?.targets.map(\.id), ["claude-code", "cursor"])
+        XCTAssertEqual(previewed?.targets.filter(\.selectedByDefault).map(\.id), [])
 
-        let addRequests = fixture.loggedRequests().filter { $0.command == "add" }
-        XCTAssertEqual(addRequests.count, 1)
-        let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
-        XCTAssertEqual(applyRequests.last?.payload?["sourceId"]?.value as? String, "prepared")
+        let requests = fixture.loggedRequests().map(\.command)
+        XCTAssertTrue(requests.contains("search-import-groups"))
+        XCTAssertTrue(requests.contains("preview-import-source"))
     }
 
-    func testDiscardPreparedImportRemovesPreparedSource() async throws {
+    func testImportPageSearchReturnsExactGroup() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
         let model = try await fixture.makeModel()
-        model.newSourceLocator = "acme/prepared"
 
-        await model.prepareImport()
-        XCTAssertEqual(model.importPhase, .prepared)
-        XCTAssertEqual(model.importPreview?.sourceId, "prepared")
+        await model.submitImportSearch("https://github.com/anthropic/skills.git")
 
-        await model.discardPreparedImport()
-
-        XCTAssertEqual(model.importPhase, .idle)
-        XCTAssertNil(model.importPreview)
-        let uninstallRequests = fixture.loggedRequests().filter { $0.command == "uninstall" }
-        XCTAssertEqual(uninstallRequests.count, 1)
+        XCTAssertEqual(model.importSearchPhase, .ready)
+        XCTAssertEqual(model.importSubmittedQuery, "https://github.com/anthropic/skills.git")
+        XCTAssertEqual(model.importDisplayGroups.map(\.canonicalRepo), ["anthropics/skills"])
     }
 
-    func testImportPreviewTogglesAffectConfirmedDraft() async throws {
+    func testImportPageImportSucceedsAndNavigatesToDetail() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
         let model = try await fixture.makeModel()
-        model.newSourceLocator = "acme/prepared"
+        await model.loadImportPageIfNeeded()
+        await model.previewImportGroupIfNeeded("anthropics-skills")
 
-        await model.prepareImport()
-        XCTAssertEqual(model.importPreview?.selectedLeafIds, ["prepared-leaf-1", "prepared-leaf-2"])
-        XCTAssertEqual(model.importPreview?.enabledTargets, ["claude-code"])
+        await model.importImportGroup(
+            groupId: "anthropics-skills",
+            locator: "anthropic/skills",
+            selectedSkillIds: ["research"],
+            enabledTargets: ["cursor"]
+        )
 
-        model.toggleImportSkill("prepared-leaf-2")
-        model.toggleImportTarget("cursor")
+        XCTAssertEqual(model.currentPage, .detail(sourceId: "anthropics-skills"))
+        XCTAssertEqual(model.selectedGroupId, "anthropics-skills")
+        XCTAssertTrue(model.sourceIds.contains("anthropics-skills"))
+        XCTAssertFalse(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
+        XCTAssertEqual(model.toast?.style, .success)
+        XCTAssertEqual(model.toast?.message, "Imported source.")
 
-        XCTAssertEqual(model.importPreview?.selectedLeafIds, ["prepared-leaf-1"])
-        XCTAssertEqual(model.importPreview?.enabledTargets, ["claude-code", "cursor"])
+        let importRequests = fixture.loggedRequests().filter { $0.command == "import-source" }
+        XCTAssertEqual(importRequests.count, 1)
+        let draft = importRequests.first?.payload?["draft"]?.value as? [String: Any]
+        XCTAssertEqual(draft?["selectedSkillIds"] as? [String], ["research"])
+        XCTAssertEqual(draft?["enabledTargets"] as? [String], ["cursor"])
+    }
 
-        await model.confirmPreparedImport()
+    func testImportPageImportFailureDoesNotLeaveGhostSource() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.importFailures = ["anthropic/skills": "provider_request_failed"]
+        try fixture.reset(state: state)
 
-        let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
-        let lastDraft = applyRequests.last?.payload?["draft"]?.value as? [String: Any]
-        XCTAssertEqual(lastDraft?["selectedLeafIds"] as? [String], ["prepared-leaf-1"])
-        XCTAssertEqual(lastDraft?["enabledTargets"] as? [String], ["claude-code", "cursor"])
+        let model = try await fixture.makeModel()
+        await model.loadImportPageIfNeeded()
+
+        await model.importImportGroup(
+            groupId: "anthropics-skills",
+            locator: "anthropic/skills",
+            selectedSkillIds: ["research"],
+            enabledTargets: []
+        )
+
+        XCTAssertFalse(model.sourceIds.contains("anthropics-skills"))
+        XCTAssertEqual(model.currentPage, .home)
+        XCTAssertEqual(model.toast?.style, .error)
+        XCTAssertEqual(model.toast?.message, "Import failed: provider_request_failed")
+        XCTAssertTrue(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
     }
 
     func testV120WorkflowCoverage() async throws {
@@ -261,9 +281,6 @@ final class WorkflowCoverageTests: XCTestCase {
 
         try await verifyApplyFailureRollsBack(using: fixture)
 
-        try fixture.reset(state: .baseline)
-
-        try await verifyPreparedImportPreviewAndApply(using: fixture)
     }
 
     private func verifyGroupSelectionIsImmediate(using fixture: TestFixture) async throws {
@@ -357,22 +374,36 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(applyRequests.first?.payload?["sourceId"]?.value as? String, "alpha")
     }
 
-    private func verifyPreparedImportPreviewAndApply(using fixture: TestFixture) async throws {
-        let model = try await fixture.makeModel()
-        model.newSourceLocator = "acme/prepared"
-
-        await model.prepareImport()
-        XCTAssertEqual(model.importPhase, .prepared)
-        XCTAssertEqual(model.importPreview?.sourceId, "prepared")
-
-        await model.confirmPreparedImport()
-        XCTAssertEqual(model.currentPage, .detail(sourceId: "prepared"))
-    }
 }
 
 @MainActor
 private struct TestFixture {
+    struct ImportSkillState: Codable, Equatable {
+        var id: String
+        var title: String
+        var summary: String
+    }
+
+    struct ImportGroupState: Codable, Equatable {
+        var id: String
+        var title: String
+        var locator: String
+        var canonicalRepo: String
+        var aliases: [String]
+        var summary: String
+        var totalInstalls: Int
+        var starCount: Int
+        var skillCount: Int
+        var matchedSkillNames: [String]
+        var skills: [ImportSkillState]
+        var targets: [String]
+    }
+
     struct SourceState: Codable, Equatable {
+        var displayName: String?
+        var locator: String?
+        var kind: String?
+        var canonicalRepo: String?
         var leafIds: [String]
         var selectedLeafIds: [String]
         var enabledTargets: [String]
@@ -384,16 +415,26 @@ private struct TestFixture {
         var applyFailures: [String: [String]]
         var pinnedSourceIds: [String]
         var pinFailures: [String: [String]]
+        var importGroups: [ImportGroupState]
+        var importFailures: [String: String]
 
         static let baseline = State(
             availableTargets: ["claude-code", "cursor"],
             sources: [
                 "alpha": SourceState(
+                    displayName: "alpha",
+                    locator: "acme/alpha",
+                    kind: "git",
+                    canonicalRepo: "acme/alpha",
                     leafIds: ["alpha-leaf-1"],
                     selectedLeafIds: ["alpha-leaf-1"],
                     enabledTargets: ["claude-code"]
                 ),
                 "beta": SourceState(
+                    displayName: "beta",
+                    locator: "acme/beta",
+                    kind: "git",
+                    canonicalRepo: "acme/beta",
                     leafIds: ["beta-leaf-1"],
                     selectedLeafIds: ["beta-leaf-1"],
                     enabledTargets: ["cursor"]
@@ -401,7 +442,53 @@ private struct TestFixture {
             ],
             applyFailures: [:],
             pinnedSourceIds: [],
-            pinFailures: [:]
+            pinFailures: [:],
+            importGroups: [
+                ImportGroupState(
+                    id: "anthropics-skills",
+                    title: "Anthropic Skills",
+                    locator: "anthropic/skills",
+                    canonicalRepo: "anthropics/skills",
+                    aliases: [
+                        "anthropic/skills",
+                        "anthropics/skills",
+                        "https://github.com/anthropics/skills",
+                        "https://github.com/anthropics/skills.git",
+                        "git@github.com:anthropics/skills.git",
+                    ],
+                    summary: "Official Anthropic skill collection.",
+                    totalInstalls: 735100,
+                    starCount: 406,
+                    skillCount: 18,
+                    matchedSkillNames: [],
+                    skills: [
+                        ImportSkillState(id: "research", title: "research", summary: "Research workflows."),
+                        ImportSkillState(id: "debugging", title: "debugging", summary: "Debugging workflows."),
+                    ],
+                    targets: ["claude-code", "cursor"]
+                ),
+                ImportGroupState(
+                    id: "garrytan-gstack",
+                    title: "Gstack Skills",
+                    locator: "garrytan/gstack",
+                    canonicalRepo: "garrytan/gstack",
+                    aliases: [
+                        "garrytan/gstack",
+                        "https://github.com/garrytan/gstack",
+                    ],
+                    summary: "Workflow and review skills.",
+                    totalInstalls: 12300,
+                    starCount: 88,
+                    skillCount: 4,
+                    matchedSkillNames: [],
+                    skills: [
+                        ImportSkillState(id: "review", title: "review", summary: "Review workflow."),
+                        ImportSkillState(id: "qa", title: "qa", summary: "QA workflow."),
+                    ],
+                    targets: ["claude-code", "cursor"]
+                ),
+            ],
+            importFailures: [:]
         )
 
         static let failureBaseline = State(
@@ -425,7 +512,9 @@ private struct TestFixture {
                 ]
             ],
             pinnedSourceIds: [],
-            pinFailures: [:]
+            pinFailures: [:],
+            importGroups: baseline.importGroups,
+            importFailures: [:]
         )
     }
 
@@ -570,7 +659,9 @@ private struct TestFixture {
         return {
           availableTargets: [],
           sources: {},
-          applyFailures: {}
+          applyFailures: {},
+          importGroups: [],
+          importFailures: {}
         };
       }
     }
@@ -593,6 +684,61 @@ private struct TestFixture {
       };
     }
 
+    function normalizeRepo(value) {
+      const raw = String(value || '').trim().toLowerCase();
+      if (!raw) {
+        return '';
+      }
+
+      const aliases = {
+        'anthropic/skills': 'anthropics/skills'
+      };
+      const patterns = [
+        /^https?:\\/\\/github\\.com\\/([^/\\s]+)\\/([^/\\s]+?)(?:\\.git)?$/i,
+        /^git@github\\.com:([^/\\s]+)\\/([^/\\s]+?)(?:\\.git)?$/i,
+        /^([^/\\s]+)\\/([^/\\s]+?)(?:\\.git)?$/i
+      ];
+
+      for (const pattern of patterns) {
+        const match = raw.match(pattern);
+        if (!match) {
+          continue;
+        }
+        const repo = `${match[1]}/${match[2]}`.replace(/\\.git$/, '');
+        return aliases[repo] || repo;
+      }
+
+      return aliases[raw] || raw.replace(/\\.git$/, '');
+    }
+
+    function installedCanonicalRepos(state) {
+      return new Set(
+        Object.values(state.sources || {})
+          .map((source) => normalizeRepo(source.canonicalRepo || source.locator || ''))
+          .filter(Boolean)
+      );
+    }
+
+    function serializeImportGroup(group, installed) {
+      return {
+        id: group.id,
+        title: group.title,
+        locator: group.locator,
+        canonicalRepo: group.canonicalRepo,
+        aliases: group.aliases || [],
+        summary: group.summary || '',
+        sourceUrl: `https://skills.sh/${group.canonicalRepo}`,
+        repoUrl: `https://github.com/${group.canonicalRepo}`,
+        starCount: group.starCount || 0,
+        totalInstalls: group.totalInstalls || 0,
+        skillCount: group.skillCount || ((group.skills || []).length),
+        matchedSkillNames: group.matchedSkillNames || [],
+        installed,
+        enrichState: { status: 'ready' },
+        previewState: { status: 'idle' }
+      };
+    }
+
     function buildSummaries(state) {
       const targetIds = (state.availableTargets || []).slice();
       return Object.entries(state.sources || {}).map(([sourceId, source]) => {
@@ -603,8 +749,17 @@ private struct TestFixture {
           bindingsTargets[targetId] = { enabled: enabledTargets.includes(targetId) };
         }
         return {
-          source: { id: sourceId },
-          leafs: (source.leafIds || []).map((leafId) => ({ id: leafId })),
+          source: {
+            id: sourceId,
+            displayName: source.displayName || sourceId,
+            locator: source.locator || '',
+            kind: source.kind || 'git'
+          },
+          leafs: (source.leafIds || []).map((leafId) => ({
+            id: leafId,
+            name: leafId,
+            linkName: leafId
+          })),
           bindings: {
             selectedLeafIds: source.selectedLeafIds || [],
             targets: bindingsTargets
@@ -685,6 +840,134 @@ private struct TestFixture {
         return;
       }
 
+      if (request.command === 'search-import-groups') {
+        const query = String((request.payload && request.payload.query) || '').trim();
+        const groups = (state.importGroups || []).filter((group) => !installedCanonicalRepos(state).has(normalizeRepo(group.canonicalRepo)));
+
+        if (!query) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            exact: false,
+            groups: groups.map((group) => serializeImportGroup(group, false))
+          }, [], [])));
+          return;
+        }
+
+        const normalizedQuery = normalizeRepo(query);
+        const exactGroup = groups.find((group) => {
+          const candidates = [group.canonicalRepo, group.locator].concat(group.aliases || []).map(normalizeRepo);
+          return candidates.includes(normalizedQuery);
+        });
+        if (exactGroup) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            exact: true,
+            groups: [serializeImportGroup(exactGroup, false)]
+          }, [], [])));
+          return;
+        }
+
+        const loweredQuery = query.toLowerCase();
+        const matched = groups.filter((group) => {
+          const values = [
+            group.title,
+            group.summary,
+            group.canonicalRepo,
+            group.locator,
+            ...(group.aliases || []),
+            ...((group.skills || []).map((skill) => skill.title)),
+          ].map((value) => String(value || '').toLowerCase());
+          return values.some((value) => value.includes(loweredQuery));
+        }).map((group) => serializeImportGroup(group, false));
+
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          exact: false,
+          groups: matched
+        }, [], [])));
+        return;
+      }
+
+      if (request.command === 'preview-import-source') {
+        const locator = String((request.payload && request.payload.locator) || '');
+        const normalizedLocator = normalizeRepo(locator);
+        const group = (state.importGroups || []).find((candidate) => {
+          const aliases = [candidate.canonicalRepo, candidate.locator].concat(candidate.aliases || []).map(normalizeRepo);
+          return aliases.includes(normalizedLocator);
+        });
+
+        if (!group) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            status: 'failed',
+            reasonCode: 'provider_data_unavailable'
+          }, [], [])));
+          return;
+        }
+
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          status: 'ready',
+          locator: group.locator,
+          skills: (group.skills || []).map((skill) => ({
+            id: skill.id,
+            title: skill.title,
+            summary: skill.summary || ''
+          })),
+          targets: (group.targets || []).map((target) => ({ id: target })),
+          selectedSkillIds: (group.skills || []).map((skill) => skill.id),
+          enabledTargets: []
+        }, [], [])));
+        return;
+      }
+
+      if (request.command === 'import-source') {
+        const locator = String((request.payload && request.payload.locator) || '');
+        const failureReason = state.importFailures && state.importFailures[locator];
+        if (failureReason) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            status: 'failed',
+            reasonCode: failureReason
+          }, [], [])));
+          return;
+        }
+
+        const normalizedLocator = normalizeRepo(locator);
+        const group = (state.importGroups || []).find((candidate) => {
+          const aliases = [candidate.canonicalRepo, candidate.locator].concat(candidate.aliases || []).map(normalizeRepo);
+          return aliases.includes(normalizedLocator);
+        });
+
+        if (!group) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            status: 'failed',
+            reasonCode: 'provider_data_unavailable'
+          }, [], [])));
+          return;
+        }
+
+        const draft = request.payload && request.payload.draft ? request.payload.draft : {};
+        const selectedSkillIds = Array.isArray(draft.selectedSkillIds) && draft.selectedSkillIds.length > 0
+          ? draft.selectedSkillIds
+          : (group.skills || []).map((skill) => skill.id);
+        const enabledTargets = Array.isArray(draft.enabledTargets) ? draft.enabledTargets : [];
+
+        if (!state.sources) {
+          state.sources = {};
+        }
+        state.sources[group.id] = {
+          displayName: group.title,
+          locator: group.locator,
+          kind: 'git',
+          canonicalRepo: group.canonicalRepo,
+          leafIds: (group.skills || []).map((skill) => `${group.id}:${skill.id}`),
+          selectedLeafIds: selectedSkillIds.map((skillId) => `${group.id}:${skillId}`),
+          enabledTargets
+        };
+        writeState(state);
+
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          status: 'ready',
+          sourceId: group.id
+        }, [], [])));
+        return;
+      }
+
       if (request.command === 'add') {
         const locator = request.payload && request.payload.locator;
         const applyNow = request.payload && request.payload.applyNow === true;
@@ -694,6 +977,10 @@ private struct TestFixture {
         }
         if (!state.sources[sourceId]) {
           state.sources[sourceId] = {
+            displayName: sourceId,
+            locator,
+            kind: 'git',
+            canonicalRepo: normalizeRepo(locator),
             leafIds: ['prepared-leaf-1', 'prepared-leaf-2'],
             selectedLeafIds: ['prepared-leaf-1', 'prepared-leaf-2'],
             enabledTargets: ['claude-code']

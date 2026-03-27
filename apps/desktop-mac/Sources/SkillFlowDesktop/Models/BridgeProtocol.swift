@@ -4,6 +4,9 @@ enum BridgeCommand: String, Codable {
     case bootstrap
     case list
     case inspect
+    case searchImportGroups = "search-import-groups"
+    case previewImportSource = "preview-import-source"
+    case importSource = "import-source"
     case togglePin = "toggle-pin"
     case doctor
     case add

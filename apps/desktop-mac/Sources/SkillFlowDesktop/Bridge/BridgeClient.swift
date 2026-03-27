@@ -59,6 +59,35 @@ final class BridgeClient {
         try await send(command: .inspect, payload: ["sourceId": AnyCodable(sourceId)])
     }
 
+    func searchImportGroups(query: String?) async throws -> BridgeResponse {
+        let payload: [String: AnyCodable]
+        if let query {
+            payload = ["query": AnyCodable(query)]
+        } else {
+            payload = [:]
+        }
+        return try await send(command: .searchImportGroups, payload: payload)
+    }
+
+    func previewImportSource(locator: String) async throws -> BridgeResponse {
+        try await send(command: .previewImportSource, payload: ["locator": AnyCodable(locator)])
+    }
+
+    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(
+                command: .importSource,
+                payload: [
+                    "locator": AnyCodable(locator),
+                    "draft": AnyCodable([
+                        "selectedSkillIds": selectedSkillIds,
+                        "enabledTargets": enabledTargets,
+                    ]),
+                ]
+            )
+        }
+    }
+
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(command: .togglePin, payload: ["sourceId": AnyCodable(sourceId)])
@@ -90,18 +119,6 @@ final class BridgeClient {
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(command: .uninstall, payload: ["sourceIds": AnyCodable(sourceIds)])
-        }
-    }
-
-    func add(locator: String, applyNow: Bool = false) async throws -> BridgeResponse {
-        try await mutationCoordinator.runMutation {
-            try await self.send(
-                command: .add,
-                payload: [
-                    "locator": AnyCodable(locator),
-                    "applyNow": AnyCodable(applyNow)
-                ]
-            )
         }
     }
 

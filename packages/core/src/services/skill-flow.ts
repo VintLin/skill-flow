@@ -9,6 +9,14 @@ import type {
   DeploymentPlan,
   DeploymentTargetName,
   DoctorReport,
+  ImportDirectoryCache,
+  ImportDraft,
+  ImportGroupCacheEntry,
+  ImportGroupCandidate,
+  ImportPreviewCacheEntry,
+  ImportPreviewResult,
+  ImportReasonCode,
+  ImportSourceResult,
   LeafRecord,
   LockFile,
   Manifest,
@@ -24,6 +32,12 @@ import type {
   WorkflowSummary,
 } from "../domain/types.js";
 import { StateStore } from "../state/store.js";
+import {
+  createEmptyImportDirectoryCache,
+  importGroupCacheEntryToDetails,
+  importPreviewCacheEntryToResult,
+  isImportDirectoryCacheExpired,
+} from "../state/import-directory-cache.js";
 import {
   isSourceMetadataCacheExpired,
   sourceMetadataCacheEntryToResult,
@@ -56,6 +70,15 @@ import {
   inferSourceMetadataProvider,
   SOURCE_METADATA_CACHE_TTL_MS,
 } from "../utils/source-details.js";
+import {
+  buildImportGroupCandidate,
+  fetchSkillsDirectoryGroupDetails,
+  fetchSkillsDirectoryPreviewSkills,
+  groupSkillsDirectorySearchHits,
+  IMPORT_DIRECTORY_CACHE_TTL_MS,
+  normalizeImportCanonicalRepo,
+  searchSkillsDirectory,
+} from "../utils/skills-directory.js";
 import { DeploymentApplier } from "./deployment-applier.js";
 import { ConfigCoordinator } from "./config-coordinator.js";
 import { DeploymentPlanner } from "./deployment-planner.js";
@@ -89,6 +112,8 @@ export class SkillFlowApp {
   readonly configCoordinator: ConfigCoordinator;
   private mutationQueue: Promise<void> = Promise.resolve();
   private metadataRefreshesBySourceId = new Map<string, Promise<void>>();
+  private importGroupRefreshesByRepo = new Map<string, Promise<void>>();
+  private importPreviewRefreshesByRepo = new Map<string, Promise<void>>();
 
   constructor() {
     const adapters = createChannelAdapters();
@@ -341,6 +366,27 @@ export class SkillFlowApp {
     return ok({ candidates }, warnings);
   }
 
+  async listRecommendedImportGroups(): Promise<Result<{ groups: ImportGroupCandidate[] }>> {
+    return this.runSerializedMutation(() => this.listRecommendedImportGroupsImpl());
+  }
+
+  async searchImportGroups(
+    query: string,
+  ): Promise<Result<{ groups: ImportGroupCandidate[]; exact: boolean }>> {
+    return this.runSerializedMutation(() => this.searchImportGroupsImpl(query));
+  }
+
+  async previewImportSource(locator: string): Promise<Result<ImportPreviewResult>> {
+    return this.runSerializedMutation(() => this.previewImportSourceImpl(locator));
+  }
+
+  async importSource(
+    locator: string,
+    draft?: ImportDraft,
+  ): Promise<Result<ImportSourceResult>> {
+    return this.runSerializedMutation(() => this.importSourceImpl(locator, draft));
+  }
+
   async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[]; pinnedSourceIds: string[] }>> {
     return this.runSerializedMutation(() => this.listWorkflowsImpl());
   }
@@ -400,6 +446,145 @@ export class SkillFlowApp {
     const sourceMetadata = await this.resolveSourceMetadata(source, summary.lock);
 
     return ok({ summary, source, binding, leafs, deployments, sourceMetadata }, listed.warnings);
+  }
+
+  private async listRecommendedImportGroupsImpl(): Promise<Result<{ groups: ImportGroupCandidate[] }>> {
+    const { manifest } = await this.store.readState();
+    const installedRepos = this.installedCanonicalRepos(manifest);
+    const groups = await Promise.all(
+      this.importRecommendationSeedRepos()
+        .filter((canonicalRepo) => !installedRepos.has(canonicalRepo))
+        .map((canonicalRepo) =>
+          this.resolveImportGroupCandidate(canonicalRepo, {
+            installed: false,
+          })
+        ),
+    );
+
+    return ok({
+      groups: groups.filter((candidate) => !candidate.installed),
+    });
+  }
+
+  private async searchImportGroupsImpl(
+    query: string,
+  ): Promise<Result<{ groups: ImportGroupCandidate[]; exact: boolean }>> {
+    try {
+      const normalizedQuery = query.trim();
+      if (!normalizedQuery) {
+        const recommended = await this.listRecommendedImportGroupsImpl();
+        if (!recommended.ok) {
+          return fail(recommended.errors, recommended.warnings);
+        }
+        return ok({ groups: recommended.data.groups, exact: false }, recommended.warnings);
+      }
+
+      const { manifest } = await this.store.readState();
+      const installedRepos = this.installedCanonicalRepos(manifest);
+      const exactRepo = normalizeImportCanonicalRepo(normalizedQuery);
+      if (exactRepo) {
+        const exactCandidate = await this.resolveImportGroupCandidate(exactRepo, {
+          installed: installedRepos.has(exactRepo),
+        });
+
+        if (
+          exactCandidate.enrichState.status === "ready" ||
+          exactCandidate.enrichState.status === "failed" &&
+            exactCandidate.enrichState.reasonCode !== "provider_data_unavailable"
+        ) {
+          return ok({ groups: [exactCandidate], exact: true });
+        }
+      }
+
+      const hits = await searchSkillsDirectory(normalizedQuery, 20);
+      const grouped = groupSkillsDirectorySearchHits(hits).slice(0, 8);
+      const groups = await Promise.all(
+        grouped.map((group) =>
+          this.resolveImportGroupCandidate(group.canonicalRepo, {
+            installed: installedRepos.has(group.canonicalRepo),
+            matchedSkillNames: group.matchedSkillNames,
+          })
+        ),
+      );
+
+      return ok({
+        groups,
+        exact: false,
+      });
+    } catch (error) {
+      return fail({
+        code: "IMPORT_SEARCH_FAILED",
+        message: `Unable to search import groups: ${String(error)}`,
+      });
+    }
+  }
+
+  private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
+    const canonicalRepo = normalizeImportCanonicalRepo(locator);
+    if (!canonicalRepo) {
+      return ok({
+        status: "failed",
+        reasonCode: "provider_not_supported",
+        retryable: false,
+      });
+    }
+
+    const cached = (await this.store.readImportDirectoryCache()).previews[canonicalRepo];
+    if (cached) {
+      if (!isImportDirectoryCacheExpired(cached)) {
+        return ok(importPreviewCacheEntryToResult(cached));
+      }
+
+      this.refreshImportPreviewInBackground(canonicalRepo);
+      return ok(importPreviewCacheEntryToResult(cached));
+    }
+
+    return ok(await this.refreshImportPreview(canonicalRepo));
+  }
+
+  private async importSourceImpl(
+    locator: string,
+    draft?: ImportDraft,
+  ): Promise<Result<ImportSourceResult>> {
+    const normalizedLocator = normalizeImportCanonicalRepo(locator) ?? locator.trim();
+    const prepared = await this.prepareAddSourceImpl(normalizedLocator, { project: false });
+    if (!prepared.ok) {
+      return ok({
+        status: "failed",
+        reasonCode: prepared.errors[0]?.code ?? "IMPORT_PREPARE_FAILED",
+        retryable: true,
+      });
+    }
+
+    const finalDraft = this.resolveImportDraftForPreparedSource(
+      prepared.data.leafs,
+      prepared.data.availableTargets,
+      draft,
+    );
+    if (!finalDraft.ok) {
+      await this.rollbackPreparedSourceInternal(prepared.data.sourceId);
+      return ok({
+        status: "failed",
+        reasonCode: finalDraft.errors[0]?.code ?? "IMPORT_PREVIEW_INVALID",
+        retryable: true,
+      });
+    }
+
+    const applied = await this.applyDraftImpl(prepared.data.sourceId, finalDraft.data);
+    if (!applied.ok) {
+      await this.rollbackPreparedSourceInternal(prepared.data.sourceId);
+      return ok({
+        status: "failed",
+        reasonCode: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
+        retryable: true,
+      });
+    }
+
+    return ok({
+      status: "ready",
+      sourceId: prepared.data.sourceId,
+      canonicalRepo: normalizeImportCanonicalRepo(normalizedLocator) ?? normalizedLocator,
+    });
   }
 
   private async resolveSourceMetadata(
@@ -466,6 +651,239 @@ export class SkillFlowApp {
       );
       return failedMetadata;
     }
+  }
+
+  private importRecommendationSeedRepos(): string[] {
+    return [
+      "anthropics/skills",
+      "garrytan/gstack",
+      "vercel-labs/agent-skills",
+    ];
+  }
+
+  private installedCanonicalRepos(manifest: Manifest): Set<string> {
+    return new Set(
+      manifest.sources.flatMap((source) => {
+        const canonicalRepo = normalizeImportCanonicalRepo(source.locator)
+          ?? (source.originLocator ? normalizeImportCanonicalRepo(source.originLocator) : undefined);
+        return canonicalRepo ? [canonicalRepo] : [];
+      }),
+    );
+  }
+
+  private async resolveImportGroupCandidate(
+    canonicalRepo: string,
+    options: {
+      installed: boolean;
+      matchedSkillNames?: string[];
+    },
+  ): Promise<ImportGroupCandidate> {
+    const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
+    const cached = (await this.store.readImportDirectoryCache()).groups[normalizedRepo];
+    if (cached) {
+      if (!isImportDirectoryCacheExpired(cached)) {
+        return this.importGroupCandidateFromCacheEntry(cached, options);
+      }
+
+      this.refreshImportGroupInBackground(normalizedRepo);
+      return this.importGroupCandidateFromCacheEntry(cached, options);
+    }
+
+    const entry = await this.refreshImportGroup(normalizedRepo);
+    return this.importGroupCandidateFromCacheEntry(entry, options);
+  }
+
+  private importGroupCandidateFromCacheEntry(
+    entry: ImportGroupCacheEntry,
+    options: {
+      installed: boolean;
+      matchedSkillNames?: string[];
+    },
+  ): ImportGroupCandidate {
+    const cachedDetails = importGroupCacheEntryToDetails(entry);
+    if (entry.status === "ready" && cachedDetails) {
+      return buildImportGroupCandidate({
+        canonicalRepo: entry.canonicalRepo,
+        installed: options.installed,
+        ...(options.matchedSkillNames ? { matchedSkillNames: options.matchedSkillNames } : {}),
+        details: cachedDetails,
+      });
+    }
+
+    const fallbackTitle = entry.canonicalRepo.split("/")[1] ?? entry.canonicalRepo;
+    return {
+      id: entry.canonicalRepo,
+      provider: "skills",
+      locator: entry.canonicalRepo,
+      canonicalRepo: entry.canonicalRepo,
+      aliases: buildImportGroupCandidate({
+        canonicalRepo: entry.canonicalRepo,
+        installed: options.installed,
+      }).aliases,
+      title: fallbackTitle,
+      installed: options.installed,
+      ...(options.matchedSkillNames?.length ? { matchedSkillNames: options.matchedSkillNames } : {}),
+      enrichState: {
+        status: "failed",
+        reasonCode: entry.reasonCode ?? "provider_request_failed",
+        retryable: entry.retryable ?? true,
+      },
+      previewState: { status: "idle" },
+    };
+  }
+
+  private refreshImportGroupInBackground(canonicalRepo: string): void {
+    if (this.importGroupRefreshesByRepo.has(canonicalRepo)) {
+      return;
+    }
+
+    const refresh = this.refreshImportGroup(canonicalRepo)
+      .then(() => undefined)
+      .catch(() => undefined)
+      .finally(() => {
+        this.importGroupRefreshesByRepo.delete(canonicalRepo);
+      });
+
+    this.importGroupRefreshesByRepo.set(canonicalRepo, refresh);
+  }
+
+  private async refreshImportGroup(canonicalRepo: string): Promise<ImportGroupCacheEntry> {
+    try {
+      const details = await fetchSkillsDirectoryGroupDetails(canonicalRepo);
+      const entry: ImportGroupCacheEntry = {
+        canonicalRepo,
+        status: "ready",
+        checkedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + IMPORT_DIRECTORY_CACHE_TTL_MS).toISOString(),
+        data: {
+          aliases: details.aliases,
+          title: details.title,
+          sourceUrl: details.sourceUrl,
+          repoUrl: details.repoUrl,
+          ...(details.totalInstalls !== undefined ? { totalInstalls: details.totalInstalls } : {}),
+          ...(details.starCount !== undefined ? { starCount: details.starCount } : {}),
+          ...(details.skillCount !== undefined ? { skillCount: details.skillCount } : {}),
+        },
+      };
+      await this.store.writeImportGroupCacheEntry(entry);
+      return entry;
+    } catch (error) {
+      const failedEntry: ImportGroupCacheEntry = {
+        canonicalRepo,
+        status: "failed",
+        checkedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + IMPORT_DIRECTORY_CACHE_TTL_MS).toISOString(),
+        reasonCode: this.inferImportReasonCode(error),
+        retryable: this.importFailureRetryable(error),
+      };
+      await this.store.writeImportGroupCacheEntry(failedEntry);
+      return failedEntry;
+    }
+  }
+
+  private refreshImportPreviewInBackground(canonicalRepo: string): void {
+    if (this.importPreviewRefreshesByRepo.has(canonicalRepo)) {
+      return;
+    }
+
+    const refresh = this.refreshImportPreview(canonicalRepo)
+      .then(() => undefined)
+      .catch(() => undefined)
+      .finally(() => {
+        this.importPreviewRefreshesByRepo.delete(canonicalRepo);
+      });
+
+    this.importPreviewRefreshesByRepo.set(canonicalRepo, refresh);
+  }
+
+  private async refreshImportPreview(canonicalRepo: string): Promise<ImportPreviewResult> {
+    try {
+      const preview = await fetchSkillsDirectoryPreviewSkills(canonicalRepo);
+      const availableTargets = await this.getAvailableTargets();
+      const result: ImportPreviewResult = {
+        status: "ready",
+        locator: preview.locator,
+        canonicalRepo,
+        selectedSkillIds: preview.skills.map((skill) => skill.id),
+        enabledTargets: [],
+        skills: preview.skills.map((skill) => ({
+          id: skill.id,
+          title: skill.title,
+          summary: skill.summary,
+          selectedByDefault: true,
+        })),
+        targets: availableTargets.map((target) => ({
+          id: target,
+          selectedByDefault: false,
+        })),
+      };
+
+      const entry: ImportPreviewCacheEntry = {
+        canonicalRepo,
+        status: "ready",
+        checkedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + IMPORT_DIRECTORY_CACHE_TTL_MS).toISOString(),
+        data: {
+          locator: preview.locator,
+          selectedSkillIds: result.selectedSkillIds,
+          enabledTargets: result.enabledTargets,
+          skills: result.skills,
+          targets: result.targets,
+        },
+      };
+      await this.store.writeImportPreviewCacheEntry(entry);
+      return result;
+    } catch (error) {
+      const result: ImportPreviewResult = {
+        status: "failed",
+        reasonCode: this.inferImportReasonCode(error),
+        retryable: this.importFailureRetryable(error),
+      };
+      const entry: ImportPreviewCacheEntry = {
+        canonicalRepo,
+        status: "failed",
+        checkedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + IMPORT_DIRECTORY_CACHE_TTL_MS).toISOString(),
+        reasonCode: result.reasonCode,
+        retryable: result.retryable,
+      };
+      await this.store.writeImportPreviewCacheEntry(entry);
+      return result;
+    }
+  }
+
+  private inferImportReasonCode(error: unknown): ImportReasonCode {
+    if (
+      this.hasErrorCode(error, "SKILLS_SEARCH_RATE_LIMITED") ||
+      this.hasErrorCode(error, "SKILLS_SOURCE_RATE_LIMITED") ||
+      this.hasErrorCode(error, "GITHUB_RATE_LIMITED")
+    ) {
+      return "provider_rate_limited";
+    }
+
+    if (
+      this.hasErrorCode(error, "SKILLS_SEARCH_RESPONSE_INVALID") ||
+      this.hasErrorCode(error, "SKILLS_SOURCE_PARSE_FAILED")
+    ) {
+      return "provider_response_invalid";
+    }
+
+    if (
+      this.hasErrorCode(error, "SKILLS_SOURCE_NOT_SUPPORTED") ||
+      this.hasErrorCode(error, "SKILLS_SOURCE_NOT_FOUND")
+    ) {
+      return "provider_data_unavailable";
+    }
+
+    return "provider_request_failed";
+  }
+
+  private importFailureRetryable(error: unknown): boolean {
+    return this.inferImportReasonCode(error) !== "provider_response_invalid";
+  }
+
+  private hasErrorCode(error: unknown, code: string): error is Error & { code: string } {
+    return typeof error === "object" && error !== null && "code" in error && error.code === code;
   }
 
   private async listWorkflowsImpl(): Promise<
@@ -1152,6 +1570,42 @@ export class SkillFlowApp {
     return ok({
       enabledTargets: enabledTargetsResult.data,
       selectedLeafIds: selectedLeafIdsResult.data,
+    });
+  }
+
+  private resolveImportDraftForPreparedSource(
+    sourceLeafs: LeafRecord[],
+    availableTargets: DeploymentTargetName[],
+    draft?: ImportDraft,
+  ): Result<DraftBinding> {
+    if (!draft) {
+      return ok({
+        selectedLeafIds: sourceLeafs.map((leaf) => leaf.id),
+        enabledTargets: [],
+      });
+    }
+
+    const selectedLeafIdsResult = this.resolveSelectedLeafIds(
+      sourceLeafs,
+      undefined,
+      draft.selectedSkillIds,
+    );
+    if (!selectedLeafIdsResult.ok) {
+      return fail(selectedLeafIdsResult.errors, selectedLeafIdsResult.warnings);
+    }
+
+    const available = new Set(availableTargets);
+    const unsupported = [...new Set(draft.enabledTargets)].filter((target) => !available.has(target));
+    if (unsupported.length > 0) {
+      return fail({
+        code: "ADD_AGENT_NOT_AVAILABLE",
+        message: `Unknown or unavailable agent(s): ${unsupported.join(", ")}.`,
+      });
+    }
+
+    return ok({
+      selectedLeafIds: selectedLeafIdsResult.data,
+      enabledTargets: [...new Set(draft.enabledTargets)],
     });
   }
 

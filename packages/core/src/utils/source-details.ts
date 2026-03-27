@@ -9,6 +9,10 @@ import type {
 import { inspectClawHubSkill } from "./clawhub.js";
 import { fetchGitHubRepoDetails } from "./github-catalog.js";
 import { parseGitHubRepo } from "./naming.js";
+import {
+  fetchSkillsDirectoryGroupDetails,
+  parseSkillsSourcePage,
+} from "./skills-directory.js";
 
 export const SOURCE_METADATA_CACHE_TTL_MS = 8 * 60 * 60_000;
 
@@ -125,57 +129,14 @@ export async function fetchSkillsDirectorySourceDetails(locator: string): Promis
     return {};
   }
 
-  const sourceUrl = `https://skills.sh/${repo.owner}/${repo.repo}`;
-  const response = await fetch(sourceUrl);
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw createProviderError(
-        "SKILLS_SOURCE_NOT_FOUND",
-        `skills.sh source page request failed with ${response.status}.`,
-      );
-    }
-    throw createProviderError(
-      "SKILLS_SOURCE_REQUEST_FAILED",
-      `skills.sh source page request failed with ${response.status}.`,
-    );
-  }
-
-  const html = await response.text();
-  const parsed = parseSkillsSourcePage(html);
-  if (parsed.totalInstalls === undefined) {
-    throw createProviderError(
-      "SKILLS_SOURCE_PARSE_FAILED",
-      "skills.sh source page payload was missing total installs.",
-    );
-  }
-  const repoDetails: SourceStats = await fetchGitHubRepoDetails(locator).catch(() => ({}));
-  const repoLabel = parsed.repoLabel ?? `${repo.owner}/${repo.repo}`;
-  const repoUrl = parsed.repoUrl ?? `https://github.com/${repo.owner}/${repo.repo}`;
-
+  const details = await fetchSkillsDirectoryGroupDetails(locator);
   return {
     provider: "skills",
-    repoLabel,
-    repoUrl,
-    sourceUrl,
-    ...(repoDetails.starCount !== undefined ? { starCount: repoDetails.starCount } : {}),
-    ...(parsed.totalInstalls !== undefined ? { totalInstalls: parsed.totalInstalls } : {}),
-  };
-}
-
-export function parseSkillsSourcePage(html: string): {
-  totalInstalls?: number;
-  repoUrl?: string;
-  repoLabel?: string;
-} {
-  const totalInstallsMatch = html.match(/>([\d.]+[KMB]?)<!-- --> total installs</i);
-  const repoUrlMatch = html.match(/href="(https:\/\/github\.com\/[^"]+)"/i);
-
-  const repoUrl = repoUrlMatch?.[1];
-  const repo = repoUrl ? parseGitHubRepo(repoUrl) : null;
-  return {
-    ...(totalInstallsMatch?.[1] ? { totalInstalls: parseCompactNumber(totalInstallsMatch[1]) } : {}),
-    ...(repoUrl ? { repoUrl } : {}),
-    ...(repo ? { repoLabel: `${repo.owner}/${repo.repo}` } : {}),
+    repoLabel: details.repoLabel,
+    repoUrl: details.repoUrl,
+    sourceUrl: details.sourceUrl,
+    ...(details.starCount !== undefined ? { starCount: details.starCount } : {}),
+    ...(details.totalInstalls !== undefined ? { totalInstalls: details.totalInstalls } : {}),
   };
 }
 
@@ -274,27 +235,6 @@ function inferFailedReasonCode(error: unknown): SourceMetadataReasonCode {
   }
 
   return "provider_request_failed";
-}
-
-function parseCompactNumber(value: string): number {
-  const trimmed = value.trim().toUpperCase();
-  const suffix = trimmed.slice(-1);
-  const base = Number.parseFloat(["K", "M", "B"].includes(suffix) ? trimmed.slice(0, -1) : trimmed);
-
-  if (!Number.isFinite(base)) {
-    return 0;
-  }
-
-  switch (suffix) {
-    case "K":
-      return Math.round(base * 1_000);
-    case "M":
-      return Math.round(base * 1_000_000);
-    case "B":
-      return Math.round(base * 1_000_000_000);
-    default:
-      return Math.round(base);
-  }
 }
 
 function parseClawHubSlug(locator: string): string | undefined {
