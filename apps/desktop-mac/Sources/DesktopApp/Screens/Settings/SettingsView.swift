@@ -2,15 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.locale) private var locale
-    @AppStorage("desktop.autoLaunch") private var autoLaunch = false
-    @AppStorage("desktop.logLevel") private var logLevel = "info"
-    @AppStorage("desktop.experimentalExternalHelper") private var experimentalExternalHelper = false
-    @AppStorage(DesktopLanguage.storageKey) private var desktopLanguageRawValue = DesktopLanguage.system.rawValue
-    @AppStorage("desktop.themeMode") private var themeMode = "light"
-    @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
-    @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
-
     @State private var openDropdown: DropdownKind?
+    @Bindable var viewModel: SettingsViewModel
 
     var theme: DesktopThemeMode = .light
 
@@ -34,11 +27,11 @@ struct SettingsView: View {
     }
 
     private var currentAccent: DesktopAccentColor {
-        DesktopAccentColor(rawValue: themeAccent) ?? .blue
+        viewModel.currentAccent
     }
 
     private var currentLanguage: DesktopLanguage {
-        DesktopLanguage(storageValue: desktopLanguageRawValue)
+        viewModel.currentLanguage
     }
 
     private var accentOptions: [DropdownOption] {
@@ -96,7 +89,7 @@ struct SettingsView: View {
                     title: t("settings.section.appearance"),
                     rows: {
                         settingsRow(title: t("settings.row.theme.title"), description: t("settings.row.theme.description")) {
-                            Picker(t("settings.row.theme.title"), selection: $themeMode) {
+                            Picker(t("settings.row.theme.title"), selection: $viewModel.themeModeRawValue) {
                                 Text(t("settings.option.theme.light")).tag("light")
                                 Text(t("settings.option.theme.dark")).tag("dark")
                             }
@@ -112,8 +105,8 @@ struct SettingsView: View {
                                 selectionTitle: t("settings.option.accent.\(currentAccent.rawValue)"),
                                 selectionSwatch: AppTheme.brand(for: currentAccent, in: theme),
                                 options: accentOptions,
-                                selectedId: themeAccent,
-                                onSelect: { themeAccent = $0 }
+                                selectedId: viewModel.themeAccentRawValue,
+                                onSelect: { viewModel.themeAccentRawValue = $0 }
                             )
                         }
 
@@ -123,8 +116,8 @@ struct SettingsView: View {
                                 selectionTitle: t("settings.option.language.\(currentLanguage.rawValue)"),
                                 selectionSwatch: nil,
                                 options: languageOptions,
-                                selectedId: desktopLanguageRawValue,
-                                onSelect: { desktopLanguageRawValue = $0 }
+                                selectedId: viewModel.desktopLanguageRawValue,
+                                onSelect: { viewModel.desktopLanguageRawValue = $0 }
                             )
                         }
                     }
@@ -135,7 +128,7 @@ struct SettingsView: View {
                     title: t("settings.section.menu_bar"),
                     rows: {
                         settingsRow(title: t("settings.row.menu_compact_cards.title"), description: t("settings.row.menu_compact_cards.description")) {
-                            Toggle("", isOn: $menuCompactCards)
+                            Toggle("", isOn: $viewModel.menuCompactCards)
                                 .labelsHidden()
                         }
                     }
@@ -145,7 +138,7 @@ struct SettingsView: View {
                     title: t("settings.section.general"),
                     rows: {
                         settingsRow(title: t("settings.row.launch_at_login.title"), description: t("settings.row.launch_at_login.description")) {
-                            Toggle("", isOn: $autoLaunch)
+                            Toggle("", isOn: $viewModel.autoLaunch)
                                 .labelsHidden()
                         }
                     }
@@ -157,16 +150,16 @@ struct SettingsView: View {
                         settingsRow(title: t("settings.row.log_level.title"), description: t("settings.row.log_level.description")) {
                             dropdownControl(
                                 kind: .logLevel,
-                                selectionTitle: t("settings.option.log_level.\(logLevel)"),
+                                selectionTitle: t("settings.option.log_level.\(viewModel.logLevel)"),
                                 selectionSwatch: nil,
                                 options: logLevelOptions,
-                                selectedId: logLevel,
-                                onSelect: { logLevel = $0 }
+                                selectedId: viewModel.logLevel,
+                                onSelect: { viewModel.logLevel = $0 }
                             )
                         }
 
                         settingsRow(title: t("settings.row.external_helper_override.title"), description: t("settings.row.external_helper_override.description")) {
-                            Toggle("", isOn: $experimentalExternalHelper)
+                            Toggle("", isOn: $viewModel.experimentalExternalHelper)
                                 .labelsHidden()
                         }
                     }
