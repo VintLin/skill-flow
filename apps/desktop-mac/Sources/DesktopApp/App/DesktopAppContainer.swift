@@ -26,13 +26,15 @@ final class DesktopAppContainer {
     ) {
         let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
         let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)
+        let mutationCoordinator = DesktopMutationCoordinator(commandFacade: resolvedCommandFacade)
         let resolvedRuntime = runtime ?? DesktopRuntime(dependencies: .live(query: resolvedQueryFacade))
 
         self.runtime = resolvedRuntime
         self.mainViewModel = MainViewModel(
             bridgeClient: bridgeClient,
             queryFacade: resolvedQueryFacade,
-            commandFacade: resolvedCommandFacade
+            commandFacade: resolvedCommandFacade,
+            mutationCoordinator: mutationCoordinator
         )
         self.settingsViewModel = SettingsViewModel(state: resolvedRuntime.state)
         self.menuBarScreenState = MenuBarScreenState()

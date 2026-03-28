@@ -121,6 +121,20 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(updateRequests.first?.payload?["sourceIds"]?.value as? [String], ["beta"])
     }
 
+    func testUpdateCurrentGroupWithoutSelectionSkipsMutationRequest() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        model.selectedSourceId = nil
+
+        await model.updateCurrentGroup()
+
+        let updateRequests = fixture.loggedRequests().filter { $0.command == "update" }
+        XCTAssertTrue(updateRequests.isEmpty)
+        XCTAssertEqual(model.toast?.style, .error)
+    }
+
     func testBootstrapUsesBootstrapPayloadWithoutImmediateListOrDoctor() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

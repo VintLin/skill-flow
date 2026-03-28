@@ -489,6 +489,7 @@ final class MainViewModel {
     private let bridgeClient: BridgeClient
     private let queryFacade: any DesktopQuerying
     private let commandFacade: any DesktopCommanding
+    private let mutationCoordinator: DesktopMutationCoordinator
 
     nonisolated private static var presentationLocale: Locale {
         let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
@@ -613,14 +614,17 @@ final class MainViewModel {
     init(
         bridgeClient: BridgeClient,
         queryFacade: (any DesktopQuerying)? = nil,
-        commandFacade: (any DesktopCommanding)? = nil
+        commandFacade: (any DesktopCommanding)? = nil,
+        mutationCoordinator: DesktopMutationCoordinator? = nil
     ) {
         let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
         let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)
+        let resolvedMutationCoordinator = mutationCoordinator ?? DesktopMutationCoordinator(commandFacade: resolvedCommandFacade)
 
         self.bridgeClient = bridgeClient
         self.queryFacade = resolvedQueryFacade
         self.commandFacade = resolvedCommandFacade
+        self.mutationCoordinator = resolvedMutationCoordinator
         self.pinnedSourceIds = []
     }
 
@@ -767,8 +771,8 @@ final class MainViewModel {
         pinnedSourceIds = toggledPinnedSourceIds(from: pinnedSourceIds, sourceId: sourceId)
 
         do {
-            let response = try await bridgeClient.togglePinnedSource(sourceId: sourceId)
-            applyPinnedSourceIds(response.data?.value)
+            let result = try await mutationCoordinator.togglePinned(sourceId: sourceId)
+            pinnedSourceIds = result.pinnedSourceIds
         } catch {
             pinnedSourceIds = previousPinnedSourceIds
             showToast(style: .error, text: localizedText("toast.pin.failed", firstErrorLine(from: error)))
@@ -1202,12 +1206,7 @@ final class MainViewModel {
     }
 
     func updateCurrentGroup() async {
-        guard let sourceId = selectedSourceId else {
-            showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
-            return
-        }
-
-        await updateSource(sourceId)
+        await submitSelectedUpdate(selectedSourceId, showLoadingToast: true)
     }
 
     func isUpdatingSource(_ sourceId: String) -> Bool {
@@ -1215,11 +1214,11 @@ final class MainViewModel {
     }
 
     func updateSource(_ sourceId: String) async {
-        await updateSource(sourceId, showLoadingToast: true)
+        await submitSelectedUpdate(sourceId, showLoadingToast: true)
     }
 
-    private func updateSource(_ sourceId: String, showLoadingToast: Bool) async {
-        let sourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func submitSelectedUpdate(_ requestedSourceId: String?, showLoadingToast: Bool) async {
+        let sourceId = requestedSourceId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !sourceId.isEmpty else {
             showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
             return
@@ -1232,12 +1231,16 @@ final class MainViewModel {
         defer { updatingSourceIds.remove(sourceId) }
 
         do {
-            let response = try await bridgeClient.updateSources([sourceId])
+            let result = try await mutationCoordinator.updateSelectedSource(requestedSourceId)
+            guard case let .submitted(submittedSourceId, response) = result else {
+                showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
+                return
+            }
             cancelDeferredDraftSync()
-            let shouldInspect = selectedGroupId == sourceId || selectedSourceId == sourceId
+            let shouldInspect = selectedGroupId == submittedSourceId || selectedSourceId == submittedSourceId
             await synchronizeState(
                 refreshDoctor: true,
-                inspectSourceId: shouldInspect ? sourceId : nil
+                inspectSourceId: shouldInspect ? submittedSourceId : nil
             )
             showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: 1)))
         } catch {
