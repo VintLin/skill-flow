@@ -6,7 +6,7 @@ struct SkillFlowDesktopApp: App {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(DesktopLanguage.storageKey) private var desktopLanguageRawValue = DesktopLanguage.system.rawValue
 
-    @State private var viewModel = MainViewModel(bridgeClient: BridgeClient())
+    @State private var container = DesktopAppContainer()
 
     init() {
         if let icon = AppIconLibrary.image() {
@@ -16,19 +16,19 @@ struct SkillFlowDesktopApp: App {
 
     var body: some Scene {
         Window(L10n.string("app.name", locale: selectedLocale), id: "main-window") {
-            MainView(viewModel: viewModel)
+            MainView(viewModel: container.mainViewModel)
                 .frame(minWidth: 980, minHeight: 640)
                 .environment(\.locale, selectedLocale)
         }
         .windowStyle(.hiddenTitleBar)
 
         Settings {
-            SettingsBridgeView(viewModel: viewModel)
+            SettingsBridgeView(viewModel: container.mainViewModel)
                 .environment(\.locale, selectedLocale)
         }
 
         MenuBarExtra {
-            MenuBarQuickConfigView(viewModel: viewModel) {
+            MenuBarQuickConfigView(viewModel: container.mainViewModel) {
                 openWindow(id: "main-window")
                 NSApp.activate(ignoringOtherApps: true)
             }
@@ -49,7 +49,7 @@ struct SkillFlowDesktopApp: App {
     }
 
     private var menuIcon: String {
-        viewModel.healthStatus.menuIconSystemName
+        container.mainViewModel.healthStatus.menuIconSystemName
     }
 }
 
