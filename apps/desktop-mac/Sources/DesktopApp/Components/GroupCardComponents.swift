@@ -160,9 +160,7 @@ enum GroupCardDisplayMode: Equatable {
 
     var showsSourceFacts: Bool {
         switch self {
-        case .importPage:
-            return true
-        case .home, .menu:
+        case .home, .menu, .importPage:
             return false
         }
     }
@@ -253,7 +251,7 @@ struct SharedGroupCard: View {
         VStack(alignment: .leading, spacing: scale.cardSpacing) {
             header
 
-            if displayMode.showsMetaLine || (displayMode.showsSourceFacts && !card.sourceFacts.isEmpty) {
+            if Self.showsHeaderDivider(card: card, displayMode: displayMode) {
                 dashedDivider
             }
 
@@ -267,6 +265,7 @@ struct SharedGroupCard: View {
                 selection: card.targetSelection,
                 items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled) },
                 compact: true,
+                loading: card.targetsLoading,
                 onToggleAll: onToggleAllTargets,
                 action: onToggleTarget
             )
@@ -305,14 +304,21 @@ struct SharedGroupCard: View {
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .top, spacing: 8) {
-            if let onOpen {
-                Button(action: onOpen) {
-                    headerContent
+            VStack(alignment: .leading, spacing: scale.headerSpacing) {
+                if let onOpen {
+                    Button(action: onOpen) {
+                        headerPrimaryContent
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    headerPrimaryContent
                 }
-                .buttonStyle(.plain)
-            } else {
-                headerContent
+                if Self.reservesHeaderStatsRow(card: card, displayMode: displayMode) {
+                    headerStatsRow
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, scale.headerBottomSpacing)
             Spacer(minLength: 0)
             headerAction
         }
@@ -327,28 +333,58 @@ struct SharedGroupCard: View {
         }
     }
 
-    private var headerContent: some View {
-        VStack(alignment: .leading, spacing: scale.headerSpacing) {
-            HStack(alignment: .firstTextBaseline, spacing: max(4, scale.cardInset * 0.5)) {
-                Text(card.title)
-                    .font(.system(size: scale.titleSize, weight: .semibold))
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                if displayMode.showsSubtitle {
-                    Text(card.subtitle)
-                        .font(.system(size: scale.metaSize, weight: .regular))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(1)
-                }
-            }
-            if displayMode.showsMetaLine {
-                Text(card.metaLine)
+    private var headerPrimaryContent: some View {
+        HStack(alignment: .firstTextBaseline, spacing: max(4, scale.cardInset * 0.5)) {
+            Text(card.title)
+                .font(.system(size: scale.titleSize, weight: .semibold))
+                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let byline = card.byline, displayMode.showsSubtitle {
+                Text(byline)
                     .font(.system(size: scale.metaSize, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(1)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, scale.headerBottomSpacing)
+    }
+
+    @ViewBuilder
+    private var headerStatsRow: some View {
+        HStack(spacing: 10) {
+            if let skillCount = card.stats.skillCount {
+                statItem(icon: .skills, text: countText(skillCount))
+            } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
+                statPlaceholder(width: 34)
+            }
+            if let downloadCount = card.stats.downloadCount {
+                statItem(icon: .downloads, text: countText(downloadCount))
+            } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
+                statPlaceholder(width: 42)
+            }
+            if let starCount = card.stats.starCount {
+                statItem(icon: .star, text: countText(starCount))
+            } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
+                statPlaceholder(width: 38)
+            }
+            if let githubURL = card.stats.githubURL {
+                Button {
+                    if let url = URL(string: githubURL) {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    statIcon(.github)
+                }
+                .buttonStyle(.plain)
+                .help(githubURL)
+            } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
+                statPlaceholder(width: 16)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(height: scale.metaSize + 4, alignment: .leading)
+        .foregroundStyle(AppTheme.textMuted(for: theme))
+        .lineLimit(1)
     }
 
     private var pinButton: some View {
@@ -461,6 +497,7 @@ struct SharedGroupCard: View {
         selection: SelectionState,
         items: [(id: String, label: String, shortLabel: String, isEnabled: Bool)],
         compact: Bool,
+        loading: Bool,
         onToggleAll: @escaping () -> Void,
         action: @escaping (String, Bool) -> Void
     ) -> some View {
@@ -476,24 +513,30 @@ struct SharedGroupCard: View {
 
             cardScroller {
                 HStack(spacing: scale.rowSpacing) {
-                    triStateSwitch(selection, action: onToggleAll)
-                    ForEach(items, id: \.id) { item in
-                        Button {
-                            action(item.id, !item.isEnabled)
-                        } label: {
-                            if compact {
-                                targetToggle(
-                                    targetId: item.id,
-                                    fallbackText: item.shortLabel,
-                                    accessibilityLabel: item.label,
-                                    isOn: item.isEnabled
-                                )
-                            } else {
-                                skillToggle(item.label, isOn: item.isEnabled)
-                            }
+                    triStateSwitch(selection, loading: false, action: onToggleAll)
+                    if loading {
+                        ForEach(0..<3, id: \.self) { _ in
+                            loadingPill
                         }
-                        .buttonStyle(.plain)
-                        .disabled(isBusy)
+                    } else {
+                        ForEach(items, id: \.id) { item in
+                            Button {
+                                action(item.id, !item.isEnabled)
+                            } label: {
+                                if compact {
+                                    targetToggle(
+                                        targetId: item.id,
+                                        fallbackText: item.shortLabel,
+                                        accessibilityLabel: item.label,
+                                        isOn: item.isEnabled
+                                    )
+                                } else {
+                                    skillToggle(item.label, isOn: item.isEnabled)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isBusy)
+                        }
                     }
                 }
             }
@@ -511,6 +554,7 @@ struct SharedGroupCard: View {
                     selection: card.skillSelection,
                     items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
                     compact: false,
+                    loading: card.skillsLoading,
                     onToggleAll: onToggleAllSkills,
                     action: onToggleSkill
                 )
@@ -594,17 +638,74 @@ struct SharedGroupCard: View {
         AppTheme.textPrimary(for: theme).opacity(isOn ? 1.0 : 0.78)
     }
 
-    private func triStateSwitch(_ selection: SelectionState, action: @escaping () -> Void) -> some View {
+    private func triStateSwitch(_ selection: SelectionState, loading: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(switchLabel(selection))
-                .font(.system(size: scale.triStateFontSize, weight: .bold))
-                .frame(width: scale.triStateWidth, height: scale.triStateHeight)
-                .background(switchFill(selection))
-                .foregroundStyle(switchText(selection))
-                .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
+            ZStack {
+                RoundedRectangle(cornerRadius: scale.cornerRadius - 2)
+                    .fill(switchFill(selection))
+                if loading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(switchText(selection))
+                } else {
+                    Text(switchLabel(selection))
+                        .font(.system(size: scale.triStateFontSize, weight: .bold))
+                        .foregroundStyle(switchText(selection))
+                }
+            }
+            .frame(width: scale.triStateWidth, height: scale.triStateHeight)
         }
         .buttonStyle(.plain)
         .disabled(isSaving)
+    }
+
+    private var loadingPill: some View {
+        RoundedRectangle(cornerRadius: scale.cornerRadius - 2)
+            .fill(AppTheme.documentBlock(for: theme))
+            .frame(width: scale.targetSize, height: scale.targetSize)
+            .overlay {
+                ProgressView()
+                    .controlSize(.small)
+            }
+    }
+
+    private var hasHeaderStats: Bool {
+        card.stats.skillCount != nil
+            || card.stats.downloadCount != nil
+            || card.stats.starCount != nil
+            || card.stats.githubURL != nil
+    }
+
+    private func statItem(icon: GroupCardStatIcon, text: String) -> some View {
+        HStack(spacing: 4) {
+            statIcon(icon)
+            Text(text)
+                .font(.system(size: scale.metaSize, weight: .medium))
+        }
+    }
+
+    private func statIcon(_ icon: GroupCardStatIcon) -> some View {
+        Group {
+            if let image = icon.image {
+                Image(nsImage: image)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 11, height: 11)
+            }
+        }
+    }
+
+    private func statPlaceholder(width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(AppTheme.documentBlock(for: theme))
+            .frame(width: width, height: 11)
+    }
+
+    private func countText(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
     private func cardScroller<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
@@ -686,12 +787,61 @@ struct SharedGroupCard: View {
     }
 }
 
+extension SharedGroupCard {
+    static func reservesHeaderStatsRow(
+        card: MainViewModel.GroupCardModel,
+        displayMode: GroupCardDisplayMode
+    ) -> Bool {
+        guard displayMode.showsMetaLine, displayMode != .menu else {
+            return false
+        }
+
+        return hasHeaderStats(card: card)
+            || (displayMode == .importPage && (card.skillsLoading || card.targetsLoading))
+    }
+
+    static func showsHeaderDivider(
+        card: MainViewModel.GroupCardModel,
+        displayMode: GroupCardDisplayMode
+    ) -> Bool {
+        reservesHeaderStatsRow(card: card, displayMode: displayMode)
+            || (displayMode.showsSourceFacts && !card.sourceFacts.isEmpty)
+    }
+
+    private static func hasHeaderStats(card: MainViewModel.GroupCardModel) -> Bool {
+        card.stats.skillCount != nil
+            || card.stats.downloadCount != nil
+            || card.stats.starCount != nil
+            || card.stats.githubURL != nil
+    }
+}
+
 private struct DashedDividerLine: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.midY))
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
         return path
+    }
+}
+
+private enum GroupCardStatIcon {
+    case skills
+    case downloads
+    case star
+    case github
+
+    var image: NSImage? {
+        switch self {
+        case .skills:
+            return GroupMetadataIconLibrary.image(for: .skills)
+        case .downloads:
+            return GroupMetadataIconLibrary.image(for: .download)
+        case .star:
+            return GroupMetadataIconLibrary.image(for: .star)
+        case .github:
+            return GroupMetadataIconLibrary.image(for: .github)
+        }
     }
 }
 

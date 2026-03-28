@@ -350,6 +350,12 @@ struct MainView: View {
                             )
                         }
                     }
+                    .task(id: groupCards.map(\.id).joined(separator: "|")) {
+                        guard homeViewModel.currentRoute == .home else {
+                            return
+                        }
+                        await viewModel.prefetchHomeGroupCardMetadataIfNeeded(groupCards.map(\.id))
+                    }
                     .frame(maxWidth: layout.gridFrameWidth, alignment: .center)
                     Spacer(minLength: 0)
                 }

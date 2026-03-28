@@ -140,6 +140,53 @@ describe.sequential("import page flow", () => {
     expect(preview.data.skills.map((skill) => skill.id)).toEqual(["research", "debugging"]);
   });
 
+  test("previewImportSource lists repo skills without fetching per-skill detail pages", async () => {
+    const requestedUrls: string[] = [];
+    vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({
+      provider: "github",
+      repoLabel: "anthropics/skills",
+      repoUrl: "https://github.com/anthropics/skills",
+      starCount: 406,
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === "https://skills.sh/anthropics/skills") {
+        return responseWithHtml(`
+          <h1>anthropics<!-- -->/<!-- -->skills</h1>
+          <span>2<!-- --> <!-- -->skills</span>
+          <span>735.1K<!-- --> total installs</span>
+          <a href="https://github.com/anthropics/skills">GitHub</a>
+          <a href="/anthropics/skills/research"><h3>research</h3></a>
+          <a href="/anthropics/skills/debugging"><h3>debugging</h3></a>
+        `);
+      }
+      if (url === "https://skills.sh/anthropics") {
+        return responseWithHtml(`
+          <span>11<!-- --> <!-- -->sources</span>
+          <span>256<!-- --> skills</span>
+          <span>874.4K<!-- --> <!-- -->total installs</span>
+          <a href="https://github.com/anthropics" class="flex items-center gap-1 whitespace-nowrap">GitHub</a>
+        `);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }));
+
+    const app = new SkillFlowApp();
+    const preview = await app.previewImportSource("anthropic/skills");
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+
+    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["research", "debugging"]);
+    expect(requestedUrls).toEqual([
+      "https://skills.sh/anthropics/skills",
+      "https://skills.sh/anthropics",
+    ]);
+  });
+
   test("importSource applies selected skills and targets", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browse things."),

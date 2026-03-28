@@ -4,6 +4,12 @@ import type {
   ImportRecommendationFeedId,
   ImportSearchHit,
   ImportSearchSnapshot,
+  RepoMetadataCacheEntry,
+  RepoMetadataIdentity,
+  RepoMetadataProvider,
+  RepoMetadataProviderEntry,
+  ResolvedRepoMetadata,
+  ResolvedRepoMetadataField,
   UnifiedSourceOwner,
   UnifiedSourceSkill,
   UnifiedSourceSkillInstalledOn,
@@ -15,7 +21,7 @@ import type {
 export function createEmptyImportDataCache(): ImportDataCache {
   return {
     searches: {},
-    sources: {},
+    repos: {},
     recommendations: {},
   };
 }
@@ -28,7 +34,7 @@ export function normalizeImportDataCache(value: unknown): ImportDataCache {
   const candidate = value as Record<string, unknown>;
   return {
     searches: normalizeSearchSnapshots(candidate.searches),
-    sources: normalizeSourceSnapshots(candidate.sources),
+    repos: normalizeRepoSnapshots(candidate.repos, candidate.sources),
     recommendations: normalizeRecommendationFeeds(candidate.recommendations),
   };
 }
@@ -57,17 +63,32 @@ function normalizeSearchSnapshots(value: unknown): Record<string, ImportSearchSn
   );
 }
 
-function normalizeSourceSnapshots(value: unknown): Record<string, UnifiedSourceSnapshotCacheEntry> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return {};
-  }
+function normalizeRepoSnapshots(
+  value: unknown,
+  legacySources: unknown,
+): Record<string, RepoMetadataCacheEntry> {
+  const repos = typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.fromEntries(
+      Object.entries(value).flatMap(([canonicalRepo, entry]) => {
+        const normalized = normalizeRepoSnapshotEntry(canonicalRepo, entry);
+        return normalized ? [[canonicalRepo, normalized] as const] : [];
+      }),
+    )
+    : {};
 
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([canonicalRepo, entry]) => {
-      const normalized = normalizeSourceSnapshotEntry(canonicalRepo, entry);
-      return normalized ? [[canonicalRepo, normalized] as const] : [];
-    }),
-  );
+  const legacy = typeof legacySources === "object" && legacySources !== null && !Array.isArray(legacySources)
+    ? Object.fromEntries(
+      Object.entries(legacySources).flatMap(([canonicalRepo, entry]) => {
+        const normalized = normalizeSourceSnapshotEntry(canonicalRepo, entry);
+        return normalized ? [[canonicalRepo, legacyRepoEntryFromSourceSnapshot(normalized)] as const] : [];
+      }),
+    )
+    : {};
+
+  return {
+    ...legacy,
+    ...repos,
+  };
 }
 
 function normalizeRecommendationFeeds(value: unknown): Record<string, ImportRecommendationFeed> {
@@ -128,6 +149,34 @@ function normalizeSourceSnapshotEntry(
     checkedAt,
     expiresAt,
     data,
+  };
+}
+
+function normalizeRepoSnapshotEntry(
+  canonicalRepo: string,
+  value: unknown,
+): RepoMetadataCacheEntry | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const checkedAt = normalizeString(candidate.checkedAt);
+  const expiresAt = normalizeString(candidate.expiresAt);
+  const identity = normalizeRepoIdentity(candidate.identity, canonicalRepo);
+  const providers = normalizeRepoProviders(candidate.providers);
+  const resolved = normalizeResolvedRepoMetadata(candidate.resolved);
+  if (!checkedAt || !expiresAt || !identity || !resolved) {
+    return undefined;
+  }
+
+  return {
+    canonicalRepo,
+    checkedAt,
+    expiresAt,
+    identity,
+    providers,
+    resolved,
   };
 }
 
@@ -240,6 +289,218 @@ function normalizeUnifiedSourceSnapshot(value: unknown): UnifiedSourceSnapshot |
     skills: normalizeSourceSkills(candidate.skills),
     ...(normalizeSourceTrust(candidate.trust) ? { trust: normalizeSourceTrust(candidate.trust)! } : {}),
   };
+}
+
+function legacyRepoEntryFromSourceSnapshot(
+  sourceEntry: UnifiedSourceSnapshotCacheEntry,
+): RepoMetadataCacheEntry {
+  const snapshot = sourceEntry.data;
+  return {
+    canonicalRepo: sourceEntry.canonicalRepo,
+    checkedAt: sourceEntry.checkedAt,
+    expiresAt: sourceEntry.expiresAt,
+    identity: {
+      canonicalRepo: sourceEntry.canonicalRepo,
+      aliases: snapshot.aliases,
+      origins: ["skills"],
+    },
+    providers: {
+      skills: {
+        provider: "skills",
+        status: "ready",
+        checkedAt: sourceEntry.checkedAt,
+        expiresAt: sourceEntry.expiresAt,
+        snapshot,
+      },
+    },
+    resolved: {
+      ...(snapshot.title ? { title: snapshot.title } : {}),
+      ...(snapshot.owner.slug ? { author: snapshot.owner.slug } : {}),
+      ...(snapshot.description ? { summary: snapshot.description } : {}),
+      ...(snapshot.repoUrl ? { githubUrl: snapshot.repoUrl } : {}),
+      ...(snapshot.sourceUrl ? { sourceUrl: snapshot.sourceUrl } : {}),
+      ...(snapshot.skillCount !== undefined ? { skillCount: snapshot.skillCount } : {}),
+      ...(snapshot.totalInstalls !== undefined ? { downloadCount: snapshot.totalInstalls } : {}),
+      ...(snapshot.repoStars !== undefined ? { starCount: snapshot.repoStars } : {}),
+      fieldSources: buildFieldSources({
+        title: snapshot.title,
+        author: snapshot.owner.slug,
+        summary: snapshot.description,
+        githubUrl: snapshot.repoUrl,
+        sourceUrl: snapshot.sourceUrl,
+        skillCount: snapshot.skillCount,
+        downloadCount: snapshot.totalInstalls,
+        starCount: snapshot.repoStars,
+      }, "skills"),
+    },
+  };
+}
+
+function normalizeRepoIdentity(
+  value: unknown,
+  canonicalRepo: string,
+): RepoMetadataIdentity | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  const normalizedRepo = normalizeString(candidate.canonicalRepo) ?? canonicalRepo;
+  if (!normalizedRepo) {
+    return undefined;
+  }
+  return {
+    canonicalRepo: normalizedRepo,
+    aliases: normalizeStringArray(candidate.aliases),
+    origins: normalizeRepoProviderArray(candidate.origins),
+  };
+}
+
+function normalizeRepoProviders(
+  value: unknown,
+): Partial<Record<RepoMetadataProvider, RepoMetadataProviderEntry>> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const providers: Partial<Record<RepoMetadataProvider, RepoMetadataProviderEntry>> = {};
+  for (const provider of ["skills", "github", "clawhub", "local"] as const) {
+    const entry = normalizeRepoProviderEntry(candidate[provider], provider);
+    if (entry) {
+      providers[provider] = entry;
+    }
+  }
+  return providers;
+}
+
+function normalizeRepoProviderEntry(
+  value: unknown,
+  provider: RepoMetadataProvider,
+): RepoMetadataProviderEntry | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  const status = normalizeString(candidate.status);
+  const checkedAt = normalizeString(candidate.checkedAt);
+  const expiresAt = normalizeString(candidate.expiresAt);
+  if (
+    (status !== "ready" && status !== "failed" && status !== "unsupported")
+    || !checkedAt
+    || !expiresAt
+  ) {
+    return undefined;
+  }
+
+  const data = normalizeSourceStats(candidate.data);
+  const snapshot = normalizeUnifiedSourceSnapshot(candidate.snapshot);
+
+  return {
+    provider,
+    status,
+    checkedAt,
+    expiresAt,
+    ...(normalizeString(candidate.reasonCode) ? { reasonCode: normalizeString(candidate.reasonCode)! as never } : {}),
+    ...(typeof candidate.retryable === "boolean" ? { retryable: candidate.retryable } : {}),
+    ...(data ? { data } : {}),
+    ...(snapshot ? { snapshot } : {}),
+  };
+}
+
+function normalizeResolvedRepoMetadata(value: unknown): ResolvedRepoMetadata | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  return {
+    ...(normalizeString(candidate.title) ? { title: normalizeString(candidate.title)! } : {}),
+    ...(normalizeString(candidate.author) ? { author: normalizeString(candidate.author)! } : {}),
+    ...(normalizeString(candidate.summary) ? { summary: normalizeString(candidate.summary)! } : {}),
+    ...(normalizeString(candidate.githubUrl) ? { githubUrl: normalizeString(candidate.githubUrl)! } : {}),
+    ...(normalizeString(candidate.sourceUrl) ? { sourceUrl: normalizeString(candidate.sourceUrl)! } : {}),
+    ...(normalizeNumber(candidate.skillCount) !== undefined ? { skillCount: normalizeNumber(candidate.skillCount)! } : {}),
+    ...(normalizeNumber(candidate.downloadCount) !== undefined ? { downloadCount: normalizeNumber(candidate.downloadCount)! } : {}),
+    ...(normalizeNumber(candidate.starCount) !== undefined ? { starCount: normalizeNumber(candidate.starCount)! } : {}),
+    fieldSources: normalizeFieldSources(candidate.fieldSources),
+  };
+}
+
+function normalizeFieldSources(
+  value: unknown,
+): Partial<Record<ResolvedRepoMetadataField, RepoMetadataProvider>> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+  const candidate = value as Record<string, unknown>;
+  const fields: ResolvedRepoMetadataField[] = [
+    "title",
+    "author",
+    "summary",
+    "githubUrl",
+    "sourceUrl",
+    "skillCount",
+    "downloadCount",
+    "starCount",
+  ];
+  return Object.fromEntries(
+    fields.flatMap((field) => {
+      const provider = normalizeRepoProvider(candidate[field]);
+      return provider ? [[field, provider] as const] : [];
+    }),
+  );
+}
+
+function normalizeRepoProviderArray(value: unknown): RepoMetadataProvider[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const provider = normalizeRepoProvider(item);
+    return provider ? [provider] : [];
+  });
+}
+
+function normalizeRepoProvider(value: unknown): RepoMetadataProvider | undefined {
+  const provider = normalizeString(value);
+  if (provider === "skills" || provider === "github" || provider === "clawhub" || provider === "local") {
+    return provider;
+  }
+  return undefined;
+}
+
+function normalizeSourceStats(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  const provider = normalizeSourceStatsProvider(candidate.provider);
+  return {
+    ...(provider ? { provider } : {}),
+    ...(normalizeString(candidate.repoLabel) ? { repoLabel: normalizeString(candidate.repoLabel)! } : {}),
+    ...(normalizeString(candidate.repoUrl) ? { repoUrl: normalizeString(candidate.repoUrl)! } : {}),
+    ...(normalizeString(candidate.sourceUrl) ? { sourceUrl: normalizeString(candidate.sourceUrl)! } : {}),
+    ...(normalizeNumber(candidate.starCount) !== undefined ? { starCount: normalizeNumber(candidate.starCount)! } : {}),
+    ...(normalizeNumber(candidate.forkCount) !== undefined ? { forkCount: normalizeNumber(candidate.forkCount)! } : {}),
+    ...(normalizeNumber(candidate.totalInstalls) !== undefined ? { totalInstalls: normalizeNumber(candidate.totalInstalls)! } : {}),
+    ...(normalizeNumber(candidate.weeklyInstalls) !== undefined ? { weeklyInstalls: normalizeNumber(candidate.weeklyInstalls)! } : {}),
+    ...(normalizeNumber(candidate.downloadCount) !== undefined ? { downloadCount: normalizeNumber(candidate.downloadCount)! } : {}),
+    ...(normalizeString(candidate.ownerHandle) ? { ownerHandle: normalizeString(candidate.ownerHandle)! } : {}),
+    ...(normalizeString(candidate.ownerDisplayName) ? { ownerDisplayName: normalizeString(candidate.ownerDisplayName)! } : {}),
+    ...(normalizeString(candidate.summary) ? { summary: normalizeString(candidate.summary)! } : {}),
+    ...(normalizeString(candidate.description) ? { description: normalizeString(candidate.description)! } : {}),
+    ...(normalizeStringArray(candidate.topics).length > 0 ? { topics: normalizeStringArray(candidate.topics) } : {}),
+    ...(normalizeString(candidate.language) ? { language: normalizeString(candidate.language)! } : {}),
+    ...(normalizeString(candidate.defaultBranch) ? { defaultBranch: normalizeString(candidate.defaultBranch)! } : {}),
+    ...(normalizeString(candidate.pushedAt) ? { pushedAt: normalizeString(candidate.pushedAt)! } : {}),
+  };
+}
+
+function normalizeSourceStatsProvider(value: unknown): "skills" | "github" | "clawhub" | undefined {
+  const provider = normalizeString(value);
+  if (provider === "skills" || provider === "github" || provider === "clawhub") {
+    return provider;
+  }
+  return undefined;
 }
 
 function normalizeSourceOwner(value: unknown): UnifiedSourceOwner | undefined {
@@ -361,35 +622,51 @@ function normalizeSourceTrust(value: unknown): UnifiedSourceTrust | undefined {
 
   const candidate = value as Record<string, unknown>;
   const normalized = {
-    ...(candidate.official === true ? { official: true } : {}),
-    ...(candidate.trending === true ? { trending: true } : {}),
-    ...(candidate.hot === true ? { hot: true } : {}),
-    ...(candidate.audited === true ? { audited: true } : {}),
+    ...(typeof candidate.official === "boolean" ? { official: candidate.official } : {}),
+    ...(typeof candidate.trending === "boolean" ? { trending: candidate.trending } : {}),
+    ...(typeof candidate.hot === "boolean" ? { hot: candidate.hot } : {}),
+    ...(typeof candidate.audited === "boolean" ? { audited: candidate.audited } : {}),
   };
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function normalizeRecommendationFeedId(value: unknown): ImportRecommendationFeedId | undefined {
-  return value === "seed" ||
-    value === "official" ||
-    value === "trending" ||
-    value === "hot" ||
-    value === "audits"
-    ? value
-    : undefined;
+  if (
+    value === "seed"
+    || value === "official"
+    || value === "trending"
+    || value === "hot"
+    || value === "audits"
+  ) {
+    return value;
+  }
+  return undefined;
 }
 
 function normalizeString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function normalizeStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
-    : [];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    const normalized = normalizeString(item);
+    return normalized ? [normalized] : [];
+  });
 }
 
 function normalizeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function buildFieldSources(
+  values: Partial<Record<ResolvedRepoMetadataField, unknown>>,
+  provider: RepoMetadataProvider,
+): Partial<Record<ResolvedRepoMetadataField, RepoMetadataProvider>> {
+  return Object.fromEntries(
+    Object.entries(values).flatMap(([key, value]) => (value !== undefined && value !== "" ? [[key, provider]] : [])),
+  ) as Partial<Record<ResolvedRepoMetadataField, RepoMetadataProvider>>;
 }

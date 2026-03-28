@@ -4,7 +4,6 @@ struct ImportScreen: View {
     @Environment(\.locale) private var locale
 
     private let controlHeight: CGFloat = 34
-    private let autoPreviewLimit = 4
 
     let container: ImportScreenContainer
     @Bindable var screenState: ImportScreenState
@@ -56,8 +55,8 @@ struct ImportScreen: View {
                         badge: "\(cards.count)"
                     )
 
-                    if case .loading = searchPhase, cards.isEmpty {
-                        importLoadingGrid
+                    if Self.loadingPresentationStyle(searchPhase: searchPhase, cardCount: cards.count) == .spinner {
+                        importLoadingIndicator
                     } else if case .failed(let message) = searchPhase, cards.isEmpty {
                         emptyState(
                             title: t("import.failed.title"),
@@ -108,8 +107,8 @@ struct ImportScreen: View {
                                     )
                                 }
                             }
-                            .task(id: importAutoPreviewTaskKey(cards: cards, submittedQuery: submittedQuery)) {
-                                let previewIds = Array(cards.prefix(autoPreviewLimit).map(\.id))
+                            .task(id: Self.autoPreviewTaskKey(cards: cards, submittedQuery: submittedQuery)) {
+                                let previewIds = Self.previewGroupIDs(for: cards)
                                 await container.previewGroupsIfNeeded(previewIds)
                             }
                             .frame(maxWidth: gridFrameWidth, alignment: .center)
@@ -171,37 +170,23 @@ struct ImportScreen: View {
         .buttonStyle(.plain)
     }
 
-    private var importLoadingGrid: some View {
+    private var importLoadingIndicator: some View {
         HStack {
             Spacer(minLength: 0)
-            LazyVGrid(columns: gridColumns, spacing: 12) {
-                ForEach(0..<4, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(AppTheme.surface(for: theme))
-                        .frame(height: 264)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-                        }
-                        .overlay(alignment: .topLeading) {
-                            VStack(alignment: .leading, spacing: 10) {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(AppTheme.toolbarButtonBackground(for: theme))
-                                    .frame(width: 120, height: 16)
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(AppTheme.toolbarButtonBackground(for: theme))
-                                    .frame(width: 160, height: 12)
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(AppTheme.toolbarButtonBackground(for: theme))
-                                    .frame(height: 52)
-                                Spacer()
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(AppTheme.toolbarButtonBackground(for: theme))
-                                    .frame(height: 40)
-                            }
-                            .padding(14)
-                        }
-                }
+            VStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.regular)
+                Text(t("common.loading.groups"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 220)
+            .background(AppTheme.surface(for: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
             }
             .frame(maxWidth: gridFrameWidth, alignment: .center)
             Spacer(minLength: 0)
@@ -226,11 +211,6 @@ struct ImportScreen: View {
         Array(repeating: GridItem(.fixed(304), spacing: 14), count: gridColumnCount)
     }
 
-    private func importAutoPreviewTaskKey(cards: [ImportViewModel.Card], submittedQuery: String) -> String {
-        let prefixIds = cards.prefix(autoPreviewLimit).map(\.id)
-        return ([submittedQuery] + prefixIds).joined(separator: "|")
-    }
-
     private func importCardModel(for card: ImportViewModel.Card) -> MainViewModel.GroupCardModel {
         let draft = container.draft(for: card)
         let selectedSkillIds = Set(draft.selectedSkillIds)
@@ -241,12 +221,21 @@ struct ImportScreen: View {
             title: card.title,
             subtitle: card.subtitle,
             metaLine: t("common.meta.from", card.locator),
+            byline: card.subtitle,
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,
             errorCount: 0,
             skillSelection: importSelectionState(allIds: card.skills.map(\.id), selectedIds: draft.selectedSkillIds),
             targetSelection: importSelectionState(allIds: card.targets.map(\.id), selectedIds: draft.enabledTargetIds),
+            stats: MainViewModel.GroupCardStats(
+                skillCount: card.stats.skillCount,
+                downloadCount: card.stats.downloadCount,
+                starCount: card.stats.starCount,
+                githubURL: card.stats.githubURL
+            ),
+            skillsLoading: card.skillsLoading,
+            targetsLoading: card.targetsLoading,
             sourceFacts: card.sourceFacts,
             skills: card.skills.map { skill in
                 MainViewModel.GroupCardSkill(
@@ -346,5 +335,30 @@ struct ImportScreen: View {
 
     private func targetLabel(_ targetId: String) -> String {
         container.targetLabel(for: targetId)
+    }
+}
+
+extension ImportScreen {
+    enum LoadingPresentationStyle: Equatable {
+        case none
+        case spinner
+    }
+
+    static func previewGroupIDs(for cards: [ImportViewModel.Card]) -> [String] {
+        cards.filter(\.skillsLoading).map(\.id)
+    }
+
+    static func autoPreviewTaskKey(cards: [ImportViewModel.Card], submittedQuery: String) -> String {
+        ([submittedQuery] + previewGroupIDs(for: cards)).joined(separator: "|")
+    }
+
+    static func loadingPresentationStyle(
+        searchPhase: MainViewModel.ImportLoadPhase,
+        cardCount: Int
+    ) -> LoadingPresentationStyle {
+        guard case .loading = searchPhase, cardCount == 0 else {
+            return .none
+        }
+        return .spinner
     }
 }

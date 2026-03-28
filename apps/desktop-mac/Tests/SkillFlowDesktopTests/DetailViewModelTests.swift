@@ -12,6 +12,12 @@ final class DetailViewModelTests: XCTestCase {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub"
+            ),
             sourceDetailLines: [
                 "Provider: clawhub",
                 "Downloads: 211,898"
@@ -91,6 +97,7 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.author, snapshot.author)
         XCTAssertEqual(viewModel.originLabel, snapshot.originLabel)
         XCTAssertEqual(viewModel.starCount, snapshot.starCount)
+        XCTAssertEqual(viewModel.groupStats, snapshot.groupStats)
         XCTAssertEqual(viewModel.sourceDetailLines, snapshot.sourceDetailLines)
         XCTAssertEqual(viewModel.sourceRepositoryURL, snapshot.sourceRepositoryURL)
         XCTAssertEqual(viewModel.locator, snapshot.locator)

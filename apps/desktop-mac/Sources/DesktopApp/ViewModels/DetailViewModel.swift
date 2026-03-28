@@ -17,6 +17,7 @@ final class DetailViewModel {
         let author: String
         let originLabel: String
         let starCount: Int?
+        let groupStats: MainViewModel.GroupCardStats
         let sourceDetailLines: [String]
         let sourceRepositoryURL: String?
         let locator: String
@@ -47,6 +48,7 @@ final class DetailViewModel {
     let author: String
     let originLabel: String
     let starCount: Int?
+    let groupStats: MainViewModel.GroupCardStats
     let sourceDetailLines: [String]
     let sourceRepositoryURL: String?
     let locator: String
@@ -77,6 +79,7 @@ final class DetailViewModel {
         author = snapshot.author
         originLabel = snapshot.originLabel
         starCount = snapshot.starCount
+        groupStats = snapshot.groupStats
         sourceDetailLines = snapshot.sourceDetailLines
         sourceRepositoryURL = snapshot.sourceRepositoryURL
         locator = snapshot.locator
@@ -110,6 +113,7 @@ extension DetailViewModel.Snapshot {
         author = detail.author
         originLabel = detail.originLabel
         starCount = detail.starCount
+        groupStats = detail.groupStats
         sourceDetailLines = detail.sourceDetailLines
         sourceRepositoryURL = detail.sourceRepositoryURL
         locator = detail.locator

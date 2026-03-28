@@ -28,8 +28,34 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertTrue(GroupCardDisplayMode.importPage.showsSectionTitles)
         XCTAssertFalse(GroupCardDisplayMode.importPage.supportsCollapsedSkills)
         XCTAssertTrue(GroupCardDisplayMode.importPage.usesPlainPrimaryActionIcon)
-        XCTAssertTrue(GroupCardDisplayMode.importPage.showsSourceFacts)
+        XCTAssertFalse(GroupCardDisplayMode.importPage.showsSourceFacts)
         XCTAssertEqual(GroupCardDisplayMode.importPage.scale, .home)
+    }
+
+    func testImportCardsReserveMetadataRowAndDividerWhileLoading() {
+        let loadingCard = MainViewModel.GroupCardModel(
+            id: "import-loading",
+            title: "Loading",
+            subtitle: "by @owner",
+            metaLine: "",
+            byline: "by @owner",
+            isPinned: false,
+            health: "DISCOVER",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: true,
+            targetsLoading: false,
+            sourceFacts: [],
+            skills: [],
+            targets: [],
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+        )
+
+        XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: loadingCard, displayMode: .importPage))
+        XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: loadingCard, displayMode: .importPage))
     }
 
     func testHealthStatusUsesStableMenuBarIcons() {

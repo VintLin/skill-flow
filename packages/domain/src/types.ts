@@ -413,6 +413,56 @@ export type UnifiedSourceSnapshotCacheEntry = {
   data: UnifiedSourceSnapshot;
 };
 
+export type RepoMetadataProvider = "skills" | "github" | "clawhub" | "local";
+
+export type RepoMetadataIdentity = {
+  canonicalRepo: string;
+  aliases: string[];
+  origins: RepoMetadataProvider[];
+};
+
+export type RepoMetadataProviderEntry = {
+  provider: RepoMetadataProvider;
+  status: "ready" | "failed" | "unsupported";
+  checkedAt: string;
+  expiresAt: string;
+  reasonCode?: SourceMetadataReasonCode;
+  retryable?: boolean;
+  data?: SourceStats;
+  snapshot?: UnifiedSourceSnapshot;
+};
+
+export type ResolvedRepoMetadataField =
+  | "title"
+  | "author"
+  | "summary"
+  | "githubUrl"
+  | "sourceUrl"
+  | "skillCount"
+  | "downloadCount"
+  | "starCount";
+
+export type ResolvedRepoMetadata = {
+  title?: string;
+  author?: string;
+  summary?: string;
+  githubUrl?: string;
+  sourceUrl?: string;
+  skillCount?: number;
+  downloadCount?: number;
+  starCount?: number;
+  fieldSources: Partial<Record<ResolvedRepoMetadataField, RepoMetadataProvider>>;
+};
+
+export type RepoMetadataCacheEntry = {
+  canonicalRepo: string;
+  checkedAt: string;
+  expiresAt: string;
+  identity: RepoMetadataIdentity;
+  providers: Partial<Record<RepoMetadataProvider, RepoMetadataProviderEntry>>;
+  resolved: ResolvedRepoMetadata;
+};
+
 export type ImportSearchHit = {
   id: string;
   skillId: string;
@@ -446,7 +496,7 @@ export type ImportRecommendationFeed = {
 
 export type ImportDataCache = {
   searches: Record<string, ImportSearchSnapshot>;
-  sources: Record<string, UnifiedSourceSnapshotCacheEntry>;
+  repos: Record<string, RepoMetadataCacheEntry>;
   recommendations: Record<string, ImportRecommendationFeed>;
 };
 

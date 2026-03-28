@@ -88,19 +88,46 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.groupCards.map(\.id), ["beta"])
     }
 
+    func testGroupCardsHydrateCachedMetadataDuringBootstrap() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+
+        let alpha = model.groupCards.first(where: { $0.id == "alpha" })
+
+        XCTAssertEqual(alpha?.stats.skillCount, 2)
+        XCTAssertEqual(alpha?.stats.downloadCount, 5045)
+        XCTAssertEqual(alpha?.stats.starCount, 1200)
+    }
+
     func testDetailSnapshotUsesInspectPayload() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
         let model = try await fixture.makeModel()
 
-        let detail = model.detailSnapshot(for: "alpha")
+        let deadline = Date().addingTimeInterval(1)
+        var detail = model.detailSnapshot(for: "alpha")
+        while Date() < deadline {
+            if let snapshot = model.detailSnapshot(for: "alpha"),
+               snapshot.groupStats.starCount == 1200,
+               snapshot.groupStats.downloadCount == 5045,
+               snapshot.skills.first?.starCount == 1200 {
+                detail = snapshot
+                break
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+            detail = model.detailSnapshot(for: "alpha")
+        }
 
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.subtitle, "clawhub")
-        XCTAssertEqual(detail?.starCount, 1200)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("Provider: clawhub") == true)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("Downloads: 211,898") == true)
+        XCTAssertEqual(detail?.groupStats.skillCount, 2)
+        XCTAssertEqual(detail?.groupStats.downloadCount, 5045)
+        XCTAssertEqual(detail?.groupStats.starCount, 1200)
+        XCTAssertNil(detail?.groupStats.githubURL)
         XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
         XCTAssertEqual(detail?.enabledSkillCount, 1)
         XCTAssertEqual(detail?.totalSkillCount, 2)
@@ -139,7 +166,9 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.skills.map(\.id), ["alpha-a", "alpha-b"])
         XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
-        XCTAssertTrue(detail?.sourceDetailLines.isEmpty == true)
+        XCTAssertEqual(detail?.groupStats.skillCount, 2)
+        XCTAssertEqual(detail?.groupStats.starCount, 1200)
+        XCTAssertNil(detail?.groupStats.githubURL)
         XCTAssertEqual(detail?.targets.map(\.id), ["claude-code", "cursor"])
     }
 
@@ -154,14 +183,14 @@ final class MainViewModelSelectionTests: XCTestCase {
         let initialDetail = model.detailSnapshot(for: "alpha")
         XCTAssertTrue(model.hasInspectPayload(for: "alpha"))
         XCTAssertEqual(initialDetail?.title, "AlphaHub")
-        XCTAssertNil(initialDetail?.starCount)
-        XCTAssertTrue(initialDetail?.sourceDetailLines.isEmpty == true)
+        XCTAssertEqual(initialDetail?.groupStats.starCount, 1200)
+        XCTAssertNil(initialDetail?.groupStats.githubURL)
 
         let deadline = Date().addingTimeInterval(1)
         while Date() < deadline {
             if let detail = model.detailSnapshot(for: "alpha"),
-               detail.starCount == 1200,
-               detail.sourceDetailLines.contains("Provider: clawhub")
+               detail.groupStats.starCount == 1200,
+               detail.groupStats.downloadCount == 5045
             {
                 let inspectRequests = fixture.loggedRequests().filter {
                     $0.command == "inspect" && $0.payload?["sourceId"]?.value as? String == "alpha"
@@ -185,10 +214,8 @@ final class MainViewModelSelectionTests: XCTestCase {
         let model = try await fixture.makeModel()
         let detail = model.detailSnapshot(for: "alpha")
 
-        XCTAssertNil(detail?.starCount)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("Provider: clawhub") == true)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("Status: Unsupported") == true)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("Current source has no readable metadata.") == true)
+        XCTAssertNil(detail?.groupStats.starCount)
+        XCTAssertEqual(detail?.groupStats.skillCount, 2)
     }
 
     func testDetailSnapshotShowsFailedMetadataState() async throws {
@@ -201,9 +228,8 @@ final class MainViewModelSelectionTests: XCTestCase {
         let model = try await fixture.makeModel()
         let detail = model.detailSnapshot(for: "alpha")
 
-        XCTAssertNil(detail?.starCount)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("Status: Failed") == true)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("Source metadata is temporarily rate-limited. Try again later.") == true)
+        XCTAssertNil(detail?.groupStats.starCount)
+        XCTAssertEqual(detail?.groupStats.skillCount, 2)
     }
 
     func testDetailSnapshotShowsDisabledMetadataState() async throws {
@@ -216,9 +242,8 @@ final class MainViewModelSelectionTests: XCTestCase {
         let model = try await fixture.makeModel()
         let detail = model.detailSnapshot(for: "alpha")
 
-        XCTAssertNil(detail?.starCount)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("Status: Disabled") == true)
-        XCTAssertTrue(detail?.sourceDetailLines.contains("This source provider is reserved but not enabled in this build.") == true)
+        XCTAssertNil(detail?.groupStats.starCount)
+        XCTAssertEqual(detail?.groupStats.skillCount, 2)
     }
 
     func testDetailSnapshotFallsBackWhenSkillDocumentIsMissing() async throws {
@@ -246,8 +271,6 @@ final class MainViewModelSelectionTests: XCTestCase {
         let model = try await fixture.makeModel()
         let detail = model.detailSnapshot(for: "alpha")
 
-        XCTAssertEqual(detail?.originLabel, "不明なソース")
-        XCTAssertTrue(detail?.sourceDetailLines.contains("状態: 非対応") == true)
         XCTAssertEqual(detail?.groupDocuments.first?.title, "ファイルツリー")
     }
 
@@ -640,14 +663,15 @@ private struct TestFixture {
         let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
         let stateURL = rootURL.appendingPathComponent("state.json")
         let logURL = rootURL.appendingPathComponent("requests.log")
+        let helperScript = Self.helperScriptTemplate
+            .replacingOccurrences(of: "__STATE_PATH__", with: jsStringLiteral(stateURL.path))
+            .replacingOccurrences(of: "__LOG_PATH__", with: jsStringLiteral(logURL.path))
+            .replacingOccurrences(of: "__ROOT_PATH__", with: jsStringLiteral(rootURL.path))
 
-        try Self.helperScript.write(to: helperURL, atomically: true, encoding: .utf8)
+        try helperScript.write(to: helperURL, atomically: true, encoding: .utf8)
         try Data("".utf8).write(to: logURL)
 
         setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
-        setenv("SKILL_FLOW_DESKTOP_TEST_STATE", stateURL.path, 1)
-        setenv("SKILL_FLOW_DESKTOP_TEST_LOG", logURL.path, 1)
-        setenv("SKILL_FLOW_DESKTOP_TEST_ROOT", rootURL.path, 1)
 
         return TestFixture(stateURL: stateURL, logURL: logURL, rootURL: rootURL)
     }
@@ -688,8 +712,7 @@ private struct TestFixture {
             if let detail = model.detailSnapshot(for: sourceId),
                !detail.groupDocuments.isEmpty,
                !detail.fileTree.isEmpty,
-               detail.skills.allSatisfy({ !$0.documents.isEmpty }),
-               !detail.sourceDetailLines.isEmpty {
+               detail.skills.allSatisfy({ !$0.documents.isEmpty }) {
                 return
             }
             try await Task.sleep(nanoseconds: 20_000_000)
@@ -792,13 +815,19 @@ private struct TestFixture {
         }
     }
 
-    private static let helperScript = """
+    private static func jsStringLiteral(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+    }
+
+    private static let helperScriptTemplate = """
     const fs = require('fs');
     const path = require('path');
 
-    const statePath = process.env.SKILL_FLOW_DESKTOP_TEST_STATE;
-    const logPath = process.env.SKILL_FLOW_DESKTOP_TEST_LOG;
-    const rootPath = process.env.SKILL_FLOW_DESKTOP_TEST_ROOT;
+    const statePath = '__STATE_PATH__';
+    const logPath = '__LOG_PATH__';
+    const rootPath = '__ROOT_PATH__';
 
     function readState() {
       try {
@@ -864,6 +893,35 @@ private struct TestFixture {
       });
     }
 
+    function buildGroupCardEnrichment(state) {
+      return Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => {
+        const status = source.metadataStatus || 'ready';
+        const provider = source.metadataProvider || 'clawhub';
+        const sourceMetadata = status === 'ready'
+          ? {
+              status: 'ready',
+              provider,
+              data: {
+                provider,
+                starCount: source.starCount ?? null,
+                totalInstalls: 5045,
+                weeklyInstalls: 4921,
+                downloadCount: 211898,
+                ownerHandle: '@steipete',
+                ownerDisplayName: 'Peter Steinberger'
+              }
+            }
+          : {
+              status,
+              provider,
+              ...(source.metadataReasonCode ? { reasonCode: source.metadataReasonCode } : {}),
+              ...(status === 'failed' ? { retryable: true } : {})
+            };
+
+        return [sourceId, { sourceMetadata }];
+      }));
+    }
+
     function responseFor(request, ok, data, warnings, errors) {
       return {
         protocolVersion: '1.0',
@@ -886,6 +944,7 @@ private struct TestFixture {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
           summaries: buildSummaries(state),
+          groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
           audit: {
             issues: []
           },
@@ -906,7 +965,8 @@ private struct TestFixture {
 
       if (request.command === 'list') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
-          summaries: buildSummaries(state)
+          summaries: buildSummaries(state),
+          groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state)
         }, [], [])));
         return;
       }

@@ -146,17 +146,28 @@ final class MainViewModel {
         let isEnabled: Bool
     }
 
+    struct GroupCardStats: Equatable {
+        let skillCount: Int?
+        let downloadCount: Int?
+        let starCount: Int?
+        let githubURL: String?
+    }
+
     struct GroupCardModel: Identifiable {
         let id: String
         let title: String
         let subtitle: String
         let metaLine: String
+        let byline: String?
         let isPinned: Bool
         let health: String
         let warningCount: Int
         let errorCount: Int
         let skillSelection: SelectionState
         let targetSelection: SelectionState
+        let stats: GroupCardStats
+        let skillsLoading: Bool
+        let targetsLoading: Bool
         let sourceFacts: [String]
         let skills: [GroupCardSkill]
         let targets: [GroupCardTarget]
@@ -299,6 +310,7 @@ final class MainViewModel {
         let author: String
         let originLabel: String
         let starCount: Int?
+        let groupStats: GroupCardStats
         let sourceDetailLines: [String]
         let sourceRepositoryURL: String?
         let locator: String
@@ -732,18 +744,23 @@ final class MainViewModel {
 
             let enabledLeafIds = Set(draft.selectedLeafIds)
             let enabledTargets = Set(draft.enabledTargets)
+            let metadata = groupCardMetadata(sourceId: row.id, summary: summary, row: row)
 
             return GroupCardModel(
                 id: row.id,
                 title: row.displayName,
                 subtitle: subtitleText(locator: row.locator, kind: row.kind),
                 metaLine: "from \(row.locator.isEmpty ? row.kind : row.locator)",
+                byline: metadata.byline,
                 isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
                 warningCount: row.warningCount,
                 errorCount: row.errorCount,
                 skillSelection: skillSelectionState(sourceId: row.id),
                 targetSelection: targetSelectionState(sourceId: row.id),
+                stats: metadata.stats,
+                skillsLoading: false,
+                targetsLoading: false,
                 sourceFacts: [],
                 skills: summary.leafs.map { leaf in
                     GroupCardSkill(
@@ -763,6 +780,24 @@ final class MainViewModel {
                 },
                 saveState: saveStateBySourceId[row.id] ?? SaveState(phase: .idle, detail: nil)
             )
+        }
+    }
+
+    func prefetchHomeGroupCardMetadataIfNeeded(_ sourceIds: [String]) async {
+        guard currentRoute == .home else {
+            return
+        }
+        for sourceId in sourceIds {
+            guard currentRoute == .home else {
+                return
+            }
+            guard detailEnrichmentPayloadBySourceId[sourceId] == nil else {
+                continue
+            }
+            guard detailEnrichmentTasksBySourceId[sourceId] == nil else {
+                continue
+            }
+            scheduleDetailEnrichmentFetch(sourceId: sourceId)
         }
     }
 
@@ -799,6 +834,31 @@ final class MainViewModel {
             return "by \(handle)"
         }
         return "by \(kind.lowercased())"
+    }
+
+    private func groupCardMetadata(
+        sourceId: String,
+        summary: WorkflowSummary,
+        row: SourceRow
+    ) -> (byline: String, stats: GroupCardStats) {
+        let payload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
+        let sourceSnapshot = parseSourceSnapshot(payload["sourceSnapshot"] as? [String: Any])
+        let sourceMetadata = (payload["sourceMetadata"] as? [String: Any])?["data"] as? [String: Any]
+
+        let byline = sourceSnapshot.map { "by @\($0.owner.slug)" }
+            ?? ((sourceMetadata?["ownerHandle"] as? String)?.nonEmpty.map { "by \($0)" })
+            ?? subtitleText(locator: row.locator, kind: row.kind)
+
+        let stats = GroupCardStats(
+            skillCount: sourceSnapshot?.skillCount ?? summary.leafs.count,
+            downloadCount: sourceSnapshot?.totalInstalls
+                ?? sourceMetadata?["totalInstalls"] as? Int
+                ?? sourceMetadata?["downloadCount"] as? Int,
+            starCount: sourceSnapshot?.repoStars ?? sourceMetadata?["starCount"] as? Int,
+            githubURL: sourceSnapshot?.repoURL ?? (sourceMetadata?["repoUrl"] as? String)?.nonEmpty
+        )
+
+        return (byline, stats)
     }
 
     var deploymentSummary: DeploymentSummary {
@@ -1147,7 +1207,6 @@ final class MainViewModel {
             let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
                 inspectedPayloadBySourceId[sourceId] = payload
-                detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
                 preparedDetailContentBySourceId.removeValue(forKey: sourceId)
                 scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
                 scheduleDetailEnrichmentFetch(sourceId: sourceId)
@@ -1393,6 +1452,17 @@ final class MainViewModel {
             let summary = (group["summary"] as? String)?.nonEmpty
                 ?? snapshot?.description.nonEmpty
                 ?? ""
+            let skills = snapshot?.skills.map { skill in
+                ImportGroupSkill(
+                    id: skill.skillId,
+                    title: skill.title,
+                    summary: skill.summary,
+                    selectedByDefault: true
+                )
+            } ?? []
+            let previewPhase: ImportLoadPhase = skills.isEmpty
+                ? parseImportLoadPhase(group["previewState"] as? [String: Any])
+                : .ready
 
             return ImportGroupItem(
                 id: id,
@@ -1408,8 +1478,8 @@ final class MainViewModel {
                 matchedSkills: matchedSkills,
                 snapshot: snapshot,
                 enrichPhase: parseImportLoadPhase(group["enrichState"] as? [String: Any]),
-                previewPhase: parseImportLoadPhase(group["previewState"] as? [String: Any]),
-                skills: [],
+                previewPhase: previewPhase,
+                skills: skills,
                 targets: []
             )
         }
@@ -1752,6 +1822,7 @@ final class MainViewModel {
     private func parseBootstrapData(_ value: Any?) {
         guard let data = value as? [String: Any] else { return }
 
+        applyCachedGroupCardEnrichment(data)
         applyPinnedSourceIds(data)
         applySummaries(parseSummariesPayload(data))
 
@@ -1789,8 +1860,34 @@ final class MainViewModel {
     }
 
     private func applyList(_ response: BridgeResponse) {
+        if let data = response.data?.value as? [String: Any] {
+            applyCachedGroupCardEnrichment(data)
+        }
         applyPinnedSourceIds(response.data?.value)
         applySummaries(parseSummariesPayload(response.data?.value))
+    }
+
+    private func applyCachedGroupCardEnrichment(_ data: [String: Any]) {
+        guard let entries = data["groupCardEnrichmentBySourceId"] as? [String: Any] else {
+            return
+        }
+
+        for (sourceId, rawValue) in entries {
+            guard let payload = rawValue as? [String: Any] else {
+                continue
+            }
+
+            var mergedPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
+            if let sourceMetadata = payload["sourceMetadata"] {
+                mergedPayload["sourceMetadata"] = sourceMetadata
+            }
+            if let sourceSnapshot = payload["sourceSnapshot"] {
+                mergedPayload["sourceSnapshot"] = sourceSnapshot
+            }
+            if !mergedPayload.isEmpty {
+                detailEnrichmentPayloadBySourceId[sourceId] = mergedPayload
+            }
+        }
     }
 
     private func parseSummaries(_ response: BridgeResponse) -> [WorkflowSummary] {
@@ -2005,7 +2102,6 @@ final class MainViewModel {
         let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
         let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
         let sourceSnapshot = parseSourceSnapshot(payload["sourceSnapshot"] as? [String: Any])
-        let sourceMetadataPresentation = sourceMetadataPresentation(from: payload, sourceSnapshot: sourceSnapshot)
         let deploymentsPayload = payload["deployments"] as? [[String: Any]] ?? []
         let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
         let preparedDetailContent = preparedDetailContentBySourceId[sourceId]
@@ -2021,9 +2117,18 @@ final class MainViewModel {
             ?? "@\(summary.sourceKind.lowercased())"
         let originLabel = sourceSnapshot.flatMap { Self.displayOriginLabel(from: $0.sourceURL) }
             ?? Self.displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
-        let starCount = sourceMetadataPresentation.starCount
-        let sourceRepositoryURL = sourceMetadataPresentation.repositoryURL
-        let sourceDetailLines = sourceMetadataPresentation.lines
+        let groupStats = groupCardMetadata(sourceId: sourceId, summary: summary, row: SourceRow(
+            id: summary.sourceId,
+            displayName: summary.sourceDisplayName,
+            locator: summary.sourceLocator,
+            kind: summary.sourceKind,
+            skillCount: summary.leafs.count,
+            status: summary.health,
+            lastUpdate: summary.updatedAt,
+            warningCount: summary.warningCount,
+            errorCount: summary.errorCount
+        )).stats
+        let starCount = groupStats.starCount
         let projectedNamesByLeafId = projectionNameMap(for: sourceId)
 
         if preparedDetailContent == nil, !payload.isEmpty {
@@ -2114,8 +2219,9 @@ final class MainViewModel {
             author: author,
             originLabel: originLabel,
             starCount: starCount,
-            sourceDetailLines: sourceDetailLines,
-            sourceRepositoryURL: sourceRepositoryURL,
+            groupStats: groupStats,
+            sourceDetailLines: [],
+            sourceRepositoryURL: groupStats.githubURL,
             locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
             groupPath: groupPath,
             updatedAt: (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt,
@@ -2162,7 +2268,6 @@ final class MainViewModel {
     private func scheduleDetailEnrichmentFetch(sourceId: String) {
         detailEnrichmentTasksBySourceId[sourceId]?.cancel()
         detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
-        detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
 
         detailEnrichmentTokenSeed &+= 1
         let token = detailEnrichmentTokenSeed

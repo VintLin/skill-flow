@@ -38,7 +38,11 @@ final class ImportScreenContainer {
         guard isActive else {
             return nil
         }
-        let viewModel = ImportViewModel(items: mainViewModel.importDisplayGroups, locale: locale)
+        let viewModel = ImportViewModel(
+            items: mainViewModel.importDisplayGroups,
+            locale: locale,
+            fallbackTargetIds: mainViewModel.visibleTargets.map(\.id)
+        )
         return Snapshot(
             searchPhase: mainViewModel.importSearchPhase,
             submittedQuery: mainViewModel.importSubmittedQuery,
@@ -52,8 +56,12 @@ final class ImportScreenContainer {
     }
 
     func previewGroupsIfNeeded(_ groupIds: [String]) async {
-        for groupId in groupIds {
-            await mainViewModel.previewImportGroupIfNeeded(groupId)
+        await withTaskGroup(of: Void.self) { group in
+            for groupId in groupIds {
+                group.addTask { [mainViewModel] in
+                    await mainViewModel.previewImportGroupIfNeeded(groupId)
+                }
+            }
         }
     }
 

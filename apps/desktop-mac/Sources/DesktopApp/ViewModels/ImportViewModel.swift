@@ -1,6 +1,13 @@
 import Foundation
 
 struct ImportViewModel: Equatable {
+    struct Stats: Equatable {
+        let skillCount: Int?
+        let downloadCount: Int?
+        let starCount: Int?
+        let githubURL: String?
+    }
+
     struct Skill: Identifiable, Equatable {
         let id: String
         let title: String
@@ -22,18 +29,26 @@ struct ImportViewModel: Equatable {
         let summary: String
         let subtitle: String
         let sourceFacts: [String]
+        let stats: Stats
+        let skillsLoading: Bool
+        let targetsLoading: Bool
         let skills: [Skill]
         let targets: [Target]
     }
 
     let cards: [Card]
 
-    init(items: [MainViewModel.ImportGroupItem], locale: Locale) {
-        self.cards = items.map { Self.card(from: $0, locale: locale) }
+    init(items: [MainViewModel.ImportGroupItem], locale: Locale, fallbackTargetIds: [String] = []) {
+        self.cards = items.map { Self.card(from: $0, locale: locale, fallbackTargetIds: fallbackTargetIds) }
     }
 
-    static func card(from item: MainViewModel.ImportGroupItem, locale: Locale) -> Card {
-        Card(
+    static func card(
+        from item: MainViewModel.ImportGroupItem,
+        locale: Locale,
+        fallbackTargetIds: [String] = []
+    ) -> Card {
+        let resolvedSkills = resolvedSkills(for: item)
+        return Card(
             id: item.id,
             title: item.title,
             locator: item.locator,
@@ -41,8 +56,11 @@ struct ImportViewModel: Equatable {
             aliases: item.aliases,
             summary: summary(for: item, locale: locale),
             subtitle: subtitle(for: item.locator, locale: locale),
-            sourceFacts: sourceFacts(for: item, locale: locale),
-            skills: item.skills.map {
+            sourceFacts: [],
+            stats: stats(for: item),
+            skillsLoading: shouldShowSkillLoadingState(for: item),
+            targetsLoading: false,
+            skills: resolvedSkills.map {
                 Skill(
                     id: $0.id,
                     title: $0.title,
@@ -50,13 +68,65 @@ struct ImportViewModel: Equatable {
                     selectedByDefault: $0.selectedByDefault
                 )
             },
-            targets: item.targets.map {
+            targets: resolvedTargets(for: item, fallbackTargetIds: fallbackTargetIds).map {
                 Target(
                     id: $0.id,
                     selectedByDefault: $0.selectedByDefault
                 )
             }
         )
+    }
+
+    private static func stats(for item: MainViewModel.ImportGroupItem) -> Stats {
+        Stats(
+            skillCount: item.snapshot?.skillCount ?? item.skillCount,
+            downloadCount: item.snapshot?.totalInstalls ?? item.totalInstalls,
+            starCount: item.snapshot?.repoStars ?? item.starCount,
+            githubURL: item.snapshot?.repoURL
+        )
+    }
+
+    private static func shouldShowSkillLoadingState(for item: MainViewModel.ImportGroupItem) -> Bool {
+        if !resolvedSkills(for: item).isEmpty {
+            return false
+        }
+
+        switch item.previewPhase {
+        case .loading:
+            return item.skills.isEmpty
+        case .idle:
+            return item.skills.isEmpty
+        case .ready, .failed:
+            return false
+        }
+    }
+
+    private static func resolvedSkills(for item: MainViewModel.ImportGroupItem) -> [MainViewModel.ImportGroupSkill] {
+        if !item.skills.isEmpty {
+            return item.skills
+        }
+
+        return item.snapshot?.skills.map { skill in
+            MainViewModel.ImportGroupSkill(
+                id: skill.skillId,
+                title: skill.title,
+                summary: skill.summary,
+                selectedByDefault: true
+            )
+        } ?? []
+    }
+
+    private static func resolvedTargets(
+        for item: MainViewModel.ImportGroupItem,
+        fallbackTargetIds: [String]
+    ) -> [MainViewModel.ImportGroupTarget] {
+        if !item.targets.isEmpty {
+            return item.targets
+        }
+
+        return fallbackTargetIds.map { targetId in
+            MainViewModel.ImportGroupTarget(id: targetId, selectedByDefault: false)
+        }
     }
 
     private static func summary(for item: MainViewModel.ImportGroupItem, locale: Locale) -> String {
@@ -85,58 +155,6 @@ struct ImportViewModel: Equatable {
         case .idle, .ready:
             return localized("import.card.summary.import_from", locale: locale, item.canonicalRepo)
         }
-    }
-
-    private static func sourceFacts(for item: MainViewModel.ImportGroupItem, locale: Locale) -> [String] {
-        var facts: [String] = []
-        let totalInstalls = item.snapshot?.totalInstalls ?? item.totalInstalls
-        let starCount = item.snapshot?.repoStars ?? item.starCount
-        let skillCount = item.snapshot?.skillCount ?? item.skillCount
-
-        if let totalInstalls, totalInstalls > 0 {
-            facts.append(localized("import.card.facts.installs", locale: locale, formattedCount(totalInstalls)))
-        }
-        if let starCount, starCount > 0 {
-            facts.append(localized("import.card.facts.stars", locale: locale, formattedCount(starCount)))
-        }
-        if let skillCount, skillCount > 0 {
-            facts.append(localized("import.card.facts.skills", locale: locale, String(skillCount)))
-        }
-        if let owner = item.snapshot?.owner {
-            var ownerFacts: [String] = [localized("import.card.facts.owner", locale: locale, owner.slug)]
-            if let sourceCount = owner.sourceCount {
-                ownerFacts.append(localized("import.card.facts.owner_sources", locale: locale, String(sourceCount)))
-            }
-            if let skillCount = owner.skillCount {
-                ownerFacts.append(localized("import.card.facts.owner_skills", locale: locale, String(skillCount)))
-            }
-            facts.append(ownerFacts.joined(separator: " · "))
-        }
-        if let trust = item.snapshot?.trust, !trust.labels.isEmpty {
-            facts.append(localized("import.card.facts.trust", locale: locale, trust.labels.joined(separator: " · ")))
-        }
-        if !item.matchedSkills.isEmpty {
-            let matches = item.matchedSkills.map { skill in
-                if let installs = skill.installs {
-                    return "\(skill.title) \(formattedCount(installs))"
-                }
-                return skill.title
-            }
-            facts.append(localized("import.card.facts.matches", locale: locale, matches.joined(separator: ", ")))
-        } else if !item.matchedSkillNames.isEmpty {
-            facts.append(localized("import.card.facts.matches", locale: locale, item.matchedSkillNames.joined(separator: ", ")))
-        }
-        if facts.isEmpty {
-            switch item.enrichPhase {
-            case .loading:
-                return [localized("import.card.facts.source_loading", locale: locale)]
-            case .failed(let message):
-                return [message.resolve(locale: locale)]
-            case .idle, .ready:
-                break
-            }
-        }
-        return facts
     }
 
     private static func subtitle(for locator: String, locale: Locale) -> String {

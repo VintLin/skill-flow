@@ -289,7 +289,7 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(previewed?.previewPhase, .ready)
         XCTAssertEqual(previewed?.skills.map(\.id), ["research", "debugging"])
         XCTAssertEqual(previewed?.skills.filter(\.selectedByDefault).map(\.id), ["research", "debugging"])
-        XCTAssertEqual(previewed?.targets.map(\.id), ["claude-code", "cursor"])
+        XCTAssertEqual(previewed?.targets.map(\.id), [])
         XCTAssertEqual(previewed?.targets.filter(\.selectedByDefault).map(\.id), [])
         XCTAssertEqual(previewed?.snapshot?.owner.slug, "anthropics")
         XCTAssertEqual(previewed?.snapshot?.repoStars, 406)
@@ -299,7 +299,22 @@ final class WorkflowCoverageTests: XCTestCase {
 
         let requests = fixture.loggedRequests().map(\.command)
         XCTAssertTrue(requests.contains("search-import-groups"))
-        XCTAssertTrue(requests.contains("preview-import-source"))
+        XCTAssertFalse(requests.contains("preview-import-source"))
+    }
+
+    func testImportPageShowsCachedSnapshotSkillsBeforePreviewRuns() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        model.requestPage(.importPage)
+
+        await model.loadImportPageIfNeeded()
+
+        let cached = model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" })
+        XCTAssertEqual(cached?.skills.map(\.id), ["research", "debugging"])
+        XCTAssertEqual(cached?.previewPhase, .ready)
+        XCTAssertFalse(fixture.loggedRequests().contains(where: { $0.command == "preview-import-source" }))
     }
 
     func testImportPageSearchReturnsExactGroup() async throws {
@@ -729,13 +744,14 @@ private struct TestFixture {
         let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
         let stateURL = rootURL.appendingPathComponent("state.json")
         let logURL = rootURL.appendingPathComponent("requests.log")
+        let helperScript = Self.helperScriptTemplate
+            .replacingOccurrences(of: "__STATE_PATH__", with: jsStringLiteral(stateURL.path))
+            .replacingOccurrences(of: "__LOG_PATH__", with: jsStringLiteral(logURL.path))
 
-        try Self.helperScript.write(to: helperURL, atomically: true, encoding: .utf8)
+        try helperScript.write(to: helperURL, atomically: true, encoding: .utf8)
         try Data("".utf8).write(to: logURL)
 
         setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
-        setenv("SKILL_FLOW_DESKTOP_TEST_STATE", stateURL.path, 1)
-        setenv("SKILL_FLOW_DESKTOP_TEST_LOG", logURL.path, 1)
 
         return TestFixture(
             stateURL: stateURL,
@@ -780,8 +796,7 @@ private struct TestFixture {
             if let detail = model.detailSnapshot(for: sourceId),
                !detail.groupDocuments.isEmpty,
                !detail.fileTree.isEmpty,
-               detail.skills.allSatisfy({ !$0.documents.isEmpty }),
-               !detail.sourceDetailLines.isEmpty {
+               detail.skills.allSatisfy({ !$0.documents.isEmpty }) {
                 return
             }
             try await Task.sleep(nanoseconds: 20_000_000)
@@ -812,11 +827,17 @@ private struct TestFixture {
         XCTAssertEqual(currentSelection, expected)
     }
 
-    private static let helperScript = """
+    private static func jsStringLiteral(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+    }
+
+    private static let helperScriptTemplate = """
     const fs = require('fs');
 
-    const statePath = process.env.SKILL_FLOW_DESKTOP_TEST_STATE;
-    const logPath = process.env.SKILL_FLOW_DESKTOP_TEST_LOG;
+    const statePath = '__STATE_PATH__';
+    const logPath = '__LOG_PATH__';
 
     function readState() {
       try {
@@ -976,6 +997,40 @@ private struct TestFixture {
       });
     }
 
+    function buildGroupCardEnrichment(state) {
+      return Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => [
+        sourceId,
+        {
+          sourceMetadata: (() => {
+            const status = source.metadataStatus || 'ready';
+            const provider = source.metadataProvider || 'clawhub';
+            if (status === 'ready') {
+              return {
+                status: 'ready',
+                provider,
+                data: {
+                  provider,
+                  starCount: source.starCount ?? null,
+                  totalInstalls: 5045,
+                  weeklyInstalls: 4921,
+                  downloadCount: 211898,
+                  ownerHandle: '@steipete',
+                  ownerDisplayName: 'Peter Steinberger'
+                }
+              };
+            }
+
+            return {
+              status,
+              provider,
+              ...(source.metadataReasonCode ? { reasonCode: source.metadataReasonCode } : {}),
+              ...(status === 'failed' ? { retryable: true } : {})
+            };
+          })()
+        }
+      ]));
+    }
+
     function responseFor(request, ok, data, warnings, errors) {
       return {
         protocolVersion: '1.0',
@@ -999,6 +1054,7 @@ private struct TestFixture {
           availableTargets: state.availableTargets || [],
           pinnedSourceIds: state.pinnedSourceIds || [],
           summaries: buildSummaries(state),
+          groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
           audit: {
             issues: []
           },
@@ -1010,6 +1066,7 @@ private struct TestFixture {
       if (request.command === 'list') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           summaries: buildSummaries(state),
+          groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
           pinnedSourceIds: state.pinnedSourceIds || []
         }, [], [])));
         return;

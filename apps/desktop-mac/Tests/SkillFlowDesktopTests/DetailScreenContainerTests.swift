@@ -15,6 +15,12 @@ final class DetailScreenContainerTests: XCTestCase {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub"
+            ),
             sourceDetailLines: ["Provider: clawhub"],
             sourceRepositoryURL: "https://example.com/alpha",
             locator: "clawhub/alpha",

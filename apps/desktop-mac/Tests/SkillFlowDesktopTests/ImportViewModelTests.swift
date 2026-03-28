@@ -46,7 +46,7 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertEqual(ImportViewModel.card(from: fallback, locale: locale).summary, "Import from anthropics/skills")
     }
 
-    func testSourceFactsPreferSnapshotDataAndComposeOwnerTrustAndMatches() {
+    func testCardStatsPreferSnapshotDataAndExposeGithubLink() {
         let item = makeItem(
             starCount: 15,
             totalInstalls: 25,
@@ -76,25 +76,85 @@ final class ImportViewModelTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(
-            ImportViewModel.card(from: item, locale: locale).sourceFacts,
-            [
-                "Installs 2,400",
-                "Stars 800",
-                "Skills 12",
-                "Owner @anthropics · 7 sources · 42 skills",
-                "Trust Official · Trending · Audited",
-                "Matches browse 1,200, review",
-            ]
-        )
+        let card = ImportViewModel.card(from: item, locale: locale)
+
+        XCTAssertEqual(card.stats.skillCount, 12)
+        XCTAssertEqual(card.stats.downloadCount, 2400)
+        XCTAssertEqual(card.stats.starCount, 800)
+        XCTAssertEqual(card.stats.githubURL, "https://github.com/anthropics/skills")
     }
 
-    func testSourceFactsFallBackToLoadingOrErrorWhenNoFactsExist() {
+    func testCardNoLongerBuildsSourceFacts() {
         let loading = makeItem(enrichPhase: .loading)
-        XCTAssertEqual(ImportViewModel.card(from: loading, locale: locale).sourceFacts, ["Source loading..."])
+        XCTAssertEqual(ImportViewModel.card(from: loading, locale: locale).sourceFacts, [])
 
         let failed = makeItem(enrichPhase: .failed(.plain("Enrich failed")))
-        XCTAssertEqual(ImportViewModel.card(from: failed, locale: locale).sourceFacts, ["Enrich failed"])
+        XCTAssertEqual(ImportViewModel.card(from: failed, locale: locale).sourceFacts, [])
+    }
+
+    func testCardLoadingStateOnlyShowsSkillLoadingUntilPreviewDataArrives() {
+        let loading = makeItem(previewPhase: .loading, skills: [], targets: [])
+        let loadingCard = ImportViewModel.card(from: loading, locale: locale)
+        XCTAssertTrue(loadingCard.skillsLoading)
+        XCTAssertFalse(loadingCard.targetsLoading)
+
+        let ready = makeItem(
+            previewPhase: .ready,
+            skills: [
+                MainViewModel.ImportGroupSkill(
+                    id: "browse",
+                    title: "Browse",
+                    summary: "Browse things.",
+                    selectedByDefault: true
+                )
+            ],
+            targets: [
+                MainViewModel.ImportGroupTarget(
+                    id: "claude-code",
+                    selectedByDefault: false
+                )
+            ]
+        )
+        let readyCard = ImportViewModel.card(from: ready, locale: locale)
+        XCTAssertFalse(readyCard.skillsLoading)
+        XCTAssertFalse(readyCard.targetsLoading)
+    }
+
+    func testCardFallsBackToSnapshotSkillsBeforePreviewCompletes() {
+        let item = makeItem(
+            snapshot: makeSnapshot(
+                skills: [
+                    MainViewModel.SnapshotSkill(
+                        skillId: "research",
+                        title: "Research",
+                        installs: 1200,
+                        weeklyInstalls: nil,
+                        firstSeen: nil,
+                        summary: "Research things.",
+                        installedOn: [],
+                        audits: nil
+                    ),
+                    MainViewModel.SnapshotSkill(
+                        skillId: "debugging",
+                        title: "Debugging",
+                        installs: 800,
+                        weeklyInstalls: nil,
+                        firstSeen: nil,
+                        summary: "Debug things.",
+                        installedOn: [],
+                        audits: nil
+                    )
+                ]
+            ),
+            previewPhase: .idle,
+            skills: []
+        )
+
+        let card = ImportViewModel.card(from: item, locale: locale)
+
+        XCTAssertFalse(card.skillsLoading)
+        XCTAssertEqual(card.skills.map { $0.id }, ["research", "debugging"])
+        XCTAssertEqual(card.skills.map { $0.summary }, ["Research things.", "Debug things."])
     }
 
     func testSubtitleDerivesOwnerFromGitHubAndRepoPatterns() {
@@ -178,6 +238,7 @@ final class ImportViewModelTests: XCTestCase {
         totalInstalls: Int? = nil,
         skillCount: Int? = nil,
         repoStars: Int? = nil,
+        skills: [MainViewModel.SnapshotSkill] = [],
         owner: MainViewModel.SnapshotOwner = MainViewModel.SnapshotOwner(
             slug: "anthropics",
             sourceURL: "https://example.com/anthropics",
@@ -205,7 +266,7 @@ final class ImportViewModelTests: XCTestCase {
             defaultBranch: nil,
             pushedAt: nil,
             owner: owner,
-            skills: [],
+            skills: skills,
             trust: trust
         )
     }

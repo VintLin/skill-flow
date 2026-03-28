@@ -62,4 +62,11 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.symbolImage(for: "codex", foreground: foreground))
         XCTAssertNotNil(AgentIconLibrary.symbolImage(for: "cursor", foreground: foreground))
     }
+
+    func testGroupMetadataIconLoaderFindsBundledSvgAssets() {
+        XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .skills))
+        XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .download))
+        XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .star))
+        XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .github))
+    }
 }

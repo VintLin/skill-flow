@@ -213,6 +213,7 @@ export async function fetchSkillsDirectorySourceSnapshot(
   options?: {
     enrichSkillIds?: string[];
     trust?: UnifiedSourceTrust;
+    includeSkillDetails?: boolean;
   },
 ): Promise<UnifiedSourceSnapshot> {
   const canonicalRepo = normalizeImportCanonicalRepo(locator);
@@ -243,24 +244,25 @@ export async function fetchSkillsDirectorySourceSnapshot(
       slug: ownerSlug,
       sourceUrl: ownerUrl,
     };
-  const skillIdsToEnrich = resolveSkillIdsToEnrich(sourcePage.skills, options?.enrichSkillIds);
-  const enrichedSkillDetails = await mapConcurrent(
-    skillIdsToEnrich,
-    SKILL_DETAIL_ENRICH_CONCURRENCY,
-    async (skillId) => {
-      try {
-        const html = await fetchSkillsDirectoryHtml(`${sourceUrl}/${encodeURIComponent(skillId)}`, "skill");
-        return parseSkillsSkillPage(html, canonicalRepo, skillId);
-      } catch {
-        return undefined;
-      }
-    },
-  );
-
-  const enrichedSkillMap = new Map(
-    enrichedSkillDetails
-      .flatMap((detail) => detail ? [[detail.skillId, detail] as const] : []),
-  );
+  const includeSkillDetails = options?.includeSkillDetails !== undefined
+    ? options.includeSkillDetails
+    : true;
+  const enrichedSkillMap = includeSkillDetails
+    ? new Map(
+      (await mapConcurrent(
+        resolveSkillIdsToEnrich(sourcePage.skills, options?.enrichSkillIds),
+        SKILL_DETAIL_ENRICH_CONCURRENCY,
+        async (skillId) => {
+          try {
+            const html = await fetchSkillsDirectoryHtml(`${sourceUrl}/${encodeURIComponent(skillId)}`, "skill");
+            return parseSkillsSkillPage(html, canonicalRepo, skillId);
+          } catch {
+            return undefined;
+          }
+        },
+      )).flatMap((detail) => detail ? [[detail.skillId, detail] as const] : []),
+    )
+    : new Map<string, SkillsDirectorySkillDetail>();
 
   const skills: UnifiedSourceSkill[] = sourcePage.skills.map((skill) => {
     const detail = enrichedSkillMap.get(skill.skillId);
@@ -300,6 +302,18 @@ export async function fetchSkillsDirectorySourceSnapshot(
     skills,
     ...(options?.trust && hasTrustSignals(options.trust) ? { trust: options.trust } : {}),
   };
+}
+
+export async function fetchSkillsDirectorySourcePreview(
+  locator: string,
+  options?: {
+    trust?: UnifiedSourceTrust;
+  },
+): Promise<UnifiedSourceSnapshot> {
+  return fetchSkillsDirectorySourceSnapshot(locator, {
+    trust: options?.trust,
+    includeSkillDetails: false,
+  });
 }
 
 export async function fetchSkillsDirectoryFeedGroups(
