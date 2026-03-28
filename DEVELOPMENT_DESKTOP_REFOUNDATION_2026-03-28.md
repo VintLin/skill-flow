@@ -13,11 +13,11 @@
 ## Current Baseline
 
 - Active desktop implementation root: `apps/desktop-mac/Sources/DesktopApp`
-- Legacy desktop implementation root: `apps/desktop-mac/Sources/Deprecated/SkillFlowDesktop`
+- Legacy desktop implementation root: removed on 2026-03-28
 - Current public page read model: `MainViewModel.currentRoute`
 - Current page write entry point: `MainViewModel.requestPage(_:)`, which writes into bound `DesktopAppState.view.currentRoute`
 - Verification baseline: `swift test --package-path apps/desktop-mac`
-- Latest verification result: 98 tests passed, 0 failed on 2026-03-28
+- Latest verification result: 100 tests passed, 0 failed on 2026-03-28
 
 ## Completed Progress
 
@@ -112,6 +112,18 @@
 - `DetailScreen` no longer depends on `MainViewModel` directly
 - Detail container coverage now verifies both fallback-row projection and action forwarding
 
+### 16. Deprecated desktop sources are removed from the repository
+
+- `apps/desktop-mac/Sources/Deprecated/SkillFlowDesktop` has been deleted
+- `apps/desktop-mac/Package.swift` already targets only `Sources/DesktopApp`, so deleting the old tree does not change the active build graph
+- Desktop verification still passes after the deletion
+
+### 17. Menu bar search state is no longer shared with the main window search field
+
+- `MenuBarScreenState` now owns the menu bar search query
+- `MenuBarQuickConfigView` filters cards through `MainViewModel.groupCards(matching:)` instead of writing through `MainViewModel.searchQuery`
+- Shared `MainViewModel` ownership is still used for real shared mutations like pin, update, delete, and toggle actions, but the known cross-surface search-state bleed is removed
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
@@ -125,10 +137,11 @@
 - Search box text and placeholder animation index still live in `ImportScreenState`, which is acceptable as UI-local state for now
 - Import business loading still comes from `MainViewModel`, but the active page now reads and acts through `ImportScreenContainer`
 
-### 3. The deprecated desktop tree still exists
+### 3. Menu bar and main window still share one `MainViewModel`, but the known search-state bleed is fixed
 
-- `Sources/Deprecated/SkillFlowDesktop` is no longer the active implementation
-- It has not been deleted yet, so migration is not complete
+- `MenuBarScreenState` now isolates menu-only search text
+- Shared `MainViewModel` state is still intentional for mutations, health status, and grouped source projections
+- No further split is required unless another cross-surface state leak is proven
 
 ## Page Data Loading Matrix
 
@@ -136,7 +149,7 @@
 | --- | --- | --- | --- | --- |
 | Home | Yes. Bootstrap and list payloads provide summaries, drafts, pins, and audit state. | No dedicated page cache layer beyond persisted workspace state. | Indirect only through bridge bootstrap/list. | Sufficient for a local workspace page. Not a true three-layer page. |
 | Detail | Yes. `summary`, `draft`, selected source, and an explicit local inspect shell render before enrich fields are applied. | Yes. `sourceMetadata` and `sourceSnapshot` reuse explicit enrichment queries and local prepared document/file-tree caches. | Yes. inspect shell and enrichment now travel through separate bridge/query phases. | Three-layer flow is explicit end-to-end. Remaining work is cleanup, not data-flow authority. |
-| Import | Yes. Card drafts live in `ImportScreenState`; recommendation/search/preview state renders immediately from current model. | Yes. recommendation feeds, search snapshots, and source snapshots all use storage-backed cache with stale reuse. | Yes. exact repo lookup, search refresh, preview refresh, and snapshot enrich all hit external providers through query runtime. | Has meaningful cache and network layering, but card hydration is still uneven and drafts are still page-local. |
+| Import | Yes. Card drafts live in `DesktopAppState.importState`; recommendation/search/preview state renders immediately from current model. | Yes. recommendation feeds, search snapshots, and source snapshots all use storage-backed cache with stale reuse. | Yes. exact repo lookup, search refresh, preview refresh, and snapshot enrich all hit external providers through query runtime. | Has meaningful cache and network layering. Remaining work is business-loading ownership, not draft persistence. |
 | Settings | Yes. Values load from `UserDefaults` through `SettingsViewModel`. | No separate cache layer. | No network layer. | Complete as a local settings page, but not unified into runtime/store state. |
 
 ## Remaining Work
@@ -151,23 +164,7 @@ Status: completed
 - Transition seams and the last route cache are removed from the active desktop path
 - Route regression coverage stays green across home, detail, import, settings, and workflow navigation paths
 
-#### D. Finish page-state boundary cleanup
-
-Status: next active cleanup
-
-- Detail page now reads and acts through `DetailScreenContainer`, but business loading still lives in `MainViewModel`
-- Import drafts now live in `DesktopAppState.importState`, and Import page reads through `ImportScreenContainer`, but Import business loading still lives in `MainViewModel`
-- Settings uses a dedicated view model, but not a shared runtime/store slice
-- Menu bar and main window still share one `MainViewModel`
-
-#### E. Remove the deprecated desktop source tree
-
-Status: not started
-
-- Delete `apps/desktop-mac/Sources/Deprecated/SkillFlowDesktop`
-- Remove any remaining references, assumptions, or documentation that treats it as current
-
-#### F. Refresh plan and audit documents
+#### D. Refresh plan and audit documents
 
 Status: not started
 
@@ -177,24 +174,20 @@ Status: not started
 
 ## Recommended Execution Order
 
-### Task 1: Finish route and page-state cleanup
+### Task 1: Refresh plan and audit documents
 
 Reason:
-- Route authority cleanup is done
-- Page-local state cleanup is now the highest-value remaining cleanup work on the active desktop path
-
-### Task 2: Delete deprecated desktop sources and refresh planning docs
-
-Reason:
-- Final cleanup should happen after page-state ownership is clearer and the active path stays stable without transitional seams
+- Route cleanup is done
+- Deprecated source cleanup is done
+- The remaining high-signal gap is that several plan and audit documents still describe the deleted path or the pre-`currentRoute` architecture
 
 ## Immediate Next Task Definition
 
-If work resumes after the route authority cleanup, the next focused engineering task should be:
+If work resumes after the current cleanup round, the next focused engineering task should be:
 
-1. Decide whether the remaining Import business-loading implementation should leave `MainViewModel` now that the page-facing adapter exists
-2. Decide whether the remaining Detail business-loading APIs should also leave `MainViewModel`
-3. Verify whether menu bar and main window still need to share one `MainViewModel`
+1. Update runtime and migration plans that still point at `Sources/SkillFlowDesktop/...`
+2. Refresh the page data flow audit so it describes `DesktopApp`, `currentRoute`, and the explicit detail shell/enrichment split
+3. Only reopen `MainViewModel` decomposition if a new shared-state leak or a concrete behavior bottleneck appears
 4. Re-run `swift test --package-path apps/desktop-mac`
 
 ## Verification
@@ -207,5 +200,5 @@ swift test --package-path apps/desktop-mac
 
 Expected:
 
-- 98 tests passed
+- 100 tests passed
 - 0 failed
