@@ -17,7 +17,7 @@
 - Current public page read model: `MainViewModel.currentRoute`
 - Current page write entry point: `MainViewModel.requestPage(_:)`, which writes into bound `DesktopAppState.view.currentRoute`
 - Verification baseline: `swift test --package-path apps/desktop-mac`
-- Latest verification result: 95 tests passed, 0 failed on 2026-03-28
+- Latest verification result: 96 tests passed, 0 failed on 2026-03-28
 
 ## Completed Progress
 
@@ -94,6 +94,12 @@
 - `DesktopAppContainer` and workflow/detail tests no longer build active Detail UI from `MainViewModel.DetailViewData`
 - `MainViewModel.DetailViewData` remains an internal assembly shape inside `MainViewModel`
 
+### 13. Import drafts now live in shared desktop app state
+
+- `ImportDraftState` and `ImportState` now live under `Sources/DesktopApp/Store`
+- `ImportScreenContainer` keeps `searchText` and `placeholderIndex` as page-local UI state, but card draft selections now persist in `DesktopAppState.importState`
+- Import draft coverage now verifies the same draft survives `ImportScreenContainer` recreation against shared app state
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
@@ -101,7 +107,13 @@
 - It still owns bridge calls, payload parsing, draft state, toast state, doctor state, import flows, detail content preparation, and write synchronization
 - The file remains the main cross-page coordinator instead of a thinner page-facing adapter, even though Detail read-side projection is now behind `detailSnapshot(for:)`
 
-### 2. The deprecated desktop tree still exists
+### 2. Import page still has mixed local and shared state ownership
+
+- Import drafts now live in shared app state
+- Search box text and placeholder animation index still live in `ImportScreenState`, which is acceptable as UI-local state for now
+- Import business loading still comes from `MainViewModel`
+
+### 3. The deprecated desktop tree still exists
 
 - `Sources/Deprecated/SkillFlowDesktop` is no longer the active implementation
 - It has not been deleted yet, so migration is not complete
@@ -132,7 +144,7 @@ Status: completed
 Status: next active cleanup
 
 - Detail page now reads through `detailSnapshot(for:)`, but business loading still lives in `MainViewModel`
-- Import drafts still live in `ImportScreenState.draftsByItemId`
+- Import drafts now live in `DesktopAppState.importState`, but Import business loading still lives in `MainViewModel`
 - Settings uses a dedicated view model, but not a shared runtime/store slice
 - Menu bar and main window still share one `MainViewModel`
 
@@ -168,7 +180,7 @@ Reason:
 
 If work resumes after the route authority cleanup, the next focused engineering task should be:
 
-1. Decide whether Import draft state should stay in `ImportScreenState` or move into a shared runtime-backed slice
+1. Decide whether Import business-loading state should stay in `MainViewModel` or move behind a page-facing Import adapter
 2. Decide whether the remaining Detail business-loading APIs should also leave `MainViewModel`
 3. Verify whether menu bar and main window still need to share one `MainViewModel`
 4. Re-run `swift test --package-path apps/desktop-mac`
@@ -183,5 +195,5 @@ swift test --package-path apps/desktop-mac
 
 Expected:
 
-- 95 tests passed
+- 96 tests passed
 - 0 failed
