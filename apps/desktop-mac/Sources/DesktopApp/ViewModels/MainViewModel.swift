@@ -487,6 +487,8 @@ final class MainViewModel {
     }
 
     private let bridgeClient: BridgeClient
+    private let queryFacade: any DesktopQuerying
+    private let commandFacade: any DesktopCommanding
 
     nonisolated private static var presentationLocale: Locale {
         let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
@@ -608,8 +610,17 @@ final class MainViewModel {
     var deploymentFilterKind: String = "All"
     var pinnedSourceIds: [String]
 
-    init(bridgeClient: BridgeClient) {
+    init(
+        bridgeClient: BridgeClient,
+        queryFacade: (any DesktopQuerying)? = nil,
+        commandFacade: (any DesktopCommanding)? = nil
+    ) {
+        let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
+        let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)
+
         self.bridgeClient = bridgeClient
+        self.queryFacade = resolvedQueryFacade
+        self.commandFacade = resolvedCommandFacade
         self.pinnedSourceIds = []
     }
 

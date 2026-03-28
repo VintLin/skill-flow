@@ -19,16 +19,26 @@ final class DesktopAppContainer {
     let navigation: RouteNavigation
 
     init(
-        runtime: DesktopRuntime = DesktopRuntime(),
-        bridgeClient: BridgeClient = BridgeClient()
+        runtime: DesktopRuntime? = nil,
+        bridgeClient: BridgeClient = BridgeClient(),
+        queryFacade: (any DesktopQuerying)? = nil,
+        commandFacade: (any DesktopCommanding)? = nil
     ) {
-        self.runtime = runtime
-        self.mainViewModel = MainViewModel(bridgeClient: bridgeClient)
+        let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
+        let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)
+        let resolvedRuntime = runtime ?? DesktopRuntime(dependencies: .live(query: resolvedQueryFacade))
+
+        self.runtime = resolvedRuntime
+        self.mainViewModel = MainViewModel(
+            bridgeClient: bridgeClient,
+            queryFacade: resolvedQueryFacade,
+            commandFacade: resolvedCommandFacade
+        )
         self.settingsViewModel = SettingsViewModel()
         self.menuBarScreenState = MenuBarScreenState()
-        self.importContainer = ImportScreenContainer(state: runtime.state, mainViewModel: mainViewModel)
+        self.importContainer = ImportScreenContainer(state: resolvedRuntime.state, mainViewModel: mainViewModel)
         self.detailContainer = DetailScreenContainer(
-            state: runtime.state,
+            state: resolvedRuntime.state,
             detailSnapshot: { [weak mainViewModel] sourceId in
                 mainViewModel?.detailSnapshot(for: sourceId)
             },
@@ -58,23 +68,23 @@ final class DesktopAppContainer {
             }
         )
         self.homeContainer = HomeScreenContainer(
-            state: runtime.state,
+            state: resolvedRuntime.state,
             mainViewModel: mainViewModel,
             settingsViewModel: settingsViewModel,
             importContainer: importContainer,
             detailContainer: detailContainer
         )
         self.navigation = RouteNavigation(
-            showHome: { [weak state = runtime.state] in
+            showHome: { [weak state = resolvedRuntime.state] in
                 state?.view.currentRoute = .home
             },
-            showDetail: { [weak state = runtime.state] sourceId in
+            showDetail: { [weak state = resolvedRuntime.state] sourceId in
                 state?.view.currentRoute = .detail(sourceId: sourceId)
             },
-            showImportPage: { [weak state = runtime.state] in
+            showImportPage: { [weak state = resolvedRuntime.state] in
                 state?.view.currentRoute = .importPage
             },
-            showSettings: { [weak state = runtime.state] in
+            showSettings: { [weak state = resolvedRuntime.state] in
                 state?.view.currentRoute = .settings
             }
         )

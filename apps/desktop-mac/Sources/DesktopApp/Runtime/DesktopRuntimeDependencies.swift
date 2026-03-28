@@ -11,10 +11,10 @@ struct DesktopRuntimeDependencies {
 }
 
 extension DesktopRuntimeDependencies {
-    static func live() -> Self {
+    static func live(query: any DesktopQuerying = DesktopBridgeQueryFacade(bridgeClient: BridgeClient())) -> Self {
         Self(
             bootstrap: {
-                let response = try await BridgeClient().bootstrap()
+                let response = try await query.bootstrap()
                 return bootstrapSourceIds(from: response)
             }
         )

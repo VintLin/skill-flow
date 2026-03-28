@@ -110,4 +110,59 @@ final class DesktopAppContainerTests: XCTestCase {
         XCTAssertEqual(container.mainViewModel.searchQuery, "home")
         XCTAssertEqual(container.menuBarScreenState.searchQuery, "menu")
     }
+
+    func testDefaultRuntimeBootstrapUsesInjectedQueryFacade() async {
+        let query = StubQueryFacade(
+            bootstrapResponse: BridgeResponse(
+                protocolVersion: "1.0",
+                requestId: UUID().uuidString,
+                command: .bootstrap,
+                ok: true,
+                data: AnyCodable([
+                    "sourceIds": ["alpha", "beta"],
+                ]),
+                warnings: [],
+                errors: []
+            )
+        )
+        let container = DesktopAppContainer(
+            queryFacade: query,
+            commandFacade: StubCommandFacade()
+        )
+
+        await container.runtime.bootstrapIfNeeded()
+
+        XCTAssertEqual(container.runtime.state.workspace.sourceIds, ["alpha", "beta"])
+        XCTAssertEqual(query.bootstrapCallCount, 1)
+    }
+}
+
+private struct StubCommandFacade: DesktopCommanding {
+    func togglePinnedSource(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
+    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse { fatalError("unused") }
+    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
+    func uninstall(sourceIds: [String]) async throws -> BridgeResponse { fatalError("unused") }
+    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
+    func doctor() async throws -> BridgeResponse { fatalError("unused") }
+}
+
+@MainActor
+private final class StubQueryFacade: DesktopQuerying {
+    private(set) var bootstrapCallCount = 0
+    private let bootstrapResponse: BridgeResponse
+
+    init(bootstrapResponse: BridgeResponse) {
+        self.bootstrapResponse = bootstrapResponse
+    }
+
+    func bootstrap() async throws -> BridgeResponse {
+        bootstrapCallCount += 1
+        return bootstrapResponse
+    }
+
+    func list() async throws -> BridgeResponse { fatalError("unused") }
+    func inspect(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
+    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
+    func searchImportGroups(query: String?) async throws -> BridgeResponse { fatalError("unused") }
+    func previewImportSource(locator: String) async throws -> BridgeResponse { fatalError("unused") }
 }
