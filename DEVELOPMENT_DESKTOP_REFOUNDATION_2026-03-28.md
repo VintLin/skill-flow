@@ -17,7 +17,7 @@
 - Current public page read model: `MainViewModel.currentRoute`
 - Current page write entry points: `MainViewModel.requestPage(_:)` and `MainViewModel.syncCurrentPage(from:)`
 - Verification baseline: `swift test --package-path apps/desktop-mac`
-- Latest verification result: 93 tests passed, 0 failed on 2026-03-28
+- Latest verification result: 94 tests passed, 0 failed on 2026-03-28
 
 ## Completed Progress
 
@@ -64,6 +64,12 @@
 - Query-level coverage verifies `inspectSource()` still succeeds when `reconcileInventory()` fails but local state is already present
 - CLI bridge inspect coverage still passes against the same response envelope
 
+### 8. Detail content warmup no longer prepares documents on the main actor
+
+- `scheduleDetailContentWarmupIfNeeded` now captures a sendable warmup input and executes file parsing and file-tree preparation in a detached task
+- Prepared detail content is published back on the main actor only after background work completes
+- `MainViewModelSelectionTests` covers that unrelated main-actor work can still run while detail warmup is in flight
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
@@ -87,7 +93,7 @@
 | Page | Local data | Cache-backed data | Network / external refresh | Current status |
 | --- | --- | --- | --- | --- |
 | Home | Yes. Bootstrap and list payloads provide summaries, drafts, pins, and audit state. | No dedicated page cache layer beyond persisted workspace state. | Indirect only through bridge bootstrap/list. | Sufficient for a local workspace page. Not a true three-layer page. |
-| Detail | Yes. `summary`, `draft`, selected source, and local fallback detail render before inspect-derived enrich fields are complete. | Yes. `sourceMetadata` and `sourceSnapshot` can reuse cache-backed query results; prepared documents and file tree are warmed locally after inspect. | Yes. Inspect path may refresh metadata and import snapshot data. | Semantically closest to local + cache + network, but still blocked by heavy inspect and main-thread bridge execution. |
+| Detail | Yes. `summary`, `draft`, selected source, and local fallback detail render before inspect-derived enrich fields are complete. | Yes. `sourceMetadata` and `sourceSnapshot` can reuse cache-backed query results; prepared documents and file tree are warmed locally after inspect. | Yes. Inspect path may refresh metadata and import snapshot data. | Now local-first with off-main warmup, but enrichment is still bundled into one inspect response. |
 | Import | Yes. Card drafts live in `ImportScreenState`; recommendation/search/preview state renders immediately from current model. | Yes. recommendation feeds, search snapshots, and source snapshots all use storage-backed cache with stale reuse. | Yes. exact repo lookup, search refresh, preview refresh, and snapshot enrich all hit external providers through query runtime. | Has meaningful cache and network layering, but card hydration is still uneven and drafts are still page-local. |
 | Settings | Yes. Values load from `UserDefaults` through `SettingsViewModel`. | No separate cache layer. | No network layer. | Complete as a local settings page, but not unified into runtime/store state. |
 
@@ -102,13 +108,6 @@ Status: in progress, not complete
 - `detailViewData(for:)` already supports partial local rendering
 - The current bridge `inspect` contract still mixes local workspace facts with metadata/snapshot enrichment
 - Detail still waits on one combined inspect response before enrichment-specific state can be modeled independently
-
-#### B. Move expensive detail content preparation off the main actor
-
-Status: not complete
-
-- `scheduleDetailContentWarmupIfNeeded` still starts from a `Task { @MainActor ... }`
-- `prepareDetailContent(...)` still performs local parsing and file-tree building in the active view-model path
 
 ### Cleanup After Behavior Stabilizes
 
@@ -152,30 +151,25 @@ Reason:
 - The inspect path no longer depends on list reconciliation, but enrichment is still bundled into one bridge response
 - This is the remaining step to make detail truly progressive
 
-### Task 2: Move detail content warmup off the main actor
-
-Reason:
-- Local-first detail still stalls if expensive parsing and tree building stay on the main actor
-
-### Task 3: Finish route and page-state cleanup
+### Task 2: Finish route and page-state cleanup
 
 Reason:
 - `currentPage` removal and page-local state cleanup are still useful
 - They are no longer the highest-value blocking work
 
-### Task 4: Delete deprecated desktop sources and refresh planning docs
+### Task 3: Delete deprecated desktop sources and refresh planning docs
 
 Reason:
 - Final cleanup should happen after the active path no longer depends on transitional seams
 
 ## Immediate Next Task Definition
 
-If work resumes immediately after the inspect split, the next focused engineering task should be:
+If work resumes immediately after the warmup split, the next focused engineering task should be:
 
-1. Add focused tests around `prepareDetailContent(...)` scheduling and main-actor responsiveness
-2. Move detail warmup parsing and file-tree preparation off the main actor
-3. Re-run `swift test --package-path apps/desktop-mac`
-4. Commit the warmup threading fix as a standalone refactor unit
+1. Split inspect output into a local detail shell and a separately modeled enrichment stage
+2. Keep `detailViewData(for:)` rendering local summary/binding facts while enrichment-specific fields refresh independently
+3. Re-run the focused query/runtime coverage and `swift test --package-path apps/desktop-mac`
+4. Commit the inspect progressive-loading refactor as a standalone unit
 
 ## Verification
 
@@ -187,5 +181,5 @@ swift test --package-path apps/desktop-mac
 
 Expected:
 
-- 93 tests passed
+- 94 tests passed
 - 0 failed
