@@ -2,15 +2,15 @@ import SwiftUI
 
 @MainActor
 final class HomeScreenContainer {
-    let navigator: DesktopNavigator
     let viewModel: HomeViewModel
+    let mainViewModel: MainViewModel
 
-    init(state: DesktopAppState, navigator: DesktopNavigator) {
-        self.navigator = navigator
+    init(state: DesktopAppState, mainViewModel: MainViewModel) {
         self.viewModel = HomeViewModel(state: state)
+        self.mainViewModel = mainViewModel
     }
 
     func makeView() -> HomeScreen {
-        HomeScreen(viewModel: viewModel)
+        HomeScreen(homeViewModel: viewModel, mainViewModel: mainViewModel)
     }
 }

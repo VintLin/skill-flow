@@ -16,8 +16,7 @@ struct SkillFlowDesktopApp: App {
 
     var body: some Scene {
         Window(L10n.string("app.name", locale: selectedLocale), id: "main-window") {
-            MainView(viewModel: container.mainViewModel)
-                .frame(minWidth: 980, minHeight: 640)
+            container.homeContainer.makeView()
                 .environment(\.locale, selectedLocale)
         }
         .windowStyle(.hiddenTitleBar)

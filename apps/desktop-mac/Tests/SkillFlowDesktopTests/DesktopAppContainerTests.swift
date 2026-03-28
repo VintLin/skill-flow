@@ -4,11 +4,13 @@ import XCTest
 
 @MainActor
 final class DesktopAppContainerTests: XCTestCase {
-    func testHomeContainerExposesViewModelSourceIdsFromDesktopAppState() {
+    func testHomeContainerReflectsRuntimeStateChangesThroughLiveSeam() {
         let runtime = DesktopRuntime()
-        runtime.state.workspace.sourceIds = ["alpha", "beta"]
-
         let container = DesktopAppContainer(runtime: runtime)
+
+        XCTAssertEqual(container.homeContainer.viewModel.sourceIds, [])
+
+        runtime.state.workspace.sourceIds = ["alpha", "beta"]
 
         XCTAssertEqual(container.homeContainer.viewModel.sourceIds, ["alpha", "beta"])
     }

@@ -1,22 +1,13 @@
 import SwiftUI
 
 struct HomeScreen: View {
-    @Bindable var viewModel: HomeViewModel
+    @Bindable var homeViewModel: HomeViewModel
+    @Bindable var mainViewModel: MainViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Home")
-                .font(.title2.weight(.semibold))
+        let _ = homeViewModel.sourceIds
 
-            if viewModel.sourceIds.isEmpty {
-                Text("No sources available")
-                    .foregroundStyle(.secondary)
-            } else {
-                List(viewModel.sourceIds, id: \.self) { sourceId in
-                    Text(sourceId)
-                }
-            }
-        }
-        .padding(24)
+        return MainView(viewModel: mainViewModel)
+            .frame(minWidth: 980, minHeight: 640)
     }
 }
