@@ -88,12 +88,18 @@
 - `routeRequest` and `currentRouteProvider` are removed
 - `HomeScreenContainer` now binds `MainViewModel` directly to `DesktopAppState`, and route tests assert state ownership through that binding
 
+### 12. Detail page read-side now consumes snapshots instead of raw `MainViewModel` detail data
+
+- `MainViewModel.detailSnapshot(for:)` is now the page-facing Detail read contract
+- `DesktopAppContainer` and workflow/detail tests no longer build active Detail UI from `MainViewModel.DetailViewData`
+- `MainViewModel.DetailViewData` remains an internal assembly shape inside `MainViewModel`
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
 
 - It still owns bridge calls, payload parsing, draft state, toast state, doctor state, import flows, detail content preparation, and write synchronization
-- The file remains the main cross-page coordinator instead of a thinner page-facing adapter
+- The file remains the main cross-page coordinator instead of a thinner page-facing adapter, even though Detail read-side projection is now behind `detailSnapshot(for:)`
 
 ### 2. The deprecated desktop tree still exists
 
@@ -125,7 +131,7 @@ Status: completed
 
 Status: next active cleanup
 
-- Detail page state has a dedicated `DetailScreenState`, but business loading still lives in `MainViewModel`
+- Detail page now reads through `detailSnapshot(for:)`, but business loading still lives in `MainViewModel`
 - Import drafts still live in `ImportScreenState.draftsByItemId`
 - Settings uses a dedicated view model, but not a shared runtime/store slice
 - Menu bar and main window still share one `MainViewModel`
@@ -162,8 +168,8 @@ Reason:
 
 If work resumes after the route authority cleanup, the next focused engineering task should be:
 
-1. Decide whether `DetailScreenState` should take more business-loading ownership out of `MainViewModel`
-2. Decide whether Import draft state should stay in `ImportScreenState` or move into a shared runtime-backed slice
+1. Decide whether Import draft state should stay in `ImportScreenState` or move into a shared runtime-backed slice
+2. Decide whether the remaining Detail business-loading APIs should also leave `MainViewModel`
 3. Verify whether menu bar and main window still need to share one `MainViewModel`
 4. Re-run `swift test --package-path apps/desktop-mac`
 
