@@ -4,6 +4,7 @@ struct MenuBarQuickConfigView: View {
     @Environment(\.locale) private var locale
     @Bindable var viewModel: MainViewModel
 
+    let navigation: DesktopAppContainer.RouteNavigation
     let openMainWindow: () -> Void
 
     @State private var hoveredGroupId: String?
@@ -154,7 +155,7 @@ struct MenuBarQuickConfigView: View {
     private var actionBar: some View {
         HStack(spacing: 8) {
             Button {
-                viewModel.currentPage = .importPage
+                navigation.showImportPage()
                 openMainWindow()
             } label: {
                 actionIcon(.import, size: 12)
@@ -168,7 +169,7 @@ struct MenuBarQuickConfigView: View {
             Spacer()
 
             Button {
-                viewModel.currentPage = .settings
+                navigation.showSettings()
                 openMainWindow()
             } label: {
                 actionIcon(.settings, size: 12)

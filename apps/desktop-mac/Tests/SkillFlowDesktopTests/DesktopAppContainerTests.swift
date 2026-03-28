@@ -33,4 +33,23 @@ final class DesktopAppContainerTests: XCTestCase {
         XCTAssertEqual(runtime.state.view.currentRoute, .home)
         XCTAssertEqual(container.mainViewModel.currentPage, .home)
     }
+
+    func testAppNavigationSeamProjectsOuterRoutesIntoFoundationState() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        container.navigation.showSettings()
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(runtime.state.view.currentRoute, .settings)
+        XCTAssertEqual(container.mainViewModel.currentPage, .settings)
+
+        container.navigation.showImportPage()
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
+        XCTAssertEqual(container.mainViewModel.currentPage, .importPage)
+    }
 }

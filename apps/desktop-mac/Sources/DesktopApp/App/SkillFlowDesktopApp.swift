@@ -22,12 +22,12 @@ struct SkillFlowDesktopApp: App {
         .windowStyle(.hiddenTitleBar)
 
         Settings {
-            SettingsBridgeView(viewModel: container.mainViewModel)
+            SettingsBridgeView(navigation: container.navigation)
                 .environment(\.locale, selectedLocale)
         }
 
         MenuBarExtra {
-            MenuBarQuickConfigView(viewModel: container.mainViewModel) {
+            MenuBarQuickConfigView(viewModel: container.mainViewModel, navigation: container.navigation) {
                 openWindow(id: "main-window")
                 NSApp.activate(ignoringOtherApps: true)
             }
@@ -56,7 +56,7 @@ private struct SettingsBridgeView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.locale) private var locale
 
-    @Bindable var viewModel: MainViewModel
+    let navigation: DesktopAppContainer.RouteNavigation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -66,7 +66,7 @@ private struct SettingsBridgeView: View {
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(.secondary)
             Button(t("settings.bridge.action_open_settings")) {
-                viewModel.currentPage = .settings
+                navigation.showSettings()
                 openWindow(id: "main-window")
                 NSApp.activate(ignoringOtherApps: true)
             }
