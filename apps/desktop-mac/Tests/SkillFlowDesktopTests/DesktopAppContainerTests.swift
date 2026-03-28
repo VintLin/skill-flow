@@ -4,12 +4,12 @@ import XCTest
 
 @MainActor
 final class DesktopAppContainerTests: XCTestCase {
-    func testHomeViewModelReadsSourceIdsFromDesktopAppState() {
-        let state = DesktopAppState()
-        state.workspace.sourceIds = ["alpha", "beta"]
+    func testHomeContainerExposesViewModelSourceIdsFromDesktopAppState() {
+        let runtime = DesktopRuntime()
+        runtime.state.workspace.sourceIds = ["alpha", "beta"]
 
-        let viewModel = HomeViewModel(state: state)
+        let container = DesktopAppContainer(runtime: runtime)
 
-        XCTAssertEqual(viewModel.sourceIds, ["alpha", "beta"])
+        XCTAssertEqual(container.homeContainer.viewModel.sourceIds, ["alpha", "beta"])
     }
 }
