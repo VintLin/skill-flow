@@ -427,12 +427,8 @@ export class SkillFlowApp {
       sourceSnapshot?: UnifiedSourceSnapshot;
     }>
   > {
-    const listed = await this.listWorkflowsImpl();
-    if (!listed.ok) {
-      return fail(listed.errors, listed.warnings);
-    }
-
     const { manifest, lockFile } = await this.store.readState();
+    this.normalizeBindings(manifest, lockFile);
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
       return fail({
@@ -441,7 +437,7 @@ export class SkillFlowApp {
       });
     }
 
-    const summary = listed.data.summaries.find((item) => item.source.id === sourceId);
+    const summary = this.workflowService.getSummaries(manifest, lockFile).find((item) => item.source.id === sourceId);
     if (!summary) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -465,7 +461,6 @@ export class SkillFlowApp {
 
     return ok(
       { summary, source, binding, leafs, deployments, sourceMetadata, ...(sourceSnapshot ? { sourceSnapshot } : {}) },
-      listed.warnings,
     );
   }
 
