@@ -17,7 +17,7 @@
 - Current public page read model: `MainViewModel.currentRoute`
 - Current page write entry points: `MainViewModel.requestPage(_:)` and `MainViewModel.syncCurrentPage(from:)`
 - Verification baseline: `swift test --package-path apps/desktop-mac`
-- Latest verification result: 90 tests passed, 0 failed on 2026-03-28
+- Latest verification result: 93 tests passed, 0 failed on 2026-03-28
 
 ## Completed Progress
 
@@ -52,6 +52,12 @@
 - Detail route wiring is covered by `DetailScreenContainerTests` and workflow coverage
 - Import route wiring, recommendation loading, preview, and import flows are covered by `ImportScreenContainerTests` and `WorkflowCoverageTests`
 
+### 6. Desktop bridge execution no longer blocks the main actor
+
+- `BridgeClient` no longer uses `process.waitUntilExit()`
+- Bridge requests now await process termination asynchronously
+- `BridgeClientExecutionTests` verifies main-actor work can continue while a slow helper is still running
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
@@ -83,15 +89,7 @@
 
 ### Must Do
 
-#### A. Make desktop bridge execution non-blocking
-
-Status: not started in the active path
-
-- `Runtime/Bridge/BridgeClient.swift` is still `@MainActor`
-- `send(...)` still calls `process.waitUntilExit()`
-- Detail and import responsiveness remain bounded by this bridge behavior
-
-#### B. Split detail loading into a true local-first progressive flow
+#### A. Split detail loading into a true local-first progressive flow
 
 Status: partially prepared, not complete
 
@@ -99,7 +97,7 @@ Status: partially prepared, not complete
 - Query runtime still makes `inspectSourceImpl()` begin with `listWorkflowsImpl()`
 - The current bridge `inspect` contract still mixes local workspace facts with metadata/snapshot enrichment
 
-#### C. Move expensive detail content preparation off the main actor
+#### B. Move expensive detail content preparation off the main actor
 
 Status: not complete
 
@@ -108,7 +106,7 @@ Status: not complete
 
 ### Cleanup After Behavior Stabilizes
 
-#### D. Finish route refoundation cleanup
+#### C. Finish route refoundation cleanup
 
 Status: low-risk cleanup, not finished
 
@@ -116,7 +114,7 @@ Status: low-risk cleanup, not finished
 - Replace `routeRequest` and `currentRouteProvider` with a single explicit route owner
 - Keep route regression coverage for home, detail, import, settings, and delete/import navigation paths
 
-#### E. Finish page-state boundary cleanup
+#### D. Finish page-state boundary cleanup
 
 Status: mixed
 
@@ -125,14 +123,14 @@ Status: mixed
 - Settings uses a dedicated view model, but not a shared runtime/store slice
 - Menu bar and main window still share one `MainViewModel`
 
-#### F. Remove the deprecated desktop source tree
+#### E. Remove the deprecated desktop source tree
 
 Status: not started
 
 - Delete `apps/desktop-mac/Sources/Deprecated/SkillFlowDesktop`
 - Remove any remaining references, assumptions, or documentation that treats it as current
 
-#### G. Refresh plan and audit documents
+#### F. Refresh plan and audit documents
 
 Status: not started
 
@@ -142,42 +140,36 @@ Status: not started
 
 ## Recommended Execution Order
 
-### Task 1: Fix bridge blocking in the active `DesktopApp` path
+### Task 1: Separate detail local shell from remote enrichment
 
 Reason:
-- Highest user-facing responsiveness risk still open
-- Blocks any claim that desktop loading is actually progressive
-
-### Task 2: Separate detail local shell from remote enrichment
-
-Reason:
-- This is the real functional follow-up to the bridge fix
+- This is now the highest-value open behavior change
 - It converts the current partial detail layering into an explicit two-phase model
 
-### Task 3: Move detail content warmup off the main actor
+### Task 2: Move detail content warmup off the main actor
 
 Reason:
 - Local-first detail still stalls if expensive parsing and tree building stay on the main actor
 
-### Task 4: Finish route and page-state cleanup
+### Task 3: Finish route and page-state cleanup
 
 Reason:
 - `currentPage` removal and page-local state cleanup are still useful
 - They are no longer the highest-value blocking work
 
-### Task 5: Delete deprecated desktop sources and refresh planning docs
+### Task 4: Delete deprecated desktop sources and refresh planning docs
 
 Reason:
 - Final cleanup should happen after the active path no longer depends on transitional seams
 
 ## Immediate Next Task Definition
 
-If work resumes immediately after the current packaging fix, the next focused engineering task should be:
+If work resumes immediately after the bridge fix, the next focused engineering task should be:
 
-1. Add focused tests around bridge execution and detail warmup threading
-2. Remove `@MainActor` / blocking wait behavior from the bridge path
+1. Add focused tests around `inspectSourceImpl()` and detail hydration staging
+2. Separate local workspace facts from metadata / snapshot enrichment in the detail path
 3. Re-run `swift test --package-path apps/desktop-mac`
-4. Commit the bridge fix as a standalone refactor unit
+4. Commit the detail loading split as a standalone refactor unit
 
 ## Verification
 
@@ -189,5 +181,5 @@ swift test --package-path apps/desktop-mac
 
 Expected:
 
-- 90 tests passed
+- 93 tests passed
 - 0 failed
