@@ -259,7 +259,7 @@ struct MainView: View {
                 accent: accent
             )
         case .settings:
-            settingsPage(layout: layout)
+            SettingsScreen(theme: theme)
         case .detail:
             DetailScreen(
                 container: detailContainer,
@@ -389,13 +389,6 @@ struct MainView: View {
             return
         }
         NSWorkspace.shared.open(url)
-    }
-
-    private func settingsPage(layout: LayoutMetrics) -> some View {
-        ScrollView {
-            SettingsView(theme: theme)
-                .padding(16)
-        }
     }
 
     private func pageSectionCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {

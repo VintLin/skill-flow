@@ -67,6 +67,18 @@ final class DesktopAppContainerTests: XCTestCase {
         XCTAssertEqual(container.mainViewModel.currentPage, .importPage)
     }
 
+    func testSettingsRouteProjectsIntoSettingsScreenPath() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        container.navigation.showSettings()
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(runtime.state.view.currentRoute, .settings)
+        XCTAssertEqual(container.mainViewModel.currentPage, .settings)
+    }
+
     func testImportRouteProjectsIntoLiveImportContainerProductionSeam() async {
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)
