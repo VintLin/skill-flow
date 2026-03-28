@@ -118,7 +118,7 @@ EOF
 
 npm install --omit=dev --prefix "$HELPER_STAGE" >/dev/null
 
-for pkg in core tui shared-types; do
+for pkg in core-engine domain integration query shared-types storage tui; do
   mkdir -p "$HELPER_STAGE/node_modules/@skill-flow/$pkg"
   cp "$ROOT_DIR/packages/$pkg/package.json" "$HELPER_STAGE/node_modules/@skill-flow/$pkg/package.json"
   cp -R "$ROOT_DIR/packages/$pkg/dist" "$HELPER_STAGE/node_modules/@skill-flow/$pkg/dist"
