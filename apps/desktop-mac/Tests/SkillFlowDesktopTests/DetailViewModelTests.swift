@@ -111,11 +111,16 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.deploymentFacts, detail.deploymentFacts)
         XCTAssertEqual(viewModel.fileTree.count, detail.fileTree.count)
         XCTAssertEqual(viewModel.fileTree.first?.title, detail.fileTree.first?.title)
+        XCTAssertEqual(viewModel.fileTree.first?.isFile, detail.fileTree.first?.isFile)
         XCTAssertEqual(viewModel.groupDocuments.count, detail.groupDocuments.count)
         XCTAssertEqual(viewModel.groupDocuments.first?.title, detail.groupDocuments.first?.title)
+        XCTAssertEqual(viewModel.groupDocuments.first?.metadata.first?.key, detail.groupDocuments.first?.metadata.first?.key)
         XCTAssertEqual(viewModel.targets.count, detail.targets.count)
         XCTAssertEqual(viewModel.targets.first?.label, detail.targets.first?.label)
+        XCTAssertEqual(viewModel.targets.first?.shortLabel, detail.targets.first?.shortLabel)
         XCTAssertEqual(viewModel.skills.count, detail.skills.count)
         XCTAssertEqual(viewModel.skills.first?.title, detail.skills.first?.title)
+        XCTAssertEqual(viewModel.skills.first?.documents.first?.title, detail.skills.first?.documents.first?.title)
+        XCTAssertEqual(viewModel.skills.first?.documents.first?.externalURL, detail.skills.first?.documents.first?.externalURL)
     }
 }
