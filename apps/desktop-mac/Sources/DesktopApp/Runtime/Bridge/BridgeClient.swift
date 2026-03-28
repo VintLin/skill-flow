@@ -63,6 +63,10 @@ final class BridgeClient: @unchecked Sendable {
         try await send(command: .inspect, payload: ["sourceId": AnyCodable(sourceId)])
     }
 
+    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
+        try await send(command: .inspectEnrichment, payload: ["sourceId": AnyCodable(sourceId)])
+    }
+
     func searchImportGroups(query: String?) async throws -> BridgeResponse {
         let payload: [String: AnyCodable]
         if let query {

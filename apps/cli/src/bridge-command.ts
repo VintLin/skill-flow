@@ -67,6 +67,23 @@ export async function executeBridgeRequest(
           })),
         });
       }
+      case "inspect-enrichment": {
+        const payload = expectObjectPayload(request.payload, "inspect-enrichment");
+        const sourceId = expectString(payload.sourceId, "sourceId", "inspect-enrichment");
+        const result = await app.inspectSourceEnrichment(sourceId);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
       case "search-import-groups": {
         const payload = expectOptionalObject(request.payload, "search-import-groups");
         const query = payload ? expectOptionalString(payload.query, "query", "search-import-groups") : undefined;

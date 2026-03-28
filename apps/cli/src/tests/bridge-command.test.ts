@@ -74,6 +74,28 @@ describe.sequential("bridge command dispatcher", () => {
     });
 
     expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("summary");
+    expect(response.data).not.toHaveProperty("sourceMetadata");
+  });
+
+  test("accepts valid inspect-enrichment payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "inspect-enrichment",
+      payload: { sourceId: added.data.manifest.id },
+    });
+
+    expect(response.ok).toBe(true);
     expect(response.data).toHaveProperty("sourceMetadata");
   });
 

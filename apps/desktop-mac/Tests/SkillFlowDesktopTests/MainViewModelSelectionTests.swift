@@ -672,7 +672,8 @@ private struct TestFixture {
             if let detail = model.detailViewData(for: sourceId),
                !detail.groupDocuments.isEmpty,
                !detail.fileTree.isEmpty,
-               detail.skills.allSatisfy({ !$0.documents.isEmpty }) {
+               detail.skills.allSatisfy({ !$0.documents.isEmpty }),
+               !detail.sourceDetailLines.isEmpty {
                 return
             }
             try await Task.sleep(nanoseconds: 20_000_000)
@@ -905,6 +906,45 @@ private struct TestFixture {
             leafIds: (source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[targetId]) || []
           };
         }
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
+          source: {
+            id: sourceId,
+            kind: source.kind,
+            displayName: source.displayName,
+            locator: source.locator,
+            addedAt: '2026-03-25T12:00:00Z',
+            selectionMode: 'partial'
+          },
+          binding: {
+            selectedLeafIds: source.selectedLeafIds || [],
+            targets: bindingsTargets
+          },
+          leafs: (source.leafs || []).map((leaf) => ({
+            id: leaf.id,
+            sourceId,
+            title: leaf.name,
+            name: leaf.name,
+            linkName: leaf.linkName,
+            description: leaf.description,
+            relativePath: `${leaf.id}`,
+            absolutePath: path.join(rootPath, 'docs', sourceId, leaf.id),
+            skillFilePath: path.join(rootPath, 'docs', sourceId, leaf.id, 'SKILL.md'),
+            metadataWarnings: leaf.metadataWarnings || []
+          })),
+          deployments: (source.enabledTargets || []).map((target) => ({
+            sourceId,
+            leafId: ((source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[target]) || [])[0] || null,
+            target,
+            status: 'active'
+          }))
+        }, [], [])));
+        return;
+      }
+
+      if (request.command === 'inspect-enrichment') {
+        const sourceId = request.payload && request.payload.sourceId;
+        const source = (state.sources || {})[sourceId] || {};
         const sourceMetadata = (() => {
           const status = source.metadataStatus || 'ready';
           const provider = source.metadataProvider || 'clawhub';
@@ -937,38 +977,7 @@ private struct TestFixture {
           return metadata;
         })();
         process.stdout.write(JSON.stringify(responseFor(request, true, {
-          summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
-          source: {
-            id: sourceId,
-            kind: source.kind,
-            displayName: source.displayName,
-            locator: source.locator,
-            addedAt: '2026-03-25T12:00:00Z',
-            selectionMode: 'partial'
-          },
           sourceMetadata,
-          binding: {
-            selectedLeafIds: source.selectedLeafIds || [],
-            targets: bindingsTargets
-          },
-          leafs: (source.leafs || []).map((leaf) => ({
-            id: leaf.id,
-            sourceId,
-            title: leaf.name,
-            name: leaf.name,
-            linkName: leaf.linkName,
-            description: leaf.description,
-            relativePath: `${leaf.id}`,
-            absolutePath: path.join(rootPath, 'docs', sourceId, leaf.id),
-            skillFilePath: path.join(rootPath, 'docs', sourceId, leaf.id, 'SKILL.md'),
-            metadataWarnings: leaf.metadataWarnings || []
-          })),
-          deployments: (source.enabledTargets || []).map((target) => ({
-            sourceId,
-            leafId: ((source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[target]) || [])[0] || null,
-            target,
-            status: 'active'
-          }))
         }, [], [])));
         return;
       }

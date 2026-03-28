@@ -183,11 +183,13 @@ final class WorkflowCoverageTests: XCTestCase {
         }
 
         XCTAssertEqual(self.inspectRequestCount(in: fixture, sourceId: "alpha"), 0)
+        XCTAssertEqual(self.inspectEnrichmentRequestCount(in: fixture, sourceId: "alpha"), 0)
 
         container.navigation.showDetail("alpha")
 
         await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
             self.inspectRequestCount(in: fixture, sourceId: "alpha") == 1
+                && self.inspectEnrichmentRequestCount(in: fixture, sourceId: "alpha") == 1
                 && container.mainViewModel.hasInspectPayload(for: "alpha")
         }
 
@@ -195,6 +197,7 @@ final class WorkflowCoverageTests: XCTestCase {
         window.close()
 
         XCTAssertEqual(self.inspectRequestCount(in: fixture, sourceId: "alpha"), 1)
+        XCTAssertEqual(self.inspectEnrichmentRequestCount(in: fixture, sourceId: "alpha"), 1)
     }
 
     func testPinnedWriteFailureRollsBack() async throws {
@@ -495,6 +498,12 @@ final class WorkflowCoverageTests: XCTestCase {
         }.count
     }
 
+    private func inspectEnrichmentRequestCount(in fixture: TestFixture, sourceId: String) -> Int {
+        fixture.loggedRequests().filter {
+            $0.command == "inspect-enrichment" && $0.payload?["sourceId"]?.value as? String == sourceId
+        }.count
+    }
+
 }
 
 @MainActor
@@ -755,7 +764,8 @@ private struct TestFixture {
             if let detail = model.detailViewData(for: sourceId),
                !detail.groupDocuments.isEmpty,
                !detail.fileTree.isEmpty,
-               detail.skills.allSatisfy({ !$0.documents.isEmpty }) {
+               detail.skills.allSatisfy({ !$0.documents.isEmpty }),
+               !detail.sourceDetailLines.isEmpty {
                 return
             }
             try await Task.sleep(nanoseconds: 20_000_000)
@@ -997,6 +1007,22 @@ private struct TestFixture {
           leafIds: source.leafIds || [],
           selectedLeafIds: source.selectedLeafIds || [],
           enabledTargets: source.enabledTargets || []
+        }, [], [])));
+        return;
+      }
+
+      if (request.command === 'inspect-enrichment') {
+        const sourceId = request.payload && request.payload.sourceId;
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          sourceMetadata: {
+            status: 'ready',
+            provider: 'clawhub',
+            data: {
+              provider: 'clawhub',
+              repoUrl: `https://example.com/${sourceId}`,
+              starCount: 1200
+            }
+          }
         }, [], [])));
         return;
       }

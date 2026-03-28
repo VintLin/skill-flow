@@ -109,6 +109,7 @@ describe("bridge protocol", () => {
 
   test("recognizes supported commands and valid json values", () => {
     expect(isBridgeCommandName("bootstrap")).toBe(true);
+    expect(isBridgeCommandName("inspect-enrichment")).toBe(true);
     expect(isBridgeCommandName("not-real")).toBe(false);
 
     expect(isJsonObject({ ok: true })).toBe(true);
@@ -120,5 +121,40 @@ describe("bridge protocol", () => {
       }),
     ).toBe(true);
     expect(isJsonValue({ bad: () => "nope" })).toBe(false);
+  });
+
+  test("builds and parses inspect-enrichment bridge messages", () => {
+    expect(
+      parseBridgeRequest({
+        protocolVersion: PROTOCOL_VERSION,
+        requestId: "req-enrich",
+        command: "inspect-enrichment",
+        payload: {
+          sourceId: "demo-source",
+        },
+      }),
+    ).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: "req-enrich",
+      command: "inspect-enrichment",
+      payload: {
+        sourceId: "demo-source",
+      },
+    });
+
+    expect(
+      buildBridgeResponse({
+        command: "inspect-enrichment",
+        ok: true,
+        data: { sourceMetadata: { status: "ready" } },
+      }),
+    ).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      command: "inspect-enrichment",
+      ok: true,
+      data: { sourceMetadata: { status: "ready" } },
+      warnings: [],
+      errors: [],
+    });
   });
 });

@@ -407,11 +407,20 @@ export class SkillFlowApp {
       binding: SourceBinding;
       leafs: LeafRecord[];
       deployments: LockFile["deployments"];
+    }>
+  > {
+    return this.inspectSourceImpl(sourceId);
+  }
+
+  async inspectSourceEnrichment(
+    sourceId: string,
+  ): Promise<
+    Result<{
       sourceMetadata: SourceMetadataResult;
       sourceSnapshot?: UnifiedSourceSnapshot;
     }>
   > {
-    return this.inspectSourceImpl(sourceId);
+    return this.inspectSourceEnrichmentImpl(sourceId);
   }
 
   private async inspectSourceImpl(
@@ -423,8 +432,6 @@ export class SkillFlowApp {
       binding: SourceBinding;
       leafs: LeafRecord[];
       deployments: LockFile["deployments"];
-      sourceMetadata: SourceMetadataResult;
-      sourceSnapshot?: UnifiedSourceSnapshot;
     }>
   > {
     const { manifest, lockFile } = await this.store.readState();
@@ -448,6 +455,23 @@ export class SkillFlowApp {
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
     const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
     const deployments = lockFile.deployments.filter((deployment) => deployment.sourceId === sourceId);
+    return ok({ summary, source, binding, leafs, deployments });
+  }
+
+  private async inspectSourceEnrichmentImpl(
+    sourceId: string,
+  ): Promise<
+    Result<{
+      sourceMetadata: SourceMetadataResult;
+      sourceSnapshot?: UnifiedSourceSnapshot;
+    }>
+  > {
+    const localInspect = await this.inspectSourceImpl(sourceId);
+    if (!localInspect.ok) {
+      return fail(localInspect.errors, localInspect.warnings);
+    }
+
+    const { source, summary, leafs } = localInspect.data;
     const canonicalRepo = normalizeImportCanonicalRepo(source.locator)
       ?? (source.originLocator ? normalizeImportCanonicalRepo(source.originLocator) : undefined);
     const [sourceMetadata, sourceSnapshot] = await Promise.all([
@@ -459,9 +483,7 @@ export class SkillFlowApp {
         : Promise.resolve(undefined),
     ]);
 
-    return ok(
-      { summary, source, binding, leafs, deployments, sourceMetadata, ...(sourceSnapshot ? { sourceSnapshot } : {}) },
-    );
+    return ok({ sourceMetadata, ...(sourceSnapshot ? { sourceSnapshot } : {}) });
   }
 
   private async listRecommendedImportGroupsImpl(): Promise<Result<{ groups: ImportGroupCandidate[] }>> {

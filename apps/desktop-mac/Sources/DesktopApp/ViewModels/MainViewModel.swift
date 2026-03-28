@@ -1124,12 +1124,11 @@ final class MainViewModel {
         do {
             let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
-                let splitPayload = splitInspectPayload(payload)
-                inspectedPayloadBySourceId[sourceId] = splitPayload.shell
+                inspectedPayloadBySourceId[sourceId] = payload
                 detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
                 preparedDetailContentBySourceId.removeValue(forKey: sourceId)
                 scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
-                scheduleDetailEnrichmentApply(sourceId: sourceId, payload: splitPayload.enrichment)
+                scheduleDetailEnrichmentFetch(sourceId: sourceId)
             }
             latestWarnings = response.warnings
         } catch {
@@ -2152,41 +2151,37 @@ final class MainViewModel {
         return payload
     }
 
-    private func splitInspectPayload(_ payload: [String: Any]) -> (shell: [String: Any], enrichment: [String: Any]) {
-        var shell = payload
-        var enrichment: [String: Any] = [:]
-
-        for key in ["sourceMetadata", "sourceSnapshot", "sourceStats"] {
-            if let value = shell.removeValue(forKey: key) {
-                enrichment[key] = value
-            }
-        }
-
-        return (shell, enrichment)
-    }
-
-    private func scheduleDetailEnrichmentApply(sourceId: String, payload: [String: Any]) {
+    private func scheduleDetailEnrichmentFetch(sourceId: String) {
         detailEnrichmentTasksBySourceId[sourceId]?.cancel()
         detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
-
-        guard !payload.isEmpty else {
-            detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
-            return
-        }
+        detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
 
         detailEnrichmentTokenSeed &+= 1
         let token = detailEnrichmentTokenSeed
         detailEnrichmentTokensBySourceId[sourceId] = token
 
-        let task = Task { @MainActor [weak self, sourceId, payload] in
-            try? await Task.sleep(for: .milliseconds(1))
-            guard !Task.isCancelled else { return }
+        let task = Task { @MainActor [weak self, sourceId] in
+            guard let self else { return }
+            do {
+                let response = try await self.bridgeClient.inspectEnrichment(sourceId: sourceId)
+                guard !Task.isCancelled else { return }
 
-            guard let self, !Task.isCancelled else { return }
-            guard self.detailEnrichmentTokensBySourceId[sourceId] == token else { return }
-            self.detailEnrichmentPayloadBySourceId[sourceId] = payload
-            self.detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
-            self.detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
+                if let payload = response.data?.value as? [String: Any],
+                   self.detailEnrichmentTokensBySourceId[sourceId] == token
+                {
+                    self.detailEnrichmentPayloadBySourceId[sourceId] = payload
+                }
+                if self.detailEnrichmentTokensBySourceId[sourceId] == token {
+                    self.latestWarnings = response.warnings
+                    self.detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+                    self.detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
+                }
+            } catch {
+                if self.detailEnrichmentTokensBySourceId[sourceId] == token {
+                    self.detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+                    self.detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
+                }
+            }
         }
 
         detailEnrichmentTasksBySourceId[sourceId] = task

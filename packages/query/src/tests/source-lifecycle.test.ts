@@ -125,6 +125,30 @@ describe.sequential("source lifecycle", () => {
     expect(result.data.summary.source.id).toBe(added.data.manifest.id);
     expect(result.data.leafs.map((leaf) => leaf.id)).toEqual([`${added.data.manifest.id}:skills/review`]);
     expect(result.data.binding.selectedLeafIds).toEqual([`${added.data.manifest.id}:skills/review`]);
+    expect(result.data).not.toHaveProperty("sourceMetadata");
+    expect(result.data).not.toHaveProperty("sourceSnapshot");
+  });
+
+  test("inspectSourceEnrichment returns metadata and snapshot without recomputing local shell", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const result = await app.inspectSourceEnrichment(added.data.manifest.id);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toHaveProperty("sourceMetadata");
   });
 
   test("rejects add path when it does not resolve to a valid skill", async () => {
