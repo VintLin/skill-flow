@@ -17,21 +17,13 @@ enum AppIconLibrary {
     }
 
     private static func resourceDirectories() -> [URL] {
-        var directories: [URL] = []
-
-        if let bundled = Bundle.main.resourceURL,
-           FileManager.default.fileExists(atPath: bundled.path) {
-            directories.append(bundled)
-        }
-
         let sourceRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Resources")
-        if FileManager.default.fileExists(atPath: sourceRoot.path) {
-            directories.append(sourceRoot)
-        }
-
-        return directories
+        return DesktopResourceLocator.resourceDirectories(
+            bundle: .module,
+            sourceRoot: sourceRoot
+        )
     }
 }

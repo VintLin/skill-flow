@@ -19,21 +19,14 @@ enum MenuBarIcon {
     }
 
     private static func resourceDirectories() -> [URL] {
-        var directories: [URL] = []
-
-        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("MenuBar"),
-           FileManager.default.fileExists(atPath: bundled.path) {
-            directories.append(bundled)
-        }
-
         let sourceRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Resources/MenuBar")
-        if FileManager.default.fileExists(atPath: sourceRoot.path) {
-            directories.append(sourceRoot)
-        }
-
-        return directories
+        return DesktopResourceLocator.resourceDirectories(
+            subdirectory: "MenuBar",
+            bundle: .module,
+            sourceRoot: sourceRoot
+        )
     }
 }

@@ -182,21 +182,14 @@ enum AgentIconLibrary {
     }
 
     private static func resourceDirectories() -> [URL] {
-        var directories: [URL] = []
-
-        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("AgentIcons"),
-           FileManager.default.fileExists(atPath: bundled.path) {
-            directories.append(bundled)
-        }
-
         let sourceRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Resources/AgentIcons")
-        if FileManager.default.fileExists(atPath: sourceRoot.path) {
-            directories.append(sourceRoot)
-        }
-
-        return directories
+        return DesktopResourceLocator.resourceDirectories(
+            subdirectory: "AgentIcons",
+            bundle: .module,
+            sourceRoot: sourceRoot
+        )
     }
 }

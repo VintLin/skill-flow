@@ -343,6 +343,8 @@ struct ImportScreen: View {
                 .interpolation(.high)
                 .scaledToFit()
                 .frame(width: size, height: size)
+        } else {
+            Color.clear.frame(width: size, height: size)
         }
     }
 
