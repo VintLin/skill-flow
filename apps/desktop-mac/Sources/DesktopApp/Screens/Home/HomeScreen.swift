@@ -5,13 +5,17 @@ struct HomeScreen: View {
     @Bindable var homeViewModel: HomeViewModel
     @Bindable var mainViewModel: MainViewModel
 
+    func bootstrapOnAppear() async {
+        await container.bootstrapIfNeeded()
+    }
+
     var body: some View {
         let _ = homeViewModel.sourceIds
 
         return MainView(viewModel: mainViewModel)
             .frame(minWidth: 980, minHeight: 640)
             .task {
-                await container.bootstrapIfNeeded()
+                await bootstrapOnAppear()
             }
     }
 }

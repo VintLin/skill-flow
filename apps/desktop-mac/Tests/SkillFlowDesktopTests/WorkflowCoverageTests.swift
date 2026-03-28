@@ -133,8 +133,9 @@ final class WorkflowCoverageTests: XCTestCase {
 
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)
+        let homeScreen = container.homeContainer.makeView()
 
-        await container.homeContainer.bootstrapIfNeeded()
+        await homeScreen.bootstrapOnAppear()
 
         XCTAssertEqual(container.homeContainer.viewModel.sourceIds, ["alpha", "beta"])
         XCTAssertEqual(runtime.state.workspace.sourceIds, ["alpha", "beta"])
