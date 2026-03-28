@@ -30,18 +30,12 @@ struct MainView: View {
         let summary: String
     }
 
-    private struct ImportDraftState {
-        let selectedSkillIds: [String]
-        let enabledTargetIds: [String]
-    }
-
     @Bindable var viewModel: MainViewModel
+    @Bindable var importScreenState: ImportScreenState
     let navigation: NavigationActions
+    let importContainer: ImportScreenContainer
     let detailContainer: DetailScreenContainer
 
-    @State private var importSearchText: String = ""
-    @State private var importPlaceholderIndex: Int = 0
-    @State private var importDraftsByItemId: [String: ImportDraftState] = [:]
     @State private var updateButtonRotation: Double = 0
     private let importAutoPreviewLimit = 4
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
@@ -50,10 +44,14 @@ struct MainView: View {
     init(
         viewModel: MainViewModel,
         navigation: NavigationActions,
+        importScreenState: ImportScreenState,
+        importContainer: ImportScreenContainer,
         detailContainer: DetailScreenContainer
     ) {
         self.viewModel = viewModel
         self.navigation = navigation
+        self.importScreenState = importScreenState
+        self.importContainer = importContainer
         self.detailContainer = detailContainer
     }
 
@@ -113,7 +111,7 @@ struct MainView: View {
                 try? await Task.sleep(for: .seconds(2.2))
                 guard !importSearchPrompts.isEmpty, case .importPage = viewModel.currentPage else { break }
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                    importPlaceholderIndex = (importPlaceholderIndex + 1) % importSearchPrompts.count
+                    importScreenState.placeholderIndex = (importScreenState.placeholderIndex + 1) % importSearchPrompts.count
                 }
             }
         }
@@ -554,7 +552,7 @@ struct MainView: View {
     private var importSearchField: some View {
         HStack(spacing: 8) {
             ZStack(alignment: .leading) {
-                if importSearchText.isEmpty {
+                if importScreenState.searchText.isEmpty {
                     Text(activeImportSearchPrompt)
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
@@ -564,13 +562,13 @@ struct MainView: View {
                         .allowsHitTesting(false)
                 }
 
-                TextField("", text: $importSearchText)
+                TextField("", text: $importScreenState.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .onSubmit {
                         Task {
-                            await viewModel.submitImportSearch(importSearchText)
+                            await viewModel.submitImportSearch(importScreenState.searchText)
                         }
                     }
             }
@@ -588,7 +586,7 @@ struct MainView: View {
     private var importSearchButton: some View {
         Button {
             Task {
-                await viewModel.submitImportSearch(importSearchText)
+                await viewModel.submitImportSearch(importScreenState.searchText)
             }
         } label: {
             actionIcon(.search, size: 12)
@@ -664,7 +662,7 @@ struct MainView: View {
 
     private var activeImportSearchPrompt: String {
         guard !importSearchPrompts.isEmpty else { return "" }
-        return importSearchPrompts[importPlaceholderIndex % importSearchPrompts.count]
+        return importSearchPrompts[importScreenState.placeholderIndex % importSearchPrompts.count]
     }
 
     private var importSearchPrompts: [String] {
@@ -703,7 +701,7 @@ struct MainView: View {
     }
 
     private func importDraft(for item: RecommendedImport) -> ImportDraftState {
-        importDraftsByItemId[item.id]
+        importScreenState.draftsByItemId[item.id]
             ?? ImportDraftState(
                 selectedSkillIds: item.skills.map(\.id),
                 enabledTargetIds: []
@@ -877,7 +875,7 @@ struct MainView: View {
             nextSelected = item.skills.map(\.id).filter { selected.subtracting([skillId]).contains($0) }
         }
 
-        importDraftsByItemId[item.id] = ImportDraftState(
+        importScreenState.draftsByItemId[item.id] = ImportDraftState(
             selectedSkillIds: nextSelected,
             enabledTargetIds: current.enabledTargetIds
         )
@@ -886,7 +884,7 @@ struct MainView: View {
     private func toggleAllImportSkills(for item: RecommendedImport) {
         let current = importDraft(for: item)
         let nextSelected = current.selectedSkillIds.count == item.skills.count ? [] : item.skills.map(\.id)
-        importDraftsByItemId[item.id] = ImportDraftState(
+        importScreenState.draftsByItemId[item.id] = ImportDraftState(
             selectedSkillIds: nextSelected,
             enabledTargetIds: current.enabledTargetIds
         )
@@ -903,7 +901,7 @@ struct MainView: View {
             nextTargets = item.targets.filter { enabledTargets.subtracting([targetId]).contains($0) }
         }
 
-        importDraftsByItemId[item.id] = ImportDraftState(
+        importScreenState.draftsByItemId[item.id] = ImportDraftState(
             selectedSkillIds: current.selectedSkillIds,
             enabledTargetIds: nextTargets
         )
@@ -912,7 +910,7 @@ struct MainView: View {
     private func toggleAllImportTargets(for item: RecommendedImport) {
         let current = importDraft(for: item)
         let nextTargets = current.enabledTargetIds.count == item.targets.count ? [] : item.targets
-        importDraftsByItemId[item.id] = ImportDraftState(
+        importScreenState.draftsByItemId[item.id] = ImportDraftState(
             selectedSkillIds: current.selectedSkillIds,
             enabledTargetIds: nextTargets
         )
