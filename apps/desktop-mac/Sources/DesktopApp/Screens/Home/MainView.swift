@@ -255,7 +255,6 @@ struct MainView: View {
         case .importPage:
             ImportScreen(
                 container: importContainer,
-                viewModel: viewModel,
                 screenState: importScreenState,
                 gridColumnCount: layout.gridColumnCount,
                 gridFrameWidth: layout.gridFrameWidth,

@@ -63,7 +63,7 @@ final class ImportScreenContainerTests: XCTestCase {
         )
     }
 
-    func testProjectedCardsFollowMainViewModelDisplayGroups() {
+    func testSnapshotProjectsImportBusinessState() {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
         let container = ImportScreenContainer(state: state, mainViewModel: model)
@@ -76,11 +76,22 @@ final class ImportScreenContainerTests: XCTestCase {
             makeItem(id: "search", title: "Search", locator: "openai/skills")
         ]
 
-        XCTAssertEqual(container.viewModel(locale: Locale(identifier: "en"))?.cards.map(\.id), ["recommended"])
+        let recommended = container.snapshot(locale: Locale(identifier: "en"))
+
+        XCTAssertEqual(recommended?.submittedQuery, "")
+        XCTAssertEqual(recommended?.searchPhase, .idle)
+        XCTAssertEqual(recommended?.cards.map(\.id), ["recommended"])
 
         model.importSubmittedQuery = "openai"
+        model.importSearchPhase = .loading
+        model.importingImportGroupId = "search"
 
-        XCTAssertEqual(container.viewModel(locale: Locale(identifier: "en"))?.cards.map(\.id), ["search"])
+        let searched = container.snapshot(locale: Locale(identifier: "en"))
+
+        XCTAssertEqual(searched?.submittedQuery, "openai")
+        XCTAssertEqual(searched?.searchPhase, .loading)
+        XCTAssertEqual(searched?.cards.map(\.id), ["search"])
+        XCTAssertEqual(searched?.importingGroupId, "search")
     }
 
     private func makeItem(id: String, title: String, locator: String) -> MainViewModel.ImportGroupItem {

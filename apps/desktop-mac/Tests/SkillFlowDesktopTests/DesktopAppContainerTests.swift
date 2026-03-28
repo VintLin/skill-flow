@@ -97,6 +97,6 @@ final class DesktopAppContainerTests: XCTestCase {
         XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
         XCTAssertEqual(container.mainViewModel.currentRoute, .importPage)
         XCTAssertTrue(container.importContainer.isActive)
-        XCTAssertNotNil(container.importContainer.viewModel(locale: Locale(identifier: "en")))
+        XCTAssertNotNil(container.importContainer.snapshot(locale: Locale(identifier: "en")))
     }
 }

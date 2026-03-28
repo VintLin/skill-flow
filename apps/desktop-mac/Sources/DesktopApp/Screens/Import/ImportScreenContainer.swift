@@ -10,6 +10,13 @@ final class ImportScreenState {
 
 @MainActor
 final class ImportScreenContainer {
+    struct Snapshot {
+        let searchPhase: MainViewModel.ImportLoadPhase
+        let submittedQuery: String
+        let cards: [ImportViewModel.Card]
+        let importingGroupId: String?
+    }
+
     private let state: DesktopAppState
     private let mainViewModel: MainViewModel
 
@@ -27,23 +34,41 @@ final class ImportScreenContainer {
         return true
     }
 
-    var searchPhase: MainViewModel.ImportLoadPhase {
-        mainViewModel.importSearchPhase
-    }
-
-    var submittedQuery: String {
-        mainViewModel.importSubmittedQuery
-    }
-
-    var viewModel: ImportViewModel? {
-        viewModel(locale: .current)
-    }
-
-    func viewModel(locale: Locale) -> ImportViewModel? {
+    func snapshot(locale: Locale) -> Snapshot? {
         guard isActive else {
             return nil
         }
-        return ImportViewModel(items: mainViewModel.importDisplayGroups, locale: locale)
+        let viewModel = ImportViewModel(items: mainViewModel.importDisplayGroups, locale: locale)
+        return Snapshot(
+            searchPhase: mainViewModel.importSearchPhase,
+            submittedQuery: mainViewModel.importSubmittedQuery,
+            cards: viewModel.cards,
+            importingGroupId: mainViewModel.importingImportGroupId
+        )
+    }
+
+    func submitSearch(_ query: String) async {
+        await mainViewModel.submitImportSearch(query)
+    }
+
+    func previewGroupsIfNeeded(_ groupIds: [String]) async {
+        for groupId in groupIds {
+            await mainViewModel.previewImportGroupIfNeeded(groupId)
+        }
+    }
+
+    func importGroup(_ card: ImportViewModel.Card) async {
+        let draft = draft(for: card)
+        await mainViewModel.importImportGroup(
+            groupId: card.id,
+            locator: card.locator,
+            selectedSkillIds: draft.selectedSkillIds,
+            enabledTargets: draft.enabledTargetIds
+        )
+    }
+
+    func targetLabel(for targetId: String) -> String {
+        mainViewModel.visibleTargets.first(where: { $0.id == targetId })?.label ?? targetId
     }
 
     func draft(for card: ImportViewModel.Card) -> ImportDraftState {

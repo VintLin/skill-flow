@@ -7,7 +7,6 @@ struct ImportScreen: View {
     private let autoPreviewLimit = 4
 
     let container: ImportScreenContainer
-    @Bindable var viewModel: MainViewModel
     @Bindable var screenState: ImportScreenState
     let gridColumnCount: Int
     let gridFrameWidth: CGFloat
@@ -16,7 +15,6 @@ struct ImportScreen: View {
 
     init(
         container: ImportScreenContainer,
-        viewModel: MainViewModel,
         screenState: ImportScreenState,
         gridColumnCount: Int,
         gridFrameWidth: CGFloat,
@@ -24,7 +22,6 @@ struct ImportScreen: View {
         accent: DesktopAccentColor
     ) {
         self.container = container
-        self.viewModel = viewModel
         self.screenState = screenState
         self.gridColumnCount = gridColumnCount
         self.gridFrameWidth = gridFrameWidth
@@ -33,8 +30,11 @@ struct ImportScreen: View {
     }
 
     var body: some View {
-        let importViewModel = container.viewModel(locale: locale)
-        let cards = importViewModel?.cards ?? []
+        let snapshot = container.snapshot(locale: locale)
+        let cards = snapshot?.cards ?? []
+        let submittedQuery = snapshot?.submittedQuery ?? ""
+        let searchPhase = snapshot?.searchPhase ?? .idle
+        let importingGroupId = snapshot?.importingGroupId
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -51,14 +51,14 @@ struct ImportScreen: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader(
-                        title: container.submittedQuery.isEmpty ? t("import.section.recommended") : t("import.section.search_results"),
+                        title: submittedQuery.isEmpty ? t("import.section.recommended") : t("import.section.search_results"),
                         subtitle: "",
                         badge: "\(cards.count)"
                     )
 
-                    if case .loading = container.searchPhase, cards.isEmpty {
+                    if case .loading = searchPhase, cards.isEmpty {
                         importLoadingGrid
-                    } else if case .failed(let message) = container.searchPhase, cards.isEmpty {
+                    } else if case .failed(let message) = searchPhase, cards.isEmpty {
                         emptyState(
                             title: t("import.failed.title"),
                             subtitle: message.resolve(locale: locale)
@@ -66,7 +66,7 @@ struct ImportScreen: View {
                     } else if cards.isEmpty {
                         emptyState(
                             title: t("home.empty.title"),
-                            subtitle: container.submittedQuery.isEmpty
+                            subtitle: submittedQuery.isEmpty
                                 ? t("import.empty.recommended")
                                 : t("import.empty.search")
                         )
@@ -81,7 +81,7 @@ struct ImportScreen: View {
                                         accent: accent,
                                         displayMode: .importPage,
                                         skillsCollapsed: false,
-                                        isUpdating: viewModel.isImportingImportGroup(card.id),
+                                        isUpdating: importingGroupId == card.id,
                                         onOpen: nil,
                                         onUpdate: {},
                                         onTogglePinned: {},
@@ -101,24 +101,16 @@ struct ImportScreen: View {
                                         actionButtonTitle: nil,
                                         actionButtonIcon: ActionIcon.import,
                                         onActionButton: {
-                                            let draft = container.draft(for: card)
                                             Task {
-                                                await viewModel.importImportGroup(
-                                                    groupId: card.id,
-                                                    locator: card.locator,
-                                                    selectedSkillIds: draft.selectedSkillIds,
-                                                    enabledTargets: draft.enabledTargetIds
-                                                )
+                                                await container.importGroup(card)
                                             }
                                         }
                                     )
                                 }
                             }
-                            .task(id: importAutoPreviewTaskKey(cards: cards)) {
+                            .task(id: importAutoPreviewTaskKey(cards: cards, submittedQuery: submittedQuery)) {
                                 let previewIds = Array(cards.prefix(autoPreviewLimit).map(\.id))
-                                for groupId in previewIds {
-                                    await viewModel.previewImportGroupIfNeeded(groupId)
-                                }
+                                await container.previewGroupsIfNeeded(previewIds)
                             }
                             .frame(maxWidth: gridFrameWidth, alignment: .center)
                             Spacer(minLength: 0)
@@ -149,7 +141,7 @@ struct ImportScreen: View {
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .onSubmit {
                         Task {
-                            await viewModel.submitImportSearch(screenState.searchText)
+                            await container.submitSearch(screenState.searchText)
                         }
                     }
             }
@@ -167,7 +159,7 @@ struct ImportScreen: View {
     private var importSearchButton: some View {
         Button {
             Task {
-                await viewModel.submitImportSearch(screenState.searchText)
+                await container.submitSearch(screenState.searchText)
             }
         } label: {
             actionIcon(.search, size: 12)
@@ -234,9 +226,9 @@ struct ImportScreen: View {
         Array(repeating: GridItem(.fixed(304), spacing: 14), count: gridColumnCount)
     }
 
-    private func importAutoPreviewTaskKey(cards: [ImportViewModel.Card]) -> String {
+    private func importAutoPreviewTaskKey(cards: [ImportViewModel.Card], submittedQuery: String) -> String {
         let prefixIds = cards.prefix(autoPreviewLimit).map(\.id)
-        return ([container.submittedQuery] + prefixIds).joined(separator: "|")
+        return ([submittedQuery] + prefixIds).joined(separator: "|")
     }
 
     private func importCardModel(for card: ImportViewModel.Card) -> MainViewModel.GroupCardModel {
@@ -353,6 +345,6 @@ struct ImportScreen: View {
     }
 
     private func targetLabel(_ targetId: String) -> String {
-        viewModel.visibleTargets.first(where: { $0.id == targetId })?.label ?? targetId
+        container.targetLabel(for: targetId)
     }
 }
