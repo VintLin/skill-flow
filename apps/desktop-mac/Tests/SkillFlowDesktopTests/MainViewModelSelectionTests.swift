@@ -129,6 +129,38 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.targets.map(\.id), ["claude-code", "cursor"])
     }
 
+    func testDetailViewDataAppliesEnrichmentAfterLocalInspectShell() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+        await model.selectSource("alpha")
+
+        let initialDetail = model.detailViewData(for: "alpha")
+        XCTAssertTrue(model.hasInspectPayload(for: "alpha"))
+        XCTAssertEqual(initialDetail?.title, "AlphaHub")
+        XCTAssertNil(initialDetail?.starCount)
+        XCTAssertTrue(initialDetail?.sourceDetailLines.isEmpty == true)
+
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            if let detail = model.detailViewData(for: "alpha"),
+               detail.starCount == 1200,
+               detail.sourceDetailLines.contains("Provider: clawhub")
+            {
+                let inspectRequests = fixture.loggedRequests().filter {
+                    $0.command == "inspect" && $0.payload?["sourceId"]?.value as? String == "alpha"
+                }
+                XCTAssertEqual(inspectRequests.count, 1)
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTFail("Timed out waiting for detail enrichment")
+    }
+
     func testDetailViewDataShowsUnsupportedMetadataState() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline

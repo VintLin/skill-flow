@@ -550,6 +550,7 @@ final class MainViewModel {
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
+    private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
     private var preparedDetailContentBySourceId: [String: PreparedDetailContent] = [:]
     @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
     private var listRequestToken: UInt64 = 0
@@ -560,6 +561,9 @@ final class MainViewModel {
     @ObservationIgnored private var inspectRequestTasksBySourceId: [String: Task<BridgeResponse, Error>] = [:]
     private var inspectRequestTokensBySourceId: [String: UInt64] = [:]
     private var inspectRequestTokenSeed: UInt64 = 0
+    @ObservationIgnored private var detailEnrichmentTasksBySourceId: [String: Task<Void, Never>] = [:]
+    private var detailEnrichmentTokensBySourceId: [String: UInt64] = [:]
+    private var detailEnrichmentTokenSeed: UInt64 = 0
     @ObservationIgnored private var detailWarmupTasksBySourceId: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var importSearchTasksByQuery: [String: Task<BridgeResponse, Error>] = [:]
     private var importSearchTokensByQuery: [String: UInt64] = [:]
@@ -1120,9 +1124,12 @@ final class MainViewModel {
         do {
             let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
-                inspectedPayloadBySourceId[sourceId] = payload
+                let splitPayload = splitInspectPayload(payload)
+                inspectedPayloadBySourceId[sourceId] = splitPayload.shell
+                detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
                 preparedDetailContentBySourceId.removeValue(forKey: sourceId)
                 scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
+                scheduleDetailEnrichmentApply(sourceId: sourceId, payload: splitPayload.enrichment)
             }
             latestWarnings = response.warnings
         } catch {
@@ -1668,6 +1675,9 @@ final class MainViewModel {
             }
             baselineDrafts.removeValue(forKey: sourceId)
             workingDrafts.removeValue(forKey: sourceId)
+            inspectedPayloadBySourceId.removeValue(forKey: sourceId)
+            detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
+            preparedDetailContentBySourceId.removeValue(forKey: sourceId)
             cancelDeferredDraftSync()
             await synchronizeState(refreshDoctor: true)
 
@@ -1989,7 +1999,7 @@ final class MainViewModel {
             return nil
         }
 
-        let payload = inspectedPayloadBySourceId[sourceId] ?? [:]
+        let payload = mergedDetailPayload(for: sourceId)
         let sourcePayload = payload["source"] as? [String: Any] ?? [:]
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
@@ -2131,6 +2141,55 @@ final class MainViewModel {
 
     func hasInspectPayload(for sourceId: String) -> Bool {
         inspectedPayloadBySourceId[sourceId] != nil
+    }
+
+    private func mergedDetailPayload(for sourceId: String) -> [String: Any] {
+        var payload = inspectedPayloadBySourceId[sourceId] ?? [:]
+        let enrichmentPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
+        for (key, value) in enrichmentPayload {
+            payload[key] = value
+        }
+        return payload
+    }
+
+    private func splitInspectPayload(_ payload: [String: Any]) -> (shell: [String: Any], enrichment: [String: Any]) {
+        var shell = payload
+        var enrichment: [String: Any] = [:]
+
+        for key in ["sourceMetadata", "sourceSnapshot", "sourceStats"] {
+            if let value = shell.removeValue(forKey: key) {
+                enrichment[key] = value
+            }
+        }
+
+        return (shell, enrichment)
+    }
+
+    private func scheduleDetailEnrichmentApply(sourceId: String, payload: [String: Any]) {
+        detailEnrichmentTasksBySourceId[sourceId]?.cancel()
+        detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+
+        guard !payload.isEmpty else {
+            detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
+            return
+        }
+
+        detailEnrichmentTokenSeed &+= 1
+        let token = detailEnrichmentTokenSeed
+        detailEnrichmentTokensBySourceId[sourceId] = token
+
+        let task = Task { @MainActor [weak self, sourceId, payload] in
+            try? await Task.sleep(for: .milliseconds(1))
+            guard !Task.isCancelled else { return }
+
+            guard let self, !Task.isCancelled else { return }
+            guard self.detailEnrichmentTokensBySourceId[sourceId] == token else { return }
+            self.detailEnrichmentPayloadBySourceId[sourceId] = payload
+            self.detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+            self.detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
+        }
+
+        detailEnrichmentTasksBySourceId[sourceId] = task
     }
 
     private func scheduleDetailContentWarmupIfNeeded(sourceId: String) {
