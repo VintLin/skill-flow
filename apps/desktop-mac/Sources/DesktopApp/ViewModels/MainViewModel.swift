@@ -578,6 +578,7 @@ final class MainViewModel {
     var saveStateBySourceId: [String: SaveState] = [:]
     var toast: ToastState?
     @ObservationIgnored var routeRequest: ((Page) -> Void)?
+    @ObservationIgnored var currentRouteProvider: (() -> DesktopRoute)?
 
     var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?
@@ -607,6 +608,13 @@ final class MainViewModel {
     }
 
     private var selectedDetailInspectSourceId: String? {
+        currentDetailSourceId
+    }
+
+    private var currentDetailSourceId: String? {
+        if let currentRouteProvider, case .detail(let sourceId) = currentRouteProvider() {
+            return sourceId
+        }
         guard case .detail(let sourceId) = currentPage else {
             return nil
         }
@@ -1670,7 +1678,7 @@ final class MainViewModel {
             } else {
                 requestPage(.home)
             }
-            if case .detail(let detailSourceId) = currentPage, detailSourceId == sourceId {
+            if currentDetailSourceId == sourceId {
                 requestPage(.home)
             }
             showToast(style: .success, text: localizedText("toast.uninstall.success", sourceId))
@@ -2458,8 +2466,7 @@ final class MainViewModel {
 
             guard let selectedSourceId,
                   pendingSourceIds.contains(selectedSourceId),
-                  case .detail(let detailSourceId) = currentPage,
-                  detailSourceId == selectedSourceId
+                  currentDetailSourceId == selectedSourceId
             else {
                 return
             }

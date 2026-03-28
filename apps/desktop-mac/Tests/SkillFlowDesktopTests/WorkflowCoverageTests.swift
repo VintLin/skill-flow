@@ -91,6 +91,7 @@ final class WorkflowCoverageTests: XCTestCase {
         runtime.state.view.currentRoute = .detail(sourceId: "alpha")
         await Task.yield()
         await Task.yield()
+        model.currentPage = .home
 
         await model.deleteSource(sourceId: "alpha")
         await Task.yield()

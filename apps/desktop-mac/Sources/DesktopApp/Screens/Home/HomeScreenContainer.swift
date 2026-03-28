@@ -41,6 +41,9 @@ final class HomeScreenContainer {
         self.mainViewModel.routeRequest = { [weak state] page in
             state?.view.currentRoute = Self.route(for: page)
         }
+        self.mainViewModel.currentRouteProvider = { [weak state] in
+            state?.view.currentRoute ?? .home
+        }
         observeFoundationRouteState()
         observeMainViewModelState()
         syncViewModelRoute()
