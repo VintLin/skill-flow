@@ -564,7 +564,7 @@ final class MainViewModel {
     var recommendedImportGroups: [ImportGroupItem] = []
     var searchImportGroups: [ImportGroupItem] = []
     var importingImportGroupId: String?
-    var currentPage: Page = .home
+    private var currentPage: Page = .home
 
     var healthStatus: HealthStatus = .unknown
     var latestWarnings: [BridgeIssue] = []
@@ -607,15 +607,19 @@ final class MainViewModel {
         return updatingSourceIds.contains(selectedSourceId)
     }
 
+    var currentRoute: DesktopRoute {
+        if let currentRouteProvider {
+            return currentRouteProvider()
+        }
+        return Self.route(for: currentPage)
+    }
+
     private var selectedDetailInspectSourceId: String? {
         currentDetailSourceId
     }
 
     private var currentDetailSourceId: String? {
-        if let currentRouteProvider, case .detail(let sourceId) = currentRouteProvider() {
-            return sourceId
-        }
-        guard case .detail(let sourceId) = currentPage else {
+        guard case .detail(let sourceId) = currentRoute else {
             return nil
         }
         return sourceId
@@ -1876,15 +1880,32 @@ final class MainViewModel {
     }
 
     func syncCurrentPage(from route: DesktopRoute) {
+        currentPage = Self.page(for: route)
+    }
+
+    static func route(for page: Page) -> DesktopRoute {
+        switch page {
+        case .home:
+            return .home
+        case .importPage:
+            return .importPage
+        case .settings:
+            return .settings
+        case .detail(let sourceId):
+            return .detail(sourceId: sourceId)
+        }
+    }
+
+    private static func page(for route: DesktopRoute) -> Page {
         switch route {
         case .home:
-            currentPage = .home
+            return .home
         case .importPage:
-            currentPage = .importPage
+            return .importPage
         case .settings:
-            currentPage = .settings
+            return .settings
         case .detail(let sourceId):
-            currentPage = .detail(sourceId: sourceId)
+            return .detail(sourceId: sourceId)
         }
     }
 

@@ -4,12 +4,12 @@ import XCTest
 
 @MainActor
 final class MainViewModelRouteTests: XCTestCase {
-    func testRequestPageUpdatesCurrentPageImmediatelyWithoutRouteProjection() {
+    func testRequestPageUpdatesCurrentRouteImmediatelyWithoutRouteProjection() {
         let model = MainViewModel(bridgeClient: BridgeClient())
 
         model.requestPage(.settings)
 
-        XCTAssertEqual(model.currentPage, .settings)
+        XCTAssertEqual(model.currentRoute, .settings)
     }
 
     func testRequestPageAlsoForwardsToRouteProjectionHook() {
@@ -22,17 +22,17 @@ final class MainViewModelRouteTests: XCTestCase {
 
         model.requestPage(.detail(sourceId: "alpha"))
 
-        XCTAssertEqual(model.currentPage, .detail(sourceId: "alpha"))
+        XCTAssertEqual(model.currentRoute, .detail(sourceId: "alpha"))
         XCTAssertEqual(projectedPage, .detail(sourceId: "alpha"))
     }
 
-    func testSyncCurrentPageProjectsFoundationRouteWithoutRouteHook() {
+    func testSyncCurrentPageProjectsFoundationRouteIntoCurrentRoute() {
         let model = MainViewModel(bridgeClient: BridgeClient())
 
         model.syncCurrentPage(from: .importPage)
-        XCTAssertEqual(model.currentPage, .importPage)
+        XCTAssertEqual(model.currentRoute, .importPage)
 
         model.syncCurrentPage(from: .detail(sourceId: "alpha"))
-        XCTAssertEqual(model.currentPage, .detail(sourceId: "alpha"))
+        XCTAssertEqual(model.currentRoute, .detail(sourceId: "alpha"))
     }
 }

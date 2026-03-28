@@ -14,7 +14,7 @@ final class DesktopAppContainerTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(runtime.state.view.currentRoute, .detail(sourceId: "alpha"))
-        XCTAssertEqual(container.mainViewModel.currentPage, .detail(sourceId: "alpha"))
+        XCTAssertEqual(container.mainViewModel.currentRoute, .detail(sourceId: "alpha"))
         XCTAssertNil(container.detailContainer.viewModel)
     }
 
@@ -38,14 +38,14 @@ final class DesktopAppContainerTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(runtime.state.view.currentRoute, .detail(sourceId: "alpha"))
-        XCTAssertEqual(container.mainViewModel.currentPage, .detail(sourceId: "alpha"))
+        XCTAssertEqual(container.mainViewModel.currentRoute, .detail(sourceId: "alpha"))
 
         container.homeContainer.navigation.showHome()
         await Task.yield()
         await Task.yield()
 
         XCTAssertEqual(runtime.state.view.currentRoute, .home)
-        XCTAssertEqual(container.mainViewModel.currentPage, .home)
+        XCTAssertEqual(container.mainViewModel.currentRoute, .home)
     }
 
     func testAppNavigationSeamProjectsOuterRoutesIntoFoundationState() async {
@@ -57,14 +57,14 @@ final class DesktopAppContainerTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(runtime.state.view.currentRoute, .settings)
-        XCTAssertEqual(container.mainViewModel.currentPage, .settings)
+        XCTAssertEqual(container.mainViewModel.currentRoute, .settings)
 
         container.navigation.showImportPage()
         await Task.yield()
         await Task.yield()
 
         XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
-        XCTAssertEqual(container.mainViewModel.currentPage, .importPage)
+        XCTAssertEqual(container.mainViewModel.currentRoute, .importPage)
     }
 
     func testSettingsRouteProjectsIntoSettingsScreenPath() async {
@@ -76,7 +76,7 @@ final class DesktopAppContainerTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(runtime.state.view.currentRoute, .settings)
-        XCTAssertEqual(container.mainViewModel.currentPage, .settings)
+        XCTAssertEqual(container.mainViewModel.currentRoute, .settings)
     }
 
     func testSettingsStateIsSharedAcrossDesktopShells() {
@@ -95,7 +95,7 @@ final class DesktopAppContainerTests: XCTestCase {
         await Task.yield()
 
         XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
-        XCTAssertEqual(container.mainViewModel.currentPage, .importPage)
+        XCTAssertEqual(container.mainViewModel.currentRoute, .importPage)
         XCTAssertTrue(container.importContainer.isActive)
         XCTAssertNotNil(container.importContainer.viewModel(locale: Locale(identifier: "en")))
     }

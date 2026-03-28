@@ -91,13 +91,13 @@ final class WorkflowCoverageTests: XCTestCase {
         runtime.state.view.currentRoute = .detail(sourceId: "alpha")
         await Task.yield()
         await Task.yield()
-        model.currentPage = .home
+        model.syncCurrentPage(from: .home)
 
         await model.deleteSource(sourceId: "alpha")
         await Task.yield()
         await Task.yield()
 
-        XCTAssertEqual(model.currentPage, .home)
+        XCTAssertEqual(model.currentRoute, .home)
         XCTAssertEqual(runtime.state.view.currentRoute, .home)
         XCTAssertEqual(model.selectedGroupId, "beta")
         XCTAssertEqual(model.pinnedSourceIds, [])
@@ -317,7 +317,7 @@ final class WorkflowCoverageTests: XCTestCase {
         await Task.yield()
         await Task.yield()
 
-        XCTAssertEqual(model.currentPage, .detail(sourceId: "anthropics-skills"))
+        XCTAssertEqual(model.currentRoute, .detail(sourceId: "anthropics-skills"))
         XCTAssertEqual(runtime.state.view.currentRoute, .detail(sourceId: "anthropics-skills"))
         XCTAssertEqual(model.selectedGroupId, "anthropics-skills")
         XCTAssertTrue(model.sourceIds.contains("anthropics-skills"))
@@ -349,7 +349,7 @@ final class WorkflowCoverageTests: XCTestCase {
         )
 
         XCTAssertFalse(model.sourceIds.contains("anthropics-skills"))
-        XCTAssertEqual(model.currentPage, .home)
+        XCTAssertEqual(model.currentRoute, .home)
         XCTAssertEqual(model.toast?.style, .error)
         XCTAssertEqual(model.toast?.message, "Import failed: provider_request_failed")
         XCTAssertTrue(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
