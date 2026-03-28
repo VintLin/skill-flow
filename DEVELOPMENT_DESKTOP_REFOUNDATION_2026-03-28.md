@@ -100,6 +100,12 @@
 - `ImportScreenContainer` keeps `searchText` and `placeholderIndex` as page-local UI state, but card draft selections now persist in `DesktopAppState.importState`
 - Import draft coverage now verifies the same draft survives `ImportScreenContainer` recreation against shared app state
 
+### 14. Import page business state now reads through `ImportScreenContainer`
+
+- `ImportScreenContainer.snapshot(locale:)` now exposes `searchPhase`, `submittedQuery`, `cards`, and `importingGroupId` as the page-facing Import read contract
+- `ImportScreen` no longer reads import business state directly from `MainViewModel`
+- Import search, preview, import, and target-label actions are now delegated through `ImportScreenContainer`
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
@@ -111,7 +117,7 @@
 
 - Import drafts now live in shared app state
 - Search box text and placeholder animation index still live in `ImportScreenState`, which is acceptable as UI-local state for now
-- Import business loading still comes from `MainViewModel`
+- Import business loading still comes from `MainViewModel`, but the active page now reads and acts through `ImportScreenContainer`
 
 ### 3. The deprecated desktop tree still exists
 
@@ -144,7 +150,7 @@ Status: completed
 Status: next active cleanup
 
 - Detail page now reads through `detailSnapshot(for:)`, but business loading still lives in `MainViewModel`
-- Import drafts now live in `DesktopAppState.importState`, but Import business loading still lives in `MainViewModel`
+- Import drafts now live in `DesktopAppState.importState`, and Import page reads through `ImportScreenContainer`, but Import business loading still lives in `MainViewModel`
 - Settings uses a dedicated view model, but not a shared runtime/store slice
 - Menu bar and main window still share one `MainViewModel`
 
@@ -180,7 +186,7 @@ Reason:
 
 If work resumes after the route authority cleanup, the next focused engineering task should be:
 
-1. Decide whether Import business-loading state should stay in `MainViewModel` or move behind a page-facing Import adapter
+1. Decide whether the remaining Import business-loading implementation should leave `MainViewModel` now that the page-facing adapter exists
 2. Decide whether the remaining Detail business-loading APIs should also leave `MainViewModel`
 3. Verify whether menu bar and main window still need to share one `MainViewModel`
 4. Re-run `swift test --package-path apps/desktop-mac`
