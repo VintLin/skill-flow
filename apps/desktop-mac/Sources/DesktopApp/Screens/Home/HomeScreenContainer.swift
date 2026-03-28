@@ -90,20 +90,7 @@ final class HomeScreenContainer {
     }
 
     private func syncViewModelRoute() {
-        mainViewModel.currentPage = page(for: state.view.currentRoute)
-    }
-
-    private func page(for route: DesktopRoute) -> MainViewModel.Page {
-        switch route {
-        case .home:
-            return .home
-        case .importPage:
-            return .importPage
-        case .settings:
-            return .settings
-        case .detail(let sourceId):
-            return .detail(sourceId: sourceId)
-        }
+        mainViewModel.syncCurrentPage(from: state.view.currentRoute)
     }
 
     private static func route(for page: MainViewModel.Page) -> DesktopRoute {

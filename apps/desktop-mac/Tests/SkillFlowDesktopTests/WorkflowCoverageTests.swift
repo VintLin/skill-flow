@@ -258,7 +258,7 @@ final class WorkflowCoverageTests: XCTestCase {
         try fixture.reset(state: .baseline)
 
         let model = try await fixture.makeModel()
-        model.currentPage = .importPage
+        model.requestPage(.importPage)
 
         await model.loadImportPageIfNeeded()
 

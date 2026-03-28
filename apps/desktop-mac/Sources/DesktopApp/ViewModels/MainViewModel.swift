@@ -1875,6 +1875,19 @@ final class MainViewModel {
         }
     }
 
+    func syncCurrentPage(from route: DesktopRoute) {
+        switch route {
+        case .home:
+            currentPage = .home
+        case .importPage:
+            currentPage = .importPage
+        case .settings:
+            currentPage = .settings
+        case .detail(let sourceId):
+            currentPage = .detail(sourceId: sourceId)
+        }
+    }
+
     private func parseDoctorIssues(_ value: Any?) -> [DoctorIssueRow] {
         guard let data = value as? [String: Any] else { return [] }
         guard let issues = data["issues"] as? [[String: Any]] else { return [] }

@@ -25,4 +25,14 @@ final class MainViewModelRouteTests: XCTestCase {
         XCTAssertEqual(model.currentPage, .detail(sourceId: "alpha"))
         XCTAssertEqual(projectedPage, .detail(sourceId: "alpha"))
     }
+
+    func testSyncCurrentPageProjectsFoundationRouteWithoutRouteHook() {
+        let model = MainViewModel(bridgeClient: BridgeClient())
+
+        model.syncCurrentPage(from: .importPage)
+        XCTAssertEqual(model.currentPage, .importPage)
+
+        model.syncCurrentPage(from: .detail(sourceId: "alpha"))
+        XCTAssertEqual(model.currentPage, .detail(sourceId: "alpha"))
+    }
 }
