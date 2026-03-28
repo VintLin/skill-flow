@@ -72,9 +72,15 @@
 
 ### 9. Desktop detail state now stages enrichment after the local inspect shell
 
-- `MainViewModel.selectSource(_:)` now splits inspect responses into a local shell payload and a delayed enrichment payload
+- `MainViewModel.selectSource(_:)` now stores the inspect shell first and then requests enrichment through a separate bridge call
 - `detailViewData(for:)` renders summary, binding, deployment, and file preparation facts from the local shell before `sourceMetadata` and `sourceSnapshot` are applied
 - `MainViewModelSelectionTests` verifies enrichment arrives without triggering a second inspect request
+
+### 10. Query and bridge detail loading now expose explicit shell and enrichment phases
+
+- `SkillFlowApp.inspectSource()` now returns only local detail shell facts: summary, source, binding, leafs, and deployments
+- `SkillFlowApp.inspectSourceEnrichment()` now owns `sourceMetadata` and `sourceSnapshot`
+- The bridge protocol now includes `inspect-enrichment`, and desktop detail hydration calls both explicit phases instead of splitting one payload locally
 
 ## In-Progress Boundaries
 
@@ -99,27 +105,17 @@
 | Page | Local data | Cache-backed data | Network / external refresh | Current status |
 | --- | --- | --- | --- | --- |
 | Home | Yes. Bootstrap and list payloads provide summaries, drafts, pins, and audit state. | No dedicated page cache layer beyond persisted workspace state. | Indirect only through bridge bootstrap/list. | Sufficient for a local workspace page. Not a true three-layer page. |
-| Detail | Yes. `summary`, `draft`, selected source, and a local inspect shell render before enrich fields are applied. | Yes. `sourceMetadata` and `sourceSnapshot` can reuse cache-backed query results; prepared documents and file tree are warmed locally after inspect. | Yes. Inspect path may refresh metadata and import snapshot data. | Desktop now stages enrichment after the local shell, but the bridge/query contract still returns both layers in one inspect response. |
+| Detail | Yes. `summary`, `draft`, selected source, and an explicit local inspect shell render before enrich fields are applied. | Yes. `sourceMetadata` and `sourceSnapshot` reuse explicit enrichment queries and local prepared document/file-tree caches. | Yes. inspect shell and enrichment now travel through separate bridge/query phases. | Three-layer flow is explicit end-to-end. Remaining work is cleanup, not data-flow authority. |
 | Import | Yes. Card drafts live in `ImportScreenState`; recommendation/search/preview state renders immediately from current model. | Yes. recommendation feeds, search snapshots, and source snapshots all use storage-backed cache with stale reuse. | Yes. exact repo lookup, search refresh, preview refresh, and snapshot enrich all hit external providers through query runtime. | Has meaningful cache and network layering, but card hydration is still uneven and drafts are still page-local. |
 | Settings | Yes. Values load from `UserDefaults` through `SettingsViewModel`. | No separate cache layer. | No network layer. | Complete as a local settings page, but not unified into runtime/store state. |
 
 ## Remaining Work
 
-### Must Do
-
-#### A. Split the bridge/query inspect contract into explicit local and enrichment phases
-
-Status: in progress, not complete
-
-- Desktop detail now stages `sourceMetadata` and `sourceSnapshot` after the local shell is stored
-- The remaining coupling is in `packages/query` and the bridge envelope, which still compute and return both layers together
-- To finish the flow, enrichment needs an explicit query/bridge path instead of a delayed split of one inspect payload
-
 ### Cleanup After Behavior Stabilizes
 
 #### C. Finish route refoundation cleanup
 
-Status: low-risk cleanup, not finished
+Status: next high-value cleanup
 
 - Remove the last internal `currentPage` cache from `MainViewModel`
 - Replace `routeRequest` and `currentRouteProvider` with a single explicit route owner
@@ -151,31 +147,25 @@ Status: not started
 
 ## Recommended Execution Order
 
-### Task 1: Split the query and bridge detail contract
-
-Reason:
-- Desktop state now stages enrichment correctly, so the remaining blocking seam is the shared inspect contract
-- This is the step that removes the current delayed-payload shim and makes detail truly progressive
-
-### Task 2: Finish route and page-state cleanup
+### Task 1: Finish route and page-state cleanup
 
 Reason:
 - `currentPage` removal and page-local state cleanup are still useful
-- They are no longer the highest-value blocking work
+- They are now the highest-value remaining cleanup work on the active desktop path
 
-### Task 3: Delete deprecated desktop sources and refresh planning docs
+### Task 2: Delete deprecated desktop sources and refresh planning docs
 
 Reason:
 - Final cleanup should happen after the active path no longer depends on transitional seams
 
 ## Immediate Next Task Definition
 
-If work resumes immediately after the desktop-side staged enrichment split, the next focused engineering task should be:
+If work resumes immediately after the explicit bridge/query phase split, the next focused engineering task should be:
 
-1. Add focused query/runtime coverage for a dedicated enrichment path that reuses the existing local inspect shell
-2. Expose that split through the desktop bridge without reintroducing a second list reconciliation dependency
-3. Replace the current delayed-payload shim in `MainViewModel` with the explicit bridge/query phases
-4. Re-run the focused query/runtime coverage and `swift test --package-path apps/desktop-mac`
+1. Remove the last internal `currentPage` cache from `MainViewModel`
+2. Collapse `routeRequest` and `currentRouteProvider` into one explicit route owner
+3. Keep the route regression coverage green across home, detail, import, settings, delete, and import navigation flows
+4. Re-run `swift test --package-path apps/desktop-mac`
 
 ## Verification
 
