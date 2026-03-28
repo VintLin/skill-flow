@@ -26,7 +26,8 @@ final class SettingsViewModelTests: XCTestCase {
         defaults.set(DesktopAccentColor.green.rawValue, forKey: SettingsViewModel.themeAccentKey)
         defaults.set(false, forKey: SettingsViewModel.menuCompactCardsKey)
 
-        let viewModel = SettingsViewModel(userDefaults: defaults)
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
 
         XCTAssertTrue(viewModel.autoLaunch)
         XCTAssertEqual(viewModel.logLevel, "warn")
@@ -37,12 +38,14 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.menuCompactCards)
         XCTAssertEqual(viewModel.currentLanguage, DesktopLanguage.ja)
         XCTAssertEqual(viewModel.currentAccent, DesktopAccentColor.green)
+        XCTAssertEqual(state.settings.logLevel, "warn")
     }
 
     @MainActor
     func testWritesPersistImmediately() {
         let defaults = UserDefaults(suiteName: suiteName)!
-        let viewModel = SettingsViewModel(userDefaults: defaults)
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
 
         viewModel.autoLaunch = true
         viewModel.logLevel = "error"
@@ -59,6 +62,8 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.themeModeKey), DesktopThemeMode.dark.rawValue)
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.themeAccentKey), DesktopAccentColor.orange.rawValue)
         XCTAssertEqual(defaults.object(forKey: SettingsViewModel.menuCompactCardsKey) as? Bool, false)
+        XCTAssertEqual(state.settings.logLevel, "error")
+        XCTAssertEqual(state.settings.themeAccentRawValue, DesktopAccentColor.orange.rawValue)
     }
 
     @MainActor
@@ -67,7 +72,10 @@ final class SettingsViewModelTests: XCTestCase {
         defaults.set("invalid-accent", forKey: SettingsViewModel.themeAccentKey)
         defaults.set("invalid-language", forKey: DesktopLanguage.storageKey)
 
-        let viewModel = SettingsViewModel(userDefaults: defaults)
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults)
+        )
 
         XCTAssertFalse(viewModel.autoLaunch)
         XCTAssertEqual(viewModel.logLevel, "info")

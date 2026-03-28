@@ -4,52 +4,76 @@ import Observation
 @MainActor
 @Observable
 final class SettingsViewModel {
-    static let autoLaunchKey = "desktop.autoLaunch"
-    static let logLevelKey = "desktop.logLevel"
-    static let externalHelperKey = "desktop.experimentalExternalHelper"
-    static let themeModeKey = "desktop.themeMode"
-    static let themeAccentKey = "desktop.themeAccent"
-    static let menuCompactCardsKey = "desktop.menuCompactCards"
+    nonisolated static let autoLaunchKey = "desktop.autoLaunch"
+    nonisolated static let logLevelKey = "desktop.logLevel"
+    nonisolated static let externalHelperKey = "desktop.experimentalExternalHelper"
+    nonisolated static let themeModeKey = "desktop.themeMode"
+    nonisolated static let themeAccentKey = "desktop.themeAccent"
+    nonisolated static let menuCompactCardsKey = "desktop.menuCompactCards"
 
-    private let userDefaults: UserDefaults
+    private let state: DesktopAppState
+    private let store: DesktopSettingsStore
 
     var autoLaunch: Bool {
-        didSet { userDefaults.set(autoLaunch, forKey: Self.autoLaunchKey) }
+        get { state.settings.autoLaunch }
+        set {
+            state.settings.autoLaunch = newValue
+            store.save(state.settings)
+        }
     }
 
     var logLevel: String {
-        didSet { userDefaults.set(logLevel, forKey: Self.logLevelKey) }
+        get { state.settings.logLevel }
+        set {
+            state.settings.logLevel = newValue
+            store.save(state.settings)
+        }
     }
 
     var experimentalExternalHelper: Bool {
-        didSet { userDefaults.set(experimentalExternalHelper, forKey: Self.externalHelperKey) }
+        get { state.settings.experimentalExternalHelper }
+        set {
+            state.settings.experimentalExternalHelper = newValue
+            store.save(state.settings)
+        }
     }
 
     var desktopLanguageRawValue: String {
-        didSet { userDefaults.set(desktopLanguageRawValue, forKey: DesktopLanguage.storageKey) }
+        get { state.settings.desktopLanguageRawValue }
+        set {
+            state.settings.desktopLanguageRawValue = newValue
+            store.save(state.settings)
+        }
     }
 
     var themeModeRawValue: String {
-        didSet { userDefaults.set(themeModeRawValue, forKey: Self.themeModeKey) }
+        get { state.settings.themeModeRawValue }
+        set {
+            state.settings.themeModeRawValue = newValue
+            store.save(state.settings)
+        }
     }
 
     var themeAccentRawValue: String {
-        didSet { userDefaults.set(themeAccentRawValue, forKey: Self.themeAccentKey) }
+        get { state.settings.themeAccentRawValue }
+        set {
+            state.settings.themeAccentRawValue = newValue
+            store.save(state.settings)
+        }
     }
 
     var menuCompactCards: Bool {
-        didSet { userDefaults.set(menuCompactCards, forKey: Self.menuCompactCardsKey) }
+        get { state.settings.menuCompactCards }
+        set {
+            state.settings.menuCompactCards = newValue
+            store.save(state.settings)
+        }
     }
 
-    init(userDefaults: UserDefaults = .standard) {
-        self.userDefaults = userDefaults
-        self.autoLaunch = userDefaults.bool(forKey: Self.autoLaunchKey)
-        self.logLevel = userDefaults.string(forKey: Self.logLevelKey) ?? "info"
-        self.experimentalExternalHelper = userDefaults.bool(forKey: Self.externalHelperKey)
-        self.desktopLanguageRawValue = userDefaults.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
-        self.themeModeRawValue = userDefaults.string(forKey: Self.themeModeKey) ?? DesktopThemeMode.light.rawValue
-        self.themeAccentRawValue = userDefaults.string(forKey: Self.themeAccentKey) ?? DesktopAccentColor.blue.rawValue
-        self.menuCompactCards = userDefaults.object(forKey: Self.menuCompactCardsKey) as? Bool ?? true
+    init(state: DesktopAppState, store: DesktopSettingsStore = DesktopSettingsStore()) {
+        self.state = state
+        self.store = store
+        self.state.settings = store.load()
     }
 
     var currentAccent: DesktopAccentColor {

@@ -34,7 +34,7 @@ final class DesktopAppContainer {
             queryFacade: resolvedQueryFacade,
             commandFacade: resolvedCommandFacade
         )
-        self.settingsViewModel = SettingsViewModel()
+        self.settingsViewModel = SettingsViewModel(state: resolvedRuntime.state)
         self.menuBarScreenState = MenuBarScreenState()
         self.importContainer = ImportScreenContainer(state: resolvedRuntime.state, mainViewModel: mainViewModel)
         self.detailContainer = DetailScreenContainer(
