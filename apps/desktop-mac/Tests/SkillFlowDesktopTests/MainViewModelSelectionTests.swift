@@ -272,6 +272,129 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertTrue(detail?.fileTree.contains(where: { $0.title == "BetaHub-browse" }) == true)
     }
+
+    func testDetailWarmupDoesNotBlockMainActor() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        let heavyLeaf = TestFixture.LeafState(
+            id: "alpha-heavy",
+            linkName: "skill-heavy",
+            name: "skill-heavy",
+            description: "Heavy skill.",
+            metadataWarnings: []
+        )
+        state.sources["alpha"]?.leafs = [heavyLeaf]
+        state.sources["alpha"]?.selectedLeafIds = [heavyLeaf.id]
+        state.sources["alpha"]?.enabledTargets = ["claude-code"]
+        state.sources["alpha"]?.targetLeafIdsByTarget = ["claude-code": [heavyLeaf.id]]
+        try fixture.reset(state: state)
+
+        try fixture.writeSkillDocument(
+            sourceId: "alpha",
+            leafId: heavyLeaf.id,
+            content: heavySkillDocument(name: heavyLeaf.name)
+        )
+        for index in 0..<1800 {
+            try fixture.writeReferenceDocument(
+                sourceId: "alpha",
+                leafId: heavyLeaf.id,
+                name: "ref-\(index).md",
+                content: heavyReferenceDocument(index: index)
+            )
+        }
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+        await model.selectSource("alpha")
+
+        let mainActorFlag = ThreadSafeFlag()
+        let pingTask = Task.detached {
+            try await Task.sleep(nanoseconds: 60_000_000)
+            await MainActor.run {
+                mainActorFlag.setTrue()
+            }
+        }
+
+        try await Task.sleep(nanoseconds: 140_000_000)
+        XCTAssertTrue(
+            mainActorFlag.value,
+            "Detail warmup should not block unrelated MainActor work."
+        )
+
+        try await pingTask.value
+        try await fixture.waitForDetailHydration(model, sourceId: "alpha", timeoutNanoseconds: 3_000_000_000)
+    }
+
+    private func heavySkillDocument(name: String) -> String {
+        let repeatedSection = String(repeating: """
+        ## Notes
+
+        This is intentionally heavy markdown content for \(name).
+        It exists to exercise background detail warmup work without changing behavior.
+
+        - step one
+        - step two
+        - step three
+
+        ```swift
+        let value = "\(name)"
+        print(value)
+        ```
+
+        """, count: 260)
+
+        return """
+        ---
+        name: \(name)
+        description: Heavy \(name).
+        ---
+
+        # \(name)
+
+        \(repeatedSection)
+
+        Final verification line.
+        """
+    }
+
+    private func heavyReferenceDocument(index: Int) -> String {
+        let body = String(repeating: """
+        # Reference \(index)
+
+        This reference document is intentionally large to stress detail warmup scheduling.
+
+        ```json
+        { "index": \(index), "status": "heavy" }
+        ```
+
+        """, count: 32)
+
+        return """
+        ---
+        name: reference-\(index)
+        description: Heavy reference \(index)
+        ---
+
+        \(body)
+        """
+    }
+}
+
+private final class ThreadSafeFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue = false
+
+    var value: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedValue
+    }
+
+    func setTrue() {
+        lock.lock()
+        storedValue = true
+        lock.unlock()
+    }
 }
 
 @MainActor
@@ -554,6 +677,20 @@ private struct TestFixture {
             .appendingPathComponent(leafId, isDirectory: true)
             .appendingPathComponent("SKILL.md")
         try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    func writeReferenceDocument(sourceId: String, leafId: String, name: String, content: String) throws {
+        let referencesURL = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(leafId, isDirectory: true)
+            .appendingPathComponent("references", isDirectory: true)
+        try FileManager.default.createDirectory(at: referencesURL, withIntermediateDirectories: true)
+        try content.write(
+            to: referencesURL.appendingPathComponent(name),
+            atomically: true,
+            encoding: .utf8
+        )
     }
 
     private func writeSkillDocuments(state: State) throws {

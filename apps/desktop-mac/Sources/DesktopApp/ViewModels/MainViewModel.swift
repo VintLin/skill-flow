@@ -163,7 +163,7 @@ final class MainViewModel {
         let saveState: SaveState
     }
 
-    struct DetailSkill: Identifiable {
+    struct DetailSkill: Identifiable, Sendable {
         let id: String
         let title: String
         let summary: String
@@ -180,13 +180,13 @@ final class MainViewModel {
         let warningCount: Int
     }
 
-    struct MetadataEntry: Identifiable, Equatable {
+    struct MetadataEntry: Identifiable, Equatable, Sendable {
         let id: String
         let key: String
         let value: String
     }
 
-    struct DocumentTab: Identifiable, Equatable {
+    struct DocumentTab: Identifiable, Equatable, Sendable {
         let id: String
         let title: String
         let path: String
@@ -196,14 +196,14 @@ final class MainViewModel {
         let externalURL: String?
     }
 
-    struct DetailTarget: Identifiable {
+    struct DetailTarget: Identifiable, Sendable {
         let id: String
         let label: String
         let shortLabel: String
         let isEnabled: Bool
     }
 
-    struct FileTreeLine: Identifiable {
+    struct FileTreeLine: Identifiable, Sendable {
         let id: String
         let depth: Int
         let prefix: String
@@ -217,7 +217,7 @@ final class MainViewModel {
         let repositoryURL: String?
     }
 
-    struct SnapshotTrust: Equatable {
+    struct SnapshotTrust: Equatable, Sendable {
         let official: Bool
         let trending: Bool
         let hot: Bool
@@ -233,7 +233,7 @@ final class MainViewModel {
         }
     }
 
-    struct SnapshotOwner: Equatable {
+    struct SnapshotOwner: Equatable, Sendable {
         let slug: String
         let sourceURL: String
         let githubURL: String?
@@ -242,19 +242,19 @@ final class MainViewModel {
         let totalInstalls: Int?
     }
 
-    struct SnapshotInstalledOn: Equatable {
+    struct SnapshotInstalledOn: Equatable, Sendable {
         let agent: String
         let installs: Int?
     }
 
-    struct SnapshotAudits: Equatable {
+    struct SnapshotAudits: Equatable, Sendable {
         let gen: String?
         let socket: String?
         let snyk: String?
         let riskLevel: String?
     }
 
-    struct SnapshotSkill: Equatable {
+    struct SnapshotSkill: Equatable, Sendable {
         let skillId: String
         let title: String
         let installs: Int?
@@ -265,7 +265,7 @@ final class MainViewModel {
         let audits: SnapshotAudits?
     }
 
-    struct SourceSnapshotData: Equatable {
+    struct SourceSnapshotData: Equatable, Sendable {
         let canonicalRepo: String
         let title: String
         let provider: String
@@ -389,7 +389,7 @@ final class MainViewModel {
         let target: String
     }
 
-    private struct LeafSummary {
+    private struct LeafSummary: Sendable {
         let id: String
         let linkName: String
         let name: String
@@ -402,7 +402,7 @@ final class MainViewModel {
         var enabledTargets: [String]
     }
 
-    private struct WorkflowSummary {
+    private struct WorkflowSummary: Sendable {
         let sourceId: String
         let sourceKind: String
         let sourceDisplayName: String
@@ -417,7 +417,7 @@ final class MainViewModel {
         let updatedAt: String
     }
 
-    private struct FileTreeNode {
+    private struct FileTreeNode: Sendable {
         var name: String
         var isFile: Bool
         var children: [String: FileTreeNode]
@@ -429,26 +429,26 @@ final class MainViewModel {
         }
     }
 
-    private struct ParsedDocument {
+    private struct ParsedDocument: Sendable {
         let frontMatter: SkillFrontMatter?
         let metadata: [MetadataEntry]
         let body: String
     }
 
-    private struct SkillFrontMatter: Decodable {
+    private struct SkillFrontMatter: Decodable, Sendable {
         let name: String?
         let description: String?
         let version: String?
         let enabled: Bool?
     }
 
-    private struct GitHubRepoContext {
+    private struct GitHubRepoContext: Sendable {
         let owner: String
         let repo: String
         let revision: String
     }
 
-    private struct PreparedDetailSkillContent {
+    private struct PreparedDetailSkillContent: Sendable {
         let title: String
         let version: String?
         let folderPath: String?
@@ -457,11 +457,33 @@ final class MainViewModel {
         let documentContent: String
     }
 
-    private struct PreparedDetailContent {
+    private struct PreparedDetailContent: Sendable {
         let groupPath: String?
         let fileTree: [FileTreeLine]
         let groupDocuments: [DocumentTab]
         let skillsByLeafId: [String: PreparedDetailSkillContent]
+    }
+
+    private struct PreparedDetailLeafInput: Sendable {
+        let id: String
+        let linkName: String
+        let name: String
+        let description: String
+        let warningCount: Int
+        let skillFilePath: String?
+        let relativePath: String?
+        let absolutePath: String?
+        let title: String?
+    }
+
+    private struct PreparedDetailWarmupInput: Sendable {
+        let summary: WorkflowSummary
+        let sourceLocator: String
+        let sourceSnapshot: SourceSnapshotData?
+        let groupPath: String?
+        let gitHubRepoContext: GitHubRepoContext?
+        let projectedNamesByLeafId: [String: String]
+        let leaves: [PreparedDetailLeafInput]
     }
 
     private let bridgeClient: BridgeClient
@@ -529,9 +551,6 @@ final class MainViewModel {
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
     private var preparedDetailContentBySourceId: [String: PreparedDetailContent] = [:]
-    private var skillDocumentCache: [String: String] = [:]
-    private var parsedDocumentCache: [String: ParsedDocument] = [:]
-    private var documentTabsCache: [String: [DocumentTab]] = [:]
     @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
     private var listRequestToken: UInt64 = 0
     private var activeListRequestToken: UInt64?
@@ -750,35 +769,10 @@ final class MainViewModel {
     }
 
     private func subtitleText(locator: String, kind: String) -> String {
-        if let handle = authorHandle(from: locator) {
+        if let handle = Self.authorHandle(from: locator) {
             return "by \(handle)"
         }
         return "by \(kind.lowercased())"
-    }
-
-    private func authorHandle(from locator: String) -> String? {
-        let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let patterns = [
-            #"github\.com/([^/\s]+)/"#,
-            #"git@github\.com:([^/\s]+)/"#,
-            #"clawhub/([^/\s]+)/"#,
-        ]
-
-        for pattern in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern) {
-                let nsrange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
-                if let match = regex.firstMatch(in: trimmed, range: nsrange),
-                   match.numberOfRanges > 1,
-                   let range = Range(match.range(at: 1), in: trimmed)
-                {
-                    return "@\(trimmed[range])"
-                }
-            }
-        }
-
-        return nil
     }
 
     var deploymentSummary: DeploymentSummary {
@@ -2013,10 +2007,10 @@ final class MainViewModel {
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
         let groupPath = preparedDetailContent?.groupPath ?? preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
         let author = sourceSnapshot.map { "@\($0.owner.slug)" }
-            ?? authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
+            ?? Self.authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
             ?? "@\(summary.sourceKind.lowercased())"
-        let originLabel = sourceSnapshot.flatMap { displayOriginLabel(from: $0.sourceURL) }
-            ?? displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
+        let originLabel = sourceSnapshot.flatMap { Self.displayOriginLabel(from: $0.sourceURL) }
+            ?? Self.displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
         let starCount = sourceMetadataPresentation.starCount
         let sourceRepositoryURL = sourceMetadataPresentation.repositoryURL
         let sourceDetailLines = sourceMetadataPresentation.lines
@@ -2051,7 +2045,7 @@ final class MainViewModel {
                 originLabel: originLabel,
                 starCount: starCount,
                 folderPath: preparedSkill?.folderPath,
-                relativeFolderPath: projectedRelativeFolderPath(
+                relativeFolderPath: Self.projectedRelativeFolderPath(
                     preparedSkill?.relativeFolderPath ?? leafRelativePath,
                     projectedName: projectedName,
                     fallbackName: linkName
@@ -2146,22 +2140,30 @@ final class MainViewModel {
         guard let summary = summary(for: sourceId), let payload = inspectedPayloadBySourceId[sourceId], !payload.isEmpty else {
             return
         }
+        let input = buildPreparedDetailWarmupInput(sourceId: sourceId, summary: summary, payload: payload)
 
-        let task = Task { @MainActor [weak self] in
+        let task = Task { [weak self, sourceId, input] in
             try? await Task.sleep(for: .milliseconds(40))
-            guard let self, !Task.isCancelled else { return }
-            let prepared = self.prepareDetailContent(sourceId: sourceId, summary: summary, payload: payload)
-            self.preparedDetailContentBySourceId[sourceId] = prepared
-            self.detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
+            guard !Task.isCancelled else { return }
+
+            let prepared = await Task.detached {
+                Self.prepareDetailContent(input: input)
+            }.value
+
+            await MainActor.run {
+                guard let self, !Task.isCancelled else { return }
+                self.preparedDetailContentBySourceId[sourceId] = prepared
+                self.detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
+            }
         }
         detailWarmupTasksBySourceId[sourceId] = task
     }
 
-    private func prepareDetailContent(
+    private func buildPreparedDetailWarmupInput(
         sourceId: String,
         summary: WorkflowSummary,
         payload: [String: Any]
-    ) -> PreparedDetailContent {
+    ) -> PreparedDetailWarmupInput {
         let sourcePayload = payload["source"] as? [String: Any] ?? [:]
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
@@ -2176,53 +2178,95 @@ final class MainViewModel {
             lockPayload: lockPayload
         )
         let projectedNamesByLeafId = projectionNameMap(for: sourceId)
-
-        var skillsByLeafId: [String: PreparedDetailSkillContent] = [:]
-        var lightweightSkills: [DetailSkill] = []
-
-        for leafId in preferredLeafIds {
+        let leaves = preferredLeafIds.compactMap { leafId -> PreparedDetailLeafInput? in
             guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
-                continue
+                return nil
             }
 
             let leafPayload = leafPayloads.first(where: { ($0["id"] as? String) == leafId }) ?? [:]
-            let skillFilePath = leafPayload["skillFilePath"] as? String
-            let leafRelativePath = leafPayload["relativePath"] as? String
-            let folderPath = (leafPayload["absolutePath"] as? String)?.nonEmpty
-                ?? skillFilePath.flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty }
-            let documentContent = skillFilePath
-                .map { parsedDocument(path: $0).body }
+            return PreparedDetailLeafInput(
+                id: leaf.id,
+                linkName: leafPayload["linkName"] as? String ?? leaf.linkName,
+                name: leaf.name,
+                description: leaf.description,
+                warningCount: leaf.metadataWarnings.count,
+                skillFilePath: leafPayload["skillFilePath"] as? String,
+                relativePath: leafPayload["relativePath"] as? String,
+                absolutePath: (leafPayload["absolutePath"] as? String)?.nonEmpty,
+                title: (leafPayload["title"] as? String)?.nonEmpty
+            )
+        }
+
+        return PreparedDetailWarmupInput(
+            summary: summary,
+            sourceLocator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
+            sourceSnapshot: sourceSnapshot,
+            groupPath: groupPath,
+            gitHubRepoContext: gitHubRepoContext,
+            projectedNamesByLeafId: projectedNamesByLeafId,
+            leaves: leaves
+        )
+    }
+
+    nonisolated private static func prepareDetailContent(input: PreparedDetailWarmupInput) -> PreparedDetailContent {
+        var rawDocumentCache: [String: String] = [:]
+        var parsedDocumentCache: [String: ParsedDocument] = [:]
+        var documentTabsCache: [String: [DocumentTab]] = [:]
+        var skillsByLeafId: [String: PreparedDetailSkillContent] = [:]
+        var lightweightSkills: [DetailSkill] = []
+
+        for leaf in input.leaves {
+            let folderPath = leaf.absolutePath
+                ?? leaf.skillFilePath.flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty }
+            let documentContent = leaf.skillFilePath
+                .map { path in
+                    parsedDocument(
+                        path: path,
+                        rawDocumentCache: &rawDocumentCache,
+                        parsedDocumentCache: &parsedDocumentCache
+                    ).body
+                }
                 .flatMap(\.nonEmpty)
                 ?? leaf.description
-            let parsedMetadata = skillFilePath.map { parsedDocument(path: $0) }
+            let parsedMetadata = leaf.skillFilePath.map { path in
+                parsedDocument(
+                    path: path,
+                    rawDocumentCache: &rawDocumentCache,
+                    parsedDocumentCache: &parsedDocumentCache
+                )
+            }
             let metadata = parsedMetadata?.metadata ?? []
             let metadataName = parsedMetadata?.frontMatter?.name?.nonEmpty
             let version = parsedMetadata?.frontMatter?.version
-            let documents = skillFilePath.flatMap { documentTabs(for: $0) }
-                .map { tabs in
-                    enrichDocumentTabs(tabs, groupPath: groupPath, gitHubRepoContext: gitHubRepoContext)
-                }
-                ?? [
-                    DocumentTab(
-                        id: "inline-skill-md",
-                        title: "SKILL.md",
-                        path: "SKILL.md",
-                        metadata: metadata,
-                        content: documentContent,
-                        renderCacheKey: "inline-skill-md:\(documentContent.hashValue)",
-                        externalURL: nil
-                    )
-                ]
-            let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
-            let projectedName = projectedNamesByLeafId[leaf.id]
+            let documents = leaf.skillFilePath.map { path in
+                documentTabs(
+                    for: path,
+                    groupPath: input.groupPath,
+                    gitHubRepoContext: input.gitHubRepoContext,
+                    rawDocumentCache: &rawDocumentCache,
+                    parsedDocumentCache: &parsedDocumentCache,
+                    documentTabsCache: &documentTabsCache
+                )
+            } ?? [
+                DocumentTab(
+                    id: "inline-skill-md",
+                    title: "SKILL.md",
+                    path: "SKILL.md",
+                    metadata: metadata,
+                    content: documentContent,
+                    renderCacheKey: "inline-skill-md:\(documentContent.hashValue)",
+                    externalURL: nil
+                )
+            ]
+            let projectedName = input.projectedNamesByLeafId[leaf.id]
             let title = metadataName
                 ?? folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
-                ?? (leafPayload["title"] as? String)?.nonEmpty
+                ?? leaf.title
                 ?? leaf.name.nonEmpty
-                ?? linkName
-            let relativeFolderPath = groupPath.flatMap { basePath in
+                ?? leaf.linkName
+            let relativeFolderPath = input.groupPath.flatMap { basePath in
                 folderPath.flatMap { relativePath(from: basePath, to: $0) }
-            } ?? leafRelativePath
+            } ?? leaf.relativePath
 
             skillsByLeafId[leaf.id] = PreparedDetailSkillContent(
                 title: title,
@@ -2237,38 +2281,40 @@ final class MainViewModel {
                 DetailSkill(
                     id: leaf.id,
                     title: title,
-                    summary: leaf.description.isEmpty ? linkName : leaf.description,
+                    summary: leaf.description.isEmpty ? leaf.linkName : leaf.description,
                     version: version,
-                    author: sourceSnapshot.map { "@\($0.owner.slug)" }
-                        ?? authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
-                        ?? "@\(summary.sourceKind.lowercased())",
-                    originLabel: sourceSnapshot.flatMap { displayOriginLabel(from: $0.sourceURL) }
-                        ?? displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator),
-                    starCount: sourceSnapshot?.repoStars,
+                    author: input.sourceSnapshot.map { "@\($0.owner.slug)" }
+                        ?? authorHandle(from: input.sourceLocator)
+                        ?? "@\(input.summary.sourceKind.lowercased())",
+                    originLabel: input.sourceSnapshot.map { displayOriginLabel(from: $0.sourceURL) }
+                        ?? displayOriginLabel(from: input.sourceLocator),
+                    starCount: input.sourceSnapshot?.repoStars,
                     folderPath: folderPath,
                     relativeFolderPath: projectedRelativeFolderPath(
                         relativeFolderPath,
                         projectedName: projectedName,
-                        fallbackName: linkName
+                        fallbackName: leaf.linkName
                     ),
                     documents: documents,
                     detailLines: [],
                     documentContent: documentContent,
                     isEnabled: false,
-                    warningCount: leaf.metadataWarnings.count
+                    warningCount: leaf.warningCount
                 )
             )
         }
 
-        let fileTree = buildFileTreeLines(groupPath: groupPath, skills: lightweightSkills)
+        let fileTree = buildFileTreeLines(groupPath: input.groupPath, skills: lightweightSkills)
         let groupDocuments = groupDocumentTabs(
-            groupPath: groupPath,
+            groupPath: input.groupPath,
             fileTree: fileTree,
-            gitHubRepoContext: gitHubRepoContext
+            gitHubRepoContext: input.gitHubRepoContext,
+            rawDocumentCache: &rawDocumentCache,
+            parsedDocumentCache: &parsedDocumentCache
         )
 
         return PreparedDetailContent(
-            groupPath: groupPath,
+            groupPath: input.groupPath,
             fileTree: fileTree,
             groupDocuments: groupDocuments,
             skillsByLeafId: skillsByLeafId
@@ -2815,8 +2861,52 @@ final class MainViewModel {
             .first(where: { !$0.isEmpty }) ?? error.localizedDescription
     }
 
-    private func cachedSkillDocument(path: String) -> String {
-        if let cached = skillDocumentCache[path] {
+    nonisolated private static func localizedWarmup(_ key: String, _ arguments: String...) -> String {
+        PresentationText.localized(key, arguments).resolve(locale: presentationLocale)
+    }
+
+    nonisolated private static func authorHandle(from locator: String) -> String? {
+        let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        let patterns = [
+            #"github\.com/([^/\s]+)/"#,
+            #"git@github\.com:([^/\s]+)/"#,
+            #"clawhub/([^/\s]+)/"#,
+        ]
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let nsRange = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+                if let match = regex.firstMatch(in: trimmed, range: nsRange),
+                   match.numberOfRanges > 1,
+                   let range = Range(match.range(at: 1), in: trimmed)
+                {
+                    return "@\(trimmed[range])"
+                }
+            }
+        }
+
+        let normalized = trimmed
+            .replacingOccurrences(of: ".git", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if normalized.contains("/") {
+            let components = normalized.split(separator: "/")
+            if components.count >= 2 {
+                return "@\(components[components.count - 2])"
+            }
+        }
+
+        return nil
+    }
+
+    nonisolated private static func cachedSkillDocument(
+        path: String,
+        rawDocumentCache: inout [String: String]
+    ) -> String {
+        if let cached = rawDocumentCache[path] {
             return cached
         }
 
@@ -2824,25 +2914,36 @@ final class MainViewModel {
         if let raw = try? String(contentsOfFile: path, encoding: .utf8) {
             document = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         } else {
-            document = localized("detail.document.skill_unavailable")
+            document = localizedWarmup("detail.document.skill_unavailable")
         }
 
-        skillDocumentCache[path] = document
+        rawDocumentCache[path] = document
         return document
     }
 
-    private func parsedDocument(path: String) -> ParsedDocument {
+    nonisolated private static func parsedDocument(
+        path: String,
+        rawDocumentCache: inout [String: String],
+        parsedDocumentCache: inout [String: ParsedDocument]
+    ) -> ParsedDocument {
         if let cached = parsedDocumentCache[path] {
             return cached
         }
 
-        let content = cachedSkillDocument(path: path)
+        let content = cachedSkillDocument(path: path, rawDocumentCache: &rawDocumentCache)
         let parsed = parseDocument(content)
         parsedDocumentCache[path] = parsed
         return parsed
     }
 
-    private func documentTabs(for skillFilePath: String) -> [DocumentTab] {
+    nonisolated private static func documentTabs(
+        for skillFilePath: String,
+        groupPath: String?,
+        gitHubRepoContext: GitHubRepoContext?,
+        rawDocumentCache: inout [String: String],
+        parsedDocumentCache: inout [String: ParsedDocument],
+        documentTabsCache: inout [String: [DocumentTab]]
+    ) -> [DocumentTab] {
         if let cached = documentTabsCache[skillFilePath] {
             return cached
         }
@@ -2851,7 +2952,9 @@ final class MainViewModel {
             makeDocumentTab(
                 id: skillFilePath,
                 title: "SKILL.md",
-                path: skillFilePath
+                path: skillFilePath,
+                rawDocumentCache: &rawDocumentCache,
+                parsedDocumentCache: &parsedDocumentCache
             )
         ]
 
@@ -2864,19 +2967,36 @@ final class MainViewModel {
                     makeDocumentTab(
                         id: fullPath,
                         title: "references/\(entry)",
-                        path: fullPath
+                        path: fullPath,
+                        rawDocumentCache: &rawDocumentCache,
+                        parsedDocumentCache: &parsedDocumentCache
                     )
                 )
             }
         }
 
-        documentTabsCache[skillFilePath] = tabs
-        return tabs
+        let enriched = enrichDocumentTabs(
+            tabs,
+            groupPath: groupPath,
+            gitHubRepoContext: gitHubRepoContext
+        )
+        documentTabsCache[skillFilePath] = enriched
+        return enriched
     }
 
-    private func makeDocumentTab(id: String, title: String, path: String) -> DocumentTab {
-        let parsed = parsedDocument(path: path)
-        let rawContent = cachedSkillDocument(path: path)
+    nonisolated private static func makeDocumentTab(
+        id: String,
+        title: String,
+        path: String,
+        rawDocumentCache: inout [String: String],
+        parsedDocumentCache: inout [String: ParsedDocument]
+    ) -> DocumentTab {
+        let parsed = parsedDocument(
+            path: path,
+            rawDocumentCache: &rawDocumentCache,
+            parsedDocumentCache: &parsedDocumentCache
+        )
+        let rawContent = cachedSkillDocument(path: path, rawDocumentCache: &rawDocumentCache)
         return DocumentTab(
             id: id,
             title: title,
@@ -2888,7 +3008,7 @@ final class MainViewModel {
         )
     }
 
-    private func parseDocument(_ content: String) -> ParsedDocument {
+    nonisolated private static func parseDocument(_ content: String) -> ParsedDocument {
         let lines = content.components(separatedBy: .newlines)
         guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
             return ParsedDocument(frontMatter: nil, metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -2908,11 +3028,11 @@ final class MainViewModel {
         return ParsedDocument(frontMatter: frontMatter, metadata: metadata, body: body)
     }
 
-    private func parseFrontMatter(_ frontMatterText: String) -> SkillFrontMatter? {
+    nonisolated private static func parseFrontMatter(_ frontMatterText: String) -> SkillFrontMatter? {
         try? YAMLDecoder().decode(SkillFrontMatter.self, from: frontMatterText)
     }
 
-    private func parseFrontmatterEntries(_ frontMatterText: String) -> [MetadataEntry] {
+    nonisolated private static func parseFrontmatterEntries(_ frontMatterText: String) -> [MetadataEntry] {
         guard let dictionary = (try? Yams.load(yaml: frontMatterText)) as? [String: Any] else {
             return []
         }
@@ -2927,7 +3047,7 @@ final class MainViewModel {
         }
     }
 
-    private func stringifyMetadataValue(_ value: Any) -> String {
+    nonisolated private static func stringifyMetadataValue(_ value: Any) -> String {
         switch value {
         case let string as String:
             return string
@@ -2944,15 +3064,17 @@ final class MainViewModel {
         }
     }
 
-    private func groupDocumentTabs(
+    nonisolated private static func groupDocumentTabs(
         groupPath: String?,
         fileTree: [FileTreeLine],
-        gitHubRepoContext: GitHubRepoContext?
+        gitHubRepoContext: GitHubRepoContext?,
+        rawDocumentCache: inout [String: String],
+        parsedDocumentCache: inout [String: ParsedDocument]
     ) -> [DocumentTab] {
         var tabs: [DocumentTab] = [
             DocumentTab(
                 id: "group:filetree",
-                title: localized("detail.document.file_tree"),
+                title: localizedWarmup("detail.document.file_tree"),
                 path: groupPath ?? ".",
                 metadata: [],
                 content: renderFileTree(fileTree),
@@ -2977,7 +3099,9 @@ final class MainViewModel {
                 makeDocumentTab(
                     id: "group:\(fullPath)",
                     title: entry,
-                    path: fullPath
+                    path: fullPath,
+                    rawDocumentCache: &rawDocumentCache,
+                    parsedDocumentCache: &parsedDocumentCache
                 )
             )
         }
@@ -2985,7 +3109,7 @@ final class MainViewModel {
         return enrichDocumentTabs(tabs, groupPath: groupPath, gitHubRepoContext: gitHubRepoContext)
     }
 
-    private func compareRootDocumentNames(_ lhs: String, _ rhs: String) -> Bool {
+    nonisolated private static func compareRootDocumentNames(_ lhs: String, _ rhs: String) -> Bool {
         let leftRank = rootDocumentRank(lhs)
         let rightRank = rootDocumentRank(rhs)
         if leftRank != rightRank {
@@ -2994,7 +3118,7 @@ final class MainViewModel {
         return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
     }
 
-    private func rootDocumentRank(_ name: String) -> Int {
+    nonisolated private static func rootDocumentRank(_ name: String) -> Int {
         let uppercased = name.uppercased()
         if uppercased == "README.MD" {
             return 0
@@ -3013,39 +3137,7 @@ final class MainViewModel {
         return 3
     }
 
-    private func preferredGroupPath(lockPayload: [String: Any], leafPayloads: [[String: Any]]) -> String? {
-        if let checkoutPath = (lockPayload["checkoutPath"] as? String)?.nonEmpty {
-            return checkoutPath
-        }
-
-        let folderPaths = leafPayloads.compactMap {
-            (($0["absolutePath"] as? String)?.nonEmpty)
-                ?? (($0["skillFilePath"] as? String).flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty })
-        }
-        return commonDirectoryPath(paths: folderPaths)
-    }
-
-    private func commonDirectoryPath(paths: [String]) -> String? {
-        guard var components = paths.first?.split(separator: "/").map(String.init), !components.isEmpty else {
-            return nil
-        }
-
-        for path in paths.dropFirst() {
-            let current = path.split(separator: "/").map(String.init)
-            var index = 0
-            while index < min(components.count, current.count), components[index] == current[index] {
-                index += 1
-            }
-            components = Array(components.prefix(index))
-            if components.isEmpty {
-                return "/"
-            }
-        }
-
-        return "/" + components.joined(separator: "/")
-    }
-
-    private func relativePath(from basePath: String, to targetPath: String) -> String? {
+    nonisolated private static func relativePath(from basePath: String, to targetPath: String) -> String? {
         let standardizedBase = URL(fileURLWithPath: basePath).standardizedFileURL.path
         let standardizedTarget = URL(fileURLWithPath: targetPath).standardizedFileURL.path
         guard standardizedTarget.hasPrefix(standardizedBase) else {
@@ -3055,7 +3147,7 @@ final class MainViewModel {
         return suffix.isEmpty ? "." : suffix
     }
 
-    private func projectedRelativeFolderPath(
+    nonisolated private static func projectedRelativeFolderPath(
         _ relativeFolderPath: String?,
         projectedName: String?,
         fallbackName: String
@@ -3074,7 +3166,7 @@ final class MainViewModel {
         return components.joined(separator: "/")
     }
 
-    private func buildFileTreeLines(groupPath: String?, skills: [DetailSkill]) -> [FileTreeLine] {
+    nonisolated private static func buildFileTreeLines(groupPath: String?, skills: [DetailSkill]) -> [FileTreeLine] {
         let rootName = groupPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty } ?? "."
         var root = FileTreeNode(name: rootName)
 
@@ -3099,7 +3191,7 @@ final class MainViewModel {
         return lines
     }
 
-    private func insertFileTreePath(_ components: [String], into node: inout FileTreeNode) {
+    nonisolated private static func insertFileTreePath(_ components: [String], into node: inout FileTreeNode) {
         guard let head = components.first else {
             return
         }
@@ -3115,7 +3207,7 @@ final class MainViewModel {
         node.children[head] = child
     }
 
-    private func appendFileTreeLines(
+    nonisolated private static func appendFileTreeLines(
         from node: FileTreeNode,
         parentId: String,
         depth: Int,
@@ -3152,11 +3244,11 @@ final class MainViewModel {
         }
     }
 
-    private func renderFileTree(_ lines: [FileTreeLine]) -> String {
+    nonisolated private static func renderFileTree(_ lines: [FileTreeLine]) -> String {
         lines.map { "\($0.prefix)\($0.title)" }.joined(separator: "\n")
     }
 
-    private func enrichDocumentTabs(
+    nonisolated private static func enrichDocumentTabs(
         _ tabs: [DocumentTab],
         groupPath: String?,
         gitHubRepoContext: GitHubRepoContext?
@@ -3176,6 +3268,75 @@ final class MainViewModel {
                 )
             )
         }
+    }
+
+    nonisolated private static func gitHubDocumentURL(
+        path: String,
+        groupPath: String?,
+        gitHubRepoContext: GitHubRepoContext?
+    ) -> String? {
+        guard let groupPath,
+              let gitHubRepoContext,
+              let relativePath = relativePath(from: groupPath, to: path),
+              relativePath != "."
+        else {
+            return nil
+        }
+
+        let normalizedPath = relativePath
+            .split(separator: "/")
+            .map(String.init)
+            .joined(separator: "/")
+        return "https://github.com/\(gitHubRepoContext.owner)/\(gitHubRepoContext.repo)/blob/\(gitHubRepoContext.revision)/\(normalizedPath)"
+    }
+
+    nonisolated private static func displayOriginLabel(from locator: String) -> String {
+        let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return localizedWarmup("detail.meta.unknown_source")
+        }
+
+        if let url = URL(string: trimmed), let host = url.host?.nonEmpty {
+            return host
+        }
+
+        if trimmed.contains("github.com") {
+            return "github.com"
+        }
+
+        return trimmed
+    }
+
+    private func preferredGroupPath(lockPayload: [String: Any], leafPayloads: [[String: Any]]) -> String? {
+        if let checkoutPath = (lockPayload["checkoutPath"] as? String)?.nonEmpty {
+            return checkoutPath
+        }
+
+        let folderPaths = leafPayloads.compactMap {
+            (($0["absolutePath"] as? String)?.nonEmpty)
+                ?? (($0["skillFilePath"] as? String).flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty })
+        }
+        return commonDirectoryPath(paths: folderPaths)
+    }
+
+    private func commonDirectoryPath(paths: [String]) -> String? {
+        guard var components = paths.first?.split(separator: "/").map(String.init), !components.isEmpty else {
+            return nil
+        }
+
+        for path in paths.dropFirst() {
+            let current = path.split(separator: "/").map(String.init)
+            var index = 0
+            while index < min(components.count, current.count), components[index] == current[index] {
+                index += 1
+            }
+            components = Array(components.prefix(index))
+            if components.isEmpty {
+                return "/"
+            }
+        }
+
+        return "/" + components.joined(separator: "/")
     }
 
     private func gitHubRepoContext(locator: String, lockPayload: [String: Any]) -> GitHubRepoContext? {
@@ -3215,43 +3376,6 @@ final class MainViewModel {
         }
 
         return nil
-    }
-
-    private func gitHubDocumentURL(
-        path: String,
-        groupPath: String?,
-        gitHubRepoContext: GitHubRepoContext?
-    ) -> String? {
-        guard let groupPath,
-              let gitHubRepoContext,
-              let relativePath = relativePath(from: groupPath, to: path),
-              relativePath != "."
-        else {
-            return nil
-        }
-
-        let normalizedPath = relativePath
-            .split(separator: "/")
-            .map(String.init)
-            .joined(separator: "/")
-        return "https://github.com/\(gitHubRepoContext.owner)/\(gitHubRepoContext.repo)/blob/\(gitHubRepoContext.revision)/\(normalizedPath)"
-    }
-
-    private func displayOriginLabel(from locator: String) -> String {
-        let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return localized("detail.meta.unknown_source")
-        }
-
-        if let url = URL(string: trimmed), let host = url.host?.nonEmpty {
-            return host
-        }
-
-        if trimmed.contains("github.com") {
-            return "github.com"
-        }
-
-        return trimmed
     }
 
     private func buildReadySourceDetailLines(sourceStatsPayload: [String: Any]) -> [String] {
