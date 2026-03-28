@@ -2117,6 +2117,13 @@ final class MainViewModel {
         )
     }
 
+    func detailSnapshot(for sourceId: String) -> DetailViewModel.Snapshot? {
+        guard let detail = detailViewData(for: sourceId) else {
+            return nil
+        }
+        return DetailViewModel.Snapshot(detail: detail)
+    }
+
     func hasInspectPayload(for sourceId: String) -> Bool {
         inspectedPayloadBySourceId[sourceId] != nil
     }

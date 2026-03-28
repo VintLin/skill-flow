@@ -8,7 +8,7 @@ final class DetailScreenContainerTests: XCTestCase {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
-        let detail = DetailViewModel.Snapshot(detail: MainViewModel.DetailViewData(
+        let detail = DetailViewModel.Snapshot(
             sourceId: "alpha",
             title: "AlphaHub",
             subtitle: "clawhub",
@@ -81,7 +81,7 @@ final class DetailScreenContainerTests: XCTestCase {
                     warningCount: 0
                 )
             ]
-        ))
+        )
 
         let container = DetailScreenContainer(state: state) { sourceId in
             XCTAssertEqual(sourceId, "alpha")

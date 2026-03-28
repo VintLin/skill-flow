@@ -26,10 +26,7 @@ final class DesktopAppContainer {
         self.settingsViewModel = SettingsViewModel()
         self.importContainer = ImportScreenContainer(state: runtime.state, mainViewModel: mainViewModel)
         self.detailContainer = DetailScreenContainer(state: runtime.state) { [weak mainViewModel] sourceId in
-            guard let detail = mainViewModel?.detailViewData(for: sourceId) else {
-                return nil
-            }
-            return DetailViewModel.Snapshot(detail: detail)
+            mainViewModel?.detailSnapshot(for: sourceId)
         }
         self.homeContainer = HomeScreenContainer(
             state: runtime.state,

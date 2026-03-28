@@ -763,7 +763,7 @@ private struct TestFixture {
     ) async throws {
         let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
         while Date() < deadline {
-            if let detail = model.detailViewData(for: sourceId),
+            if let detail = model.detailSnapshot(for: sourceId),
                !detail.groupDocuments.isEmpty,
                !detail.fileTree.isEmpty,
                detail.skills.allSatisfy({ !$0.documents.isEmpty }),

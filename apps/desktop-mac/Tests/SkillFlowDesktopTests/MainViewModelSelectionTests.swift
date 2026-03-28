@@ -74,13 +74,13 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.skillSelectionState(sourceId: "beta"), .empty)
     }
 
-    func testDetailViewDataUsesInspectPayload() async throws {
+    func testDetailSnapshotUsesInspectPayload() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
         let model = try await fixture.makeModel()
 
-        let detail = model.detailViewData(for: "alpha")
+        let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.subtitle, "clawhub")
@@ -111,7 +111,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.skills.first?.starCount, 1200)
     }
 
-    func testDetailViewDataBuildsLocalContentBeforeInspectPayloadArrives() async throws {
+    func testDetailSnapshotBuildsLocalContentBeforeInspectPayloadArrives() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
@@ -120,7 +120,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertFalse(model.hasInspectPayload(for: "alpha"))
 
-        let detail = model.detailViewData(for: "alpha")
+        let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.skills.map(\.id), ["alpha-a", "alpha-b"])
@@ -129,7 +129,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.targets.map(\.id), ["claude-code", "cursor"])
     }
 
-    func testDetailViewDataAppliesEnrichmentAfterLocalInspectShell() async throws {
+    func testDetailSnapshotAppliesEnrichmentAfterLocalInspectShell() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
@@ -137,7 +137,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         await model.bootstrap()
         await model.selectSource("alpha")
 
-        let initialDetail = model.detailViewData(for: "alpha")
+        let initialDetail = model.detailSnapshot(for: "alpha")
         XCTAssertTrue(model.hasInspectPayload(for: "alpha"))
         XCTAssertEqual(initialDetail?.title, "AlphaHub")
         XCTAssertNil(initialDetail?.starCount)
@@ -145,7 +145,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let deadline = Date().addingTimeInterval(1)
         while Date() < deadline {
-            if let detail = model.detailViewData(for: "alpha"),
+            if let detail = model.detailSnapshot(for: "alpha"),
                detail.starCount == 1200,
                detail.sourceDetailLines.contains("Provider: clawhub")
             {
@@ -161,7 +161,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTFail("Timed out waiting for detail enrichment")
     }
 
-    func testDetailViewDataShowsUnsupportedMetadataState() async throws {
+    func testDetailSnapshotShowsUnsupportedMetadataState() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
         state.sources["alpha"]?.metadataStatus = "unsupported"
@@ -169,7 +169,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
-        let detail = model.detailViewData(for: "alpha")
+        let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertNil(detail?.starCount)
         XCTAssertTrue(detail?.sourceDetailLines.contains("Provider: clawhub") == true)
@@ -177,7 +177,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(detail?.sourceDetailLines.contains("Current source has no readable metadata.") == true)
     }
 
-    func testDetailViewDataShowsFailedMetadataState() async throws {
+    func testDetailSnapshotShowsFailedMetadataState() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
         state.sources["alpha"]?.metadataStatus = "failed"
@@ -185,14 +185,14 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
-        let detail = model.detailViewData(for: "alpha")
+        let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertNil(detail?.starCount)
         XCTAssertTrue(detail?.sourceDetailLines.contains("Status: Failed") == true)
         XCTAssertTrue(detail?.sourceDetailLines.contains("Source metadata is temporarily rate-limited. Try again later.") == true)
     }
 
-    func testDetailViewDataShowsDisabledMetadataState() async throws {
+    func testDetailSnapshotShowsDisabledMetadataState() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
         state.sources["alpha"]?.metadataStatus = "disabled"
@@ -200,26 +200,26 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
-        let detail = model.detailViewData(for: "alpha")
+        let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertNil(detail?.starCount)
         XCTAssertTrue(detail?.sourceDetailLines.contains("Status: Disabled") == true)
         XCTAssertTrue(detail?.sourceDetailLines.contains("This source provider is reserved but not enabled in this build.") == true)
     }
 
-    func testDetailViewDataFallsBackWhenSkillDocumentIsMissing() async throws {
+    func testDetailSnapshotFallsBackWhenSkillDocumentIsMissing() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
         try fixture.removeSkillDocument(sourceId: "alpha", leafId: "alpha-a")
 
         let model = try await fixture.makeModel()
 
-        let detail = model.detailViewData(for: "alpha")
+        let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertEqual(detail?.skills.first?.documentContent, "SKILL.md unavailable.")
     }
 
-    func testDetailViewDataLocalizesDerivedDetailCopyForJapanese() async throws {
+    func testDetailSnapshotLocalizesDerivedDetailCopyForJapanese() async throws {
         UserDefaults.standard.set(DesktopLanguage.ja.rawValue, forKey: DesktopLanguage.storageKey)
 
         let fixture = try TestFixture.install()
@@ -230,14 +230,14 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
-        let detail = model.detailViewData(for: "alpha")
+        let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertEqual(detail?.originLabel, "不明なソース")
         XCTAssertTrue(detail?.sourceDetailLines.contains("状態: 非対応") == true)
         XCTAssertEqual(detail?.groupDocuments.first?.title, "ファイルツリー")
     }
 
-    func testDetailViewDataLocalizesUpdatedRelativeWithSelectedLanguage() async throws {
+    func testDetailSnapshotLocalizesUpdatedRelativeWithSelectedLanguage() async throws {
         let formatter = ISO8601DateFormatter()
         MainViewModel.currentDateProvider = {
             formatter.date(from: "2026-03-27T00:00:00Z")!
@@ -248,11 +248,11 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let model = try await fixture.makeModel()
 
-        XCTAssertEqual(model.detailViewData(for: "alpha")?.updatedRelative, "Updated 1 day ago")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.updatedRelative, "Updated 1 day ago")
 
         UserDefaults.standard.set(DesktopLanguage.ja.rawValue, forKey: DesktopLanguage.storageKey)
 
-        let localizedRelative = model.detailViewData(for: "alpha")?.updatedRelative
+        let localizedRelative = model.detailSnapshot(for: "alpha")?.updatedRelative
         XCTAssertTrue(localizedRelative?.contains("更新") == true)
         XCTAssertFalse(localizedRelative?.contains("Updated") == true)
     }
@@ -275,7 +275,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let model = try await fixture.makeModel()
 
-        let detail = model.detailViewData(for: "alpha")
+        let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertEqual(detail?.skills.first?.title, "Browser Metadata Name")
     }
@@ -300,7 +300,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         await model.selectSource("beta")
         try await fixture.waitForDetailHydration(model, sourceId: "beta")
 
-        let detail = model.detailViewData(for: "beta")
+        let detail = model.detailSnapshot(for: "beta")
 
         XCTAssertTrue(detail?.fileTree.contains(where: { $0.title == "BetaHub-browse" }) == true)
     }
@@ -671,7 +671,7 @@ private struct TestFixture {
     ) async throws {
         let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
         while Date() < deadline {
-            if let detail = model.detailViewData(for: sourceId),
+            if let detail = model.detailSnapshot(for: sourceId),
                !detail.groupDocuments.isEmpty,
                !detail.fileTree.isEmpty,
                detail.skills.allSatisfy({ !$0.documents.isEmpty }),
