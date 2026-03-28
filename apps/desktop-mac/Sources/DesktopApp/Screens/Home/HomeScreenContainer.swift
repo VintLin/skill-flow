@@ -26,6 +26,9 @@ final class HomeScreenContainer {
                 state?.view.currentRoute = .settings
             }
         )
+        self.mainViewModel.routeRequest = { [weak state] page in
+            state?.view.currentRoute = Self.route(for: page)
+        }
         observeFoundationRouteState()
         observeMainViewModelState()
         syncViewModelRoute()
@@ -70,6 +73,19 @@ final class HomeScreenContainer {
 
     private func page(for route: DesktopRoute) -> MainViewModel.Page {
         switch route {
+        case .home:
+            return .home
+        case .importPage:
+            return .importPage
+        case .settings:
+            return .settings
+        case .detail(let sourceId):
+            return .detail(sourceId: sourceId)
+        }
+    }
+
+    private static func route(for page: MainViewModel.Page) -> DesktopRoute {
+        switch page {
         case .home:
             return .home
         case .importPage:

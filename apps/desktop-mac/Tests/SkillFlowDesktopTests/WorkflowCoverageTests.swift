@@ -85,12 +85,19 @@ final class WorkflowCoverageTests: XCTestCase {
         state.pinnedSourceIds = ["alpha"]
         try fixture.reset(state: state)
 
-        let model = try await fixture.makeModel()
-        model.currentPage = .detail(sourceId: "alpha")
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+        let model = container.mainViewModel
+        runtime.state.view.currentRoute = .detail(sourceId: "alpha")
+        await Task.yield()
+        await Task.yield()
 
         await model.deleteSource(sourceId: "alpha")
+        await Task.yield()
+        await Task.yield()
 
         XCTAssertEqual(model.currentPage, .home)
+        XCTAssertEqual(runtime.state.view.currentRoute, .home)
         XCTAssertEqual(model.selectedGroupId, "beta")
         XCTAssertEqual(model.pinnedSourceIds, [])
         XCTAssertFalse(model.sourceIds.contains("alpha"))
@@ -265,7 +272,9 @@ final class WorkflowCoverageTests: XCTestCase {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
-        let model = try await fixture.makeModel()
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+        let model = container.mainViewModel
         await model.loadImportPageIfNeeded()
         await model.previewImportGroupIfNeeded("anthropics-skills")
 
@@ -275,8 +284,11 @@ final class WorkflowCoverageTests: XCTestCase {
             selectedSkillIds: ["research"],
             enabledTargets: ["cursor"]
         )
+        await Task.yield()
+        await Task.yield()
 
         XCTAssertEqual(model.currentPage, .detail(sourceId: "anthropics-skills"))
+        XCTAssertEqual(runtime.state.view.currentRoute, .detail(sourceId: "anthropics-skills"))
         XCTAssertEqual(model.selectedGroupId, "anthropics-skills")
         XCTAssertTrue(model.sourceIds.contains("anthropics-skills"))
         XCTAssertFalse(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))

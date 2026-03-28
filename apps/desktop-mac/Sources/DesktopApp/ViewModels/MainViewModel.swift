@@ -577,6 +577,7 @@ final class MainViewModel {
     var updatingSourceIds: Set<String> = []
     var saveStateBySourceId: [String: SaveState] = [:]
     var toast: ToastState?
+    @ObservationIgnored var routeRequest: ((Page) -> Void)?
 
     var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?
@@ -1331,7 +1332,7 @@ final class MainViewModel {
                 inspectSourceId: sourceId.nonEmpty
             )
             if let sourceId = sourceId.nonEmpty {
-                currentPage = .detail(sourceId: sourceId)
+                requestPage(.detail(sourceId: sourceId))
             }
             recommendedImportGroups.removeAll(where: { $0.id == groupId })
             searchImportGroups.removeAll(where: { $0.id == groupId })
@@ -1667,10 +1668,10 @@ final class MainViewModel {
             if let first = sourceIds.first {
                 await selectSource(first)
             } else {
-                currentPage = .home
+                requestPage(.home)
             }
             if case .detail(let detailSourceId) = currentPage, detailSourceId == sourceId {
-                currentPage = .home
+                requestPage(.home)
             }
             showToast(style: .success, text: localizedText("toast.uninstall.success", sourceId))
         } catch {
@@ -1857,6 +1858,14 @@ final class MainViewModel {
             detectedTargets.formUnion(summary.enabledTargets)
         }
 
+    }
+
+    func requestPage(_ page: Page) {
+        if let routeRequest {
+            routeRequest(page)
+        } else {
+            currentPage = page
+        }
     }
 
     private func parseDoctorIssues(_ value: Any?) -> [DoctorIssueRow] {
