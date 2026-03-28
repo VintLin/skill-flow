@@ -47,6 +47,7 @@ struct MainView: View {
 
     @Bindable var viewModel: MainViewModel
     let navigation: NavigationActions
+    let detailContainer: DetailScreenContainer
 
     @State private var detailSkillIdByGroup: [String: String] = [:]
     @State private var detailShowsGroupOverviewByGroup: [String: Bool] = [:]
@@ -67,9 +68,14 @@ struct MainView: View {
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
 
-    init(viewModel: MainViewModel, navigation: NavigationActions) {
+    init(
+        viewModel: MainViewModel,
+        navigation: NavigationActions,
+        detailContainer: DetailScreenContainer
+    ) {
         self.viewModel = viewModel
         self.navigation = navigation
+        self.detailContainer = detailContainer
     }
 
     private var theme: DesktopThemeMode {
@@ -108,24 +114,6 @@ struct MainView: View {
         .tint(AppTheme.brand(for: accent))
         .onChange(of: viewModel.currentPage) { _, newValue in
             switch newValue {
-            case .detail(let groupId):
-                Task {
-                    await viewModel.selectSource(groupId)
-                }
-                if detailShowsGroupOverviewByGroup[groupId] == nil {
-                    detailShowsGroupOverviewByGroup[groupId] = true
-                }
-                if let detail = viewModel.detailViewData(for: groupId) {
-                    if detailSkillIdByGroup[groupId] == nil {
-                        detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
-                    }
-                    if detailDocumentTabIdByGroup[groupId] == nil {
-                        detailDocumentTabIdByGroup[groupId] = detail.groupDocuments.first?.id
-                    }
-                    for skill in detail.skills where detailDocumentTabIdBySkill[skill.id] == nil {
-                        detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
-                    }
-                }
             case .importPage:
                 Task {
                     await viewModel.loadImportPageIfNeeded()
@@ -315,8 +303,15 @@ struct MainView: View {
             importPage(layout: layout)
         case .settings:
             settingsPage(layout: layout)
-        case .detail(let sourceId):
-            detailPage(groupId: sourceId, layout: layout)
+        case .detail:
+            DetailScreen(
+                container: detailContainer,
+                viewModel: viewModel,
+                sidebarWidth: layout.detailSidebarWidth,
+                theme: theme,
+                accent: accent,
+                updateButtonRotation: updateButtonRotation
+            )
         }
     }
 
@@ -2027,7 +2022,7 @@ private struct LayoutMetrics {
     }
 }
 
-private struct EmptyStateChrome: ViewModifier {
+struct EmptyStateChrome: ViewModifier {
     let theme: DesktopThemeMode
     let enabled: Bool
 

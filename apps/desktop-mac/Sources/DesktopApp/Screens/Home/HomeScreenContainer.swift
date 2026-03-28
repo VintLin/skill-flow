@@ -6,12 +6,18 @@ final class HomeScreenContainer {
     private let state: DesktopAppState
     let viewModel: HomeViewModel
     let mainViewModel: MainViewModel
+    let detailContainer: DetailScreenContainer
     let navigation: MainView.NavigationActions
 
-    init(state: DesktopAppState, mainViewModel: MainViewModel) {
+    init(
+        state: DesktopAppState,
+        mainViewModel: MainViewModel,
+        detailContainer: DetailScreenContainer
+    ) {
         self.state = state
         self.viewModel = HomeViewModel(state: state)
         self.mainViewModel = mainViewModel
+        self.detailContainer = detailContainer
         self.navigation = MainView.NavigationActions(
             showHome: { [weak state] in
                 state?.view.currentRoute = .home
@@ -35,7 +41,12 @@ final class HomeScreenContainer {
     }
 
     func makeView() -> HomeScreen {
-        HomeScreen(container: self, homeViewModel: viewModel, mainViewModel: mainViewModel)
+        HomeScreen(
+            container: self,
+            detailContainer: detailContainer,
+            homeViewModel: viewModel,
+            mainViewModel: mainViewModel
+        )
     }
 
     func bootstrapIfNeeded() async {

@@ -8,7 +8,7 @@ final class DetailScreenContainerTests: XCTestCase {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
-        let detail = MainViewModel.DetailViewData(
+        let detail = DetailViewModel.Snapshot(detail: MainViewModel.DetailViewData(
             sourceId: "alpha",
             title: "AlphaHub",
             subtitle: "clawhub",
@@ -81,7 +81,7 @@ final class DetailScreenContainerTests: XCTestCase {
                     warningCount: 0
                 )
             ]
-        )
+        ))
 
         let container = DetailScreenContainer(state: state) { sourceId in
             XCTAssertEqual(sourceId, "alpha")
@@ -98,6 +98,18 @@ final class DetailScreenContainerTests: XCTestCase {
         let state = DesktopAppState()
         let container = DetailScreenContainer(state: state) { _ in
             XCTFail("detail data provider should not be queried for non-detail routes")
+            return nil
+        }
+
+        XCTAssertNil(container.viewModel)
+    }
+
+    func testReturnsNilWhenCurrentDetailRouteHasNoSnapshot() {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        let container = DetailScreenContainer(state: state) { sourceId in
+            XCTAssertEqual(sourceId, "alpha")
             return nil
         }
 

@@ -3,22 +3,29 @@ import Foundation
 @MainActor
 final class DetailScreenContainer {
     private let state: DesktopAppState
-    private let detailViewData: (String) -> MainViewModel.DetailViewData?
+    private let detailSnapshot: (String) -> DetailViewModel.Snapshot?
 
     init(
         state: DesktopAppState,
-        detailViewData: @escaping (String) -> MainViewModel.DetailViewData?
+        detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?
     ) {
         self.state = state
-        self.detailViewData = detailViewData
+        self.detailSnapshot = detailSnapshot
+    }
+
+    var sourceId: String? {
+        guard case .detail(let sourceId) = state.view.currentRoute else {
+            return nil
+        }
+        return sourceId
     }
 
     var viewModel: DetailViewModel? {
-        guard case .detail(let sourceId) = state.view.currentRoute,
-              let detail = detailViewData(sourceId) else {
+        guard let sourceId,
+              let snapshot = detailSnapshot(sourceId) else {
             return nil
         }
 
-        return DetailViewModel(detail: detail)
+        return DetailViewModel(snapshot: snapshot)
     }
 }

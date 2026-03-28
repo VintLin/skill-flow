@@ -4,6 +4,19 @@ import XCTest
 
 @MainActor
 final class DesktopAppContainerTests: XCTestCase {
+    func testDetailRouteProjectsIntoLiveDetailContainerProductionSeam() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        container.navigation.showDetail("alpha")
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(runtime.state.view.currentRoute, .detail(sourceId: "alpha"))
+        XCTAssertEqual(container.mainViewModel.currentPage, .detail(sourceId: "alpha"))
+        XCTAssertNil(container.detailContainer.viewModel)
+    }
+
     func testHomeContainerReflectsRuntimeStateChangesThroughLiveSeam() {
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)

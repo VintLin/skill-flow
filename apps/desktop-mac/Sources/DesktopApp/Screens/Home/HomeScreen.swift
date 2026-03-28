@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeScreen: View {
     let container: HomeScreenContainer
+    let detailContainer: DetailScreenContainer
     @Bindable var homeViewModel: HomeViewModel
     @Bindable var mainViewModel: MainViewModel
 
@@ -12,7 +13,11 @@ struct HomeScreen: View {
     var body: some View {
         let _ = homeViewModel.sourceIds
 
-        return MainView(viewModel: mainViewModel, navigation: container.navigation)
+        return MainView(
+            viewModel: mainViewModel,
+            navigation: container.navigation,
+            detailContainer: detailContainer
+        )
             .frame(minWidth: 980, minHeight: 640)
             .task {
                 await bootstrapOnAppear()

@@ -82,8 +82,9 @@ final class DetailViewModelTests: XCTestCase {
                 )
             ]
         )
+        let snapshot = DetailViewModel.Snapshot(detail: detail)
 
-        let viewModel = DetailViewModel(detail: detail)
+        let viewModel = DetailViewModel(snapshot: snapshot)
 
         XCTAssertEqual(viewModel.sourceId, detail.sourceId)
         XCTAssertEqual(viewModel.title, detail.title)
