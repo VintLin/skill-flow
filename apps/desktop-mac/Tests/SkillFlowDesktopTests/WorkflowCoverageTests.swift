@@ -138,12 +138,26 @@ final class WorkflowCoverageTests: XCTestCase {
         let hostingController = NSHostingController(rootView: container.homeContainer.makeView())
         let window = NSWindow(contentViewController: hostingController)
         window.makeKeyAndOrderFront(nil)
-        try await Task.sleep(nanoseconds: 300_000_000)
+
+        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
+            self.bootstrapRequestCount(in: fixture) == 1
+                && runtime.state.workspace.sourceIds == ["alpha", "beta"]
+                && runtime.state.view.selectedSourceId == "alpha"
+        }
+
+        container.mainViewModel.sourceIds = ["gamma"]
+        container.mainViewModel.selectedSourceId = "gamma"
+
+        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
+            self.bootstrapRequestCount(in: fixture) == 1
+                && runtime.state.workspace.sourceIds == ["gamma"]
+                && runtime.state.view.selectedSourceId == "gamma"
+                && container.homeContainer.viewModel.sourceIds == ["gamma"]
+        }
+
         window.close()
 
-        XCTAssertEqual(container.homeContainer.viewModel.sourceIds, ["alpha", "beta"])
-        XCTAssertEqual(runtime.state.workspace.sourceIds, ["alpha", "beta"])
-        XCTAssertEqual(runtime.state.view.selectedSourceId, "alpha")
+        XCTAssertEqual(self.bootstrapRequestCount(in: fixture), 1)
     }
 
     func testPinnedWriteFailureRollsBack() async throws {
@@ -412,6 +426,25 @@ final class WorkflowCoverageTests: XCTestCase {
         let applyRequests = fixture.loggedRequests().filter { $0.command == "apply" }
         XCTAssertEqual(applyRequests.count, 1)
         XCTAssertEqual(applyRequests.first?.payload?["sourceId"]?.value as? String, "alpha")
+    }
+
+    func waitForCondition(
+        timeoutNanoseconds: UInt64,
+        pollIntervalNanoseconds: UInt64 = 20_000_000,
+        _ condition: @escaping () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+        }
+        XCTFail("Timed out waiting for condition")
+    }
+
+    private func bootstrapRequestCount(in fixture: TestFixture) -> Int {
+        fixture.loggedRequests().filter { $0.command == "bootstrap" }.count
     }
 
 }

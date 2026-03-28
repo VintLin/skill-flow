@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 
 @MainActor
@@ -10,6 +11,7 @@ final class HomeScreenContainer {
         self.state = state
         self.viewModel = HomeViewModel(state: state)
         self.mainViewModel = mainViewModel
+        observeMainViewModelState()
     }
 
     func makeView() -> HomeScreen {
@@ -22,6 +24,18 @@ final class HomeScreenContainer {
         }
 
         syncFoundationState()
+    }
+
+    private func observeMainViewModelState() {
+        withObservationTracking {
+            _ = mainViewModel.sourceIds
+            _ = mainViewModel.selectedSourceId
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.syncFoundationState()
+                self?.observeMainViewModelState()
+            }
+        }
     }
 
     private func syncFoundationState() {
