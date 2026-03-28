@@ -1869,10 +1869,9 @@ final class MainViewModel {
     }
 
     func requestPage(_ page: Page) {
+        currentPage = page
         if let routeRequest {
             routeRequest(page)
-        } else {
-            currentPage = page
         }
     }
 
