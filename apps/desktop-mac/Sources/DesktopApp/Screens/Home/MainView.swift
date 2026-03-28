@@ -14,6 +14,7 @@ struct MainView: View {
 
     @Bindable var viewModel: MainViewModel
     @Bindable var importScreenState: ImportScreenState
+    @Bindable var homeViewModel: HomeViewModel
     @Bindable var settingsViewModel: SettingsViewModel
     let navigation: NavigationActions
     let importContainer: ImportScreenContainer
@@ -28,6 +29,7 @@ struct MainView: View {
         importScreenState: ImportScreenState,
         importContainer: ImportScreenContainer,
         detailContainer: DetailScreenContainer,
+        homeViewModel: HomeViewModel,
         settingsViewModel: SettingsViewModel
     ) {
         self.viewModel = viewModel
@@ -35,6 +37,7 @@ struct MainView: View {
         self.importScreenState = importScreenState
         self.importContainer = importContainer
         self.detailContainer = detailContainer
+        self.homeViewModel = homeViewModel
         self.settingsViewModel = settingsViewModel
     }
 
@@ -72,7 +75,7 @@ struct MainView: View {
             }
         }
         .tint(AppTheme.brand(for: accent))
-        .onChange(of: viewModel.currentPage) { _, newValue in
+        .onChange(of: homeViewModel.currentRoute) { _, newValue in
             switch newValue {
             case .importPage:
                 Task {
@@ -162,7 +165,7 @@ struct MainView: View {
     }
 
     private var isHomePage: Bool {
-        viewModel.currentPage == .home
+        homeViewModel.currentRoute == .home
     }
 
     private var headerLogoRow: some View {
@@ -246,7 +249,7 @@ struct MainView: View {
 
     @ViewBuilder
     private func pageContent(layout: LayoutMetrics) -> some View {
-        switch viewModel.currentPage {
+        switch homeViewModel.currentRoute {
         case .home:
             configPage(layout: layout)
         case .importPage:
@@ -368,7 +371,7 @@ struct MainView: View {
     }
 
     private var currentPageTitle: String {
-        switch viewModel.currentPage {
+        switch homeViewModel.currentRoute {
         case .home:
             return t("page.home.title")
         case .importPage:

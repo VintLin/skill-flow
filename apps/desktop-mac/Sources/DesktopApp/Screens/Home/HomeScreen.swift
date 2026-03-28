@@ -21,6 +21,7 @@ struct HomeScreen: View {
             importScreenState: importContainer.screenState,
             importContainer: importContainer,
             detailContainer: detailContainer,
+            homeViewModel: homeViewModel,
             settingsViewModel: settingsViewModel
         )
             .frame(minWidth: 980, minHeight: 640)

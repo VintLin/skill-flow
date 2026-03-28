@@ -13,4 +13,8 @@ final class HomeViewModel {
     var sourceIds: [String] {
         state.workspace.sourceIds
     }
+
+    var currentRoute: DesktopRoute {
+        state.view.currentRoute
+    }
 }
