@@ -14,15 +14,17 @@ final class DesktopRuntime {
     }
 
     func bootstrapIfNeeded() async {
-        guard state.asyncResources.homeBootstrapPhase != .ready else {
+        switch state.asyncResources.homeBootstrapPhase {
+        case .loading, .ready:
             return
+        case .idle, .failed:
+            break
         }
 
         state.asyncResources.homeBootstrapPhase = .loading
 
         do {
-            let response = try await dependencies.bootstrap()
-            let sourceIds = sourceIds(from: response)
+            let sourceIds = try await dependencies.bootstrap()
 
             state.workspace.sourceIds = sourceIds
             if state.view.selectedSourceId == nil || !sourceIds.contains(state.view.selectedSourceId ?? "") {
@@ -34,7 +36,7 @@ final class DesktopRuntime {
         }
     }
 
-    func showDetail(sourceId: String) async {
+    func showDetail(sourceId: String) {
         let normalizedSourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedSourceId.isEmpty else {
             return
@@ -42,27 +44,5 @@ final class DesktopRuntime {
 
         state.view.selectedSourceId = normalizedSourceId
         state.view.currentRoute = .detail(sourceId: normalizedSourceId)
-
-        do {
-            _ = try await dependencies.inspect(normalizedSourceId)
-        } catch {
-            return
-        }
-    }
-
-    private func sourceIds(from response: BridgeResponse) -> [String] {
-        guard let payload = response.data?.value as? [String: Any] else {
-            return []
-        }
-
-        if let summaries = payload["summaries"] as? [[String: Any]] {
-            return summaries.compactMap { $0["sourceId"] as? String }
-        }
-
-        if let sourceIds = payload["sourceIds"] as? [String] {
-            return sourceIds
-        }
-
-        return []
     }
 }

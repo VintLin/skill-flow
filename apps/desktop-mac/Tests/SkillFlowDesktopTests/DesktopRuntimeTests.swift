@@ -7,34 +7,7 @@ final class DesktopRuntimeTests: XCTestCase {
     func testBootstrapIfNeededMarksHomeBootstrapPhaseReadyAfterLoad() async throws {
         let runtime = DesktopRuntime(
             dependencies: .testing(
-                bootstrap: {
-                    BridgeResponse(
-                        protocolVersion: "1.0",
-                        requestId: "bootstrap-request",
-                        command: .bootstrap,
-                        ok: true,
-                        data: AnyCodable([
-                            "summaries": [
-                                ["sourceId": "alpha"],
-                                ["sourceId": "beta"]
-                            ]
-                        ]),
-                        warnings: [],
-                        errors: []
-                    )
-                },
-                inspect: { _ in
-                    XCTFail("bootstrapIfNeeded() should not inspect")
-                    return BridgeResponse(
-                        protocolVersion: "1.0",
-                        requestId: "inspect-request",
-                        command: .inspect,
-                        ok: true,
-                        data: nil,
-                        warnings: [],
-                        errors: []
-                    )
-                }
+                bootstrap: { ["alpha", "beta"] }
             )
         )
 
@@ -44,38 +17,51 @@ final class DesktopRuntimeTests: XCTestCase {
         XCTAssertEqual(runtime.state.workspace.sourceIds, ["alpha", "beta"])
     }
 
-    func testShowDetailUpdatesSelectedSourceAndRoute() async {
+    func testBootstrapIfNeededReturnsImmediatelyWhileLoading() async throws {
+        let firstBootstrapStarted = expectation(description: "first bootstrap started")
+
+        var bootstrapCallCount = 0
+        var continuation: CheckedContinuation<[String], Never>?
+
         let runtime = DesktopRuntime(
             dependencies: .testing(
                 bootstrap: {
-                    XCTFail("showDetail(sourceId:) should not bootstrap")
-                    return BridgeResponse(
-                        protocolVersion: "1.0",
-                        requestId: "bootstrap-request",
-                        command: .bootstrap,
-                        ok: true,
-                        data: nil,
-                        warnings: [],
-                        errors: []
-                    )
-                },
-                inspect: { sourceId in
-                    BridgeResponse(
-                        protocolVersion: "1.0",
-                        requestId: "inspect-request-\(sourceId)",
-                        command: .inspect,
-                        ok: true,
-                        data: AnyCodable([
-                            "sourceId": sourceId
-                        ]),
-                        warnings: [],
-                        errors: []
-                    )
+                    bootstrapCallCount += 1
+                    firstBootstrapStarted.fulfill()
+                    return await withCheckedContinuation { cont in
+                        continuation = cont
+                    }
                 }
             )
         )
 
-        await runtime.showDetail(sourceId: "alpha")
+        let bootstrapTask = Task {
+            await runtime.bootstrapIfNeeded()
+        }
+
+        await fulfillment(of: [firstBootstrapStarted], timeout: 1)
+        XCTAssertEqual(runtime.state.asyncResources.homeBootstrapPhase, .loading)
+
+        await runtime.bootstrapIfNeeded()
+
+        XCTAssertEqual(bootstrapCallCount, 1)
+        XCTAssertEqual(runtime.state.asyncResources.homeBootstrapPhase, .loading)
+
+        continuation?.resume(returning: ["alpha"])
+        await bootstrapTask.value
+
+        XCTAssertEqual(runtime.state.asyncResources.homeBootstrapPhase, .ready)
+        XCTAssertEqual(runtime.state.workspace.sourceIds, ["alpha"])
+    }
+
+    func testShowDetailNormalizesSelectedSourceAndRouteWithoutInspectingBridge() async {
+        let runtime = DesktopRuntime(
+            dependencies: .testing(
+                bootstrap: { [] }
+            )
+        )
+
+        runtime.showDetail(sourceId: "  alpha  ")
 
         XCTAssertEqual(runtime.state.view.selectedSourceId, "alpha")
         XCTAssertEqual(runtime.state.view.currentRoute, .detail(sourceId: "alpha"))

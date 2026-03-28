@@ -1,15 +1,12 @@
 import Foundation
 
 struct DesktopRuntimeDependencies {
-    let bootstrap: @MainActor () async throws -> BridgeResponse
-    let inspect: @MainActor (String) async throws -> BridgeResponse
+    let bootstrap: @MainActor () async throws -> [String]
 
     init(
-        bootstrap: @escaping @MainActor () async throws -> BridgeResponse,
-        inspect: @escaping @MainActor (String) async throws -> BridgeResponse
+        bootstrap: @escaping @MainActor () async throws -> [String]
     ) {
         self.bootstrap = bootstrap
-        self.inspect = inspect
     }
 }
 
@@ -17,49 +14,37 @@ extension DesktopRuntimeDependencies {
     static func live() -> Self {
         Self(
             bootstrap: {
-                try await BridgeClient().bootstrap()
-            },
-            inspect: { sourceId in
-                try await BridgeClient().inspect(sourceId: sourceId)
+                let response = try await BridgeClient().bootstrap()
+                return bootstrapSourceIds(from: response)
             }
         )
     }
 
     static func preview() -> Self {
         Self(
-            bootstrap: {
-                BridgeResponse(
-                    protocolVersion: "1.0",
-                    requestId: "preview-bootstrap",
-                    command: .bootstrap,
-                    ok: true,
-                    data: AnyCodable([
-                        "summaries": []
-                    ]),
-                    warnings: [],
-                    errors: []
-                )
-            },
-            inspect: { sourceId in
-                BridgeResponse(
-                    protocolVersion: "1.0",
-                    requestId: "preview-inspect-\(sourceId)",
-                    command: .inspect,
-                    ok: true,
-                    data: AnyCodable([
-                        "sourceId": sourceId
-                    ]),
-                    warnings: [],
-                    errors: []
-                )
-            }
+            bootstrap: { [] }
         )
     }
 
     static func testing(
-        bootstrap: @escaping @MainActor () async throws -> BridgeResponse,
-        inspect: @escaping @MainActor (String) async throws -> BridgeResponse
+        bootstrap: @escaping @MainActor () async throws -> [String]
     ) -> Self {
-        Self(bootstrap: bootstrap, inspect: inspect)
+        Self(bootstrap: bootstrap)
+    }
+
+    private static func bootstrapSourceIds(from response: BridgeResponse) -> [String] {
+        guard let payload = response.data?.value as? [String: Any] else {
+            return []
+        }
+
+        if let summaries = payload["summaries"] as? [[String: Any]] {
+            return summaries.compactMap { $0["sourceId"] as? String }
+        }
+
+        if let sourceIds = payload["sourceIds"] as? [String] {
+            return sourceIds
+        }
+
+        return []
     }
 }
