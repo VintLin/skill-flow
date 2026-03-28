@@ -4,7 +4,7 @@
 
 **Goal:** Consolidate the current desktop refoundation progress, close the current audit round, and list the remaining tasks in execution order.
 
-**Architecture:** `apps/desktop-mac/Sources/DesktopApp` is now the active desktop implementation root. Route state is centered on `DesktopRoute` and `DesktopAppState`, while `MainViewModel` still acts as the bridge-backed data and mutation coordinator for Home, Detail, Import, and menu interactions.
+**Architecture:** `apps/desktop-mac/Sources/DesktopApp` is now the active desktop implementation root. Route state is centered on `DesktopRoute` and `DesktopAppState`, while `MainViewModel` acts as the bridge-backed data and mutation coordinator for Home, Detail, Import, and menu interactions.
 
 **Tech Stack:** Swift 6, SwiftUI, Observation, XCTest, desktop bridge command, `packages/query`, `packages/storage`
 
@@ -15,7 +15,7 @@
 - Active desktop implementation root: `apps/desktop-mac/Sources/DesktopApp`
 - Legacy desktop implementation root: `apps/desktop-mac/Sources/Deprecated/SkillFlowDesktop`
 - Current public page read model: `MainViewModel.currentRoute`
-- Current page write entry points: `MainViewModel.requestPage(_:)` and `MainViewModel.syncCurrentPage(from:)`
+- Current page write entry point: `MainViewModel.requestPage(_:)`, which writes into bound `DesktopAppState.view.currentRoute`
 - Verification baseline: `swift test --package-path apps/desktop-mac`
 - Latest verification result: 95 tests passed, 0 failed on 2026-03-28
 
@@ -82,6 +82,12 @@
 - `SkillFlowApp.inspectSourceEnrichment()` now owns `sourceMetadata` and `sourceSnapshot`
 - The bridge protocol now includes `inspect-enrichment`, and desktop detail hydration calls both explicit phases instead of splitting one payload locally
 
+### 11. `currentPage` and route transition seams are removed from the active desktop path
+
+- `MainViewModel` no longer keeps an internal `currentPage` cache
+- `routeRequest` and `currentRouteProvider` are removed
+- `HomeScreenContainer` now binds `MainViewModel` directly to `DesktopAppState`, and route tests assert state ownership through that binding
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
@@ -89,13 +95,7 @@
 - It still owns bridge calls, payload parsing, draft state, toast state, doctor state, import flows, detail content preparation, and write synchronization
 - The file remains the main cross-page coordinator instead of a thinner page-facing adapter
 
-### 2. `currentPage` is not deleted yet
-
-- `currentPage` is now private and reduced to an internal compatibility cache
-- `routeRequest` and `currentRouteProvider` still exist as transition seams
-- Production code no longer depends on `currentPage` as the public route state, but the cache has not been removed
-
-### 3. The deprecated desktop tree still exists
+### 2. The deprecated desktop tree still exists
 
 - `Sources/Deprecated/SkillFlowDesktop` is no longer the active implementation
 - It has not been deleted yet, so migration is not complete
@@ -115,15 +115,15 @@
 
 #### C. Finish route refoundation cleanup
 
-Status: next high-value cleanup
+Status: completed
 
-- Remove the last internal `currentPage` cache from `MainViewModel`
-- Replace `routeRequest` and `currentRouteProvider` with a single explicit route owner
-- Keep route regression coverage for home, detail, import, settings, and delete/import navigation paths
+- `MainViewModel` route writes now bind directly to `DesktopAppState`
+- Transition seams and the last route cache are removed from the active desktop path
+- Route regression coverage stays green across home, detail, import, settings, and workflow navigation paths
 
 #### D. Finish page-state boundary cleanup
 
-Status: mixed
+Status: next active cleanup
 
 - Detail page state has a dedicated `DetailScreenState`, but business loading still lives in `MainViewModel`
 - Import drafts still live in `ImportScreenState.draftsByItemId`
@@ -150,21 +150,21 @@ Status: not started
 ### Task 1: Finish route and page-state cleanup
 
 Reason:
-- `currentPage` removal and page-local state cleanup are still useful
-- They are now the highest-value remaining cleanup work on the active desktop path
+- Route authority cleanup is done
+- Page-local state cleanup is now the highest-value remaining cleanup work on the active desktop path
 
 ### Task 2: Delete deprecated desktop sources and refresh planning docs
 
 Reason:
-- Final cleanup should happen after the active path no longer depends on transitional seams
+- Final cleanup should happen after page-state ownership is clearer and the active path stays stable without transitional seams
 
 ## Immediate Next Task Definition
 
-If work resumes immediately after the explicit bridge/query phase split, the next focused engineering task should be:
+If work resumes after the route authority cleanup, the next focused engineering task should be:
 
-1. Remove the last internal `currentPage` cache from `MainViewModel`
-2. Collapse `routeRequest` and `currentRouteProvider` into one explicit route owner
-3. Keep the route regression coverage green across home, detail, import, settings, delete, and import navigation flows
+1. Decide whether `DetailScreenState` should take more business-loading ownership out of `MainViewModel`
+2. Decide whether Import draft state should stay in `ImportScreenState` or move into a shared runtime-backed slice
+3. Verify whether menu bar and main window still need to share one `MainViewModel`
 4. Re-run `swift test --package-path apps/desktop-mac`
 
 ## Verification
