@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 @testable import SkillFlowDesktop
@@ -64,5 +65,19 @@ final class DesktopAppContainerTests: XCTestCase {
 
         XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
         XCTAssertEqual(container.mainViewModel.currentPage, .importPage)
+    }
+
+    func testImportRouteProjectsIntoLiveImportContainerProductionSeam() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        container.navigation.showImportPage()
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
+        XCTAssertEqual(container.mainViewModel.currentPage, .importPage)
+        XCTAssertTrue(container.importContainer.isActive)
+        XCTAssertNotNil(container.importContainer.viewModel(locale: Locale(identifier: "en")))
     }
 }

@@ -105,16 +105,6 @@ struct MainView: View {
             try? await Task.sleep(for: .seconds(2))
             viewModel.dismissToast(id: toastId)
         }
-        .task(id: viewModel.currentPage) {
-            guard case .importPage = viewModel.currentPage else { return }
-            while case .importPage = viewModel.currentPage {
-                try? await Task.sleep(for: .seconds(2.2))
-                guard !importSearchPrompts.isEmpty, case .importPage = viewModel.currentPage else { break }
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                    importScreenState.placeholderIndex = (importScreenState.placeholderIndex + 1) % importSearchPrompts.count
-                }
-            }
-        }
         .onChange(of: viewModel.isUpdatingCurrentGroup) { _, isUpdating in
             if isUpdating {
                 withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
@@ -277,7 +267,15 @@ struct MainView: View {
         case .home:
             configPage(layout: layout)
         case .importPage:
-            importPage(layout: layout)
+            ImportScreen(
+                container: importContainer,
+                viewModel: viewModel,
+                screenState: importScreenState,
+                gridColumnCount: layout.gridColumnCount,
+                gridFrameWidth: layout.gridFrameWidth,
+                theme: theme,
+                accent: accent
+            )
         case .settings:
             settingsPage(layout: layout)
         case .detail:
