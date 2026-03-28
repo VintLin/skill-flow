@@ -4,6 +4,7 @@ struct MenuBarQuickConfigView: View {
     @Environment(\.locale) private var locale
     @Bindable var viewModel: MainViewModel
     @Bindable var settingsViewModel: SettingsViewModel
+    @Bindable var screenState: MenuBarScreenState
 
     let navigation: DesktopAppContainer.RouteNavigation
     let openMainWindow: () -> Void
@@ -99,14 +100,14 @@ struct MenuBarQuickConfigView: View {
                 actionIcon(.search, size: 11)
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                 ZStack(alignment: .leading) {
-                    if viewModel.searchQuery.isEmpty {
+                    if screenState.searchQuery.isEmpty {
                         Text(t("menu.placeholder.search_group_source"))
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
                             .allowsHitTesting(false)
                     }
 
-                    TextField("", text: $viewModel.searchQuery)
+                    TextField("", text: $screenState.searchQuery)
                         .textFieldStyle(.plain)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
@@ -191,7 +192,7 @@ struct MenuBarQuickConfigView: View {
     }
 
     private var groupCards: [MainViewModel.GroupCardModel] {
-        viewModel.groupCards
+        viewModel.groupCards(matching: screenState.searchQuery)
     }
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
@@ -202,6 +203,7 @@ struct MenuBarQuickConfigView: View {
         hoverExpandTask?.cancel()
         hoverExpandTask = nil
         hoveredGroupId = nil
+        screenState.searchQuery = ""
     }
 
     private func scheduleHoverExpansion(for groupId: String) {

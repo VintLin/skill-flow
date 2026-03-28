@@ -99,4 +99,15 @@ final class DesktopAppContainerTests: XCTestCase {
         XCTAssertTrue(container.importContainer.isActive)
         XCTAssertNotNil(container.importContainer.snapshot(locale: Locale(identifier: "en")))
     }
+
+    func testMenuBarSearchStateIsIndependentFromPrimarySearchState() {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        container.mainViewModel.searchQuery = "home"
+        container.menuBarScreenState.searchQuery = "menu"
+
+        XCTAssertEqual(container.mainViewModel.searchQuery, "home")
+        XCTAssertEqual(container.menuBarScreenState.searchQuery, "menu")
+    }
 }

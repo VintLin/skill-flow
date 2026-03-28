@@ -74,6 +74,20 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.skillSelectionState(sourceId: "beta"), .empty)
     }
 
+    func testAlternateGroupCardQueryDoesNotMutatePrimarySearchState() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        model.searchQuery = "beta"
+
+        let cards = model.groupCards(matching: "alpha")
+
+        XCTAssertEqual(cards.map(\.id), ["alpha"])
+        XCTAssertEqual(model.searchQuery, "beta")
+        XCTAssertEqual(model.groupCards.map(\.id), ["beta"])
+    }
+
     func testDetailSnapshotUsesInspectPayload() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

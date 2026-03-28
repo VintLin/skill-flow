@@ -29,6 +29,7 @@ struct SkillFlowDesktopApp: App {
             MenuBarQuickConfigView(
                 viewModel: container.mainViewModel,
                 settingsViewModel: container.settingsViewModel,
+                screenState: container.menuBarScreenState,
                 navigation: container.navigation
             ) {
                 openWindow(id: "main-window")

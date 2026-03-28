@@ -668,7 +668,11 @@ final class MainViewModel {
     }
 
     var sourceRows: [SourceRow] {
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        sourceRows(matching: searchQuery)
+    }
+
+    func sourceRows(matching rawQuery: String) -> [SourceRow] {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let summaries = query.isEmpty
             ? allSummaries
             : allSummaries.filter { summary in
@@ -702,7 +706,11 @@ final class MainViewModel {
     }
 
     var groupCards: [GroupCardModel] {
-        sourceRows.compactMap { row in
+        groupCards(matching: searchQuery)
+    }
+
+    func groupCards(matching rawQuery: String) -> [GroupCardModel] {
+        sourceRows(matching: rawQuery).compactMap { row in
             guard let summary = summary(for: row.id), let draft = draft(for: row.id) else {
                 return nil
             }

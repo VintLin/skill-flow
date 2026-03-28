@@ -12,6 +12,7 @@ final class DesktopAppContainer {
     let runtime: DesktopRuntime
     let mainViewModel: MainViewModel
     let settingsViewModel: SettingsViewModel
+    let menuBarScreenState: MenuBarScreenState
     let importContainer: ImportScreenContainer
     let detailContainer: DetailScreenContainer
     let homeContainer: HomeScreenContainer
@@ -24,6 +25,7 @@ final class DesktopAppContainer {
         self.runtime = runtime
         self.mainViewModel = MainViewModel(bridgeClient: bridgeClient)
         self.settingsViewModel = SettingsViewModel()
+        self.menuBarScreenState = MenuBarScreenState()
         self.importContainer = ImportScreenContainer(state: runtime.state, mainViewModel: mainViewModel)
         self.detailContainer = DetailScreenContainer(
             state: runtime.state,
