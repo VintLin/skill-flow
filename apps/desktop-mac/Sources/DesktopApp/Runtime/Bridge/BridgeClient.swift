@@ -31,8 +31,7 @@ enum BridgeClientError: Error, LocalizedError {
     }
 }
 
-@MainActor
-final class BridgeClient {
+final class BridgeClient: @unchecked Sendable {
     private final class ThreadSafeBuffer: @unchecked Sendable {
         private var data = Data()
         private let lock = NSLock()
@@ -166,6 +165,13 @@ final class BridgeClient {
 
         let outputBuffer = ThreadSafeBuffer()
         let errorBuffer = ThreadSafeBuffer()
+        let exitStream = AsyncStream<Void> { continuation in
+            process.terminationHandler = { _ in
+                continuation.yield(())
+                continuation.finish()
+            }
+        }
+        var exitIterator = exitStream.makeAsyncIterator()
 
         outputPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
@@ -182,7 +188,8 @@ final class BridgeClient {
         inputPipe.fileHandleForWriting.write(requestData)
         inputPipe.fileHandleForWriting.closeFile()
 
-        process.waitUntilExit()
+        _ = await exitIterator.next()
+        process.terminationHandler = nil
 
         outputPipe.fileHandleForReading.readabilityHandler = nil
         errorPipe.fileHandleForReading.readabilityHandler = nil

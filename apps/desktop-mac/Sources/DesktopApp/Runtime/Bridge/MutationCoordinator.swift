@@ -4,7 +4,7 @@ import Foundation
 final class MutationCoordinator {
     private var runningMutation = false
 
-    func runMutation(operation: @escaping () async throws -> BridgeResponse) async throws -> BridgeResponse {
+    func runMutation(operation: @Sendable @escaping () async throws -> BridgeResponse) async throws -> BridgeResponse {
         guard !runningMutation else {
             throw BridgeClientError.concurrentMutationRejected
         }
