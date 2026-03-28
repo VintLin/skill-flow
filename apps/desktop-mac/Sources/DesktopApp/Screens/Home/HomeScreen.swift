@@ -12,7 +12,7 @@ struct HomeScreen: View {
     var body: some View {
         let _ = homeViewModel.sourceIds
 
-        return MainView(viewModel: mainViewModel)
+        return MainView(viewModel: mainViewModel, navigation: container.navigation)
             .frame(minWidth: 980, minHeight: 640)
             .task {
                 await bootstrapOnAppear()

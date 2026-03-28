@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 
 struct MainView: View {
+    struct NavigationActions {
+        let showHome: () -> Void
+        let showDetail: (String) -> Void
+        let showImportPage: () -> Void
+        let showSettings: () -> Void
+    }
+
     @Environment(\.locale) private var locale
     private let detailHeaderMinHeight: CGFloat = 76
     private let detailGroupRowHeight: CGFloat = 64
@@ -39,6 +46,7 @@ struct MainView: View {
     }
 
     @Bindable var viewModel: MainViewModel
+    let navigation: NavigationActions
 
     @State private var detailSkillIdByGroup: [String: String] = [:]
     @State private var detailShowsGroupOverviewByGroup: [String: Bool] = [:]
@@ -58,6 +66,11 @@ struct MainView: View {
     private let importAutoPreviewLimit = 4
     @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
     @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
+
+    init(viewModel: MainViewModel, navigation: NavigationActions) {
+        self.viewModel = viewModel
+        self.navigation = navigation
+    }
 
     private var theme: DesktopThemeMode {
         DesktopThemeMode(rawValue: themeModeRawValue) ?? .light
@@ -93,11 +106,6 @@ struct MainView: View {
             }
         }
         .tint(AppTheme.brand(for: accent))
-        .onChange(of: viewModel.selectedGroupId) { _, newValue in
-            guard case .detail = viewModel.currentPage else { return }
-            guard let groupId = newValue else { return }
-            viewModel.currentPage = .detail(sourceId: groupId)
-        }
         .onChange(of: viewModel.currentPage) { _, newValue in
             switch newValue {
             case .detail(let groupId):
@@ -200,7 +208,7 @@ struct MainView: View {
                 headerLogoRow
             } else {
                 Button {
-                    viewModel.currentPage = .home
+                    navigation.showHome()
                 } label: {
                     actionIcon(.back, size: 14)
                 }
@@ -285,9 +293,7 @@ struct MainView: View {
     }
 
     private var importButton: some View {
-        toolbarIconButton(.import) {
-            viewModel.currentPage = .importPage
-        }
+        toolbarIconButton(.import) { navigation.showImportPage() }
     }
 
     private var homeUpdateButton: some View {
@@ -297,9 +303,7 @@ struct MainView: View {
     }
 
     private var settingsButton: some View {
-        toolbarIconButton(.settings) {
-            viewModel.currentPage = .settings
-        }
+        toolbarIconButton(.settings) { navigation.showSettings() }
     }
 
     @ViewBuilder
@@ -366,7 +370,7 @@ struct MainView: View {
                                 skillsCollapsed: false,
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
-                                    viewModel.currentPage = .detail(sourceId: card.id)
+                                    navigation.showDetail(card.id)
                                 },
                                 onUpdate: {
                                     Task { await viewModel.updateSource(card.id) }

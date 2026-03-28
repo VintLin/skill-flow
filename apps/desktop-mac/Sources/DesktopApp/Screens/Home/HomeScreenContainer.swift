@@ -6,12 +6,29 @@ final class HomeScreenContainer {
     private let state: DesktopAppState
     let viewModel: HomeViewModel
     let mainViewModel: MainViewModel
+    let navigation: MainView.NavigationActions
 
     init(state: DesktopAppState, mainViewModel: MainViewModel) {
         self.state = state
         self.viewModel = HomeViewModel(state: state)
         self.mainViewModel = mainViewModel
+        self.navigation = MainView.NavigationActions(
+            showHome: { [weak state] in
+                state?.view.currentRoute = .home
+            },
+            showDetail: { [weak state] sourceId in
+                state?.view.currentRoute = .detail(sourceId: sourceId)
+            },
+            showImportPage: { [weak state] in
+                state?.view.currentRoute = .importPage
+            },
+            showSettings: { [weak state] in
+                state?.view.currentRoute = .settings
+            }
+        )
+        observeFoundationRouteState()
         observeMainViewModelState()
+        syncViewModelRoute()
     }
 
     func makeView() -> HomeScreen {
@@ -24,24 +41,22 @@ final class HomeScreenContainer {
         }
 
         syncFoundationState()
+        syncViewModelRoute()
     }
 
-    private func observeMainViewModelState() {
+    private func observeFoundationRouteState() {
         withObservationTracking {
-            _ = mainViewModel.sourceIds
-            _ = mainViewModel.selectedSourceId
-            _ = mainViewModel.currentPage
+            _ = state.view.currentRoute
         } onChange: { [weak self] in
             Task { @MainActor in
-                self?.syncFoundationState()
-                self?.observeMainViewModelState()
+                self?.syncViewModelRoute()
+                self?.observeFoundationRouteState()
             }
         }
     }
 
     private func syncFoundationState() {
         state.workspace.sourceIds = mainViewModel.sourceIds
-        state.view.currentRoute = foundationRoute(for: mainViewModel.currentPage)
 
         if let selectedSourceId = mainViewModel.selectedSourceId,
            mainViewModel.sourceIds.contains(selectedSourceId) {
@@ -49,8 +64,12 @@ final class HomeScreenContainer {
         }
     }
 
-    private func foundationRoute(for page: MainViewModel.Page) -> DesktopRoute {
-        switch page {
+    private func syncViewModelRoute() {
+        mainViewModel.currentPage = page(for: state.view.currentRoute)
+    }
+
+    private func page(for route: DesktopRoute) -> MainViewModel.Page {
+        switch route {
         case .home:
             return .home
         case .importPage:
@@ -59,6 +78,18 @@ final class HomeScreenContainer {
             return .settings
         case .detail(let sourceId):
             return .detail(sourceId: sourceId)
+        }
+    }
+
+    private func observeMainViewModelState() {
+        withObservationTracking {
+            _ = mainViewModel.sourceIds
+            _ = mainViewModel.selectedSourceId
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.syncFoundationState()
+                self?.observeMainViewModelState()
+            }
         }
     }
 }
