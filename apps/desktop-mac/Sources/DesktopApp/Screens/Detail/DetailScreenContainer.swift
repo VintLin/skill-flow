@@ -1,9 +1,26 @@
 import Foundation
 
 @MainActor
+@Observable
+final class DetailScreenState {
+    var detailSkillIdByGroup: [String: String] = [:]
+    var detailShowsGroupOverviewByGroup: [String: Bool] = [:]
+    var detailHoveredItemIdByGroup: [String: String] = [:]
+    var detailDocumentTabIdByGroup: [String: String] = [:]
+    var detailDocumentTabIdBySkill: [String: String] = [:]
+    var pendingDetailSkillIdByGroup: [String: String] = [:]
+    var pendingDetailDocumentIdByGroup: [String: String] = [:]
+    var pendingDetailDocumentIdBySkill: [String: String] = [:]
+    var detailSkillSelectionTokenByGroup: [String: UInt64] = [:]
+    var detailDocumentSelectionTokenByGroup: [String: UInt64] = [:]
+    var detailDocumentSelectionTokenBySkill: [String: UInt64] = [:]
+}
+
+@MainActor
 final class DetailScreenContainer {
     private let state: DesktopAppState
     private let detailSnapshot: (String) -> DetailViewModel.Snapshot?
+    let screenState = DetailScreenState()
 
     init(
         state: DesktopAppState,

@@ -115,4 +115,23 @@ final class DetailScreenContainerTests: XCTestCase {
 
         XCTAssertNil(container.viewModel)
     }
+
+    func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
+        let state = DesktopAppState()
+        let container = DetailScreenContainer(state: state) { _ in nil }
+
+        container.screenState.detailSkillIdByGroup["alpha"] = "alpha-b"
+        container.screenState.detailShowsGroupOverviewByGroup["alpha"] = false
+        container.screenState.detailDocumentTabIdByGroup["alpha"] = "readme"
+        container.screenState.detailDocumentTabIdBySkill["alpha-b"] = "skill-doc"
+
+        state.view.currentRoute = .detail(sourceId: "alpha")
+        state.view.currentRoute = .home
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        XCTAssertEqual(container.screenState.detailSkillIdByGroup["alpha"], "alpha-b")
+        XCTAssertEqual(container.screenState.detailShowsGroupOverviewByGroup["alpha"], false)
+        XCTAssertEqual(container.screenState.detailDocumentTabIdByGroup["alpha"], "readme")
+        XCTAssertEqual(container.screenState.detailDocumentTabIdBySkill["alpha-b"], "skill-doc")
+    }
 }

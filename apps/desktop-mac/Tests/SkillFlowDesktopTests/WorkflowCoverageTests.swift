@@ -167,6 +167,35 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(self.bootstrapRequestCount(in: fixture), 1)
     }
 
+    func testRenderedDetailRouteHydratesThroughDetailScreenOncePerEntry() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+        let hostingController = NSHostingController(rootView: container.homeContainer.makeView())
+        let window = NSWindow(contentViewController: hostingController)
+        window.makeKeyAndOrderFront(nil)
+
+        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
+            self.bootstrapRequestCount(in: fixture) == 1
+        }
+
+        XCTAssertEqual(self.inspectRequestCount(in: fixture, sourceId: "alpha"), 0)
+
+        container.navigation.showDetail("alpha")
+
+        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
+            self.inspectRequestCount(in: fixture, sourceId: "alpha") == 1
+                && container.mainViewModel.hasInspectPayload(for: "alpha")
+        }
+
+        try await Task.sleep(nanoseconds: 150_000_000)
+        window.close()
+
+        XCTAssertEqual(self.inspectRequestCount(in: fixture, sourceId: "alpha"), 1)
+    }
+
     func testPinnedWriteFailureRollsBack() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -457,6 +486,12 @@ final class WorkflowCoverageTests: XCTestCase {
 
     private func bootstrapRequestCount(in fixture: TestFixture) -> Int {
         fixture.loggedRequests().filter { $0.command == "bootstrap" }.count
+    }
+
+    private func inspectRequestCount(in fixture: TestFixture, sourceId: String) -> Int {
+        fixture.loggedRequests().filter {
+            $0.command == "inspect" && $0.payload?["sourceId"]?.value as? String == sourceId
+        }.count
     }
 
 }
