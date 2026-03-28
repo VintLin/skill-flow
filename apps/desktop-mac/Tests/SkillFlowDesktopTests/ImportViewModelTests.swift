@@ -1,174 +1,160 @@
-import Foundation
 import XCTest
 
 @testable import SkillFlowDesktop
 
 @MainActor
 final class ImportViewModelTests: XCTestCase {
-    func testProjectCardSummaryFollowsCurrentFallbackOrder() {
-        let explicitSummary = makeItem(
+    private let locale = Locale(identifier: "en")
+
+    func testSummaryPrefersExplicitSummaryThenSnapshotThenMatchesThenFallbackStates() {
+        let explicit = makeItem(
             summary: "Explicit summary",
-            snapshot: makeSnapshot(description: "Snapshot description"),
-            matchedSkills: [MainViewModel.ImportMatchedSkill(skillId: "browse", title: "Browse", installs: 1200)],
-            matchedSkillNames: ["Named skill"],
-            previewPhase: .failed(.plain("Failed import"))
-        )
-        let fromSnapshot = makeItem(
-            summary: "",
-            snapshot: makeSnapshot(description: "Snapshot description"),
-            matchedSkills: [MainViewModel.ImportMatchedSkill(skillId: "browse", title: "Browse", installs: 1200)],
-            matchedSkillNames: ["Named skill"],
-            previewPhase: .failed(.plain("Failed import"))
-        )
-        let fromMatchedSkills = makeItem(
-            summary: "",
-            snapshot: makeSnapshot(description: ""),
-            matchedSkills: [
-                MainViewModel.ImportMatchedSkill(skillId: "browse", title: "Browse", installs: 1200),
-                MainViewModel.ImportMatchedSkill(skillId: "write", title: "Write", installs: nil)
-            ],
-            matchedSkillNames: ["Named skill"]
-        )
-        let fromMatchedSkillNames = makeItem(
-            summary: "",
-            snapshot: makeSnapshot(description: ""),
-            matchedSkills: [],
-            matchedSkillNames: ["Browse", "Write"]
-        )
-        let loadingFallback = makeItem(
-            summary: "",
-            snapshot: makeSnapshot(description: ""),
-            matchedSkills: [],
-            matchedSkillNames: [],
+            matchedSkills: [makeMatchedSkill(title: "browse", installs: 1200)],
+            snapshot: makeSnapshot(description: "Snapshot summary"),
             previewPhase: .loading
         )
-        let failedFallback = makeItem(
+        XCTAssertEqual(ImportViewModel.card(from: explicit, locale: locale).summary, "Explicit summary")
+
+        let snapshot = makeItem(
             summary: "",
-            snapshot: makeSnapshot(description: ""),
-            matchedSkills: [],
-            matchedSkillNames: [],
-            previewPhase: .failed(.plain("Failed import"))
+            matchedSkills: [makeMatchedSkill(title: "browse", installs: 1200)],
+            snapshot: makeSnapshot(description: "Snapshot summary"),
+            previewPhase: .loading
         )
+        XCTAssertEqual(ImportViewModel.card(from: snapshot, locale: locale).summary, "Snapshot summary")
 
-        let viewModel = ImportViewModel(
-            groups: [
-                explicitSummary,
-                fromSnapshot,
-                fromMatchedSkills,
-                fromMatchedSkillNames,
-                loadingFallback,
-                failedFallback
-            ],
-            locale: Locale(identifier: "en")
+        let matchedSkills = makeItem(
+            matchedSkills: [
+                makeMatchedSkill(title: "browse", installs: 1200),
+                makeMatchedSkill(title: "review", installs: nil)
+            ]
         )
+        XCTAssertEqual(ImportViewModel.card(from: matchedSkills, locale: locale).summary, "browse 1,200, review")
 
-        XCTAssertEqual(viewModel.cards[0].summary, "Explicit summary")
-        XCTAssertEqual(viewModel.cards[1].summary, "Snapshot description")
-        XCTAssertEqual(viewModel.cards[2].summary, "Browse 1,200, Write")
-        XCTAssertEqual(viewModel.cards[3].summary, "Browse, Write")
-        XCTAssertEqual(viewModel.cards[4].summary, "Loading skills...")
-        XCTAssertEqual(viewModel.cards[5].summary, "Failed import")
+        let matchedNames = makeItem(
+            matchedSkillNames: ["browse", "review"]
+        )
+        XCTAssertEqual(ImportViewModel.card(from: matchedNames, locale: locale).summary, "browse, review")
+
+        let loading = makeItem(previewPhase: .loading)
+        XCTAssertEqual(ImportViewModel.card(from: loading, locale: locale).summary, "Loading skills...")
+
+        let failed = makeItem(previewPhase: .failed(.plain("Preview failed")))
+        XCTAssertEqual(ImportViewModel.card(from: failed, locale: locale).summary, "Preview failed")
+
+        let fallback = makeItem(canonicalRepo: "anthropics/skills")
+        XCTAssertEqual(ImportViewModel.card(from: fallback, locale: locale).summary, "Import from anthropics/skills")
     }
 
-    func testProjectCardSourceFactsPreferSnapshotValuesAndIncludeOwnerTrustAndMatches() {
-        let viewModel = ImportViewModel(
-            groups: [
-                makeItem(
-                    snapshot: makeSnapshot(
-                        totalInstalls: 211_898,
-                        skillCount: 4,
-                        repoStars: 1_200,
-                        owner: .init(
-                            slug: "acme",
-                            sourceURL: "https://example.com/acme",
-                            githubURL: "https://github.com/acme",
-                            sourceCount: 12,
-                            skillCount: 34,
-                            totalInstalls: 98_765
-                        ),
-                        trust: .init(official: true, trending: true, hot: false, audited: false),
-                        description: "Snapshot description"
-                    ),
-                    matchedSkills: [
-                        MainViewModel.ImportMatchedSkill(skillId: "browse", title: "Browse", installs: 1_200),
-                        MainViewModel.ImportMatchedSkill(skillId: "write", title: "Write", installs: nil)
-                    ]
-                )
+    func testSourceFactsPreferSnapshotDataAndComposeOwnerTrustAndMatches() {
+        let item = makeItem(
+            starCount: 15,
+            totalInstalls: 25,
+            skillCount: 3,
+            matchedSkills: [
+                makeMatchedSkill(title: "browse", installs: 1200),
+                makeMatchedSkill(title: "review", installs: nil)
             ],
-            locale: Locale(identifier: "en")
+            snapshot: makeSnapshot(
+                totalInstalls: 2400,
+                skillCount: 12,
+                repoStars: 800,
+                owner: MainViewModel.SnapshotOwner(
+                    slug: "anthropics",
+                    sourceURL: "https://example.com/anthropics",
+                    githubURL: "https://github.com/anthropics",
+                    sourceCount: 7,
+                    skillCount: 42,
+                    totalInstalls: 9999
+                ),
+                trust: MainViewModel.SnapshotTrust(
+                    official: true,
+                    trending: true,
+                    hot: false,
+                    audited: true
+                )
+            )
         )
 
         XCTAssertEqual(
-            viewModel.cards[0].sourceFacts,
+            ImportViewModel.card(from: item, locale: locale).sourceFacts,
             [
-                "Installs 211,898",
-                "Stars 1,200",
-                "Skills 4",
-                "Owner @acme · 12 sources · 34 skills",
-                "Trust Official · Trending",
-                "Matches Browse 1,200, Write"
+                "Installs 2,400",
+                "Stars 800",
+                "Skills 12",
+                "Owner @anthropics · 7 sources · 42 skills",
+                "Trust Official · Trending · Audited",
+                "Matches browse 1,200, review",
             ]
         )
     }
 
-    func testProjectCardSourceFactsFallBackToItemLevelCountsWhenSnapshotIsMissing() {
-        let viewModel = ImportViewModel(
-            groups: [
-                makeItem(
-                    snapshot: nil,
-                    totalInstalls: 18_400,
-                    starCount: 230,
-                    skillCount: 9
-                )
-            ],
-            locale: Locale(identifier: "en")
+    func testSourceFactsFallBackToLoadingOrErrorWhenNoFactsExist() {
+        let loading = makeItem(enrichPhase: .loading)
+        XCTAssertEqual(ImportViewModel.card(from: loading, locale: locale).sourceFacts, ["Source loading..."])
+
+        let failed = makeItem(enrichPhase: .failed(.plain("Enrich failed")))
+        XCTAssertEqual(ImportViewModel.card(from: failed, locale: locale).sourceFacts, ["Enrich failed"])
+    }
+
+    func testSubtitleDerivesOwnerFromGitHubAndRepoPatterns() {
+        XCTAssertEqual(
+            ImportViewModel.card(
+                from: makeItem(locator: "https://github.com/anthropic/skills.git"),
+                locale: locale
+            ).subtitle,
+            "by @anthropic"
         )
 
         XCTAssertEqual(
-            viewModel.cards[0].sourceFacts,
-            [
-                "Installs 18,400",
-                "Stars 230",
-                "Skills 9"
-            ]
-        )
-    }
-
-    func testProjectCardSubtitleMatchesLocatorPatterns() {
-        let viewModel = ImportViewModel(
-            groups: [
-                makeItem(locator: "github.com/anthropics/skills"),
-                makeItem(locator: "git@github.com:anthropics/skills.git"),
-                makeItem(locator: "anthropics/skills"),
-                makeItem(locator: "not-a-repo")
-            ],
-            locale: Locale(identifier: "en")
+            ImportViewModel.card(
+                from: makeItem(locator: "git@github.com:anthropic/skills.git"),
+                locale: locale
+            ).subtitle,
+            "by @anthropic"
         )
 
-        XCTAssertEqual(viewModel.cards[0].subtitle, "by @anthropics")
-        XCTAssertEqual(viewModel.cards[1].subtitle, "by @anthropics")
-        XCTAssertEqual(viewModel.cards[2].subtitle, "by @anthropics")
-        XCTAssertEqual(viewModel.cards[3].subtitle, "recommended")
+        XCTAssertEqual(
+            ImportViewModel.card(
+                from: makeItem(locator: "anthropic/skills"),
+                locale: locale
+            ).subtitle,
+            "by @anthropic"
+        )
+
+        XCTAssertEqual(
+            ImportViewModel.card(
+                from: makeItem(locator: "https://example.com/custom-source"),
+                locale: locale
+            ).subtitle,
+            "by @https:"
+        )
     }
 
     private func makeItem(
+        id: String = "anthropics-skills",
+        title: String = "Anthropic Skills",
+        locator: String = "anthropic/skills",
+        canonicalRepo: String = "anthropics/skills",
+        aliases: [String] = [],
         summary: String = "",
-        snapshot: MainViewModel.SourceSnapshotData? = nil,
-        matchedSkills: [MainViewModel.ImportMatchedSkill] = [],
-        matchedSkillNames: [String] = [],
-        totalInstalls: Int? = nil,
         starCount: Int? = nil,
+        totalInstalls: Int? = nil,
         skillCount: Int? = nil,
-        previewPhase: MainViewModel.ImportLoadPhase = .ready,
+        matchedSkillNames: [String] = [],
+        matchedSkills: [MainViewModel.ImportMatchedSkill] = [],
+        snapshot: MainViewModel.SourceSnapshotData? = nil,
         enrichPhase: MainViewModel.ImportLoadPhase = .ready,
-        locator: String = "github.com/anthropics/skills"
+        previewPhase: MainViewModel.ImportLoadPhase = .ready,
+        skills: [MainViewModel.ImportGroupSkill] = [],
+        targets: [MainViewModel.ImportGroupTarget] = []
     ) -> MainViewModel.ImportGroupItem {
         MainViewModel.ImportGroupItem(
-            id: locator,
-            title: "Skills",
+            id: id,
+            title: title,
             locator: locator,
-            canonicalRepo: "anthropics/skills",
-            aliases: [],
+            canonicalRepo: canonicalRepo,
+            aliases: aliases,
             summary: summary,
             starCount: starCount,
             totalInstalls: totalInstalls,
@@ -178,47 +164,35 @@ final class ImportViewModelTests: XCTestCase {
             snapshot: snapshot,
             enrichPhase: enrichPhase,
             previewPhase: previewPhase,
-            skills: [
-                MainViewModel.ImportGroupSkill(
-                    id: "browse",
-                    title: "Browse",
-                    summary: "Browse things.",
-                    selectedByDefault: true
-                ),
-                MainViewModel.ImportGroupSkill(
-                    id: "write",
-                    title: "Write",
-                    summary: "Write things.",
-                    selectedByDefault: false
-                )
-            ],
-            targets: [
-                MainViewModel.ImportGroupTarget(id: "claude-code", selectedByDefault: true),
-                MainViewModel.ImportGroupTarget(id: "codex", selectedByDefault: false)
-            ]
+            skills: skills,
+            targets: targets
         )
     }
 
+    private func makeMatchedSkill(title: String, installs: Int?) -> MainViewModel.ImportMatchedSkill {
+        MainViewModel.ImportMatchedSkill(skillId: title, title: title, installs: installs)
+    }
+
     private func makeSnapshot(
+        description: String = "",
         totalInstalls: Int? = nil,
         skillCount: Int? = nil,
         repoStars: Int? = nil,
-        owner: MainViewModel.SnapshotOwner = .init(
-            slug: "acme",
-            sourceURL: "https://example.com/acme",
-            githubURL: "https://github.com/acme",
-            sourceCount: 12,
-            skillCount: 34,
-            totalInstalls: 98_765
+        owner: MainViewModel.SnapshotOwner = MainViewModel.SnapshotOwner(
+            slug: "anthropics",
+            sourceURL: "https://example.com/anthropics",
+            githubURL: "https://github.com/anthropics",
+            sourceCount: nil,
+            skillCount: nil,
+            totalInstalls: nil
         ),
-        trust: MainViewModel.SnapshotTrust? = .init(official: true, trending: true, hot: false, audited: false),
-        description: String = "Snapshot description"
+        trust: MainViewModel.SnapshotTrust? = nil
     ) -> MainViewModel.SourceSnapshotData {
         MainViewModel.SourceSnapshotData(
             canonicalRepo: "anthropics/skills",
-            title: "Skills",
-            provider: "github",
-            sourceURL: "https://example.com/source",
+            title: "Anthropic Skills",
+            provider: "clawhub",
+            sourceURL: "https://example.com/anthropics/skills",
             repoURL: "https://github.com/anthropics/skills",
             repoLabel: "anthropics/skills",
             totalInstalls: totalInstalls,
