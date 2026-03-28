@@ -142,11 +142,6 @@ struct MainView: View {
                 }
             }
         }
-        .task {
-            if case .idle = viewModel.loadState {
-                await viewModel.bootstrap()
-            }
-        }
         .onChange(of: viewModel.isUpdatingCurrentGroup) { _, isUpdating in
             if isUpdating {
                 withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {

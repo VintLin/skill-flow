@@ -127,6 +127,20 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertFalse(commands.contains("doctor"))
     }
 
+    func testHomeBootstrapProjectsBridgeSourceIdsIntoFoundationState() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        await container.homeContainer.bootstrapIfNeeded()
+
+        XCTAssertEqual(container.homeContainer.viewModel.sourceIds, ["alpha", "beta"])
+        XCTAssertEqual(runtime.state.workspace.sourceIds, ["alpha", "beta"])
+        XCTAssertEqual(runtime.state.view.selectedSourceId, "alpha")
+    }
+
     func testPinnedWriteFailureRollsBack() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
