@@ -311,8 +311,8 @@ export async function fetchSkillsDirectorySourcePreview(
   },
 ): Promise<UnifiedSourceSnapshot> {
   return fetchSkillsDirectorySourceSnapshot(locator, {
-    trust: options?.trust,
     includeSkillDetails: false,
+    ...(options?.trust ? { trust: options.trust } : {}),
   });
 }
 

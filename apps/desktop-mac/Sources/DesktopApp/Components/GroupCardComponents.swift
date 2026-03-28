@@ -21,11 +21,11 @@ enum GroupCardScale {
     }
 
     var titleSize: CGFloat {
-        17
+        21
     }
 
     var metaSize: CGFloat {
-        11
+        12
     }
 
     var sectionLabelSize: CGFloat {
@@ -37,7 +37,7 @@ enum GroupCardScale {
     }
 
     var chipFontSize: CGFloat {
-        11
+        12
     }
 
     var targetSize: CGFloat {
@@ -78,6 +78,10 @@ enum GroupCardScale {
 
     var headerBottomSpacing: CGFloat {
         2 * factor
+    }
+
+    var sectionCountSize: CGFloat {
+        metaSize
     }
 
     var fadeWidth: CGFloat {
@@ -167,6 +171,12 @@ enum GroupCardDisplayMode: Equatable {
 }
 
 struct SharedGroupCard: View {
+    enum HeaderStatKind: Equatable {
+        case downloads
+        case star
+        case github
+    }
+
     @Environment(\.locale) private var locale
     let card: MainViewModel.GroupCardModel
     let theme: DesktopThemeMode
@@ -263,7 +273,7 @@ struct SharedGroupCard: View {
             cardRow(
                 title: t("common.section.agents"),
                 selection: card.targetSelection,
-                items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled) },
+                items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled, nil) },
                 compact: true,
                 loading: card.targetsLoading,
                 onToggleAll: onToggleAllTargets,
@@ -334,17 +344,19 @@ struct SharedGroupCard: View {
     }
 
     private var headerPrimaryContent: some View {
-        HStack(alignment: .firstTextBaseline, spacing: max(4, scale.cardInset * 0.5)) {
+        VStack(alignment: .leading, spacing: max(2, scale.headerSpacing)) {
             Text(card.title)
-                .font(.system(size: scale.titleSize, weight: .semibold))
+                .font(.system(size: scale.titleSize, weight: .regular))
                 .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if let byline = card.byline, displayMode.showsSubtitle {
-                Text(byline)
-                    .font(.system(size: scale.metaSize, weight: .regular))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .lineLimit(1)
+            if displayMode.showsSubtitle {
+                if let byline = card.byline {
+                    Text(byline)
+                        .font(.system(size: scale.metaSize, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                }
             }
         }
     }
@@ -352,11 +364,6 @@ struct SharedGroupCard: View {
     @ViewBuilder
     private var headerStatsRow: some View {
         HStack(spacing: 10) {
-            if let skillCount = card.stats.skillCount {
-                statItem(icon: .skills, text: countText(skillCount))
-            } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
-                statPlaceholder(width: 34)
-            }
             if let downloadCount = card.stats.downloadCount {
                 statItem(icon: .downloads, text: countText(downloadCount))
             } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
@@ -447,7 +454,7 @@ struct SharedGroupCard: View {
         } label: {
             if displayMode.usesPlainPrimaryActionIcon {
                 actionIcon(actionButtonIcon, size: 12)
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .foregroundStyle(Self.primaryActionIconForeground(displayMode: displayMode, theme: theme, accent: accent))
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             } else {
@@ -495,7 +502,7 @@ struct SharedGroupCard: View {
     private func cardRow(
         title: String,
         selection: SelectionState,
-        items: [(id: String, label: String, shortLabel: String, isEnabled: Bool)],
+        items: [(id: String, label: String, shortLabel: String, isEnabled: Bool, highlightQuery: String?)],
         compact: Bool,
         loading: Bool,
         onToggleAll: @escaping () -> Void,
@@ -503,12 +510,15 @@ struct SharedGroupCard: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: scale.rowSpacing) {
             if displayMode.showsSectionTitles {
-                Text(title)
-                    .font(.system(size: scale.sectionLabelSize, weight: .semibold))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .textCase(.uppercase)
-                    .padding(.horizontal, scale.sectionHorizontalPadding)
-                    .padding(.top, scale.sectionTopPadding)
+                HStack(spacing: 8) {
+                    Text(sectionTitleText(baseTitle: title, compact: compact))
+                        .font(.system(size: scale.sectionLabelSize, weight: .regular))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .textCase(.uppercase)
+                    Spacer(minLength: 8)
+                }
+                .padding(.horizontal, scale.sectionHorizontalPadding)
+                .padding(.top, scale.sectionTopPadding)
             }
 
             cardScroller {
@@ -531,7 +541,7 @@ struct SharedGroupCard: View {
                                         isOn: item.isEnabled
                                     )
                                 } else {
-                                    skillToggle(item.label, isOn: item.isEnabled)
+                                    skillToggle(item.label, highlightQuery: item.highlightQuery, isOn: item.isEnabled)
                                 }
                             }
                             .buttonStyle(.plain)
@@ -552,7 +562,7 @@ struct SharedGroupCard: View {
                 cardRow(
                     title: t("group_card.section.skills"),
                     selection: card.skillSelection,
-                    items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled) },
+                    items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled, $0.highlightQuery) },
                     compact: false,
                     loading: card.skillsLoading,
                     onToggleAll: onToggleAllSkills,
@@ -561,6 +571,20 @@ struct SharedGroupCard: View {
             }
             .transition(.move(edge: .top).combined(with: .opacity))
         }
+    }
+
+    private var skillSectionCountText: String? {
+        guard let count = card.stats.skillCount ?? (card.skills.isEmpty ? nil : card.skills.count) else {
+            return nil
+        }
+        return countText(count)
+    }
+
+    private func sectionTitleText(baseTitle: String, compact: Bool) -> String {
+        guard !compact, let count = skillSectionCountText else {
+            return baseTitle
+        }
+        return "\(baseTitle) (\(count))"
     }
 
     private var minimumHeight: CGFloat? {
@@ -572,14 +596,29 @@ struct SharedGroupCard: View {
         }
     }
 
-    private func skillToggle(_ text: String, isOn: Bool) -> some View {
-        Text(text)
-            .font(.system(size: scale.chipFontSize, weight: .bold))
+    private func skillToggle(_ text: String, highlightQuery: String?, isOn: Bool) -> some View {
+        highlightedSkillText(text, highlightQuery: highlightQuery)
+            .font(.system(size: scale.chipFontSize, weight: .regular))
             .padding(.horizontal, max(6, scale.cardInset - 2))
             .frame(height: scale.chipHeight)
             .background(isOn ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30) : AppTheme.documentBlock(for: theme))
-            .foregroundStyle(AppTheme.textPrimary(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
+    }
+
+    private func highlightedSkillText(_ text: String, highlightQuery: String?) -> Text {
+        guard let highlightQuery,
+              !highlightQuery.isEmpty,
+              let range = text.range(of: highlightQuery, options: [.caseInsensitive, .diacriticInsensitive]) else {
+            return Text(text).foregroundStyle(AppTheme.textPrimary(for: theme))
+        }
+
+        let prefix = String(text[..<range.lowerBound])
+        let match = String(text[range])
+        let suffix = String(text[range.upperBound...])
+
+        return Text(prefix).foregroundStyle(AppTheme.textPrimary(for: theme))
+            + Text(match).foregroundStyle(AppTheme.brand(for: accent, in: theme))
+            + Text(suffix).foregroundStyle(AppTheme.textPrimary(for: theme))
     }
 
     private func targetToggle(
@@ -788,6 +827,24 @@ struct SharedGroupCard: View {
 }
 
 extension SharedGroupCard {
+    static func visibleHeaderStatKinds(stats: MainViewModel.GroupCardStats) -> [HeaderStatKind] {
+        var kinds: [HeaderStatKind] = []
+        if stats.downloadCount != nil {
+            kinds.append(.downloads)
+        }
+        if stats.starCount != nil {
+            kinds.append(.star)
+        }
+        if stats.githubURL != nil {
+            kinds.append(.github)
+        }
+        return kinds
+    }
+
+    static func showsInlineHeaderStats(displayMode: GroupCardDisplayMode) -> Bool {
+        false
+    }
+
     static func reservesHeaderStatsRow(
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
@@ -795,24 +852,32 @@ extension SharedGroupCard {
         guard displayMode.showsMetaLine, displayMode != .menu else {
             return false
         }
-
-        return hasHeaderStats(card: card)
-            || (displayMode == .importPage && (card.skillsLoading || card.targetsLoading))
+        return true
     }
 
     static func showsHeaderDivider(
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
-        reservesHeaderStatsRow(card: card, displayMode: displayMode)
-            || (displayMode.showsSourceFacts && !card.sourceFacts.isEmpty)
+        guard displayMode != .menu else {
+            return false
+        }
+        return displayMode.showsMetaLine || (displayMode.showsSourceFacts && !card.sourceFacts.isEmpty)
+    }
+
+    static func primaryActionIconForeground(
+        displayMode: GroupCardDisplayMode,
+        theme: DesktopThemeMode,
+        accent: DesktopAccentColor
+    ) -> Color {
+        if displayMode.usesPlainPrimaryActionIcon {
+            return AppTheme.brand(for: accent, in: theme)
+        }
+        return AppTheme.pageBackground(for: theme)
     }
 
     private static func hasHeaderStats(card: MainViewModel.GroupCardModel) -> Bool {
-        card.stats.skillCount != nil
-            || card.stats.downloadCount != nil
-            || card.stats.starCount != nil
-            || card.stats.githubURL != nil
+        !visibleHeaderStatKinds(stats: card.stats).isEmpty
     }
 }
 

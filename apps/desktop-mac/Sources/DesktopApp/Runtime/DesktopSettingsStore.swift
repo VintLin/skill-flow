@@ -15,7 +15,8 @@ struct DesktopSettingsStore {
             desktopLanguageRawValue: userDefaults.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue,
             themeModeRawValue: userDefaults.string(forKey: SettingsViewModel.themeModeKey) ?? DesktopThemeMode.light.rawValue,
             themeAccentRawValue: userDefaults.string(forKey: SettingsViewModel.themeAccentKey) ?? DesktopAccentColor.blue.rawValue,
-            menuCompactCards: userDefaults.object(forKey: SettingsViewModel.menuCompactCardsKey) as? Bool ?? true
+            homeCardDensityRawValue: userDefaults.string(forKey: SettingsViewModel.homeCardDensityKey) ?? DesktopCardDensity.comfortable.rawValue,
+            menuCardDensityRawValue: userDefaults.string(forKey: SettingsViewModel.menuCardDensityKey) ?? DesktopCardDensity.compact.rawValue
         )
     }
 
@@ -26,6 +27,7 @@ struct DesktopSettingsStore {
         userDefaults.set(state.desktopLanguageRawValue, forKey: DesktopLanguage.storageKey)
         userDefaults.set(state.themeModeRawValue, forKey: SettingsViewModel.themeModeKey)
         userDefaults.set(state.themeAccentRawValue, forKey: SettingsViewModel.themeAccentKey)
-        userDefaults.set(state.menuCompactCards, forKey: SettingsViewModel.menuCompactCardsKey)
+        userDefaults.set(state.homeCardDensityRawValue, forKey: SettingsViewModel.homeCardDensityKey)
+        userDefaults.set(state.menuCardDensityRawValue, forKey: SettingsViewModel.menuCardDensityKey)
     }
 }

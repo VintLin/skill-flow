@@ -10,7 +10,8 @@ final class SettingsStateTests: XCTestCase {
         XCTAssertEqual(state.settings.logLevel, "info")
         XCTAssertEqual(state.settings.themeModeRawValue, DesktopThemeMode.light.rawValue)
         XCTAssertEqual(state.settings.themeAccentRawValue, DesktopAccentColor.blue.rawValue)
-        XCTAssertTrue(state.settings.menuCompactCards)
+        XCTAssertEqual(state.settings.homeCardDensityRawValue, DesktopCardDensity.comfortable.rawValue)
+        XCTAssertEqual(state.settings.menuCardDensityRawValue, DesktopCardDensity.compact.rawValue)
     }
 
     func testSettingsStoreLoadsAndPersistsState() {
@@ -20,11 +21,13 @@ final class SettingsStateTests: XCTestCase {
 
         var state = store.load()
         state.logLevel = "debug"
-        state.menuCompactCards = false
+        state.homeCardDensityRawValue = DesktopCardDensity.compact.rawValue
+        state.menuCardDensityRawValue = DesktopCardDensity.comfortable.rawValue
         store.save(state)
 
         let reloaded = store.load()
         XCTAssertEqual(reloaded.logLevel, "debug")
-        XCTAssertFalse(reloaded.menuCompactCards)
+        XCTAssertEqual(reloaded.homeCardDensityRawValue, DesktopCardDensity.compact.rawValue)
+        XCTAssertEqual(reloaded.menuCardDensityRawValue, DesktopCardDensity.comfortable.rawValue)
     }
 }

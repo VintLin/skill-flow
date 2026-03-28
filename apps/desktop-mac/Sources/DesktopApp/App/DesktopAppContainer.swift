@@ -47,6 +47,12 @@ final class DesktopAppContainer {
             fallbackRow: { [weak mainViewModel] sourceId in
                 mainViewModel?.sourceRows.first(where: { $0.id == sourceId })
             },
+            hasInspectPayload: { [weak mainViewModel] sourceId in
+                mainViewModel?.hasInspectPayload(for: sourceId) ?? false
+            },
+            isInspectRequestInFlight: { [weak mainViewModel] sourceId in
+                mainViewModel?.isInspectRequestInFlight(for: sourceId) ?? false
+            },
             isUpdatingCurrentGroup: { [weak mainViewModel] in
                 mainViewModel?.isUpdatingCurrentGroup ?? false
             },
@@ -80,8 +86,11 @@ final class DesktopAppContainer {
             showHome: { [weak state = resolvedRuntime.state] in
                 state?.view.currentRoute = .home
             },
-            showDetail: { [weak state = resolvedRuntime.state] sourceId in
+            showDetail: { [weak state = resolvedRuntime.state, weak mainViewModel] sourceId in
                 state?.view.currentRoute = .detail(sourceId: sourceId)
+                Task { @MainActor in
+                    await mainViewModel?.selectSource(sourceId)
+                }
             },
             showImportPage: { [weak state = resolvedRuntime.state] in
                 state?.view.currentRoute = .importPage

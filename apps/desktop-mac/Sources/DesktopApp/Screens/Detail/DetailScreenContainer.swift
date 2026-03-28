@@ -21,6 +21,8 @@ final class DetailScreenContainer {
     private let state: DesktopAppState
     private let detailSnapshot: (String) -> DetailViewModel.Snapshot?
     private let fallbackRowProvider: (String) -> MainViewModel.SourceRow?
+    private let hasInspectPayloadProvider: (String) -> Bool
+    private let isInspectRequestInFlightProvider: (String) -> Bool
     private let isUpdatingCurrentGroupProvider: () -> Bool
     private let selectSourceAction: (String) async -> Void
     private let updateCurrentGroupAction: () async -> Void
@@ -34,6 +36,8 @@ final class DetailScreenContainer {
         state: DesktopAppState,
         detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
         fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
+        hasInspectPayload: @escaping (String) -> Bool = { _ in false },
+        isInspectRequestInFlight: @escaping (String) -> Bool = { _ in false },
         isUpdatingCurrentGroup: @escaping () -> Bool = { false },
         selectSource: @escaping (String) async -> Void = { _ in },
         updateCurrentGroup: @escaping () async -> Void = {},
@@ -45,6 +49,8 @@ final class DetailScreenContainer {
         self.state = state
         self.detailSnapshot = detailSnapshot
         self.fallbackRowProvider = fallbackRow
+        self.hasInspectPayloadProvider = hasInspectPayload
+        self.isInspectRequestInFlightProvider = isInspectRequestInFlight
         self.isUpdatingCurrentGroupProvider = isUpdatingCurrentGroup
         self.selectSourceAction = selectSource
         self.updateCurrentGroupAction = updateCurrentGroup
@@ -70,6 +76,14 @@ final class DetailScreenContainer {
 
     var isUpdatingCurrentGroup: Bool {
         isUpdatingCurrentGroupProvider()
+    }
+
+    func hasInspectPayload(for sourceId: String) -> Bool {
+        hasInspectPayloadProvider(sourceId)
+    }
+
+    func isInspectRequestInFlight(for sourceId: String) -> Bool {
+        isInspectRequestInFlightProvider(sourceId)
     }
 
     var viewModel: DetailViewModel? {

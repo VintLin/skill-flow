@@ -127,9 +127,26 @@ struct SettingsView: View {
                 settingsSection(
                     title: t("settings.section.menu_bar"),
                     rows: {
-                        settingsRow(title: t("settings.row.menu_compact_cards.title"), description: t("settings.row.menu_compact_cards.description")) {
-                            Toggle("", isOn: $viewModel.menuCompactCards)
-                                .labelsHidden()
+                        settingsRow(title: t("settings.row.home_card_density.title"), description: t("settings.row.home_card_density.description")) {
+                            Picker(t("settings.row.home_card_density.title"), selection: $viewModel.homeCardDensityRawValue) {
+                                Text(t("settings.option.card_density.comfortable")).tag(DesktopCardDensity.comfortable.rawValue)
+                                Text(t("settings.option.card_density.compact")).tag(DesktopCardDensity.compact.rawValue)
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: controlColumnWidth, alignment: .trailing)
+                            .environment(\.colorScheme, colorScheme)
+                        }
+
+                        settingsRow(title: t("settings.row.menu_card_density.title"), description: t("settings.row.menu_card_density.description")) {
+                            Picker(t("settings.row.menu_card_density.title"), selection: $viewModel.menuCardDensityRawValue) {
+                                Text(t("settings.option.card_density.comfortable")).tag(DesktopCardDensity.comfortable.rawValue)
+                                Text(t("settings.option.card_density.compact")).tag(DesktopCardDensity.compact.rawValue)
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .frame(width: controlColumnWidth, alignment: .trailing)
+                            .environment(\.colorScheme, colorScheme)
                         }
                     }
                 )

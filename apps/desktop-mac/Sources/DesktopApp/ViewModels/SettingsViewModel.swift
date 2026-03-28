@@ -9,7 +9,8 @@ final class SettingsViewModel {
     nonisolated static let externalHelperKey = "desktop.experimentalExternalHelper"
     nonisolated static let themeModeKey = "desktop.themeMode"
     nonisolated static let themeAccentKey = "desktop.themeAccent"
-    nonisolated static let menuCompactCardsKey = "desktop.menuCompactCards"
+    nonisolated static let homeCardDensityKey = "desktop.homeCardDensity"
+    nonisolated static let menuCardDensityKey = "desktop.menuCardDensity"
 
     private let state: DesktopAppState
     private let store: DesktopSettingsStore
@@ -62,10 +63,18 @@ final class SettingsViewModel {
         }
     }
 
-    var menuCompactCards: Bool {
-        get { state.settings.menuCompactCards }
+    var homeCardDensityRawValue: String {
+        get { state.settings.homeCardDensityRawValue }
         set {
-            state.settings.menuCompactCards = newValue
+            state.settings.homeCardDensityRawValue = newValue
+            store.save(state.settings)
+        }
+    }
+
+    var menuCardDensityRawValue: String {
+        get { state.settings.menuCardDensityRawValue }
+        set {
+            state.settings.menuCardDensityRawValue = newValue
             store.save(state.settings)
         }
     }
@@ -86,6 +95,14 @@ final class SettingsViewModel {
 
     var currentLanguage: DesktopLanguage {
         DesktopLanguage(storageValue: desktopLanguageRawValue)
+    }
+
+    var currentHomeCardDensity: DesktopCardDensity {
+        DesktopCardDensity(rawValue: homeCardDensityRawValue) ?? .comfortable
+    }
+
+    var currentMenuCardDensity: DesktopCardDensity {
+        DesktopCardDensity(rawValue: menuCardDensityRawValue) ?? .compact
     }
 
     var selectedLocale: Locale {

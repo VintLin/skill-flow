@@ -27,7 +27,11 @@ struct MenuBarQuickConfigView: View {
     private let menuListMaxHeight: CGFloat = 440
 
     private var cardDisplayMode: GroupCardDisplayMode {
-        settingsViewModel.menuCompactCards ? .menu : .home
+        MainView.groupCardDisplayMode(for: settingsViewModel.currentMenuCardDensity)
+    }
+
+    private var menuUsesCompactDensity: Bool {
+        settingsViewModel.currentMenuCardDensity == .compact
     }
 
     var body: some View {
@@ -40,7 +44,7 @@ struct MenuBarQuickConfigView: View {
                             theme: theme,
                             accent: accent,
                             displayMode: cardDisplayMode,
-                            skillsCollapsed: settingsViewModel.menuCompactCards && hoveredGroupId != card.id,
+                            skillsCollapsed: menuUsesCompactDensity && hoveredGroupId != card.id,
                             isUpdating: viewModel.isUpdatingSource(card.id),
                             onOpen: nil,
                             onUpdate: {
@@ -66,7 +70,7 @@ struct MenuBarQuickConfigView: View {
                             }
                         )
                         .onHover { isHovering in
-                            guard settingsViewModel.menuCompactCards else { return }
+                            guard menuUsesCompactDensity else { return }
                             if isHovering {
                                 scheduleHoverExpansion(for: card.id)
                             } else {

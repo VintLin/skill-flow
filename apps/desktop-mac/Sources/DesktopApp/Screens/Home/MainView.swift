@@ -2,6 +2,29 @@ import AppKit
 import SwiftUI
 
 struct MainView: View {
+    struct ImportSearchPrompt: Equatable {
+        let leadingText: String
+        let fixedText: String
+        let trailingText: String
+
+        var id: String {
+            "\(leadingText)|\(fixedText)|\(trailingText)"
+        }
+    }
+
+    private enum SearchFieldFocus: Hashable {
+        case home
+        case importPage
+    }
+
+    enum ImportSearchActionState: Equatable {
+        case hidden
+        case idle
+        case submit
+        case loading
+        case resultCount(Int)
+    }
+
     struct NavigationActions {
         let showHome: () -> Void
         let showDetail: (String) -> Void
@@ -21,6 +44,7 @@ struct MainView: View {
     let detailContainer: DetailScreenContainer
 
     @State private var updateButtonRotation: Double = 0
+    @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
     init(
@@ -102,6 +126,30 @@ struct MainView: View {
                 }
             }
         }
+        .task(id: isImportPage) {
+            guard isImportPage, Self.importSearchPrompts.count > 1 else { return }
+            while !Task.isCancelled, isImportPage {
+                try? await Task.sleep(for: .seconds(2.2))
+                guard !Task.isCancelled, isImportPage else { break }
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.28)) {
+                        importScreenState.placeholderIndex = (importScreenState.placeholderIndex + 1) % Self.importSearchPrompts.count
+                    }
+                }
+            }
+        }
+        .task(id: isImportPage) {
+            guard isImportPage, Self.importSearchPrompts.count > 1 else { return }
+            while !Task.isCancelled, isImportPage {
+                try? await Task.sleep(for: .seconds(2.2))
+                guard !Task.isCancelled, isImportPage else { break }
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.28)) {
+                        importScreenState.placeholderIndex = (importScreenState.placeholderIndex + 1) % Self.importSearchPrompts.count
+                    }
+                }
+            }
+        }
     }
 
     private func topBar(layout: LayoutMetrics) -> some View {
@@ -131,6 +179,19 @@ struct MainView: View {
                 .padding(.horizontal, 16)
                 .frame(height: 52)
                 .background(AppTheme.headerBackground(for: theme))
+            } else if isImportPage {
+                HStack(spacing: 12) {
+                    topBarTitleRow
+                    importSearchField
+                    if importSearchActionState != .hidden {
+                        importSearchActionButton
+                            .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 52)
+                .background(AppTheme.headerBackground(for: theme))
             } else {
                 HStack(spacing: 10) {
                     topBarTitleRow
@@ -148,14 +209,7 @@ struct MainView: View {
             if isHomePage {
                 headerLogoRow
             } else {
-                Button {
-                    navigation.showHome()
-                } label: {
-                    actionIcon(.back, size: 14)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .frame(width: 22, height: 22)
+                toolbarIconButton(.back) { navigation.showHome() }
 
                 Text(currentPageTitle)
                     .font(.system(size: topBarTitleSize, weight: .semibold))
@@ -166,6 +220,10 @@ struct MainView: View {
 
     private var isHomePage: Bool {
         homeViewModel.currentRoute == .home
+    }
+
+    private var isImportPage: Bool {
+        homeViewModel.currentRoute == .importPage
     }
 
     private var headerLogoRow: some View {
@@ -207,23 +265,24 @@ struct MainView: View {
             actionIcon(.search, size: 11)
                 .foregroundStyle(AppTheme.textMuted(for: theme))
             ZStack(alignment: .leading) {
-                if viewModel.searchQuery.isEmpty {
+                if Self.shouldShowSearchPrompt(query: viewModel.searchQuery, isFocused: focusedSearchField == .home) {
                     Text(t("placeholder.home.search_group_author"))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
                         .textCase(.uppercase)
                         .allowsHitTesting(false)
                 }
 
                 TextField("", text: $viewModel.searchQuery)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .textCase(.uppercase)
+                    .focused($focusedSearchField, equals: .home)
             }
         }
         .padding(.horizontal, 12)
-        .frame(width: 320, height: 34, alignment: .leading)
+        .frame(width: Self.headerSearchFieldWidth, height: Self.headerSearchFieldHeight, alignment: .leading)
         .background(AppTheme.headerControlFill(for: theme))
         .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -233,8 +292,134 @@ struct MainView: View {
         }
     }
 
+    private var importSearchField: some View {
+        HStack(spacing: 8) {
+            actionIcon(.search, size: 11)
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+            ZStack(alignment: .leading) {
+                if Self.shouldShowSearchPrompt(query: importScreenState.searchText, isFocused: focusedSearchField == .importPage) {
+                    importSearchPromptLabel(activeImportSearchPrompt)
+                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                        .allowsHitTesting(false)
+                }
+
+                TextField("", text: $importScreenState.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .focused($focusedSearchField, equals: .importPage)
+                    .onSubmit {
+                        Task {
+                            focusedSearchField = nil
+                            await importContainer.submitSearch(importScreenState.searchText)
+                        }
+                    }
+            }
+
+        }
+        .padding(.horizontal, 12)
+        .frame(width: Self.headerSearchFieldWidth, height: Self.headerSearchFieldHeight, alignment: .leading)
+        .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    private func importSearchPromptLabel(_ prompt: ImportSearchPrompt) -> some View {
+        HStack(spacing: 0) {
+            ZStack {
+                Text(prompt.leadingText)
+                    .id("leading-\(prompt.id)")
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    ))
+            }
+            .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+            .frame(width: Self.importPromptLeadingWidth, alignment: .center)
+            Text(prompt.fixedText)
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+            ZStack {
+                Text(prompt.trailingText)
+                    .id("trailing-\(prompt.id)")
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    ))
+            }
+            .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+            .frame(width: Self.importPromptTrailingWidth, alignment: .center)
+        }
+    }
+
+    private var activeImportSearchPrompt: ImportSearchPrompt {
+        let prompts = Self.importSearchPrompts
+        guard !prompts.isEmpty else {
+            return ImportSearchPrompt(leadingText: "", fixedText: "", trailingText: "")
+        }
+        return prompts[importScreenState.placeholderIndex % prompts.count]
+    }
+
     private var importButton: some View {
         toolbarIconButton(.import) { navigation.showImportPage() }
+    }
+
+    @ViewBuilder
+    private var importSearchActionButton: some View {
+        switch importSearchActionState {
+        case .hidden:
+            EmptyView()
+        case .idle:
+            searchActionButtonShell {
+                EmptyView()
+            }
+        case .submit:
+            Button {
+                Task {
+                    focusedSearchField = nil
+                    await importContainer.submitSearch(importScreenState.searchText)
+                }
+            } label: {
+                searchActionButtonShell {
+                    actionIcon(.searchSubmitEnter, size: 14)
+                        .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                }
+            }
+            .buttonStyle(.plain)
+        case .loading:
+            searchActionButtonShell {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(AppTheme.brand(for: accent, in: theme))
+            }
+        case .resultCount(let count):
+            searchActionButtonShell {
+                Text("\(count)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+            }
+        }
+    }
+
+    private func searchActionButtonShell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .frame(width: Self.headerSearchActionButtonSize, height: Self.headerSearchActionButtonSize)
+            .background(AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.28 : 0.18))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var importSearchActionState: ImportSearchActionState {
+        let snapshot = importContainer.snapshot(locale: locale)
+        return Self.importSearchActionState(
+            isFocused: focusedSearchField == .importPage,
+            query: importScreenState.searchText,
+            searchPhase: snapshot?.searchPhase ?? .idle,
+            resultCount: snapshot?.cards.count ?? 0,
+            submittedQuery: snapshot?.submittedQuery ?? ""
+        )
     }
 
     private var homeUpdateButton: some View {
@@ -245,6 +430,10 @@ struct MainView: View {
 
     private var settingsButton: some View {
         toolbarIconButton(.settings) { navigation.showSettings() }
+    }
+
+    private var homeCardDisplayMode: GroupCardDisplayMode {
+        Self.groupCardDisplayMode(for: settingsViewModel.currentHomeCardDensity)
     }
 
     @ViewBuilder
@@ -320,7 +509,7 @@ struct MainView: View {
                                     card: card,
                                     theme: theme,
                                     accent: accent,
-                                    displayMode: .home,
+                                    displayMode: homeCardDisplayMode,
                                 skillsCollapsed: false,
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
@@ -385,6 +574,70 @@ struct MainView: View {
         case .detail:
             return t("page.detail.title")
         }
+    }
+
+    static func topBarShowsSearch(for route: DesktopRoute) -> Bool {
+        switch route {
+        case .home, .importPage:
+            return true
+        case .settings, .detail:
+            return false
+        }
+    }
+
+    static let headerSearchFieldWidth: CGFloat = 384
+    static let headerSearchFieldHeight: CGFloat = 34
+    static let headerSearchActionButtonSize: CGFloat = headerSearchFieldHeight
+    static let importPromptLeadingWidth: CGFloat = measuredPromptWidth(for: importSearchPrompts.map(\.leadingText))
+    static let importPromptTrailingWidth: CGFloat = measuredPromptWidth(for: importSearchPrompts.map(\.trailingText))
+
+    static func shouldShowSearchPrompt(query: String, isFocused: Bool) -> Bool {
+        query.isEmpty && !isFocused
+    }
+
+    static func importSearchActionState(
+        isFocused: Bool,
+        query: String,
+        searchPhase: MainViewModel.ImportLoadPhase,
+        resultCount: Int,
+        submittedQuery: String
+    ) -> ImportSearchActionState {
+        if case .loading = searchPhase {
+            return .loading
+        }
+        if isFocused {
+            return .submit
+        }
+        if !submittedQuery.isEmpty {
+            return .resultCount(resultCount)
+        }
+        return .hidden
+    }
+
+    static let importSearchPrompts: [ImportSearchPrompt] = [
+        ImportSearchPrompt(
+            leadingText: "npx skills",
+            fixedText: " 输入:",
+            trailingText: " anthropics/skills"
+        ),
+        ImportSearchPrompt(
+            leadingText: "github 链接",
+            fixedText: " 输入:",
+            trailingText: " https://github.com/..."
+        ),
+        ImportSearchPrompt(
+            leadingText: "关键词",
+            fixedText: " 输入:",
+            trailingText: " anthropics"
+        ),
+    ]
+
+    private static func measuredPromptWidth(for texts: [String]) -> CGFloat {
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let measured = texts.map { text in
+            ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        }
+        return (measured.max() ?? 0) + 4
     }
 
     private func openPath(_ path: String) {
@@ -541,15 +794,30 @@ struct MainView: View {
         Button(action: action) {
             actionIcon(icon, size: 14)
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .frame(width: 34, height: 34)
+                .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
+        .contentShape(Rectangle())
         .background(AppTheme.headerControlFill(for: theme))
         .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+}
+
+extension MainView {
+    static let toolbarButtonSize: CGFloat = 34
+    static func groupCardDisplayMode(for density: DesktopCardDensity) -> GroupCardDisplayMode {
+        switch density {
+        case .comfortable:
+            return .home
+        case .compact:
+            return .menu
         }
     }
 }
@@ -689,7 +957,7 @@ enum AppTheme {
     }
 
     static func pageBackground(for mode: DesktopThemeMode) -> Color {
-        neutralCardColor(.color2, for: mode)
+        neutralCardColor(.color3, for: mode)
     }
 
     static func surface(for mode: DesktopThemeMode) -> Color {
@@ -701,7 +969,19 @@ enum AppTheme {
     }
 
     static func headerBackground(for mode: DesktopThemeMode) -> Color {
+        neutralCardColor(.color3, for: mode)
+    }
+
+    static func detailHeaderBackground(for mode: DesktopThemeMode) -> Color {
+        neutralCardColor(.color1, for: mode)
+    }
+
+    static func detailBodyBackground(for mode: DesktopThemeMode) -> Color {
         neutralCardColor(.color2, for: mode)
+    }
+
+    static func detailHeaderBottomBorder(for mode: DesktopThemeMode) -> Color {
+        neutralCardColor(.color3, for: mode).opacity(0.5)
     }
 
     static func headerControlFill(for mode: DesktopThemeMode) -> Color {

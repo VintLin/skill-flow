@@ -69,4 +69,9 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .star))
         XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .github))
     }
+
+    func testDetailInfoIconLoaderFindsBundledSvgAssets() {
+        XCTAssertNotNil(DetailInfoIconLibrary.image(for: .version))
+        XCTAssertNotNil(DetailInfoIconLibrary.image(for: .wordCount))
+    }
 }

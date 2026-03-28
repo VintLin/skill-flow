@@ -117,7 +117,8 @@ final class ImportScreenContainerTests: XCTestCase {
                 )
             ],
             locale: Locale(identifier: "en"),
-            fallbackTargetIds: ["claude-code", "cursor"]
+            fallbackTargetIds: ["claude-code", "cursor"],
+            submittedQuery: ""
         )
 
         XCTAssertEqual(viewModel.cards.first?.targets.map(\.id), ["claude-code", "cursor"])
@@ -197,6 +198,106 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(ImportScreen.loadingPresentationStyle(searchPhase: .loading, cardCount: 0), .spinner)
         XCTAssertEqual(ImportScreen.loadingPresentationStyle(searchPhase: .idle, cardCount: 0), .none)
         XCTAssertEqual(ImportScreen.loadingPresentationStyle(searchPhase: .loading, cardCount: 2), .none)
+    }
+
+    func testTopBarSearchVisibilityMatchesHomeAndImportRoutes() {
+        XCTAssertTrue(MainView.topBarShowsSearch(for: .home))
+        XCTAssertTrue(MainView.topBarShowsSearch(for: .importPage))
+        XCTAssertFalse(MainView.topBarShowsSearch(for: .settings))
+        XCTAssertFalse(MainView.topBarShowsSearch(for: .detail(sourceId: "alpha")))
+    }
+
+    func testHeaderSearchFieldsUseExpandedWidth() {
+        XCTAssertEqual(MainView.headerSearchFieldWidth, 384)
+        XCTAssertEqual(MainView.headerSearchActionButtonSize, MainView.headerSearchFieldHeight)
+    }
+
+    func testSearchPromptHidesOnFocusEvenWhenQueryIsEmpty() {
+        XCTAssertTrue(MainView.shouldShowSearchPrompt(query: "", isFocused: false))
+        XCTAssertFalse(MainView.shouldShowSearchPrompt(query: "", isFocused: true))
+        XCTAssertFalse(MainView.shouldShowSearchPrompt(query: "anthropics", isFocused: false))
+    }
+
+    func testImportSearchPromptsExposeFixedInputSegmentAndAccentText() {
+        let prompt = MainView.importSearchPrompts[0]
+
+        XCTAssertEqual(prompt.leadingText, "npx skills")
+        XCTAssertEqual(prompt.fixedText, " 输入:")
+        XCTAssertEqual(prompt.trailingText, " anthropics/skills")
+    }
+
+    func testImportSearchActionStateTracksFocusQueryAndResults() {
+        XCTAssertEqual(
+            MainView.importSearchActionState(
+                isFocused: false,
+                query: "",
+                searchPhase: .idle,
+                resultCount: 0,
+                submittedQuery: ""
+            ),
+            .hidden
+        )
+        XCTAssertEqual(
+            MainView.importSearchActionState(
+                isFocused: true,
+                query: "",
+                searchPhase: .idle,
+                resultCount: 0,
+                submittedQuery: ""
+            ),
+            .submit
+        )
+        XCTAssertEqual(
+            MainView.importSearchActionState(
+                isFocused: true,
+                query: "anthropics",
+                searchPhase: .idle,
+                resultCount: 0,
+                submittedQuery: ""
+            ),
+            .submit
+        )
+        XCTAssertEqual(
+            MainView.importSearchActionState(
+                isFocused: false,
+                query: "anthropics",
+                searchPhase: .loading,
+                resultCount: 0,
+                submittedQuery: "anthropics"
+            ),
+            .loading
+        )
+        XCTAssertEqual(
+            MainView.importSearchActionState(
+                isFocused: false,
+                query: "anthropics",
+                searchPhase: .idle,
+                resultCount: 7,
+                submittedQuery: "anthropics"
+            ),
+            .resultCount(7)
+        )
+    }
+
+    func testImportSearchPromptTextWidthsUseMaxPromptTextInsteadOfFullFieldWidth() {
+        XCTAssertLessThan(MainView.importPromptLeadingWidth, MainView.headerSearchFieldWidth)
+        XCTAssertLessThan(MainView.importPromptTrailingWidth, MainView.headerSearchFieldWidth)
+        XCTAssertGreaterThan(MainView.importPromptLeadingWidth, 0)
+        XCTAssertGreaterThan(MainView.importPromptTrailingWidth, 0)
+    }
+
+    func testImportPageBodyOmitsLegacySectionHeader() {
+        XCTAssertFalse(ImportScreen.showsResultsHeader(searchPhase: .idle, cardCount: 6))
+        XCTAssertFalse(ImportScreen.showsResultsHeader(searchPhase: .loading, cardCount: 0))
+    }
+
+    func testImportEmptyAndLoadingStatesUsePlainCenteredPresentation() {
+        XCTAssertFalse(ImportScreen.usesChromedEmptyState(searchPhase: .idle, cardCount: 0))
+        XCTAssertFalse(ImportScreen.usesChromedEmptyState(searchPhase: .failed(.plain("x")), cardCount: 0))
+        XCTAssertFalse(ImportScreen.usesChromedLoadingState(searchPhase: .loading, cardCount: 0))
+        XCTAssertTrue(ImportScreen.usesCenteredStandaloneState(searchPhase: .idle, cardCount: 0))
+        XCTAssertTrue(ImportScreen.usesCenteredStandaloneState(searchPhase: .loading, cardCount: 0))
+        XCTAssertFalse(ImportScreen.usesCenteredStandaloneState(searchPhase: .loading, cardCount: 2))
     }
 
     private func makeItem(id: String, title: String, locator: String) -> MainViewModel.ImportGroupItem {

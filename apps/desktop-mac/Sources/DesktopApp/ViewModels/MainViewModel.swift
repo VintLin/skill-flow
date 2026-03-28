@@ -137,6 +137,21 @@ final class MainViewModel {
         let label: String
         let description: String
         let isEnabled: Bool
+        let highlightQuery: String?
+
+        init(
+            id: String,
+            label: String,
+            description: String,
+            isEnabled: Bool,
+            highlightQuery: String? = nil
+        ) {
+            self.id = id
+            self.label = label
+            self.description = description
+            self.isEnabled = isEnabled
+            self.highlightQuery = highlightQuery
+        }
     }
 
     struct GroupCardTarget: Identifiable {
@@ -2049,6 +2064,39 @@ final class MainViewModel {
         )
     }
 
+    static func preferredDetailGroupTitle(
+        sourceId: String,
+        displayName: String?,
+        snapshotTitle: String?,
+        locator: String
+    ) -> String {
+        if let snapshotTitle = snapshotTitle?.nonEmpty {
+            return snapshotTitle
+        }
+
+        if let displayName = sanitizedDetailTitle(displayName) {
+            return displayName
+        }
+
+        return detailTitleFallback(from: locator, sourceId: sourceId)
+    }
+
+    static func preferredDetailSkillTitle(
+        preparedTitle: String?,
+        payloadTitle: String?,
+        projectedName: String?,
+        snapshotTitle: String?,
+        rawLeafName: String?,
+        fallbackLinkName: String
+    ) -> String {
+        preparedTitle?.nonEmpty
+            ?? payloadTitle?.nonEmpty
+            ?? projectedName?.nonEmpty
+            ?? snapshotTitle?.nonEmpty
+            ?? sanitizedDetailTitle(rawLeafName)
+            ?? fallbackLinkName
+    }
+
     private func draft(for sourceId: String?) -> DraftState? {
         guard let sourceId = resolveSourceId(sourceId) else {
             return nil
@@ -2146,10 +2194,14 @@ final class MainViewModel {
             let linkName = leafPayload["linkName"] as? String ?? leaf.linkName
             let snapshotSkill = sourceSnapshot?.skills.first(where: { $0.skillId == linkName })
             let projectedName = projectedNamesByLeafId[leaf.id]
-            let title = preparedSkill?.title
-                ?? (leafPayload["title"] as? String)?.nonEmpty
-                ?? leaf.name.nonEmpty
-                ?? linkName
+            let title = Self.preferredDetailSkillTitle(
+                preparedTitle: preparedSkill?.title,
+                payloadTitle: leafPayload["title"] as? String,
+                projectedName: projectedName,
+                snapshotTitle: snapshotSkill?.title,
+                rawLeafName: leaf.name,
+                fallbackLinkName: linkName
+            )
 
             return DetailSkill(
                 id: leaf.id,
@@ -2212,9 +2264,14 @@ final class MainViewModel {
 
         return DetailViewData(
             sourceId: summary.sourceId,
-            title: (sourcePayload["displayName"] as? String)?.nonEmpty
-                ?? (summarySourcePayload["displayName"] as? String)?.nonEmpty
-                ?? summary.sourceDisplayName,
+            title: Self.preferredDetailGroupTitle(
+                sourceId: summary.sourceId,
+                displayName: (sourcePayload["displayName"] as? String)?.nonEmpty
+                    ?? (summarySourcePayload["displayName"] as? String)?.nonEmpty
+                    ?? summary.sourceDisplayName,
+                snapshotTitle: sourceSnapshot?.title,
+                locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator
+            ),
             subtitle: (sourcePayload["kind"] as? String)?.nonEmpty ?? summary.sourceKind,
             author: author,
             originLabel: originLabel,
@@ -2254,6 +2311,10 @@ final class MainViewModel {
 
     func hasInspectPayload(for sourceId: String) -> Bool {
         inspectedPayloadBySourceId[sourceId] != nil
+    }
+
+    func isInspectRequestInFlight(for sourceId: String) -> Bool {
+        inspectRequestTasksBySourceId[sourceId] != nil
     }
 
     private func mergedDetailPayload(for sourceId: String) -> [String: Any] {
@@ -3757,6 +3818,45 @@ final class MainViewModel {
 
     private func uniqueSorted(_ values: [String]) -> [String] {
         Array(Set(values)).sorted()
+    }
+
+    private static func sanitizedDetailTitle(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+
+        let lowercase = trimmed.lowercased()
+        let rejectedFragments = [
+            "zsh-compatible:",
+            "use find",
+            "no such file",
+            "command not found",
+            "permission denied",
+        ]
+        if rejectedFragments.contains(where: { lowercase.contains($0) }) {
+            return nil
+        }
+
+        return trimmed
+    }
+
+    private static func detailTitleFallback(from locator: String, sourceId: String) -> String {
+        let trimmed = locator
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ".git", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        guard !trimmed.isEmpty else {
+            return sourceId
+        }
+
+        if locator.hasPrefix("clawhub:"),
+           let slug = locator.split(separator: ":").last?.split(separator: "@").first {
+            return String(slug.split(separator: "/").last ?? Substring(sourceId))
+        }
+
+        let components = trimmed.split(separator: "/").map(String.init)
+        return components.last ?? sourceId
     }
 
     private func pruneSourceMap<T>(_ sourceMap: [String: T], allowedSourceIds: Set<String>) -> [String: T] {

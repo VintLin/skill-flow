@@ -51,8 +51,12 @@
 "settings.option.language.en" = "English";
 "settings.option.language.ja" = "日本語";
 "settings.section.menu_bar" = "菜单栏";
-"settings.row.menu_compact_cards.title" = "紧凑菜单卡片";
-"settings.row.menu_compact_cards.description" = "在菜单栏列表中折叠次级技能详情。";
+"settings.row.home_card_density.title" = "首页卡片密度";
+"settings.row.home_card_density.description" = "选择首页使用完整卡片还是菜单式紧凑卡片。";
+"settings.row.menu_card_density.title" = "菜单栏卡片密度";
+"settings.row.menu_card_density.description" = "选择菜单栏列表使用紧凑卡片还是首页完整卡片。";
+"settings.option.card_density.comfortable" = "标准";
+"settings.option.card_density.compact" = "紧凑";
 "settings.section.general" = "通用";
 "settings.row.launch_at_login.title" = "登录时启动";
 "settings.row.launch_at_login.description" = "系统启动时自动打开桌面应用。";

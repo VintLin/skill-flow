@@ -13,6 +13,21 @@ struct ImportViewModel: Equatable {
         let title: String
         let summary: String
         let selectedByDefault: Bool
+        let highlightQuery: String?
+
+        init(
+            id: String,
+            title: String,
+            summary: String,
+            selectedByDefault: Bool,
+            highlightQuery: String? = nil
+        ) {
+            self.id = id
+            self.title = title
+            self.summary = summary
+            self.selectedByDefault = selectedByDefault
+            self.highlightQuery = highlightQuery
+        }
     }
 
     struct Target: Identifiable, Equatable {
@@ -38,16 +53,24 @@ struct ImportViewModel: Equatable {
 
     let cards: [Card]
 
-    init(items: [MainViewModel.ImportGroupItem], locale: Locale, fallbackTargetIds: [String] = []) {
-        self.cards = items.map { Self.card(from: $0, locale: locale, fallbackTargetIds: fallbackTargetIds) }
+    init(
+        items: [MainViewModel.ImportGroupItem],
+        locale: Locale,
+        fallbackTargetIds: [String] = [],
+        submittedQuery: String = ""
+    ) {
+        self.cards = items.map {
+            Self.card(from: $0, locale: locale, fallbackTargetIds: fallbackTargetIds, submittedQuery: submittedQuery)
+        }
     }
 
     static func card(
         from item: MainViewModel.ImportGroupItem,
         locale: Locale,
-        fallbackTargetIds: [String] = []
+        fallbackTargetIds: [String] = [],
+        submittedQuery: String = ""
     ) -> Card {
-        let resolvedSkills = resolvedSkills(for: item)
+        let resolvedSkills = resolvedSkills(for: item, submittedQuery: submittedQuery)
         return Card(
             id: item.id,
             title: item.title,
@@ -60,14 +83,7 @@ struct ImportViewModel: Equatable {
             stats: stats(for: item),
             skillsLoading: shouldShowSkillLoadingState(for: item),
             targetsLoading: false,
-            skills: resolvedSkills.map {
-                Skill(
-                    id: $0.id,
-                    title: $0.title,
-                    summary: $0.summary,
-                    selectedByDefault: $0.selectedByDefault
-                )
-            },
+            skills: resolvedSkills,
             targets: resolvedTargets(for: item, fallbackTargetIds: fallbackTargetIds).map {
                 Target(
                     id: $0.id,
@@ -87,7 +103,7 @@ struct ImportViewModel: Equatable {
     }
 
     private static func shouldShowSkillLoadingState(for item: MainViewModel.ImportGroupItem) -> Bool {
-        if !resolvedSkills(for: item).isEmpty {
+        if !resolvedBaseSkills(for: item).isEmpty {
             return false
         }
 
@@ -101,7 +117,7 @@ struct ImportViewModel: Equatable {
         }
     }
 
-    private static func resolvedSkills(for item: MainViewModel.ImportGroupItem) -> [MainViewModel.ImportGroupSkill] {
+    private static func resolvedBaseSkills(for item: MainViewModel.ImportGroupItem) -> [MainViewModel.ImportGroupSkill] {
         if !item.skills.isEmpty {
             return item.skills
         }
@@ -114,6 +130,49 @@ struct ImportViewModel: Equatable {
                 selectedByDefault: true
             )
         } ?? []
+    }
+
+    private static func resolvedSkills(
+        for item: MainViewModel.ImportGroupItem,
+        submittedQuery: String
+    ) -> [Skill] {
+        let baseSkills = resolvedBaseSkills(for: item)
+        let normalizedQuery = submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryKey = normalizedQuery.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+
+        let matchedKeys = Set(
+            item.matchedSkillNames.map(normalizedMatchKey)
+                + item.matchedSkills.flatMap { [normalizedMatchKey($0.skillId), normalizedMatchKey($0.title)] }
+        )
+
+        return baseSkills.enumerated()
+            .map { index, skill in
+                let titleKey = normalizedMatchKey(skill.title)
+                let idKey = normalizedMatchKey(skill.id)
+                let matchesQuery = !queryKey.isEmpty && (
+                    titleKey.contains(queryKey) || idKey.contains(queryKey)
+                )
+                let isMatched = matchesQuery || matchedKeys.contains(titleKey) || matchedKeys.contains(idKey)
+
+                return (
+                    index: index,
+                    matched: isMatched,
+                    skill: Skill(
+                        id: skill.id,
+                        title: skill.title,
+                        summary: skill.summary,
+                        selectedByDefault: skill.selectedByDefault,
+                        highlightQuery: matchesQuery ? normalizedQuery : nil
+                    )
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.matched != rhs.matched {
+                    return lhs.matched && !rhs.matched
+                }
+                return lhs.index < rhs.index
+            }
+            .map(\.skill)
     }
 
     private static func resolvedTargets(
@@ -185,6 +244,12 @@ struct ImportViewModel: Equatable {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    private static func normalizedMatchKey(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 
     private static func localized(_ key: String, locale: Locale, _ arguments: CVarArg...) -> String {

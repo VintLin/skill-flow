@@ -2,20 +2,51 @@ import AppKit
 import Observation
 import SwiftUI
 
+enum DetailRouteBootstrap {
+    @MainActor
+    static func applySelections(
+        state: DetailScreenState,
+        sourceId: String,
+        detail: DetailViewModel?
+    ) {
+        if state.detailShowsGroupOverviewByGroup[sourceId] == nil {
+            state.detailShowsGroupOverviewByGroup[sourceId] = true
+        }
+        guard let detail else {
+            return
+        }
+        if state.detailSkillIdByGroup[sourceId] == nil {
+            state.detailSkillIdByGroup[sourceId] = preferredDetailSkillId(for: detail)
+        }
+        if state.detailDocumentTabIdByGroup[sourceId] == nil {
+            state.detailDocumentTabIdByGroup[sourceId] = detail.groupDocuments.first?.id
+        }
+        for skill in detail.skills where state.detailDocumentTabIdBySkill[skill.id] == nil {
+            state.detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
+        }
+    }
+
+    static func shouldFetchInspect(hasInspectPayload: Bool, isInspectRequestInFlight: Bool) -> Bool {
+        !hasInspectPayload && !isInspectRequestInFlight
+    }
+
+    private static func preferredDetailSkillId(for detail: DetailViewModel) -> String? {
+        detail.skills.first(where: \.isEnabled)?.id ?? detail.skills.first?.id
+    }
+}
+
 struct DetailScreen: View {
     @Environment(\.locale) private var locale
 
-    private let detailHeaderMinHeight: CGFloat = 84
-    private let detailGroupRowHeight: CGFloat = 64
-    private let detailSkillRowHeight: CGFloat = 60
-    private let detailSkillDividerHeight: CGFloat = 16
-    private let detailIndicatorHeight: CGFloat = 36
+    private let detailHeaderMinHeight: CGFloat = DetailSidebarLayout.headerMinHeight
     private let detailToggleWidth: CGFloat = 34
     private let detailToggleHeight: CGFloat = 34
     private let detailAgentItemHeight: CGFloat = 34
     private let detailAgentIconSize: CGFloat = 20
-    private let detailHeaderTitleSize: CGFloat = 17
-    private let detailHeaderMetaSize: CGFloat = 11
+    private let detailHeaderTitleSize: CGFloat = 21
+    private let detailHeaderMetaSize: CGFloat = 12
+    private let detailSidebarTitleSize: CGFloat = 13
+    private let detailSidebarMetaSize: CGFloat = 11
 
     let container: DetailScreenContainer
     @Bindable var screenState: DetailScreenState
@@ -66,23 +97,15 @@ struct DetailScreen: View {
     }
 
     private func bootstrapDetailRoute(sourceId: String, detail: DetailViewModel?) async {
-        await container.selectSource(sourceId)
-
-        if screenState.detailShowsGroupOverviewByGroup[sourceId] == nil {
-            screenState.detailShowsGroupOverviewByGroup[sourceId] = true
-        }
-        guard let detail else {
+        DetailRouteBootstrap.applySelections(state: screenState, sourceId: sourceId, detail: detail)
+        guard DetailRouteBootstrap.shouldFetchInspect(
+            hasInspectPayload: container.hasInspectPayload(for: sourceId),
+            isInspectRequestInFlight: container.isInspectRequestInFlight(for: sourceId)
+        ) else {
             return
         }
-        if screenState.detailSkillIdByGroup[sourceId] == nil {
-            screenState.detailSkillIdByGroup[sourceId] = preferredDetailSkillId(for: detail)
-        }
-        if screenState.detailDocumentTabIdByGroup[sourceId] == nil {
-            screenState.detailDocumentTabIdByGroup[sourceId] = detail.groupDocuments.first?.id
-        }
-        for skill in detail.skills where screenState.detailDocumentTabIdBySkill[skill.id] == nil {
-            screenState.detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
-        }
+        await container.selectSource(sourceId)
+        DetailRouteBootstrap.applySelections(state: screenState, sourceId: sourceId, detail: container.viewModel)
     }
 
     private func detailSidebar(
@@ -136,7 +159,7 @@ struct DetailScreen: View {
     ) -> some View {
         let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
         let showingGroupOverview = isShowingGroupOverview(groupId)
-        let isSkillLoading = screenState.pendingDetailSkillIdByGroup[groupId] != nil
+        let isSkillLoading = detail == nil && !showingGroupOverview
 
         return VStack(alignment: .leading, spacing: 0) {
             if showingGroupOverview {
@@ -167,9 +190,10 @@ struct DetailScreen: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .scrollIndicators(.never)
+            .background(AppTheme.detailBodyBackground(for: theme))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(AppTheme.surface(for: theme))
+        .background(AppTheme.detailBodyBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
@@ -245,47 +269,50 @@ struct DetailScreen: View {
         _ = fallbackOriginLabel
 
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
-                detailHeaderTitleRow(title: detail?.title ?? fallbackTitle, author: detail?.author ?? "@unknown")
-
-                Spacer(minLength: 12)
-
-                Button {
-                    Task { await container.updateCurrentGroup() }
-                } label: {
-                    actionIcon(.update, size: 14)
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .rotationEffect(.degrees(updateButtonRotation))
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.plain)
-                .background(
-                    isUpdating
-                        ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.24 : 0.18)
-                        : AppTheme.toolbarButtonBackground(for: theme)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(
-                            isUpdating ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : AppTheme.cardBorder(for: theme),
-                            lineWidth: 0.5
-                        )
-                }
-                .animation(.easeInOut(duration: 0.24), value: isUpdating)
-            }
+            detailHeaderTitleRow(title: detail?.title ?? fallbackTitle, author: detail?.author ?? "@unknown")
 
             detailHeaderMetadataRow(stats: detail?.groupStats ?? emptyStats)
         }
         .padding(14)
         .frame(height: detailHeaderMinHeight, alignment: .center)
-        .background(AppTheme.toolbarGlass(for: theme))
+        .background(AppTheme.detailHeaderBackground(for: theme))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(AppTheme.detailHeaderBottomBorder(for: theme))
+                .frame(height: 1)
+        }
+        .overlay(alignment: .trailing) {
+            Button {
+                Task { await container.updateCurrentGroup() }
+            } label: {
+                actionIcon(.update, size: 14)
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .rotationEffect(.degrees(updateButtonRotation))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .background(
+                isUpdating
+                    ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.24 : 0.18)
+                    : AppTheme.toolbarButtonBackground(for: theme)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(
+                        isUpdating ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : AppTheme.cardBorder(for: theme),
+                        lineWidth: 0.5
+                    )
+            }
+            .animation(.easeInOut(duration: 0.24), value: isUpdating)
+            .padding(.trailing, 14)
+        }
     }
 
     private func detailHeaderTitleRow(title: String, author: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title)
-                .font(.system(size: detailHeaderTitleSize, weight: .semibold))
+                .font(.system(size: detailHeaderTitleSize, weight: .regular))
                 .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -322,14 +349,7 @@ struct DetailScreen: View {
     }
 
     private func detailSkillVersionRow(_ version: String?) -> some View {
-        HStack {
-            Text(version.map(normalizedVersionText) ?? " ")
-                .font(.system(size: detailHeaderMetaSize, weight: .medium))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .frame(height: detailHeaderMetaSize + 4, alignment: .leading)
+        detailInfoRow(version: version, documentContent: nil, fontSize: detailHeaderMetaSize)
     }
 
     private var emptyStats: MainViewModel.GroupCardStats {
@@ -338,17 +358,17 @@ struct DetailScreen: View {
 
     private func detailSkillHeader(skill: DetailViewModel.DetailSkill?, fallbackGroupId: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
-                detailHeaderTitleRow(title: skill?.title ?? fallbackGroupId, author: skill?.author ?? "@unknown")
-
-                Spacer(minLength: 12)
-            }
-
-            detailSkillVersionRow(skill?.version)
+            detailHeaderTitleRow(title: skill?.title ?? fallbackGroupId, author: skill?.author ?? "@unknown")
+            detailInfoRow(version: skill?.version, documentContent: skill?.documentContent, fontSize: detailHeaderMetaSize)
         }
         .padding(14)
         .frame(height: detailHeaderMinHeight, alignment: .center)
-        .background(AppTheme.toolbarGlass(for: theme))
+        .background(AppTheme.detailHeaderBackground(for: theme))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(AppTheme.detailHeaderBottomBorder(for: theme))
+                .frame(height: 1)
+        }
     }
 
     private func detailGroupListRow(
@@ -359,12 +379,12 @@ struct DetailScreen: View {
         let isSelected = isShowingGroupOverview(groupId)
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(detail?.title ?? fallbackRow?.displayName ?? groupId)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                Text(detail?.title ?? detailFallbackTitle(sourceId: groupId, fallbackRow: fallbackRow))
+                    .font(.system(size: detailSidebarTitleSize, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? AppTheme.brand(for: accent, in: theme) : AppTheme.textPrimary(for: theme))
                     .lineLimit(1)
                 Text(t("detail.meta.by", detail?.author ?? "@unknown"))
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(size: detailSidebarMetaSize, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(1)
             }
@@ -375,7 +395,7 @@ struct DetailScreen: View {
                 Task { await container.toggleAllSkills(sourceId: groupId) }
             }
         }
-        .frame(height: detailGroupRowHeight)
+        .frame(height: DetailSidebarLayout.groupRowHeight)
         .contentShape(Rectangle())
         .onTapGesture {
             selectGroupOverview(groupId: groupId, detail: detail)
@@ -388,7 +408,7 @@ struct DetailScreen: View {
                 .fill(AppTheme.border(for: theme))
                 .frame(height: 1)
         }
-        .frame(height: 10)
+        .frame(height: DetailSidebarLayout.skillDividerHeight)
     }
 
     private func detailSkillListRow(groupId: String, skill: DetailViewModel.DetailSkill) -> some View {
@@ -398,9 +418,11 @@ struct DetailScreen: View {
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(skill.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: detailSidebarTitleSize, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? AppTheme.brand(for: accent, in: theme) : AppTheme.textPrimary(for: theme))
                     .lineLimit(1)
+
+                detailInfoRow(version: skill.version, documentContent: skill.documentContent, fontSize: detailSidebarMetaSize)
             }
             .frame(maxHeight: .infinity, alignment: .center)
 
@@ -416,11 +438,48 @@ struct DetailScreen: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .foregroundStyle(AppTheme.selectionControlText(skill.isEnabled ? .full : .empty, for: theme))
         }
-        .frame(height: detailSkillRowHeight)
+        .frame(height: DetailSidebarLayout.skillRowHeight)
         .opacity(isPending ? 0.72 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
             scheduleSkillSelection(groupId: groupId, skill: skill)
+        }
+    }
+
+    @ViewBuilder
+    private func detailInfoRow(version: String?, documentContent: String?, fontSize: CGFloat) -> some View {
+        let items = DetailInfoLayout.headerItems(version: version, documentContent: documentContent, locale: locale)
+
+        HStack(spacing: 10) {
+            if items.isEmpty {
+                Text(" ")
+                    .font(.system(size: fontSize, weight: .regular))
+                    .foregroundStyle(.clear)
+            } else {
+                ForEach(items) { item in
+                    detailInfoItem(item, fontSize: fontSize)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(height: fontSize + 4, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func detailInfoItem(_ item: DetailInfoLayout.Item, fontSize: CGFloat) -> some View {
+        HStack(spacing: 4) {
+            if let image = item.icon.image {
+                Image(nsImage: image)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .frame(width: fontSize, height: fontSize)
+            }
+            Text(item.text)
+                .font(.system(size: fontSize, weight: .regular))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .lineLimit(1)
         }
     }
 
@@ -539,10 +598,6 @@ struct DetailScreen: View {
                             .padding(.horizontal, 14)
                             .frame(height: detailAgentItemHeight)
                             .background(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.18) : AppTheme.documentBlock(for: theme))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(target.isEnabled ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : Color.clear, lineWidth: 1)
-                            )
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
@@ -652,27 +707,7 @@ struct DetailScreen: View {
     }
 
     private func detailIndicatorFrame(itemId: String?, detail: DetailViewModel?) -> CGRect? {
-        guard let itemId else {
-            return nil
-        }
-        if itemId.hasPrefix("group:") {
-            return CGRect(
-                x: 0,
-                y: (detailGroupRowHeight - detailIndicatorHeight) / 2,
-                width: 4,
-                height: detailIndicatorHeight
-            )
-        }
-        guard itemId.hasPrefix("skill:"),
-              let detail else {
-            return nil
-        }
-        let index = max(0, detailSkillIndex(from: itemId, detail: detail))
-        let originY = detailGroupRowHeight
-            + detailSkillDividerHeight
-            + CGFloat(index) * detailSkillRowHeight
-            + ((detailSkillRowHeight - detailIndicatorHeight) / 2)
-        return CGRect(x: 0, y: originY, width: 4, height: detailIndicatorHeight)
+        DetailSidebarLayout.indicatorFrame(itemId: itemId, skillIds: detail?.skills.map(\.id) ?? [])
     }
 
     private func detailSkillIndex(from itemId: String, detail: DetailViewModel) -> Int {
@@ -690,11 +725,6 @@ struct DetailScreen: View {
             return
         }
         NSWorkspace.shared.open(url)
-    }
-
-    private func normalizedVersionText(_ version: String) -> String {
-        let normalizedVersion = version.lowercased().hasPrefix("v") ? version : "v\(version)"
-        return t("detail.version", normalizedVersion)
     }
 
     private func agentIconForeground(isEnabled: Bool) -> NSColor {
@@ -727,8 +757,7 @@ struct DetailScreen: View {
 
     private func selectedDetailSkill(for groupId: String, detail: DetailViewModel?) -> DetailViewModel.DetailSkill? {
         guard let detail else { return nil }
-        let selectedId = screenState.pendingDetailSkillIdByGroup[groupId]
-            ?? screenState.detailSkillIdByGroup[groupId]
+        let selectedId = screenState.detailSkillIdByGroup[groupId]
             ?? preferredDetailSkillId(for: detail)
         if screenState.detailSkillIdByGroup[groupId] == nil, let selectedId {
             screenState.detailSkillIdByGroup[groupId] = selectedId
@@ -737,12 +766,16 @@ struct DetailScreen: View {
     }
 
     private func scheduleSkillSelection(groupId: String, skill: DetailViewModel.DetailSkill) {
+        if screenState.detailSkillIdByGroup[groupId] == skill.id,
+           screenState.detailShowsGroupOverviewByGroup[groupId] == false {
+            return
+        }
         screenState.pendingDetailSkillIdByGroup[groupId] = skill.id
         let token = nextSelectionToken(screenState.detailSkillSelectionTokenByGroup[groupId])
         screenState.detailSkillSelectionTokenByGroup[groupId] = token
 
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(40))
+            try? await Task.sleep(for: .milliseconds(DetailSidebarLayout.selectionTransitionDelayMilliseconds))
             guard screenState.detailSkillSelectionTokenByGroup[groupId] == token else { return }
             screenState.detailSkillIdByGroup[groupId] = skill.id
             screenState.detailShowsGroupOverviewByGroup[groupId] = false
@@ -968,6 +1001,104 @@ struct DetailScreen: View {
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
         L10n.string(key, locale: locale, arguments: arguments)
+    }
+}
+
+enum DetailInfoLayout {
+    struct Item: Identifiable, Equatable {
+        let id: String
+        let icon: DetailInfoIcon
+        let text: String
+    }
+
+    static func wordCount(from content: String?) -> Int? {
+        guard let content else {
+            return nil
+        }
+        let normalized = content
+            .replacingOccurrences(of: "#", with: " ")
+            .replacingOccurrences(of: "`", with: " ")
+            .replacingOccurrences(of: "*", with: " ")
+            .replacingOccurrences(of: ">", with: " ")
+        let components = normalized
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+        return components.isEmpty ? nil : components.count
+    }
+
+    static func headerItems(version: String?, documentContent: String?, locale: Locale) -> [Item] {
+        var items: [Item] = []
+        if let versionText = normalizedVersionText(version, locale: locale) {
+            items.append(Item(id: "version", icon: .version, text: versionText))
+        }
+        if let wordCount = wordCount(from: documentContent) {
+            items.append(Item(id: "word-count", icon: .wordCount, text: String(wordCount)))
+        }
+        return items
+    }
+
+    static func normalizedVersionText(_ version: String?, locale: Locale) -> String? {
+        guard let version, !version.isEmpty else {
+            return nil
+        }
+        _ = locale
+        return version.lowercased().hasPrefix("v") ? version : "v\(version)"
+    }
+}
+
+enum DetailSidebarLayout {
+    static let headerMinHeight: CGFloat = 84
+    static let groupRowHeight: CGFloat = 64
+    static let skillRowHeight: CGFloat = 60
+    static let skillDividerHeight: CGFloat = 10
+    static let indicatorHeight: CGFloat = 36
+    static let selectionTransitionDelayMilliseconds = 80
+
+    static func indicatorFrame(itemId: String?, skillIds: [String]) -> CGRect? {
+        guard let itemId else {
+            return nil
+        }
+        if itemId.hasPrefix("group:") {
+            return CGRect(
+                x: 0,
+                y: (groupRowHeight - indicatorHeight) / 2,
+                width: 4,
+                height: indicatorHeight
+            )
+        }
+        guard itemId.hasPrefix("skill:") else {
+            return nil
+        }
+        let skillId = itemId.replacingOccurrences(of: "skill:", with: "")
+        let index = max(0, skillIds.firstIndex(of: skillId) ?? 0)
+        let originY = groupRowHeight
+            + skillDividerHeight
+            + CGFloat(index) * skillRowHeight
+            + ((skillRowHeight - indicatorHeight) / 2)
+        return CGRect(x: 0, y: originY, width: 4, height: indicatorHeight)
+    }
+
+    static func sidebarVersionText(_ version: String?, locale: Locale) -> String {
+        guard let version, !version.isEmpty else {
+            return " "
+        }
+        let normalizedVersion = version.lowercased().hasPrefix("v") ? version : "v\(version)"
+        return L10n.string("detail.version", locale: locale, arguments: [normalizedVersion])
+    }
+}
+
+enum DetailInfoIcon {
+    case version
+    case wordCount
+
+    var image: NSImage? {
+        switch self {
+        case .version:
+            return DetailInfoIconLibrary.image(for: .version)
+        case .wordCount:
+            return DetailInfoIconLibrary.image(for: .wordCount)
+        }
     }
 }
 

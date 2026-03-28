@@ -24,7 +24,8 @@ final class SettingsViewModelTests: XCTestCase {
         defaults.set(DesktopLanguage.ja.rawValue, forKey: DesktopLanguage.storageKey)
         defaults.set(DesktopThemeMode.dark.rawValue, forKey: SettingsViewModel.themeModeKey)
         defaults.set(DesktopAccentColor.green.rawValue, forKey: SettingsViewModel.themeAccentKey)
-        defaults.set(false, forKey: SettingsViewModel.menuCompactCardsKey)
+        defaults.set(DesktopCardDensity.compact.rawValue, forKey: SettingsViewModel.homeCardDensityKey)
+        defaults.set(DesktopCardDensity.comfortable.rawValue, forKey: SettingsViewModel.menuCardDensityKey)
 
         let state = DesktopAppState()
         let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
@@ -35,9 +36,12 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.desktopLanguageRawValue, DesktopLanguage.ja.rawValue)
         XCTAssertEqual(viewModel.themeModeRawValue, DesktopThemeMode.dark.rawValue)
         XCTAssertEqual(viewModel.themeAccentRawValue, DesktopAccentColor.green.rawValue)
-        XCTAssertFalse(viewModel.menuCompactCards)
+        XCTAssertEqual(viewModel.homeCardDensityRawValue, DesktopCardDensity.compact.rawValue)
+        XCTAssertEqual(viewModel.menuCardDensityRawValue, DesktopCardDensity.comfortable.rawValue)
         XCTAssertEqual(viewModel.currentLanguage, DesktopLanguage.ja)
         XCTAssertEqual(viewModel.currentAccent, DesktopAccentColor.green)
+        XCTAssertEqual(viewModel.currentHomeCardDensity, .compact)
+        XCTAssertEqual(viewModel.currentMenuCardDensity, .comfortable)
         XCTAssertEqual(state.settings.logLevel, "warn")
     }
 
@@ -53,7 +57,8 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.desktopLanguageRawValue = DesktopLanguage.zhHans.rawValue
         viewModel.themeModeRawValue = DesktopThemeMode.dark.rawValue
         viewModel.themeAccentRawValue = DesktopAccentColor.orange.rawValue
-        viewModel.menuCompactCards = false
+        viewModel.homeCardDensityRawValue = DesktopCardDensity.compact.rawValue
+        viewModel.menuCardDensityRawValue = DesktopCardDensity.comfortable.rawValue
 
         XCTAssertEqual(defaults.bool(forKey: SettingsViewModel.autoLaunchKey), true)
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.logLevelKey), "error")
@@ -61,7 +66,8 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: DesktopLanguage.storageKey), DesktopLanguage.zhHans.rawValue)
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.themeModeKey), DesktopThemeMode.dark.rawValue)
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.themeAccentKey), DesktopAccentColor.orange.rawValue)
-        XCTAssertEqual(defaults.object(forKey: SettingsViewModel.menuCompactCardsKey) as? Bool, false)
+        XCTAssertEqual(defaults.string(forKey: SettingsViewModel.homeCardDensityKey), DesktopCardDensity.compact.rawValue)
+        XCTAssertEqual(defaults.string(forKey: SettingsViewModel.menuCardDensityKey), DesktopCardDensity.comfortable.rawValue)
         XCTAssertEqual(state.settings.logLevel, "error")
         XCTAssertEqual(state.settings.themeAccentRawValue, DesktopAccentColor.orange.rawValue)
     }
@@ -81,7 +87,8 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.logLevel, "info")
         XCTAssertFalse(viewModel.experimentalExternalHelper)
         XCTAssertEqual(viewModel.themeModeRawValue, DesktopThemeMode.light.rawValue)
-        XCTAssertEqual(viewModel.menuCompactCards, true)
+        XCTAssertEqual(viewModel.homeCardDensityRawValue, DesktopCardDensity.comfortable.rawValue)
+        XCTAssertEqual(viewModel.menuCardDensityRawValue, DesktopCardDensity.compact.rawValue)
         XCTAssertEqual(viewModel.currentAccent, DesktopAccentColor.blue)
         XCTAssertEqual(viewModel.currentLanguage, DesktopLanguage.system)
     }

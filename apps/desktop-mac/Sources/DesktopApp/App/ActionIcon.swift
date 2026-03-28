@@ -13,11 +13,17 @@ enum ActionIcon: String {
     case more
     case pin
     case search
+    case searchSubmitEnter = "search-submit-enter"
     case settings
     case star
     case update
 
     func image(size: CGFloat? = nil, isTemplate: Bool = true) -> NSImage? {
+        if self == .searchSubmitEnter,
+           let fallback = Self.searchSubmitFallbackImage(size: size, isTemplate: isTemplate) {
+            return fallback
+        }
+
         for directory in Self.resourceDirectories() {
             let url = directory.appendingPathComponent("\(rawValue).svg")
             if let image = NSImage(contentsOf: url) {
@@ -118,5 +124,22 @@ enum ActionIcon: String {
             bundle: .module,
             sourceRoot: sourceRoot
         )
+    }
+
+    private static func searchSubmitFallbackImage(size: CGFloat?, isTemplate: Bool) -> NSImage? {
+        let symbolName = "arrow.turn.down.left"
+        let configuration = NSImage.SymbolConfiguration(
+            pointSize: size ?? 14,
+            weight: .regular
+        )
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) else {
+            return nil
+        }
+        image.isTemplate = isTemplate
+        if let size {
+            image.size = NSSize(width: size, height: size)
+        }
+        return image
     }
 }

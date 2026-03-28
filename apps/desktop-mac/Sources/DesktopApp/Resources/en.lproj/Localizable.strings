@@ -51,8 +51,12 @@
 "settings.option.language.en" = "English";
 "settings.option.language.ja" = "日本語";
 "settings.section.menu_bar" = "Menu Bar";
-"settings.row.menu_compact_cards.title" = "Compact menu cards";
-"settings.row.menu_compact_cards.description" = "Collapse secondary skill details in the menu bar list.";
+"settings.row.home_card_density.title" = "Home card density";
+"settings.row.home_card_density.description" = "Choose whether home uses the full card or the compact menu card layout.";
+"settings.row.menu_card_density.title" = "Menu card density";
+"settings.row.menu_card_density.description" = "Choose whether the menu bar list uses compact cards or the full home card layout.";
+"settings.option.card_density.comfortable" = "Standard";
+"settings.option.card_density.compact" = "Compact";
 "settings.section.general" = "General";
 "settings.row.launch_at_login.title" = "Launch at login";
 "settings.row.launch_at_login.description" = "Open the desktop app automatically when the system starts.";

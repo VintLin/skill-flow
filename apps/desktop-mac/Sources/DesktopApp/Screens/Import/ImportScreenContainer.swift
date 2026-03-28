@@ -41,7 +41,8 @@ final class ImportScreenContainer {
         let viewModel = ImportViewModel(
             items: mainViewModel.importDisplayGroups,
             locale: locale,
-            fallbackTargetIds: mainViewModel.visibleTargets.map(\.id)
+            fallbackTargetIds: mainViewModel.visibleTargets.map(\.id),
+            submittedQuery: mainViewModel.importSubmittedQuery
         )
         return Snapshot(
             searchPhase: mainViewModel.importSearchPhase,

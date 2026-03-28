@@ -51,8 +51,12 @@
 "settings.option.language.en" = "English";
 "settings.option.language.ja" = "日本語";
 "settings.section.menu_bar" = "メニューバー";
-"settings.row.menu_compact_cards.title" = "コンパクトカード";
-"settings.row.menu_compact_cards.description" = "メニューバー一覧で補助的なスキル詳細を折りたたみます。";
+"settings.row.home_card_density.title" = "ホームカード密度";
+"settings.row.home_card_density.description" = "ホームで通常カードを使うか、メニュー用のコンパクトカードを使うかを選びます。";
+"settings.row.menu_card_density.title" = "メニューカード密度";
+"settings.row.menu_card_density.description" = "メニューバー一覧でコンパクトカードを使うか、ホームと同じ通常カードを使うかを選びます。";
+"settings.option.card_density.comfortable" = "標準";
+"settings.option.card_density.compact" = "コンパクト";
 "settings.section.general" = "一般";
 "settings.row.launch_at_login.title" = "ログイン時に起動";
 "settings.row.launch_at_login.description" = "システム起動時にデスクトップアプリを自動で開きます。";

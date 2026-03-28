@@ -3,8 +3,6 @@ import SwiftUI
 struct ImportScreen: View {
     @Environment(\.locale) private var locale
 
-    private let controlHeight: CGFloat = 34
-
     let container: ImportScreenContainer
     @Bindable var screenState: ImportScreenState
     let gridColumnCount: Int
@@ -35,41 +33,14 @@ struct ImportScreen: View {
         let searchPhase = snapshot?.searchPhase ?? .idle
         let importingGroupId = snapshot?.importingGroupId
 
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(t("import.page.title"))
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-
-                    HStack(spacing: 10) {
-                        importSearchField
-                        importSearchButton
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionHeader(
-                        title: submittedQuery.isEmpty ? t("import.section.recommended") : t("import.section.search_results"),
-                        subtitle: "",
-                        badge: "\(cards.count)"
-                    )
-
-                    if Self.loadingPresentationStyle(searchPhase: searchPhase, cardCount: cards.count) == .spinner {
-                        importLoadingIndicator
-                    } else if case .failed(let message) = searchPhase, cards.isEmpty {
-                        emptyState(
-                            title: t("import.failed.title"),
-                            subtitle: message.resolve(locale: locale)
-                        )
-                    } else if cards.isEmpty {
-                        emptyState(
-                            title: t("home.empty.title"),
-                            subtitle: submittedQuery.isEmpty
-                                ? t("import.empty.recommended")
-                                : t("import.empty.search")
-                        )
-                    } else {
+        return Group {
+            if Self.usesCenteredStandaloneState(searchPhase: searchPhase, cardCount: cards.count) {
+                centeredStateContent(searchPhase: searchPhase, submittedQuery: submittedQuery)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
                         HStack {
                             Spacer(minLength: 0)
                             LazyVGrid(columns: gridColumns, spacing: 12) {
@@ -115,96 +86,43 @@ struct ImportScreen: View {
                             Spacer(minLength: 0)
                         }
                     }
+                    .padding(16)
                 }
             }
-            .padding(16)
         }
     }
 
-    private var importSearchField: some View {
-        HStack(spacing: 8) {
-            ZStack(alignment: .leading) {
-                if screenState.searchText.isEmpty {
-                    Text(activeImportSearchPrompt)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
-                        .lineLimit(1)
-                        .id(activeImportSearchPrompt)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .allowsHitTesting(false)
-                }
-
-                TextField("", text: $screenState.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    .onSubmit {
-                        Task {
-                            await container.submitSearch(screenState.searchText)
-                        }
-                    }
-            }
+    @ViewBuilder
+    private func centeredStateContent(searchPhase: MainViewModel.ImportLoadPhase, submittedQuery: String) -> some View {
+        if Self.loadingPresentationStyle(searchPhase: searchPhase, cardCount: 0) == .spinner {
+            importLoadingIndicator
+        } else if case .failed(let message) = searchPhase {
+            emptyState(
+                title: t("import.failed.title"),
+                subtitle: message.resolve(locale: locale),
+                chromed: Self.usesChromedEmptyState(searchPhase: searchPhase, cardCount: 0)
+            )
+        } else {
+            emptyState(
+                title: t("home.empty.title"),
+                subtitle: submittedQuery.isEmpty
+                    ? t("import.empty.recommended")
+                    : t("import.empty.search"),
+                chromed: Self.usesChromedEmptyState(searchPhase: searchPhase, cardCount: 0)
+            )
         }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: controlHeight, alignment: .leading)
-        .background(AppTheme.headerControlFill(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-        }
-    }
-
-    private var importSearchButton: some View {
-        Button {
-            Task {
-                await container.submitSearch(screenState.searchText)
-            }
-        } label: {
-            actionIcon(.search, size: 12)
-                .foregroundStyle(AppTheme.pageBackground(for: theme))
-                .frame(width: controlHeight, height: controlHeight)
-                .background(AppTheme.brand(for: accent, in: theme))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
     }
 
     private var importLoadingIndicator: some View {
-        HStack {
-            Spacer(minLength: 0)
-            VStack(spacing: 10) {
-                ProgressView()
-                    .controlSize(.regular)
-                Text(t("common.loading.groups"))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, minHeight: 220)
-            .background(AppTheme.surface(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-            }
-            .frame(maxWidth: gridFrameWidth, alignment: .center)
-            Spacer(minLength: 0)
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.regular)
+            Text(t("common.loading.groups"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .multilineTextAlignment(.center)
         }
-    }
-
-    private var activeImportSearchPrompt: String {
-        guard !importSearchPrompts.isEmpty else { return "" }
-        return importSearchPrompts[screenState.placeholderIndex % importSearchPrompts.count]
-    }
-
-    private var importSearchPrompts: [String] {
-        [
-            "anthropic/skills",
-            "https://github.com/anthropics/skills",
-            "https://github.com/anthropics/skills.git",
-            "git@github.com:anthropics/skills.git",
-        ]
+        .frame(maxWidth: .infinity, minHeight: 220)
     }
 
     private var gridColumns: [GridItem] {
@@ -242,7 +160,8 @@ struct ImportScreen: View {
                     id: skill.id,
                     label: skill.title,
                     description: skill.summary,
-                    isEnabled: selectedSkillIds.contains(skill.id)
+                    isEnabled: selectedSkillIds.contains(skill.id),
+                    highlightQuery: skill.highlightQuery
                 )
             },
             targets: card.targets.map { target in
@@ -269,29 +188,6 @@ struct ImportScreen: View {
             return .full
         default:
             return .partial
-        }
-    }
-
-    private func sectionHeader(title: String, subtitle: String, badge: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                if !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                }
-            }
-            Spacer()
-            Text(badge)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(AppTheme.toolbarButtonBackground(for: theme))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
         }
     }
 
@@ -360,5 +256,30 @@ extension ImportScreen {
             return .none
         }
         return .spinner
+    }
+
+    static func showsResultsHeader(searchPhase: MainViewModel.ImportLoadPhase, cardCount: Int) -> Bool {
+        false
+    }
+
+    static func usesChromedEmptyState(
+        searchPhase: MainViewModel.ImportLoadPhase,
+        cardCount: Int
+    ) -> Bool {
+        false
+    }
+
+    static func usesChromedLoadingState(
+        searchPhase: MainViewModel.ImportLoadPhase,
+        cardCount: Int
+    ) -> Bool {
+        false
+    }
+
+    static func usesCenteredStandaloneState(
+        searchPhase: MainViewModel.ImportLoadPhase,
+        cardCount: Int
+    ) -> Bool {
+        cardCount == 0
     }
 }

@@ -157,6 +157,39 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertEqual(card.skills.map { $0.summary }, ["Research things.", "Debug things."])
     }
 
+    func testCardPromotesMatchedSkillToFrontAndMarksHighlightQuery() {
+        let item = makeItem(
+            matchedSkillNames: ["browse"],
+            previewPhase: .ready,
+            skills: [
+                MainViewModel.ImportGroupSkill(
+                    id: "review",
+                    title: "Review",
+                    summary: "Review things.",
+                    selectedByDefault: true
+                ),
+                MainViewModel.ImportGroupSkill(
+                    id: "browse",
+                    title: "Browse",
+                    summary: "Browse things.",
+                    selectedByDefault: true
+                ),
+                MainViewModel.ImportGroupSkill(
+                    id: "debug",
+                    title: "Debug",
+                    summary: "Debug things.",
+                    selectedByDefault: true
+                )
+            ]
+        )
+
+        let card = ImportViewModel.card(from: item, locale: locale, submittedQuery: "bro")
+
+        XCTAssertEqual(card.skills.map(\.id), ["browse", "review", "debug"])
+        XCTAssertEqual(card.skills.first?.highlightQuery, "bro")
+        XCTAssertNil(card.skills.dropFirst().first?.highlightQuery)
+    }
+
     func testSubtitleDerivesOwnerFromGitHubAndRepoPatterns() {
         XCTAssertEqual(
             ImportViewModel.card(
