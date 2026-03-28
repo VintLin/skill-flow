@@ -18,7 +18,6 @@ struct DetailScreen: View {
     private let detailHeaderMetaSize: CGFloat = 11
 
     let container: DetailScreenContainer
-    @Bindable var viewModel: MainViewModel
     @Bindable var screenState: DetailScreenState
     let sidebarWidth: CGFloat
     let theme: DesktopThemeMode
@@ -27,14 +26,12 @@ struct DetailScreen: View {
 
     init(
         container: DetailScreenContainer,
-        viewModel: MainViewModel,
         sidebarWidth: CGFloat,
         theme: DesktopThemeMode,
         accent: DesktopAccentColor,
         updateButtonRotation: Double
     ) {
         self.container = container
-        self.viewModel = viewModel
         self.screenState = container.screenState
         self.sidebarWidth = sidebarWidth
         self.theme = theme
@@ -46,7 +43,7 @@ struct DetailScreen: View {
         Group {
             if let sourceId = container.sourceId {
                 let detail = container.viewModel
-                let fallbackRow = viewModel.sourceRows.first(where: { $0.id == sourceId })
+                let fallbackRow = container.fallbackRow
 
                 HStack(alignment: .top, spacing: 14) {
                     detailSidebar(
@@ -69,7 +66,7 @@ struct DetailScreen: View {
     }
 
     private func bootstrapDetailRoute(sourceId: String, detail: DetailViewModel?) async {
-        await viewModel.selectSource(sourceId)
+        await container.selectSource(sourceId)
 
         if screenState.detailShowsGroupOverviewByGroup[sourceId] == nil {
             screenState.detailShowsGroupOverviewByGroup[sourceId] = true
@@ -282,7 +279,7 @@ struct DetailScreen: View {
         fallbackTitle: String,
         fallbackOriginLabel: String?
     ) -> some View {
-        let isUpdating = viewModel.isUpdatingCurrentGroup
+        let isUpdating = container.isUpdatingCurrentGroup
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
@@ -300,7 +297,7 @@ struct DetailScreen: View {
                 Spacer(minLength: 12)
 
                 Button {
-                    Task { await viewModel.updateCurrentGroup() }
+                    Task { await container.updateCurrentGroup() }
                 } label: {
                     actionIcon(.update, size: 14)
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
@@ -399,7 +396,7 @@ struct DetailScreen: View {
             Spacer(minLength: 10)
 
             detailToggleButton(selection: detail?.skillSelection ?? .empty) {
-                Task { await viewModel.toggleAllSkills(sourceId: groupId) }
+                Task { await container.toggleAllSkills(sourceId: groupId) }
             }
         }
         .frame(height: detailGroupRowHeight)
@@ -443,7 +440,7 @@ struct DetailScreen: View {
             Spacer(minLength: 10)
 
             Button(skill.isEnabled ? t("common.selection.on") : t("common.selection.off")) {
-                Task { await viewModel.setSkillEnabled(skill.id, enabled: !skill.isEnabled, sourceId: groupId) }
+                Task { await container.setSkillEnabled(skill.id, enabled: !skill.isEnabled, sourceId: groupId) }
             }
             .buttonStyle(.plain)
             .font(.system(size: 10, weight: .bold))
@@ -543,12 +540,12 @@ struct DetailScreen: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     detailToggleButton(selection: detail?.targetSelection ?? .empty) {
-                        Task { await viewModel.toggleAllTargets(sourceId: groupId) }
+                        Task { await container.toggleAllTargets(sourceId: groupId) }
                     }
 
                     ForEach(detail?.targets ?? []) { target in
                         Button {
-                            Task { await viewModel.setTargetEnabled(target.id, enabled: !target.isEnabled, sourceId: groupId) }
+                            Task { await container.setTargetEnabled(target.id, enabled: !target.isEnabled, sourceId: groupId) }
                         } label: {
                             HStack(spacing: 10) {
                                 if let image = AgentIconLibrary.symbolImage(

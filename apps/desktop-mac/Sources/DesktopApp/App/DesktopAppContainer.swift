@@ -25,9 +25,36 @@ final class DesktopAppContainer {
         self.mainViewModel = MainViewModel(bridgeClient: bridgeClient)
         self.settingsViewModel = SettingsViewModel()
         self.importContainer = ImportScreenContainer(state: runtime.state, mainViewModel: mainViewModel)
-        self.detailContainer = DetailScreenContainer(state: runtime.state) { [weak mainViewModel] sourceId in
-            mainViewModel?.detailSnapshot(for: sourceId)
-        }
+        self.detailContainer = DetailScreenContainer(
+            state: runtime.state,
+            detailSnapshot: { [weak mainViewModel] sourceId in
+                mainViewModel?.detailSnapshot(for: sourceId)
+            },
+            fallbackRow: { [weak mainViewModel] sourceId in
+                mainViewModel?.sourceRows.first(where: { $0.id == sourceId })
+            },
+            isUpdatingCurrentGroup: { [weak mainViewModel] in
+                mainViewModel?.isUpdatingCurrentGroup ?? false
+            },
+            selectSource: { [weak mainViewModel] sourceId in
+                await mainViewModel?.selectSource(sourceId)
+            },
+            updateCurrentGroup: { [weak mainViewModel] in
+                await mainViewModel?.updateCurrentGroup()
+            },
+            toggleAllSkills: { [weak mainViewModel] sourceId in
+                await mainViewModel?.toggleAllSkills(sourceId: sourceId)
+            },
+            setSkillEnabled: { [weak mainViewModel] skillId, enabled, sourceId in
+                await mainViewModel?.setSkillEnabled(skillId, enabled: enabled, sourceId: sourceId)
+            },
+            toggleAllTargets: { [weak mainViewModel] sourceId in
+                await mainViewModel?.toggleAllTargets(sourceId: sourceId)
+            },
+            setTargetEnabled: { [weak mainViewModel] targetId, enabled, sourceId in
+                await mainViewModel?.setTargetEnabled(targetId, enabled: enabled, sourceId: sourceId)
+            }
+        )
         self.homeContainer = HomeScreenContainer(
             state: runtime.state,
             mainViewModel: mainViewModel,

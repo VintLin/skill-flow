@@ -266,7 +266,6 @@ struct MainView: View {
         case .detail:
             DetailScreen(
                 container: detailContainer,
-                viewModel: viewModel,
                 sidebarWidth: layout.detailSidebarWidth,
                 theme: theme,
                 accent: accent,

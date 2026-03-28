@@ -134,4 +134,82 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertEqual(container.screenState.detailDocumentTabIdByGroup["alpha"], "readme")
         XCTAssertEqual(container.screenState.detailDocumentTabIdBySkill["alpha-b"], "skill-doc")
     }
+
+    func testFallbackRowProjectsFromCurrentDetailRoute() {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in nil },
+            fallbackRow: { sourceId in
+                XCTAssertEqual(sourceId, "alpha")
+                return MainViewModel.SourceRow(
+                    id: sourceId,
+                    displayName: "AlphaHub",
+                    locator: "clawhub/alpha",
+                    kind: "clawhub",
+                    skillCount: 2,
+                    status: "healthy",
+                    lastUpdate: "2026-03-25T12:00:00Z",
+                    warningCount: 0,
+                    errorCount: 0
+                )
+            }
+        )
+
+        XCTAssertEqual(container.fallbackRow?.displayName, "AlphaHub")
+        XCTAssertEqual(container.fallbackRow?.locator, "clawhub/alpha")
+    }
+
+    func testActionSeamsForwardThroughDetailContainer() async {
+        let state = DesktopAppState()
+        var selectedSourceId: String?
+        var updateCurrentGroupCount = 0
+        var toggledAllSkillsSourceId: String?
+        var setSkillCall: (id: String, enabled: Bool, sourceId: String)?
+        var toggledAllTargetsSourceId: String?
+        var setTargetCall: (id: String, enabled: Bool, sourceId: String)?
+
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in nil },
+            selectSource: { sourceId in
+                selectedSourceId = sourceId
+            },
+            updateCurrentGroup: {
+                updateCurrentGroupCount += 1
+            },
+            toggleAllSkills: { sourceId in
+                toggledAllSkillsSourceId = sourceId
+            },
+            setSkillEnabled: { skillId, enabled, sourceId in
+                setSkillCall = (skillId, enabled, sourceId)
+            },
+            toggleAllTargets: { sourceId in
+                toggledAllTargetsSourceId = sourceId
+            },
+            setTargetEnabled: { targetId, enabled, sourceId in
+                setTargetCall = (targetId, enabled, sourceId)
+            }
+        )
+
+        await container.selectSource("alpha")
+        await container.updateCurrentGroup()
+        await container.toggleAllSkills(sourceId: "alpha")
+        await container.setSkillEnabled("browse", enabled: false, sourceId: "alpha")
+        await container.toggleAllTargets(sourceId: "alpha")
+        await container.setTargetEnabled("claude-code", enabled: true, sourceId: "alpha")
+
+        XCTAssertEqual(selectedSourceId, "alpha")
+        XCTAssertEqual(updateCurrentGroupCount, 1)
+        XCTAssertEqual(toggledAllSkillsSourceId, "alpha")
+        XCTAssertEqual(setSkillCall?.id, "browse")
+        XCTAssertEqual(setSkillCall?.enabled, false)
+        XCTAssertEqual(setSkillCall?.sourceId, "alpha")
+        XCTAssertEqual(toggledAllTargetsSourceId, "alpha")
+        XCTAssertEqual(setTargetCall?.id, "claude-code")
+        XCTAssertEqual(setTargetCall?.enabled, true)
+        XCTAssertEqual(setTargetCall?.sourceId, "alpha")
+    }
 }
