@@ -648,7 +648,9 @@ private struct TestFixture {
     }
 
     func makeModel() async throws -> MainViewModel {
+        let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
         await model.bootstrap()
         switch model.loadState {
         case .ready:

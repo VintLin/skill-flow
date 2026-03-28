@@ -29,7 +29,7 @@ final class DesktopAppContainerTests: XCTestCase {
         XCTAssertEqual(container.homeContainer.viewModel.sourceIds, ["alpha", "beta"])
     }
 
-    func testHomeSeamProjectsFoundationRouteIntoMainViewModelCurrentPage() async {
+    func testHomeSeamBindsFoundationRouteIntoMainViewModelCurrentRoute() async {
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)
 

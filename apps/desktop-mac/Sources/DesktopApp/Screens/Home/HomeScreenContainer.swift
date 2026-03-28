@@ -38,15 +38,8 @@ final class HomeScreenContainer {
                 state?.view.currentRoute = .settings
             }
         )
-        self.mainViewModel.routeRequest = { [weak state] page in
-            state?.view.currentRoute = MainViewModel.route(for: page)
-        }
-        self.mainViewModel.currentRouteProvider = { [weak state] in
-            state?.view.currentRoute ?? .home
-        }
-        observeFoundationRouteState()
+        self.mainViewModel.bindRouteState(state)
         observeMainViewModelState()
-        syncViewModelRoute()
     }
 
     func makeView() -> HomeScreen {
@@ -66,18 +59,6 @@ final class HomeScreenContainer {
         }
 
         syncFoundationState()
-        syncViewModelRoute()
-    }
-
-    private func observeFoundationRouteState() {
-        withObservationTracking {
-            _ = state.view.currentRoute
-        } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.syncViewModelRoute()
-                self?.observeFoundationRouteState()
-            }
-        }
     }
 
     private func syncFoundationState() {
@@ -87,10 +68,6 @@ final class HomeScreenContainer {
            mainViewModel.sourceIds.contains(selectedSourceId) {
             state.view.selectedSourceId = selectedSourceId
         }
-    }
-
-    private func syncViewModelRoute() {
-        mainViewModel.syncCurrentPage(from: state.view.currentRoute)
     }
 
     private func observeMainViewModelState() {

@@ -4,35 +4,37 @@ import XCTest
 
 @MainActor
 final class MainViewModelRouteTests: XCTestCase {
-    func testRequestPageUpdatesCurrentRouteImmediatelyWithoutRouteProjection() {
+    func testRequestPageWritesIntoBoundRouteState() {
+        let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
 
         model.requestPage(.settings)
 
         XCTAssertEqual(model.currentRoute, .settings)
+        XCTAssertEqual(state.view.currentRoute, .settings)
     }
 
-    func testRequestPageAlsoForwardsToRouteProjectionHook() {
+    func testCurrentRouteTracksBoundStateChangesWithoutProjectionHooks() {
+        let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
-        var projectedPage: MainViewModel.Page?
+        model.bindRouteState(state)
 
-        model.routeRequest = { page in
-            projectedPage = page
-        }
-
-        model.requestPage(.detail(sourceId: "alpha"))
+        state.view.currentRoute = .detail(sourceId: "alpha")
 
         XCTAssertEqual(model.currentRoute, .detail(sourceId: "alpha"))
-        XCTAssertEqual(projectedPage, .detail(sourceId: "alpha"))
     }
 
-    func testSyncCurrentPageProjectsFoundationRouteIntoCurrentRoute() {
+    func testRequestPageReusesPageRouteMappingAgainstBoundState() {
+        let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
 
-        model.syncCurrentPage(from: .importPage)
+        model.requestPage(.importPage)
         XCTAssertEqual(model.currentRoute, .importPage)
 
-        model.syncCurrentPage(from: .detail(sourceId: "alpha"))
+        model.requestPage(.detail(sourceId: "alpha"))
         XCTAssertEqual(model.currentRoute, .detail(sourceId: "alpha"))
+        XCTAssertEqual(state.view.currentRoute, .detail(sourceId: "alpha"))
     }
 }

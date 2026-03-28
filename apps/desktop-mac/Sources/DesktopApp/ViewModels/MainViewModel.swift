@@ -587,7 +587,7 @@ final class MainViewModel {
     var recommendedImportGroups: [ImportGroupItem] = []
     var searchImportGroups: [ImportGroupItem] = []
     var importingImportGroupId: String?
-    private var currentPage: Page = .home
+    @ObservationIgnored private weak var routeState: DesktopAppState?
 
     var healthStatus: HealthStatus = .unknown
     var latestWarnings: [BridgeIssue] = []
@@ -600,8 +600,6 @@ final class MainViewModel {
     var updatingSourceIds: Set<String> = []
     var saveStateBySourceId: [String: SaveState] = [:]
     var toast: ToastState?
-    @ObservationIgnored var routeRequest: ((Page) -> Void)?
-    @ObservationIgnored var currentRouteProvider: (() -> DesktopRoute)?
 
     var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?
@@ -613,6 +611,10 @@ final class MainViewModel {
     init(bridgeClient: BridgeClient) {
         self.bridgeClient = bridgeClient
         self.pinnedSourceIds = []
+    }
+
+    func bindRouteState(_ state: DesktopAppState) {
+        routeState = state
     }
 
     var availableGroups: [String] {
@@ -631,10 +633,7 @@ final class MainViewModel {
     }
 
     var currentRoute: DesktopRoute {
-        if let currentRouteProvider {
-            return currentRouteProvider()
-        }
-        return Self.route(for: currentPage)
+        routeState?.view.currentRoute ?? .home
     }
 
     private var selectedDetailInspectSourceId: String? {
@@ -1876,31 +1875,11 @@ final class MainViewModel {
     }
 
     func requestPage(_ page: Page) {
-        currentPage = page
-        if let routeRequest {
-            routeRequest(page)
-        }
-    }
-
-    func syncCurrentPage(from route: DesktopRoute) {
-        currentPage = Self.page(for: route)
+        routeState?.view.currentRoute = Self.route(for: page)
     }
 
     static func route(for page: Page) -> DesktopRoute {
         switch page {
-        case .home:
-            return .home
-        case .importPage:
-            return .importPage
-        case .settings:
-            return .settings
-        case .detail(let sourceId):
-            return .detail(sourceId: sourceId)
-        }
-    }
-
-    private static func page(for route: DesktopRoute) -> Page {
-        switch route {
         case .home:
             return .home
         case .importPage:

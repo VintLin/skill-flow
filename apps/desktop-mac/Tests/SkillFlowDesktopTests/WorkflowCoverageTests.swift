@@ -91,7 +91,7 @@ final class WorkflowCoverageTests: XCTestCase {
         runtime.state.view.currentRoute = .detail(sourceId: "alpha")
         await Task.yield()
         await Task.yield()
-        model.syncCurrentPage(from: .home)
+        runtime.state.view.currentRoute = .home
 
         await model.deleteSource(sourceId: "alpha")
         await Task.yield()
@@ -738,7 +738,9 @@ private struct TestFixture {
     }
 
     func makeModel() async throws -> MainViewModel {
+        let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
         await model.bootstrap()
         let loadState = model.loadState
         switch loadState {
