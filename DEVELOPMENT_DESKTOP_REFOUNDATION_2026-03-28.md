@@ -17,7 +17,7 @@
 - Current public page read model: `MainViewModel.currentRoute`
 - Current page write entry point: `MainViewModel.requestPage(_:)`, which writes into bound `DesktopAppState.view.currentRoute`
 - Verification baseline: `swift test --package-path apps/desktop-mac`
-- Latest verification result: 96 tests passed, 0 failed on 2026-03-28
+- Latest verification result: 98 tests passed, 0 failed on 2026-03-28
 
 ## Completed Progress
 
@@ -106,12 +106,18 @@
 - `ImportScreen` no longer reads import business state directly from `MainViewModel`
 - Import search, preview, import, and target-label actions are now delegated through `ImportScreenContainer`
 
+### 15. Detail page actions and fallback state now route through `DetailScreenContainer`
+
+- `DetailScreenContainer` now owns fallback-row projection and forwards detail route actions like select, update, skill toggles, and target toggles
+- `DetailScreen` no longer depends on `MainViewModel` directly
+- Detail container coverage now verifies both fallback-row projection and action forwarding
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
 
 - It still owns bridge calls, payload parsing, draft state, toast state, doctor state, import flows, detail content preparation, and write synchronization
-- The file remains the main cross-page coordinator instead of a thinner page-facing adapter, even though Detail read-side projection is now behind `detailSnapshot(for:)`
+- The file remains the main cross-page coordinator instead of a thinner page-facing adapter, even though active Detail and Import pages now read and act through page containers
 
 ### 2. Import page still has mixed local and shared state ownership
 
@@ -149,7 +155,7 @@ Status: completed
 
 Status: next active cleanup
 
-- Detail page now reads through `detailSnapshot(for:)`, but business loading still lives in `MainViewModel`
+- Detail page now reads and acts through `DetailScreenContainer`, but business loading still lives in `MainViewModel`
 - Import drafts now live in `DesktopAppState.importState`, and Import page reads through `ImportScreenContainer`, but Import business loading still lives in `MainViewModel`
 - Settings uses a dedicated view model, but not a shared runtime/store slice
 - Menu bar and main window still share one `MainViewModel`
@@ -201,5 +207,5 @@ swift test --package-path apps/desktop-mac
 
 Expected:
 
-- 96 tests passed
+- 98 tests passed
 - 0 failed
