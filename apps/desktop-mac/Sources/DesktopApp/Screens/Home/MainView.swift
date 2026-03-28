@@ -14,35 +14,36 @@ struct MainView: View {
 
     @Bindable var viewModel: MainViewModel
     @Bindable var importScreenState: ImportScreenState
+    @Bindable var settingsViewModel: SettingsViewModel
     let navigation: NavigationActions
     let importContainer: ImportScreenContainer
     let detailContainer: DetailScreenContainer
 
     @State private var updateButtonRotation: Double = 0
     private let importAutoPreviewLimit = 4
-    @AppStorage("desktop.themeMode") private var themeModeRawValue = DesktopThemeMode.light.rawValue
-    @AppStorage("desktop.themeAccent") private var themeAccentRawValue = DesktopAccentColor.blue.rawValue
 
     init(
         viewModel: MainViewModel,
         navigation: NavigationActions,
         importScreenState: ImportScreenState,
         importContainer: ImportScreenContainer,
-        detailContainer: DetailScreenContainer
+        detailContainer: DetailScreenContainer,
+        settingsViewModel: SettingsViewModel
     ) {
         self.viewModel = viewModel
         self.navigation = navigation
         self.importScreenState = importScreenState
         self.importContainer = importContainer
         self.detailContainer = detailContainer
+        self.settingsViewModel = settingsViewModel
     }
 
     private var theme: DesktopThemeMode {
-        DesktopThemeMode(rawValue: themeModeRawValue) ?? .light
+        settingsViewModel.currentThemeMode
     }
 
     private var accent: DesktopAccentColor {
-        DesktopAccentColor(rawValue: themeAccentRawValue) ?? .blue
+        settingsViewModel.currentAccent
     }
 
     var body: some View {
@@ -259,7 +260,7 @@ struct MainView: View {
                 accent: accent
             )
         case .settings:
-            SettingsScreen(theme: theme)
+            SettingsScreen(viewModel: settingsViewModel, theme: theme)
         case .detail:
             DetailScreen(
                 container: detailContainer,

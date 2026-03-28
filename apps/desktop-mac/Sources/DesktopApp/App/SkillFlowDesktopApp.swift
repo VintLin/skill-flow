@@ -4,7 +4,6 @@ import AppKit
 @main
 struct SkillFlowDesktopApp: App {
     @Environment(\.openWindow) private var openWindow
-    @AppStorage(DesktopLanguage.storageKey) private var desktopLanguageRawValue = DesktopLanguage.system.rawValue
 
     @State private var container = DesktopAppContainer()
 
@@ -27,7 +26,11 @@ struct SkillFlowDesktopApp: App {
         }
 
         MenuBarExtra {
-            MenuBarQuickConfigView(viewModel: container.mainViewModel, navigation: container.navigation) {
+            MenuBarQuickConfigView(
+                viewModel: container.mainViewModel,
+                settingsViewModel: container.settingsViewModel,
+                navigation: container.navigation
+            ) {
                 openWindow(id: "main-window")
                 NSApp.activate(ignoringOtherApps: true)
             }
@@ -44,7 +47,7 @@ struct SkillFlowDesktopApp: App {
     }
 
     private var selectedLocale: Locale {
-        DesktopLanguage(storageValue: desktopLanguageRawValue).locale
+        container.settingsViewModel.selectedLocale
     }
 
     private var menuIcon: String {

@@ -56,7 +56,15 @@ final class SettingsViewModel {
         DesktopAccentColor(rawValue: themeAccentRawValue) ?? .blue
     }
 
+    var currentThemeMode: DesktopThemeMode {
+        DesktopThemeMode(rawValue: themeModeRawValue) ?? .light
+    }
+
     var currentLanguage: DesktopLanguage {
         DesktopLanguage(storageValue: desktopLanguageRawValue)
+    }
+
+    var selectedLocale: Locale {
+        currentLanguage.locale
     }
 }

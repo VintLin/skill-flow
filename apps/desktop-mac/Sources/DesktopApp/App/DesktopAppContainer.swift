@@ -11,6 +11,7 @@ final class DesktopAppContainer {
 
     let runtime: DesktopRuntime
     let mainViewModel: MainViewModel
+    let settingsViewModel: SettingsViewModel
     let importContainer: ImportScreenContainer
     let detailContainer: DetailScreenContainer
     let homeContainer: HomeScreenContainer
@@ -22,6 +23,7 @@ final class DesktopAppContainer {
     ) {
         self.runtime = runtime
         self.mainViewModel = MainViewModel(bridgeClient: bridgeClient)
+        self.settingsViewModel = SettingsViewModel()
         self.importContainer = ImportScreenContainer(state: runtime.state, mainViewModel: mainViewModel)
         self.detailContainer = DetailScreenContainer(state: runtime.state) { [weak mainViewModel] sourceId in
             guard let detail = mainViewModel?.detailViewData(for: sourceId) else {
@@ -32,6 +34,7 @@ final class DesktopAppContainer {
         self.homeContainer = HomeScreenContainer(
             state: runtime.state,
             mainViewModel: mainViewModel,
+            settingsViewModel: settingsViewModel,
             importContainer: importContainer,
             detailContainer: detailContainer
         )

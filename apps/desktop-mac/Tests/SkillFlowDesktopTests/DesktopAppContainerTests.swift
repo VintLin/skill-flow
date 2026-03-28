@@ -79,6 +79,13 @@ final class DesktopAppContainerTests: XCTestCase {
         XCTAssertEqual(container.mainViewModel.currentPage, .settings)
     }
 
+    func testSettingsStateIsSharedAcrossDesktopShells() {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        XCTAssertTrue(container.homeContainer.settingsViewModel === container.settingsViewModel)
+    }
+
     func testImportRouteProjectsIntoLiveImportContainerProductionSeam() async {
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)

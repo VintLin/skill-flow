@@ -3,27 +3,21 @@ import SwiftUI
 struct MenuBarQuickConfigView: View {
     @Environment(\.locale) private var locale
     @Bindable var viewModel: MainViewModel
+    @Bindable var settingsViewModel: SettingsViewModel
 
     let navigation: DesktopAppContainer.RouteNavigation
     let openMainWindow: () -> Void
 
     @State private var hoveredGroupId: String?
     @State private var hoverExpandTask: Task<Void, Never>?
-    @AppStorage("desktop.themeMode") private var themeMode = "light"
-    @AppStorage("desktop.themeAccent") private var themeAccent = DesktopAccentColor.blue.rawValue
-    @AppStorage("desktop.menuCompactCards") private var menuCompactCards = true
 
     private let hoverExpandDelay: Duration = .milliseconds(500)
     private var theme: DesktopThemeMode {
-        isDark ? .dark : .light
+        settingsViewModel.currentThemeMode
     }
 
     private var accent: DesktopAccentColor {
-        DesktopAccentColor(rawValue: themeAccent) ?? .blue
-    }
-
-    private var isDark: Bool {
-        themeMode == "dark"
+        settingsViewModel.currentAccent
     }
 
     private let topBarHeight: CGFloat = 40
@@ -32,7 +26,7 @@ struct MenuBarQuickConfigView: View {
     private let menuListMaxHeight: CGFloat = 440
 
     private var cardDisplayMode: GroupCardDisplayMode {
-        menuCompactCards ? .menu : .home
+        settingsViewModel.menuCompactCards ? .menu : .home
     }
 
     var body: some View {
@@ -45,7 +39,7 @@ struct MenuBarQuickConfigView: View {
                             theme: theme,
                             accent: accent,
                             displayMode: cardDisplayMode,
-                            skillsCollapsed: menuCompactCards && hoveredGroupId != card.id,
+                            skillsCollapsed: settingsViewModel.menuCompactCards && hoveredGroupId != card.id,
                             isUpdating: viewModel.isUpdatingSource(card.id),
                             onOpen: nil,
                             onUpdate: {
@@ -71,7 +65,7 @@ struct MenuBarQuickConfigView: View {
                             }
                         )
                         .onHover { isHovering in
-                            guard menuCompactCards else { return }
+                            guard settingsViewModel.menuCompactCards else { return }
                             if isHovering {
                                 scheduleHoverExpansion(for: card.id)
                             } else {

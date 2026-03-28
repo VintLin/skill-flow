@@ -6,6 +6,7 @@ struct HomeScreen: View {
     let detailContainer: DetailScreenContainer
     @Bindable var homeViewModel: HomeViewModel
     @Bindable var mainViewModel: MainViewModel
+    @Bindable var settingsViewModel: SettingsViewModel
 
     func bootstrapOnAppear() async {
         await container.bootstrapIfNeeded()
@@ -19,7 +20,8 @@ struct HomeScreen: View {
             navigation: container.navigation,
             importScreenState: importContainer.screenState,
             importContainer: importContainer,
-            detailContainer: detailContainer
+            detailContainer: detailContainer,
+            settingsViewModel: settingsViewModel
         )
             .frame(minWidth: 980, minHeight: 640)
             .task {

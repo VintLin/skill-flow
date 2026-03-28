@@ -6,6 +6,7 @@ final class HomeScreenContainer {
     private let state: DesktopAppState
     let viewModel: HomeViewModel
     let mainViewModel: MainViewModel
+    let settingsViewModel: SettingsViewModel
     let importContainer: ImportScreenContainer
     let detailContainer: DetailScreenContainer
     let navigation: MainView.NavigationActions
@@ -13,12 +14,14 @@ final class HomeScreenContainer {
     init(
         state: DesktopAppState,
         mainViewModel: MainViewModel,
+        settingsViewModel: SettingsViewModel,
         importContainer: ImportScreenContainer,
         detailContainer: DetailScreenContainer
     ) {
         self.state = state
         self.viewModel = HomeViewModel(state: state)
         self.mainViewModel = mainViewModel
+        self.settingsViewModel = settingsViewModel
         self.importContainer = importContainer
         self.detailContainer = detailContainer
         self.navigation = MainView.NavigationActions(
@@ -49,7 +52,8 @@ final class HomeScreenContainer {
             importContainer: importContainer,
             detailContainer: detailContainer,
             homeViewModel: viewModel,
-            mainViewModel: mainViewModel
+            mainViewModel: mainViewModel,
+            settingsViewModel: settingsViewModel
         )
     }
 

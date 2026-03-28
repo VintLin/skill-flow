@@ -1,13 +1,8 @@
 import SwiftUI
 
 struct SettingsScreen: View {
+    @Bindable var viewModel: SettingsViewModel
     let theme: DesktopThemeMode
-    @State private var viewModel: SettingsViewModel
-
-    init(theme: DesktopThemeMode) {
-        self.theme = theme
-        _viewModel = State(initialValue: SettingsViewModel())
-    }
 
     var body: some View {
         ScrollView {
