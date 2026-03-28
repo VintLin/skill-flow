@@ -1,17 +1,11 @@
 import Foundation
 import Observation
 
-struct ImportDraftState: Equatable {
-    let selectedSkillIds: [String]
-    let enabledTargetIds: [String]
-}
-
 @MainActor
 @Observable
 final class ImportScreenState {
     var searchText: String = ""
     var placeholderIndex: Int = 0
-    var draftsByItemId: [String: ImportDraftState] = [:]
 }
 
 @MainActor
@@ -53,7 +47,7 @@ final class ImportScreenContainer {
     }
 
     func draft(for card: ImportViewModel.Card) -> ImportDraftState {
-        screenState.draftsByItemId[card.id]
+        state.importState.draftsByItemId[card.id]
             ?? ImportDraftState(
                 selectedSkillIds: card.skills.map(\.id),
                 enabledTargetIds: []
@@ -71,7 +65,7 @@ final class ImportScreenContainer {
             nextSelectedIds = card.skills.map(\.id).filter { selectedIds.subtracting([skillId]).contains($0) }
         }
 
-        screenState.draftsByItemId[card.id] = ImportDraftState(
+        state.importState.draftsByItemId[card.id] = ImportDraftState(
             selectedSkillIds: nextSelectedIds,
             enabledTargetIds: current.enabledTargetIds
         )
@@ -81,7 +75,7 @@ final class ImportScreenContainer {
         let current = draft(for: card)
         let nextSelectedIds = current.selectedSkillIds.count == card.skills.count ? [] : card.skills.map(\.id)
 
-        screenState.draftsByItemId[card.id] = ImportDraftState(
+        state.importState.draftsByItemId[card.id] = ImportDraftState(
             selectedSkillIds: nextSelectedIds,
             enabledTargetIds: current.enabledTargetIds
         )
@@ -98,7 +92,7 @@ final class ImportScreenContainer {
             nextTargetIds = card.targets.map(\.id).filter { enabledTargetIds.subtracting([targetId]).contains($0) }
         }
 
-        screenState.draftsByItemId[card.id] = ImportDraftState(
+        state.importState.draftsByItemId[card.id] = ImportDraftState(
             selectedSkillIds: current.selectedSkillIds,
             enabledTargetIds: nextTargetIds
         )
@@ -108,7 +102,7 @@ final class ImportScreenContainer {
         let current = draft(for: card)
         let nextTargetIds = current.enabledTargetIds.count == card.targets.count ? [] : card.targets.map(\.id)
 
-        screenState.draftsByItemId[card.id] = ImportDraftState(
+        state.importState.draftsByItemId[card.id] = ImportDraftState(
             selectedSkillIds: current.selectedSkillIds,
             enabledTargetIds: nextTargetIds
         )

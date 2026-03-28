@@ -25,10 +25,6 @@ final class ImportScreenContainerTests: XCTestCase {
 
         container.screenState.searchText = "anthropic/skills"
         container.screenState.placeholderIndex = 2
-        container.screenState.draftsByItemId["anthropics-skills"] = ImportDraftState(
-            selectedSkillIds: ["browse"],
-            enabledTargetIds: ["claude-code"]
-        )
 
         state.view.currentRoute = .importPage
         state.view.currentRoute = .home
@@ -36,10 +32,32 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(container.screenState.searchText, "anthropic/skills")
         XCTAssertEqual(container.screenState.placeholderIndex, 2)
+    }
+
+    func testDraftsPersistAcrossContainerRecreationThroughDesktopAppState() {
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let firstContainer = ImportScreenContainer(state: state, mainViewModel: model)
+        state.view.currentRoute = .importPage
+
+        let card = ImportViewModel.card(
+            from: makeItem(
+                id: "anthropics-skills",
+                title: "Anthropic Skills",
+                locator: "anthropic/skills"
+            ),
+            locale: Locale(identifier: "en")
+        )
+
+        firstContainer.setSkill("browse", enabled: false, for: card)
+        firstContainer.setTarget("claude-code", enabled: true, for: card)
+
+        let secondContainer = ImportScreenContainer(state: state, mainViewModel: model)
+
         XCTAssertEqual(
-            container.screenState.draftsByItemId["anthropics-skills"],
+            secondContainer.draft(for: card),
             ImportDraftState(
-                selectedSkillIds: ["browse"],
+                selectedSkillIds: [],
                 enabledTargetIds: ["claude-code"]
             )
         )
@@ -81,8 +99,20 @@ final class ImportScreenContainerTests: XCTestCase {
             snapshot: nil,
             enrichPhase: .idle,
             previewPhase: .idle,
-            skills: [],
-            targets: []
+            skills: [
+                MainViewModel.ImportGroupSkill(
+                    id: "browse",
+                    title: "Browse",
+                    summary: "Browse things.",
+                    selectedByDefault: true
+                )
+            ],
+            targets: [
+                MainViewModel.ImportGroupTarget(
+                    id: "claude-code",
+                    selectedByDefault: false
+                )
+            ]
         )
     }
 }

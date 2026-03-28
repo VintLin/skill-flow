@@ -6,5 +6,6 @@ import Observation
 final class DesktopAppState {
     var workspace = WorkspaceState()
     var view = ViewState()
+    var importState = ImportState()
     var asyncResources = AsyncResourceState()
 }
