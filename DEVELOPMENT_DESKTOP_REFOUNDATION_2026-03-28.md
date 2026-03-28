@@ -58,6 +58,12 @@
 - Bridge requests now await process termination asynchronously
 - `BridgeClientExecutionTests` verifies main-actor work can continue while a slow helper is still running
 
+### 7. Detail inspect no longer depends on a full list reconciliation pass
+
+- `inspectSourceImpl()` now derives local summary, binding, leaf, and deployment facts from stored manifest/lock state
+- Query-level coverage verifies `inspectSource()` still succeeds when `reconcileInventory()` fails but local state is already present
+- CLI bridge inspect coverage still passes against the same response envelope
+
 ## In-Progress Boundaries
 
 ### 1. `MainViewModel` is still the desktop coordination bottleneck
@@ -91,11 +97,11 @@
 
 #### A. Split detail loading into a true local-first progressive flow
 
-Status: partially prepared, not complete
+Status: in progress, not complete
 
 - `detailViewData(for:)` already supports partial local rendering
-- Query runtime still makes `inspectSourceImpl()` begin with `listWorkflowsImpl()`
 - The current bridge `inspect` contract still mixes local workspace facts with metadata/snapshot enrichment
+- Detail still waits on one combined inspect response before enrichment-specific state can be modeled independently
 
 #### B. Move expensive detail content preparation off the main actor
 
@@ -143,8 +149,8 @@ Status: not started
 ### Task 1: Separate detail local shell from remote enrichment
 
 Reason:
-- This is now the highest-value open behavior change
-- It converts the current partial detail layering into an explicit two-phase model
+- The inspect path no longer depends on list reconciliation, but enrichment is still bundled into one bridge response
+- This is the remaining step to make detail truly progressive
 
 ### Task 2: Move detail content warmup off the main actor
 
@@ -164,12 +170,12 @@ Reason:
 
 ## Immediate Next Task Definition
 
-If work resumes immediately after the bridge fix, the next focused engineering task should be:
+If work resumes immediately after the inspect split, the next focused engineering task should be:
 
-1. Add focused tests around `inspectSourceImpl()` and detail hydration staging
-2. Separate local workspace facts from metadata / snapshot enrichment in the detail path
+1. Add focused tests around `prepareDetailContent(...)` scheduling and main-actor responsiveness
+2. Move detail warmup parsing and file-tree preparation off the main actor
 3. Re-run `swift test --package-path apps/desktop-mac`
-4. Commit the detail loading split as a standalone refactor unit
+4. Commit the warmup threading fix as a standalone refactor unit
 
 ## Verification
 
