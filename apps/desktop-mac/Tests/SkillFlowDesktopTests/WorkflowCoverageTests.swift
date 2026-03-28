@@ -1,6 +1,8 @@
 import Foundation
+import AppKit
 import XCTest
 import Darwin
+import SwiftUI
 
 @testable import SkillFlowDesktop
 
@@ -133,9 +135,11 @@ final class WorkflowCoverageTests: XCTestCase {
 
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)
-        let homeScreen = container.homeContainer.makeView()
-
-        await homeScreen.bootstrapOnAppear()
+        let hostingController = NSHostingController(rootView: container.homeContainer.makeView())
+        let window = NSWindow(contentViewController: hostingController)
+        window.makeKeyAndOrderFront(nil)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        window.close()
 
         XCTAssertEqual(container.homeContainer.viewModel.sourceIds, ["alpha", "beta"])
         XCTAssertEqual(runtime.state.workspace.sourceIds, ["alpha", "beta"])
