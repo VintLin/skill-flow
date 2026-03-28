@@ -30,6 +30,7 @@ final class HomeScreenContainer {
         withObservationTracking {
             _ = mainViewModel.sourceIds
             _ = mainViewModel.selectedSourceId
+            _ = mainViewModel.currentPage
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.syncFoundationState()
@@ -40,10 +41,24 @@ final class HomeScreenContainer {
 
     private func syncFoundationState() {
         state.workspace.sourceIds = mainViewModel.sourceIds
+        state.view.currentRoute = foundationRoute(for: mainViewModel.currentPage)
 
         if let selectedSourceId = mainViewModel.selectedSourceId,
            mainViewModel.sourceIds.contains(selectedSourceId) {
             state.view.selectedSourceId = selectedSourceId
+        }
+    }
+
+    private func foundationRoute(for page: MainViewModel.Page) -> DesktopRoute {
+        switch page {
+        case .home:
+            return .home
+        case .importPage:
+            return .importPage
+        case .settings:
+            return .settings
+        case .detail(let sourceId):
+            return .detail(sourceId: sourceId)
         }
     }
 }
