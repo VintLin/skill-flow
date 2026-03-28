@@ -166,29 +166,30 @@ Status: completed
 
 #### D. Refresh plan and audit documents
 
-Status: not started
+Status: completed
 
-- Update runtime and migration plans to reflect `currentRoute` instead of `currentPage`
-- Mark old-path plans that still target `Sources/SkillFlowDesktop/...` as outdated or historical
-- Refresh the page data flow audit to describe the active `DesktopApp` path
+- `docs/plan/PLAN_MODULE_DESKTOP_RUNTIME_REBUILD.md` and `docs/plan/PLAN_MODULE_DESKTOP_PAGE_BY_PAGE_MIGRATION.md` now reflect the active `DesktopApp` path and completed route migration
+- `docs/feedback/FEEDBACK_DESKTOP_PAGE_DATA_FLOW_AUDIT_20260328.md` now describes `DesktopApp`, `currentRoute`, and the explicit detail shell/enrichment split
+- historical `superpowers` plans/specs and the old detail-load investigation are marked as historical so they no longer read like active task lists
+- `docs/feedback/FEEDBACK_DESKTOP_TARGET_ARCHITECTURE_GAP_20260328.md` records the difference between the current maintainable state and the ideal thin-coordinator/facade end state
 
 ## Recommended Execution Order
 
-### Task 1: Refresh plan and audit documents
+### Task 1: Reopen desktop refactors only on new evidence
 
 Reason:
 - Route cleanup is done
 - Deprecated source cleanup is done
-- The remaining high-signal gap is that several plan and audit documents still describe the deleted path or the pre-`currentRoute` architecture
+- Plan and audit documents are updated
+- The remaining architecture gaps are quality-of-structure gaps, not active correctness or responsiveness failures
 
 ## Immediate Next Task Definition
 
 If work resumes after the current cleanup round, the next focused engineering task should be:
 
-1. Update runtime and migration plans that still point at `Sources/SkillFlowDesktop/...`
-2. Refresh the page data flow audit so it describes `DesktopApp`, `currentRoute`, and the explicit detail shell/enrichment split
-3. Only reopen `MainViewModel` decomposition if a new shared-state leak or a concrete behavior bottleneck appears
-4. Re-run `swift test --package-path apps/desktop-mac`
+1. Only reopen `MainViewModel` decomposition if a new shared-state leak or concrete coordination bottleneck appears
+2. Only reopen transport refactoring if desktop needs explicit facade boundaries beyond the current `BridgeClient`
+3. Keep using `swift test --package-path apps/desktop-mac` as the desktop verification baseline when code changes resume
 
 ## Verification
 
