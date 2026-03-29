@@ -1563,9 +1563,42 @@ final class MainViewModel {
     }
 
     private static func normalizedImportRecommendationKey(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ""
+        }
+
+        let lowered = trimmed.lowercased()
+        let patterns = [
+            #"^https?://github\.com/([^/\s]+)/([^/\s]+?)(?:\.git)?$"#,
+            #"^git@github\.com:([^/\s]+)/([^/\s]+?)(?:\.git)?$"#,
+            #"^([^/\s]+)/([^/\s]+?)(?:\.git)?$"#,
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                continue
+            }
+            let range = NSRange(lowered.startIndex..<lowered.endIndex, in: lowered)
+            guard let match = regex.firstMatch(in: lowered, options: [], range: range),
+                  let ownerRange = Range(match.range(at: 1), in: lowered),
+                  let repoRange = Range(match.range(at: 2), in: lowered) else {
+                continue
+            }
+
+            return importRecommendationAlias("\(lowered[ownerRange])/\(lowered[repoRange])")
+        }
+
+        return importRecommendationAlias(lowered.replacingOccurrences(of: ".git", with: ""))
+    }
+
+    private static func importRecommendationAlias(_ repo: String) -> String {
+        switch repo {
+        case "anthropic/skills":
+            return "anthropics/skills"
+        default:
+            return repo
+        }
     }
 
     private static func localRecommendationTitle(for canonicalRepo: String) -> String {

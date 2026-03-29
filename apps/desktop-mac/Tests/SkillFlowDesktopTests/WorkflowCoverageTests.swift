@@ -317,6 +317,29 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertFalse(fixture.loggedRequests().contains(where: { $0.command == "preview-import-source" }))
     }
 
+    func testImportPageMarksRecommendationAsInstalledWhenExistingSourceUsesGitHubLocator() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["anthropic-github"] = TestFixture.SourceState(
+            displayName: "Anthropic Skills",
+            locator: "https://github.com/anthropic/skills.git",
+            kind: "git",
+            canonicalRepo: nil,
+            leafIds: ["research"],
+            selectedLeafIds: ["research"],
+            enabledTargets: ["claude-code"]
+        )
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.requestPage(.importPage)
+
+        await model.loadImportPageIfNeeded()
+
+        let recommended = model.recommendedImportGroups.first(where: { $0.canonicalRepo == "anthropics/skills" })
+        XCTAssertEqual(recommended?.isInstalledLocally, true)
+    }
+
     func testImportPageSearchReturnsExactGroup() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
