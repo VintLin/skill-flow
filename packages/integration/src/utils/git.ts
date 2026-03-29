@@ -3,6 +3,18 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+export async function isGitAvailable(): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["--version"], {
+      encoding: "utf8",
+      env: process.env,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function git(
   args: string[],
   options: { cwd?: string } = {},

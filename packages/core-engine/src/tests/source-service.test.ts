@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { StateStore } from "@skill-flow/storage/store";
+import * as gitUtils from "@skill-flow/integration/utils/git";
 import { InventoryService } from "../services/inventory-service.js";
 import { SourceService } from "../services/source-service.js";
 import {
+  createZipArchive,
   createRepo,
   skillDoc,
   useSkillFlowSandbox,
@@ -232,5 +234,52 @@ describe.sequential("source service", () => {
     expect(item?.diffs.map((diff) => diff.kind)).toEqual(["invalidated"]);
     expect(item?.invalidatedLeafIds).toEqual([`${added.data.manifest.id}:browse`]);
     expect(item?.removedLeafIds).toEqual([]);
+  });
+
+  test("github sources fall back to zip download when git is unavailable", async () => {
+    const sourceService = createSourceService();
+    const repoRoot = path.join(sandbox.sandboxRoot, "github-zip");
+    const archivePath = path.join(sandbox.sandboxRoot, "github-zip.zip");
+    await writeRepoFiles(repoRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow from zip."),
+    });
+    await createZipArchive(repoRoot, archivePath);
+
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
+    vi.spyOn(gitUtils, "git").mockRejectedValue(new Error("git missing"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(await fs.readFile(archivePath), {
+          status: 200,
+          headers: { "content-type": "application/zip" },
+        })) as typeof fetch,
+    );
+
+    const added = await sourceService.addSource("https://github.com/example/skills.git");
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const checkoutPath = added.data.lock.checkoutPath;
+    expect(await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8")).toContain(
+      "Browser flow from zip.",
+    );
+  });
+
+  test("non-github git sources still fail when git is unavailable", async () => {
+    const sourceService = createSourceService();
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
+    vi.spyOn(gitUtils, "git").mockRejectedValue(new Error("git missing"));
+
+    const added = await sourceService.addSource("https://gitlab.com/example/skills.git");
+
+    expect(added.ok).toBe(false);
+    if (added.ok) {
+      return;
+    }
+    expect(added.errors[0]?.code).toBe("GIT_CLONE_FAILED");
   });
 });

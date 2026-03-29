@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import type {
   DeploymentTargetName,
   LockFile,
@@ -24,11 +26,14 @@ import {
 import {
   installClawHubSkill,
 } from "@skill-flow/integration/utils/clawhub";
-import { git } from "@skill-flow/integration/utils/git";
+import { git, isGitAvailable } from "@skill-flow/integration/utils/git";
+import { parseGitHubRepo } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import { deriveDisplayName, deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
 import { InventoryService } from "./inventory-service.js";
+
+const execFileAsync = promisify(execFile);
 
 export type SourceSnapshot = {
   manifest: SourceManifestRecord;
@@ -1047,6 +1052,10 @@ export class SourceService {
     }
 
     if (source.kind === "git") {
+      if (!(await isGitAvailable())) {
+        await this.fetchGitHubArchive(source.gitLocator!, checkoutPath);
+        return;
+      }
       await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
       return;
     }
@@ -1074,6 +1083,9 @@ export class SourceService {
     }
 
     if (source.kind === "git") {
+      if (!(await isGitAvailable())) {
+        return this.refreshGitHubArchiveCheckout(source, currentLock);
+      }
       await git(["pull", "--ff-only"], { cwd: currentLock.checkoutPath });
       const latestCommitSha = await git(["rev-parse", "HEAD"], {
         cwd: currentLock.checkoutPath,
@@ -1157,6 +1169,11 @@ export class SourceService {
     }
 
     if (kind === "git") {
+      if (!(await pathExists(path.join(checkoutPath, ".git")))) {
+        return {
+          contentHash: await hashDirectory(checkoutPath),
+        };
+      }
       return {
         commitSha: await git(["rev-parse", "HEAD"], { cwd: checkoutPath }),
       };
@@ -1176,5 +1193,140 @@ export class SourceService {
     }
 
     return {};
+  }
+
+  private async refreshGitHubArchiveCheckout(
+    source: SourceManifestRecord,
+    currentLock: SourceLockRecord,
+  ): Promise<boolean> {
+    const tempCheckoutPath = `${currentLock.checkoutPath}.${process.pid}.${crypto.randomUUID()}.refresh`;
+    const backupPath = `${currentLock.checkoutPath}.${process.pid}.${crypto.randomUUID()}.backup`;
+
+    try {
+      await this.fetchGitHubArchive(source.locator, tempCheckoutPath, currentLock.originBranch);
+      const nextHash = await hashDirectory(tempCheckoutPath);
+      const checkoutExists = await pathExists(currentLock.checkoutPath);
+      const currentHash =
+        checkoutExists ? await hashDirectory(currentLock.checkoutPath) : undefined;
+      if (checkoutExists && nextHash === currentLock.contentHash && currentHash === nextHash) {
+        await removePath(tempCheckoutPath);
+        return false;
+      }
+
+      if (checkoutExists) {
+        await fs.rename(currentLock.checkoutPath, backupPath);
+        try {
+          await fs.rename(tempCheckoutPath, currentLock.checkoutPath);
+        } catch (error) {
+          await fs.rename(backupPath, currentLock.checkoutPath).catch(() => {});
+          throw error;
+        } finally {
+          await removePath(backupPath).catch(() => {});
+        }
+      } else {
+        await fs.rename(tempCheckoutPath, currentLock.checkoutPath);
+      }
+
+      return true;
+    } catch (error) {
+      await removePath(tempCheckoutPath).catch(() => {});
+      await removePath(backupPath).catch(() => {});
+      throw error;
+    }
+  }
+
+  private async fetchGitHubArchive(
+    locator: string,
+    checkoutPath: string,
+    preferredBranch?: string,
+  ): Promise<void> {
+    const repo = parseGitHubRepo(locator);
+    if (!repo) {
+      throw new Error(`Git is unavailable and '${locator}' is not a supported GitHub repository.`);
+    }
+
+    const tempRoot = `${checkoutPath}.${process.pid}.${crypto.randomUUID()}.archive`;
+    const archivePath = path.join(tempRoot, "repo.zip");
+    const extractPath = path.join(tempRoot, "extract");
+
+    try {
+      await ensureDir(tempRoot);
+
+      const branchCandidates = [
+        preferredBranch,
+        "main",
+        "master",
+      ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+
+      let lastError: Error | undefined;
+      for (const branch of branchCandidates) {
+        try {
+          await this.downloadGitHubArchive(repo.owner, repo.repo, branch, archivePath);
+          await this.extractZipArchive(archivePath, extractPath);
+          await this.copyExtractedArchive(
+            extractPath,
+            checkoutPath,
+            `${repo.repo}-${branch}`,
+          );
+          return;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          await removePath(archivePath).catch(() => {});
+          await removePath(extractPath).catch(() => {});
+        }
+      }
+
+      throw lastError ?? new Error(`Unable to download GitHub archive for '${locator}'.`);
+    } finally {
+      await removePath(tempRoot).catch(() => {});
+    }
+  }
+
+  private async downloadGitHubArchive(
+    owner: string,
+    repo: string,
+    branch: string,
+    archivePath: string,
+  ): Promise<void> {
+    const response = await fetch(
+      `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`,
+    );
+    if (!response.ok) {
+      throw new Error(`GitHub archive download failed with status ${response.status} for branch '${branch}'.`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.writeFile(archivePath, buffer);
+  }
+
+  private async extractZipArchive(archivePath: string, extractPath: string): Promise<void> {
+    await ensureDir(extractPath);
+    const command =
+      process.platform === "darwin"
+        ? { file: "ditto", args: ["-x", "-k", archivePath, extractPath] }
+        : { file: "unzip", args: ["-q", archivePath, "-d", extractPath] };
+    await execFileAsync(command.file, command.args, {
+      encoding: "utf8",
+      env: process.env,
+    });
+  }
+
+  private async copyExtractedArchive(
+    extractPath: string,
+    checkoutPath: string,
+    expectedArchiveRootName?: string,
+  ): Promise<void> {
+    const entries = await fs.readdir(extractPath, { withFileTypes: true });
+    const visibleEntries = entries.filter((entry) => entry.name !== "__MACOSX");
+    const visibleDirectories = visibleEntries.filter((entry) => entry.isDirectory());
+    const visibleFiles = visibleEntries.filter((entry) => !entry.isDirectory());
+    const sourcePath =
+      visibleDirectories.length === 1 &&
+      visibleFiles.length === 0 &&
+      expectedArchiveRootName &&
+      visibleDirectories[0]?.name === expectedArchiveRootName
+        ? path.join(extractPath, visibleDirectories[0]!.name)
+        : extractPath;
+    await copyDirectory(sourcePath, checkoutPath);
   }
 }

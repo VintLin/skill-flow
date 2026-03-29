@@ -111,6 +111,25 @@ ${heading ? `\n# ${heading}\n` : ""}
 `;
 }
 
+export async function createZipArchive(
+  root: string,
+  archivePath: string,
+  keepParent = false,
+) {
+  await fs.mkdir(path.dirname(archivePath), { recursive: true });
+  execFileSync(
+    "ditto",
+    [
+      "-c",
+      "-k",
+      ...(keepParent ? ["--keepParent"] : []),
+      root,
+      archivePath,
+    ],
+    { stdio: "pipe" },
+  );
+}
+
 function git(cwd: string, args: string[]) {
   execFileSync("git", args, { cwd, stdio: "pipe" });
 }
