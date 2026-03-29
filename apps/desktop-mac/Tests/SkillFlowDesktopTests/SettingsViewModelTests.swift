@@ -147,4 +147,121 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: sourceMetadataPath.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: preferencesPath.path))
     }
+
+    @MainActor
+    func testCheckForUpdatesMarksUpdateAvailableWhenLatestVersionIsNewer() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.2.0")!
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.2.0", releaseURL: releaseURL))),
+            currentVersionProvider: { "1.1.5" }
+        )
+
+        await viewModel.checkForUpdates()
+
+        XCTAssertEqual(viewModel.currentVersion, "1.1.5")
+        XCTAssertEqual(viewModel.latestVersion, "1.2.0")
+        XCTAssertEqual(viewModel.updateStatus, .updateAvailable)
+        XCTAssertEqual(viewModel.releaseURL, releaseURL)
+    }
+
+    @MainActor
+    func testCheckForUpdatesMarksUpToDateWhenCurrentVersionMatchesLatest() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.1.5")!
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.1.5", releaseURL: releaseURL))),
+            currentVersionProvider: { "1.1.5" }
+        )
+
+        await viewModel.checkForUpdates()
+
+        XCTAssertEqual(viewModel.updateStatus, .upToDate)
+        XCTAssertEqual(viewModel.latestVersion, "1.1.5")
+        XCTAssertEqual(viewModel.releaseURL, releaseURL)
+    }
+
+    @MainActor
+    func testCheckForUpdatesStoresFailureState() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            updateChecker: FakeUpdateChecker(result: .failure(FakeUpdateError.requestFailed)),
+            currentVersionProvider: { "1.1.5" }
+        )
+
+        await viewModel.checkForUpdates()
+
+        XCTAssertEqual(viewModel.updateStatus, .failed)
+        XCTAssertNil(viewModel.releaseURL)
+    }
+
+    @MainActor
+    func testOpenReleasePageUsesInjectedOpener() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/latest")!
+        var openedURL: URL?
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.2.0", releaseURL: releaseURL))),
+            currentVersionProvider: { "1.1.5" },
+            releaseURLOpener: { openedURL = $0 }
+        )
+
+        viewModel.releaseURL = releaseURL
+        viewModel.openReleasePage()
+
+        XCTAssertEqual(openedURL, releaseURL)
+    }
+
+    @MainActor
+    func testCheckForUpdatesIfNeededOnlyRunsOnce() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let checker = CountingUpdateChecker(
+            result: .success(.init(version: "1.2.0", releaseURL: URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.2.0")!))
+        )
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            updateChecker: checker,
+            currentVersionProvider: { "1.1.5" }
+        )
+
+        await viewModel.checkForUpdatesIfNeeded()
+        await viewModel.checkForUpdatesIfNeeded()
+
+        XCTAssertEqual(checker.callCount, 1)
+    }
+}
+
+private struct FakeUpdateChecker: DesktopUpdateChecking {
+    let result: Result<DesktopReleaseInfo, Error>
+
+    func fetchLatestRelease() async throws -> DesktopReleaseInfo {
+        try result.get()
+    }
+}
+
+private enum FakeUpdateError: Error {
+    case requestFailed
+}
+
+private final class CountingUpdateChecker: DesktopUpdateChecking, @unchecked Sendable {
+    let result: Result<DesktopReleaseInfo, Error>
+    private(set) var callCount = 0
+
+    init(result: Result<DesktopReleaseInfo, Error>) {
+        self.result = result
+    }
+
+    func fetchLatestRelease() async throws -> DesktopReleaseInfo {
+        callCount += 1
+        return try result.get()
+    }
 }

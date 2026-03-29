@@ -164,6 +164,57 @@ struct SettingsView: View {
                 )
 
                 settingsSection(
+                    title: t("settings.section.application_update"),
+                    rows: {
+                        settingsRow(title: t("settings.row.current_version.title"), description: t("settings.row.current_version.description")) {
+                            Text(viewModel.currentVersion)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        }
+
+                        settingsRow(title: t("settings.row.check_updates.title"), description: updateStatusDescription) {
+                            if viewModel.updateStatus == .checking {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .frame(width: controlColumnWidth, alignment: .trailing)
+                            } else {
+                                Button(t("settings.action.check_updates")) {
+                                    Task {
+                                        await viewModel.checkForUpdates()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+                                .frame(width: controlColumnWidth, height: 32)
+                                .background(Self.controlBackground(for: .pageBackground, theme: theme))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                                }
+                            }
+                        }
+
+                        settingsRow(title: t("settings.row.open_releases.title"), description: t("settings.row.open_releases.description")) {
+                            Button(t("settings.action.open_releases")) {
+                                viewModel.openReleasePage()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+                            .frame(width: controlColumnWidth, height: 32)
+                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                            }
+                        }
+                    }
+                )
+
+                settingsSection(
                     title: t("settings.section.general"),
                     rows: {
                         settingsRow(title: t("settings.row.launch_at_login.title"), description: t("settings.row.launch_at_login.description")) {
@@ -243,6 +294,21 @@ struct SettingsView: View {
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
         L10n.string(key, locale: locale, arguments: arguments)
+    }
+
+    private var updateStatusDescription: String {
+        switch viewModel.updateStatus {
+        case .idle:
+            return t("settings.row.check_updates.description.idle")
+        case .checking:
+            return t("settings.row.check_updates.description.checking")
+        case .upToDate:
+            return t("settings.row.check_updates.description.up_to_date", viewModel.latestVersion ?? viewModel.currentVersion)
+        case .updateAvailable:
+            return t("settings.row.check_updates.description.available", viewModel.latestVersion ?? "-")
+        case .failed:
+            return t("settings.row.check_updates.description.failed")
+        }
     }
 
     private func settingsSection<Rows: View>(title: String, @ViewBuilder rows: () -> Rows) -> some View {

@@ -17,6 +17,9 @@ struct SkillFlowDesktopApp: App {
         Window(L10n.string("app.name", locale: selectedLocale), id: "main-window") {
             container.homeContainer.makeView()
                 .environment(\.locale, selectedLocale)
+                .task {
+                    await container.settingsViewModel.checkForUpdatesIfNeeded()
+                }
         }
         .windowStyle(.hiddenTitleBar)
 

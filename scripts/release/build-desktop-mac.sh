@@ -2,22 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DESKTOP_DIR="$ROOT_DIR/apps/desktop-mac"
+ARCH="${1:-universal}"
+OUTPUT_DIR="${2:-$ROOT_DIR/dist/desktop-mac}"
 
-if [[ -z "${APPLE_DEVELOPER_ID_APPLICATION:-}" ]]; then
-  echo "Missing APPLE_DEVELOPER_ID_APPLICATION" >&2
-  exit 1
-fi
-
-if [[ -z "${APPLE_NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
-  echo "Missing APPLE_NOTARY_KEYCHAIN_PROFILE" >&2
-  exit 1
-fi
-
-cd "$ROOT_DIR"
-npm run build
-
-cd "$DESKTOP_DIR"
-swift build -c release
-
-echo "Desktop release build completed."
+"$ROOT_DIR/scripts/release/package-desktop-mac.sh" \
+  --arch "$ARCH" \
+  --output "$OUTPUT_DIR"

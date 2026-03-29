@@ -4,7 +4,7 @@
 
 Turn scattered AI agent skills into organized workflows.
 
-[中文文档](./README.zh.md) · [Architecture](./docs/ARCHITECTURE.md) · [Contributing](./docs/CONTRIBUTING.md) · [Reference Docs](./docs/references/README.md)
+[中文](./README.zh.md) · [日本語](./README.ja.md)
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
 [![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
@@ -240,6 +240,23 @@ Unsigned desktop packaging:
 scripts/release/package-desktop-mac.sh --arch arm64
 scripts/release/package-desktop-mac.sh --arch x86_64
 scripts/release/package-desktop-mac.sh --arch universal
+```
+
+Open-source macOS release flow:
+
+```bash
+scripts/release/package-desktop-mac.sh --arch universal
+scripts/release/package-desktop-mac-zip.sh universal
+scripts/release/generate-sha256.sh universal
+```
+
+Unsigned macOS install notes:
+
+- Download `Skill-Flow-universal.dmg` from GitHub Releases, copy `Skill Flow.app` to `Applications`, then open it once with Finder's `Open` action if Gatekeeper blocks it.
+- If macOS still marks the app as quarantined, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
 ```
 
 ## Star History
