@@ -156,12 +156,12 @@ final class SettingsViewModelTests: XCTestCase {
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
             updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.2.0", releaseURL: releaseURL))),
-            currentVersionProvider: { "1.1.5" }
+            currentVersionProvider: { "1.1.0" }
         )
 
         await viewModel.checkForUpdates()
 
-        XCTAssertEqual(viewModel.currentVersion, "1.1.5")
+        XCTAssertEqual(viewModel.currentVersion, "1.1.0")
         XCTAssertEqual(viewModel.latestVersion, "1.2.0")
         XCTAssertEqual(viewModel.updateStatus, .updateAvailable)
         XCTAssertEqual(viewModel.releaseURL, releaseURL)
@@ -170,18 +170,18 @@ final class SettingsViewModelTests: XCTestCase {
     @MainActor
     func testCheckForUpdatesMarksUpToDateWhenCurrentVersionMatchesLatest() async {
         let defaults = UserDefaults(suiteName: suiteName)!
-        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.1.5")!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.1.0")!
         let viewModel = SettingsViewModel(
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
-            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.1.5", releaseURL: releaseURL))),
-            currentVersionProvider: { "1.1.5" }
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.1.0", releaseURL: releaseURL))),
+            currentVersionProvider: { "1.1.0" }
         )
 
         await viewModel.checkForUpdates()
 
         XCTAssertEqual(viewModel.updateStatus, .upToDate)
-        XCTAssertEqual(viewModel.latestVersion, "1.1.5")
+        XCTAssertEqual(viewModel.latestVersion, "1.1.0")
         XCTAssertEqual(viewModel.releaseURL, releaseURL)
     }
 
@@ -192,7 +192,7 @@ final class SettingsViewModelTests: XCTestCase {
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
             updateChecker: FakeUpdateChecker(result: .failure(FakeUpdateError.requestFailed)),
-            currentVersionProvider: { "1.1.5" }
+            currentVersionProvider: { "1.1.0" }
         )
 
         await viewModel.checkForUpdates()
@@ -210,7 +210,7 @@ final class SettingsViewModelTests: XCTestCase {
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
             updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.2.0", releaseURL: releaseURL))),
-            currentVersionProvider: { "1.1.5" },
+            currentVersionProvider: { "1.1.0" },
             releaseURLOpener: { openedURL = $0 }
         )
 
@@ -230,7 +230,7 @@ final class SettingsViewModelTests: XCTestCase {
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
             updateChecker: checker,
-            currentVersionProvider: { "1.1.5" }
+            currentVersionProvider: { "1.1.0" }
         )
 
         await viewModel.checkForUpdatesIfNeeded()

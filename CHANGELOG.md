@@ -2,6 +2,28 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.1.0 - 2026-03-29
+
+### Added
+
+- Added the monorepo package split around `apps/cli`, `packages/core-engine`, `packages/query`, `packages/shared-types`, `packages/tui`, and `apps/desktop-mac`.
+- Added the versioned machine bridge protocol and the `skill-flow bridge --json` entrypoint used by the macOS desktop shell.
+- Added the rebuilt macOS desktop surface with home, import, detail, settings, and menu bar quick config flows.
+
+### Changed
+
+- Moved root build and test execution to workspace-aware monorepo scripts.
+- GitHub sources now fall back to downloaded ZIP archives when `git` is unavailable, while non-GitHub Git sources still require `git`.
+- Desktop bridge failures now surface actionable dependency guidance for missing `node`, `git`, and `npx` and point to the README prerequisites section.
+- Updated project documentation to match the current CLI, bridge, desktop, and packaging structure.
+
+### Verification
+
+- `npm run build`
+- `npm test`
+- `swift build` in `apps/desktop-mac`
+- `swift test` in `apps/desktop-mac`
+
 ## v1.0.8 - 2026-03-25
 
 ### Changed
