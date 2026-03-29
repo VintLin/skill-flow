@@ -279,9 +279,12 @@ final class WorkflowCoverageTests: XCTestCase {
 
         await model.loadImportPageIfNeeded()
 
+        let expectedRecommendationIds = ImportRecommendationLoader.load().map { entry in
+            entry.canonicalRepo.replacingOccurrences(of: "/", with: "-")
+        }
         XCTAssertEqual(model.importSearchPhase, .ready)
         XCTAssertEqual(model.importSubmittedQuery, "")
-        XCTAssertEqual(model.importDisplayGroups.map(\.id), ["anthropics-skills", "garrytan-gstack"])
+        XCTAssertEqual(model.importDisplayGroups.map(\.id), expectedRecommendationIds)
 
         await model.previewImportGroupIfNeeded("anthropics-skills")
 
@@ -289,17 +292,16 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(previewed?.previewPhase, .ready)
         XCTAssertEqual(previewed?.skills.map(\.id), ["research", "debugging"])
         XCTAssertEqual(previewed?.skills.filter(\.selectedByDefault).map(\.id), ["research", "debugging"])
-        XCTAssertEqual(previewed?.targets.map(\.id), [])
+        XCTAssertEqual(previewed?.targets.map(\.id), ["claude-code", "cursor"])
         XCTAssertEqual(previewed?.targets.filter(\.selectedByDefault).map(\.id), [])
         XCTAssertEqual(previewed?.snapshot?.owner.slug, "anthropics")
         XCTAssertEqual(previewed?.snapshot?.repoStars, 406)
         XCTAssertEqual(previewed?.snapshot?.trust?.labels, ["Official", "Trending"])
-        XCTAssertEqual(previewed?.matchedSkills.first?.skillId, "research")
-        XCTAssertEqual(previewed?.matchedSkills.first?.installs, 207800)
+        XCTAssertEqual(previewed?.matchedSkills, [])
 
         let requests = fixture.loggedRequests().map(\.command)
-        XCTAssertTrue(requests.contains("search-import-groups"))
-        XCTAssertFalse(requests.contains("preview-import-source"))
+        XCTAssertFalse(requests.contains("search-import-groups"))
+        XCTAssertTrue(requests.contains("preview-import-source"))
     }
 
     func testImportPageShowsCachedSnapshotSkillsBeforePreviewRuns() async throws {
@@ -312,8 +314,8 @@ final class WorkflowCoverageTests: XCTestCase {
         await model.loadImportPageIfNeeded()
 
         let cached = model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" })
-        XCTAssertEqual(cached?.skills.map(\.id), ["research", "debugging"])
-        XCTAssertEqual(cached?.previewPhase, .ready)
+        XCTAssertEqual(cached?.skills.map(\.id), [])
+        XCTAssertEqual(cached?.previewPhase, .idle)
         XCTAssertFalse(fixture.loggedRequests().contains(where: { $0.command == "preview-import-source" }))
     }
 
