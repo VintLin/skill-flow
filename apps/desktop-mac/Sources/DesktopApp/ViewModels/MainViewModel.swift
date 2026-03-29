@@ -385,6 +385,7 @@ final class MainViewModel {
         let title: String
         let locator: String
         let canonicalRepo: String
+        let isInstalledLocally: Bool
         let aliases: [String]
         let summary: String
         let starCount: Int?
@@ -445,6 +446,7 @@ final class MainViewModel {
         let sourceKind: String
         let sourceDisplayName: String
         let sourceLocator: String
+        let sourceCanonicalRepo: String?
         let leafs: [LeafSummary]
         let selectedLeafIds: [String]
         let enabledTargets: [String]
@@ -1488,6 +1490,7 @@ final class MainViewModel {
                 title: title,
                 locator: locator,
                 canonicalRepo: canonicalRepo,
+                isInstalledLocally: group["installed"] as? Bool ?? false,
                 aliases: aliases,
                 summary: summary,
                 starCount: group["starCount"] as? Int ?? snapshot?.repoStars,
@@ -1518,7 +1521,13 @@ final class MainViewModel {
     }
 
     private func makeLocalRecommendedImportGroups(_ recommendations: [ImportRecommendationEntry]) -> [ImportGroupItem] {
-        let installedLocators = Set(allSummaries.map { Self.normalizedImportRecommendationKey($0.sourceLocator) })
+        let installedLocators = Set(
+            allSummaries.flatMap { summary in
+                [summary.sourceCanonicalRepo, summary.sourceLocator]
+                    .compactMap { $0 }
+                    .map(Self.normalizedImportRecommendationKey)
+            }
+        )
 
         return recommendations
             .sorted(by: { lhs, rhs in
@@ -1527,17 +1536,16 @@ final class MainViewModel {
                 }
                 return lhs.canonicalRepo < rhs.canonicalRepo
             })
-            .filter { recommendation in
-                !installedLocators.contains(Self.normalizedImportRecommendationKey(recommendation.canonicalRepo))
-            }
             .map { recommendation in
                 let normalizedRepo = Self.normalizedImportRecommendationKey(recommendation.canonicalRepo)
+                let isInstalledLocally = installedLocators.contains(normalizedRepo)
 
                 return ImportGroupItem(
                     id: normalizedRepo.replacingOccurrences(of: "/", with: "-"),
                     title: Self.localRecommendationTitle(for: recommendation.canonicalRepo),
                     locator: recommendation.locator,
                     canonicalRepo: recommendation.canonicalRepo,
+                    isInstalledLocally: isInstalledLocally,
                     aliases: uniqueSorted([recommendation.canonicalRepo, recommendation.locator]),
                     summary: "",
                     starCount: nil,
@@ -1771,6 +1779,7 @@ final class MainViewModel {
                 title: snapshot?.title ?? item.title,
                 locator: (payload["locator"] as? String)?.nonEmpty ?? fallbackLocator,
                 canonicalRepo: item.canonicalRepo,
+                isInstalledLocally: item.isInstalledLocally,
                 aliases: item.aliases,
                 summary: item.summary.nonEmpty ?? snapshot?.description ?? "",
                 starCount: item.starCount,
@@ -1794,6 +1803,7 @@ final class MainViewModel {
                 title: item.title,
                 locator: item.locator,
                 canonicalRepo: item.canonicalRepo,
+                isInstalledLocally: item.isInstalledLocally,
                 aliases: item.aliases,
                 summary: item.summary,
                 starCount: item.starCount,
@@ -2001,6 +2011,8 @@ final class MainViewModel {
             let kind = source["kind"] as? String ?? "unknown"
             let sourceDisplayName = source["displayName"] as? String ?? sourceId
             let sourceLocator = source["locator"] as? String ?? ""
+            let sourceCanonicalRepo = (source["canonicalRepo"] as? String)?.nonEmpty
+                ?? (source["originLocator"] as? String)?.nonEmpty
 
             let lock = summary["lock"] as? [String: Any]
             let updatedAt = lock?["updatedAt"] as? String ?? "-"
@@ -2042,6 +2054,7 @@ final class MainViewModel {
                 sourceKind: kind,
                 sourceDisplayName: sourceDisplayName,
                 sourceLocator: sourceLocator,
+                sourceCanonicalRepo: sourceCanonicalRepo,
                 leafs: leafs,
                 selectedLeafIds: selectedLeafIds,
                 enabledTargets: normalizedTargets(enabledTargets),

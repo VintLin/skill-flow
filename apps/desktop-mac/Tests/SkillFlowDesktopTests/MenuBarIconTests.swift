@@ -49,10 +49,29 @@ final class MenuBarIconTests: XCTestCase {
         let foreground = SharedGroupCard.primaryActionIconForeground(
             displayMode: .importSearch,
             theme: .light,
-            accent: .green
+            accent: .green,
+            isEnabled: true
         )
 
         assertColorsEqual(foreground, AppTheme.brand(for: .green, in: .light))
+    }
+
+    func testDisabledImportPrimaryActionUsesMutedForegroundAndNeutralBackground() {
+        let foreground = SharedGroupCard.primaryActionIconForeground(
+            displayMode: .importRecommendation,
+            theme: .light,
+            accent: .green,
+            isEnabled: false
+        )
+        let background = SharedGroupCard.primaryActionIconBackground(
+            displayMode: .importRecommendation,
+            theme: .light,
+            accent: .green,
+            isEnabled: false
+        )
+
+        assertColorsEqual(foreground, AppTheme.textMuted(for: .light))
+        assertColorsEqual(background, AppTheme.documentBlock(for: .light))
     }
 
     func testRecommendationBadgeAccentUsesStablePerTagPalette() {

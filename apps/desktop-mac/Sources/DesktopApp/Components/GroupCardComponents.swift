@@ -195,6 +195,7 @@ struct SharedGroupCard: View {
     let onToggleAllTargets: () -> Void
     let actionButtonTitle: String?
     let actionButtonIcon: ActionIcon
+    let actionButtonEnabled: Bool
     let onActionButton: (() -> Void)?
     let recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem]
     let recommendationDescription: String?
@@ -219,6 +220,7 @@ struct SharedGroupCard: View {
         onToggleAllTargets: @escaping () -> Void,
         actionButtonTitle: String? = nil,
         actionButtonIcon: ActionIcon = .import,
+        actionButtonEnabled: Bool = true,
         onActionButton: (() -> Void)? = nil,
         recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem] = [],
         recommendationDescription: String? = nil
@@ -239,6 +241,7 @@ struct SharedGroupCard: View {
         self.onToggleAllTargets = onToggleAllTargets
         self.actionButtonTitle = actionButtonTitle
         self.actionButtonIcon = actionButtonIcon
+        self.actionButtonEnabled = actionButtonEnabled
         self.onActionButton = onActionButton
         self.recommendationBadgeItems = recommendationBadgeItems
         self.recommendationDescription = recommendationDescription
@@ -461,13 +464,25 @@ struct SharedGroupCard: View {
 
     private var importButton: some View {
         Button {
-            guard !isBusy else { return }
+            guard !isBusy, actionButtonEnabled else { return }
             onActionButton?()
         } label: {
             if displayMode.usesPlainPrimaryActionIcon {
                 actionIcon(actionButtonIcon, size: 12)
-                    .foregroundStyle(Self.primaryActionIconForeground(displayMode: displayMode, theme: theme, accent: accent))
-                    .frame(width: 22, height: 22)
+                    .foregroundStyle(Self.primaryActionIconForeground(
+                        displayMode: displayMode,
+                        theme: theme,
+                        accent: accent,
+                        isEnabled: actionButtonEnabled
+                    ))
+                    .frame(width: 28, height: 28)
+                    .background(Self.primaryActionIconBackground(
+                        displayMode: displayMode,
+                        theme: theme,
+                        accent: accent,
+                        isEnabled: actionButtonEnabled
+                    ))
+                    .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
                     .contentShape(Rectangle())
             } else {
                 HStack(spacing: 6) {
@@ -485,7 +500,7 @@ struct SharedGroupCard: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(isBusy)
+        .disabled(isBusy || !actionButtonEnabled)
     }
 
     private var sourceFactsSection: some View {
@@ -929,12 +944,30 @@ extension SharedGroupCard {
     static func primaryActionIconForeground(
         displayMode: GroupCardDisplayMode,
         theme: DesktopThemeMode,
-        accent: DesktopAccentColor
+        accent: DesktopAccentColor,
+        isEnabled: Bool
     ) -> Color {
         if displayMode.usesPlainPrimaryActionIcon {
-            return AppTheme.brand(for: accent, in: theme)
+            return isEnabled ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme)
         }
         return AppTheme.pageBackground(for: theme)
+    }
+
+    static func primaryActionIconBackground(
+        displayMode: GroupCardDisplayMode,
+        theme: DesktopThemeMode,
+        accent: DesktopAccentColor,
+        isEnabled: Bool
+    ) -> Color {
+        guard displayMode.usesPlainPrimaryActionIcon else {
+            return .clear
+        }
+
+        if isEnabled {
+            return AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30)
+        }
+
+        return AppTheme.documentBlock(for: theme)
     }
 
     static func recommendationBadgeAccent(tagId: String) -> DesktopAccentColor {

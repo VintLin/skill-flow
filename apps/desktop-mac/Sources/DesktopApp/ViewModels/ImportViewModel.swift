@@ -58,6 +58,7 @@ struct ImportViewModel: Equatable {
         let title: String
         let locator: String
         let canonicalRepo: String
+        let isInstalledLocally: Bool
         let aliases: [String]
         let summary: String
         let subtitle: String
@@ -75,6 +76,7 @@ struct ImportViewModel: Equatable {
             title: String,
             locator: String,
             canonicalRepo: String,
+            isInstalledLocally: Bool,
             aliases: [String],
             summary: String,
             subtitle: String,
@@ -91,6 +93,7 @@ struct ImportViewModel: Equatable {
             self.title = title
             self.locator = locator
             self.canonicalRepo = canonicalRepo
+            self.isInstalledLocally = isInstalledLocally
             self.aliases = aliases
             self.summary = summary
             self.subtitle = subtitle
@@ -140,6 +143,7 @@ struct ImportViewModel: Equatable {
             title: item.title,
             locator: item.locator,
             canonicalRepo: item.canonicalRepo,
+            isInstalledLocally: item.isInstalledLocally,
             aliases: item.aliases,
             summary: summary(for: item, locale: locale),
             subtitle: subtitle(for: item.locator, locale: locale),
@@ -180,6 +184,7 @@ struct ImportViewModel: Equatable {
                 title: baseCard.title,
                 locator: baseCard.locator,
                 canonicalRepo: baseCard.canonicalRepo,
+                isInstalledLocally: baseCard.isInstalledLocally,
                 aliases: baseCard.aliases,
                 summary: baseCard.summary,
                 subtitle: baseCard.subtitle,

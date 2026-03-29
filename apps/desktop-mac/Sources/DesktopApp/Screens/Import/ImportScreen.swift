@@ -127,9 +127,7 @@ struct ImportScreen: View {
         VStack(alignment: .leading, spacing: 18) {
             ForEach(sections) { section in
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("# \(section.title)")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    sectionTitle(section)
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: 14) {
                             ForEach(section.cards) { card in
@@ -174,6 +172,7 @@ struct ImportScreen: View {
             },
             actionButtonTitle: nil,
             actionButtonIcon: ActionIcon.import,
+            actionButtonEnabled: !card.isInstalledLocally,
             onActionButton: {
                 Task {
                     await container.importGroup(card)
@@ -182,6 +181,18 @@ struct ImportScreen: View {
             recommendationBadgeItems: card.recommendationBadgeItems,
             recommendationDescription: card.recommendationDescription
         )
+    }
+
+    private func sectionTitle(_ section: ImportViewModel.RecommendedCategorySection) -> some View {
+        let badgeAccent = SharedGroupCard.recommendationBadgeAccent(tagId: section.categoryId)
+
+        return Text("# \(section.title)")
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(AppTheme.brand(for: badgeAccent, in: theme))
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(AppTheme.brand(for: badgeAccent, in: theme).opacity(theme == .dark ? 0.22 : 0.14))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func importCardModel(for card: ImportViewModel.Card) -> MainViewModel.GroupCardModel {
