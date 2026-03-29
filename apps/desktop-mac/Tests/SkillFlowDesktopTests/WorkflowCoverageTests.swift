@@ -340,6 +340,29 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(recommended?.isInstalledLocally, true)
     }
 
+    func testImportPageMarksRecommendationAsInstalledWhenExistingSourceUsesGitHubLocatorWithTrailingSlash() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["garrytan-gstack"] = TestFixture.SourceState(
+            displayName: "gstack",
+            locator: "https://github.com/garrytan/gstack/",
+            kind: "git",
+            canonicalRepo: nil,
+            leafIds: ["review"],
+            selectedLeafIds: ["review"],
+            enabledTargets: ["claude-code"]
+        )
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.requestPage(.importPage)
+
+        await model.loadImportPageIfNeeded()
+
+        let recommended = model.recommendedImportGroups.first(where: { $0.canonicalRepo == "garrytan/gstack" })
+        XCTAssertEqual(recommended?.isInstalledLocally, true)
+    }
+
     func testImportPageSearchReturnsExactGroup() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

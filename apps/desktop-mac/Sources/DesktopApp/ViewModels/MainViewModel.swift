@@ -1572,7 +1572,9 @@ final class MainViewModel {
             return ""
         }
 
-        let lowered = trimmed.lowercased()
+        let lowered = trimmed
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let patterns = [
             #"^https?://github\.com/([^/\s]+)/([^/\s]+?)(?:\.git)?$"#,
             #"^git@github\.com:([^/\s]+)/([^/\s]+?)(?:\.git)?$"#,
