@@ -67,6 +67,16 @@ skill-flow --help
 npx skill-flow --help
 ```
 
+### デスクトップ版の前提依存
+
+Skill Flow Desktop は現在、対象の Mac 上でいくつかの外部コマンドラインツールに依存します。
+
+- 同梱 desktop helper の起動には `node` 20 以上が必要です
+- GitHub 以外の Git ソースを扱うには `git` が必要です
+- ClawHub ソースを扱うには `npx` が必要です
+
+デスクトップアプリが依存不足を検出した場合は、実行可能なエラーメッセージを表示し、この節へ案内します。
+
 ### 典型的なフロー
 
 ```bash

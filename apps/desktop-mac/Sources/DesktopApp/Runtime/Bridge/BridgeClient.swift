@@ -1,5 +1,11 @@
 import Foundation
 
+enum RuntimeDependency: String {
+    case node
+    case git
+    case npx
+}
+
 enum BridgeClientError: Error, LocalizedError {
     case helperMissing
     case invalidResponse
@@ -7,6 +13,7 @@ enum BridgeClientError: Error, LocalizedError {
     case timeout(UInt64)
     case emptyResponse
     case concurrentMutationRejected
+    case missingDependency(RuntimeDependency)
 
     private var locale: Locale {
         let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
@@ -27,11 +34,19 @@ enum BridgeClientError: Error, LocalizedError {
             return L10n.string("bridge.error.empty_response", locale: locale)
         case .concurrentMutationRejected:
             return L10n.string("bridge.error.concurrent_mutation", locale: locale)
+        case .missingDependency(let dependency):
+            return L10n.string(
+                "bridge.error.missing_dependency.\(dependency.rawValue)",
+                locale: locale,
+                arguments: [BridgeClient.desktopPrerequisitesURL.absoluteString]
+            )
         }
     }
 }
 
 final class BridgeClient: @unchecked Sendable {
+    static let desktopPrerequisitesURL = URL(string: "https://github.com/VintLin/skill-flow#desktop-prerequisites")!
+
     private final class ThreadSafeBuffer: @unchecked Sendable {
         private var data = Data()
         private let lock = NSLock()
@@ -150,6 +165,7 @@ final class BridgeClient: @unchecked Sendable {
         let request = BridgeRequest(command: command, payload: payload)
         let requestData = try JSONEncoder().encode(request)
         let nodeExecutable = resolveNodeExecutable()
+        try validateEnvironment(command: command, payload: payload, nodeExecutable: nodeExecutable)
 
         let process = Process()
         if nodeExecutable == "node" {
@@ -216,6 +232,9 @@ final class BridgeClient: @unchecked Sendable {
                 let stderrMessage = String(decoding: errorData, as: UTF8.self)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !stderrMessage.isEmpty {
+                    if let dependencyError = Self.dependencyError(for: stderrMessage) {
+                        throw dependencyError
+                    }
                     throw BridgeClientError.commandFailed(stderrMessage)
                 }
             }
@@ -236,6 +255,9 @@ final class BridgeClient: @unchecked Sendable {
             let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
             let locale = DesktopLanguage(storageValue: rawValue).locale
             message = L10n.string("bridge.error.command_failed_default", locale: locale)
+        }
+        if let dependencyError = Self.dependencyError(for: message) {
+            throw dependencyError
         }
         throw BridgeClientError.commandFailed(message)
     }
@@ -299,5 +321,94 @@ final class BridgeClient: @unchecked Sendable {
         }
 
         return "node"
+    }
+
+    private func validateEnvironment(
+        command: BridgeCommand,
+        payload: [String: AnyCodable]?,
+        nodeExecutable: String
+    ) throws {
+        guard isNodeAvailable(nodeExecutable) else {
+            throw BridgeClientError.missingDependency(.node)
+        }
+
+        guard let locator = locator(from: payload) else {
+            return
+        }
+
+        if locator.hasPrefix("clawhub:"), !isCommandAvailable("npx") {
+            throw BridgeClientError.missingDependency(.npx)
+        }
+
+        if requiresGit(locator: locator), !isCommandAvailable("git") {
+            throw BridgeClientError.missingDependency(.git)
+        }
+    }
+
+    private func locator(from payload: [String: AnyCodable]?) -> String? {
+        payload?["locator"]?.value as? String
+    }
+
+    private func requiresGit(locator: String) -> Bool {
+        let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.hasPrefix("clawhub:") {
+            return false
+        }
+
+        let lowercased = trimmed.lowercased()
+        if lowercased.contains("github.com") || isGitHubShorthand(trimmed) {
+            return false
+        }
+
+        return
+            lowercased.hasPrefix("git@") ||
+            lowercased.hasPrefix("http://") ||
+            lowercased.hasPrefix("https://")
+    }
+
+    private func isGitHubShorthand(_ locator: String) -> Bool {
+        let parts = locator.split(separator: "/")
+        return parts.count == 2 && !locator.contains("://") && !locator.contains(":")
+    }
+
+    private func isNodeAvailable(_ nodeExecutable: String) -> Bool {
+        if nodeExecutable == "node" {
+            return isCommandAvailable("node")
+        }
+        return FileManager.default.isExecutableFile(atPath: nodeExecutable)
+    }
+
+    private func isCommandAvailable(_ command: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [command, "--version"]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    static func dependencyError(for message: String) -> BridgeClientError? {
+        let lowercased = message.lowercased()
+
+        if lowercased.contains("spawn npx enoent") || lowercased.contains("npx: command not found") {
+            return .missingDependency(.npx)
+        }
+
+        if lowercased.contains("spawn git enoent") || lowercased.contains("git: command not found") {
+            return .missingDependency(.git)
+        }
+
+        if lowercased.contains("spawn node enoent") || lowercased.contains("node: command not found") {
+            return .missingDependency(.node)
+        }
+
+        return nil
     }
 }

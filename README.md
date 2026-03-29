@@ -67,6 +67,16 @@ Or run without a global install:
 npx skill-flow --help
 ```
 
+### Desktop prerequisites
+
+Skill Flow Desktop currently relies on a few external command-line tools on the target Mac:
+
+- `node` 20 or newer is required to launch the bundled desktop helper
+- `git` is required for non-GitHub Git sources
+- `npx` is required for ClawHub imports
+
+If the desktop app detects a missing dependency, it will surface an actionable error and point back to this section.
+
 ### Typical flow
 
 ```bash

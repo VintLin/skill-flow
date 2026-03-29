@@ -5,10 +5,17 @@ import XCTest
 
 final class BridgeClientExecutionTests: XCTestCase {
     private var fixture: SlowBridgeFixture?
+    private var savedNodeOverride: String?
 
     override func tearDownWithError() throws {
         try fixture?.tearDown()
         fixture = nil
+        if let savedNodeOverride {
+            setenv("SKILL_FLOW_DESKTOP_NODE_OVERRIDE", savedNodeOverride, 1)
+        } else {
+            unsetenv("SKILL_FLOW_DESKTOP_NODE_OVERRIDE")
+        }
+        savedNodeOverride = nil
     }
 
     func testListAllowsMainActorWorkWhileHelperIsStillRunning() async throws {
@@ -40,6 +47,36 @@ final class BridgeClientExecutionTests: XCTestCase {
 
         XCTAssertEqual(response.command, .list)
         XCTAssertTrue(response.ok)
+    }
+
+    func testListFailsWithActionableNodeRequirementWhenNodeIsMissing() async throws {
+        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 0)
+        self.fixture = fixture
+        savedNodeOverride = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_NODE_OVERRIDE"]
+        setenv("SKILL_FLOW_DESKTOP_NODE_OVERRIDE", "/tmp/skill-flow-tests/missing-node", 1)
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        do {
+            _ = try await bridge.list()
+            XCTFail("Expected missing node requirement to fail before launching the helper.")
+        } catch {
+            XCTAssertEqual(
+                error.localizedDescription,
+                "Node.js 20+ is required to run Skill Flow Desktop. Install it, then retry. README: https://github.com/VintLin/skill-flow#desktop-prerequisites"
+            )
+        }
+    }
+
+    func testRuntimeMissingCommandErrorsAreMappedToDependencyGuidance() {
+        XCTAssertEqual(
+            BridgeClient.dependencyError(for: "spawn git ENOENT")?.localizedDescription,
+            "Git is required for this operation. Install Git or Xcode Command Line Tools, then retry. README: https://github.com/VintLin/skill-flow#desktop-prerequisites"
+        )
+        XCTAssertEqual(
+            BridgeClient.dependencyError(for: "/bin/sh: npx: command not found")?.localizedDescription,
+            "`npx` is required for ClawHub imports. Install Node.js/npm, then retry. README: https://github.com/VintLin/skill-flow#desktop-prerequisites"
+        )
     }
 }
 

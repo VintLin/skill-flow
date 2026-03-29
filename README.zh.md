@@ -67,6 +67,16 @@ skill-flow --help
 npx skill-flow --help
 ```
 
+### 桌面端前置依赖
+
+Skill Flow Desktop 目前在目标 Mac 上仍依赖少量外部命令行工具：
+
+- 启动内置 desktop helper 需要 `node` 20 或更高版本
+- 导入非 GitHub Git source 需要 `git`
+- 导入 ClawHub source 需要 `npx`
+
+如果桌面应用检测到依赖缺失，会直接提示可执行的错误信息，并引导回本节处理。
+
 ### 常见使用流程
 
 ```bash

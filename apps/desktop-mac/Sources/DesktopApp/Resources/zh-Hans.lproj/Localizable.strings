@@ -5,6 +5,9 @@
 "bridge.error.empty_response" = "Bridge helper 返回了空响应。";
 "bridge.error.concurrent_mutation" = "已有另一个写入任务正在运行。";
 "bridge.error.command_failed_default" = "未知的 bridge 命令失败。";
+"bridge.error.missing_dependency.node" = "运行 Skill Flow Desktop 需要 Node.js 20 及以上版本。安装后请重试。README：%@";
+"bridge.error.missing_dependency.git" = "当前操作需要 Git。请安装 Git 或 Xcode Command Line Tools 后重试。README：%@";
+"bridge.error.missing_dependency.npx" = "ClawHub 导入需要 `npx`。请安装 Node.js/npm 后重试。README：%@";
 "page.home.title" = "主页";
 "page.import.title" = "导入";
 "page.settings.title" = "设置";

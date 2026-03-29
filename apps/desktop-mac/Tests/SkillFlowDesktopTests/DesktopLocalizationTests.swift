@@ -57,11 +57,19 @@ final class DesktopLocalizationTests: XCTestCase {
             "同梱 helper が見つかりません。Skill Flow Desktop を再インストールしてください。"
         )
         XCTAssertEqual(BridgeClientError.timeout(250).errorDescription, "250ms 後に操作がタイムアウトしました。")
+        XCTAssertEqual(
+            BridgeClientError.missingDependency(.node).errorDescription,
+            "Skill Flow Desktop の実行には Node.js 20 以降が必要です。インストール後に再試行してください。README: https://github.com/VintLin/skill-flow#desktop-prerequisites"
+        )
 
         UserDefaults.standard.set(DesktopLanguage.en.rawValue, forKey: DesktopLanguage.storageKey)
         XCTAssertEqual(
             BridgeClientError.concurrentMutationRejected.errorDescription,
             "Another write task is already running."
+        )
+        XCTAssertEqual(
+            BridgeClientError.missingDependency(.npx).errorDescription,
+            "`npx` is required for ClawHub imports. Install Node.js/npm, then retry. README: https://github.com/VintLin/skill-flow#desktop-prerequisites"
         )
     }
 
