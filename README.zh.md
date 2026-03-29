@@ -1,227 +1,227 @@
 # Skill Flow
 
-> **让 Skill 管理回归本质。**
-> Skill 分组 · 一键部署到多个工具 · 配置清晰 · 问题快速定位
+<div align="center">
 
-![img](img/img-1.jpg)
+将散落的 AI agent skill 整合为有序工作流。
 
-[English](./README.md)
+[English](./README.md) · [架构文档](./docs/ARCHITECTURE.md) · [贡献指南](./docs/CONTRIBUTING.md) · [参考文档](./docs/references/README.md)
 
-[![Node.js Version](https://img.shields.io/node/v/skill-flow?style=flat-square)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
+[![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
-当你的 Skill 越装越多，管理就会变得混乱：从 Github 仓库下载了一堆相关技能，部署到不同 agent 后结构被打散，更新和排障变得困难。
+<img src="./img/img-icon.png" alt="Skill Flow 图标" width="120" />
 
-`skill-flow` 用 Skill 视角重新组织管理：以 Github 仓库作为 Skill 分组依据，选择部署目标，统一更新，快速诊断问题。让 Skill 管理清晰、可控、高效。
+</div>
 
-## 核心特性
-![Skill 分组关系图](./img/img-2.png)
+`skill-flow` 是一个用于将 AI agent skill 作为工作流管理的桌面应用和 CLI。通过关键词、GitHub URL 或 `npx` 包格式从 ClawHub 和其他来源搜索并导入 skill，部署到任意 agent，并维护可读、可修复的状态。
 
-**Skill 分组管理**
-一个 Github 仓库 = 一个 Skill 分组。相关 Skills 保持在一起，更新和维护以分组为单位进行。
+构建为一个 monorepo，包含原生 macOS 桌面应用、发布的 CLI、共享运行时、Ink TUI，以及通过 `skill-flow bridge --json` 访问的统一状态系统。
 
-**一键部署到多个工具**
-一次配置，部署到多个 agent（Claude Code、Cursor、Windsurf 等 13+ 目标）。
+![Skill Flow 桌面总览](./img/img-home.png)
 
-**交互式终端 UI**
-直观的 TUI 界面：查看分组 → 选择技能 → 选择目标 → 保存配置。
+## 为什么要做这个
 
-**进入 Config 自动自举**
-`config` 会先立即渲染，再显示启动进度；启动阶段会识别 agent 根目录里尚未纳入管理的 skill，回填到 `skill-flow`，并在进入主界面前完成状态审计。
+逐个安装 skill 在规模化后会崩溃：
 
-**显式状态追踪**
-`manifest.json` 记录你的意图，`lock.json` 记录实际安装状态。状态清晰可查。
+- 仓库包含多个相关 skill，但你分别安装它们
+- 不同 agent 期望不同的位置
+- 更新会悄悄漂移
+- 未管理的目录不断累积
+- 没人追踪实际部署了什么
 
-**一键体检**
-`doctor` 命令检测断链、不一致、冲突，精准定位问题。
+`skill-flow` 保留了工作流分组。一个 source 始终是一个内聚单元——检查它、选择 skill、部署到多个目标、干净地更新，并始终了解你的状态。
 
-## 安装
+## 当前能力
 
-需要 Node.js >= 20，当前版本针对 macOS 优化。
+- **分组化 source 管理**：本地、Git、ClawHub 统一走同一套导入模型。
+- **多 agent 部署**：把同一组选中的 skill 部署到 Claude Code、Codex、Cursor、Gemini CLI、OpenCode、OpenClaw、Windsurf 等目标。
+- **交互式配置流程**：基于 Ink 的 add/config/find TUI，覆盖选择、审阅和修复流程。
+- **macOS 15+ 桌面应用**：SwiftUI 主窗口、导入页、详情页、设置页和菜单栏快速配置。
+- **显式状态**：`manifest.json` 记录意图，`lock.json` 记录实际 inventory 与 deployment。
+- **Bridge 协议**：通过 `skill-flow bridge --json` 提供机器可读入口。
+- **修复与诊断**：`doctor`、`repair-source`、`repair-state`、`repair-targets` 负责处理最容易坏掉的地方。
 
-通过 npm 安装：
+## 界面预览
+
+| 菜单栏 | 导入页 |
+| --- | --- |
+| ![菜单栏快速配置](./img/img-menu.png) | ![导入页](./img/img-import.png) |
+
+| 详情页 | 设置页 |
+| --- | --- |
+| ![详情页](./img/img-detail.png) | ![设置页](./img/img-setting.png) |
+
+## 快速开始
+
+### 安装
 
 ```bash
 npm install -g skill-flow
 skill-flow --help
 ```
 
-不做全局安装也可以直接运行：
+也可以不全局安装，直接运行：
 
 ```bash
 npx skill-flow --help
 ```
 
-如果你要本地开发，再使用源码安装：
+### 常见使用流程
 
 ```bash
-git clone https://github.com/VintLin/skill-flow.git
-cd skill-flow
-npm install
-npm run build
-npm link
-```
-
-## 快速开始
-
-```bash
-# 添加技能源
-skill-flow add /path/to/skills-repo
-
-# 查看 Skill 分组
-skill-flow list
-
-# 交互式配置（选择技能和目标）
-skill-flow config
-
-# 更新所有源
-skill-flow update --all
-
-# 健康检查
-skill-flow doctor
-
-# 移除 Skill 分组
-skill-flow uninstall my-source-id
-```
-
-`add <source>` 支持本地路径、`owner/repo`、完整的 https/ssh Git URL、GitHub tree URL，以及 `clawhub:<slug>[@version]`。
-
-`add` 默认会预选该源的全部 skill，以及当前检测到的全部 agent 目标。传入 `--path <repoSubpath>` 时，仍然会导入整个仓库，但只会预选该路径下的 skill。
-
-示例：
-
-```bash
-# 本地仓库
-skill-flow add ~/code/my-skills
-
-# GitHub 简写
+# 添加一个 source
 skill-flow add garrytan/gstack
 
-# 完整 Git URL
-skill-flow add https://github.com/garrytan/gstack.git
-skill-flow add git@github.com:garrytan/gstack.git
+# 查看当前 workflow group
+skill-flow list
 
-# GitHub tree URL
-skill-flow add https://github.com/garrytan/gstack/tree/main/skills
+# 打开交互式配置 UI
+skill-flow config
 
-# 导入整个仓库，但只预选某个子路径下的 skill
-skill-flow add garrytan/gstack --path skills
+# 搜索本地技能、内置目录和 ClawHub
+skill-flow find browser
 
-# ClawHub 包
-skill-flow add clawhub:example/skill-pack
-skill-flow add clawhub:example/skill-pack@1.2.3
+# 更新单个 source 或全部 source
+skill-flow update garrytan-gstack
+skill-flow update --all
+
+# 诊断漂移和坏掉的部署
+skill-flow doctor
 ```
 
-## 命令参考
+### 机器桥接入口
 
-| 命令 | 说明 |
-|---|---|
-| `add <source>` | 添加技能源（本地路径、Git 仓库或 ClawHub） |
-| `find <query>` | 搜索本地已安装技能、内置 Git 仓库和 ClawHub |
-| `search <query>` | `find` 的别名 |
-| `list` | 显示 Skill 分组 |
-| `config` | 打开交互式配置界面 |
-| `update [sourceId] --all` | 更新所有技能并重新部署 |
-| `doctor` | 体检，排查问题 |
-| `uninstall <sourceIds...>` | 移除 Skill 分组及其部署 |
-
-当已选 skill 出现同名冲突时，`skill-flow` 会把内容完全相同的重复项保留为 warning，把内容不同的冲突项改成带 repo / author 前缀的链接名，例如 `gstack-browse`、`gstack(garrytan)-browse` 或 `garrytan-skill-creator`。
-
-## 工作原理
-
-**状态管理**
-- `~/.skillflow/manifest.json` - 你的配置（你想要什么）
-- `~/.skillflow/lock.json` - 实际状态（实际装了什么）
-- `~/.skillflow/source/local/<source-id>/` - 本地导入源，以及启动时接管的外部 skill
-- `~/.skillflow/source/git/<source-id>/` - Git 仓库缓存
-- `~/.skillflow/source/clawhub/<source-id>/` - ClawHub 缓存
-- `~/.skillflow/catalog/git/<source-id>/` - 内置 Git 仓库缓存
-
-**部署策略**
-优先使用符号链接，必要时使用文件复制。目标目录只是部署点，真正的状态在 lock.json 里。
-
-**Config 启动时会做什么**
-- 检测当前可用 agent 目标
-- 扫描已知 agent `skills/` 根目录中的未受管 skill
-- 将这些外部 skill 导入到 `~/.skillflow/source/local/`
-- 刷新 inventory、归一化 bindings、审计当前投影状态
-- 然后进入交互式 config 界面
-
-如果某个 agent 根目录里的 symlink 本来就已经指向 `~/.skillflow/source/*` 下的受管内容，bootstrap 会把它视为已管理状态，不会重复回填。
-
-## 支持的 Agent
-
-Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · OpenClaw · Pi · Windsurf · Roo Code · Cline · Amp · Kiro
-
-可通过环境变量自定义目标路径（如 `SKILL_FLOW_TARGET_CLAUDE_CODE`）。
-
-更广义的生态路径参考，包括 project 级 rules / instructions 路径（文档整理中）。
-
-## 默认内置发现仓库
-
-`find/search` 除了搜索本地已安装技能和 ClawHub，也会搜索默认内置的 Git 仓库目录。
-
-如果希望内置 Git 仓库搜索更稳定，建议设置 `GITHUB_TOKEN`，避免 GitHub 未认证 API 的低速率限制。
-
-| Repository | Description | Stars | Skills |
-| --- | --- | ---: | ---: |
-| [anthropic-skills](https://github.com/anthropics/skills) | Official Agent Skills from Anthropic | 95,957 | 18 |
-| [superpowers](https://github.com/obra/superpowers) | Agentic skills framework & development methodology | 89,816 | 14 |
-| [everything-claude-code](https://github.com/affaan-m/everything-claude-code) | Performance optimization system for Claude Code, Codex, and beyond | 81,392 | 147 |
-| [agency-agents](https://github.com/msitarzewski/agency-agents) | Specialized expert agents with personality and proven deliverables | 50,749 | — |
-| [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | Design intelligence for building professional UI/UX | 43,112 | 7 |
-| [antigravity-awesome-skills](https://github.com/sickn33/antigravity-awesome-skills) | 1,000+ battle-tested skills for Claude Code, Cursor, and more | 25,047 | 1,258 |
-| [marketingskills](https://github.com/coreyhaines31/marketingskills) | Marketing skills — CRO, copywriting, SEO, analytics, growth | 14,099 | 33 |
-| [agentskills](https://github.com/agentskills/agentskills) | Specification and documentation for Agent Skills | 13,342 | — |
-| [taste-skill](https://github.com/Leonxlnx/taste-skill) | Gives your AI good taste — stops generic, boring output | 3,389 | 5 |
-| [affiliate-skills](https://github.com/Affitor/affiliate-skills) | Full affiliate marketing funnel: research to deploy | 99 | 47 |
-| [skills](https://github.com/luongnv89/skills) | Reusable skills to supercharge your AI agents | 1 | 29 |
-| [awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) | Community Claude skills collection | — | — |
-| [myclaude](https://github.com/cexll/myclaude) | Personal Claude skills collection | — | — |
-| [baoyu-skills](https://github.com/JimLiu/baoyu-skills) | Community skills collection | — | — |
-| [dbskill](https://github.com/dontbesilent2025/dbskill) | Database-focused skills collection | — | — |
-| [gstack](https://github.com/garrytan/gstack) | Gstack skills and workflows | — | — |
-| [impeccable](https://github.com/pbakaus/impeccable) | Design and taste skills collection | — | — |
-| [frontend-slides](https://github.com/zarazhangrui/frontend-slides) | Frontend presentation skills collection | — | — |
-
-## 开发
-
-```bash
-npm install
-npm run build   # 构建
-npm test        # 运行测试
-npm run -w skill-flow dev  # CLI 开发模式
-```
-
-工作区结构：
-
-- `apps/cli`：对外发布的 npm CLI 包（`skill-flow`）
-- `packages/domain`：共享领域模型与类型定义
-- `packages/storage`：状态存储、缓存与本地持久化
-- `packages/integration`：Git、GitHub、ClawHub、文件系统等外部集成
-- `packages/core-engine`：部署、inventory、doctor、workflow 等核心服务
-- `packages/query`：CLI / TUI / desktop 共享的运行时与查询编排
-- `packages/tui`：Ink 终端 UI 模块
-- `packages/shared-types`：bridge 协议契约
-- `apps/desktop-mac`：SwiftUI 桌面壳（macOS 15+），活动源码位于 `Sources/DesktopApp`
-
-当前测试归属：
-
-- `packages/shared-types`：bridge 协议解析与响应契约
-- `packages/storage`：preferences、cache 与状态存储持久化
-- `packages/integration`：ClawHub / search naming / source locator 等工具逻辑
-- `packages/core-engine`：inventory 与 source service 行为
-- `packages/query`：runtime lifecycle、import flow、config bootstrap 行为
-- `packages/tui`：add-flow 与 selection-state 模型
-- `apps/cli`：命令入口与跨包集成路径
-
-桌面/辅助进程机器协议入口：
+桌面端和辅助工具通过版本化 JSON 协议调用 CLI：
 
 ```bash
 printf '%s' '{"protocolVersion":"1.0","command":"list"}' | skill-flow bridge --json
 ```
 
-技术栈：TypeScript + Vitest + Ink TUI + SwiftUI（桌面壳）
+## 支持的来源
+
+`skill-flow add <source>` 目前支持：
+
+- 本地目录
+- `owner/repo` GitHub 简写
+- 完整 HTTPS Git URL
+- SSH Git URL
+- GitHub tree URL
+- `clawhub:<slug>[@version]`
+
+示例：
+
+```bash
+skill-flow add ~/code/my-skills
+skill-flow add garrytan/gstack
+skill-flow add https://github.com/garrytan/gstack.git
+skill-flow add git@github.com:garrytan/gstack.git
+skill-flow add https://github.com/garrytan/gstack/tree/main/skills
+skill-flow add clawhub:example/skill-pack
+skill-flow add clawhub:example/skill-pack@1.2.3
+```
+
+如果仓库很大，但默认只想从某个子目录开始预选，可以加 `--path <repoSubpath>`。
+
+## 支持的目标 Agent
+
+当前内置目标：
+
+- Claude Code
+- Codex
+- Cursor
+- GitHub Copilot
+- Gemini CLI
+- OpenCode
+- OpenClaw
+- Pi
+- Windsurf
+- Roo Code
+- Cline
+- Amp
+- Kiro
+
+目标路径可以通过 `SKILL_FLOW_TARGET_*` 环境变量覆盖。
+
+## 命令总览
+
+| 命令 | 作用 |
+| --- | --- |
+| `add <source>` | 导入 source，并选择 skill 与目标 |
+| `list` | 查看 workflow group 和当前健康状态 |
+| `find <query>` / `search <query>` | 搜索本地技能、内置 Git 目录与 ClawHub |
+| `config` | 打开交互式配置 UI |
+| `update [sourceId] --all` | 更新单个或全部已注册 source |
+| `doctor` | 诊断漂移、缺失路径和投影问题 |
+| `repair-source [sourceId] --all` | 修复 source checkout 元数据 |
+| `repair-state [sourceId] --all` | 重建 source 侧状态 |
+| `repair-targets [sourceId] --all` | 修复目标部署内容 |
+| `uninstall <sourceIds...>` | 移除 group 及其部署 |
+| `bridge --json` | 执行机器协议请求 |
+
+## 状态如何组织
+
+`skill-flow` 默认把状态放在 `~/.skillflow/`：
+
+- `manifest.json`：你想要什么
+- `lock.json`：系统实际装成了什么
+- `source/local/*`：本地导入或接管的外部 source
+- `source/git/*`：Git source 缓存
+- `source/clawhub/*`：ClawHub source 缓存
+- `catalog/git/*`：内置 Git catalog 缓存
+
+目标目录只是部署结果，不是真正的事实源。
+
+## Monorepo 结构
+
+- `apps/cli`：对外发布的 npm CLI 包
+- `apps/desktop-mac`：macOS 15+ SwiftUI 桌面应用
+- `packages/domain`：领域模型和核心类型
+- `packages/storage`：manifest/lock/preferences/cache 持久化
+- `packages/integration`：Git、GitHub、ClawHub、路径与命名集成
+- `packages/core-engine`：inventory、deployment、doctor、bootstrap 等服务
+- `packages/query`：共享运行时与 bridge 编排
+- `packages/shared-types`：bridge 协议类型
+- `packages/tui`：Ink add/find/config UI
+- `docs`：架构、贡献指南、参考资料、计划与打包文档
+
+## 开发
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+CLI 开发调试：
+
+```bash
+npm run -w skill-flow dev -- --help
+```
+
+桌面端开发调试：
+
+```bash
+npm run build
+cd apps/desktop-mac
+swift build
+swift test
+```
+
+让桌面端使用本地 CLI 构建产物：
+
+```bash
+export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
+```
+
+## 文档入口
+
+- [架构文档](./docs/ARCHITECTURE.md)
+- [贡献指南](./docs/CONTRIBUTING.md)
+- [文档索引](./docs/README.md)
+- [CLI 参考](./docs/references/REF_00_cli-commands.md)
+- [桌面打包参考](./docs/references/REF_09_desktop-packaging.md)
+- [v1.1.5 发布说明](./releases/RELEASE_v1.1.5.md)
 
 ## 许可证
 

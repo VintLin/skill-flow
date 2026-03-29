@@ -1,0 +1,243 @@
+# Skill Flow
+
+<div align="center">
+
+散在する AI エージェントスキルを整理されたワークフローに。
+
+[English](./README.md) · [中文文档](./README.zh.md) · [Architecture](./docs/ARCHITECTURE.md) · [Contributing](./docs/CONTRIBUTING.md) · [Reference Docs](./docs/references/README.md)
+
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
+[![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
+
+<img src="./img/img-icon.png" alt="Skill Flow アイコン" width="120" />
+
+</div>
+
+`skill-flow` は AI エージェントスキルをワークフローとして管理するためのデスクトップアプリケーションと CLI です。キーワード、GitHub URL、または `npx` パッケージ形式で ClawHub やその他のソースからスキルを検索してインポートし、任意のエージェントにデプロイし、読みやすく修復可能な状態を維持します。
+
+ネイティブ macOS デスクトップアプリ、公開された CLI、共有ランタイム、Ink TUI、および `skill-flow bridge --json` を通じてアクセス可能な統一状態システムを含むモノレポとして構築されています。
+
+![Skill Flow デスクトップ概要](./img/img-home.png)
+
+## なぜこれが存在するのか
+
+スキルを一つずつインストールすることは、規模が大きくなると破綻します：
+
+- リポジトリには複数の関連スキルが含まれているが、個別にインストールする
+- 異なるエージェントは異なる場所を期待する
+- 更新が静かにドリフトする
+- 管理されていないフォルダが蓄積される
+- 実際に何がデプロイされているか誰も追跡していない
+
+`skill-flow` はワークフローグループを保持します。一つのソースは一つのまとまりのあるユニットのまま——検査し、スキルを選択し、複数のターゲットにデプロイし、クリーンに更新し、常に状態を把握できます。
+
+## 主な機能
+
+- **グループ化されたソース管理**: ローカル、Git、ClawHub ソースはすべて同じインポートモデルを通じて流れます。
+- **マルチエージェントデプロイ**: 選択した一つのスキルセットを Claude Code、Codex、Cursor、Gemini CLI、OpenCode、OpenClaw、Windsurf などにデプロイします。
+- **インタラクティブな設定フロー**: add/config フロー、選択状態、レビュー、修復のための Ink ベース TUI。
+- **macOS 15+ デスクトップアプリ**: SwiftUI メインウィンドウ、インポートビュー、詳細パネル、設定、メニューバークイック設定。
+- **明示的な状態**: `manifest.json` は意図を保存し、`lock.json` は解決されたインベントリとデプロイメントを保存します。
+- **ブリッジプロトコル**: `skill-flow bridge --json` を介した機械可読デスクトップ/ヘルパーエントリポイント。
+- **修復と診断**: `doctor`、`repair-source`、`repair-state`、`repair-targets` が通常最初に腐る部分をカバーします。
+
+## インターフェースプレビュー
+
+| メニューバー | インポート |
+| --- | --- |
+| ![メニューバークイック設定](./img/img-menu.png) | ![インポート画面](./img/img-import.png) |
+
+| 詳細 | 設定 |
+| --- | --- |
+| ![詳細画面](./img/img-detail.png) | ![設定画面](./img/img-setting.png) |
+
+## クイックスタート
+
+### インストール
+
+```bash
+npm install -g skill-flow
+skill-flow --help
+```
+
+またはグローバルインストールなしで実行：
+
+```bash
+npx skill-flow --help
+```
+
+### 典型的なフロー
+
+```bash
+# ソースを追加
+skill-flow add garrytan/gstack
+
+# インストールされたワークフローグループをレビュー
+skill-flow list
+
+# インタラクティブな設定 UI を開く
+skill-flow config
+
+# インストールされたスキル、組み込みカタログ、ClawHub を検索
+skill-flow find browser
+
+# 一つのソースまたはすべてのソースを更新
+skill-flow update garrytan-gstack
+skill-flow update --all
+
+# ドリフトまたは壊れたプロジェクションを診断
+skill-flow doctor
+```
+
+### マシンブリッジ
+
+デスクトップアプリとヘルパーツールは、バージョン管理された JSON プロトコルを通じて CLI と通信します：
+
+```bash
+printf '%s' '{"protocolVersion":"1.0","command":"list"}' | skill-flow bridge --json
+```
+
+## サポートされているソース
+
+`skill-flow add <source>` は以下をサポートします：
+
+- ローカルフォルダ
+- `owner/repo` GitHub 短縮形
+- 完全な HTTPS Git URL
+- SSH Git URL
+- GitHub ツリー URL
+- `clawhub:<slug>[@version]`
+
+例：
+
+```bash
+skill-flow add ~/code/my-skills
+skill-flow add garrytan/gstack
+skill-flow add https://github.com/garrytan/gstack.git
+skill-flow add git@github.com:garrytan/gstack.git
+skill-flow add https://github.com/garrytan/gstack/tree/main/skills
+skill-flow add clawhub:example/skill-pack
+skill-flow add clawhub:example/skill-pack@1.2.3
+```
+
+リポジトリが大きいが、デフォルトの選択を一つのサブツリーから開始する場合は、`--path <repoSubpath>` を使用します。
+
+## サポートされているターゲット
+
+現在の組み込みターゲット：
+
+- Claude Code
+- Codex
+- Cursor
+- GitHub Copilot
+- Gemini CLI
+- OpenCode
+- OpenClaw
+- Pi
+- Windsurf
+- Roo Code
+- Cline
+- Amp
+- Kiro
+
+ターゲットパスは `SKILL_FLOW_TARGET_*` 環境変数でオーバーライドできます。
+
+## コマンドマップ
+
+| コマンド | 機能 |
+| --- | --- |
+| `add <source>` | ソースをインポートし、スキル/ターゲットを選択 |
+| `list` | ワークフローグループと現在の健全性を表示 |
+| `find <query>` / `search <query>` | インストールされたスキル、組み込み Git カタログ、ClawHub を検索 |
+| `config` | インタラクティブな設定 UI を開く |
+| `update [sourceId] --all` | 一つのソースまたはすべての登録されたソースを更新 |
+| `doctor` | ドリフト、欠落パス、プロジェクション問題を診断 |
+| `repair-source [sourceId] --all` | ソースチェックアウトメタデータを再構築 |
+| `repair-state [sourceId] --all` | ソース側の状態を再構築 |
+| `repair-targets [sourceId] --all` | プロジェクトされたターゲットコンテンツを修復 |
+| `uninstall <sourceIds...>` | グループとそのデプロイメントを削除 |
+| `bridge --json` | マシンプロトコルリクエストを実行 |
+
+## 状態の仕組み
+
+`skill-flow` は一つの状態ルートを保持し、デフォルトは `~/.skillflow/` です。
+
+- `manifest.json`: あなたが望むもの
+- `lock.json`: 実際にインストールされているもの
+- `source/local/*`: インポートされたローカルまたは採用された管理されていないソース
+- `source/git/*`: Git ソースキャッシュ
+- `source/clawhub/*`: ClawHub ソースキャッシュ
+- `catalog/git/*`: 組み込み Git カタログキャッシュ
+
+ターゲットディレクトリはデプロイメント出力であり、真実のソースではありません。
+
+## FAQ
+
+### `skill-flow` はどこにデータを保存しますか？
+
+デフォルトでは、状態は `~/.skillflow/` の下に存在します。`manifest.json` は望むワークフローを記録し、`lock.json` は解決されたインベントリとデプロイメントを記録し、`source/*` ディレクトリはインポートされたソースをキャッシュします。
+
+### デプロイメントはターゲットエージェントフォルダ内のファイルを上書きしますか？
+
+`skill-flow` はターゲットディレクトリをデプロイメント出力として扱います。ワークフローグループの選択されたスキルは状態からそこにプロジェクトされるため、これらのファイルは真実のソースとして編集するのではなく、生成された結果として扱う必要があります。
+
+### `doctor` と `repair-*` をいつ使用すべきですか？
+
+何かがおかしいと思われ、最初に診断が必要な場合は `skill-flow doctor` から始めます。ソースチェックアウトメタデータが壊れている場合は `repair-source`、ソース側の状態を再構築する必要がある場合は `repair-state`、デプロイされたターゲットコンテンツが現在の状態からドリフトしている場合は `repair-targets` を使用します。
+
+## モノレポレイアウト
+
+```text
+.
+├── apps
+│   ├── cli/                    # 公開された npm パッケージと CLI エントリポイント
+│   └── desktop-mac/            # macOS 15+ 用 SwiftUI デスクトップアプリ
+├── packages
+│   ├── core-engine/            # インベントリ、デプロイメント、doctor、ブートストラップサービス
+│   ├── domain/                 # ドメインモデルとコアタイプ
+│   ├── integration/            # Git、GitHub、ClawHub、パス、命名統合
+│   ├── query/                  # 共有ランタイムとブリッジ向けオーケストレーション
+│   ├── shared-types/           # ブリッジプロトコルタイプ
+│   ├── storage/                # manifest、lock、preferences、キャッシュ永続化
+│   └── tui/                    # Ink add/find/config UI
+├── docs/                       # アーキテクチャ、コントリビュータードキュメント、リファレンス、プラン
+└── releases/                   # リリースノート
+```
+
+## 開発
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+CLI 開発ループ：
+
+```bash
+npm run -w skill-flow dev -- --help
+```
+
+デスクトップ開発ループ：
+
+```bash
+npm run build
+cd apps/desktop-mac
+swift build
+swift test
+```
+
+ローカル CLI ビルドに対してデスクトップシェルをデバッグ：
+
+```bash
+export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
+```
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=VintLin/skill-flow&type=Date)](https://www.star-history.com/#VintLin/skill-flow&Date)
+
+## ライセンス
+
+Apache License 2.0。[LICENSE](./LICENSE) を参照してください。
