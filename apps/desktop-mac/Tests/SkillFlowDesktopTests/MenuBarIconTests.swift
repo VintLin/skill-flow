@@ -47,6 +47,30 @@ final class MenuBarIconTests: XCTestCase {
         assertColorsEqual(foreground, AppTheme.brand(for: .green, in: .light))
     }
 
+    func testImportSearchPromptTextUsesTranslucentBrandColor() {
+        let lightPromptColor = AppTheme.importSearchPromptText(for: .green, in: .light)
+        let darkPromptColor = AppTheme.importSearchPromptText(for: .green, in: .dark)
+        let lightFixedColor = AppTheme.importSearchPromptFixedText(for: .light)
+        let darkFixedColor = AppTheme.importSearchPromptFixedText(for: .dark)
+
+        XCTAssertEqual(nsColor(lightPromptColor)?.alphaComponent ?? -1, nsColor(lightFixedColor)?.alphaComponent ?? -2, accuracy: 0.001)
+        XCTAssertEqual(nsColor(darkPromptColor)?.alphaComponent ?? -1, nsColor(darkFixedColor)?.alphaComponent ?? -2, accuracy: 0.001)
+    }
+
+    func testImportSearchPromptFixedTextUsesMutedGrayWithExtraTransparency() {
+        let lightPromptColor = AppTheme.importSearchPromptFixedText(for: .light)
+        let darkPromptColor = AppTheme.importSearchPromptFixedText(for: .dark)
+
+        assertColorsEqual(
+            lightPromptColor,
+            AppTheme.textMuted(for: .light).opacity(0.78)
+        )
+        assertColorsEqual(
+            darkPromptColor,
+            AppTheme.textMuted(for: .dark).opacity(0.82)
+        )
+    }
+
     func testActionIconSearchSubmitEnterResolvesToVisibleImage() {
         let image = ActionIcon.searchSubmitEnter.image(size: 14, isTemplate: true)
 
@@ -157,6 +181,11 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(MainView.toolbarButtonSize, 34)
     }
 
+    func testHeaderLayoutUsesStableLeadingAndSearchWidths() {
+        XCTAssertEqual(MainView.headerLeadingWidth, 220)
+        XCTAssertEqual(MainView.headerSearchFieldWidth, 384)
+    }
+
     func testMenuBarIconLoadsTemplateSvg() {
         let image = MenuBarIcon.image()
 
@@ -194,13 +223,17 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     private func assertColorsEqual(_ lhs: Color, _ rhs: Color, file: StaticString = #filePath, line: UInt = #line) {
-        let left = NSColor(lhs).usingColorSpace(.deviceRGB)
-        let right = NSColor(rhs).usingColorSpace(.deviceRGB)
+        let left = nsColor(lhs)
+        let right = nsColor(rhs)
         XCTAssertNotNil(left, file: file, line: line)
         XCTAssertNotNil(right, file: file, line: line)
         XCTAssertEqual(left?.redComponent ?? -1, right?.redComponent ?? -2, accuracy: 0.001, file: file, line: line)
         XCTAssertEqual(left?.greenComponent ?? -1, right?.greenComponent ?? -2, accuracy: 0.001, file: file, line: line)
         XCTAssertEqual(left?.blueComponent ?? -1, right?.blueComponent ?? -2, accuracy: 0.001, file: file, line: line)
         XCTAssertEqual(left?.alphaComponent ?? -1, right?.alphaComponent ?? -2, accuracy: 0.001, file: file, line: line)
+    }
+
+    private func nsColor(_ color: Color) -> NSColor? {
+        NSColor(color).usingColorSpace(.deviceRGB)
     }
 }

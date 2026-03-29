@@ -44,6 +44,7 @@ struct MainView: View {
     let detailContainer: DetailScreenContainer
 
     @State private var updateButtonRotation: Double = 0
+    @State private var searchFocusResetToken = 0
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -99,7 +100,15 @@ struct MainView: View {
             }
         }
         .tint(AppTheme.brand(for: accent))
+        .onAppear {
+            focusedSearchField = nil
+            scheduleImplicitSearchFocusReset(for: homeViewModel.currentRoute)
+        }
         .onChange(of: homeViewModel.currentRoute) { _, newValue in
+            if !Self.shouldAutofocusSearchField(for: newValue) {
+                focusedSearchField = nil
+            }
+            scheduleImplicitSearchFocusReset(for: newValue)
             switch newValue {
             case .importPage:
                 Task {
@@ -109,6 +118,7 @@ struct MainView: View {
                 break
             }
         }
+        .background(WindowFirstResponderResetter(resetToken: searchFocusResetToken))
         .task(id: viewModel.toast?.id) {
             guard let toast = viewModel.toast, toast.style != .loading else { return }
             let toastId = toast.id
@@ -127,25 +137,25 @@ struct MainView: View {
             }
         }
         .task(id: isImportPage) {
-            guard isImportPage, Self.importSearchPrompts.count > 1 else { return }
+            guard isImportPage, localizedImportSearchPrompts.count > 1 else { return }
             while !Task.isCancelled, isImportPage {
                 try? await Task.sleep(for: .seconds(2.2))
                 guard !Task.isCancelled, isImportPage else { break }
                 await MainActor.run {
                     withAnimation(.easeInOut(duration: 0.28)) {
-                        importScreenState.placeholderIndex = (importScreenState.placeholderIndex + 1) % Self.importSearchPrompts.count
+                        importScreenState.placeholderIndex = (importScreenState.placeholderIndex + 1) % localizedImportSearchPrompts.count
                     }
                 }
             }
         }
         .task(id: isImportPage) {
-            guard isImportPage, Self.importSearchPrompts.count > 1 else { return }
+            guard isImportPage, localizedImportSearchPrompts.count > 1 else { return }
             while !Task.isCancelled, isImportPage {
                 try? await Task.sleep(for: .seconds(2.2))
                 guard !Task.isCancelled, isImportPage else { break }
                 await MainActor.run {
                     withAnimation(.easeInOut(duration: 0.28)) {
-                        importScreenState.placeholderIndex = (importScreenState.placeholderIndex + 1) % Self.importSearchPrompts.count
+                        importScreenState.placeholderIndex = (importScreenState.placeholderIndex + 1) % localizedImportSearchPrompts.count
                     }
                 }
             }
@@ -170,6 +180,7 @@ struct MainView: View {
             } else if isHomePage {
                 HStack(spacing: 12) {
                     topBarTitleRow
+                        .frame(width: Self.headerLeadingWidth, alignment: .leading)
                     searchField
                     Spacer(minLength: 0)
                     importButton
@@ -182,6 +193,7 @@ struct MainView: View {
             } else if isImportPage {
                 HStack(spacing: 12) {
                     topBarTitleRow
+                        .frame(width: Self.headerLeadingWidth, alignment: .leading)
                     importSearchField
                     if importSearchActionState != .hidden {
                         importSearchActionButton
@@ -195,6 +207,7 @@ struct MainView: View {
             } else {
                 HStack(spacing: 10) {
                     topBarTitleRow
+                        .frame(width: Self.headerLeadingWidth, alignment: .leading)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
@@ -338,10 +351,10 @@ struct MainView: View {
                         removal: .move(edge: .top).combined(with: .opacity)
                     ))
             }
-            .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-            .frame(width: Self.importPromptLeadingWidth, alignment: .center)
+            .foregroundStyle(AppTheme.importSearchPromptText(for: accent, in: theme))
+            .frame(width: Self.importPromptLeadingWidth(for: locale), alignment: .center)
             Text(prompt.fixedText)
-                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .foregroundStyle(AppTheme.importSearchPromptFixedText(for: theme))
             ZStack {
                 Text(prompt.trailingText)
                     .id("trailing-\(prompt.id)")
@@ -350,13 +363,17 @@ struct MainView: View {
                         removal: .move(edge: .top).combined(with: .opacity)
                     ))
             }
-            .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-            .frame(width: Self.importPromptTrailingWidth, alignment: .center)
+            .foregroundStyle(AppTheme.importSearchPromptText(for: accent, in: theme))
+            .frame(width: Self.importPromptTrailingWidth(for: locale), alignment: .center)
         }
     }
 
+    private var localizedImportSearchPrompts: [ImportSearchPrompt] {
+        Self.importSearchPrompts(locale: locale)
+    }
+
     private var activeImportSearchPrompt: ImportSearchPrompt {
-        let prompts = Self.importSearchPrompts
+        let prompts = localizedImportSearchPrompts
         guard !prompts.isEmpty else {
             return ImportSearchPrompt(leadingText: "", fixedText: "", trailingText: "")
         }
@@ -585,14 +602,38 @@ struct MainView: View {
         }
     }
 
+    static func shouldAutofocusSearchField(for route: DesktopRoute) -> Bool {
+        switch route {
+        case .home, .importPage, .settings, .detail:
+            return false
+        }
+    }
+
+    static func shouldClearImplicitSearchFocusOnAppear(for route: DesktopRoute) -> Bool {
+        topBarShowsSearch(for: route) && !shouldAutofocusSearchField(for: route)
+    }
+
     static let headerSearchFieldWidth: CGFloat = 384
     static let headerSearchFieldHeight: CGFloat = 34
     static let headerSearchActionButtonSize: CGFloat = headerSearchFieldHeight
-    static let importPromptLeadingWidth: CGFloat = measuredPromptWidth(for: importSearchPrompts.map(\.leadingText))
-    static let importPromptTrailingWidth: CGFloat = measuredPromptWidth(for: importSearchPrompts.map(\.trailingText))
+    static func importPromptLeadingWidth(for locale: Locale) -> CGFloat {
+        measuredPromptWidth(for: importSearchPrompts(locale: locale).map(\.leadingText))
+    }
+
+    static func importPromptTrailingWidth(for locale: Locale) -> CGFloat {
+        measuredPromptWidth(for: importSearchPrompts(locale: locale).map(\.trailingText))
+    }
 
     static func shouldShowSearchPrompt(query: String, isFocused: Bool) -> Bool {
         query.isEmpty && !isFocused
+    }
+
+    private func scheduleImplicitSearchFocusReset(for route: DesktopRoute) {
+        guard Self.shouldClearImplicitSearchFocusOnAppear(for: route) else {
+            return
+        }
+
+        searchFocusResetToken += 1
     }
 
     static func importSearchActionState(
@@ -614,23 +655,25 @@ struct MainView: View {
         return .hidden
     }
 
-    static let importSearchPrompts: [ImportSearchPrompt] = [
-        ImportSearchPrompt(
-            leadingText: "npx skills",
-            fixedText: " 输入:",
-            trailingText: " anthropics/skills"
-        ),
-        ImportSearchPrompt(
-            leadingText: "github 链接",
-            fixedText: " 输入:",
-            trailingText: " https://github.com/..."
-        ),
-        ImportSearchPrompt(
-            leadingText: "关键词",
-            fixedText: " 输入:",
-            trailingText: " anthropics"
-        ),
-    ]
+    static func importSearchPrompts(locale: Locale) -> [ImportSearchPrompt] {
+        [
+            ImportSearchPrompt(
+                leadingText: L10n.string("import.search.prompt.1.leading", locale: locale),
+                fixedText: L10n.string("import.search.prompt.fixed_input", locale: locale),
+                trailingText: L10n.string("import.search.prompt.1.trailing", locale: locale)
+            ),
+            ImportSearchPrompt(
+                leadingText: L10n.string("import.search.prompt.2.leading", locale: locale),
+                fixedText: L10n.string("import.search.prompt.fixed_input", locale: locale),
+                trailingText: L10n.string("import.search.prompt.2.trailing", locale: locale)
+            ),
+            ImportSearchPrompt(
+                leadingText: L10n.string("import.search.prompt.3.leading", locale: locale),
+                fixedText: L10n.string("import.search.prompt.fixed_input", locale: locale),
+                trailingText: L10n.string("import.search.prompt.3.trailing", locale: locale)
+            ),
+        ]
+    }
 
     private static func measuredPromptWidth(for texts: [String]) -> CGFloat {
         let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -812,6 +855,7 @@ struct MainView: View {
 
 extension MainView {
     static let toolbarButtonSize: CGFloat = 34
+    static let headerLeadingWidth: CGFloat = 220
     static func groupCardDisplayMode(for density: DesktopCardDensity) -> GroupCardDisplayMode {
         switch density {
         case .comfortable:
@@ -940,6 +984,14 @@ enum AppTheme {
         case (.purple, .dark):
             return Color(red: 167.0 / 255.0, green: 139.0 / 255.0, blue: 250.0 / 255.0)
         }
+    }
+
+    static func importSearchPromptText(for accent: DesktopAccentColor, in mode: DesktopThemeMode) -> Color {
+        brand(for: accent, in: mode).opacity(mode == .dark ? 0.5576 : 0.4836)
+    }
+
+    static func importSearchPromptFixedText(for mode: DesktopThemeMode) -> Color {
+        textMuted(for: mode).opacity(mode == .dark ? 0.82 : 0.78)
     }
 
     struct ControlSize {
@@ -1186,5 +1238,39 @@ enum AppTheme {
 private extension String {
     var nonEmpty: String? {
         isEmpty ? nil : self
+    }
+}
+
+private struct WindowFirstResponderResetter: NSViewRepresentable {
+    let resetToken: Int
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context _: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard context.coordinator.lastResetToken != resetToken else {
+            return
+        }
+
+        context.coordinator.lastResetToken = resetToken
+
+        DispatchQueue.main.async {
+            guard let window = nsView.window else {
+                return
+            }
+
+            window.initialFirstResponder = nil
+            window.endEditing(for: nil)
+            window.makeFirstResponder(nil)
+        }
+    }
+
+    final class Coordinator {
+        var lastResetToken: Int?
     }
 }

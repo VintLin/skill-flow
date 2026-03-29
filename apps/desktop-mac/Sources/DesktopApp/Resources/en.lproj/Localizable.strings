@@ -34,6 +34,13 @@
 "import.failed.title" = "Import search failed";
 "import.empty.recommended" = "No recommended groups are available to import.";
 "import.empty.search" = "Try another keyword.";
+"import.search.prompt.fixed_input" = " Input:";
+"import.search.prompt.1.leading" = "npx skills";
+"import.search.prompt.1.trailing" = " anthropics/skills";
+"import.search.prompt.2.leading" = "github link";
+"import.search.prompt.2.trailing" = " https://github.com/...";
+"import.search.prompt.3.leading" = "Keyword";
+"import.search.prompt.3.trailing" = " anthropics";
 "settings.bridge.title" = "Settings moved";
 "settings.bridge.subtitle" = "Open the main window to configure desktop settings.";
 "settings.bridge.action_open_settings" = "Open Settings";
@@ -176,4 +183,11 @@
 "detail.save.saved" = "Saved";
 "detail.save.failed" = "Save failed";
 "detail.save.agents" = "%@ agents";
+"settings.section.maintenance" = "Maintenance";
+"settings.row.clear_cache.title" = "Clear Cache";
+"settings.row.clear_cache.description" = "Remove cached author, repo, and skill metadata fetched from the network.";
+"settings.action.clear_cache" = "Clear";
+"settings.row.reset_configuration.title" = "Reset Configuration";
+"settings.row.reset_configuration.description" = "Restore settings on this page to their default values.";
+"settings.action.reset_configuration" = "Reset";
 "test.fallback.only_en" = "Only English";

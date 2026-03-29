@@ -237,6 +237,17 @@ final class MainViewModel {
         let isFile: Bool
     }
 
+    struct FileTreeItem: Identifiable, Equatable, Sendable {
+        let id: String
+        let title: String
+        let path: String
+        let isDirectory: Bool
+        let isSkillRoot: Bool
+        let isSkillDocument: Bool
+        let skillId: String?
+        let children: [FileTreeItem]
+    }
+
     private struct SourceMetadataPresentation {
         let lines: [String]
         let starCount: Int?
@@ -344,7 +355,7 @@ final class MainViewModel {
         let enabledTargetLabels: [String]
         let sourceFacts: [String]
         let deploymentFacts: [String]
-        let fileTree: [FileTreeLine]
+        let fileTree: [FileTreeItem]
         let groupDocuments: [DocumentTab]
         let targets: [DetailTarget]
         let skills: [DetailSkill]
@@ -456,6 +467,12 @@ final class MainViewModel {
         }
     }
 
+    private struct FileTreeSkillReference: Sendable {
+        let skillId: String
+        let folderPath: String
+        let displayTitle: String
+    }
+
     private struct ParsedDocument: Sendable {
         let frontMatter: SkillFrontMatter?
         let metadata: [MetadataEntry]
@@ -486,7 +503,7 @@ final class MainViewModel {
 
     private struct PreparedDetailContent: Sendable {
         let groupPath: String?
-        let fileTree: [FileTreeLine]
+        let fileTree: [FileTreeItem]
         let groupDocuments: [DocumentTab]
         let skillsByLeafId: [String: PreparedDetailSkillContent]
     }
@@ -2532,7 +2549,7 @@ final class MainViewModel {
             )
         }
 
-        let fileTree = buildFileTreeLines(groupPath: input.groupPath, skills: lightweightSkills)
+        let fileTree = buildFileTreeItems(groupPath: input.groupPath, skills: lightweightSkills)
         let groupDocuments = groupDocumentTabs(
             groupPath: input.groupPath,
             fileTree: fileTree,
@@ -3294,7 +3311,7 @@ final class MainViewModel {
 
     nonisolated private static func groupDocumentTabs(
         groupPath: String?,
-        fileTree: [FileTreeLine],
+        fileTree: [FileTreeItem],
         gitHubRepoContext: GitHubRepoContext?,
         rawDocumentCache: inout [String: String],
         parsedDocumentCache: inout [String: ParsedDocument]
@@ -3394,29 +3411,185 @@ final class MainViewModel {
         return components.joined(separator: "/")
     }
 
-    nonisolated private static func buildFileTreeLines(groupPath: String?, skills: [DetailSkill]) -> [FileTreeLine] {
+    nonisolated private static func buildFileTreeItems(groupPath: String?, skills: [DetailSkill]) -> [FileTreeItem] {
         let rootName = groupPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty } ?? "."
+        let skillReferences = fileTreeSkillReferences(skills: skills, groupPath: groupPath)
+
+        guard let groupPath else {
+            return buildSyntheticFileTreeItems(rootName: rootName, skills: skillReferences)
+        }
+
+        let standardizedRootPath = URL(fileURLWithPath: groupPath).standardizedFileURL.path
+        guard FileManager.default.fileExists(atPath: standardizedRootPath),
+              let rootItem = buildFileTreeItem(
+                  at: standardizedRootPath,
+                  rootDisplayTitle: rootName,
+                  skillReferencesByPath: Dictionary(uniqueKeysWithValues: skillReferences.map { ($0.folderPath, $0) })
+              )
+        else {
+            return buildSyntheticFileTreeItems(rootName: rootName, skills: skillReferences)
+        }
+
+        return [rootItem]
+    }
+
+    nonisolated private static func fileTreeSkillReferences(
+        skills: [DetailSkill],
+        groupPath: String?
+    ) -> [FileTreeSkillReference] {
+        skills.compactMap { skill in
+            let displayTitle = skill.relativeFolderPath?
+                .split(separator: "/")
+                .last
+                .map(String.init)
+                ?? skill.folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
+                ?? skill.title.nonEmpty
+
+            guard let displayTitle else {
+                return nil
+            }
+
+            let folderPath: String?
+            if let absoluteFolderPath = skill.folderPath?.nonEmpty {
+                folderPath = URL(fileURLWithPath: absoluteFolderPath).standardizedFileURL.path
+            } else if let groupPath, let relativeFolderPath = skill.relativeFolderPath?.nonEmpty {
+                folderPath = URL(fileURLWithPath: groupPath)
+                    .appendingPathComponent(relativeFolderPath)
+                    .standardizedFileURL
+                    .path
+            } else {
+                folderPath = nil
+            }
+
+            guard let folderPath else {
+                return nil
+            }
+
+            return FileTreeSkillReference(
+                skillId: skill.id,
+                folderPath: folderPath,
+                displayTitle: displayTitle
+            )
+        }
+    }
+
+    nonisolated private static func buildFileTreeItem(
+        at path: String,
+        rootDisplayTitle: String? = nil,
+        skillReferencesByPath: [String: FileTreeSkillReference]
+    ) -> FileTreeItem? {
+        let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let url = URL(fileURLWithPath: standardizedPath)
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+        let isDirectory = values?.isDirectory ?? false
+        let skillReference = skillReferencesByPath[standardizedPath]
+        let skillRootPaths = Set(skillReferencesByPath.keys)
+        let title = rootDisplayTitle
+            ?? skillReference?.displayTitle
+            ?? url.lastPathComponent.nonEmpty
+            ?? standardizedPath
+
+        let children: [FileTreeItem]
+        if isDirectory,
+           let entries = try? FileManager.default.contentsOfDirectory(
+               at: url,
+               includingPropertiesForKeys: [.isDirectoryKey],
+               options: [.skipsHiddenFiles]
+           ) {
+            children = entries
+                .compactMap { entry in
+                    buildFileTreeItem(
+                        at: entry.path,
+                        skillReferencesByPath: skillReferencesByPath
+                    )
+                }
+                .filter { item in
+                    shouldIncludeFileTreeItem(
+                        item,
+                        parentPath: standardizedPath,
+                        currentSkillReference: skillReference,
+                        rootPath: rootDisplayTitle == nil ? nil : standardizedPath,
+                        skillRootPaths: skillRootPaths
+                    )
+                }
+                .sorted { lhs, rhs in
+                    sortFileTreeItems(
+                        lhs,
+                        rhs,
+                        isRootLevel: rootDisplayTitle != nil
+                    )
+                }
+        } else {
+            children = []
+        }
+
+        let isSkillDocument = !isDirectory
+            && url.lastPathComponent.caseInsensitiveCompare("SKILL.md") == .orderedSame
+            && skillReferencesByPath[(url.deletingLastPathComponent().path)] != nil
+
+        return FileTreeItem(
+            id: standardizedPath,
+            title: title,
+            path: standardizedPath,
+            isDirectory: isDirectory,
+            isSkillRoot: skillReference != nil,
+            isSkillDocument: isSkillDocument,
+            skillId: skillReference?.skillId
+                ?? (isSkillDocument ? skillReferencesByPath[url.deletingLastPathComponent().path]?.skillId : nil),
+            children: children
+        )
+    }
+
+    nonisolated private static func shouldIncludeFileTreeItem(
+        _ item: FileTreeItem,
+        parentPath: String,
+        currentSkillReference: FileTreeSkillReference?,
+        rootPath: String?,
+        skillRootPaths: Set<String>
+    ) -> Bool {
+        let isRootLevel = rootPath == parentPath
+
+        if item.isDirectory {
+            return containsSkillRootDescendant(item.path, skillRootPaths: skillRootPaths)
+        }
+
+        if isRootLevel {
+            return item.title.lowercased().hasSuffix(".md")
+        }
+
+        if currentSkillReference != nil {
+            return true
+        }
+
+        return false
+    }
+
+    nonisolated private static func containsSkillRootDescendant(
+        _ path: String,
+        skillRootPaths: Set<String>
+    ) -> Bool {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        if skillRootPaths.contains(normalizedPath) {
+            return true
+        }
+        let prefix = normalizedPath.hasSuffix("/") ? normalizedPath : normalizedPath + "/"
+        return skillRootPaths.contains(where: { $0.hasPrefix(prefix) })
+    }
+
+    nonisolated private static func buildSyntheticFileTreeItems(
+        rootName: String,
+        skills: [FileTreeSkillReference]
+    ) -> [FileTreeItem] {
         var root = FileTreeNode(name: rootName)
 
         for skill in skills {
-            let relativeFolderPath = skill.relativeFolderPath ?? skill.folderPath
-            guard let relativeFolderPath else {
-                continue
-            }
-
-            let trimmedFolder = relativeFolderPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            let components = trimmedFolder.isEmpty || trimmedFolder == "."
-                ? [String]()
-                : trimmedFolder.split(separator: "/").map(String.init)
+            let components = skill.displayTitle.split(separator: "/").map(String.init)
             insertFileTreePath(components, into: &root)
         }
 
-        var lines: [FileTreeLine] = [
-            FileTreeLine(id: rootName, depth: 0, prefix: "", title: root.name, isFile: false)
+        return [
+            fileTreeItems(from: root, parentPath: rootName, skillReferencesByPath: Dictionary(uniqueKeysWithValues: skills.map { ($0.folderPath, $0) }))
         ]
-
-        appendFileTreeLines(from: root, parentId: rootName, depth: 1, ancestry: [], into: &lines)
-        return lines
     }
 
     nonisolated private static func insertFileTreePath(_ components: [String], into node: inout FileTreeNode) {
@@ -3425,55 +3598,106 @@ final class MainViewModel {
         }
 
         var child = node.children[head] ?? FileTreeNode(name: head)
-        if components.count == 1 {
-            child.isFile = true
-            node.children[head] = child
-            return
+        child.isFile = components.count == 1
+        if components.count > 1 {
+            insertFileTreePath(Array(components.dropFirst()), into: &child)
         }
-
-        insertFileTreePath(Array(components.dropFirst()), into: &child)
         node.children[head] = child
     }
 
-    nonisolated private static func appendFileTreeLines(
+    nonisolated private static func fileTreeItems(
         from node: FileTreeNode,
-        parentId: String,
+        parentPath: String,
+        skillReferencesByPath _: [String: FileTreeSkillReference]
+    ) -> FileTreeItem {
+        let itemPath = parentPath
+        let children = node.children.values
+            .sorted { lhs, rhs in
+                if lhs.isFile != rhs.isFile {
+                    return !lhs.isFile && rhs.isFile
+                }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            .map { child in
+                fileTreeItems(
+                    from: child,
+                    parentPath: "\(parentPath)/\(child.name)",
+                    skillReferencesByPath: [:]
+                )
+            }
+        return FileTreeItem(
+            id: itemPath,
+            title: node.name,
+            path: itemPath,
+            isDirectory: !node.isFile,
+            isSkillRoot: false,
+            isSkillDocument: false,
+            skillId: nil,
+            children: children
+        )
+    }
+
+    nonisolated private static func sortFileTreeItems(_ lhs: FileTreeItem, _ rhs: FileTreeItem, isRootLevel: Bool) -> Bool {
+        if lhs.isDirectory != rhs.isDirectory {
+            return lhs.isDirectory && !rhs.isDirectory
+        }
+        if isRootLevel, !lhs.isDirectory, !rhs.isDirectory {
+            return compareRootDocumentNames(lhs.title, rhs.title)
+        }
+        return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+    }
+
+    nonisolated private static func renderFileTree(_ items: [FileTreeItem]) -> String {
+        renderFileTreeLines(items).map { "\($0.prefix)\($0.title)" }.joined(separator: "\n")
+    }
+
+    nonisolated private static func renderFileTreeLines(_ items: [FileTreeItem]) -> [FileTreeLine] {
+        var lines: [FileTreeLine] = []
+        for (index, item) in items.enumerated() {
+            lines.append(
+                FileTreeLine(
+                    id: item.id,
+                    depth: 0,
+                    prefix: "",
+                    title: item.title,
+                    isFile: !item.isDirectory
+                )
+            )
+            appendRenderedFileTreeLines(
+                from: item.children,
+                depth: 1,
+                ancestry: [index == items.count - 1],
+                into: &lines
+            )
+        }
+        return lines
+    }
+
+    nonisolated private static func appendRenderedFileTreeLines(
+        from items: [FileTreeItem],
         depth: Int,
         ancestry: [Bool],
         into lines: inout [FileTreeLine]
     ) {
-        let children = node.children.values.sorted {
-            if $0.isFile != $1.isFile {
-                return !$0.isFile && $1.isFile
-            }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
-
-        for (index, child) in children.enumerated() {
-            let isLast = index == children.count - 1
-            let branch = ancestry.map { $0 ? "    " : "|   " }.joined() + (isLast ? "`-- " : "|-- ")
-            let childId = "\(parentId)/\(child.name)"
+        for (index, item) in items.enumerated() {
+            let isLast = index == items.count - 1
+            let branch = ancestry.dropLast().map { $0 ? "    " : "|   " }.joined() + (isLast ? "`-- " : "|-- ")
             lines.append(
                 FileTreeLine(
-                    id: childId,
+                    id: item.id,
                     depth: depth,
                     prefix: branch,
-                    title: child.name,
-                    isFile: child.isFile
+                    title: item.title,
+                    isFile: !item.isDirectory
                 )
             )
-            appendFileTreeLines(
-                from: child,
-                parentId: childId,
+            appendRenderedFileTreeLines(
+                from: item.children,
                 depth: depth + 1,
                 ancestry: ancestry + [isLast],
                 into: &lines
             )
         }
-    }
-
-    nonisolated private static func renderFileTree(_ lines: [FileTreeLine]) -> String {
-        lines.map { "\($0.prefix)\($0.title)" }.joined(separator: "\n")
     }
 
     nonisolated private static func enrichDocumentTabs(

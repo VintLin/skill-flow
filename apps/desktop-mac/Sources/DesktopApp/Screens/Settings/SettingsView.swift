@@ -182,6 +182,35 @@ struct SettingsView: View {
                     }
                 )
                 .zIndex(advancedSectionZIndex)
+
+                settingsSection(
+                    title: t("settings.section.maintenance"),
+                    rows: {
+                        settingsRow(title: t("settings.row.clear_cache.title"), description: t("settings.row.clear_cache.description")) {
+                            Button(t("settings.action.clear_cache")) {
+                                viewModel.clearMetadataCache()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+                            .frame(width: controlColumnWidth, height: 32)
+                            .background(AppTheme.toolbarButtonBackground(for: theme))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+
+                        settingsRow(title: t("settings.row.reset_configuration.title"), description: t("settings.row.reset_configuration.description")) {
+                            Button(t("settings.action.reset_configuration")) {
+                                viewModel.resetConfiguration()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+                            .frame(width: controlColumnWidth, height: 32)
+                            .background(AppTheme.toolbarButtonBackground(for: theme))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                )
             }
         }
         .frame(maxWidth: 900, alignment: .leading)

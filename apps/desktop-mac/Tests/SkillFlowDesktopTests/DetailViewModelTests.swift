@@ -40,12 +40,26 @@ final class DetailViewModelTests: XCTestCase {
             sourceFacts: ["2026-03-25T12:00:00Z"],
             deploymentFacts: ["Claude Code -> /Users/vint/.claude"],
             fileTree: [
-                MainViewModel.FileTreeLine(
+                MainViewModel.FileTreeItem(
                     id: "root",
-                    depth: 0,
-                    prefix: "",
                     title: "alpha",
-                    isFile: false
+                    path: "/groups/alpha",
+                    isDirectory: true,
+                    isSkillRoot: false,
+                    isSkillDocument: false,
+                    skillId: nil,
+                    children: [
+                        MainViewModel.FileTreeItem(
+                            id: "root/alpha-a",
+                            title: "alpha-a",
+                            path: "/groups/alpha/alpha-a",
+                            isDirectory: true,
+                            isSkillRoot: true,
+                            isSkillDocument: false,
+                            skillId: "alpha-a",
+                            children: []
+                        )
+                    ]
                 )
             ],
             groupDocuments: [
@@ -118,7 +132,8 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.deploymentFacts, snapshot.deploymentFacts)
         XCTAssertEqual(viewModel.fileTree.count, snapshot.fileTree.count)
         XCTAssertEqual(viewModel.fileTree.first?.title, snapshot.fileTree.first?.title)
-        XCTAssertEqual(viewModel.fileTree.first?.isFile, snapshot.fileTree.first?.isFile)
+        XCTAssertEqual(viewModel.fileTree.first?.isDirectory, snapshot.fileTree.first?.isDirectory)
+        XCTAssertEqual(viewModel.fileTree.first?.children.first?.skillId, "alpha-a")
         XCTAssertEqual(viewModel.groupDocuments.count, snapshot.groupDocuments.count)
         XCTAssertEqual(viewModel.groupDocuments.first?.title, snapshot.groupDocuments.first?.title)
         XCTAssertEqual(viewModel.groupDocuments.first?.metadata.first?.key, snapshot.groupDocuments.first?.metadata.first?.key)

@@ -218,12 +218,38 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(MainView.shouldShowSearchPrompt(query: "anthropics", isFocused: false))
     }
 
+    func testSearchFieldDoesNotAutoFocusOnHomeOrImportEntry() {
+        XCTAssertFalse(MainView.shouldAutofocusSearchField(for: .home))
+        XCTAssertFalse(MainView.shouldAutofocusSearchField(for: .importPage))
+        XCTAssertFalse(MainView.shouldAutofocusSearchField(for: .settings))
+    }
+
+    func testWindowAppearClearsImplicitSearchFocusForRoutesThatShowSearch() {
+        XCTAssertTrue(MainView.shouldClearImplicitSearchFocusOnAppear(for: .home))
+        XCTAssertTrue(MainView.shouldClearImplicitSearchFocusOnAppear(for: .importPage))
+        XCTAssertFalse(MainView.shouldClearImplicitSearchFocusOnAppear(for: .settings))
+        XCTAssertFalse(MainView.shouldClearImplicitSearchFocusOnAppear(for: .detail(sourceId: "alpha")))
+    }
+
     func testImportSearchPromptsExposeFixedInputSegmentAndAccentText() {
-        let prompt = MainView.importSearchPrompts[0]
+        let prompt = MainView.importSearchPrompts(locale: Locale(identifier: "zh-Hans"))[0]
 
         XCTAssertEqual(prompt.leadingText, "npx skills")
         XCTAssertEqual(prompt.fixedText, " 输入:")
         XCTAssertEqual(prompt.trailingText, " anthropics/skills")
+    }
+
+    func testImportSearchPromptsAreLocalizedWhileKeepingProviderKeywordsStable() {
+        let enPrompt = MainView.importSearchPrompts(locale: Locale(identifier: "en"))[1]
+        let jaPrompt = MainView.importSearchPrompts(locale: Locale(identifier: "ja"))[2]
+
+        XCTAssertEqual(enPrompt.leadingText, "github link")
+        XCTAssertEqual(enPrompt.fixedText, " Input:")
+        XCTAssertEqual(enPrompt.trailingText, " https://github.com/...")
+
+        XCTAssertEqual(jaPrompt.leadingText, "キーワード")
+        XCTAssertEqual(jaPrompt.fixedText, " 入力:")
+        XCTAssertEqual(jaPrompt.trailingText, " anthropics")
     }
 
     func testImportSearchActionStateTracksFocusQueryAndResults() {
@@ -280,10 +306,13 @@ final class ImportScreenContainerTests: XCTestCase {
     }
 
     func testImportSearchPromptTextWidthsUseMaxPromptTextInsteadOfFullFieldWidth() {
-        XCTAssertLessThan(MainView.importPromptLeadingWidth, MainView.headerSearchFieldWidth)
-        XCTAssertLessThan(MainView.importPromptTrailingWidth, MainView.headerSearchFieldWidth)
-        XCTAssertGreaterThan(MainView.importPromptLeadingWidth, 0)
-        XCTAssertGreaterThan(MainView.importPromptTrailingWidth, 0)
+        let leadingWidth = MainView.importPromptLeadingWidth(for: Locale(identifier: "ja"))
+        let trailingWidth = MainView.importPromptTrailingWidth(for: Locale(identifier: "ja"))
+
+        XCTAssertLessThan(leadingWidth, MainView.headerSearchFieldWidth)
+        XCTAssertLessThan(trailingWidth, MainView.headerSearchFieldWidth)
+        XCTAssertGreaterThan(leadingWidth, 0)
+        XCTAssertGreaterThan(trailingWidth, 0)
     }
 
     func testImportPageBodyOmitsLegacySectionHeader() {

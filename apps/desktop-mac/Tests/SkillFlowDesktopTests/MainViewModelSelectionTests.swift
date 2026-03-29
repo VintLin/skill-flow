@@ -142,14 +142,30 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.groupDocuments.map(\.title), ["File Tree", "README.md", "README.zh.md", "CHANGELOG.md"])
         XCTAssertEqual(detail?.groupDocuments.first(where: { $0.title == "README.md" })?.externalURL, "https://github.com/acme/alpha-hub/blob/HEAD/README.md")
         XCTAssertEqual(detail?.fileTree.first?.title, "alpha")
-        XCTAssertTrue(detail?.fileTree.dropFirst().contains(where: { $0.prefix.contains("|--") || $0.prefix.contains("`--") }) == true)
-        XCTAssertFalse(detail?.fileTree.contains(where: { $0.title == "SKILL.md" }) == true)
+        XCTAssertTrue(detail?.fileTree.first?.isDirectory == true)
+        XCTAssertEqual(detail?.fileTree.first?.children.map(\.title), ["alpha-a", "alpha-b", "README.md", "README.zh.md", "CHANGELOG.md"])
+        XCTAssertTrue(detail?.fileTree.first?.children.contains(where: { $0.title == "alpha-a" && $0.isSkillRoot && $0.skillId == "alpha-a" }) == true)
+        XCTAssertTrue(detail?.fileTree.first?.children.first(where: { $0.skillId == "alpha-a" })?.children.contains(where: { $0.title == "SKILL.md" && $0.skillId == "alpha-a" }) == true)
         XCTAssertTrue(detail?.skills.first?.detailLines.contains(where: { $0.contains("SKILL.md") }) == true)
         XCTAssertEqual(detail?.skills.first?.documents.first?.metadata.map(\.key), ["description", "name"])
         XCTAssertFalse(detail?.skills.first?.documents.first?.content.contains("---") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("# browse") == true)
         XCTAssertTrue(detail?.skills.first?.documentContent.contains("Final verification line.") == true)
         XCTAssertEqual(detail?.skills.first?.starCount, 1200)
+    }
+
+    func testDetailFileTreeKeepsSkillRootFilesButPrunesNonSkillNestedDirectories() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        try fixture.writeSkillSidecarDocument(sourceId: "alpha", leafId: "alpha-a", name: "README.md", content: "# Local Skill Readme")
+        try fixture.writeReferenceDocument(sourceId: "alpha", leafId: "alpha-a", name: "deep.md", content: "# Hidden nested")
+
+        let model = try await fixture.makeModel()
+        let detail = model.detailSnapshot(for: "alpha")
+
+        let alphaSkillRoot = detail?.fileTree.first?.children.first(where: { $0.skillId == "alpha-a" })
+        XCTAssertEqual(alphaSkillRoot?.children.map(\.title), ["README.md", "SKILL.md"])
+        XCTAssertFalse(alphaSkillRoot?.children.contains(where: { $0.title == "references" }) == true)
     }
 
     func testDetailSnapshotBuildsLocalContentBeforeInspectPayloadArrives() async throws {
@@ -339,7 +355,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let detail = model.detailSnapshot(for: "beta")
 
-        XCTAssertTrue(detail?.fileTree.contains(where: { $0.title == "BetaHub-browse" }) == true)
+        XCTAssertTrue(detail?.fileTree.containsSkillRoot(skillId: "beta-a") == true)
     }
 
     func testDetailWarmupDoesNotBlockMainActor() async throws {
@@ -446,6 +462,20 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         \(body)
         """
+    }
+}
+
+private extension Array where Element == MainViewModel.FileTreeItem {
+    func containsSkillRoot(skillId: String) -> Bool {
+        for item in self {
+            if item.skillId == skillId, item.isSkillRoot {
+                return true
+            }
+            if item.children.containsSkillRoot(skillId: skillId) {
+                return true
+            }
+        }
+        return false
     }
 }
 
@@ -760,6 +790,18 @@ private struct TestFixture {
         try FileManager.default.createDirectory(at: referencesURL, withIntermediateDirectories: true)
         try content.write(
             to: referencesURL.appendingPathComponent(name),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    func writeSkillSidecarDocument(sourceId: String, leafId: String, name: String, content: String) throws {
+        let folderURL = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(leafId, isDirectory: true)
+        try content.write(
+            to: folderURL.appendingPathComponent(name),
             atomically: true,
             encoding: .utf8
         )

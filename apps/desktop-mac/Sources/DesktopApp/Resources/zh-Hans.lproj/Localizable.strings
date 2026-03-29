@@ -34,6 +34,13 @@
 "import.failed.title" = "导入搜索失败";
 "import.empty.recommended" = "当前没有可导入的推荐分组。";
 "import.empty.search" = "试试其他关键词。";
+"import.search.prompt.fixed_input" = " 输入:";
+"import.search.prompt.1.leading" = "npx skills";
+"import.search.prompt.1.trailing" = " anthropics/skills";
+"import.search.prompt.2.leading" = "github 链接";
+"import.search.prompt.2.trailing" = " https://github.com/...";
+"import.search.prompt.3.leading" = "关键词";
+"import.search.prompt.3.trailing" = " anthropics";
 "settings.bridge.title" = "设置已迁移";
 "settings.bridge.subtitle" = "请打开主窗口来配置桌面设置。";
 "settings.bridge.action_open_settings" = "打开设置";
@@ -176,3 +183,10 @@
 "detail.save.saved" = "已保存";
 "detail.save.failed" = "保存失败";
 "detail.save.agents" = "%@ 个代理";
+"settings.section.maintenance" = "维护";
+"settings.row.clear_cache.title" = "清理缓存";
+"settings.row.clear_cache.description" = "清除网络获取的作者、仓库和技能元数据缓存。";
+"settings.action.clear_cache" = "清理";
+"settings.row.reset_configuration.title" = "重置配置";
+"settings.row.reset_configuration.description" = "将本页设置恢复为默认值。";
+"settings.action.reset_configuration" = "重置";

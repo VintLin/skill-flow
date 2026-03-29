@@ -14,6 +14,7 @@ final class SettingsViewModel {
 
     private let state: DesktopAppState
     private let store: DesktopSettingsStore
+    private let cacheMaintenance: DesktopCacheMaintenance
 
     var autoLaunch: Bool {
         get { state.settings.autoLaunch }
@@ -79,9 +80,14 @@ final class SettingsViewModel {
         }
     }
 
-    init(state: DesktopAppState, store: DesktopSettingsStore = DesktopSettingsStore()) {
+    init(
+        state: DesktopAppState,
+        store: DesktopSettingsStore = DesktopSettingsStore(),
+        cacheMaintenance: DesktopCacheMaintenance = DesktopCacheMaintenance()
+    ) {
         self.state = state
         self.store = store
+        self.cacheMaintenance = cacheMaintenance
         self.state.settings = store.load()
     }
 
@@ -107,5 +113,14 @@ final class SettingsViewModel {
 
     var selectedLocale: Locale {
         currentLanguage.locale
+    }
+
+    func resetConfiguration() {
+        state.settings = SettingsState()
+        store.save(state.settings)
+    }
+
+    func clearMetadataCache() {
+        cacheMaintenance.clearMetadataCache()
     }
 }

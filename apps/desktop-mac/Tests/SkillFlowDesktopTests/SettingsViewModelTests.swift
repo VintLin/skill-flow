@@ -92,4 +92,59 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.currentAccent, DesktopAccentColor.blue)
         XCTAssertEqual(viewModel.currentLanguage, DesktopLanguage.system)
     }
+
+    @MainActor
+    func testResetConfigurationRestoresDefaultSettingsValues() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        viewModel.autoLaunch = true
+        viewModel.logLevel = "error"
+        viewModel.experimentalExternalHelper = true
+        viewModel.desktopLanguageRawValue = DesktopLanguage.ja.rawValue
+        viewModel.themeModeRawValue = DesktopThemeMode.dark.rawValue
+        viewModel.themeAccentRawValue = DesktopAccentColor.orange.rawValue
+        viewModel.homeCardDensityRawValue = DesktopCardDensity.compact.rawValue
+        viewModel.menuCardDensityRawValue = DesktopCardDensity.comfortable.rawValue
+
+        viewModel.resetConfiguration()
+
+        XCTAssertEqual(state.settings, SettingsState())
+        XCTAssertEqual(defaults.bool(forKey: SettingsViewModel.autoLaunchKey), false)
+        XCTAssertEqual(defaults.string(forKey: SettingsViewModel.logLevelKey), "info")
+        XCTAssertEqual(defaults.bool(forKey: SettingsViewModel.externalHelperKey), false)
+        XCTAssertEqual(defaults.string(forKey: DesktopLanguage.storageKey), DesktopLanguage.system.rawValue)
+        XCTAssertEqual(defaults.string(forKey: SettingsViewModel.themeModeKey), DesktopThemeMode.light.rawValue)
+        XCTAssertEqual(defaults.string(forKey: SettingsViewModel.themeAccentKey), DesktopAccentColor.blue.rawValue)
+        XCTAssertEqual(defaults.string(forKey: SettingsViewModel.homeCardDensityKey), DesktopCardDensity.comfortable.rawValue)
+        XCTAssertEqual(defaults.string(forKey: SettingsViewModel.menuCardDensityKey), DesktopCardDensity.compact.rawValue)
+    }
+
+    @MainActor
+    func testClearMetadataCacheRemovesCatalogMetadataFilesOnly() throws {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let stateRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let catalogRoot = stateRoot.appendingPathComponent("catalog", isDirectory: true)
+        try FileManager.default.createDirectory(at: catalogRoot, withIntermediateDirectories: true)
+        let importDataPath = catalogRoot.appendingPathComponent("import-data.json")
+        let sourceMetadataPath = catalogRoot.appendingPathComponent("source-metadata.json")
+        let preferencesPath = stateRoot.appendingPathComponent("preferences.json")
+        try "{}".write(to: importDataPath, atomically: true, encoding: .utf8)
+        try "{}".write(to: sourceMetadataPath, atomically: true, encoding: .utf8)
+        try "{}".write(to: preferencesPath, atomically: true, encoding: .utf8)
+
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            cacheMaintenance: DesktopCacheMaintenance(stateRootProvider: { stateRoot.path })
+        )
+
+        viewModel.clearMetadataCache()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: importDataPath.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sourceMetadataPath.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: preferencesPath.path))
+    }
 }

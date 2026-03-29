@@ -40,12 +40,15 @@ final class DetailScreenContainerTests: XCTestCase {
             sourceFacts: ["2026-03-25T12:00:00Z"],
             deploymentFacts: ["Claude Code -> /Users/vint/.claude"],
             fileTree: [
-                MainViewModel.FileTreeLine(
+                MainViewModel.FileTreeItem(
                     id: "root",
-                    depth: 0,
-                    prefix: "",
                     title: "alpha",
-                    isFile: false
+                    path: "/groups/alpha",
+                    isDirectory: true,
+                    isSkillRoot: false,
+                    isSkillDocument: false,
+                    skillId: nil,
+                    children: []
                 )
             ],
             groupDocuments: [

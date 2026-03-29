@@ -34,6 +34,13 @@
 "import.failed.title" = "インポート検索に失敗しました";
 "import.empty.recommended" = "インポートできるおすすめグループはありません。";
 "import.empty.search" = "別のキーワードを試してください。";
+"import.search.prompt.fixed_input" = " 入力:";
+"import.search.prompt.1.leading" = "npx skills";
+"import.search.prompt.1.trailing" = " anthropics/skills";
+"import.search.prompt.2.leading" = "github リンク";
+"import.search.prompt.2.trailing" = " https://github.com/...";
+"import.search.prompt.3.leading" = "キーワード";
+"import.search.prompt.3.trailing" = " anthropics";
 "settings.bridge.title" = "設定の場所が変わりました";
 "settings.bridge.subtitle" = "メインウィンドウを開いてデスクトップ設定を変更してください。";
 "settings.bridge.action_open_settings" = "設定を開く";
@@ -176,3 +183,10 @@
 "detail.save.saved" = "保存済み";
 "detail.save.failed" = "保存に失敗しました";
 "detail.save.agents" = "%@ エージェント";
+"settings.section.maintenance" = "メンテナンス";
+"settings.row.clear_cache.title" = "キャッシュを削除";
+"settings.row.clear_cache.description" = "ネットワーク取得した作成者、リポジトリ、スキルのメタデータキャッシュを削除します。";
+"settings.action.clear_cache" = "削除";
+"settings.row.reset_configuration.title" = "設定をリセット";
+"settings.row.reset_configuration.description" = "このページの設定を既定値に戻します。";
+"settings.action.reset_configuration" = "リセット";

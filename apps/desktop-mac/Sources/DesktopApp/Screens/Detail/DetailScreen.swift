@@ -24,6 +24,12 @@ enum DetailRouteBootstrap {
         for skill in detail.skills where state.detailDocumentTabIdBySkill[skill.id] == nil {
             state.detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
         }
+        if state.detailSelectedTreeItemIdByGroup[sourceId] == nil,
+           state.detailShowsGroupOverviewByGroup[sourceId] == false,
+           let selectedSkillId = state.detailSkillIdByGroup[sourceId] ?? preferredDetailSkillId(for: detail),
+           let treeItemId = detail.fileTree.skillRootItemId(for: selectedSkillId) {
+            state.detailSelectedTreeItemIdByGroup[sourceId] = treeItemId
+        }
     }
 
     static func shouldFetchInspect(hasInspectPayload: Bool, isInspectRequestInFlight: Bool) -> Bool {
@@ -545,7 +551,7 @@ struct DetailScreen: View {
                 }
             } else if let selectedDocument = selectedGroupDocument(for: detail, groupId: groupId) {
                 if selectedDocument.id == detail.groupDocuments.first?.id {
-                    detailFileTreeCard(detail.fileTree)
+                    detailFileTreeCard(groupId: groupId, detail: detail)
                 } else {
                     detailContentCard {
                         detailDocumentContent(document: selectedDocument)
@@ -642,18 +648,96 @@ struct DetailScreen: View {
         }
     }
 
-    private func detailFileTreeCard(_ lines: [DetailViewModel.FileTreeLine]) -> some View {
+    private func detailFileTreeCard(groupId: String, detail: DetailViewModel) -> some View {
         detailContentCard {
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(lines) { line in
-                    Text("\(line.prefix)\(line.title)")
-                        .font(.system(size: 11, weight: line.isFile ? .semibold : .regular, design: .monospaced))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(detail.fileTree) { item in
+                    detailFileTreeItemRow(
+                        groupId: groupId,
+                        detail: detail,
+                        item: item,
+                        depth: 0,
+                        ancestryHasTrailingSiblings: [],
+                        isLast: true
+                    )
                 }
             }
         }
+    }
+
+    private func detailFileTreeItemRow(
+        groupId: String,
+        detail: DetailViewModel,
+        item: DetailViewModel.FileTreeItem,
+        depth: Int,
+        ancestryHasTrailingSiblings: [Bool],
+        isLast: Bool
+    ) -> AnyView {
+        let isExpanded = detailIsTreeItemExpanded(groupId: groupId, itemId: item.id, defaultExpanded: item.isDirectory)
+        let isSelected = detailIsTreeItemSelected(groupId: groupId, item: item, detail: detail)
+        let isSkillRoot = item.isSkillRoot && item.skillId != nil
+        let showsSkillLink = isSkillRoot || item.isSkillDocument
+        let indicatorColor = isSelected
+            ? AppTheme.brand(for: accent, in: theme)
+            : AppTheme.textMuted(for: theme).opacity(0.45)
+
+        return AnyView(VStack(alignment: .leading, spacing: 2) {
+            Button {
+                handleTreeItemSelection(groupId: groupId, item: item, detail: detail)
+            } label: {
+                HStack(spacing: 0) {
+                    ForEach(Array(ancestryHasTrailingSiblings.enumerated()), id: \.offset) { _, hasTrailingSibling in
+                        detailTreeVerticalGuide(isVisible: hasTrailingSibling)
+                    }
+
+                    detailTreeNodeLead(depth: depth, isLast: isLast, isDirectory: item.isDirectory, isExpanded: isExpanded)
+
+                    HStack(spacing: DetailTreeLayout.contentSpacing) {
+                        Image(systemName: item.isDirectory ? "folder.fill" : "doc.text")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(isSkillRoot ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme))
+                            .frame(width: DetailTreeLayout.iconColumnWidth)
+
+                        Text(item.title)
+                            .font(.system(size: 11, weight: showsSkillLink ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? AppTheme.brand(for: accent, in: theme) : AppTheme.textPrimary(for: theme))
+                            .lineLimit(1)
+                    }
+                    .padding(.trailing, DetailTreeLayout.rowTrailingPadding)
+                    .frame(height: DetailTreeLayout.rowHeight, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(
+                                isSelected
+                                    ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.22 : 0.16)
+                                    : Color.clear
+                            )
+                    )
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 999)
+                            .fill(indicatorColor)
+                            .frame(width: 2, height: 16)
+                            .opacity(isSelected ? 1 : 0)
+                            .padding(.leading, 4)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if item.isDirectory && isExpanded {
+                ForEach(Array(item.children.enumerated()), id: \.element.id) { index, child in
+                    detailFileTreeItemRow(
+                        groupId: groupId,
+                        detail: detail,
+                        item: child,
+                        depth: depth + 1,
+                        ancestryHasTrailingSiblings: ancestryHasTrailingSiblings + [!isLast],
+                        isLast: index == item.children.count - 1
+                    )
+                }
+            }
+        })
     }
 
     @ViewBuilder
@@ -753,6 +837,7 @@ struct DetailScreen: View {
             screenState.detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
         }
         screenState.detailShowsGroupOverviewByGroup[groupId] = true
+        screenState.detailSelectedTreeItemIdByGroup[groupId] = nil
     }
 
     private func selectedDetailSkill(for groupId: String, detail: DetailViewModel?) -> DetailViewModel.DetailSkill? {
@@ -779,11 +864,116 @@ struct DetailScreen: View {
             guard screenState.detailSkillSelectionTokenByGroup[groupId] == token else { return }
             screenState.detailSkillIdByGroup[groupId] = skill.id
             screenState.detailShowsGroupOverviewByGroup[groupId] = false
+            if let detail = container.viewModel,
+               let treeItemId = detail.fileTree.skillRootItemId(for: skill.id) {
+                screenState.detailSelectedTreeItemIdByGroup[groupId] = treeItemId
+                expandTreePath(groupId: groupId, itemId: treeItemId, detail: detail)
+            }
             if screenState.detailDocumentTabIdBySkill[skill.id] == nil {
                 screenState.detailDocumentTabIdBySkill[skill.id] = skill.documents.first?.id
             }
             screenState.pendingDetailSkillIdByGroup[groupId] = nil
         }
+    }
+
+    private func detailIsTreeItemExpanded(groupId: String, itemId: String, defaultExpanded: Bool) -> Bool {
+        let collapsedIds = Set(screenState.detailCollapsedTreeItemIdsByGroup[groupId] ?? [])
+        return defaultExpanded && !collapsedIds.contains(itemId)
+    }
+
+    private func detailIsTreeItemSelected(
+        groupId: String,
+        item: DetailViewModel.FileTreeItem,
+        detail: DetailViewModel
+    ) -> Bool {
+        guard !isShowingGroupOverview(groupId) else {
+            return false
+        }
+        if screenState.detailSelectedTreeItemIdByGroup[groupId] == item.id {
+            return true
+        }
+        guard let selectedSkill = selectedDetailSkill(for: groupId, detail: detail),
+              item.skillId == selectedSkill.id
+        else {
+            return false
+        }
+        return true
+    }
+
+    private func handleTreeItemSelection(groupId: String, item: DetailViewModel.FileTreeItem, detail: DetailViewModel) {
+            screenState.detailSelectedTreeItemIdByGroup[groupId] = item.id
+
+        if let skillId = item.skillId,
+           let skill = detail.skills.first(where: { $0.id == skillId }),
+           (item.isSkillRoot || item.isSkillDocument) {
+            expandTreePath(groupId: groupId, itemId: item.id, detail: detail)
+            scheduleSkillSelection(groupId: groupId, skill: skill)
+            return
+        }
+
+        guard item.isDirectory else {
+            return
+        }
+
+        var collapsedIds = Set(screenState.detailCollapsedTreeItemIdsByGroup[groupId] ?? [])
+        if collapsedIds.contains(item.id) {
+            collapsedIds.remove(item.id)
+        } else {
+            collapsedIds.insert(item.id)
+        }
+        screenState.detailCollapsedTreeItemIdsByGroup[groupId] = Array(collapsedIds)
+    }
+
+    private func detailTreeVerticalGuide(isVisible: Bool) -> some View {
+        ZStack {
+            Color.clear
+            if isVisible {
+                Rectangle()
+                    .fill(AppTheme.border(for: theme).opacity(0.7))
+                    .frame(width: 1, height: DetailTreeLayout.rowHeight)
+            }
+        }
+        .frame(width: DetailTreeLayout.guideColumnWidth, height: DetailTreeLayout.rowHeight)
+    }
+
+    private func detailTreeNodeLead(depth: Int, isLast: Bool, isDirectory: Bool, isExpanded: Bool) -> some View {
+        let guideWidth = depth > 0 ? DetailTreeLayout.guideColumnWidth : 0
+
+        return ZStack(alignment: .leading) {
+            Color.clear
+
+            if depth > 0 {
+                Rectangle()
+                    .fill(AppTheme.border(for: theme).opacity(0.7))
+                    .frame(width: 1, height: isLast ? DetailTreeLayout.rowHeight / 2 : DetailTreeLayout.rowHeight)
+                    .offset(x: 0, y: isLast ? -(DetailTreeLayout.rowHeight / 4) : 0)
+
+                Rectangle()
+                    .fill(AppTheme.border(for: theme).opacity(0.7))
+                    .frame(width: DetailTreeLayout.nodeLeadWidth(for: depth), height: 1)
+                    .offset(x: 0, y: 0)
+            }
+
+            if isDirectory {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .frame(width: DetailTreeLayout.chevronColumnWidth, alignment: .leading)
+                    .offset(x: guideWidth, y: 0)
+            }
+        }
+        .frame(width: DetailTreeLayout.nodeLeadWidth(for: depth), height: DetailTreeLayout.rowHeight)
+    }
+
+    private func expandTreePath(groupId: String, itemId: String, detail: DetailViewModel) {
+        guard let pathIds = detail.fileTree.pathIds(to: itemId) else {
+            return
+        }
+        var collapsedIds = Set(screenState.detailCollapsedTreeItemIdsByGroup[groupId] ?? [])
+        for pathId in pathIds {
+            collapsedIds.remove(pathId)
+        }
+        screenState.detailCollapsedTreeItemIdsByGroup[groupId] = Array(collapsedIds)
     }
 
     private func scheduleSkillDocumentSelection(skillId: String, documentId: String) {
@@ -1088,6 +1278,20 @@ enum DetailSidebarLayout {
     }
 }
 
+enum DetailTreeLayout {
+    static let guideColumnWidth: CGFloat = 16
+    static let chevronColumnWidth: CGFloat = 12
+    static let iconColumnWidth: CGFloat = 14
+    static let rowHeight: CGFloat = 28
+    static let contentSpacing: CGFloat = 8
+    static let rowTrailingPadding: CGFloat = 8
+
+    static func nodeLeadWidth(for depth: Int) -> CGFloat {
+        let guideWidth = depth > 0 ? guideColumnWidth : 0
+        return guideWidth + chevronColumnWidth + contentSpacing
+    }
+}
+
 enum DetailInfoIcon {
     case version
     case wordCount
@@ -1119,6 +1323,32 @@ private enum DetailHeaderStatIcon {
         case .github:
             return GroupMetadataIconLibrary.image(for: .github)
         }
+    }
+}
+
+private extension Array where Element == MainViewModel.FileTreeItem {
+    func skillRootItemId(for skillId: String) -> String? {
+        for item in self {
+            if item.skillId == skillId, item.isSkillRoot {
+                return item.id
+            }
+            if let nested = item.children.skillRootItemId(for: skillId) {
+                return nested
+            }
+        }
+        return nil
+    }
+
+    func pathIds(to targetId: String) -> [String]? {
+        for item in self {
+            if item.id == targetId {
+                return [item.id]
+            }
+            if let nested = item.children.pathIds(to: targetId) {
+                return [item.id] + nested
+            }
+        }
+        return nil
     }
 }
 

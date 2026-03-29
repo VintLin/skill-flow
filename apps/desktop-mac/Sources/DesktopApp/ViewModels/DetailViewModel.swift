@@ -5,7 +5,7 @@ import Observation
 @Observable
 final class DetailViewModel {
     typealias SaveState = MainViewModel.SaveState
-    typealias FileTreeLine = MainViewModel.FileTreeLine
+    typealias FileTreeItem = MainViewModel.FileTreeItem
     typealias DocumentTab = MainViewModel.DocumentTab
     typealias DetailTarget = MainViewModel.DetailTarget
     typealias DetailSkill = MainViewModel.DetailSkill
@@ -36,7 +36,7 @@ final class DetailViewModel {
         let enabledTargetLabels: [String]
         let sourceFacts: [String]
         let deploymentFacts: [String]
-        let fileTree: [FileTreeLine]
+        let fileTree: [FileTreeItem]
         let groupDocuments: [DocumentTab]
         let targets: [DetailTarget]
         let skills: [DetailSkill]
@@ -67,7 +67,7 @@ final class DetailViewModel {
     let enabledTargetLabels: [String]
     let sourceFacts: [String]
     let deploymentFacts: [String]
-    let fileTree: [MainViewModel.FileTreeLine]
+    let fileTree: [MainViewModel.FileTreeItem]
     let groupDocuments: [MainViewModel.DocumentTab]
     let targets: [MainViewModel.DetailTarget]
     let skills: [MainViewModel.DetailSkill]

@@ -6,6 +6,8 @@ final class DetailScreenState {
     var detailSkillIdByGroup: [String: String] = [:]
     var detailShowsGroupOverviewByGroup: [String: Bool] = [:]
     var detailHoveredItemIdByGroup: [String: String] = [:]
+    var detailSelectedTreeItemIdByGroup: [String: String] = [:]
+    var detailCollapsedTreeItemIdsByGroup: [String: [String]] = [:]
     var detailDocumentTabIdByGroup: [String: String] = [:]
     var detailDocumentTabIdBySkill: [String: String] = [:]
     var pendingDetailSkillIdByGroup: [String: String] = [:]
