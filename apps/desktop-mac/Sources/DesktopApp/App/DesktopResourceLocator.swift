@@ -23,9 +23,18 @@ enum DesktopResourceLocator {
             guard let bundled = candidateBundle.resourceURL else {
                 continue
             }
-            let candidate = subdirectory.map { bundled.appendingPathComponent($0) } ?? bundled
-            if FileManager.default.fileExists(atPath: candidate.path), seenPaths.insert(candidate.path).inserted {
-                directories.append(candidate)
+
+            let bundledCandidates = if let subdirectory {
+                [bundled.appendingPathComponent(subdirectory), bundled]
+            } else {
+                [bundled]
+            }
+
+            for candidate in bundledCandidates {
+                if FileManager.default.fileExists(atPath: candidate.path),
+                   seenPaths.insert(candidate.path).inserted {
+                    directories.append(candidate)
+                }
             }
         }
 

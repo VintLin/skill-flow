@@ -11,12 +11,13 @@ final class DesktopResourceLocatorTests: XCTestCase {
             sourceRoot: nil
         )
 
-        XCTAssertEqual(directories.count, 1)
-        let directory = try XCTUnwrap(directories.first)
+        XCTAssertFalse(directories.isEmpty)
         XCTAssertTrue(
-            FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent("back.svg").path
-            )
+            directories.contains { directory in
+                FileManager.default.fileExists(
+                    atPath: directory.appendingPathComponent("back.svg").path
+                )
+            }
         )
     }
 
@@ -27,20 +28,30 @@ final class DesktopResourceLocatorTests: XCTestCase {
             sourceRoot: nil
         )
 
-        XCTAssertEqual(directories.count, 1)
-        let directory = try XCTUnwrap(directories.first)
+        XCTAssertFalse(directories.isEmpty)
         XCTAssertTrue(
-            FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent("menu_icon.svg").path
-            )
+            directories.contains { directory in
+                FileManager.default.fileExists(
+                    atPath: directory.appendingPathComponent("menu_icon.svg").path
+                )
+            }
         )
     }
 
     private func desktopResourceBundle() throws -> Bundle {
-        let testsBundleURL = Bundle(for: Self.self).bundleURL
-        let bundleURL = testsBundleURL
+        if let bundle = DesktopResourceLocator.runtimeResourceBundle() {
+            return bundle
+        }
+
+        let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
-            .appendingPathComponent("SkillFlowDesktop_SkillFlowDesktop.bundle")
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let debugBuildRoot = packageRoot
+            .appendingPathComponent(".build")
+            .appendingPathComponent("arm64-apple-macosx")
+            .appendingPathComponent("debug")
+        let bundleURL = debugBuildRoot.appendingPathComponent("SkillFlowDesktop_SkillFlowDesktop.bundle")
 
         guard let bundle = Bundle(url: bundleURL) else {
             throw XCTSkip("Desktop resource bundle not available at \(bundleURL.path)")
