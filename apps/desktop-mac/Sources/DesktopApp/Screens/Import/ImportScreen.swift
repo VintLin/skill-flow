@@ -175,7 +175,7 @@ struct ImportScreen: View {
             actionButtonEnabled: !card.isInstalledLocally,
             onActionButton: {
                 Task {
-                    await container.importGroup(card)
+                    await container.handleImportAction(for: card)
                 }
             },
             recommendationBadgeItems: card.recommendationBadgeItems,

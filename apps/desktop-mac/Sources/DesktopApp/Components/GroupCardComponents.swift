@@ -464,7 +464,7 @@ struct SharedGroupCard: View {
 
     private var importButton: some View {
         Button {
-            guard !isBusy, actionButtonEnabled else { return }
+            guard !isBusy else { return }
             onActionButton?()
         } label: {
             if displayMode.usesPlainPrimaryActionIcon {
@@ -500,7 +500,7 @@ struct SharedGroupCard: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(isBusy || !actionButtonEnabled)
+        .disabled(isBusy)
     }
 
     private var sourceFactsSection: some View {

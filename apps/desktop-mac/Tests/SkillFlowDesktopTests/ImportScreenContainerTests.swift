@@ -168,6 +168,34 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(sections[1].cards.map { $0.canonicalRepo }, ["obra/superpowers"])
     }
 
+    func testHandleImportActionShowsToastWhenRecommendationAlreadyExistsLocally() async {
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let card = ImportViewModel.Card(
+            id: "anthropics-skills",
+            title: "Anthropic Skills",
+            locator: "anthropics/skills",
+            canonicalRepo: "anthropics/skills",
+            isInstalledLocally: true,
+            aliases: [],
+            summary: "",
+            subtitle: "by @anthropics",
+            sourceFacts: [],
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+
+        await container.handleImportAction(for: card)
+
+        XCTAssertEqual(model.importingImportGroupId, nil)
+        XCTAssertEqual(model.toast?.style, .neutral)
+        XCTAssertEqual(model.toast?.message, "This group is already available locally.")
+    }
+
     func testImportViewModelFallsBackToVisibleTargetsWhenPreviewTargetsAreUnavailable() {
         let viewModel = ImportViewModel(
             items: [

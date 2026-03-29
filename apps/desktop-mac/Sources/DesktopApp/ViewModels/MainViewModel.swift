@@ -1455,6 +1455,10 @@ final class MainViewModel {
         }
     }
 
+    func showImportAlreadyExistsToast() {
+        showToast(style: .neutral, text: localizedText("toast.import.exists"))
+    }
+
     private func parseImportGroupsPayload(payload: [String: Any]) -> [ImportGroupItem] {
         let groups = payload["groups"] as? [[String: Any]] ?? []
         return groups.compactMap { group in

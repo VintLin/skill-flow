@@ -137,6 +137,7 @@
 "common.source_metadata.unavailable" = "当前来源没有可读取的元数据。";
 "toast.import.failed" = "导入失败：%@";
 "toast.import.invalid_response" = "导入失败：响应无效。";
+"toast.import.exists" = "该 Group 已存在于本地。";
 "toast.import.success" = "已导入来源。";
 "toast.pin.failed" = "置顶失败：%@";
 "toast.details.load_failed" = "加载 %@ 详情失败。";

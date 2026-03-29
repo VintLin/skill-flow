@@ -137,6 +137,7 @@
 "common.source_metadata.unavailable" = "現在のソースには読み取れるメタデータがありません。";
 "toast.import.failed" = "インポート失敗: %@";
 "toast.import.invalid_response" = "インポート失敗: 無効なレスポンスです。";
+"toast.import.exists" = "この Group はすでにローカルに存在します。";
 "toast.import.success" = "ソースをインポートしました。";
 "toast.pin.failed" = "ピン留め失敗: %@";
 "toast.details.load_failed" = "%@ の詳細を読み込めませんでした。";

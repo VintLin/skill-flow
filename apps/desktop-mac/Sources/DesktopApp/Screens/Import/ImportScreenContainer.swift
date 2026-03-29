@@ -85,6 +85,15 @@ final class ImportScreenContainer {
         )
     }
 
+    func handleImportAction(for card: ImportViewModel.Card) async {
+        if card.isInstalledLocally {
+            mainViewModel.showImportAlreadyExistsToast()
+            return
+        }
+
+        await importGroup(card)
+    }
+
     func targetLabel(for targetId: String) -> String {
         mainViewModel.visibleTargets.first(where: { $0.id == targetId })?.label ?? targetId
     }
