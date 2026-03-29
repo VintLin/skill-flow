@@ -11,15 +11,22 @@ struct ImportRecommendationEntry: Codable, Equatable, Sendable {
 }
 
 enum ImportRecommendationLoader {
-    static func load(bundle: Bundle = .module) -> [ImportRecommendationEntry] {
-        guard let url =
-            bundle.url(
+    static func load(bundle: Bundle? = nil) -> [ImportRecommendationEntry] {
+        let bundleCandidates = [
+            bundle,
+            DesktopResourceLocator.runtimeResourceBundle(),
+            Bundle.main,
+        ].compactMap { $0 }
+
+        let url = bundleCandidates.lazy.compactMap { candidateBundle in
+            candidateBundle.url(
                 forResource: "recommendations",
                 withExtension: "json",
                 subdirectory: "ImportRecommendations"
-            )
-            ?? bundle.url(forResource: "recommendations", withExtension: "json")
-        else {
+            ) ?? candidateBundle.url(forResource: "recommendations", withExtension: "json")
+        }.first
+
+        guard let url else {
             return []
         }
 
