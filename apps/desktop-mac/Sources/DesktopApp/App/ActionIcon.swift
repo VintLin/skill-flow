@@ -118,10 +118,10 @@ enum ActionIcon: String {
         let sourceRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Resources/ActionIcons")
+            .appendingPathComponent("Resources")
         return DesktopResourceLocator.resourceDirectories(
             subdirectory: "ActionIcons",
-            bundle: .module,
+            bundle: DesktopResourceLocator.runtimeResourceBundle(),
             sourceRoot: sourceRoot
         )
     }

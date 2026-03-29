@@ -23,21 +23,11 @@ enum DetailInfoIconLibrary {
         let sourceDirectory = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Resources/DetailIcons")
-        var directories: [URL] = []
-
-        if let bundled = Bundle.module.resourceURL {
-            directories.append(bundled)
-            let grouped = bundled.appendingPathComponent("DetailIcons")
-            if FileManager.default.fileExists(atPath: grouped.path) {
-                directories.append(grouped)
-            }
-        }
-
-        if FileManager.default.fileExists(atPath: sourceDirectory.path) {
-            directories.append(sourceDirectory)
-        }
-
-        return directories
+            .appendingPathComponent("Resources")
+        return DesktopResourceLocator.resourceDirectories(
+            subdirectory: "DetailIcons",
+            bundle: DesktopResourceLocator.runtimeResourceBundle(),
+            sourceRoot: sourceDirectory
+        )
     }
 }

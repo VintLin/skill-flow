@@ -22,10 +22,10 @@ enum MenuBarIcon {
         let sourceRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Resources/MenuBar")
+            .appendingPathComponent("Resources")
         return DesktopResourceLocator.resourceDirectories(
             subdirectory: "MenuBar",
-            bundle: .module,
+            bundle: DesktopResourceLocator.runtimeResourceBundle(),
             sourceRoot: sourceRoot
         )
     }

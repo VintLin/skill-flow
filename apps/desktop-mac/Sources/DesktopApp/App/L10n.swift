@@ -20,19 +20,19 @@ enum L10n {
             let identifier = DesktopLanguage.supportedIdentifier(for: locale.identifier),
             let bundle = bundle(forLocalizationIdentifier: identifier)
         else {
-            return Bundle.module
+            return resourceBundle
         }
         return bundle
     }
 
     private static var fallbackBundle: Bundle {
-        bundle(forLocalizationIdentifier: DesktopLanguage.fallback.localeIdentifier) ?? Bundle.module
+        bundle(forLocalizationIdentifier: DesktopLanguage.fallback.localeIdentifier) ?? resourceBundle
     }
 
     private static func bundle(forLocalizationIdentifier identifier: String) -> Bundle? {
         let candidates = [identifier, identifier.lowercased()]
         for candidate in candidates {
-            guard let path = Bundle.module.path(forResource: candidate, ofType: "lproj") else {
+            guard let path = resourceBundle.path(forResource: candidate, ofType: "lproj") else {
                 continue
             }
             if let bundle = Bundle(path: path) {
@@ -40,5 +40,9 @@ enum L10n {
             }
         }
         return nil
+    }
+
+    private static var resourceBundle: Bundle {
+        DesktopResourceLocator.runtimeResourceBundle() ?? Bundle.main
     }
 }

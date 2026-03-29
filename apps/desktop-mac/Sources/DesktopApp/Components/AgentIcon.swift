@@ -185,10 +185,10 @@ enum AgentIconLibrary {
         let sourceRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Resources/AgentIcons")
+            .appendingPathComponent("Resources")
         return DesktopResourceLocator.resourceDirectories(
             subdirectory: "AgentIcons",
-            bundle: .module,
+            bundle: DesktopResourceLocator.runtimeResourceBundle(),
             sourceRoot: sourceRoot
         )
     }

@@ -22,7 +22,7 @@ enum AppIconLibrary {
             .deletingLastPathComponent()
             .appendingPathComponent("Resources")
         return DesktopResourceLocator.resourceDirectories(
-            bundle: .module,
+            bundle: DesktopResourceLocator.runtimeResourceBundle(),
             sourceRoot: sourceRoot
         )
     }
