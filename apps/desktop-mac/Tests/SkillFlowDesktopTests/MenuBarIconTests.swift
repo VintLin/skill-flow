@@ -83,6 +83,28 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(SharedGroupCard.recommendationBadgeAccent(tagId: "unknown"), .blue)
     }
 
+    func testBusyOverlayScrimUsesStrongContrastInBothThemes() {
+        assertColorsEqual(
+            SharedGroupCard.busyOverlayScrimColor(for: .light),
+            Color.white.opacity(0.64)
+        )
+        assertColorsEqual(
+            SharedGroupCard.busyOverlayScrimColor(for: .dark),
+            Color.black.opacity(0.24)
+        )
+    }
+
+    func testBusyOverlayBadgeUsesOpaqueSurfaceBackground() {
+        assertColorsEqual(
+            SharedGroupCard.busyOverlayBadgeBackground(for: .light),
+            AppTheme.surface(for: .light).opacity(0.96)
+        )
+        assertColorsEqual(
+            SharedGroupCard.busyOverlayBadgeBackground(for: .dark),
+            AppTheme.surface(for: .dark).opacity(0.92)
+        )
+    }
+
     func testImportSearchPromptTextUsesTranslucentBrandColor() {
         let lightPromptColor = AppTheme.importSearchPromptText(for: .green, in: .light)
         let darkPromptColor = AppTheme.importSearchPromptText(for: .green, in: .dark)

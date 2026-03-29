@@ -497,17 +497,14 @@ export class SkillFlowApp {
     const recommendedRepos = await this.resolveRecommendedImportRepos();
     const importCache = await this.store.readImportDataCache();
     const groups = recommendedRepos
-      .filter((canonicalRepo) => !installedRepos.has(canonicalRepo))
       .slice(0, 8)
       .map((canonicalRepo) =>
         this.buildImmediateImportGroupCandidate(importCache, canonicalRepo, {
-          installed: false,
+          installed: installedRepos.has(canonicalRepo),
         }),
       );
 
-    return ok({
-      groups: groups.filter((candidate) => !candidate.installed),
-    });
+    return ok({ groups });
   }
 
   private async searchImportGroupsImpl(
@@ -645,6 +642,7 @@ export class SkillFlowApp {
     const finalDraft = this.resolveImportDraftForPreparedSource(
       prepared.data.leafs,
       prepared.data.availableTargets,
+      normalizeImportCanonicalRepo(normalizedLocator),
       draft,
     );
     if (!finalDraft.ok) {
@@ -663,14 +661,14 @@ export class SkillFlowApp {
         status: "failed",
         reasonCode: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
         retryable: true,
-      });
+      }, [...finalDraft.warnings, ...applied.warnings]);
     }
 
     return ok({
       status: "ready",
       sourceId: prepared.data.sourceId,
       canonicalRepo: normalizeImportCanonicalRepo(normalizedLocator) ?? normalizedLocator,
-    });
+    }, [...finalDraft.warnings, ...applied.warnings]);
   }
 
   private async resolveSourceMetadata(
@@ -1169,6 +1167,83 @@ export class SkillFlowApp {
         ...(next.trust ?? {}),
       },
     };
+  }
+
+  private buildImportSkillSelectorVariants(
+    value: string,
+    canonicalRepo: string,
+  ): string[] {
+    const normalized = this.normalizeImportSkillSelector(value);
+    if (!normalized) {
+      return [];
+    }
+
+    const repo = parseGitHubRepo(canonicalRepo);
+    const variants = new Set<string>([normalized]);
+    const prefixes = new Set<string>();
+
+    if (repo) {
+      const normalizedOwner = this.normalizeImportSkillSelector(repo.owner);
+      const ownerHead = this.normalizeImportSkillSelector(repo.owner.split(/[^a-z0-9]+/i)[0] ?? "");
+      const normalizedRepo = this.normalizeImportSkillSelector(repo.repo);
+
+      if (normalizedOwner) {
+        prefixes.add(normalizedOwner);
+      }
+      if (ownerHead) {
+        prefixes.add(ownerHead);
+      }
+      if (normalizedRepo) {
+        prefixes.add(normalizedRepo);
+      }
+    }
+
+    for (const prefix of prefixes) {
+      if (normalized.startsWith(`${prefix}-`)) {
+        variants.add(normalized.slice(prefix.length + 1));
+      }
+    }
+
+    return [...variants];
+  }
+
+  private normalizeImportSkillSelector(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .replace(/-+/g, "-");
+  }
+
+  private getImportLeafSelectorRank(relativePath: string): number {
+    if (relativePath === ".") {
+      return 0;
+    }
+    if (/^skills\/[^/]+$/.test(relativePath)) {
+      return 1;
+    }
+    if (/^skills\/\.(curated|experimental|system)\/[^/]+$/.test(relativePath)) {
+      return 2;
+    }
+    return 3;
+  }
+
+  private pickPreferredImportLeafMatch(matches: LeafRecord[]): LeafRecord | undefined {
+    if (matches.length === 0) {
+      return undefined;
+    }
+
+    const ranked = matches.map((leaf) => ({
+      leaf,
+      rank: this.getImportLeafSelectorRank(leaf.relativePath),
+    }));
+    const bestRank = Math.min(...ranked.map((entry) => entry.rank));
+    const bestMatches = ranked
+      .filter((entry) => entry.rank === bestRank)
+      .map((entry) => entry.leaf);
+
+    return bestMatches.length === 1 ? bestMatches[0] : undefined;
   }
 
   private importSourceRefreshKey(canonicalRepo: string, enrichSkillIds?: string[]): string {
@@ -1983,6 +2058,7 @@ export class SkillFlowApp {
   private resolveImportDraftForPreparedSource(
     sourceLeafs: LeafRecord[],
     availableTargets: DeploymentTargetName[],
+    canonicalRepo: string | undefined,
     draft?: ImportDraft,
   ): Result<DraftBinding> {
     if (!draft) {
@@ -1992,11 +2068,18 @@ export class SkillFlowApp {
       });
     }
 
-    const selectedLeafIdsResult = this.resolveSelectedLeafIds(
-      sourceLeafs,
-      undefined,
-      draft.selectedSkillIds,
-    );
+    const selectedLeafIdsResult = canonicalRepo
+      ? this.resolveImportLeafIdsForGitHubSource(
+          sourceLeafs,
+          draft.selectedSkillIds,
+          canonicalRepo,
+        )
+      : this.resolveSelectedLeafIds(
+          sourceLeafs,
+          undefined,
+          draft.selectedSkillIds,
+          canonicalRepo,
+        );
     if (!selectedLeafIdsResult.ok) {
       return fail(selectedLeafIdsResult.errors, selectedLeafIdsResult.warnings);
     }
@@ -2013,13 +2096,65 @@ export class SkillFlowApp {
     return ok({
       selectedLeafIds: selectedLeafIdsResult.data,
       enabledTargets: [...new Set(draft.enabledTargets)],
-    });
+    }, selectedLeafIdsResult.warnings);
+  }
+
+  private resolveImportLeafIdsForGitHubSource(
+    sourceLeafs: LeafRecord[],
+    skillNames: string[],
+    canonicalRepo: string,
+  ): Result<string[]> {
+    const requested = [...new Set(skillNames.map((skillName) => skillName.trim()).filter(Boolean))];
+    const matchedLeafIds: string[] = [];
+    const skippedSkillIds: string[] = [];
+    const warnings: Warning[] = [];
+
+    for (const selector of requested) {
+      const selectedLeafIdsResult = this.resolveSelectedLeafIds(
+        sourceLeafs,
+        undefined,
+        [selector],
+        canonicalRepo,
+      );
+
+      if (selectedLeafIdsResult.ok) {
+        matchedLeafIds.push(...selectedLeafIdsResult.data);
+        continue;
+      }
+
+      const firstError = selectedLeafIdsResult.errors[0];
+      if (firstError?.code !== "ADD_SKILL_NOT_FOUND") {
+        return fail(selectedLeafIdsResult.errors, selectedLeafIdsResult.warnings);
+      }
+
+      skippedSkillIds.push(selector);
+    }
+
+    if (matchedLeafIds.length === 0 && requested.length > 0) {
+      return fail({
+        code: "ADD_SKILL_NOT_FOUND",
+        message: `Unable to preselect skill(s): ${requested.join(", ")}.`,
+      });
+    }
+
+    if (skippedSkillIds.length > 0) {
+      warnings.push({
+        code: "IMPORT_SKILL_SKIPPED",
+        message:
+          `Ignored ${skippedSkillIds.length} skill selector` +
+          `${skippedSkillIds.length === 1 ? "" : "s"} not present in the GitHub repo: ` +
+          skippedSkillIds.join(", "),
+      });
+    }
+
+    return ok([...new Set(matchedLeafIds)], warnings);
   }
 
   private resolveSelectedLeafIds(
     sourceLeafs: LeafRecord[],
     requestedPath: string | undefined,
     skillNames?: string[],
+    canonicalRepo?: string,
   ): Result<string[]> {
     if (!skillNames || skillNames.length === 0) {
       return ok(this.selectLeafIdsForRequestedPath(sourceLeafs, requestedPath));
@@ -2041,14 +2176,41 @@ export class SkillFlowApp {
         });
       }
 
-      const fallbackMatches = sourceLeafs.filter(
-        (leaf) => leaf.linkName === selector || leaf.name === selector,
-      );
+      const fallbackMatches = sourceLeafs.filter((leaf) => {
+        if (leaf.linkName === selector || leaf.name === selector) {
+          return true;
+        }
+
+        if (!canonicalRepo) {
+          return false;
+        }
+
+        // skills.sh can prefix repo skill ids, for example `vercel-react-best-practices`,
+        // while the GitHub checkout still uses the real directory name `react-best-practices`.
+        // Keep the preview data unchanged for the UI, but accept those prefixed ids here so
+        // the actual import still resolves against the GitHub checkout.
+        const selectorVariants = this.buildImportSkillSelectorVariants(selector, canonicalRepo);
+        const leafVariants = new Set([
+          ...this.buildImportSkillSelectorVariants(leaf.linkName, canonicalRepo),
+          ...this.buildImportSkillSelectorVariants(leaf.name, canonicalRepo),
+          ...this.buildImportSkillSelectorVariants(path.posix.basename(leaf.relativePath), canonicalRepo),
+        ]);
+
+        return selectorVariants.some((variant) => leafVariants.has(variant));
+      });
       if (fallbackMatches.length === 1) {
         matchedLeafIds.push(fallbackMatches[0]!.id);
         continue;
       }
       if (fallbackMatches.length > 1) {
+        if (canonicalRepo) {
+          const preferred = this.pickPreferredImportLeafMatch(fallbackMatches);
+          if (preferred) {
+            matchedLeafIds.push(preferred.id);
+            continue;
+          }
+        }
+
         return fail({
           code: "ADD_SKILL_SELECTOR_AMBIGUOUS",
           message:

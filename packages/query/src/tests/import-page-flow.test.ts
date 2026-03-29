@@ -13,7 +13,7 @@ describe.sequential("import page flow", () => {
     vi.unstubAllGlobals();
   });
 
-  test("recommendations exclude installed canonical repos", async () => {
+  test("recommendations keep installed canonical repos visible", async () => {
     vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({
       provider: "github",
       repoLabel: "garrytan/gstack",
@@ -67,9 +67,14 @@ describe.sequential("import page flow", () => {
     }
 
     expect(recommendations.data.groups.map((group) => group.canonicalRepo)).toEqual([
+      "anthropics/skills",
       "garrytan/gstack",
       "vercel-labs/agent-skills",
     ]);
+    expect(
+      recommendations.data.groups.find((group) => group.canonicalRepo === "anthropics/skills")
+        ?.installed,
+    ).toBe(true);
   });
 
   test("exact import search returns a single canonical group card", async () => {
@@ -211,6 +216,175 @@ describe.sequential("import page flow", () => {
       lockFile.leafInventory.find((leaf) => leaf.id === binding?.selectedLeafIds?.[0])?.linkName,
     ).toBe("browse");
     expect(Object.keys(binding?.targets ?? {})).toEqual(["cursor"]);
+  });
+
+  test("importSource accepts prefixed skills.sh skill ids and resolves them against the GitHub checkout", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/react-best-practices/SKILL.md": skillDoc(
+        "vercel-react-best-practices",
+        "React best practices.",
+      ),
+      "skills/deploy-to-vercel/SKILL.md": skillDoc(
+        "deploy-to-vercel",
+        "Deploy to Vercel.",
+      ),
+    });
+
+    const app = new SkillFlowApp();
+    const imported = await app.importSource(repoPath, {
+      selectedSkillIds: ["vercel-react-best-practices"],
+      enabledTargets: [],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok || imported.data.status !== "ready") {
+      return;
+    }
+
+    const { manifest, lockFile } = await app.store.readState();
+    const binding = manifest.bindings[imported.data.sourceId];
+    expect(binding?.selectedLeafIds).toHaveLength(1);
+    expect(
+      lockFile.leafInventory.find((leaf) => leaf.id === binding?.selectedLeafIds?.[0])?.relativePath,
+    ).toBe("skills/react-best-practices");
+  });
+
+  test("import draft skips skills.sh-only ids that are missing from the GitHub checkout", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/supabase-postgres-best-practices/SKILL.md": skillDoc(
+        "supabase-postgres-best-practices",
+        "Postgres best practices.",
+      ),
+    });
+
+    const app = new SkillFlowApp();
+    const prepared = await app.prepareAddSource(repoPath, { skipTargetDetection: true });
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+
+    const result = (app as unknown as {
+      resolveImportDraftForPreparedSource: (
+        sourceLeafs: Array<{ id: string }>,
+        availableTargets: string[],
+        canonicalRepo: string | undefined,
+        draft?: { selectedSkillIds: string[]; enabledTargets: string[] },
+      ) => {
+        ok: boolean;
+        data?: { selectedLeafIds: string[]; enabledTargets: string[] };
+        warnings: Array<{ code: string; message: string }>;
+      };
+    }).resolveImportDraftForPreparedSource(
+      prepared.data.leafs,
+      [],
+      "supabase/agent-skills",
+      {
+        selectedSkillIds: ["supabase-postgres-best-practices", "skill-creator"],
+        enabledTargets: [],
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.data) {
+      return;
+    }
+
+    expect(result.data.selectedLeafIds).toEqual([
+      `${prepared.data.sourceId}:skills/supabase-postgres-best-practices`,
+    ]);
+    expect(result.warnings.map((warning) => warning.code)).toContain("IMPORT_SKILL_SKIPPED");
+  });
+
+  test("import draft prefers the root GitHub skill when a skills.sh id collides with a variant name", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "SKILL.md": skillDoc("last30days", "Root skill."),
+      "variants/open/SKILL.md": skillDoc("last30days", "Open variant."),
+    });
+
+    const app = new SkillFlowApp();
+    const prepared = await app.prepareAddSource(repoPath, { skipTargetDetection: true });
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+
+    const result = (app as unknown as {
+      resolveImportDraftForPreparedSource: (
+        sourceLeafs: Array<{ id: string; relativePath: string }>,
+        availableTargets: string[],
+        canonicalRepo: string | undefined,
+        draft?: { selectedSkillIds: string[]; enabledTargets: string[] },
+      ) => {
+        ok: boolean;
+        data?: { selectedLeafIds: string[]; enabledTargets: string[] };
+        warnings: Array<{ code: string; message: string }>;
+        errors: Array<{ code: string; message: string }>;
+      };
+    }).resolveImportDraftForPreparedSource(
+      prepared.data.leafs,
+      [],
+      "mvanhorn/last30days-skill",
+      {
+        selectedSkillIds: ["last30days"],
+        enabledTargets: [],
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.data) {
+      return;
+    }
+
+    expect(result.data.selectedLeafIds).toEqual([
+      `${prepared.data.sourceId}:.`,
+    ]);
+  });
+
+  test("import draft prefers the standard skills bucket over recursive matches", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Primary review skill."),
+      "variants/review/SKILL.md": skillDoc("review", "Variant review skill."),
+    });
+
+    const app = new SkillFlowApp();
+    const prepared = await app.prepareAddSource(repoPath, { skipTargetDetection: true });
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+
+    const result = (app as unknown as {
+      resolveImportDraftForPreparedSource: (
+        sourceLeafs: Array<{ id: string; relativePath: string }>,
+        availableTargets: string[],
+        canonicalRepo: string | undefined,
+        draft?: { selectedSkillIds: string[]; enabledTargets: string[] },
+      ) => {
+        ok: boolean;
+        data?: { selectedLeafIds: string[]; enabledTargets: string[] };
+      };
+    }).resolveImportDraftForPreparedSource(
+      prepared.data.leafs,
+      [],
+      "demo/review-pack",
+      {
+        selectedSkillIds: ["review"],
+        enabledTargets: [],
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.data) {
+      return;
+    }
+
+    expect(result.data.selectedLeafIds).toEqual([
+      `${prepared.data.sourceId}:skills/review`,
+    ]);
   });
 
   test("importSource rolls back prepared state when draft targets are invalid", async () => {

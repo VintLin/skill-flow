@@ -259,6 +259,10 @@ struct SharedGroupCard: View {
         isSaving || isUpdating
     }
 
+    private var busyContentOpacity: Double {
+        isBusy ? 0.34 : 1.0
+    }
+
     private var shouldShowPinnedIcon: Bool {
         card.isPinned && !isActionButtonHovered && !isActionMenuOpen
     }
@@ -299,6 +303,8 @@ struct SharedGroupCard: View {
             skillsSection
                 .padding(.horizontal, -scale.cardInset)
         }
+        .opacity(busyContentOpacity)
+        .blur(radius: isBusy ? 0.8 : 0)
         .padding(scale.cardInset)
         .frame(minHeight: minimumHeight, alignment: .topLeading)
         .background(AppTheme.groupCardFill(for: theme))
@@ -311,17 +317,27 @@ struct SharedGroupCard: View {
         .allowsHitTesting(!isBusy)
         .overlay {
             if isBusy {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(loadingMessage)
-                        .font(.system(size: scale.metaSize, weight: .semibold))
-                }
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(AppTheme.toolbarGlass(for: theme))
-                .clipShape(Capsule())
+                RoundedRectangle(cornerRadius: scale.cornerRadius)
+                    .fill(Self.busyOverlayScrimColor(for: theme))
+                    .overlay {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(loadingMessage)
+                                .font(.system(size: scale.metaSize, weight: .semibold))
+                        }
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Self.busyOverlayBadgeBackground(for: theme))
+                        .clipShape(Capsule())
+                        .shadow(
+                            color: Self.busyOverlayBadgeShadowColor(for: theme),
+                            radius: 12,
+                            x: 0,
+                            y: 6
+                        )
+                    }
             }
         }
     }
@@ -990,6 +1006,33 @@ extension SharedGroupCard {
             return .blue
         default:
             return .blue
+        }
+    }
+
+    static func busyOverlayScrimColor(for theme: DesktopThemeMode) -> Color {
+        switch theme {
+        case .dark:
+            return Color.black.opacity(0.24)
+        case .light:
+            return Color.white.opacity(0.64)
+        }
+    }
+
+    static func busyOverlayBadgeBackground(for theme: DesktopThemeMode) -> Color {
+        switch theme {
+        case .dark:
+            return AppTheme.surface(for: theme).opacity(0.92)
+        case .light:
+            return AppTheme.surface(for: theme).opacity(0.96)
+        }
+    }
+
+    static func busyOverlayBadgeShadowColor(for theme: DesktopThemeMode) -> Color {
+        switch theme {
+        case .dark:
+            return Color.black.opacity(0.28)
+        case .light:
+            return Color.black.opacity(0.10)
         }
     }
 

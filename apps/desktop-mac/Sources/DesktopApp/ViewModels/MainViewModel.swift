@@ -1447,8 +1447,6 @@ final class MainViewModel {
             if let sourceId = sourceId.nonEmpty {
                 requestPage(.detail(sourceId: sourceId))
             }
-            recommendedImportGroups.removeAll(where: { $0.id == groupId })
-            searchImportGroups.removeAll(where: { $0.id == groupId })
             showToast(style: .success, text: localizedText("toast.import.success"))
         } catch {
             showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
@@ -2110,6 +2108,7 @@ final class MainViewModel {
         allSummaries = summaries
         sourceIds = summaries.map(\.sourceId)
         pruneStateMaps(allowedSourceIds: Set(sourceIds))
+        refreshImportGroupInstalledState()
 
         if selectedSourceId == nil || !sourceIds.contains(selectedSourceId ?? "") {
             selectedSourceId = sourceIds.first
@@ -2127,6 +2126,45 @@ final class MainViewModel {
             detectedTargets.formUnion(summary.enabledTargets)
         }
 
+    }
+
+    private func refreshImportGroupInstalledState() {
+        let installedLocators = Set(
+            allSummaries.flatMap { summary in
+                [summary.sourceCanonicalRepo, summary.sourceLocator]
+                    .compactMap { $0 }
+                    .map(Self.normalizedImportRecommendationKey)
+            }
+        )
+
+        func update(_ item: ImportGroupItem) -> ImportGroupItem {
+            let isInstalledLocally = installedLocators.contains(
+                Self.normalizedImportRecommendationKey(item.canonicalRepo)
+            )
+
+            return ImportGroupItem(
+                id: item.id,
+                title: item.title,
+                locator: item.locator,
+                canonicalRepo: item.canonicalRepo,
+                isInstalledLocally: isInstalledLocally,
+                aliases: item.aliases,
+                summary: item.summary,
+                starCount: item.starCount,
+                totalInstalls: item.totalInstalls,
+                skillCount: item.skillCount,
+                matchedSkillNames: item.matchedSkillNames,
+                matchedSkills: item.matchedSkills,
+                snapshot: item.snapshot,
+                enrichPhase: item.enrichPhase,
+                previewPhase: item.previewPhase,
+                skills: item.skills,
+                targets: item.targets
+            )
+        }
+
+        recommendedImportGroups = recommendedImportGroups.map(update)
+        searchImportGroups = searchImportGroups.map(update)
     }
 
     func requestPage(_ page: Page) {

@@ -365,6 +365,37 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(recommended?.isInstalledLocally, true)
     }
 
+    func testImportPageClearsInstalledStateAfterDeletingRecommendedSource() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["anthropic-github"] = TestFixture.SourceState(
+            displayName: "Anthropic Skills",
+            locator: "https://github.com/anthropic/skills.git",
+            kind: "git",
+            canonicalRepo: nil,
+            leafIds: ["research"],
+            selectedLeafIds: ["research"],
+            enabledTargets: ["claude-code"]
+        )
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.requestPage(.importPage)
+
+        await model.loadImportPageIfNeeded()
+        XCTAssertEqual(
+            model.recommendedImportGroups.first(where: { $0.canonicalRepo == "anthropics/skills" })?.isInstalledLocally,
+            true
+        )
+
+        await model.deleteSource(sourceId: "anthropic-github")
+
+        XCTAssertEqual(
+            model.recommendedImportGroups.first(where: { $0.canonicalRepo == "anthropics/skills" })?.isInstalledLocally,
+            false
+        )
+    }
+
     func testImportPageSearchReturnsExactGroup() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -401,7 +432,11 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(runtime.state.view.currentRoute, .detail(sourceId: "anthropics-skills"))
         XCTAssertEqual(model.selectedGroupId, "anthropics-skills")
         XCTAssertTrue(model.sourceIds.contains("anthropics-skills"))
-        XCTAssertFalse(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
+        XCTAssertTrue(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
+        XCTAssertEqual(
+            model.recommendedImportGroups.first(where: { $0.id == "anthropics-skills" })?.isInstalledLocally,
+            true
+        )
         XCTAssertEqual(model.toast?.style, .success)
         XCTAssertEqual(model.toast?.message, "Imported source.")
 
@@ -410,6 +445,33 @@ final class WorkflowCoverageTests: XCTestCase {
         let draft = importRequests.first?.payload?["draft"]?.value as? [String: Any]
         XCTAssertEqual(draft?["selectedSkillIds"] as? [String], ["research"])
         XCTAssertEqual(draft?["enabledTargets"] as? [String], ["cursor"])
+    }
+
+    func testImportPageSearchResultMarksImportedGroupAsInstalled() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+        let model = container.mainViewModel
+
+        await model.submitImportSearch("https://github.com/anthropic/skills.git")
+        let group = try XCTUnwrap(model.importDisplayGroups.first(where: { $0.canonicalRepo == "anthropics/skills" }))
+
+        await model.importImportGroup(
+            groupId: group.id,
+            locator: group.locator,
+            selectedSkillIds: ["research"],
+            enabledTargets: []
+        )
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(model.currentRoute, .detail(sourceId: "anthropics-skills"))
+        XCTAssertEqual(
+            model.searchImportGroups.first(where: { $0.canonicalRepo == "anthropics/skills" })?.isInstalledLocally,
+            true
+        )
     }
 
     func testImportPageImportFailureDoesNotLeaveGhostSource() async throws {
