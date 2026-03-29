@@ -33,6 +33,7 @@ Thumbs.db
 PRD/
 docs/
 .superset/
+.build/
 .gstack/
 
 # Build artifacts
@@ -43,3 +44,8 @@ docs/
 
 # Vercel
 .vercel/
+.opencli/
+*.png
+!img/*.png
+
+AGENTS.md

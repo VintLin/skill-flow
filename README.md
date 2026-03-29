@@ -1,200 +1,277 @@
 # Skill Flow
 
-> **Workflow-first management for AI agent skills.**
-> Skill grouping · Deploy everywhere · Clear config · Quick diagnosis
+<div align="center">
 
-![img](img/img-1.jpg)
+Turn scattered AI agent skills into organized workflows.
 
-[中文文档](./README.zh.md)
+[中文](./README.zh.md) · [日本語](./README.ja.md)
 
-[![Node.js Version](https://img.shields.io/node/v/skill-flow?style=flat-square)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
+[![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
-As your AI agent skills grow, management gets messy: one Git repo has a bunch of related skills, they end up scattered across different agents, and updates become a headache.
+<img src="./img/img-icon.png" alt="Skill Flow icon" width="120" />
 
-`skill-flow` fixes this by organizing skills around groups: add skill groups from Git repos, pick where to deploy, update all at once, spot problems fast. Keep your skill setup clean, organized, and stress-free.
+</div>
 
-## Key Features
+`skill-flow` is a desktop application and CLI for managing AI agent skills as workflows. Search and import skills by keyword, GitHub URL, or `npx` package format from ClawHub and other sources, deploy them to any agent, and maintain readable, repairable state.
 
-![Skill groups diagram](./img/img-2.png)
+Built as a monorepo with a native macOS desktop app, published CLI, shared runtime, Ink TUI, and a unified state system accessible through `skill-flow bridge --json`.
 
-**Skill-Based Grouping**
-One Git repo = one skills group. Related skills stay together, updates and maintenance happen at the group level.
+![Skill Flow desktop overview](./img/img-home.png)
 
-**Deploy Everywhere**
-Set it up once, deploy to multiple agents (Claude Code, Cursor, Windsurf, and 13+ targets).
+## Why This Exists
 
-**Interactive Terminal UI**
-Intuitive TUI: view groups → select skills → choose targets → save configuration.
+Installing skills one by one breaks down at scale:
 
-**Bootstrap On Config Open**
-`config` renders immediately, shows boot progress, adopts unmanaged skills already found in agent roots, then audits current projections before entering the main UI.
+- Repos contain multiple related skills, but you install them separately
+- Different agents expect different locations
+- Updates drift silently
+- Unmanaged folders accumulate
+- Nobody tracks what's actually deployed
 
-**Explicit State Tracking**
-`manifest.json` = what you want, `lock.json` = what's actually installed. Both are readable and queryable.
+`skill-flow` preserves the workflow group. One source remains one cohesive unit—inspect it, select skills, deploy to multiple targets, update cleanly, and always know your state.
 
-**Health Diagnosis**
-`doctor` catches broken links, mismatches, and conflicts — tells you exactly what's wrong.
+## What You Get
 
-## Installation
+- **Grouped source management**: local, Git, and ClawHub sources all flow through the same import model.
+- **Multi-agent deployment**: deploy one selected skill set to Claude Code, Codex, Cursor, Gemini CLI, OpenCode, OpenClaw, Windsurf, and more.
+- **Interactive config flow**: Ink-based TUI for add/config flows, selection state, review, and repair.
+- **Desktop app on macOS 15+**: SwiftUI main window, import view, detail panel, settings, and menu bar quick config.
+- **Explicit state**: `manifest.json` stores intent, `lock.json` stores resolved inventory and deployments.
+- **Bridge protocol**: machine-readable desktop/helper entrypoint via `skill-flow bridge --json`.
+- **Repair and diagnosis**: `doctor`, `repair-source`, `repair-state`, and `repair-targets` cover the parts that usually rot first.
 
-Requires Node.js >= 20, currently optimized for macOS.
+## Interface Preview
 
-Install from npm:
+| Menu Bar | Import |
+| --- | --- |
+| ![Menu bar quick config](./img/img-menu.png) | ![Import screen](./img/img-import.png) |
+
+| Detail | Settings |
+| --- | --- |
+| ![Detail screen](./img/img-detail.png) | ![Settings screen](./img/img-setting.png) |
+
+## Quick Start
+
+### Install
 
 ```bash
 npm install -g skill-flow
 skill-flow --help
 ```
 
-Run without a global install:
+Or run without a global install:
 
 ```bash
 npx skill-flow --help
 ```
 
-Install from source for local development:
+### Desktop prerequisites
+
+Skill Flow Desktop currently relies on a few external command-line tools on the target Mac:
+
+- `node` 20 or newer is required to launch the bundled desktop helper
+- `git` is required for non-GitHub Git sources
+- `npx` is required for ClawHub imports
+
+If the desktop app detects a missing dependency, it will surface an actionable error and point back to this section.
+
+### Typical flow
 
 ```bash
-git clone https://github.com/VintLin/skill-flow.git
-cd skill-flow
-npm install
-npm run build
-npm link
-```
+# Add a source
+skill-flow add garrytan/gstack
 
-## Quick Start
-
-```bash
-# Add a skill source
-skill-flow add /path/to/skills-repo
-
-# View skills groups
+# Review installed workflow groups
 skill-flow list
 
-# Interactive configuration (select skills and targets)
+# Open the interactive config UI
 skill-flow config
 
-# Update all sources
+# Search installed skills, built-in catalogs, and ClawHub
+skill-flow find browser
+
+# Update one source or all sources
+skill-flow update garrytan-gstack
 skill-flow update --all
 
-# Health check
+# Diagnose drift or broken projections
 skill-flow doctor
-
-# Remove a skills group
-skill-flow uninstall my-source-id
 ```
 
-`add <source>` supports local paths, `owner/repo`, full https/ssh Git URLs, GitHub tree URLs, and `clawhub:<slug>[@version]`.
+### Machine bridge
 
-By default, `add` preselects all discovered skills and all detected agent targets. When `--path <repoSubpath>` is provided, the full repo is still imported, but only skills under that path are preselected. `--path` values are normalized, so `./skills/` and `skills/` behave the same, and the CLI prints a preselection warning when the import only scopes the default selection.
+The desktop app and helper tooling talk to the CLI through a versioned JSON protocol:
+
+```bash
+printf '%s' '{"protocolVersion":"1.0","command":"list"}' | skill-flow bridge --json
+```
+
+## Supported Sources
+
+`skill-flow add <source>` supports:
+
+- local folders
+- `owner/repo` GitHub shorthand
+- full HTTPS Git URLs
+- SSH Git URLs
+- GitHub tree URLs
+- `clawhub:<slug>[@version]`
 
 Examples:
 
 ```bash
-# Local repo
 skill-flow add ~/code/my-skills
-
-# GitHub shorthand
 skill-flow add garrytan/gstack
-
-# Full Git URL
 skill-flow add https://github.com/garrytan/gstack.git
 skill-flow add git@github.com:garrytan/gstack.git
-
-# GitHub tree URL
 skill-flow add https://github.com/garrytan/gstack/tree/main/skills
-
-# Import the repo, but only preselect skills under a subpath
-skill-flow add garrytan/gstack --path skills
-
-# ClawHub package
 skill-flow add clawhub:example/skill-pack
 skill-flow add clawhub:example/skill-pack@1.2.3
 ```
 
-## Command Reference
+Use `--path <repoSubpath>` when the repo is large but your default selection should start from one subtree.
 
-| Command | Description |
-|---|---|
-| `add <source>` | Add a skill source (local path, Git repo, or ClawHub) |
-| `find <query>` | Search installed skills, built-in Git catalogs, and ClawHub |
-| `search <query>` | Alias of `find` |
-| `list` | Show skills groups |
-| `config` | Open interactive configuration UI |
-| `update [sourceId] --all` | Update all skills and re-deploy |
-| `doctor` | Check for problems |
-| `uninstall <sourceIds...>` | Remove skills groups and their deployments |
+## Supported Targets
 
-When selected skills collide by name, `skill-flow` keeps identical duplicates as warnings and renames different-content collisions with repo/author-prefixed link names such as `gstack-browse`, `gstack(garrytan)-browse`, or `garrytan-skill-creator`.
+Current built-in targets:
 
-## How It Works
+- Claude Code
+- Codex
+- Cursor
+- GitHub Copilot
+- Gemini CLI
+- OpenCode
+- OpenClaw
+- Pi
+- Windsurf
+- Roo Code
+- Cline
+- Amp
+- Kiro
 
-**State Management**
-- `~/.skillflow/manifest.json` - Your configuration (what you want)
-- `~/.skillflow/lock.json` - Actual state (what's installed)
-- `~/.skillflow/source/local/<source-id>/` - Imported local sources and adopted unmanaged external skills
-- `~/.skillflow/source/git/<source-id>/` - Git repo cache
-- `~/.skillflow/source/clawhub/<source-id>/` - ClawHub cache
-- `~/.skillflow/catalog/git/<source-id>/` - Built-in Git catalog cache
+Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 
-**Deployment Strategy**
-Uses symlinks when possible, file copies when needed. Target directories are just deploy points — real state lives in lock.json.
+## Command Map
 
-**Config Bootstrap**
-- detect available agent targets
-- scan known agent `skills/` roots for unmanaged skills
-- import unmanaged external skills into `~/.skillflow/source/local/`
-- refresh inventory, normalize bindings, and audit projections
-- enter the interactive config UI
+| Command | What it does |
+| --- | --- |
+| `add <source>` | Import a source and choose skills/targets |
+| `list` | Show workflow groups and current health |
+| `find <query>` / `search <query>` | Search installed skills, built-in Git catalogs, and ClawHub |
+| `config` | Open the interactive configuration UI |
+| `update [sourceId] --all` | Refresh one source or all registered sources |
+| `doctor` | Diagnose drift, missing paths, and projection problems |
+| `repair-source [sourceId] --all` | Rebuild source checkout metadata |
+| `repair-state [sourceId] --all` | Rebuild source-side state |
+| `repair-targets [sourceId] --all` | Repair projected target contents |
+| `uninstall <sourceIds...>` | Remove groups and their deployments |
+| `bridge --json` | Execute machine protocol requests |
 
-Already-managed projections are not imported again. For example, if an agent root contains symlinks that already point into `~/.skillflow/source/*`, bootstrap treats them as managed state and skips them.
+## How State Works
 
-## Supported Agents
+`skill-flow` keeps one state root, defaulting to `~/.skillflow/`.
 
-Claude Code · Codex · Cursor · GitHub Copilot · Gemini CLI · OpenCode · OpenClaw · Pi · Windsurf · Roo Code · Cline · Amp · Kiro
+- `manifest.json`: what you want
+- `lock.json`: what is actually installed
+- `source/local/*`: imported local or adopted unmanaged sources
+- `source/git/*`: Git source cache
+- `source/clawhub/*`: ClawHub source cache
+- `catalog/git/*`: built-in Git catalog cache
 
-Customize target paths via environment variables (e.g., `SKILL_FLOW_TARGET_CLAUDE_CODE`).
+Target directories are deployment outputs, not the source of truth.
 
-Broader ecosystem path references, including project-level rules and instructions paths (docs TBD).
+## FAQ
 
-## Built-in Discovery Catalogs
+### Where does `skill-flow` store data?
 
-`find/search` searches built-in Git catalogs in addition to local installed skills and ClawHub.
+By default, state lives under `~/.skillflow/`. `manifest.json` records the workflow you want, `lock.json` records the resolved inventory and deployments, and the `source/*` directories cache imported sources.
 
-For more reliable built-in Git catalog search, set `GITHUB_TOKEN` to avoid low unauthenticated GitHub API rate limits.
+### Does deployment overwrite files in target agent folders?
 
-| Repository | Description | Stars | Skills |
-| --- | --- | ---: | ---: |
-| [anthropic-skills](https://github.com/anthropics/skills) | Official Agent Skills from Anthropic | 95,957 | 18 |
-| [superpowers](https://github.com/obra/superpowers) | Agentic skills framework & development methodology | 89,816 | 14 |
-| [everything-claude-code](https://github.com/affaan-m/everything-claude-code) | Performance optimization system for Claude Code, Codex, and beyond | 81,392 | 147 |
-| [agency-agents](https://github.com/msitarzewski/agency-agents) | Specialized expert agents with personality and proven deliverables | 50,749 | — |
-| [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | Design intelligence for building professional UI/UX | 43,112 | 7 |
-| [antigravity-awesome-skills](https://github.com/sickn33/antigravity-awesome-skills) | 1,000+ battle-tested skills for Claude Code, Cursor, and more | 25,047 | 1,258 |
-| [marketingskills](https://github.com/coreyhaines31/marketingskills) | Marketing skills — CRO, copywriting, SEO, analytics, growth | 14,099 | 33 |
-| [agentskills](https://github.com/agentskills/agentskills) | Specification and documentation for Agent Skills | 13,342 | — |
-| [taste-skill](https://github.com/Leonxlnx/taste-skill) | Gives your AI good taste — stops generic, boring output | 3,389 | 5 |
-| [affiliate-skills](https://github.com/Affitor/affiliate-skills) | Full affiliate marketing funnel: research to deploy | 99 | 47 |
-| [skills](https://github.com/luongnv89/skills) | Reusable skills to supercharge your AI agents | 1 | 29 |
-| [awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills) | Community Claude skills collection | — | — |
-| [myclaude](https://github.com/cexll/myclaude) | Personal Claude skills collection | — | — |
-| [baoyu-skills](https://github.com/JimLiu/baoyu-skills) | Community skills collection | — | — |
-| [dbskill](https://github.com/dontbesilent2025/dbskill) | Database-focused skills collection | — | — |
-| [gstack](https://github.com/garrytan/gstack) | Gstack skills and workflows | — | — |
-| [impeccable](https://github.com/pbakaus/impeccable) | Design and taste skills collection | — | — |
-| [frontend-slides](https://github.com/zarazhangrui/frontend-slides) | Frontend presentation skills collection | — | — |
+`skill-flow` treats target directories as deployment outputs. The selected skills for a workflow group are projected there from state, so you should treat those files as generated results rather than edit them as the source of truth.
+
+### When should I use `doctor` vs `repair-*`?
+
+Start with `skill-flow doctor` when something looks wrong and you want a diagnosis first. Use `repair-source` when source checkout metadata is broken, `repair-state` when source-side state needs rebuilding, and `repair-targets` when deployed target contents have drifted from the current state.
+
+## Monorepo Layout
+
+```text
+.
+├── apps
+│   ├── cli/                    # published npm package and CLI entrypoint
+│   └── desktop-mac/            # SwiftUI desktop app for macOS 15+
+├── packages
+│   ├── core-engine/            # inventory, deployment, doctor, bootstrap services
+│   ├── domain/                 # domain models and core types
+│   ├── integration/            # Git, GitHub, ClawHub, path, naming integrations
+│   ├── query/                  # shared runtime and bridge-facing orchestration
+│   ├── shared-types/           # bridge protocol types
+│   ├── storage/                # manifest, lock, preferences, cache persistence
+│   └── tui/                    # Ink add/find/config UI
+├── docs/                       # architecture, contributor docs, references, plans
+└── releases/                   # release notes
+```
 
 ## Development
 
 ```bash
 npm install
-npm run dev     # Development mode
-npm run build   # Build
-npm test        # Run tests
+npm run build
+npm test
 ```
 
-Tech stack: TypeScript + Vitest + Ink TUI
+CLI dev loop:
+
+```bash
+npm run -w skill-flow dev -- --help
+```
+
+Desktop dev loop:
+
+```bash
+npm run build
+cd apps/desktop-mac
+swift build
+swift test
+```
+
+Debugging the desktop shell against a local CLI build:
+
+```bash
+export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
+```
+
+Unsigned desktop packaging:
+
+```bash
+scripts/release/package-desktop-mac.sh --arch arm64
+scripts/release/package-desktop-mac.sh --arch x86_64
+scripts/release/package-desktop-mac.sh --arch universal
+```
+
+Open-source macOS release flow:
+
+```bash
+scripts/release/package-desktop-mac.sh --arch universal
+scripts/release/package-desktop-mac-zip.sh universal
+scripts/release/generate-sha256.sh universal
+```
+
+Unsigned macOS install notes:
+
+- Download `Skill-Flow-universal.dmg` from GitHub Releases, copy `Skill Flow.app` to `Applications`, then open it once with Finder's `Open` action if Gatekeeper blocks it.
+- If macOS still marks the app as quarantined, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
+```
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=VintLin/skill-flow&type=Date)](https://www.star-history.com/#VintLin/skill-flow&Date)
 
 ## License
 

@@ -1,0 +1,27 @@
+{
+  "name": "@skill-flow/core-engine",
+  "version": "1.1.0",
+  "type": "module",
+  "private": true,
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./services/*": "./dist/services/*.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest --passWithNoTests"
+  },
+  "dependencies": {
+    "@skill-flow/domain": "1.1.0",
+    "@skill-flow/integration": "1.1.0",
+    "@skill-flow/storage": "1.1.0",
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}

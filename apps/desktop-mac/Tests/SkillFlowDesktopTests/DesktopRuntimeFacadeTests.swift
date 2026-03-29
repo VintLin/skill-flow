@@ -1,0 +1,112 @@
+import XCTest
+
+@testable import SkillFlowDesktop
+
+@MainActor
+final class DesktopRuntimeFacadeTests: XCTestCase {
+    func testBridgeQueryFacadeForwardsBootstrapAndInspectCalls() async throws {
+        let bridge = StubBridgeTransport()
+        let facade = DesktopBridgeQueryFacade(bridgeClient: bridge)
+
+        _ = try await facade.bootstrap()
+        _ = try await facade.inspect(sourceId: "alpha")
+        _ = try await facade.inspectEnrichment(sourceId: "alpha")
+
+        XCTAssertEqual(bridge.recordedCommands, [
+            "bootstrap",
+            "inspect:alpha",
+            "inspect-enrichment:alpha",
+        ])
+    }
+
+    func testBridgeCommandFacadeForwardsMutationCalls() async throws {
+        let bridge = StubBridgeTransport()
+        let facade = DesktopBridgeCommandFacade(bridgeClient: bridge)
+
+        _ = try await facade.togglePinnedSource(sourceId: "alpha")
+        _ = try await facade.updateSources(["alpha"])
+
+        XCTAssertEqual(bridge.recordedCommands, [
+            "toggle-pin:alpha",
+            "update:[\"alpha\"]",
+        ])
+    }
+}
+
+private final class StubBridgeTransport: DesktopBridgeTransporting, @unchecked Sendable {
+    private(set) var recordedCommands: [String] = []
+
+    func bootstrap() async throws -> BridgeResponse {
+        recordedCommands.append("bootstrap")
+        return .success(command: .bootstrap)
+    }
+
+    func list() async throws -> BridgeResponse {
+        recordedCommands.append("list")
+        return .success(command: .list)
+    }
+
+    func inspect(sourceId: String) async throws -> BridgeResponse {
+        recordedCommands.append("inspect:\(sourceId)")
+        return .success(command: .inspect)
+    }
+
+    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
+        recordedCommands.append("inspect-enrichment:\(sourceId)")
+        return .success(command: .inspectEnrichment)
+    }
+
+    func searchImportGroups(query: String?) async throws -> BridgeResponse {
+        recordedCommands.append("search-import-groups:\(query ?? "nil")")
+        return .success(command: .searchImportGroups)
+    }
+
+    func previewImportSource(locator: String) async throws -> BridgeResponse {
+        recordedCommands.append("preview-import-source:\(locator)")
+        return .success(command: .previewImportSource)
+    }
+
+    func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
+        recordedCommands.append("toggle-pin:\(sourceId)")
+        return .success(command: .togglePin)
+    }
+
+    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
+        recordedCommands.append("update:\(sourceIds ?? [])")
+        return .success(command: .update)
+    }
+
+    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        recordedCommands.append("import-source:\(locator)")
+        return .success(command: .importSource)
+    }
+
+    func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
+        recordedCommands.append("uninstall:\(sourceIds)")
+        return .success(command: .uninstall)
+    }
+
+    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        recordedCommands.append("apply:\(sourceId)")
+        return .success(command: .apply)
+    }
+
+    func doctor() async throws -> BridgeResponse {
+        recordedCommands.append("doctor")
+        return .success(command: .doctor)
+    }
+}
+
+private extension BridgeResponse {
+    static func success(command: BridgeCommand, payload: [String: Any]? = nil) -> BridgeResponse {
+        BridgeResponse(
+            protocolVersion: "1.0",
+            requestId: UUID().uuidString,
+            command: command,
+            ok: true,
+            data: payload.map(AnyCodable.init),
+            warnings: [],
+            errors: []
+        )
+    }
+}
