@@ -19,6 +19,10 @@ struct SettingsView: View {
         let swatch: Color?
     }
 
+    enum ControlSurfaceToken: Equatable {
+        case pageBackground
+    }
+
     private let controlColumnWidth: CGFloat = 168
     private let dropdownControlWidth: CGFloat = 148
 
@@ -99,7 +103,11 @@ struct SettingsView: View {
                             .environment(\.colorScheme, colorScheme)
                         }
 
-                        settingsRow(title: t("settings.row.accent.title"), description: t("settings.row.accent.description")) {
+                        settingsRow(
+                            title: t("settings.row.accent.title"),
+                            description: t("settings.row.accent.description"),
+                            elevated: openDropdown == .accent
+                        ) {
                             dropdownControl(
                                 kind: .accent,
                                 selectionTitle: t("settings.option.accent.\(currentAccent.rawValue)"),
@@ -110,7 +118,11 @@ struct SettingsView: View {
                             )
                         }
 
-                        settingsRow(title: t("settings.row.language.title"), description: t("settings.row.language.description")) {
+                        settingsRow(
+                            title: t("settings.row.language.title"),
+                            description: t("settings.row.language.description"),
+                            elevated: openDropdown == .language
+                        ) {
                             dropdownControl(
                                 kind: .language,
                                 selectionTitle: t("settings.option.language.\(currentLanguage.rawValue)"),
@@ -164,7 +176,11 @@ struct SettingsView: View {
                 settingsSection(
                     title: t("settings.section.advanced"),
                     rows: {
-                        settingsRow(title: t("settings.row.log_level.title"), description: t("settings.row.log_level.description")) {
+                        settingsRow(
+                            title: t("settings.row.log_level.title"),
+                            description: t("settings.row.log_level.description"),
+                            elevated: openDropdown == .logLevel
+                        ) {
                             dropdownControl(
                                 kind: .logLevel,
                                 selectionTitle: t("settings.option.log_level.\(viewModel.logLevel)"),
@@ -194,8 +210,12 @@ struct SettingsView: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
                             .frame(width: controlColumnWidth, height: 32)
-                            .background(AppTheme.toolbarButtonBackground(for: theme))
+                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                            }
                         }
 
                         settingsRow(title: t("settings.row.reset_configuration.title"), description: t("settings.row.reset_configuration.description")) {
@@ -206,8 +226,12 @@ struct SettingsView: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
                             .frame(width: controlColumnWidth, height: 32)
-                            .background(AppTheme.toolbarButtonBackground(for: theme))
+                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                            }
                         }
                     }
                 )
@@ -240,7 +264,12 @@ struct SettingsView: View {
         }
     }
 
-    private func settingsRow<Control: View>(title: String, description: String, @ViewBuilder control: () -> Control) -> some View {
+    private func settingsRow<Control: View>(
+        title: String,
+        description: String,
+        elevated: Bool = false,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -258,6 +287,7 @@ struct SettingsView: View {
             }
             .frame(width: controlColumnWidth, alignment: .trailing)
         }
+        .zIndex(Self.rowZIndex(isElevated: elevated))
     }
 
     @ViewBuilder
@@ -292,7 +322,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 10)
             .frame(width: dropdownControlWidth, height: 32, alignment: .leading)
-            .background(AppTheme.pageBackground(for: theme))
+            .background(Self.controlBackground(for: .pageBackground, theme: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -337,7 +367,7 @@ struct SettingsView: View {
                     }
                 }
                 .padding(6)
-                .background(AppTheme.pageBackground(for: theme))
+                .background(Self.controlBackground(for: .pageBackground, theme: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay {
                     RoundedRectangle(cornerRadius: 10)
@@ -348,5 +378,16 @@ struct SettingsView: View {
         }
         .frame(width: dropdownControlWidth, alignment: .trailing)
         .zIndex(openDropdown == kind ? 10 : 0)
+    }
+
+    static func rowZIndex(isElevated: Bool) -> Double {
+        isElevated ? 30 : 0
+    }
+
+    static func controlBackground(for token: ControlSurfaceToken, theme: DesktopThemeMode) -> Color {
+        switch token {
+        case .pageBackground:
+            return AppTheme.pageBackground(for: theme)
+        }
     }
 }
