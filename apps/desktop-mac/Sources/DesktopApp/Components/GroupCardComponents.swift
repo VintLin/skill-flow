@@ -323,6 +323,7 @@ struct SharedGroupCard: View {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
+                                .tint(AppTheme.textPrimary(for: theme))
                             Text(loadingMessage)
                                 .font(.system(size: scale.metaSize, weight: .semibold))
                         }
@@ -538,6 +539,9 @@ struct SharedGroupCard: View {
     private var loadingMessage: String {
         if isSaving {
             return t("common.status.applying")
+        }
+        if displayMode == .importSearch || displayMode == .importRecommendation {
+            return t("group_card.loading.downloading")
         }
         return t("group_card.loading.updating")
     }
@@ -1019,12 +1023,7 @@ extension SharedGroupCard {
     }
 
     static func busyOverlayBadgeBackground(for theme: DesktopThemeMode) -> Color {
-        switch theme {
-        case .dark:
-            return AppTheme.surface(for: theme).opacity(0.92)
-        case .light:
-            return AppTheme.surface(for: theme).opacity(0.96)
-        }
+        AppTheme.documentBlock(for: theme)
     }
 
     static func busyOverlayBadgeShadowColor(for theme: DesktopThemeMode) -> Color {

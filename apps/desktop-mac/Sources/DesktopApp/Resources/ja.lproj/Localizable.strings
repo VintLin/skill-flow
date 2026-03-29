@@ -143,6 +143,7 @@
 "group_card.action.unpin" = "ピン留め解除";
 "group_card.action.update" = "更新";
 "group_card.action.delete" = "削除";
+"group_card.loading.downloading" = "ダウンロード中...";
 "group_card.loading.updating" = "更新中...";
 "common.meta.from" = "%@ から";
 "common.loading.groups" = "グループを読み込み中";

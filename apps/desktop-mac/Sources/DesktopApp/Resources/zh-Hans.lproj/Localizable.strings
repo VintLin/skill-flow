@@ -143,6 +143,7 @@
 "group_card.action.unpin" = "取消置顶";
 "group_card.action.update" = "更新";
 "group_card.action.delete" = "删除";
+"group_card.loading.downloading" = "正在下载...";
 "group_card.loading.updating" = "正在更新...";
 "common.meta.from" = "来自 %@";
 "common.loading.groups" = "正在加载分组";

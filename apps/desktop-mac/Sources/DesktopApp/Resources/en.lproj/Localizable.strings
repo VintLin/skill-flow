@@ -143,6 +143,7 @@
 "group_card.action.unpin" = "Unpin";
 "group_card.action.update" = "Update";
 "group_card.action.delete" = "Delete";
+"group_card.loading.downloading" = "Downloading...";
 "group_card.loading.updating" = "Updating...";
 "common.meta.from" = "from %@";
 "common.loading.groups" = "Loading groups";

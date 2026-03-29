@@ -97,11 +97,11 @@ final class MenuBarIconTests: XCTestCase {
     func testBusyOverlayBadgeUsesOpaqueSurfaceBackground() {
         assertColorsEqual(
             SharedGroupCard.busyOverlayBadgeBackground(for: .light),
-            AppTheme.surface(for: .light).opacity(0.96)
+            AppTheme.documentBlock(for: .light)
         )
         assertColorsEqual(
             SharedGroupCard.busyOverlayBadgeBackground(for: .dark),
-            AppTheme.surface(for: .dark).opacity(0.92)
+            AppTheme.documentBlock(for: .dark)
         )
     }
 
