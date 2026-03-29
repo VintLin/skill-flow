@@ -12,11 +12,14 @@ struct ImportRecommendationEntry: Codable, Equatable, Sendable {
 
 enum ImportRecommendationLoader {
     static func load(bundle: Bundle = .module) -> [ImportRecommendationEntry] {
-        guard let url = bundle.url(
-            forResource: "recommendations",
-            withExtension: "json",
-            subdirectory: "ImportRecommendations"
-        ) else {
+        guard let url =
+            bundle.url(
+                forResource: "recommendations",
+                withExtension: "json",
+                subdirectory: "ImportRecommendations"
+            )
+            ?? bundle.url(forResource: "recommendations", withExtension: "json")
+        else {
             return []
         }
 

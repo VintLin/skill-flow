@@ -108,8 +108,8 @@
     "sortOrder": 120
   },
   {
-    "canonicalRepo": "JimLiu/baoyu-skills",
-    "locator": "JimLiu/baoyu-skills",
+    "canonicalRepo": "jimliu/baoyu-skills",
+    "locator": "jimliu/baoyu-skills",
     "categoryId": "creation",
     "primaryTagId": "creation",
     "secondaryTagIds": ["marketing"],

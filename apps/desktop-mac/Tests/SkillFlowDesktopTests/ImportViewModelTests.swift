@@ -65,7 +65,7 @@ final class ImportViewModelTests: XCTestCase {
         )
         XCTAssertEqual(
             sections[1].cards[0].recommendationDescription,
-            "This is a development workflow centered on thinking clearly before writing. It is a good fit for people who often get pulled off track by AI, redo work repeatedly, and feel their projects getting messier over time."
+            "A development workflow centered on thinking clearly before writing, suited for people who get pulled off track by AI, redo too much work, or feel projects slipping out of control."
         )
     }
 

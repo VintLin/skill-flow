@@ -116,6 +116,58 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(searched?.importingGroupId, "search")
     }
 
+    func testLoadImportPageSeedsRecommendedContentFromLocalRecommendations() async {
+        let recommendations = [
+            ImportRecommendationEntry(
+                canonicalRepo: "anthropics/skills",
+                locator: "anthropics/skills",
+                categoryId: "general",
+                primaryTagId: "general",
+                secondaryTagIds: [],
+                descriptionKey: "import.recommendation.description.anthropics_skills",
+                sortOrder: 10
+            ),
+            ImportRecommendationEntry(
+                canonicalRepo: "obra/superpowers",
+                locator: "obra/superpowers",
+                categoryId: "development",
+                primaryTagId: "development",
+                secondaryTagIds: [],
+                descriptionKey: "import.recommendation.description.obra_superpowers",
+                sortOrder: 20
+            ),
+        ]
+
+        let state = DesktopAppState()
+        state.view.currentRoute = .importPage
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            recommendationsProvider: { recommendations }
+        )
+        let container = ImportScreenContainer(
+            state: state,
+            mainViewModel: model,
+            recommendationsProvider: { recommendations }
+        )
+
+        await model.loadImportPageIfNeeded()
+
+        XCTAssertEqual(model.importSearchPhase, MainViewModel.ImportLoadPhase.ready)
+        XCTAssertEqual(model.recommendedImportGroups.map { $0.canonicalRepo }, [
+            "anthropics/skills",
+            "obra/superpowers",
+        ])
+
+        let snapshot = container.snapshot(locale: Locale(identifier: "en"))
+        guard case .recommended(let sections) = snapshot?.content else {
+            return XCTFail("expected recommended content")
+        }
+
+        XCTAssertEqual(sections.map { $0.categoryId }, ["general", "development"])
+        XCTAssertEqual(sections[0].cards.map { $0.canonicalRepo }, ["anthropics/skills"])
+        XCTAssertEqual(sections[1].cards.map { $0.canonicalRepo }, ["obra/superpowers"])
+    }
+
     func testImportViewModelFallsBackToVisibleTargetsWhenPreviewTargetsAreUnavailable() {
         let viewModel = ImportViewModel(
             items: [

@@ -593,6 +593,7 @@ final class MainViewModel {
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
     private let deferredDraftSyncDelay: Duration = .milliseconds(250)
+    private let recommendationsProvider: () -> [ImportRecommendationEntry]
     private var baselineDrafts: [String: DraftState] = [:]
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
@@ -659,7 +660,8 @@ final class MainViewModel {
         bridgeClient: BridgeClient,
         queryFacade: (any DesktopQuerying)? = nil,
         commandFacade: (any DesktopCommanding)? = nil,
-        mutationCoordinator: DesktopMutationCoordinator? = nil
+        mutationCoordinator: DesktopMutationCoordinator? = nil,
+        recommendationsProvider: @escaping () -> [ImportRecommendationEntry] = { ImportRecommendationLoader.load() }
     ) {
         let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
         let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)
@@ -669,6 +671,7 @@ final class MainViewModel {
         self.queryFacade = resolvedQueryFacade
         self.commandFacade = resolvedCommandFacade
         self.mutationCoordinator = resolvedMutationCoordinator
+        self.recommendationsProvider = recommendationsProvider
         self.pinnedSourceIds = []
     }
 
@@ -1348,27 +1351,11 @@ final class MainViewModel {
     }
 
     func loadImportPageIfNeeded() async {
-        guard recommendedImportGroups.isEmpty else {
-            if importSearchPhase == .idle {
-                importSearchPhase = .ready
-            }
-            return
-        }
-        await loadRecommendedImportGroups()
+        seedRecommendedImportGroupsIfNeeded()
     }
 
     func loadRecommendedImportGroups() async {
-        importSearchPhase = .loading
-        do {
-            let response = try await fetchImportSearchResponse(query: nil)
-            let payload = response.data?.value as? [String: Any] ?? [:]
-            recommendedImportGroups = parseImportGroupsPayload(payload: payload)
-            importSubmittedQuery = ""
-            importSearchPhase = .ready
-        } catch {
-            importSearchPhase = .failed(localizedText("import.error.load_recommendations"))
-            showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
-        }
+        seedRecommendedImportGroupsIfNeeded()
     }
 
     func submitImportSearch(_ query: String) async {
@@ -1515,6 +1502,79 @@ final class MainViewModel {
                 targets: []
             )
         }
+    }
+
+    private func seedRecommendedImportGroupsIfNeeded() {
+        guard recommendedImportGroups.isEmpty else {
+            if importSearchPhase == .idle {
+                importSearchPhase = .ready
+            }
+            return
+        }
+
+        recommendedImportGroups = makeLocalRecommendedImportGroups(recommendationsProvider())
+        importSubmittedQuery = ""
+        importSearchPhase = .ready
+    }
+
+    private func makeLocalRecommendedImportGroups(_ recommendations: [ImportRecommendationEntry]) -> [ImportGroupItem] {
+        let installedLocators = Set(allSummaries.map { Self.normalizedImportRecommendationKey($0.sourceLocator) })
+
+        return recommendations
+            .sorted(by: { lhs, rhs in
+                if lhs.sortOrder != rhs.sortOrder {
+                    return lhs.sortOrder < rhs.sortOrder
+                }
+                return lhs.canonicalRepo < rhs.canonicalRepo
+            })
+            .filter { recommendation in
+                !installedLocators.contains(Self.normalizedImportRecommendationKey(recommendation.canonicalRepo))
+            }
+            .map { recommendation in
+                let normalizedRepo = Self.normalizedImportRecommendationKey(recommendation.canonicalRepo)
+
+                return ImportGroupItem(
+                    id: normalizedRepo.replacingOccurrences(of: "/", with: "-"),
+                    title: Self.localRecommendationTitle(for: recommendation.canonicalRepo),
+                    locator: recommendation.locator,
+                    canonicalRepo: recommendation.canonicalRepo,
+                    aliases: uniqueSorted([recommendation.canonicalRepo, recommendation.locator]),
+                    summary: "",
+                    starCount: nil,
+                    totalInstalls: nil,
+                    skillCount: nil,
+                    matchedSkillNames: [],
+                    matchedSkills: [],
+                    snapshot: nil,
+                    enrichPhase: .idle,
+                    previewPhase: .idle,
+                    skills: [],
+                    targets: []
+                )
+            }
+    }
+
+    private static func normalizedImportRecommendationKey(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private static func localRecommendationTitle(for canonicalRepo: String) -> String {
+        let repoName = canonicalRepo
+            .split(separator: "/")
+            .last
+            .map(String.init) ?? canonicalRepo
+
+        return repoName
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { token in
+                guard let first = token.first else { return "" }
+                return String(first).uppercased() + token.dropFirst()
+            }
+            .joined(separator: " ")
     }
 
     private func parseImportLoadPhase(_ payload: [String: Any]?) -> ImportLoadPhase {
@@ -1708,11 +1768,11 @@ final class MainViewModel {
         mutateImportGroup(groupId) { item in
             ImportGroupItem(
                 id: item.id,
-                title: item.title,
+                title: snapshot?.title ?? item.title,
                 locator: (payload["locator"] as? String)?.nonEmpty ?? fallbackLocator,
                 canonicalRepo: item.canonicalRepo,
                 aliases: item.aliases,
-                summary: item.summary,
+                summary: item.summary.nonEmpty ?? snapshot?.description ?? "",
                 starCount: item.starCount,
                 totalInstalls: item.totalInstalls,
                 skillCount: item.skillCount,
@@ -1880,15 +1940,7 @@ final class MainViewModel {
     }
 
     private func prefetchRecommendedImportGroupsIfNeeded() async {
-        guard recommendedImportGroups.isEmpty else { return }
-
-        do {
-            let response = try await fetchImportSearchResponse(query: nil)
-            let payload = response.data?.value as? [String: Any] ?? [:]
-            recommendedImportGroups = parseImportGroupsPayload(payload: payload)
-        } catch {
-            // Recommendation prefetch should never block bootstrap or emit global errors.
-        }
+        seedRecommendedImportGroupsIfNeeded()
     }
 
     private func applyList(_ response: BridgeResponse) {

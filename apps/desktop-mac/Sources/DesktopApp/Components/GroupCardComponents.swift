@@ -274,6 +274,7 @@ struct SharedGroupCard: View {
 
             if displayMode == .importRecommendation, showsRecommendationSummary {
                 recommendationSummarySection
+                dashedDivider
             }
 
             if displayMode.showsSourceFacts && !card.sourceFacts.isEmpty {
@@ -538,12 +539,12 @@ struct SharedGroupCard: View {
                 ForEach(recommendationBadgeItems) { badge in
                     let badgeAccent = Self.recommendationBadgeAccent(tagId: badge.id)
                     Text("#\(badge.title)")
-                        .font(.system(size: scale.chipFontSize, weight: badge.isPrimary ? .bold : .semibold))
+                        .font(.system(size: scale.chipFontSize, weight: .regular))
                         .foregroundStyle(AppTheme.brand(for: badgeAccent, in: theme))
                         .padding(.horizontal, 8)
                         .frame(height: 24)
                         .background(AppTheme.brand(for: badgeAccent, in: theme).opacity(theme == .dark ? 0.22 : 0.14))
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
                 }
             }
         }

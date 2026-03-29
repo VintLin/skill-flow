@@ -87,6 +87,16 @@ final class DesktopLocalizationTests: XCTestCase {
         }
     }
 
+    func testImportRecommendationLoaderLoadsBundledConfiguration() {
+        let recommendations = ImportRecommendationLoader.load()
+
+        XCTAssertFalse(recommendations.isEmpty)
+        XCTAssertTrue(
+            recommendations.contains(where: { $0.canonicalRepo == "anthropics/skills" }),
+            "Expected bundled recommendations to include anthropics/skills"
+        )
+    }
+
     func testImportRecommendationUsesPrimaryTagAsOnlyGroupingCategory() {
         let recommendations = loadRecommendations()
         XCTAssertFalse(recommendations.isEmpty)
