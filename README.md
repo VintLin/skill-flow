@@ -14,9 +14,9 @@ Turn scattered AI agent skills into organized workflows.
 
 </div>
 
-`skill-flow` is a desktop application and CLI for managing AI agent skills as workflows. Search and import skills by keyword, GitHub URL, or `npx` package format from ClawHub and other sources, deploy them to any agent, and maintain readable, repairable state.
+Install, manage, and share skills across every major coding agent — Claude Code, Cursor, Copilot, and more.
 
-Built as a monorepo with a native macOS desktop app, published CLI, shared runtime, Ink TUI, and a unified state system accessible through `skill-flow bridge --json`.
+Search and import skills from skills.sh, GitHub, or local sources. Deploy to multiple agents at once. Keep everything organized and up to date.
 
 ![Skill Flow desktop overview](./img/img-home.png)
 
@@ -34,7 +34,7 @@ Installing skills one by one breaks down at scale:
 
 ## What You Get
 
-- **Grouped source management**: local, Git, and ClawHub sources all flow through the same import model.
+- **Grouped source management**: local, Git, and skills.sh sources all flow through the same import model.
 - **Multi-agent deployment**: deploy one selected skill set to Claude Code, Codex, Cursor, Gemini CLI, OpenCode, OpenClaw, Windsurf, and more.
 - **Interactive config flow**: Ink-based TUI for add/config flows, selection state, review, and repair.
 - **Desktop app on macOS 15+**: SwiftUI main window, import view, detail panel, settings, and menu bar quick config.
@@ -73,7 +73,7 @@ Skill Flow Desktop currently relies on a few external command-line tools on the 
 
 - `node` 20 or newer is required to launch the bundled desktop helper
 - `git` is required for non-GitHub Git sources
-- `npx` is required for ClawHub imports
+- `npx` is required for skills.sh imports
 
 If the desktop app detects a missing dependency, it will surface an actionable error and point back to this section.
 
@@ -89,7 +89,7 @@ skill-flow list
 # Open the interactive config UI
 skill-flow config
 
-# Search installed skills, built-in catalogs, and ClawHub
+# Search installed skills, built-in catalogs, and skills.sh
 skill-flow find browser
 
 # Update one source or all sources
@@ -159,7 +159,7 @@ Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 | --- | --- |
 | `add <source>` | Import a source and choose skills/targets |
 | `list` | Show workflow groups and current health |
-| `find <query>` / `search <query>` | Search installed skills, built-in Git catalogs, and ClawHub |
+| `find <query>` / `search <query>` | Search installed skills, built-in Git catalogs, and skills.sh |
 | `config` | Open the interactive configuration UI |
 | `update [sourceId] --all` | Refresh one source or all registered sources |
 | `doctor` | Diagnose drift, missing paths, and projection problems |
@@ -177,7 +177,7 @@ Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 - `lock.json`: what is actually installed
 - `source/local/*`: imported local or adopted unmanaged sources
 - `source/git/*`: Git source cache
-- `source/clawhub/*`: ClawHub source cache
+- `source/clawhub/*`: skills.sh source cache
 - `catalog/git/*`: built-in Git catalog cache
 
 Target directories are deployment outputs, not the source of truth.
@@ -206,7 +206,7 @@ Start with `skill-flow doctor` when something looks wrong and you want a diagnos
 ├── packages
 │   ├── core-engine/            # inventory, deployment, doctor, bootstrap services
 │   ├── domain/                 # domain models and core types
-│   ├── integration/            # Git, GitHub, ClawHub, path, naming integrations
+│   ├── integration/            # Git, GitHub, skills.sh, path, naming integrations
 │   ├── query/                  # shared runtime and bridge-facing orchestration
 │   ├── shared-types/           # bridge protocol types
 │   ├── storage/                # manifest, lock, preferences, cache persistence

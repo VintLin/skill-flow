@@ -14,9 +14,9 @@
 
 </div>
 
-`skill-flow` は AI エージェントスキルをワークフローとして管理するためのデスクトップアプリケーションと CLI です。キーワード、GitHub URL、または `npx` パッケージ形式で ClawHub やその他のソースからスキルを検索してインポートし、任意のエージェントにデプロイし、読みやすく修復可能な状態を維持します。
+すべての主要なコーディングエージェントでスキルをインストール、管理、共有 —— Claude Code、Cursor、Copilot など。
 
-ネイティブ macOS デスクトップアプリ、公開された CLI、共有ランタイム、Ink TUI、および `skill-flow bridge --json` を通じてアクセス可能な統一状態システムを含むモノレポとして構築されています。
+skills.sh、GitHub、またはローカルソースからスキルを検索してインポート。複数のエージェントに一度にデプロイ。すべてを整理して最新の状態に保つ。
 
 ![Skill Flow デスクトップ概要](./img/img-home.png)
 
@@ -34,7 +34,7 @@
 
 ## 主な機能
 
-- **グループ化されたソース管理**: ローカル、Git、ClawHub ソースはすべて同じインポートモデルを通じて流れます。
+- **グループ化されたソース管理**: ローカル、Git、skills.sh ソースはすべて同じインポートモデルを通じて流れます。
 - **マルチエージェントデプロイ**: 選択した一つのスキルセットを Claude Code、Codex、Cursor、Gemini CLI、OpenCode、OpenClaw、Windsurf などにデプロイします。
 - **インタラクティブな設定フロー**: add/config フロー、選択状態、レビュー、修復のための Ink ベース TUI。
 - **macOS 15+ デスクトップアプリ**: SwiftUI メインウィンドウ、インポートビュー、詳細パネル、設定、メニューバークイック設定。
@@ -73,7 +73,7 @@ Skill Flow Desktop は現在、対象の Mac 上でいくつかの外部コマ�
 
 - 同梱 desktop helper の起動には `node` 20 以上が必要です
 - GitHub 以外の Git ソースを扱うには `git` が必要です
-- ClawHub ソースを扱うには `npx` が必要です
+- skills.sh ソースを扱うには `npx` が必要です
 
 デスクトップアプリが依存不足を検出した場合は、実行可能なエラーメッセージを表示し、この節へ案内します。
 
@@ -89,7 +89,7 @@ skill-flow list
 # インタラクティブな設定 UI を開く
 skill-flow config
 
-# インストールされたスキル、組み込みカタログ、ClawHub を検索
+# インストールされたスキル、組み込みカタログ、skills.sh を検索
 skill-flow find browser
 
 # 一つのソースまたはすべてのソースを更新
@@ -159,7 +159,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | --- | --- |
 | `add <source>` | ソースをインポートし、スキル/ターゲットを選択 |
 | `list` | ワークフローグループと現在の健全性を表示 |
-| `find <query>` / `search <query>` | インストールされたスキル、組み込み Git カタログ、ClawHub を検索 |
+| `find <query>` / `search <query>` | インストールされたスキル、組み込み Git カタログ、skills.sh を検索 |
 | `config` | インタラクティブな設定 UI を開く |
 | `update [sourceId] --all` | 一つのソースまたはすべての登録されたソースを更新 |
 | `doctor` | ドリフト、欠落パス、プロジェクション問題を診断 |
@@ -177,7 +177,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 - `lock.json`: 実際にインストールされているもの
 - `source/local/*`: インポートされたローカルまたは採用された管理されていないソース
 - `source/git/*`: Git ソースキャッシュ
-- `source/clawhub/*`: ClawHub ソースキャッシュ
+- `source/clawhub/*`: skills.sh ソースキャッシュ
 - `catalog/git/*`: 組み込み Git カタログキャッシュ
 
 ターゲットディレクトリはデプロイメント出力であり、真実のソースではありません。
@@ -206,7 +206,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 ├── packages
 │   ├── core-engine/            # インベントリ、デプロイメント、doctor、ブートストラップサービス
 │   ├── domain/                 # ドメインモデルとコアタイプ
-│   ├── integration/            # Git、GitHub、ClawHub、パス、命名統合
+│   ├── integration/            # Git、GitHub、skills.sh、パス、命名統合
 │   ├── query/                  # 共有ランタイムとブリッジ向けオーケストレーション
 │   ├── shared-types/           # ブリッジプロトコルタイプ
 │   ├── storage/                # manifest、lock、preferences、キャッシュ永続化

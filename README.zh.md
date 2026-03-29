@@ -14,9 +14,9 @@
 
 </div>
 
-`skill-flow` 是一个用于将 AI agent skill 作为工作流管理的桌面应用和 CLI。通过关键词、GitHub URL 或 `npx` 包格式从 ClawHub 和其他来源搜索并导入 skill，部署到任意 agent，并维护可读、可修复的状态。
+在所有主流编码 agent 中安装、管理和共享 skill —— Claude Code、Cursor、Copilot 等。
 
-构建为一个 monorepo，包含原生 macOS 桌面应用、发布的 CLI、共享运行时、Ink TUI，以及通过 `skill-flow bridge --json` 访问的统一状态系统。
+从 skills.sh、GitHub 或本地来源搜索并导入 skill。一次部署到多个 agent。保持一切井然有序且及时更新。
 
 ![Skill Flow 桌面总览](./img/img-home.png)
 
@@ -34,7 +34,7 @@
 
 ## 当前能力
 
-- **分组化 source 管理**：本地、Git、ClawHub 统一走同一套导入模型。
+- **分组化 source 管理**：本地、Git、skills.sh 统一走同一套导入模型。
 - **多 agent 部署**：把同一组选中的 skill 部署到 Claude Code、Codex、Cursor、Gemini CLI、OpenCode、OpenClaw、Windsurf 等目标。
 - **交互式配置流程**：基于 Ink 的 add/config/find TUI，覆盖选择、审阅和修复流程。
 - **macOS 15+ 桌面应用**：SwiftUI 主窗口、导入页、详情页、设置页和菜单栏快速配置。
@@ -73,7 +73,7 @@ Skill Flow Desktop 目前在目标 Mac 上仍依赖少量外部命令行工具�
 
 - 启动内置 desktop helper 需要 `node` 20 或更高版本
 - 导入非 GitHub Git source 需要 `git`
-- 导入 ClawHub source 需要 `npx`
+- 导入 skills.sh source 需要 `npx`
 
 如果桌面应用检测到依赖缺失，会直接提示可执行的错误信息，并引导回本节处理。
 
@@ -89,7 +89,7 @@ skill-flow list
 # 打开交互式配置 UI
 skill-flow config
 
-# 搜索本地技能、内置目录和 ClawHub
+# 搜索本地技能、内置目录和 skills.sh
 skill-flow find browser
 
 # 更新单个 source 或全部 source
@@ -159,7 +159,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | --- | --- |
 | `add <source>` | 导入 source，并选择 skill 与目标 |
 | `list` | 查看 workflow group 和当前健康状态 |
-| `find <query>` / `search <query>` | 搜索本地技能、内置 Git 目录与 ClawHub |
+| `find <query>` / `search <query>` | 搜索本地技能、内置 Git 目录与 skills.sh |
 | `config` | 打开交互式配置 UI |
 | `update [sourceId] --all` | 更新单个或全部已注册 source |
 | `doctor` | 诊断漂移、缺失路径和投影问题 |
@@ -177,7 +177,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 - `lock.json`：系统实际装成了什么
 - `source/local/*`：本地导入或接管的外部 source
 - `source/git/*`：Git source 缓存
-- `source/clawhub/*`：ClawHub source 缓存
+- `source/clawhub/*`：skills.sh source 缓存
 - `catalog/git/*`：内置 Git catalog 缓存
 
 目标目录只是部署结果，不是真正的事实源。
@@ -188,7 +188,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 - `apps/desktop-mac`：macOS 15+ SwiftUI 桌面应用
 - `packages/domain`：领域模型和核心类型
 - `packages/storage`：manifest/lock/preferences/cache 持久化
-- `packages/integration`：Git、GitHub、ClawHub、路径与命名集成
+- `packages/integration`：Git、GitHub、skills.sh、路径与命名集成
 - `packages/core-engine`：inventory、deployment、doctor、bootstrap 等服务
 - `packages/query`：共享运行时与 bridge 编排
 - `packages/shared-types`：bridge 协议类型
