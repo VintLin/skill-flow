@@ -4,7 +4,7 @@
 
 将散落的 AI agent skill 整合为有序工作流。
 
-[English](./README.md) · [架构文档](./docs/ARCHITECTURE.md) · [贡献指南](./docs/CONTRIBUTING.md) · [参考文档](./docs/references/README.md)
+[English](./README.md) · [日本語](./README.ja.md)
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
 [![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)

@@ -4,7 +4,7 @@
 
 散在する AI エージェントスキルを整理されたワークフローに。
 
-[English](./README.md) · [中文文档](./README.zh.md) · [Architecture](./docs/ARCHITECTURE.md) · [Contributing](./docs/CONTRIBUTING.md) · [Reference Docs](./docs/references/README.md)
+[English](./README.md) · [中文](./README.zh.md)
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
 [![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
