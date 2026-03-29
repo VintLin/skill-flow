@@ -66,11 +66,27 @@ final class ImportScreenContainerTests: XCTestCase {
     func testSnapshotProjectsImportBusinessState() {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
-        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let container = ImportScreenContainer(
+            state: state,
+            mainViewModel: model,
+            recommendationsProvider: {
+                [
+                    ImportRecommendationEntry(
+                        canonicalRepo: "anthropics/skills",
+                        locator: "anthropics/skills",
+                        categoryId: "general",
+                        primaryTagId: "general",
+                        secondaryTagIds: [],
+                        descriptionKey: "import.recommendation.description.anthropics_skills",
+                        sortOrder: 10
+                    )
+                ]
+            }
+        )
         state.view.currentRoute = .importPage
 
         model.recommendedImportGroups = [
-            makeItem(id: "recommended", title: "Recommended", locator: "anthropic/skills")
+            makeItem(id: "recommended", title: "Recommended", locator: "anthropics/skills")
         ]
         model.searchImportGroups = [
             makeItem(id: "search", title: "Search", locator: "openai/skills")
@@ -80,7 +96,10 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(recommended?.submittedQuery, "")
         XCTAssertEqual(recommended?.searchPhase, .idle)
-        XCTAssertEqual(recommended?.cards.map(\.id), ["recommended"])
+        guard case .recommended(let sections) = recommended?.content else {
+            return XCTFail("expected recommended content")
+        }
+        XCTAssertEqual(sections.flatMap(\.cards).map(\.id), ["recommended"])
 
         model.importSubmittedQuery = "openai"
         model.importSearchPhase = .loading
@@ -90,7 +109,10 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(searched?.submittedQuery, "openai")
         XCTAssertEqual(searched?.searchPhase, .loading)
-        XCTAssertEqual(searched?.cards.map(\.id), ["search"])
+        guard case .searchResults(let cards) = searched?.content else {
+            return XCTFail("expected search content")
+        }
+        XCTAssertEqual(cards.map(\.id), ["search"])
         XCTAssertEqual(searched?.importingGroupId, "search")
     }
 
@@ -118,7 +140,7 @@ final class ImportScreenContainerTests: XCTestCase {
             ],
             locale: Locale(identifier: "en"),
             fallbackTargetIds: ["claude-code", "cursor"],
-            submittedQuery: ""
+            submittedQuery: "recommended"
         )
 
         XCTAssertEqual(viewModel.cards.first?.targets.map(\.id), ["claude-code", "cursor"])

@@ -170,12 +170,15 @@ final class DetailLoadingLayoutTests: XCTestCase {
 
     func testDetailTreeLayoutUsesDedicatedGuideAndChevronColumns() {
         XCTAssertEqual(DetailTreeLayout.guideColumnWidth, 16)
-        XCTAssertEqual(DetailTreeLayout.chevronColumnWidth, 12)
         XCTAssertEqual(DetailTreeLayout.iconColumnWidth, 14)
         XCTAssertEqual(DetailTreeLayout.rowHeight, 28)
-        XCTAssertEqual(DetailTreeLayout.contentSpacing, 8)
+        XCTAssertEqual(DetailTreeLayout.contentSpacing, 6)
         XCTAssertEqual(DetailTreeLayout.rowTrailingPadding, 8)
-        XCTAssertEqual(DetailTreeLayout.nodeLeadWidth(for: 0), 20)
-        XCTAssertEqual(DetailTreeLayout.nodeLeadWidth(for: 1), 36)
+        XCTAssertEqual(DetailTreeLayout.iconColumnLeadingInset, 0)
+        XCTAssertEqual(DetailTreeLayout.guideStrokeOffset, 8)
+        XCTAssertEqual(DetailTreeLayout.branchLineWidth(for: 1), 14)
+        XCTAssertEqual(DetailTreeLayout.branchLineWidth(for: 2), 14)
+        XCTAssertEqual(DetailTreeLayout.nodeLeadWidth(for: 0), 6)
+        XCTAssertEqual(DetailTreeLayout.nodeLeadWidth(for: 1), 22)
     }
 }

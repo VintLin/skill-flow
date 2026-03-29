@@ -108,11 +108,12 @@ enum GroupCardScale {
 enum GroupCardDisplayMode: Equatable {
     case home
     case menu
-    case importPage
+    case importSearch
+    case importRecommendation
 
     var scale: GroupCardScale {
         switch self {
-        case .home, .importPage:
+        case .home, .importSearch, .importRecommendation:
             return .home
         case .menu:
             return .menu
@@ -121,14 +122,14 @@ enum GroupCardDisplayMode: Equatable {
 
     var showsSubtitle: Bool {
         switch self {
-        case .home, .menu, .importPage:
+        case .home, .menu, .importSearch, .importRecommendation:
             return true
         }
     }
 
     var showsMetaLine: Bool {
         switch self {
-        case .home, .importPage:
+        case .home, .importSearch, .importRecommendation:
             return true
         case .menu:
             return false
@@ -137,7 +138,7 @@ enum GroupCardDisplayMode: Equatable {
 
     var showsSectionTitles: Bool {
         switch self {
-        case .home, .importPage:
+        case .home, .importSearch, .importRecommendation:
             return true
         case .menu:
             return false
@@ -146,7 +147,7 @@ enum GroupCardDisplayMode: Equatable {
 
     var supportsCollapsedSkills: Bool {
         switch self {
-        case .home, .importPage:
+        case .home, .importSearch, .importRecommendation:
             return false
         case .menu:
             return true
@@ -155,7 +156,7 @@ enum GroupCardDisplayMode: Equatable {
 
     var usesPlainPrimaryActionIcon: Bool {
         switch self {
-        case .importPage:
+        case .importSearch, .importRecommendation:
             return true
         case .home, .menu:
             return false
@@ -164,7 +165,7 @@ enum GroupCardDisplayMode: Equatable {
 
     var showsSourceFacts: Bool {
         switch self {
-        case .home, .menu, .importPage:
+        case .home, .menu, .importSearch, .importRecommendation:
             return false
         }
     }
@@ -195,6 +196,8 @@ struct SharedGroupCard: View {
     let actionButtonTitle: String?
     let actionButtonIcon: ActionIcon
     let onActionButton: (() -> Void)?
+    let recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem]
+    let recommendationDescription: String?
 
     @State private var isActionMenuOpen = false
     @State private var isActionButtonHovered = false
@@ -216,7 +219,9 @@ struct SharedGroupCard: View {
         onToggleAllTargets: @escaping () -> Void,
         actionButtonTitle: String? = nil,
         actionButtonIcon: ActionIcon = .import,
-        onActionButton: (() -> Void)? = nil
+        onActionButton: (() -> Void)? = nil,
+        recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem] = [],
+        recommendationDescription: String? = nil
     ) {
         self.card = card
         self.theme = theme
@@ -235,6 +240,8 @@ struct SharedGroupCard: View {
         self.actionButtonTitle = actionButtonTitle
         self.actionButtonIcon = actionButtonIcon
         self.onActionButton = onActionButton
+        self.recommendationBadgeItems = recommendationBadgeItems
+        self.recommendationDescription = recommendationDescription
     }
 
     private var scale: GroupCardScale {
@@ -263,6 +270,10 @@ struct SharedGroupCard: View {
 
             if Self.showsHeaderDivider(card: card, displayMode: displayMode) {
                 dashedDivider
+            }
+
+            if displayMode == .importRecommendation, showsRecommendationSummary {
+                recommendationSummarySection
             }
 
             if displayMode.showsSourceFacts && !card.sourceFacts.isEmpty {
@@ -366,12 +377,12 @@ struct SharedGroupCard: View {
         HStack(spacing: 10) {
             if let downloadCount = card.stats.downloadCount {
                 statItem(icon: .downloads, text: countText(downloadCount))
-            } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
+            } else if usesImportStatPlaceholders {
                 statPlaceholder(width: 42)
             }
             if let starCount = card.stats.starCount {
                 statItem(icon: .star, text: countText(starCount))
-            } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
+            } else if usesImportStatPlaceholders {
                 statPlaceholder(width: 38)
             }
             if let githubURL = card.stats.githubURL {
@@ -384,7 +395,7 @@ struct SharedGroupCard: View {
                 }
                 .buttonStyle(.plain)
                 .help(githubURL)
-            } else if displayMode == .importPage && (card.skillsLoading || card.targetsLoading) {
+            } else if usesImportStatPlaceholders {
                 statPlaceholder(width: 16)
             }
             Spacer(minLength: 0)
@@ -499,6 +510,46 @@ struct SharedGroupCard: View {
         return t("group_card.loading.updating")
     }
 
+    private var showsRecommendationSummary: Bool {
+        !recommendationBadgeItems.isEmpty || ((recommendationDescription?.isEmpty) == false)
+    }
+
+    private var recommendationSummarySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !recommendationBadgeItems.isEmpty {
+                recommendationBadgeRow
+            }
+
+            if let recommendationDescription, !recommendationDescription.isEmpty {
+                Text(recommendationDescription)
+                    .font(.system(size: scale.metaSize, weight: .regular))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var recommendationBadgeRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(recommendationBadgeItems) { badge in
+                    let badgeAccent = Self.recommendationBadgeAccent(tagId: badge.id)
+                    Text("#\(badge.title)")
+                        .font(.system(size: scale.chipFontSize, weight: badge.isPrimary ? .bold : .semibold))
+                        .foregroundStyle(AppTheme.brand(for: badgeAccent, in: theme))
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(AppTheme.brand(for: badgeAccent, in: theme).opacity(theme == .dark ? 0.22 : 0.14))
+                        .clipShape(Capsule())
+                }
+            }
+        }
+        .scrollDisabled(true)
+    }
+
     private func cardRow(
         title: String,
         selection: SelectionState,
@@ -589,10 +640,19 @@ struct SharedGroupCard: View {
 
     private var minimumHeight: CGFloat? {
         switch displayMode {
-        case .home, .importPage:
+        case .home, .importSearch, .importRecommendation:
             return scale.minHeight
         case .menu:
             return nil
+        }
+    }
+
+    private var usesImportStatPlaceholders: Bool {
+        switch displayMode {
+        case .importSearch, .importRecommendation:
+            return card.skillsLoading || card.targetsLoading
+        case .home, .menu:
+            return false
         }
     }
 
@@ -874,6 +934,29 @@ extension SharedGroupCard {
             return AppTheme.brand(for: accent, in: theme)
         }
         return AppTheme.pageBackground(for: theme)
+    }
+
+    static func recommendationBadgeAccent(tagId: String) -> DesktopAccentColor {
+        switch tagId {
+        case "general":
+            return .blue
+        case "development":
+            return .green
+        case "design":
+            return .pink
+        case "creation":
+            return .orange
+        case "marketing":
+            return .purple
+        case "research":
+            return .yellow
+        case "automation":
+            return .orange
+        case "teamwork":
+            return .blue
+        default:
+            return .blue
+        }
     }
 
     private static func hasHeaderStats(card: MainViewModel.GroupCardModel) -> Bool {

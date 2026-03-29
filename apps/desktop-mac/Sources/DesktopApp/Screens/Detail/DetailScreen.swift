@@ -690,13 +690,16 @@ struct DetailScreen: View {
                         detailTreeVerticalGuide(isVisible: hasTrailingSibling)
                     }
 
-                    detailTreeNodeLead(depth: depth, isLast: isLast, isDirectory: item.isDirectory, isExpanded: isExpanded)
+                    detailTreeNodeLead(depth: depth, isLast: isLast)
 
                     HStack(spacing: DetailTreeLayout.contentSpacing) {
                         Image(systemName: item.isDirectory ? "folder.fill" : "doc.text")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(isSkillRoot ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme))
-                            .frame(width: DetailTreeLayout.iconColumnWidth)
+                            .frame(
+                                width: DetailTreeLayout.iconColumnWidth,
+                                alignment: .leading
+                            )
 
                         Text(item.title)
                             .font(.system(size: 11, weight: showsSkillLink ? .semibold : .regular))
@@ -925,20 +928,19 @@ struct DetailScreen: View {
     }
 
     private func detailTreeVerticalGuide(isVisible: Bool) -> some View {
-        ZStack {
+        ZStack(alignment: .leading) {
             Color.clear
             if isVisible {
                 Rectangle()
                     .fill(AppTheme.border(for: theme).opacity(0.7))
                     .frame(width: 1, height: DetailTreeLayout.rowHeight)
+                    .offset(x: DetailTreeLayout.guideStrokeOffset, y: 0)
             }
         }
         .frame(width: DetailTreeLayout.guideColumnWidth, height: DetailTreeLayout.rowHeight)
     }
 
-    private func detailTreeNodeLead(depth: Int, isLast: Bool, isDirectory: Bool, isExpanded: Bool) -> some View {
-        let guideWidth = depth > 0 ? DetailTreeLayout.guideColumnWidth : 0
-
+    private func detailTreeNodeLead(depth: Int, isLast: Bool) -> some View {
         return ZStack(alignment: .leading) {
             Color.clear
 
@@ -946,20 +948,12 @@ struct DetailScreen: View {
                 Rectangle()
                     .fill(AppTheme.border(for: theme).opacity(0.7))
                     .frame(width: 1, height: isLast ? DetailTreeLayout.rowHeight / 2 : DetailTreeLayout.rowHeight)
-                    .offset(x: 0, y: isLast ? -(DetailTreeLayout.rowHeight / 4) : 0)
+                    .offset(x: DetailTreeLayout.guideStrokeOffset, y: isLast ? -(DetailTreeLayout.rowHeight / 4) : 0)
 
                 Rectangle()
                     .fill(AppTheme.border(for: theme).opacity(0.7))
-                    .frame(width: DetailTreeLayout.nodeLeadWidth(for: depth), height: 1)
-                    .offset(x: 0, y: 0)
-            }
-
-            if isDirectory {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .frame(width: DetailTreeLayout.chevronColumnWidth, alignment: .leading)
-                    .offset(x: guideWidth, y: 0)
+                    .frame(width: DetailTreeLayout.branchLineWidth(for: depth), height: 1)
+                    .offset(x: DetailTreeLayout.guideStrokeOffset, y: 0)
             }
         }
         .frame(width: DetailTreeLayout.nodeLeadWidth(for: depth), height: DetailTreeLayout.rowHeight)
@@ -1280,15 +1274,20 @@ enum DetailSidebarLayout {
 
 enum DetailTreeLayout {
     static let guideColumnWidth: CGFloat = 16
-    static let chevronColumnWidth: CGFloat = 12
     static let iconColumnWidth: CGFloat = 14
     static let rowHeight: CGFloat = 28
-    static let contentSpacing: CGFloat = 8
+    static let contentSpacing: CGFloat = 6
     static let rowTrailingPadding: CGFloat = 8
+    static let iconColumnLeadingInset: CGFloat = 0
+    static let guideStrokeOffset: CGFloat = guideColumnWidth / 2
 
     static func nodeLeadWidth(for depth: Int) -> CGFloat {
         let guideWidth = depth > 0 ? guideColumnWidth : 0
-        return guideWidth + chevronColumnWidth + contentSpacing
+        return guideWidth + contentSpacing
+    }
+
+    static func branchLineWidth(for depth: Int) -> CGFloat {
+        max(0, nodeLeadWidth(for: depth) - guideStrokeOffset)
     }
 }
 

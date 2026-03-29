@@ -28,63 +28,25 @@ struct ImportScreen: View {
 
     var body: some View {
         let snapshot = container.snapshot(locale: locale)
-        let cards = snapshot?.cards ?? []
+        let content = snapshot?.content ?? .recommended([])
+        let displayedCards = Self.displayedCards(for: content)
         let submittedQuery = snapshot?.submittedQuery ?? ""
         let searchPhase = snapshot?.searchPhase ?? .idle
         let importingGroupId = snapshot?.importingGroupId
 
         return Group {
-            if Self.usesCenteredStandaloneState(searchPhase: searchPhase, cardCount: cards.count) {
+            if Self.usesCenteredStandaloneState(searchPhase: searchPhase, cardCount: displayedCards.count) {
                 centeredStateContent(searchPhase: searchPhase, submittedQuery: submittedQuery)
                     .padding(16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        HStack {
-                            Spacer(minLength: 0)
-                            LazyVGrid(columns: gridColumns, spacing: 12) {
-                                ForEach(cards) { card in
-                                    SharedGroupCard(
-                                        card: importCardModel(for: card),
-                                        theme: theme,
-                                        accent: accent,
-                                        displayMode: .importPage,
-                                        skillsCollapsed: false,
-                                        isUpdating: importingGroupId == card.id,
-                                        onOpen: nil,
-                                        onUpdate: {},
-                                        onTogglePinned: {},
-                                        onDelete: {},
-                                        onToggleSkill: { skillId, enabled in
-                                            container.setSkill(skillId, enabled: enabled, for: card)
-                                        },
-                                        onToggleAllSkills: {
-                                            container.toggleAllSkills(for: card)
-                                        },
-                                        onToggleTarget: { targetId, enabled in
-                                            container.setTarget(targetId, enabled: enabled, for: card)
-                                        },
-                                        onToggleAllTargets: {
-                                            container.toggleAllTargets(for: card)
-                                        },
-                                        actionButtonTitle: nil,
-                                        actionButtonIcon: ActionIcon.import,
-                                        onActionButton: {
-                                            Task {
-                                                await container.importGroup(card)
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                            .task(id: Self.autoPreviewTaskKey(cards: cards, submittedQuery: submittedQuery)) {
-                                let previewIds = Self.previewGroupIDs(for: cards)
-                                await container.previewGroupsIfNeeded(previewIds)
-                            }
-                            .frame(maxWidth: gridFrameWidth, alignment: .center)
-                            Spacer(minLength: 0)
-                        }
+                        contentBody(content: content, importingGroupId: importingGroupId)
+                    }
+                    .task(id: Self.autoPreviewTaskKey(cards: displayedCards, submittedQuery: submittedQuery)) {
+                        let previewIds = Self.previewGroupIDs(for: displayedCards)
+                        await container.previewGroupsIfNeeded(previewIds)
                     }
                     .padding(16)
                 }
@@ -127,6 +89,99 @@ struct ImportScreen: View {
 
     private var gridColumns: [GridItem] {
         Array(repeating: GridItem(.fixed(304), spacing: 14), count: gridColumnCount)
+    }
+
+    @ViewBuilder
+    private func contentBody(
+        content: ImportViewModel.Content,
+        importingGroupId: String?
+    ) -> some View {
+        switch content {
+        case .recommended(let sections):
+            recommendedContent(sections: sections, importingGroupId: importingGroupId)
+        case .searchResults(let cards):
+            searchResultsContent(cards: cards, importingGroupId: importingGroupId)
+        }
+    }
+
+    private func searchResultsContent(
+        cards: [ImportViewModel.Card],
+        importingGroupId: String?
+    ) -> some View {
+        HStack {
+            Spacer(minLength: 0)
+            LazyVGrid(columns: gridColumns, spacing: 12) {
+                ForEach(cards) { card in
+                    importCard(card, importingGroupId: importingGroupId, displayMode: .importSearch)
+                }
+            }
+            .frame(maxWidth: gridFrameWidth, alignment: .center)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func recommendedContent(
+        sections: [ImportViewModel.RecommendedCategorySection],
+        importingGroupId: String?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(sections) { section in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("# \(section.title)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(alignment: .top, spacing: 14) {
+                            ForEach(section.cards) { card in
+                                importCard(card, importingGroupId: importingGroupId, displayMode: .importRecommendation)
+                                    .frame(width: 304)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+    }
+
+    private func importCard(
+        _ card: ImportViewModel.Card,
+        importingGroupId: String?,
+        displayMode: GroupCardDisplayMode
+    ) -> some View {
+        SharedGroupCard(
+            card: importCardModel(for: card),
+            theme: theme,
+            accent: accent,
+            displayMode: displayMode,
+            skillsCollapsed: false,
+            isUpdating: importingGroupId == card.id,
+            onOpen: nil,
+            onUpdate: {},
+            onTogglePinned: {},
+            onDelete: {},
+            onToggleSkill: { skillId, enabled in
+                container.setSkill(skillId, enabled: enabled, for: card)
+            },
+            onToggleAllSkills: {
+                container.toggleAllSkills(for: card)
+            },
+            onToggleTarget: { targetId, enabled in
+                container.setTarget(targetId, enabled: enabled, for: card)
+            },
+            onToggleAllTargets: {
+                container.toggleAllTargets(for: card)
+            },
+            actionButtonTitle: nil,
+            actionButtonIcon: ActionIcon.import,
+            onActionButton: {
+                Task {
+                    await container.importGroup(card)
+                }
+            },
+            recommendationBadgeItems: card.recommendationBadgeItems,
+            recommendationDescription: card.recommendationDescription
+        )
     }
 
     private func importCardModel(for card: ImportViewModel.Card) -> MainViewModel.GroupCardModel {
@@ -242,6 +297,15 @@ extension ImportScreen {
 
     static func previewGroupIDs(for cards: [ImportViewModel.Card]) -> [String] {
         cards.filter(\.skillsLoading).map(\.id)
+    }
+
+    static func displayedCards(for content: ImportViewModel.Content) -> [ImportViewModel.Card] {
+        switch content {
+        case .recommended(let sections):
+            return sections.flatMap(\.cards)
+        case .searchResults(let cards):
+            return cards
+        }
     }
 
     static func autoPreviewTaskKey(cards: [ImportViewModel.Card], submittedQuery: String) -> String {

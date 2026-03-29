@@ -23,13 +23,21 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testGroupCardDisplayModeImportUsesDedicatedChrome() {
-        XCTAssertTrue(GroupCardDisplayMode.importPage.showsSubtitle)
-        XCTAssertTrue(GroupCardDisplayMode.importPage.showsMetaLine)
-        XCTAssertTrue(GroupCardDisplayMode.importPage.showsSectionTitles)
-        XCTAssertFalse(GroupCardDisplayMode.importPage.supportsCollapsedSkills)
-        XCTAssertTrue(GroupCardDisplayMode.importPage.usesPlainPrimaryActionIcon)
-        XCTAssertFalse(GroupCardDisplayMode.importPage.showsSourceFacts)
-        XCTAssertEqual(GroupCardDisplayMode.importPage.scale, .home)
+        XCTAssertTrue(GroupCardDisplayMode.importSearch.showsSubtitle)
+        XCTAssertTrue(GroupCardDisplayMode.importSearch.showsMetaLine)
+        XCTAssertTrue(GroupCardDisplayMode.importSearch.showsSectionTitles)
+        XCTAssertFalse(GroupCardDisplayMode.importSearch.supportsCollapsedSkills)
+        XCTAssertTrue(GroupCardDisplayMode.importSearch.usesPlainPrimaryActionIcon)
+        XCTAssertFalse(GroupCardDisplayMode.importSearch.showsSourceFacts)
+        XCTAssertEqual(GroupCardDisplayMode.importSearch.scale, .home)
+
+        XCTAssertTrue(GroupCardDisplayMode.importRecommendation.showsSubtitle)
+        XCTAssertTrue(GroupCardDisplayMode.importRecommendation.showsMetaLine)
+        XCTAssertTrue(GroupCardDisplayMode.importRecommendation.showsSectionTitles)
+        XCTAssertFalse(GroupCardDisplayMode.importRecommendation.supportsCollapsedSkills)
+        XCTAssertTrue(GroupCardDisplayMode.importRecommendation.usesPlainPrimaryActionIcon)
+        XCTAssertFalse(GroupCardDisplayMode.importRecommendation.showsSourceFacts)
+        XCTAssertEqual(GroupCardDisplayMode.importRecommendation.scale, .home)
     }
 
     func testCardDensityProjectsToExpectedGroupCardDisplayMode() {
@@ -39,12 +47,21 @@ final class MenuBarIconTests: XCTestCase {
 
     func testImportPrimaryActionIconUsesAccentColor() {
         let foreground = SharedGroupCard.primaryActionIconForeground(
-            displayMode: .importPage,
+            displayMode: .importSearch,
             theme: .light,
             accent: .green
         )
 
         assertColorsEqual(foreground, AppTheme.brand(for: .green, in: .light))
+    }
+
+    func testRecommendationBadgeAccentUsesStablePerTagPalette() {
+        XCTAssertEqual(SharedGroupCard.recommendationBadgeAccent(tagId: "general"), .blue)
+        XCTAssertEqual(SharedGroupCard.recommendationBadgeAccent(tagId: "development"), .green)
+        XCTAssertEqual(SharedGroupCard.recommendationBadgeAccent(tagId: "design"), .pink)
+        XCTAssertEqual(SharedGroupCard.recommendationBadgeAccent(tagId: "research"), .yellow)
+        XCTAssertEqual(SharedGroupCard.recommendationBadgeAccent(tagId: "automation"), .orange)
+        XCTAssertEqual(SharedGroupCard.recommendationBadgeAccent(tagId: "unknown"), .blue)
     }
 
     func testImportSearchPromptTextUsesTranslucentBrandColor() {
@@ -100,8 +117,8 @@ final class MenuBarIconTests: XCTestCase {
             saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
         )
 
-        XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: loadingCard, displayMode: .importPage))
-        XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: loadingCard, displayMode: .importPage))
+        XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: loadingCard, displayMode: .importSearch))
+        XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: loadingCard, displayMode: .importSearch))
     }
 
     func testHomeCardsReserveMetadataRowAndDividerEvenWhenStatsAreMissing() {

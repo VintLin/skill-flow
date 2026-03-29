@@ -6,6 +6,144 @@ import XCTest
 final class ImportViewModelTests: XCTestCase {
     private let locale = Locale(identifier: "en")
 
+    func testRecommendedContentGroupsCardsByCategoryAndAttachesRecommendationMetadata() {
+        let viewModel = ImportViewModel(
+            items: [
+                makeItem(
+                    id: "anthropics-skills",
+                    title: "Anthropic Skills",
+                    locator: "anthropics/skills",
+                    canonicalRepo: "anthropics/skills"
+                ),
+                makeItem(
+                    id: "obra-superpowers",
+                    title: "Superpowers",
+                    locator: "obra/superpowers",
+                    canonicalRepo: "obra/superpowers"
+                ),
+            ],
+            locale: locale,
+            fallbackTargetIds: [],
+            submittedQuery: "",
+            recommendations: [
+                .init(
+                    canonicalRepo: "obra/superpowers",
+                    locator: "obra/superpowers",
+                    categoryId: "development",
+                    primaryTagId: "development",
+                    secondaryTagIds: ["teamwork", "automation", "ignored"],
+                    descriptionKey: "import.recommendation.description.obra_superpowers",
+                    sortOrder: 20
+                ),
+                .init(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: ["design"],
+                    descriptionKey: "import.recommendation.description.anthropics_skills",
+                    sortOrder: 10
+                ),
+            ]
+        )
+
+        guard case .recommended(let sections) = viewModel.content else {
+            return XCTFail("expected recommended content")
+        }
+
+        XCTAssertEqual(sections.map(\.categoryId), ["general", "development"])
+        XCTAssertEqual(sections.map(\.title), ["General", "Development"])
+        XCTAssertEqual(sections[0].cards.map(\.id), ["anthropics-skills"])
+        XCTAssertEqual(sections[1].cards.map(\.id), ["obra-superpowers"])
+        XCTAssertEqual(
+            sections[1].cards[0].recommendationBadgeItems.map(\.id),
+            ["development", "teamwork", "automation"]
+        )
+        XCTAssertEqual(
+            sections[1].cards[0].recommendationBadgeItems.map(\.title),
+            ["Development", "Teamwork", "Automation"]
+        )
+        XCTAssertEqual(
+            sections[1].cards[0].recommendationDescription,
+            "This is a development workflow centered on thinking clearly before writing. It is a good fit for people who often get pulled off track by AI, redo work repeatedly, and feel their projects getting messier over time."
+        )
+    }
+
+    func testSearchResultsContentDoesNotAttachRecommendationMetadata() {
+        let viewModel = ImportViewModel(
+            items: [
+                makeItem(
+                    id: "anthropics-skills",
+                    title: "Anthropic Skills",
+                    locator: "anthropics/skills",
+                    canonicalRepo: "anthropics/skills"
+                )
+            ],
+            locale: locale,
+            fallbackTargetIds: [],
+            submittedQuery: "anthropic",
+            recommendations: [
+                .init(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: ["design"],
+                    descriptionKey: "import.recommendation.description.anthropics_skills",
+                    sortOrder: 10
+                )
+            ]
+        )
+
+        guard case .searchResults(let cards) = viewModel.content else {
+            return XCTFail("expected search content")
+        }
+
+        XCTAssertEqual(cards.map(\.id), ["anthropics-skills"])
+        XCTAssertTrue(cards[0].recommendationBadgeItems.isEmpty)
+        XCTAssertNil(cards[0].recommendationDescription)
+    }
+
+    func testRecommendedContentSkipsItemsWithoutLocalRecommendationConfig() {
+        let viewModel = ImportViewModel(
+            items: [
+                makeItem(
+                    id: "anthropics-skills",
+                    title: "Anthropic Skills",
+                    locator: "anthropics/skills",
+                    canonicalRepo: "anthropics/skills"
+                ),
+                makeItem(
+                    id: "openai-skills",
+                    title: "OpenAI Skills",
+                    locator: "openai/skills",
+                    canonicalRepo: "openai/skills"
+                )
+            ],
+            locale: locale,
+            fallbackTargetIds: [],
+            submittedQuery: "",
+            recommendations: [
+                .init(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: [],
+                    descriptionKey: "import.recommendation.description.anthropics_skills",
+                    sortOrder: 10
+                )
+            ]
+        )
+
+        guard case .recommended(let sections) = viewModel.content else {
+            return XCTFail("expected recommended content")
+        }
+
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertEqual(sections[0].cards.map(\.id), ["anthropics-skills"])
+    }
+
     func testSummaryPrefersExplicitSummaryThenSnapshotThenMatchesThenFallbackStates() {
         let explicit = makeItem(
             summary: "Explicit summary",

@@ -4,6 +4,16 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class DesktopLocalizationTests: XCTestCase {
+    private func loadRecommendations() -> [ImportRecommendationEntry] {
+        let configurationURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/DesktopApp/Resources/ImportRecommendations/recommendations.json")
+        let data = try! Data(contentsOf: configurationURL)
+        return try! JSONDecoder().decode([ImportRecommendationEntry].self, from: data)
+    }
+
     func testDesktopLanguageNormalizesSupportedIdentifiers() {
         XCTAssertEqual(DesktopLanguage.supportedIdentifier(for: "en-US"), "en")
         XCTAssertEqual(DesktopLanguage.supportedIdentifier(for: "ja_JP"), "ja")
@@ -53,5 +63,80 @@ final class DesktopLocalizationTests: XCTestCase {
             BridgeClientError.concurrentMutationRejected.errorDescription,
             "Another write task is already running."
         )
+    }
+
+    func testImportRecommendationDescriptionKeysExistInAllSupportedLocales() {
+        let recommendations = loadRecommendations()
+        XCTAssertFalse(recommendations.isEmpty)
+
+        let locales = [
+            Locale(identifier: "zh-Hans"),
+            Locale(identifier: "en"),
+            Locale(identifier: "ja"),
+        ]
+
+        for recommendation in recommendations {
+            for locale in locales {
+                let value = L10n.string(recommendation.descriptionKey, locale: locale)
+                XCTAssertNotEqual(
+                    value,
+                    recommendation.descriptionKey,
+                    "Missing localization for \(recommendation.descriptionKey) in \(locale.identifier)"
+                )
+            }
+        }
+    }
+
+    func testImportRecommendationUsesPrimaryTagAsOnlyGroupingCategory() {
+        let recommendations = loadRecommendations()
+        XCTAssertFalse(recommendations.isEmpty)
+
+        for recommendation in recommendations {
+            XCTAssertEqual(
+                recommendation.categoryId,
+                recommendation.primaryTagId,
+                "Primary tag must be the grouping category for \(recommendation.canonicalRepo)"
+            )
+            XCTAssertLessThanOrEqual(
+                recommendation.secondaryTagIds.count,
+                2,
+                "Secondary tags should remain badges only for \(recommendation.canonicalRepo)"
+            )
+            XCTAssertFalse(
+                recommendation.secondaryTagIds.contains(recommendation.primaryTagId),
+                "Secondary tags must not duplicate primary tag for \(recommendation.canonicalRepo)"
+            )
+        }
+    }
+
+    func testImportRecommendationCategoryAndTagKeysExistInAllSupportedLocales() {
+        let recommendations = loadRecommendations()
+        let locales = [
+            Locale(identifier: "zh-Hans"),
+            Locale(identifier: "en"),
+            Locale(identifier: "ja"),
+        ]
+
+        for recommendation in recommendations {
+            let tagIds = [recommendation.primaryTagId] + recommendation.secondaryTagIds
+            for locale in locales {
+                let categoryValue = L10n.string("import.recommendation.category.\(recommendation.categoryId)", locale: locale)
+                XCTAssertNotEqual(
+                    categoryValue,
+                    "import.recommendation.category.\(recommendation.categoryId)",
+                    "Missing category localization for \(recommendation.categoryId) in \(locale.identifier)"
+                )
+
+                for tagId in tagIds {
+                    let tagKey = "import.recommendation.tag.\(tagId)"
+                    let tagValue = L10n.string(tagKey, locale: locale)
+                    XCTAssertNotEqual(
+                        tagValue,
+                        tagKey,
+                        "Missing tag localization for \(tagId) in \(locale.identifier)"
+                    )
+                }
+            }
+        }
     }
 }

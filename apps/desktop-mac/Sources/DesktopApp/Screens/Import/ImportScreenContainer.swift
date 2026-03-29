@@ -14,17 +14,24 @@ final class ImportScreenContainer {
         let searchPhase: MainViewModel.ImportLoadPhase
         let submittedQuery: String
         let cards: [ImportViewModel.Card]
+        let content: ImportViewModel.Content
         let importingGroupId: String?
     }
 
     private let state: DesktopAppState
     private let mainViewModel: MainViewModel
+    private let recommendationsProvider: () -> [ImportRecommendationEntry]
 
     let screenState = ImportScreenState()
 
-    init(state: DesktopAppState, mainViewModel: MainViewModel) {
+    init(
+        state: DesktopAppState,
+        mainViewModel: MainViewModel,
+        recommendationsProvider: @escaping () -> [ImportRecommendationEntry] = { ImportRecommendationLoader.load() }
+    ) {
         self.state = state
         self.mainViewModel = mainViewModel
+        self.recommendationsProvider = recommendationsProvider
     }
 
     var isActive: Bool {
@@ -42,12 +49,14 @@ final class ImportScreenContainer {
             items: mainViewModel.importDisplayGroups,
             locale: locale,
             fallbackTargetIds: mainViewModel.visibleTargets.map(\.id),
-            submittedQuery: mainViewModel.importSubmittedQuery
+            submittedQuery: mainViewModel.importSubmittedQuery,
+            recommendations: recommendationsProvider()
         )
         return Snapshot(
             searchPhase: mainViewModel.importSearchPhase,
             submittedQuery: mainViewModel.importSubmittedQuery,
             cards: viewModel.cards,
+            content: viewModel.content,
             importingGroupId: mainViewModel.importingImportGroupId
         )
     }
