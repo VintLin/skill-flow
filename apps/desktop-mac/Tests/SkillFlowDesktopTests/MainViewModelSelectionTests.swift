@@ -104,6 +104,25 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.toast?.style, .error)
     }
 
+    func testRefreshListReconcilesExistingDraftsWithServerSummary() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        XCTAssertTrue(model.isTargetEnabled("claude-code"))
+
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.enabledTargets = []
+        state.sources["alpha"]?.selectedLeafIds = []
+        try fixture.reset(state: state)
+
+        await model.refreshList()
+
+        XCTAssertFalse(model.isTargetEnabled("claude-code"))
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.enabledTargetCount, 0)
+    }
+
     func testClawhubGroupSelectionIncludesAllClawhubSources() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

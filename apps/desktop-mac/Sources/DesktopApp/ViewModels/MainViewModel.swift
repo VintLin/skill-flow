@@ -2070,12 +2070,19 @@ final class MainViewModel {
         }
 
         for summary in summaries {
-            if baselineDrafts[summary.sourceId] == nil {
-                baselineDrafts[summary.sourceId] = buildInitialDraftFromSummary(summary)
-            }
-            if workingDrafts[summary.sourceId] == nil {
-                workingDrafts[summary.sourceId] = baselineDrafts[summary.sourceId]
-                    ?? buildInitialDraftFromSummary(summary)
+            let serverDraft = buildInitialDraftFromSummary(summary)
+            let savePhase = saveStateBySourceId[summary.sourceId]?.phase ?? .idle
+
+            if savePhase == .saving {
+                if baselineDrafts[summary.sourceId] == nil {
+                    baselineDrafts[summary.sourceId] = serverDraft
+                }
+                if workingDrafts[summary.sourceId] == nil {
+                    workingDrafts[summary.sourceId] = serverDraft
+                }
+            } else {
+                baselineDrafts[summary.sourceId] = serverDraft
+                workingDrafts[summary.sourceId] = serverDraft
             }
 
             detectedTargets.formUnion(summary.enabledTargets)
