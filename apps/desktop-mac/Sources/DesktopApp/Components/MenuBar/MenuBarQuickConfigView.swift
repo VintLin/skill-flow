@@ -79,7 +79,10 @@ struct MenuBarQuickConfigView: View {
                             },
                             groupTagItems: groupTagController.resolvedTags(forSourceId: card.id, locale: locale),
                             groupTagSuggestions: [],
-                            onCreateGroupTag: nil
+                            canCreateGroupTag: false,
+                            canDeleteGroupTags: false,
+                            onCreateGroupTag: nil,
+                            onDeleteGroupTag: nil
                         )
                         .onHover { isHovering in
                             guard menuUsesCompactDensity else { return }

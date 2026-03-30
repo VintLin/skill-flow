@@ -570,8 +570,13 @@ struct MainView: View {
                                 },
                                 groupTagItems: homeContainer.groupTags(for: card.id, locale: locale),
                                 groupTagSuggestions: homeContainer.tagSuggestions(for: card.id, locale: locale),
+                                canCreateGroupTag: homeContainer.canAddTag(for: card.id, locale: locale),
+                                canDeleteGroupTags: homeContainer.hasRemovableTags(for: card.id),
                                 onCreateGroupTag: { title, itemAccent in
-                                    homeContainer.addCustomTag(title, accent: itemAccent, toSourceId: card.id)
+                                    homeContainer.addCustomTag(title, accent: itemAccent, toSourceId: card.id, locale: locale)
+                                },
+                                onDeleteGroupTag: { tagID in
+                                    homeContainer.removeCustomTag(tagID, fromSourceId: card.id, locale: locale)
                                 }
                             )
                         }

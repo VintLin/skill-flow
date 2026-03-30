@@ -61,6 +61,9 @@ final class DesktopAppContainer {
             fallbackRow: { [weak mainViewModel] sourceId in
                 mainViewModel?.sourceRows.first(where: { $0.id == sourceId })
             },
+            toastPresenter: { [weak mainViewModel] style, message in
+                mainViewModel?.presentToast(style: style, message: message)
+            },
             hasInspectPayload: { [weak mainViewModel] sourceId in
                 mainViewModel?.hasInspectPayload(for: sourceId) ?? false
             },

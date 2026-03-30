@@ -18,7 +18,7 @@ final class SettingsViewModel {
     struct AgentDisplayRow: Identifiable, Equatable {
         let targetId: String
         let title: String
-        let description: String
+        let mountPath: String
         let isVisible: Bool
 
         var id: String { targetId }
@@ -162,7 +162,7 @@ final class SettingsViewModel {
                 AgentDisplayRow(
                     targetId: preference.targetId,
                     title: AgentDisplayCatalog.label(for: preference.targetId),
-                    description: preference.targetId,
+                    mountPath: AgentDisplayCatalog.mountPath(for: preference.targetId),
                     isVisible: preference.isVisible
                 )
             }

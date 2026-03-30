@@ -4,10 +4,37 @@ struct GroupTagDisplayItem: Identifiable, Equatable {
     let id: String
     let title: String
     let accent: DesktopAccentColor
+    let isRemovable: Bool
+}
+
+enum GroupTagMutationResult: Equatable {
+    case added
+    case removed
+    case duplicate
+    case limitReached
+    case empty
+    case notFound
+
+    func toastMessage(locale: Locale) -> String? {
+        switch self {
+        case .added, .removed:
+            return nil
+        case .duplicate:
+            return L10n.string("group_tag.toast.duplicate", locale: locale)
+        case .limitReached:
+            return L10n.string("group_tag.toast.limit", locale: locale)
+        case .empty:
+            return L10n.string("group_tag.toast.empty", locale: locale)
+        case .notFound:
+            return L10n.string("group_tag.toast.not_found", locale: locale)
+        }
+    }
 }
 
 @MainActor
 final class GroupTagController {
+    static let maximumTagCount = 3
+
     private let state: DesktopAppState
     private let store: DesktopGroupTagStore
     private let recommendationsProvider: () -> [ImportRecommendationEntry]
@@ -32,25 +59,23 @@ final class GroupTagController {
     }
 
     func resolvedTags(forSourceId sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
-        if let preset = presetTags(
+        let preset = presetTags(
             canonicalRepo: sourceCanonicalRepo(sourceId),
             locator: sourceLocator(sourceId),
             locale: locale
-        ) {
-            return preset
-        }
-
-        guard let preference = state.groupTags.customTagsBySourceId[sourceId] else {
-            return []
-        }
-
-        return [
-            GroupTagDisplayItem(
+        ) ?? []
+        let presetIDs = Set(preset.map(\.id))
+        let custom = (state.groupTags.customTagsBySourceId[sourceId] ?? []).compactMap { preference in
+            let item = GroupTagDisplayItem(
                 id: Self.customTagKey(for: preference.title),
                 title: preference.title,
-                accent: preference.accent
+                accent: preference.accent,
+                isRemovable: true
             )
-        ]
+            return presetIDs.contains(item.id) ? nil : item
+        }
+
+        return Array((preset + custom).prefix(Self.maximumTagCount))
     }
 
     func availableHomeTags(sourceIds: [String], locale: Locale) -> [GroupTagDisplayItem] {
@@ -88,31 +113,75 @@ final class GroupTagController {
     }
 
     func tagSuggestions(sourceIds: [String], excluding sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
-        guard resolvedTags(forSourceId: sourceId, locale: locale).isEmpty else {
+        let currentTagIDs = Set(resolvedTags(forSourceId: sourceId, locale: locale).map(\.id))
+        guard currentTagIDs.count < Self.maximumTagCount else {
             return []
         }
+
         return availableHomeTags(sourceIds: sourceIds, locale: locale)
+            .filter { !currentTagIDs.contains($0.id) }
     }
 
-    func addCustomTag(_ rawTitle: String, accent: DesktopAccentColor?, toSourceId sourceId: String) {
-        guard presetTags(
-            canonicalRepo: sourceCanonicalRepo(sourceId),
-            locator: sourceLocator(sourceId),
-            locale: Locale(identifier: "en")
-        ) == nil else {
-            return
+    func canAddTag(forSourceId sourceId: String, locale: Locale) -> Bool {
+        resolvedTags(forSourceId: sourceId, locale: locale).count < Self.maximumTagCount
+    }
+
+    func hasRemovableTags(forSourceId sourceId: String) -> Bool {
+        !(state.groupTags.customTagsBySourceId[sourceId] ?? []).isEmpty
+    }
+
+    func addCustomTag(
+        _ rawTitle: String,
+        accent: DesktopAccentColor?,
+        toSourceId sourceId: String,
+        locale: Locale
+    ) -> GroupTagMutationResult {
+        guard canAddTag(forSourceId: sourceId, locale: locale) else {
+            return .limitReached
         }
 
         let title = Self.normalizedCustomTitle(rawTitle)
         guard !title.isEmpty else {
-            return
+            return .empty
         }
 
-        state.groupTags.customTagsBySourceId[sourceId] = GroupTagPreference(
+        let nextItem = GroupTagDisplayItem(
+            id: Self.customTagKey(for: title),
             title: title,
-            accentRawValue: (accent ?? randomAccent()).rawValue
+            accent: accent ?? randomAccent(),
+            isRemovable: true
+        )
+        let existingTitles = Set(
+            resolvedTags(forSourceId: sourceId, locale: locale)
+                .map(\.title)
+                .map(Self.normalizedKey)
+        )
+        guard !existingTitles.contains(Self.normalizedKey(title)) else {
+            return .duplicate
+        }
+
+        state.groupTags.customTagsBySourceId[sourceId, default: []].append(
+            GroupTagPreference(title: title, accentRawValue: nextItem.accent.rawValue)
         )
         store.saveCustomTags(state.groupTags.customTagsBySourceId)
+        return .added
+    }
+
+    func removeCustomTag(_ tagID: String, fromSourceId sourceId: String) -> GroupTagMutationResult {
+        let current = state.groupTags.customTagsBySourceId[sourceId] ?? []
+        let next = current.filter { Self.customTagKey(for: $0.title) != tagID }
+
+        guard next.count != current.count else {
+            return .notFound
+        }
+
+        if next.isEmpty {
+            state.groupTags.customTagsBySourceId.removeValue(forKey: sourceId)
+        } else {
+            state.groupTags.customTagsBySourceId[sourceId] = next
+        }
+        store.saveCustomTags(state.groupTags.customTagsBySourceId)
+        return .removed
     }
 
     private func presetTags(canonicalRepo: String?, locator: String?, locale: Locale) -> [GroupTagDisplayItem]? {
@@ -125,7 +194,8 @@ final class GroupTagController {
             GroupTagDisplayItem(
                 id: Self.presetTagKey(for: tagId),
                 title: L10n.string("import.recommendation.tag.\(tagId)", locale: locale),
-                accent: SharedGroupCard.recommendationBadgeAccent(tagId: tagId)
+                accent: SharedGroupCard.recommendationBadgeAccent(tagId: tagId),
+                isRemovable: false
             )
         }
     }

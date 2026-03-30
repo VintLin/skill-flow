@@ -148,10 +148,17 @@
 "group_card.action.pin" = "ピン留め";
 "group_card.action.unpin" = "ピン留め解除";
 "group_card.action.update" = "更新";
+"group_card.action.delete_tags" = "タグを削除";
+"group_card.action.done_delete_tags" = "タグ削除を終了";
 "group_card.action.delete" = "削除";
 "group_card.loading.downloading" = "ダウンロード中...";
 "group_tag.action.add" = "タグを追加";
 "group_tag.filter.all" = "ALL";
+"group_tag.input.placeholder" = "新しいタグ";
+"group_tag.toast.duplicate" = "このタグは既に選択されています。";
+"group_tag.toast.limit" = "タグ数が上限に達しました。";
+"group_tag.toast.empty" = "先にタグを入力してください。";
+"group_tag.toast.not_found" = "タグは既に存在しません。";
 "group_card.loading.updating" = "更新中...";
 "common.meta.from" = "%@ から";
 "common.loading.groups" = "グループを読み込み中";

@@ -96,6 +96,41 @@ enum AgentDisplayCatalog {
         shortLabelsByTargetId[targetId] ?? String(label(for: targetId).prefix(2)).uppercased()
     }
 
+    static func mountPath(for targetId: String) -> String {
+        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+
+        switch targetId {
+        case "claude-code":
+            return homeDirectory.appendingPathComponent(".claude/skills", isDirectory: true).path
+        case "codex":
+            return homeDirectory.appendingPathComponent(".codex/skills", isDirectory: true).path
+        case "cursor":
+            return homeDirectory.appendingPathComponent(".cursor/skills", isDirectory: true).path
+        case "github-copilot":
+            return homeDirectory.appendingPathComponent(".copilot/skills", isDirectory: true).path
+        case "gemini-cli":
+            return homeDirectory.appendingPathComponent(".gemini/skills", isDirectory: true).path
+        case "opencode":
+            return homeDirectory.appendingPathComponent(".config/opencode/skills", isDirectory: true).path
+        case "openclaw":
+            return homeDirectory.appendingPathComponent(".openclaw/skills", isDirectory: true).path
+        case "pi":
+            return homeDirectory.appendingPathComponent(".pi/agent/skills", isDirectory: true).path
+        case "windsurf":
+            return homeDirectory.appendingPathComponent(".codeium/windsurf/skills", isDirectory: true).path
+        case "roo-code":
+            return homeDirectory.appendingPathComponent(".roo/skills", isDirectory: true).path
+        case "cline":
+            return homeDirectory.appendingPathComponent(".agents/skills", isDirectory: true).path
+        case "amp":
+            return homeDirectory.appendingPathComponent(".config/agents/skills", isDirectory: true).path
+        case "kiro":
+            return homeDirectory.appendingPathComponent(".kiro/skills", isDirectory: true).path
+        default:
+            return targetId
+        }
+    }
+
     static func orderedTargetIds(in targetIds: some Sequence<String>) -> [String] {
         let selected = Set(targetIds)
         return defaultTargetOrder.filter { selected.contains($0) }

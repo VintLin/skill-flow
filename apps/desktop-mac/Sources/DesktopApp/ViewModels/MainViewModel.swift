@@ -2714,6 +2714,10 @@ final class MainViewModel {
         toast = nil
     }
 
+    func presentToast(style: ToastStyle = .neutral, message: String) {
+        showToast(style: style, message: message)
+    }
+
     private func commitDraftChange(
         sourceId: String,
         nextDraft: DraftState,

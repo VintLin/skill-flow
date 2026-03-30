@@ -10,6 +10,6 @@ struct GroupTagPreference: Codable, Equatable {
 }
 
 struct GroupTagState {
-    var customTagsBySourceId: [String: GroupTagPreference] = [:]
+    var customTagsBySourceId: [String: [GroupTagPreference]] = [:]
     var selectedHomeFilterKey: String? = nil
 }

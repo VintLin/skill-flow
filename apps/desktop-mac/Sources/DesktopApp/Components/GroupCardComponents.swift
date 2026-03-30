@@ -199,12 +199,16 @@ struct SharedGroupCard: View {
     let onActionButton: (() -> Void)?
     let groupTagItems: [GroupTagDisplayItem]
     let groupTagSuggestions: [GroupTagDisplayItem]
+    let canCreateGroupTag: Bool
+    let canDeleteGroupTags: Bool
     let onCreateGroupTag: ((String, DesktopAccentColor?) -> Void)?
+    let onDeleteGroupTag: ((String) -> Void)?
     let recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem]
     let recommendationDescription: String?
 
     @State private var isActionMenuOpen = false
     @State private var isActionButtonHovered = false
+    @State private var isDeletingTags = false
 
     init(
         card: MainViewModel.GroupCardModel,
@@ -227,7 +231,10 @@ struct SharedGroupCard: View {
         onActionButton: (() -> Void)? = nil,
         groupTagItems: [GroupTagDisplayItem] = [],
         groupTagSuggestions: [GroupTagDisplayItem] = [],
+        canCreateGroupTag: Bool = false,
+        canDeleteGroupTags: Bool = false,
         onCreateGroupTag: ((String, DesktopAccentColor?) -> Void)? = nil,
+        onDeleteGroupTag: ((String) -> Void)? = nil,
         recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem] = [],
         recommendationDescription: String? = nil
     ) {
@@ -251,7 +258,10 @@ struct SharedGroupCard: View {
         self.onActionButton = onActionButton
         self.groupTagItems = groupTagItems
         self.groupTagSuggestions = groupTagSuggestions
+        self.canCreateGroupTag = canCreateGroupTag
+        self.canDeleteGroupTags = canDeleteGroupTags
         self.onCreateGroupTag = onCreateGroupTag
+        self.onDeleteGroupTag = onDeleteGroupTag
         self.recommendationBadgeItems = recommendationBadgeItems
         self.recommendationDescription = recommendationDescription
     }
@@ -455,6 +465,11 @@ struct SharedGroupCard: View {
                 isActionMenuOpen = false
             }
         }
+        .onChange(of: canDeleteGroupTags) { _, canDelete in
+            if !canDelete {
+                isDeletingTags = false
+            }
+        }
         .popover(isPresented: $isActionMenuOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 actionMenuButton(
@@ -472,6 +487,16 @@ struct SharedGroupCard: View {
                 ) {
                     isActionMenuOpen = false
                     onUpdate()
+                }
+                if canDeleteGroupTags {
+                    actionMenuButton(
+                        title: isDeletingTags ? t("group_card.action.done_delete_tags") : t("group_card.action.delete_tags"),
+                        icon: .delete,
+                        foreground: AppTheme.textMuted(for: theme)
+                    ) {
+                        isActionMenuOpen = false
+                        isDeletingTags.toggle()
+                    }
                 }
                 actionMenuButton(
                     title: t("group_card.action.delete"),
@@ -573,7 +598,13 @@ struct SharedGroupCard: View {
                     inputWidth: max(88, scale.triStateWidth * 2.6),
                     tagItems: groupTagItems,
                     suggestions: [],
-                    onCreate: nil
+                    canAddMore: canCreateGroupTag,
+                    showsAddButtonWhenTagsExist: true,
+                    isDeleteMode: isDeletingTags,
+                    onCreate: onCreateGroupTag,
+                    onDelete: { item in
+                        onDeleteGroupTag?(item.id)
+                    }
                 )
             } else if !recommendationBadgeItems.isEmpty {
                 recommendationBadgeRow
@@ -586,7 +617,11 @@ struct SharedGroupCard: View {
                     inputWidth: max(88, scale.triStateWidth * 2.6),
                     tagItems: [],
                     suggestions: groupTagSuggestions,
-                    onCreate: onCreateGroupTag
+                    canAddMore: canCreateGroupTag,
+                    showsAddButtonWhenTagsExist: true,
+                    isDeleteMode: false,
+                    onCreate: onCreateGroupTag,
+                    onDelete: nil
                 )
             }
 

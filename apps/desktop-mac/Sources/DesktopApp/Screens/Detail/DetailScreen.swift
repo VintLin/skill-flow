@@ -648,8 +648,14 @@ struct DetailScreen: View {
                 inputWidth: 110,
                 tagItems: container.groupTags(for: groupId, locale: locale),
                 suggestions: container.tagSuggestions(for: groupId, locale: locale),
+                canAddMore: container.canAddTag(for: groupId, locale: locale),
+                showsAddButtonWhenTagsExist: true,
+                isDeleteMode: false,
                 onCreate: { title, itemAccent in
-                    container.addCustomTag(title, accent: itemAccent, toSourceId: groupId)
+                    container.addCustomTag(title, accent: itemAccent, toSourceId: groupId, locale: locale)
+                },
+                onDelete: { item in
+                    container.removeCustomTag(item.id, fromSourceId: groupId, locale: locale)
                 }
             )
         }

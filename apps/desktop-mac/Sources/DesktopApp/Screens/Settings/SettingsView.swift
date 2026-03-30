@@ -406,23 +406,30 @@ struct SettingsView: View {
     }
 
     private func agentDisplayRow(_ row: SettingsViewModel.AgentDisplayRow) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+        let contentOpacity = row.isVisible ? 1.0 : 0.45
+        let backgroundOpacity = row.isVisible ? 1.0 : 0.55
+
+        return HStack(alignment: .center, spacing: 12) {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .frame(width: 20)
                 .contentShape(Rectangle())
                 .draggable(row.targetId)
+                .opacity(contentOpacity)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text(t("settings.agent_display.target_id", row.description))
+                Text(row.mountPath)
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(contentOpacity)
 
             Toggle("", isOn: Binding(
                 get: { row.isVisible },
@@ -435,10 +442,12 @@ struct SettingsView: View {
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Self.controlBackground(for: .pageBackground, theme: theme))
+                .opacity(backgroundOpacity)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                .opacity(backgroundOpacity)
         }
         .dropDestination(for: String.self) { items, _ in
             guard let sourceId = items.first,

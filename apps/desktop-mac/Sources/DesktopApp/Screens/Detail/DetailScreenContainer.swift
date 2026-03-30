@@ -24,6 +24,7 @@ final class DetailScreenContainer {
     private let groupTagController: GroupTagController
     private let detailSnapshot: (String) -> DetailViewModel.Snapshot?
     private let fallbackRowProvider: (String) -> MainViewModel.SourceRow?
+    private let toastPresenter: (MainViewModel.ToastStyle, String) -> Void
     private let hasInspectPayloadProvider: (String) -> Bool
     private let isInspectRequestInFlightProvider: (String) -> Bool
     private let isUpdatingCurrentGroupProvider: () -> Bool
@@ -51,6 +52,7 @@ final class DetailScreenContainer {
         groupTagController: GroupTagController,
         detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
         fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
+        toastPresenter: @escaping (MainViewModel.ToastStyle, String) -> Void = { _, _ in },
         hasInspectPayload: @escaping (String) -> Bool = { _ in false },
         isInspectRequestInFlight: @escaping (String) -> Bool = { _ in false },
         isUpdatingCurrentGroup: @escaping () -> Bool = { false },
@@ -65,6 +67,7 @@ final class DetailScreenContainer {
         self.groupTagController = groupTagController
         self.detailSnapshot = detailSnapshot
         self.fallbackRowProvider = fallbackRow
+        self.toastPresenter = toastPresenter
         self.hasInspectPayloadProvider = hasInspectPayload
         self.isInspectRequestInFlightProvider = isInspectRequestInFlight
         self.isUpdatingCurrentGroupProvider = isUpdatingCurrentGroup
@@ -80,6 +83,7 @@ final class DetailScreenContainer {
         state: DesktopAppState,
         detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
         fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
+        toastPresenter: @escaping (MainViewModel.ToastStyle, String) -> Void = { _, _ in },
         hasInspectPayload: @escaping (String) -> Bool = { _ in false },
         isInspectRequestInFlight: @escaping (String) -> Bool = { _ in false },
         isUpdatingCurrentGroup: @escaping () -> Bool = { false },
@@ -95,6 +99,7 @@ final class DetailScreenContainer {
             groupTagController: Self.defaultGroupTagController(state: state),
             detailSnapshot: detailSnapshot,
             fallbackRow: fallbackRow,
+            toastPresenter: toastPresenter,
             hasInspectPayload: hasInspectPayload,
             isInspectRequestInFlight: isInspectRequestInFlight,
             isUpdatingCurrentGroup: isUpdatingCurrentGroup,
@@ -154,8 +159,26 @@ final class DetailScreenContainer {
         )
     }
 
-    func addCustomTag(_ title: String, accent: DesktopAccentColor?, toSourceId sourceId: String) {
-        groupTagController.addCustomTag(title, accent: accent, toSourceId: sourceId)
+    func canAddTag(for sourceId: String, locale: Locale) -> Bool {
+        groupTagController.canAddTag(forSourceId: sourceId, locale: locale)
+    }
+
+    func hasRemovableTags(for sourceId: String) -> Bool {
+        groupTagController.hasRemovableTags(forSourceId: sourceId)
+    }
+
+    func addCustomTag(_ title: String, accent: DesktopAccentColor?, toSourceId sourceId: String, locale: Locale) {
+        let result = groupTagController.addCustomTag(title, accent: accent, toSourceId: sourceId, locale: locale)
+        if let message = result.toastMessage(locale: locale) {
+            toastPresenter(.neutral, message)
+        }
+    }
+
+    func removeCustomTag(_ tagID: String, fromSourceId sourceId: String, locale: Locale) {
+        let result = groupTagController.removeCustomTag(tagID, fromSourceId: sourceId)
+        if let message = result.toastMessage(locale: locale) {
+            toastPresenter(.neutral, message)
+        }
     }
 
     func selectSource(_ sourceId: String) async {

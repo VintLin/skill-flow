@@ -148,10 +148,17 @@
 "group_card.action.pin" = "置顶";
 "group_card.action.unpin" = "取消置顶";
 "group_card.action.update" = "更新";
+"group_card.action.delete_tags" = "删除标签";
+"group_card.action.done_delete_tags" = "完成删除标签";
 "group_card.action.delete" = "删除";
 "group_card.loading.downloading" = "正在下载...";
 "group_tag.action.add" = "添加标签";
 "group_tag.filter.all" = "ALL";
+"group_tag.input.placeholder" = "新标签";
+"group_tag.toast.duplicate" = "该标签已存在。";
+"group_tag.toast.limit" = "标签数量已达上限。";
+"group_tag.toast.empty" = "请先输入标签。";
+"group_tag.toast.not_found" = "标签已不存在。";
 "group_card.loading.updating" = "正在更新...";
 "common.meta.from" = "来自 %@";
 "common.loading.groups" = "正在加载分组";

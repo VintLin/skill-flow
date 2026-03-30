@@ -180,7 +180,10 @@ struct ImportScreen: View {
             },
             groupTagItems: [],
             groupTagSuggestions: [],
+            canCreateGroupTag: false,
+            canDeleteGroupTags: false,
             onCreateGroupTag: nil,
+            onDeleteGroupTag: nil,
             recommendationBadgeItems: card.recommendationBadgeItems,
             recommendationDescription: card.recommendationDescription
         )

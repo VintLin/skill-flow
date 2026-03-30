@@ -79,8 +79,26 @@ final class HomeScreenContainer {
         )
     }
 
-    func addCustomTag(_ title: String, accent: DesktopAccentColor?, toSourceId sourceId: String) {
-        groupTagController.addCustomTag(title, accent: accent, toSourceId: sourceId)
+    func canAddTag(for sourceId: String, locale: Locale) -> Bool {
+        groupTagController.canAddTag(forSourceId: sourceId, locale: locale)
+    }
+
+    func hasRemovableTags(for sourceId: String) -> Bool {
+        groupTagController.hasRemovableTags(forSourceId: sourceId)
+    }
+
+    func addCustomTag(_ title: String, accent: DesktopAccentColor?, toSourceId sourceId: String, locale: Locale) {
+        let result = groupTagController.addCustomTag(title, accent: accent, toSourceId: sourceId, locale: locale)
+        if let message = result.toastMessage(locale: locale) {
+            mainViewModel.presentToast(message: message)
+        }
+    }
+
+    func removeCustomTag(_ tagID: String, fromSourceId sourceId: String, locale: Locale) {
+        let result = groupTagController.removeCustomTag(tagID, fromSourceId: sourceId)
+        if let message = result.toastMessage(locale: locale) {
+            mainViewModel.presentToast(message: message)
+        }
     }
 
     func makeView() -> HomeScreen {

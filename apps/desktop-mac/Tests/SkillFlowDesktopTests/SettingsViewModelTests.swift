@@ -50,6 +50,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.currentHomeCardDensity, .compact)
         XCTAssertEqual(viewModel.currentMenuCardDensity, .comfortable)
         XCTAssertEqual(viewModel.detectedAgentRows(detectedTargetIds: ["codex", "claude-code"]).map(\.targetId), ["codex", "claude-code"])
+        XCTAssertEqual(viewModel.detectedAgentRows(detectedTargetIds: ["codex"]).first?.mountPath, AgentDisplayCatalog.mountPath(for: "codex"))
         XCTAssertEqual(state.settings.agentDisplayPreferences.first?.targetId, "codex")
         XCTAssertEqual(state.settings.agentDisplayPreferences.first?.isVisible, false)
         XCTAssertEqual(state.settings.logLevel, "warn")
@@ -137,6 +138,14 @@ final class SettingsViewModelTests: XCTestCase {
         let rows = viewModel.detectedAgentRows(detectedTargetIds: ["claude-code", "codex", "cursor"])
         XCTAssertEqual(rows.map(\.targetId), ["claude-code", "codex", "cursor"])
         XCTAssertTrue(rows.allSatisfy(\.isVisible))
+    }
+
+    func testAgentDisplayCatalogReturnsMountPaths() {
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "codex"), "\(homePath)/.codex/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "amp"), "\(homePath)/.config/agents/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "unknown"), "unknown")
     }
 
     @MainActor
