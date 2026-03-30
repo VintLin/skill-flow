@@ -862,6 +862,43 @@ describe.sequential("skill-flow", () => {
     ).toBe(true);
   });
 
+  test("refresh keeps mounted direct child skills for sources that also have a root SKILL", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "SKILL.md": skillDoc("gstack", "Root skill."),
+      "browse/SKILL.md": skillDoc("browse", "Browse skill."),
+      "investigate/SKILL.md": skillDoc("investigate", "Investigate skill."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "browse");
+
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(true);
+
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(true);
+
+    const configData = await app.getConfigData();
+    expect(configData.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(true);
+
+    const doctor = await app.doctor();
+    expect(doctor.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(true);
+  });
+
   test("doctor reports unmanaged external target skills", async () => {
     const unmanagedRoot = path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "unmanaged");
     await writeRepoFiles(unmanagedRoot, {
