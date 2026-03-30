@@ -190,6 +190,58 @@ describe.sequential("source lifecycle", () => {
     expect(result.data).toHaveProperty("sourceMetadata");
   });
 
+  test("updating a local source ignores mounted agent symlinks inside priority skill buckets", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "source/skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const originalCodexTarget = process.env.SKILL_FLOW_TARGET_CODEX;
+    process.env.SKILL_FLOW_TARGET_CODEX = path.join(repoPath, ".codex", "skills");
+    await fs.mkdir(process.env.SKILL_FLOW_TARGET_CODEX, { recursive: true });
+
+    try {
+      const app = new SkillFlowApp();
+      const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+      expect(added.ok).toBe(true);
+      if (!added.ok) {
+        return;
+      }
+
+      const sourceId = added.data.manifest.id;
+      const leafId = `${sourceId}:source/skills/review`;
+      const applied = await app.applyDraft(sourceId, {
+        enabledTargets: ["codex"],
+        selectedLeafIds: [leafId],
+      });
+      expect(applied.ok).toBe(true);
+      if (!applied.ok) {
+        return;
+      }
+
+      const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX, "review");
+      expect(await pathExists(targetPath)).toBe(true);
+
+      const updated = await app.updateSources([sourceId]);
+      expect(updated.ok).toBe(true);
+      if (!updated.ok) {
+        return;
+      }
+
+      const inspect = await app.inspectSource(sourceId);
+      expect(inspect.ok).toBe(true);
+      if (!inspect.ok) {
+        return;
+      }
+
+      expect(inspect.data.leafs.map((leaf) => leaf.id)).toEqual([leafId]);
+      expect(inspect.data.binding.selectedLeafIds).toEqual([leafId]);
+      expect(inspect.data.deployments).toHaveLength(1);
+      expect(inspect.data.deployments[0]?.target).toBe("codex");
+      expect(await pathExists(targetPath)).toBe(true);
+    } finally {
+      process.env.SKILL_FLOW_TARGET_CODEX = originalCodexTarget;
+    }
+  });
+
   test("rejects add path when it does not resolve to a valid skill", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/find-skills/SKILL.md": skillDoc("find-skills", "Find skills."),

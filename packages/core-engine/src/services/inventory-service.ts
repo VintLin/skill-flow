@@ -154,6 +154,7 @@ export class InventoryService {
       .filter(
         (entry) =>
           entry.isDirectory() &&
+          !entry.isSymbolicLink() &&
           !InventoryService.IGNORED_DIRECTORIES.has(entry.name),
       )
       .sort((left, right) => left.name.localeCompare(right.name));
