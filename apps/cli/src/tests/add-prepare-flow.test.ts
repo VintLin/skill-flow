@@ -102,7 +102,7 @@ describe.sequential("add prepare flow", () => {
     expect(manifest.bindings[prepared.data.sourceId]).toBeUndefined();
   });
 
-  test("prepareAddSource rejects ambiguous skill selectors", async () => {
+  test("prepareAddSource prefers standard skill buckets over recursive duplicates", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review flow."),
       "nested/review/SKILL.md": skillDoc("review", "Another review flow."),
@@ -113,12 +113,14 @@ describe.sequential("add prepare flow", () => {
       skillNames: ["review"],
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) {
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
       return;
     }
 
-    expect(result.errors[0]?.code).toBe("ADD_SKILL_SELECTOR_AMBIGUOUS");
+    expect(result.data.draft.selectedLeafIds).toEqual([
+      `${result.data.sourceId}:skills/review`,
+    ]);
   });
 
   test("prepareAddSource rejects unavailable agent selectors", async () => {
