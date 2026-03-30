@@ -97,6 +97,8 @@
 "settings.option.language.en" = "English";
 "settings.option.language.ja" = "日本語";
 "settings.section.menu_bar" = "メニューバー";
+"settings.section.agent_display" = "Agent 表示";
+"settings.section.agent_display.description" = "検出済み Agent をグループ表示に出すかどうかと、その順序を設定します。";
 "settings.section.application_update" = "アプリ更新";
 "settings.row.current_version.title" = "現在のバージョン";
 "settings.row.current_version.description" = "この app ビルドに含まれているバージョンです。";
@@ -114,6 +116,9 @@
 "settings.row.home_card_density.description" = "ホームで通常カードを使うか、メニュー用のコンパクトカードを使うかを選びます。";
 "settings.row.menu_card_density.title" = "メニューカード密度";
 "settings.row.menu_card_density.description" = "メニューバー一覧でコンパクトカードを使うか、ホームと同じ通常カードを使うかを選びます。";
+"settings.agent_display.target_id" = "target: %@";
+"settings.agent_display.empty" = "検出済みの Agent はありません。";
+"settings.agent_display.footer" = "ドラッグして並び替えます。変更は Group Card と Group Detail に反映されます。";
 "settings.option.card_density.comfortable" = "標準";
 "settings.option.card_density.compact" = "コンパクト";
 "settings.section.general" = "一般";

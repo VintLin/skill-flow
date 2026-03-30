@@ -26,6 +26,13 @@ final class SettingsViewModelTests: XCTestCase {
         defaults.set(DesktopAccentColor.green.rawValue, forKey: SettingsViewModel.themeAccentKey)
         defaults.set(DesktopCardDensity.compact.rawValue, forKey: SettingsViewModel.homeCardDensityKey)
         defaults.set(DesktopCardDensity.comfortable.rawValue, forKey: SettingsViewModel.menuCardDensityKey)
+        defaults.set(
+            try! JSONEncoder().encode([
+                AgentDisplayPreference(targetId: "codex", isVisible: false, sortOrder: 0),
+                AgentDisplayPreference(targetId: "unknown", isVisible: true, sortOrder: 1),
+            ]),
+            forKey: SettingsViewModel.agentDisplayPreferencesKey
+        )
 
         let state = DesktopAppState()
         let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
@@ -42,6 +49,9 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.currentAccent, DesktopAccentColor.green)
         XCTAssertEqual(viewModel.currentHomeCardDensity, .compact)
         XCTAssertEqual(viewModel.currentMenuCardDensity, .comfortable)
+        XCTAssertEqual(viewModel.detectedAgentRows(detectedTargetIds: ["codex", "claude-code"]).map(\.targetId), ["codex", "claude-code"])
+        XCTAssertEqual(state.settings.agentDisplayPreferences.first?.targetId, "codex")
+        XCTAssertEqual(state.settings.agentDisplayPreferences.first?.isVisible, false)
         XCTAssertEqual(state.settings.logLevel, "warn")
     }
 
@@ -59,6 +69,7 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.themeAccentRawValue = DesktopAccentColor.orange.rawValue
         viewModel.homeCardDensityRawValue = DesktopCardDensity.compact.rawValue
         viewModel.menuCardDensityRawValue = DesktopCardDensity.comfortable.rawValue
+        viewModel.setAgentVisibility(targetId: "codex", isVisible: false)
 
         XCTAssertEqual(defaults.bool(forKey: SettingsViewModel.autoLaunchKey), true)
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.logLevelKey), "error")
@@ -68,6 +79,12 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.themeAccentKey), DesktopAccentColor.orange.rawValue)
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.homeCardDensityKey), DesktopCardDensity.compact.rawValue)
         XCTAssertEqual(defaults.string(forKey: SettingsViewModel.menuCardDensityKey), DesktopCardDensity.comfortable.rawValue)
+        let storedAgentPreferences = try! JSONDecoder().decode(
+            [AgentDisplayPreference].self,
+            from: try XCTUnwrap(defaults.data(forKey: SettingsViewModel.agentDisplayPreferencesKey))
+        )
+        XCTAssertEqual(storedAgentPreferences.first?.targetId, "claude-code")
+        XCTAssertEqual(storedAgentPreferences.first(where: { $0.targetId == "codex" })?.isVisible, false)
         XCTAssertEqual(state.settings.logLevel, "error")
         XCTAssertEqual(state.settings.themeAccentRawValue, DesktopAccentColor.orange.rawValue)
     }
@@ -91,6 +108,35 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.menuCardDensityRawValue, DesktopCardDensity.compact.rawValue)
         XCTAssertEqual(viewModel.currentAccent, DesktopAccentColor.blue)
         XCTAssertEqual(viewModel.currentLanguage, DesktopLanguage.system)
+        XCTAssertEqual(viewModel.detectedAgentRows(detectedTargetIds: ["claude-code", "codex"]).map(\.targetId), ["claude-code", "codex"])
+    }
+
+    @MainActor
+    func testMoveAgentsUpdatesDetectedOrderAndKeepsUndetectedPreferencesStable() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        viewModel.moveAgents(from: IndexSet(integer: 1), to: 0, detectedTargetIds: ["claude-code", "codex", "cursor"])
+
+        XCTAssertEqual(state.settings.agentDisplayPreferences.prefix(3).map(\.targetId), ["codex", "claude-code", "cursor"])
+        XCTAssertEqual(state.settings.agentDisplayPreferences.prefix(3).map(\.sortOrder), [0, 1, 2])
+    }
+
+    @MainActor
+    func testResetAgentDisplayPreferencesRestoresDefaultOrderAndVisibility() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        viewModel.setAgentVisibility(targetId: "codex", isVisible: false)
+        viewModel.moveAgents(from: IndexSet(integer: 1), to: 0, detectedTargetIds: ["claude-code", "codex", "cursor"])
+
+        viewModel.resetAgentDisplayPreferences()
+
+        let rows = viewModel.detectedAgentRows(detectedTargetIds: ["claude-code", "codex", "cursor"])
+        XCTAssertEqual(rows.map(\.targetId), ["claude-code", "codex", "cursor"])
+        XCTAssertTrue(rows.allSatisfy(\.isVisible))
     }
 
     @MainActor

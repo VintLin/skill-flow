@@ -12,6 +12,7 @@ final class SettingsStateTests: XCTestCase {
         XCTAssertEqual(state.settings.themeAccentRawValue, DesktopAccentColor.blue.rawValue)
         XCTAssertEqual(state.settings.homeCardDensityRawValue, DesktopCardDensity.comfortable.rawValue)
         XCTAssertEqual(state.settings.menuCardDensityRawValue, DesktopCardDensity.compact.rawValue)
+        XCTAssertTrue(state.settings.agentDisplayPreferences.isEmpty)
     }
 
     func testSettingsStoreLoadsAndPersistsState() {
@@ -23,11 +24,17 @@ final class SettingsStateTests: XCTestCase {
         state.logLevel = "debug"
         state.homeCardDensityRawValue = DesktopCardDensity.compact.rawValue
         state.menuCardDensityRawValue = DesktopCardDensity.comfortable.rawValue
+        state.agentDisplayPreferences = [
+            AgentDisplayPreference(targetId: "codex", isVisible: false, sortOrder: 0),
+            AgentDisplayPreference(targetId: "claude-code", isVisible: true, sortOrder: 1),
+        ]
         store.save(state)
 
         let reloaded = store.load()
         XCTAssertEqual(reloaded.logLevel, "debug")
         XCTAssertEqual(reloaded.homeCardDensityRawValue, DesktopCardDensity.compact.rawValue)
         XCTAssertEqual(reloaded.menuCardDensityRawValue, DesktopCardDensity.comfortable.rawValue)
+        XCTAssertEqual(reloaded.agentDisplayPreferences.prefix(2).map(\.targetId), ["codex", "claude-code"])
+        XCTAssertEqual(reloaded.agentDisplayPreferences.first?.isVisible, false)
     }
 }

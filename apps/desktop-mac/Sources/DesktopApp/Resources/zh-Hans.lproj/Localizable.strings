@@ -97,6 +97,8 @@
 "settings.option.language.en" = "English";
 "settings.option.language.ja" = "日本語";
 "settings.section.menu_bar" = "菜单栏";
+"settings.section.agent_display" = "Agent 显示";
+"settings.section.agent_display.description" = "配置哪些已检测到的 Agent 会出现在分组视图中，以及它们的显示顺序。";
 "settings.section.application_update" = "应用更新";
 "settings.row.current_version.title" = "当前版本";
 "settings.row.current_version.description" = "当前 app 构建内置的版本号。";
@@ -114,6 +116,9 @@
 "settings.row.home_card_density.description" = "选择首页使用完整卡片还是菜单式紧凑卡片。";
 "settings.row.menu_card_density.title" = "菜单栏卡片密度";
 "settings.row.menu_card_density.description" = "选择菜单栏列表使用紧凑卡片还是首页完整卡片。";
+"settings.agent_display.target_id" = "target: %@";
+"settings.agent_display.empty" = "当前没有检测到 Agent。";
+"settings.agent_display.footer" = "拖拽即可调整顺序。变更会同步影响 Group Card 和 Group Detail。";
 "settings.option.card_density.comfortable" = "标准";
 "settings.option.card_density.compact" = "紧凑";
 "settings.section.general" = "通用";

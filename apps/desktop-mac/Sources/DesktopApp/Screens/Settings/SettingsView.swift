@@ -3,9 +3,11 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.locale) private var locale
     @State private var openDropdown: DropdownKind?
+    @State private var draggedAgentTargetId: String?
     @Bindable var viewModel: SettingsViewModel
 
     var theme: DesktopThemeMode = .light
+    var detectedTargetIds: [String] = []
 
     private enum DropdownKind: Hashable {
         case accent
@@ -36,6 +38,10 @@ struct SettingsView: View {
 
     private var currentLanguage: DesktopLanguage {
         viewModel.currentLanguage
+    }
+
+    private var agentRows: [SettingsViewModel.AgentDisplayRow] {
+        viewModel.detectedAgentRows(detectedTargetIds: detectedTargetIds)
     }
 
     private var accentOptions: [DropdownOption] {
@@ -160,6 +166,14 @@ struct SettingsView: View {
                             .frame(width: controlColumnWidth, alignment: .trailing)
                             .environment(\.colorScheme, colorScheme)
                         }
+                    }
+                )
+
+                settingsSection(
+                    title: t("settings.section.agent_display"),
+                    description: t("settings.section.agent_display.description"),
+                    rows: {
+                        agentDisplayRows
                     }
                 )
 
@@ -311,12 +325,47 @@ struct SettingsView: View {
         }
     }
 
-    private func settingsSection<Rows: View>(title: String, @ViewBuilder rows: () -> Rows) -> some View {
+    @ViewBuilder
+    private var agentDisplayRows: some View {
+        if agentRows.isEmpty {
+            Text(t("settings.agent_display.empty"))
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(agentRows) { row in
+                    agentDisplayRow(row)
+                }
+
+                Text(t("settings.agent_display.footer"))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let sourceId = items.first else {
+                            return false
+                        }
+                        moveAgentIfNeeded(sourceId: sourceId, destinationIndex: agentRows.count)
+                        return true
+                    }
+            }
+        }
+    }
+
+    private func settingsSection<Rows: View>(
+        title: String,
+        description: String? = nil,
+        @ViewBuilder rows: () -> Rows
+    ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.system(size: 11, weight: .bold))
                 .textCase(.uppercase)
                 .foregroundStyle(AppTheme.textMuted(for: theme))
+            if let description {
+                Text(description)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+            }
             rows()
         }
         .padding(14)
@@ -354,6 +403,74 @@ struct SettingsView: View {
             .frame(width: controlColumnWidth, alignment: .trailing)
         }
         .zIndex(Self.rowZIndex(isElevated: elevated))
+    }
+
+    private func agentDisplayRow(_ row: SettingsViewModel.AgentDisplayRow) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .frame(width: 20)
+                .contentShape(Rectangle())
+                .draggable(row.targetId)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                Text(t("settings.agent_display.target_id", row.description))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Toggle("", isOn: Binding(
+                get: { row.isVisible },
+                set: { viewModel.setAgentVisibility(targetId: row.targetId, isVisible: $0) }
+            ))
+            .labelsHidden()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Self.controlBackground(for: .pageBackground, theme: theme))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+        .dropDestination(for: String.self) { items, _ in
+            guard let sourceId = items.first,
+                  let destinationIndex = agentRows.firstIndex(where: { $0.targetId == row.targetId })
+            else {
+                return false
+            }
+            moveAgentIfNeeded(sourceId: sourceId, destinationIndex: destinationIndex)
+            return true
+        } isTargeted: { isTargeted in
+            draggedAgentTargetId = isTargeted ? row.targetId : nil
+        }
+        .overlay {
+            if draggedAgentTargetId == row.targetId {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(AppTheme.brand(for: currentAccent, in: theme), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+            }
+        }
+    }
+
+    private func moveAgentIfNeeded(sourceId: String, destinationIndex: Int) {
+        guard let sourceIndex = agentRows.firstIndex(where: { $0.targetId == sourceId }) else {
+            return
+        }
+
+        let adjustedDestination = sourceIndex < destinationIndex ? destinationIndex + 1 : destinationIndex
+        viewModel.moveAgents(
+            from: IndexSet(integer: sourceIndex),
+            to: min(adjustedDestination, agentRows.count),
+            detectedTargetIds: detectedTargetIds
+        )
+        draggedAgentTargetId = nil
     }
 
     @ViewBuilder

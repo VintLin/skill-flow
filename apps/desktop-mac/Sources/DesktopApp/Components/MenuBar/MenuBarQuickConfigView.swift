@@ -21,10 +21,11 @@ struct MenuBarQuickConfigView: View {
         settingsViewModel.currentAccent
     }
 
-    private let topBarHeight: CGFloat = 40
+    private let topBarHeight: CGFloat = MainView.headerSearchFieldHeight + 10
     private let footerHeight: CGFloat = 30
     private let menuListMinHeight: CGFloat = 360
     private let menuListMaxHeight: CGFloat = 440
+    private let topBarControlCornerRadius: CGFloat = 8
 
     private var cardDisplayMode: GroupCardDisplayMode {
         MainView.groupCardDisplayMode(for: settingsViewModel.currentMenuCardDensity)
@@ -106,24 +107,27 @@ struct MenuBarQuickConfigView: View {
                 ZStack(alignment: .leading) {
                     if screenState.searchQuery.isEmpty {
                         Text(t("menu.placeholder.search_group_source"))
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(AppTheme.searchPlaceholder(for: theme))
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .textCase(.uppercase)
                             .allowsHitTesting(false)
                     }
 
                     TextField("", text: $screenState.searchQuery)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .textCase(.uppercase)
                         .disableAutocorrection(true)
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(controlFill)
+            .padding(.horizontal, 12)
+            .frame(height: MainView.headerSearchFieldHeight)
+            .background(AppTheme.headerControlFill(for: theme))
+            .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: topBarControlCornerRadius)
                     .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
             }
 
@@ -136,11 +140,12 @@ struct MenuBarQuickConfigView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(AppTheme.textPrimary(for: theme))
-            .frame(width: 26, height: 26)
-            .background(controlFill)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .frame(width: MainView.headerSearchFieldHeight, height: MainView.headerSearchFieldHeight)
+            .background(AppTheme.headerControlFill(for: theme))
+            .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+            .clipShape(RoundedRectangle(cornerRadius: topBarControlCornerRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: topBarControlCornerRadius)
                     .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
             }
         }

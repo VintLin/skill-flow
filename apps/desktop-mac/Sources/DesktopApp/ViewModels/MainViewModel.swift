@@ -544,53 +544,7 @@ final class MainViewModel {
 
     @MainActor static var currentDateProvider: () -> Date = Date.init
 
-    private static let targetOrder: [String] = [
-        "claude-code",
-        "codex",
-        "cursor",
-        "github-copilot",
-        "gemini-cli",
-        "opencode",
-        "openclaw",
-        "pi",
-        "windsurf",
-        "roo-code",
-        "cline",
-        "amp",
-        "kiro",
-    ]
-
-    private static let targetCatalog: [String: String] = [
-        "claude-code": "Claude Code",
-        "codex": "Codex",
-        "cursor": "Cursor",
-        "github-copilot": "GitHub Copilot",
-        "gemini-cli": "Gemini CLI",
-        "opencode": "OpenCode",
-        "openclaw": "OpenClaw",
-        "pi": "Pi",
-        "windsurf": "Windsurf",
-        "roo-code": "Roo Code",
-        "cline": "Cline",
-        "amp": "Amp",
-        "kiro": "Kiro",
-    ]
-
-    private static let targetShortLabel: [String: String] = [
-        "claude-code": "CC",
-        "codex": "CX",
-        "cursor": "CU",
-        "github-copilot": "GH",
-        "gemini-cli": "GM",
-        "opencode": "OP",
-        "openclaw": "OC",
-        "pi": "PI",
-        "windsurf": "WS",
-        "roo-code": "RO",
-        "cline": "CL",
-        "amp": "AM",
-        "kiro": "KI",
-    ]
+    private static var targetOrder: [String] { AgentDisplayCatalog.defaultTargetOrder }
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
@@ -727,8 +681,12 @@ final class MainViewModel {
         let targetIds = visibleTargetIds()
 
         return targetIds.map { target in
-            TargetOption(id: target, label: Self.targetCatalog[target] ?? target)
+            TargetOption(id: target, label: AgentDisplayCatalog.label(for: target))
         }
+    }
+
+    var detectedTargetIdsForSettings: [String] {
+        AgentDisplayCatalog.orderedTargetIds(in: detectedTargets)
     }
 
     var sourceRows: [SourceRow] {
@@ -810,8 +768,8 @@ final class MainViewModel {
                 targets: visibleTargetIds().map { targetId in
                     GroupCardTarget(
                         id: targetId,
-                        label: Self.targetCatalog[targetId] ?? targetId,
-                        shortLabel: Self.targetShortLabel[targetId] ?? String((Self.targetCatalog[targetId] ?? targetId).prefix(2)).uppercased(),
+                        label: AgentDisplayCatalog.label(for: targetId),
+                        shortLabel: AgentDisplayCatalog.shortLabel(for: targetId),
                         isEnabled: enabledTargets.contains(targetId)
                     )
                 },
@@ -1171,7 +1129,7 @@ final class MainViewModel {
             }
 
             for target in enabledTargets {
-                let targetLabel = Self.targetCatalog[target] ?? target
+                let targetLabel = AgentDisplayCatalog.label(for: target)
 
                 if selectedLeafIds.isEmpty {
                     rows.append(
@@ -1444,9 +1402,6 @@ final class MainViewModel {
                 refreshDoctor: true,
                 inspectSourceId: sourceId.nonEmpty
             )
-            if let sourceId = sourceId.nonEmpty {
-                requestPage(.detail(sourceId: sourceId))
-            }
             showToast(style: .success, text: localizedText("toast.import.success"))
         } catch {
             showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
@@ -2279,11 +2234,16 @@ final class MainViewModel {
     }
 
     private func visibleTargetIds() -> [String] {
+        let preferences = AgentDisplayCatalog.normalize(routeState?.settings.agentDisplayPreferences ?? [])
+        let visibleTargetIds = preferences
+            .filter(\.isVisible)
+            .map(\.targetId)
+
         if showAllTargets {
-            return Self.targetOrder
+            return visibleTargetIds
         }
 
-        return Array(Self.targetOrder.filter { detectedTargets.contains($0) }.prefix(10))
+        return Array(visibleTargetIds.filter { detectedTargets.contains($0) }.prefix(10))
     }
 
     private func normalizedTargets(_ values: [String]) -> [String] {
@@ -2314,7 +2274,7 @@ final class MainViewModel {
         let preparedDetailContent = preparedDetailContentBySourceId[sourceId]
 
         let selectedLeafIds = Set(draft.selectedLeafIds)
-        let enabledTargetLabels = draft.enabledTargets.map { Self.targetCatalog[$0] ?? $0 }
+        let enabledTargetLabels = draft.enabledTargets.map { AgentDisplayCatalog.label(for: $0) }
         let enabledTargets = Set(draft.enabledTargets)
         let inspectedLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
@@ -2407,14 +2367,14 @@ final class MainViewModel {
                 return nil
             }
             let leafId = (deployment["leafId"] as? String)?.nonEmpty ?? "unknown"
-            return "\(Self.targetCatalog[target] ?? target) · \(status) · \(leafId)"
+            return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(leafId)"
         }
 
         let targets = visibleTargetIds().map { targetId in
             DetailTarget(
                 id: targetId,
-                label: Self.targetCatalog[targetId] ?? targetId,
-                shortLabel: Self.targetShortLabel[targetId] ?? String((Self.targetCatalog[targetId] ?? targetId).prefix(2)),
+                label: AgentDisplayCatalog.label(for: targetId),
+                shortLabel: AgentDisplayCatalog.shortLabel(for: targetId),
                 isEnabled: enabledTargets.contains(targetId)
             )
         }
@@ -3008,7 +2968,7 @@ final class MainViewModel {
     }
 
     private func targetLabel(for targetId: String) -> String {
-        Self.targetCatalog[targetId] ?? targetId
+        AgentDisplayCatalog.label(for: targetId)
     }
 
     private func compactSkillToastMessage(sourceId: String, leafId: String, enabled: Bool) -> PresentationText {

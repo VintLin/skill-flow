@@ -468,7 +468,11 @@ struct MainView: View {
                 accent: accent
             )
         case .settings:
-            SettingsScreen(viewModel: settingsViewModel, theme: theme)
+            SettingsScreen(
+                viewModel: settingsViewModel,
+                theme: theme,
+                detectedTargetIds: viewModel.detectedTargetIdsForSettings
+            )
         case .detail:
             DetailScreen(
                 container: detailContainer,
@@ -778,26 +782,34 @@ struct MainView: View {
     private func toastBackground(_ style: MainViewModel.ToastStyle) -> Color {
         switch style {
         case .loading:
-            return AppTheme.toolbarGlass(for: theme)
+            return AppTheme.surface(for: theme)
         case .success:
-            return Color.green.opacity(0.22)
+            return theme == .dark
+                ? Color(red: 20.0 / 255.0, green: 83.0 / 255.0, blue: 45.0 / 255.0)
+                : Color(red: 220.0 / 255.0, green: 252.0 / 255.0, blue: 231.0 / 255.0)
         case .neutral:
-            return Color.gray.opacity(theme == .dark ? 0.26 : 0.20)
+            return AppTheme.surface(for: theme)
         case .error:
-            return Color.red.opacity(0.20)
+            return theme == .dark
+                ? Color(red: 127.0 / 255.0, green: 29.0 / 255.0, blue: 29.0 / 255.0)
+                : Color(red: 254.0 / 255.0, green: 242.0 / 255.0, blue: 242.0 / 255.0)
         }
     }
 
     private func toastBorder(_ style: MainViewModel.ToastStyle) -> Color {
         switch style {
         case .loading:
-            return AppTheme.border(for: theme)
+            return AppTheme.border(for: theme).opacity(theme == .dark ? 0.55 : 0.45)
         case .success:
-            return Color.green.opacity(0.45)
+            return theme == .dark
+                ? Color(red: 74.0 / 255.0, green: 222.0 / 255.0, blue: 128.0 / 255.0).opacity(0.26)
+                : Color(red: 34.0 / 255.0, green: 197.0 / 255.0, blue: 94.0 / 255.0).opacity(0.18)
         case .neutral:
-            return Color.gray.opacity(0.40)
+            return AppTheme.border(for: theme).opacity(theme == .dark ? 0.48 : 0.38)
         case .error:
-            return Color.red.opacity(0.35)
+            return theme == .dark
+                ? Color(red: 252.0 / 255.0, green: 165.0 / 255.0, blue: 165.0 / 255.0).opacity(0.24)
+                : Color(red: 239.0 / 255.0, green: 68.0 / 255.0, blue: 68.0 / 255.0).opacity(0.16)
         }
     }
 

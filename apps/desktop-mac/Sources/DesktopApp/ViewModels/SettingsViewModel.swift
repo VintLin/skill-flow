@@ -15,6 +15,15 @@ final class SettingsViewModel {
         case failed
     }
 
+    struct AgentDisplayRow: Identifiable, Equatable {
+        let targetId: String
+        let title: String
+        let description: String
+        let isVisible: Bool
+
+        var id: String { targetId }
+    }
+
     nonisolated static let autoLaunchKey = "desktop.autoLaunch"
     nonisolated static let logLevelKey = "desktop.logLevel"
     nonisolated static let externalHelperKey = "desktop.experimentalExternalHelper"
@@ -22,6 +31,7 @@ final class SettingsViewModel {
     nonisolated static let themeAccentKey = "desktop.themeAccent"
     nonisolated static let homeCardDensityKey = "desktop.homeCardDensity"
     nonisolated static let menuCardDensityKey = "desktop.menuCardDensity"
+    nonisolated static let agentDisplayPreferencesKey = "desktop.agentDisplayPreferences"
 
     private let state: DesktopAppState
     private let store: DesktopSettingsStore
@@ -144,6 +154,60 @@ final class SettingsViewModel {
         currentLanguage.locale
     }
 
+    func detectedAgentRows(detectedTargetIds: [String]) -> [AgentDisplayRow] {
+        let detectedSet = Set(detectedTargetIds)
+        return normalizedAgentDisplayPreferences()
+            .filter { detectedSet.contains($0.targetId) }
+            .map { preference in
+                AgentDisplayRow(
+                    targetId: preference.targetId,
+                    title: AgentDisplayCatalog.label(for: preference.targetId),
+                    description: preference.targetId,
+                    isVisible: preference.isVisible
+                )
+            }
+    }
+
+    func setAgentVisibility(targetId: String, isVisible: Bool) {
+        var preferences = normalizedAgentDisplayPreferences()
+        guard let index = preferences.firstIndex(where: { $0.targetId == targetId }) else {
+            return
+        }
+        preferences[index].isVisible = isVisible
+        persistAgentDisplayPreferences(preferences)
+    }
+
+    func moveAgents(from offsets: IndexSet, to destination: Int, detectedTargetIds: [String]) {
+        let detectedOrder = AgentDisplayCatalog.orderedTargetIds(in: detectedTargetIds)
+        let detectedSet = Set(detectedOrder)
+        var preferences = normalizedAgentDisplayPreferences()
+        var reorderedDetected = preferences.filter { detectedSet.contains($0.targetId) }
+
+        guard !reorderedDetected.isEmpty else {
+            return
+        }
+
+        reorderedDetected.move(fromOffsets: offsets, toOffset: destination)
+        var reorderedIterator = reorderedDetected.makeIterator()
+
+        preferences = preferences.map { preference in
+            guard detectedSet.contains(preference.targetId), let reordered = reorderedIterator.next() else {
+                return preference
+            }
+            return AgentDisplayPreference(
+                targetId: reordered.targetId,
+                isVisible: reordered.isVisible,
+                sortOrder: preference.sortOrder
+            )
+        }
+
+        persistAgentDisplayPreferences(preferences)
+    }
+
+    func resetAgentDisplayPreferences() {
+        persistAgentDisplayPreferences(AgentDisplayCatalog.defaultPreferences())
+    }
+
     func resetConfiguration() {
         state.settings = SettingsState()
         store.save(state.settings)
@@ -183,5 +247,14 @@ final class SettingsViewModel {
 
     private static func isVersion(_ lhs: String, newerThan rhs: String) -> Bool {
         lhs.compare(rhs, options: .numeric) == .orderedDescending
+    }
+
+    private func normalizedAgentDisplayPreferences() -> [AgentDisplayPreference] {
+        AgentDisplayCatalog.normalize(state.settings.agentDisplayPreferences)
+    }
+
+    private func persistAgentDisplayPreferences(_ preferences: [AgentDisplayPreference]) {
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(preferences)
+        store.save(state.settings)
     }
 }

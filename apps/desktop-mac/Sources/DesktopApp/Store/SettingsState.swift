@@ -14,4 +14,5 @@ struct SettingsState: Equatable {
     var themeAccentRawValue: String = DesktopAccentColor.blue.rawValue
     var homeCardDensityRawValue: String = DesktopCardDensity.comfortable.rawValue
     var menuCardDensityRawValue: String = DesktopCardDensity.compact.rawValue
+    var agentDisplayPreferences: [AgentDisplayPreference] = []
 }

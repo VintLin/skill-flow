@@ -97,6 +97,8 @@
 "settings.option.language.en" = "English";
 "settings.option.language.ja" = "日本語";
 "settings.section.menu_bar" = "Menu Bar";
+"settings.section.agent_display" = "Agent Display";
+"settings.section.agent_display.description" = "Configure which detected agents appear in group views and in what order.";
 "settings.section.application_update" = "Application Update";
 "settings.row.current_version.title" = "Current version";
 "settings.row.current_version.description" = "Version bundled in this app build.";
@@ -114,6 +116,9 @@
 "settings.row.home_card_density.description" = "Choose whether home uses the full card or the compact menu card layout.";
 "settings.row.menu_card_density.title" = "Menu card density";
 "settings.row.menu_card_density.description" = "Choose whether the menu bar list uses compact cards or the full home card layout.";
+"settings.agent_display.target_id" = "target: %@";
+"settings.agent_display.empty" = "No detected agents.";
+"settings.agent_display.footer" = "Drag to reorder. Changes affect Group Card and Group Detail.";
 "settings.option.card_density.comfortable" = "Standard";
 "settings.option.card_density.compact" = "Compact";
 "settings.section.general" = "General";

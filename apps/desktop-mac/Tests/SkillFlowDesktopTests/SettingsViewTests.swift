@@ -22,6 +22,11 @@ final class SettingsViewTests: XCTestCase {
         )
     }
 
+    func testAgentDisplayLocalizationKeysResolve() {
+        XCTAssertNotEqual(L10n.string("settings.section.agent_display", locale: Locale(identifier: "en")), "settings.section.agent_display")
+        XCTAssertNotEqual(L10n.string("settings.agent_display.empty", locale: Locale(identifier: "zh-Hans")), "settings.agent_display.empty")
+    }
+
     private func assertColorsEqual(
         _ lhs: Color,
         _ rhs: Color,

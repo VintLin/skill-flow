@@ -409,13 +409,14 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(model.importDisplayGroups.map(\.canonicalRepo), ["anthropics/skills"])
     }
 
-    func testImportPageImportSucceedsAndNavigatesToDetail() async throws {
+    func testImportPageImportSucceedsAndStaysOnImportPage() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)
         let model = container.mainViewModel
+        runtime.state.view.currentRoute = .importPage
         await model.loadImportPageIfNeeded()
         await model.previewImportGroupIfNeeded("anthropics-skills")
 
@@ -428,9 +429,8 @@ final class WorkflowCoverageTests: XCTestCase {
         await Task.yield()
         await Task.yield()
 
-        XCTAssertEqual(model.currentRoute, .detail(sourceId: "anthropics-skills"))
-        XCTAssertEqual(runtime.state.view.currentRoute, .detail(sourceId: "anthropics-skills"))
-        XCTAssertEqual(model.selectedGroupId, "anthropics-skills")
+        XCTAssertEqual(model.currentRoute, .importPage)
+        XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
         XCTAssertTrue(model.sourceIds.contains("anthropics-skills"))
         XCTAssertTrue(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
         XCTAssertEqual(

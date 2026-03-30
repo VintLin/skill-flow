@@ -50,6 +50,47 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
     }
 
+    func testVisibleTargetsFollowSettingsOrderAndVisibility() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let state = DesktopAppState()
+        state.settings.agentDisplayPreferences = [
+            AgentDisplayPreference(targetId: "cursor", isVisible: true, sortOrder: 0),
+            AgentDisplayPreference(targetId: "claude-code", isVisible: false, sortOrder: 1),
+        ]
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+        await model.selectSource("alpha")
+        try await fixture.waitForDetailHydration(model, sourceId: "alpha")
+
+        XCTAssertEqual(model.visibleTargets.map(\.id), ["cursor"])
+        XCTAssertEqual(model.groupCards.first?.targets.map(\.id), ["cursor"])
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.targets.map(\.id), ["cursor"])
+    }
+
+    func testShowAllTargetsStillHonorsVisibilityAndUserOrder() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let state = DesktopAppState()
+        state.settings.agentDisplayPreferences = [
+            AgentDisplayPreference(targetId: "codex", isVisible: true, sortOrder: 0),
+            AgentDisplayPreference(targetId: "claude-code", isVisible: true, sortOrder: 1),
+            AgentDisplayPreference(targetId: "cursor", isVisible: false, sortOrder: 2),
+        ]
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+        model.showAllTargets = true
+
+        XCTAssertEqual(model.visibleTargets.prefix(3).map(\.id), ["codex", "claude-code", "github-copilot"])
+        XCTAssertFalse(model.visibleTargets.map(\.id).contains("cursor"))
+    }
+
     func testSaveFailureRollsBackOptimisticEdit() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .failureBaseline)
