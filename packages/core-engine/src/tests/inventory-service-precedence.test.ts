@@ -9,7 +9,7 @@ import {
 describe.sequential("inventory discovery precedence", () => {
   const sandbox = useSkillFlowSandbox();
 
-  test("keeps a root skill ahead of matching duplicates in other buckets", async () => {
+  test("returns only the root skill when a root SKILL.md exists", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "SKILL.md": skillDoc("browse", "Root browse skill."),
       "alpha/browse/SKILL.md": skillDoc("browse", "Root browse skill."),
@@ -21,14 +21,11 @@ describe.sequential("inventory discovery precedence", () => {
 
     expect(scanned.leafs).toHaveLength(1);
     expect(scanned.leafs[0]?.relativePath).toBe(".");
-    expect(
-      scanned.duplicateLeafs.some(
-        (duplicate) => duplicate.path === "alpha/browse" && duplicate.keptPath === ".",
-      ),
-    ).toBe(true);
+    expect(scanned.duplicateLeafs).toEqual([]);
+    expect(scanned.skillFileCount).toBe(1);
   });
 
-  test("prefers standard skill buckets over alphabetically earlier recursive matches", async () => {
+  test("uses standard skill buckets before recursive fallback", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "alpha/browse/SKILL.md": skillDoc("browse", "Shared browse skill."),
       "skills/browse/SKILL.md": skillDoc("browse", "Shared browse skill."),
@@ -42,14 +39,15 @@ describe.sequential("inventory discovery precedence", () => {
 
     expect(scanned.leafs).toHaveLength(1);
     expect(scanned.leafs[0]?.relativePath).toBe("skills/browse");
-    expect(
-      scanned.duplicateLeafs.some(
-        (duplicate) => duplicate.path === "alpha/browse" && duplicate.keptPath === "skills/browse",
-      ),
-    ).toBe(true);
+    expect(scanned.duplicateLeafs).toEqual([
+      { path: "skills/.curated/browse", keptPath: "skills/browse" },
+      { path: "skills/.experimental/browse", keptPath: "skills/browse" },
+      { path: "skills/.system/browse", keptPath: "skills/browse" },
+    ]);
+    expect(scanned.skillFileCount).toBe(4);
   });
 
-  test("preserves recursive fallback for hidden host directories", async () => {
+  test("discovers hidden host directories from the standard bucket list", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       ".agents/skills/gstack-browse/SKILL.md": skillDoc("gstack-browse", "Host directory skill."),
     });
@@ -59,6 +57,21 @@ describe.sequential("inventory discovery precedence", () => {
 
     expect(scanned.leafs).toHaveLength(1);
     expect(scanned.leafs[0]?.relativePath).toBe(".agents/skills/gstack-browse");
+  });
+
+  test("does not recursively pull duplicate source layouts when a supported host bucket already matched", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      ".agents/skills/adapt/SKILL.md": skillDoc("adapt", "Agent skill."),
+      "source/skills/adapt/SKILL.md": skillDoc("adapt", "Source mirror."),
+    });
+    const inventory = new InventoryService();
+
+    const scanned = await inventory.scanSource("pbakaus-impeccable", repoPath, "impeccable");
+
+    expect(scanned.leafs).toHaveLength(1);
+    expect(scanned.leafs[0]?.relativePath).toBe(".agents/skills/adapt");
+    expect(scanned.duplicateLeafs).toEqual([]);
+    expect(scanned.skillFileCount).toBe(1);
   });
 
   test("uses repository display name for a root-level skill link name", async () => {

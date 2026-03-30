@@ -20,6 +20,12 @@ export type TargetDefinition = {
   writerKey: string;
   writeRootCandidates: string[];
   compatReadRootCandidates: string[];
+  // Reserved for future project-scope installs. Current runtime still writes via writeRootCandidates.
+  documentedProjectPath?: string;
+  // Mirrors the external README contract and may differ from today's runtime write root.
+  documentedGlobalPath: string;
+  iconAssetName?: string;
+  documentedAgentIds?: string[];
 };
 
 export const TARGET_ORDER: DeploymentTargetName[] = [
@@ -46,6 +52,9 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     writerKey: "claude-home",
     writeRootCandidates: [path.join(os.homedir(), ".claude", "skills")],
     compatReadRootCandidates: [],
+    documentedProjectPath: ".claude/skills/",
+    documentedGlobalPath: "~/.claude/skills/",
+    iconAssetName: "claude-code.svg",
   },
   codex: {
     label: "Codex",
@@ -53,10 +62,16 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     envVar: "SKILL_FLOW_TARGET_CODEX",
     writerKey: "agents-skills",
     writeRootCandidates: [
+      path.join(os.homedir(), ".codex", "skills"),
+    ],
+    compatReadRootCandidates: [
       path.join(os.homedir(), ".agents", "skills"),
       path.join(os.homedir(), ".codex", ".agents", "skills"),
+      path.join("/etc", "codex", "skills"),
     ],
-    compatReadRootCandidates: [path.join("/etc", "codex", "skills")],
+    documentedProjectPath: ".agents/skills/",
+    documentedGlobalPath: "~/.codex/skills/",
+    iconAssetName: "codex.svg",
   },
   cursor: {
     label: "Cursor",
@@ -69,6 +84,9 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
       path.join(os.homedir(), ".claude", "skills"),
       path.join(os.homedir(), ".codex", "skills"),
     ],
+    documentedProjectPath: ".agents/skills/",
+    documentedGlobalPath: "~/.cursor/skills/",
+    iconAssetName: "cursor.svg",
   },
   "github-copilot": {
     label: "GitHub Copilot",
@@ -80,6 +98,9 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
       path.join(os.homedir(), ".claude", "skills"),
       path.join(os.homedir(), ".agents", "skills"),
     ],
+    documentedProjectPath: ".agents/skills/",
+    documentedGlobalPath: "~/.copilot/skills/",
+    iconAssetName: "copilot.svg",
   },
   "gemini-cli": {
     label: "Gemini CLI",
@@ -88,6 +109,9 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     writerKey: "gemini-home",
     writeRootCandidates: [path.join(os.homedir(), ".gemini", "skills")],
     compatReadRootCandidates: [path.join(os.homedir(), ".agents", "skills")],
+    documentedProjectPath: ".agents/skills/",
+    documentedGlobalPath: "~/.gemini/skills/",
+    iconAssetName: "gemini.svg",
   },
   opencode: {
     label: "OpenCode",
@@ -96,12 +120,15 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     writerKey: "opencode-home",
     writeRootCandidates: [
       path.join(os.homedir(), ".config", "opencode", "skills"),
-      path.join(os.homedir(), ".opencode", "skills"),
     ],
     compatReadRootCandidates: [
+      path.join(os.homedir(), ".opencode", "skills"),
       path.join(os.homedir(), ".claude", "skills"),
       path.join(os.homedir(), ".agents", "skills"),
     ],
+    documentedProjectPath: ".agents/skills/",
+    documentedGlobalPath: "~/.config/opencode/skills/",
+    iconAssetName: "opencode.svg",
   },
   openclaw: {
     label: "OpenClaw",
@@ -110,6 +137,9 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     writerKey: "openclaw-home",
     writeRootCandidates: [path.join(os.homedir(), ".openclaw", "skills")],
     compatReadRootCandidates: [],
+    documentedProjectPath: "skills/",
+    documentedGlobalPath: "~/.openclaw/skills/",
+    iconAssetName: "clawdbot.svg",
   },
   pi: {
     label: "Pi",
@@ -122,6 +152,8 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
       path.join(os.homedir(), ".claude", "skills"),
       path.join(os.homedir(), ".codex", "skills"),
     ],
+    documentedProjectPath: ".pi/skills/",
+    documentedGlobalPath: "~/.pi/agent/skills/",
   },
   windsurf: {
     label: "Windsurf",
@@ -132,6 +164,9 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     compatReadRootCandidates: [
       path.join("/Library", "Application Support", "Windsurf", "skills"),
     ],
+    documentedProjectPath: ".windsurf/skills/",
+    documentedGlobalPath: "~/.codeium/windsurf/skills/",
+    iconAssetName: "windsurf.svg",
   },
   "roo-code": {
     label: "Roo Code",
@@ -140,14 +175,24 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     writerKey: "roo-home",
     writeRootCandidates: [path.join(os.homedir(), ".roo", "skills")],
     compatReadRootCandidates: [],
+    documentedProjectPath: ".roo/skills/",
+    documentedGlobalPath: "~/.roo/skills/",
+    iconAssetName: "roo.svg",
+    documentedAgentIds: ["roo"],
   },
   cline: {
     label: "Cline",
     strategy: "symlink",
     envVar: "SKILL_FLOW_TARGET_CLINE",
     writerKey: "cline-home",
-    writeRootCandidates: [path.join(os.homedir(), ".cline", "skills")],
-    compatReadRootCandidates: [path.join(os.homedir(), ".claude", "skills")],
+    writeRootCandidates: [path.join(os.homedir(), ".agents", "skills")],
+    compatReadRootCandidates: [
+      path.join(os.homedir(), ".cline", "skills"),
+      path.join(os.homedir(), ".claude", "skills"),
+    ],
+    documentedProjectPath: ".agents/skills/",
+    documentedGlobalPath: "~/.agents/skills/",
+    iconAssetName: "cline.svg",
   },
   amp: {
     label: "Amp",
@@ -156,9 +201,14 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     writerKey: "amp-home",
     writeRootCandidates: [
       path.join(os.homedir(), ".config", "agents", "skills"),
-      path.join(os.homedir(), ".config", "amp", "skills"),
     ],
-    compatReadRootCandidates: [path.join(os.homedir(), ".claude", "skills")],
+    compatReadRootCandidates: [
+      path.join(os.homedir(), ".config", "amp", "skills"),
+      path.join(os.homedir(), ".claude", "skills"),
+    ],
+    documentedProjectPath: ".agents/skills/",
+    documentedGlobalPath: "~/.config/agents/skills/",
+    iconAssetName: "amp.svg",
   },
   kiro: {
     label: "Kiro",
@@ -167,6 +217,10 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     writerKey: "kiro-home",
     writeRootCandidates: [path.join(os.homedir(), ".kiro", "skills")],
     compatReadRootCandidates: [],
+    documentedProjectPath: ".kiro/skills/",
+    documentedGlobalPath: "~/.kiro/skills/",
+    iconAssetName: "kiro-cli.svg",
+    documentedAgentIds: ["kiro-cli"],
   },
 };
 
@@ -199,6 +253,21 @@ export const TARGET_COMPAT_READ_CANDIDATES: Record<DeploymentTargetName, string[
       TARGET_DEFINITIONS[target].compatReadRootCandidates,
     ]),
   ) as Record<DeploymentTargetName, string[]>;
+
+export const TARGET_DOCUMENTED_PROJECT_PATHS: Record<DeploymentTargetName, string | undefined> =
+  Object.fromEntries(
+    TARGET_ORDER.map((target) => [target, TARGET_DEFINITIONS[target].documentedProjectPath]),
+  ) as Record<DeploymentTargetName, string | undefined>;
+
+export const TARGET_DOCUMENTED_GLOBAL_PATHS: Record<DeploymentTargetName, string> =
+  Object.fromEntries(
+    TARGET_ORDER.map((target) => [target, TARGET_DEFINITIONS[target].documentedGlobalPath]),
+  ) as Record<DeploymentTargetName, string>;
+
+export const TARGET_ICON_ASSET_NAMES: Record<DeploymentTargetName, string | undefined> =
+  Object.fromEntries(
+    TARGET_ORDER.map((target) => [target, TARGET_DEFINITIONS[target].iconAssetName]),
+  ) as Record<DeploymentTargetName, string | undefined>;
 
 export function getExplicitTargetNames(): DeploymentTargetName[] {
   return TARGET_ORDER.filter((target) => {

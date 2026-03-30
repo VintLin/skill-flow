@@ -25,6 +25,35 @@ export class InventoryService {
     ".git",
     "node_modules",
   ]);
+  private static readonly PRIORITY_SKILL_DIRECTORIES = [
+    "skills",
+    "skills/.curated",
+    "skills/.experimental",
+    "skills/.system",
+    ".agents/skills",
+    ".claude/skills",
+    ".cline/skills",
+    ".codebuddy/skills",
+    ".codex/skills",
+    ".commandcode/skills",
+    ".continue/skills",
+    ".github/skills",
+    ".goose/skills",
+    ".iflow/skills",
+    ".junie/skills",
+    ".kilocode/skills",
+    ".kiro/skills",
+    ".mux/skills",
+    ".neovate/skills",
+    ".opencode/skills",
+    ".openhands/skills",
+    ".pi/skills",
+    ".qoder/skills",
+    ".roo/skills",
+    ".trae/skills",
+    ".windsurf/skills",
+    ".zencoder/skills",
+  ] as const;
 
   async scanSource(
     sourceId: string,
@@ -69,7 +98,7 @@ export class InventoryService {
         contentHash: await hashDirectory(leafRoot),
         metadataWarnings: parsed.metadataWarnings,
         valid: true,
-        dedupeKey: `${parsed.name}\n${parsed.description}`,
+        dedupeKey: parsed.name,
       });
     }
 
@@ -94,24 +123,57 @@ export class InventoryService {
     if (await pathExists(rootSkillPath)) {
       discovered.push(rootSkillPath);
       seen.add(rootSkillPath);
+      return discovered;
     }
 
-    await this.walkSkillTree(path.join(rootPath, "skills"), discovered, seen, false);
-    await this.walkSkillTree(path.join(rootPath, "skills", ".curated"), discovered, seen, true);
-    await this.walkSkillTree(path.join(rootPath, "skills", ".experimental"), discovered, seen, true);
-    await this.walkSkillTree(path.join(rootPath, "skills", ".system"), discovered, seen, true);
-    await this.walkSkillTree(rootPath, discovered, seen, true);
+    for (const relativePath of InventoryService.PRIORITY_SKILL_DIRECTORIES) {
+      await this.collectDirectChildSkillFiles(path.join(rootPath, relativePath), discovered, seen);
+    }
+
+    if (discovered.length > 0) {
+      return discovered;
+    }
+
+    await this.walkSkillTree(rootPath, discovered, seen, 0);
 
     return discovered;
+  }
+
+  private async collectDirectChildSkillFiles(
+    currentPath: string,
+    discovered: string[],
+    seen: Set<string>,
+  ): Promise<void> {
+    if (!(await pathExists(currentPath))) {
+      return;
+    }
+
+    const entries = await fs.readdir(currentPath, { withFileTypes: true });
+    const directories = entries
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          !InventoryService.IGNORED_DIRECTORIES.has(entry.name),
+      )
+      .sort((left, right) => left.name.localeCompare(right.name));
+
+    for (const entry of directories) {
+      const skillFilePath = path.join(currentPath, entry.name, "SKILL.md");
+      if (!(await pathExists(skillFilePath)) || seen.has(skillFilePath)) {
+        continue;
+      }
+      seen.add(skillFilePath);
+      discovered.push(skillFilePath);
+    }
   }
 
   private async walkSkillTree(
     currentPath: string,
     discovered: string[],
     seen: Set<string>,
-    includeHiddenDirectories: boolean,
+    depth: number,
   ): Promise<void> {
-    if (!(await pathExists(currentPath))) {
+    if (depth > 5 || !(await pathExists(currentPath))) {
       return;
     }
 
@@ -127,16 +189,14 @@ export class InventoryService {
           !entry.name.startsWith("."),
       )
       .sort((left, right) => left.name.localeCompare(right.name));
-    const hiddenDirectories = includeHiddenDirectories
-      ? entries
-          .filter(
-            (entry) =>
-              entry.isDirectory() &&
-              !InventoryService.IGNORED_DIRECTORIES.has(entry.name) &&
-              entry.name.startsWith("."),
-          )
-          .sort((left, right) => left.name.localeCompare(right.name))
-      : [];
+    const hiddenDirectories = entries
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          !InventoryService.IGNORED_DIRECTORIES.has(entry.name) &&
+          entry.name.startsWith("."),
+      )
+      .sort((left, right) => left.name.localeCompare(right.name));
 
     for (const entry of files) {
       if (entry.name !== "SKILL.md") {
@@ -152,12 +212,7 @@ export class InventoryService {
     }
 
     for (const entry of [...visibleDirectories, ...hiddenDirectories]) {
-      await this.walkSkillTree(
-        path.join(currentPath, entry.name),
-        discovered,
-        seen,
-        includeHiddenDirectories,
-      );
+      await this.walkSkillTree(path.join(currentPath, entry.name), discovered, seen, depth + 1);
     }
   }
 

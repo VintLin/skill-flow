@@ -236,6 +236,25 @@ describe.sequential("source service", () => {
     expect(item?.removedLeafIds).toEqual([]);
   });
 
+  test("addSource keeps only the supported host bucket when a mirrored source layout also exists", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      ".agents/skills/adapt/SKILL.md": skillDoc("adapt", "Agent skill."),
+      "source/skills/adapt/SKILL.md": skillDoc("adapt", "Source mirror."),
+    });
+    const sourceService = createSourceService();
+
+    const added = await sourceService.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    expect(added.data.leafCount).toBe(1);
+    expect(
+      added.warnings.some((warning) => warning.message.includes("Duplicate skill content")),
+    ).toBe(false);
+  });
+
   test("github sources fall back to zip download when git is unavailable", async () => {
     const sourceService = createSourceService();
     const repoRoot = path.join(sandbox.sandboxRoot, "github-zip");
