@@ -550,7 +550,6 @@ final class MainViewModel {
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
     private let deferredDraftSyncDelay: Duration = .milliseconds(250)
     private let recommendationsProvider: () -> [ImportRecommendationEntry]
-    private var baselineDrafts: [String: DraftState] = [:]
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
@@ -1111,8 +1110,9 @@ final class MainViewModel {
         var rows: [DeploymentRow] = []
 
         for summary in allSummaries {
-            let selectedLeafIds = baselineDrafts[summary.sourceId]?.selectedLeafIds ?? summary.selectedLeafIds
-            let enabledTargets = baselineDrafts[summary.sourceId]?.enabledTargets ?? summary.enabledTargets
+            let draft = draft(for: summary.sourceId) ?? buildInitialDraftFromSummary(summary)
+            let selectedLeafIds = draft.selectedLeafIds
+            let enabledTargets = draft.enabledTargets
 
             if enabledTargets.isEmpty {
                 rows.append(
@@ -1857,7 +1857,6 @@ final class MainViewModel {
             if selectedSourceId == sourceId {
                 selectedSourceId = nil
             }
-            baselineDrafts.removeValue(forKey: sourceId)
             workingDrafts.removeValue(forKey: sourceId)
             inspectedPayloadBySourceId.removeValue(forKey: sourceId)
             detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
@@ -1930,7 +1929,6 @@ final class MainViewModel {
                 let selectedLeafIds = uniqueSorted(draftObject["selectedLeafIds"] as? [String] ?? [])
                 let enabledTargets = normalizedTargets(draftObject["enabledTargets"] as? [String] ?? [])
                 let draft = DraftState(selectedLeafIds: selectedLeafIds, enabledTargets: enabledTargets)
-                baselineDrafts[sourceId] = draft
                 workingDrafts[sourceId] = draft
             }
         }
@@ -2074,14 +2072,10 @@ final class MainViewModel {
             let savePhase = saveStateBySourceId[summary.sourceId]?.phase ?? .idle
 
             if savePhase == .saving {
-                if baselineDrafts[summary.sourceId] == nil {
-                    baselineDrafts[summary.sourceId] = serverDraft
-                }
                 if workingDrafts[summary.sourceId] == nil {
                     workingDrafts[summary.sourceId] = serverDraft
                 }
             } else {
-                baselineDrafts[summary.sourceId] = serverDraft
                 workingDrafts[summary.sourceId] = serverDraft
             }
 
@@ -2222,7 +2216,17 @@ final class MainViewModel {
         guard let sourceId = resolveSourceId(sourceId) else {
             return nil
         }
-        return workingDrafts[sourceId]
+        guard let summary = summary(for: sourceId) else {
+            return nil
+        }
+
+        let serverDraft = buildInitialDraftFromSummary(summary)
+        let savePhase = saveStateBySourceId[sourceId]?.phase ?? .idle
+        if savePhase == .saving || savePhase == .saved {
+            return workingDrafts[sourceId] ?? serverDraft
+        }
+
+        return serverDraft
     }
 
     private func summary(for sourceId: String?) -> WorkflowSummary? {
@@ -2700,7 +2704,7 @@ final class MainViewModel {
 
         let normalizedDraft = normalizeDraft(nextDraft)
 
-        let previousDraft = workingDrafts[sourceId] ?? baselineDrafts[sourceId] ?? normalizedDraft
+        let previousDraft = draft(for: sourceId) ?? normalizedDraft
         selectedSourceId = sourceId
         workingDrafts[sourceId] = normalizedDraft
         saveStateBySourceId[sourceId] = SaveState(phase: .saving, detail: nil)
@@ -2711,7 +2715,6 @@ final class MainViewModel {
                 selectedLeafIds: normalizedDraft.selectedLeafIds,
                 enabledTargets: normalizedDraft.enabledTargets
             )
-            baselineDrafts[sourceId] = normalizedDraft
             workingDrafts[sourceId] = normalizedDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
             showToast(style: successStyle, text: successMessage)
@@ -4106,7 +4109,6 @@ final class MainViewModel {
     }
 
     private func pruneStateMaps(allowedSourceIds: Set<String>) {
-        baselineDrafts = pruneSourceMap(baselineDrafts, allowedSourceIds: allowedSourceIds)
         workingDrafts = pruneSourceMap(workingDrafts, allowedSourceIds: allowedSourceIds)
         saveStateBySourceId = pruneSourceMap(saveStateBySourceId, allowedSourceIds: allowedSourceIds)
     }
@@ -4130,12 +4132,18 @@ final class MainViewModel {
     }
 
     private func projectionDrafts() -> [String: ProjectionDraftState] {
-        workingDrafts.mapValues {
-            ProjectionDraftState(
-                enabledTargets: $0.enabledTargets,
-                selectedLeafIds: $0.selectedLeafIds
+        Dictionary(uniqueKeysWithValues: allSummaries.compactMap { summary in
+            guard let draft = draft(for: summary.sourceId) else {
+                return nil
+            }
+            return (
+                summary.sourceId,
+                ProjectionDraftState(
+                    enabledTargets: draft.enabledTargets,
+                    selectedLeafIds: draft.selectedLeafIds
+                )
             )
-        }
+        })
     }
 
     func projectionNameMap(for sourceId: String? = nil) -> [String: String] {
