@@ -141,6 +141,7 @@
 "settings.option.accent.purple" = "Purple";
 "menu.placeholder.search_group_source" = "Search Group / Source";
 "common.section.agents" = "Agents";
+"common.section.tags" = "Tags";
 "group_card.section.skills" = "Skills";
 "common.section.source" = "Source";
 "group_card.action.import" = "Import";
@@ -149,6 +150,8 @@
 "group_card.action.update" = "Update";
 "group_card.action.delete" = "Delete";
 "group_card.loading.downloading" = "Downloading...";
+"group_tag.action.add" = "Add tag";
+"group_tag.filter.all" = "ALL";
 "group_card.loading.updating" = "Updating...";
 "common.meta.from" = "from %@";
 "common.loading.groups" = "Loading groups";

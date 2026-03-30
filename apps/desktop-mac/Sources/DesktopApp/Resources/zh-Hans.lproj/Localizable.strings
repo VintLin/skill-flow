@@ -141,6 +141,7 @@
 "settings.option.accent.purple" = "紫色";
 "menu.placeholder.search_group_source" = "搜索分组 / 来源";
 "common.section.agents" = "代理";
+"common.section.tags" = "标签";
 "group_card.section.skills" = "技能";
 "common.section.source" = "来源";
 "group_card.action.import" = "导入";
@@ -149,6 +150,8 @@
 "group_card.action.update" = "更新";
 "group_card.action.delete" = "删除";
 "group_card.loading.downloading" = "正在下载...";
+"group_tag.action.add" = "添加标签";
+"group_tag.filter.all" = "ALL";
 "group_card.loading.updating" = "正在更新...";
 "common.meta.from" = "来自 %@";
 "common.loading.groups" = "正在加载分组";

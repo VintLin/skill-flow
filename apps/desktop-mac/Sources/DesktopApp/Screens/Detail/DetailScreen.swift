@@ -213,6 +213,7 @@ struct DetailScreen: View {
         fallbackRow _: MainViewModel.SourceRow?
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            detailTagRail(groupId: groupId)
             detailAgentRail(groupId: groupId, detail: detail, isLoading: detail == nil)
 
             if let detail, !detail.groupDocuments.isEmpty {
@@ -622,6 +623,28 @@ struct DetailScreen: View {
                     }
                 }
             }
+        }
+    }
+
+    private func detailTagRail(groupId: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(t("common.section.tags"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+
+            EditableGroupTagSection(
+                theme: theme,
+                accent: accent,
+                controlHeight: detailAgentItemHeight,
+                cornerRadius: 10,
+                inputWidth: 110,
+                tagItems: container.groupTags(for: groupId, locale: locale),
+                suggestions: container.tagSuggestions(for: groupId, locale: locale),
+                onCreate: { title, itemAccent in
+                    container.addCustomTag(title, accent: itemAccent, toSourceId: groupId)
+                }
+            )
         }
     }
 

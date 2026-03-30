@@ -21,6 +21,7 @@ final class DetailScreenState {
 @MainActor
 final class DetailScreenContainer {
     private let state: DesktopAppState
+    private let groupTagController: GroupTagController
     private let detailSnapshot: (String) -> DetailViewModel.Snapshot?
     private let fallbackRowProvider: (String) -> MainViewModel.SourceRow?
     private let hasInspectPayloadProvider: (String) -> Bool
@@ -34,8 +35,20 @@ final class DetailScreenContainer {
     private let setTargetEnabledAction: (String, Bool, String) async -> Void
     let screenState = DetailScreenState()
 
+    private static func defaultGroupTagController(state: DesktopAppState) -> GroupTagController {
+        GroupTagController(
+            state: state,
+            store: DesktopGroupTagStore(),
+            recommendationsProvider: { [] },
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { _ in nil },
+            randomAccent: { .blue }
+        )
+    }
+
     init(
         state: DesktopAppState,
+        groupTagController: GroupTagController,
         detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
         fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
         hasInspectPayload: @escaping (String) -> Bool = { _ in false },
@@ -49,6 +62,7 @@ final class DetailScreenContainer {
         setTargetEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in }
     ) {
         self.state = state
+        self.groupTagController = groupTagController
         self.detailSnapshot = detailSnapshot
         self.fallbackRowProvider = fallbackRow
         self.hasInspectPayloadProvider = hasInspectPayload
@@ -60,6 +74,37 @@ final class DetailScreenContainer {
         self.setSkillEnabledAction = setSkillEnabled
         self.toggleAllTargetsAction = toggleAllTargets
         self.setTargetEnabledAction = setTargetEnabled
+    }
+
+    convenience init(
+        state: DesktopAppState,
+        detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
+        fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
+        hasInspectPayload: @escaping (String) -> Bool = { _ in false },
+        isInspectRequestInFlight: @escaping (String) -> Bool = { _ in false },
+        isUpdatingCurrentGroup: @escaping () -> Bool = { false },
+        selectSource: @escaping (String) async -> Void = { _ in },
+        updateCurrentGroup: @escaping () async -> Void = {},
+        toggleAllSkills: @escaping (String) async -> Void = { _ in },
+        setSkillEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in },
+        toggleAllTargets: @escaping (String) async -> Void = { _ in },
+        setTargetEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in }
+    ) {
+        self.init(
+            state: state,
+            groupTagController: Self.defaultGroupTagController(state: state),
+            detailSnapshot: detailSnapshot,
+            fallbackRow: fallbackRow,
+            hasInspectPayload: hasInspectPayload,
+            isInspectRequestInFlight: isInspectRequestInFlight,
+            isUpdatingCurrentGroup: isUpdatingCurrentGroup,
+            selectSource: selectSource,
+            updateCurrentGroup: updateCurrentGroup,
+            toggleAllSkills: toggleAllSkills,
+            setSkillEnabled: setSkillEnabled,
+            toggleAllTargets: toggleAllTargets,
+            setTargetEnabled: setTargetEnabled
+        )
     }
 
     var sourceId: String? {
@@ -95,6 +140,22 @@ final class DetailScreenContainer {
         }
 
         return DetailViewModel(snapshot: snapshot)
+    }
+
+    func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
+        groupTagController.resolvedTags(forSourceId: sourceId, locale: locale)
+    }
+
+    func tagSuggestions(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
+        groupTagController.tagSuggestions(
+            sourceIds: state.workspace.sourceIds,
+            excluding: sourceId,
+            locale: locale
+        )
+    }
+
+    func addCustomTag(_ title: String, accent: DesktopAccentColor?, toSourceId sourceId: String) {
+        groupTagController.addCustomTag(title, accent: accent, toSourceId: sourceId)
     }
 
     func selectSource(_ sourceId: String) async {

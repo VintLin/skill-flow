@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class HomeScreenContainer {
     private let state: DesktopAppState
+    private let groupTagController: GroupTagController
     let viewModel: HomeViewModel
     let mainViewModel: MainViewModel
     let settingsViewModel: SettingsViewModel
@@ -14,11 +15,13 @@ final class HomeScreenContainer {
     init(
         state: DesktopAppState,
         mainViewModel: MainViewModel,
+        groupTagController: GroupTagController,
         settingsViewModel: SettingsViewModel,
         importContainer: ImportScreenContainer,
         detailContainer: DetailScreenContainer
     ) {
         self.state = state
+        self.groupTagController = groupTagController
         self.viewModel = HomeViewModel(state: state)
         self.mainViewModel = mainViewModel
         self.settingsViewModel = settingsViewModel
@@ -40,6 +43,44 @@ final class HomeScreenContainer {
         )
         self.mainViewModel.bindRouteState(state)
         observeMainViewModelState()
+    }
+
+    func visibleGroupCards(locale: Locale) -> [MainViewModel.GroupCardModel] {
+        mainViewModel.groupCards.filter { card in
+            groupTagController.matchesHomeFilter(
+                sourceId: card.id,
+                sourceIds: mainViewModel.sourceIds,
+                locale: locale
+            )
+        }
+    }
+
+    func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
+        groupTagController.resolvedTags(forSourceId: sourceId, locale: locale)
+    }
+
+    func availableHomeTags(locale: Locale) -> [GroupTagDisplayItem] {
+        groupTagController.availableHomeTags(sourceIds: mainViewModel.sourceIds, locale: locale)
+    }
+
+    func selectedHomeTagFilterKey(locale: Locale) -> String? {
+        groupTagController.effectiveSelectedHomeFilterKey(sourceIds: mainViewModel.sourceIds, locale: locale)
+    }
+
+    func setSelectedHomeTagFilterKey(_ key: String?) {
+        groupTagController.setSelectedHomeFilterKey(key)
+    }
+
+    func tagSuggestions(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
+        groupTagController.tagSuggestions(
+            sourceIds: mainViewModel.sourceIds,
+            excluding: sourceId,
+            locale: locale
+        )
+    }
+
+    func addCustomTag(_ title: String, accent: DesktopAccentColor?, toSourceId sourceId: String) {
+        groupTagController.addCustomTag(title, accent: accent, toSourceId: sourceId)
     }
 
     func makeView() -> HomeScreen {

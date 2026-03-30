@@ -17,6 +17,7 @@ struct HomeScreen: View {
 
         return MainView(
             viewModel: mainViewModel,
+            homeContainer: container,
             navigation: container.navigation,
             importScreenState: importContainer.screenState,
             importContainer: importContainer,

@@ -178,6 +178,9 @@ struct ImportScreen: View {
                     await container.handleImportAction(for: card)
                 }
             },
+            groupTagItems: [],
+            groupTagSuggestions: [],
+            onCreateGroupTag: nil,
             recommendationBadgeItems: card.recommendationBadgeItems,
             recommendationDescription: card.recommendationDescription
         )

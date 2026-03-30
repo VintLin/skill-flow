@@ -12,6 +12,7 @@ final class DesktopAppContainer {
     let runtime: DesktopRuntime
     let mainViewModel: MainViewModel
     let settingsViewModel: SettingsViewModel
+    let groupTagController: GroupTagController
     let menuBarScreenState: MenuBarScreenState
     let importContainer: ImportScreenContainer
     let detailContainer: DetailScreenContainer
@@ -28,6 +29,8 @@ final class DesktopAppContainer {
         let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)
         let mutationCoordinator = DesktopMutationCoordinator(commandFacade: resolvedCommandFacade)
         let resolvedRuntime = runtime ?? DesktopRuntime(dependencies: .live(query: resolvedQueryFacade))
+        let groupTagStore = DesktopGroupTagStore()
+        resolvedRuntime.state.groupTags.customTagsBySourceId = groupTagStore.loadCustomTags()
 
         self.runtime = resolvedRuntime
         self.mainViewModel = MainViewModel(
@@ -37,10 +40,21 @@ final class DesktopAppContainer {
             mutationCoordinator: mutationCoordinator
         )
         self.settingsViewModel = SettingsViewModel(state: resolvedRuntime.state)
+        self.groupTagController = GroupTagController(
+            state: resolvedRuntime.state,
+            store: groupTagStore,
+            sourceCanonicalRepo: { [weak mainViewModel] sourceId in
+                mainViewModel?.sourceCanonicalRepo(for: sourceId)
+            },
+            sourceLocator: { [weak mainViewModel] sourceId in
+                mainViewModel?.sourceLocator(for: sourceId)
+            }
+        )
         self.menuBarScreenState = MenuBarScreenState()
         self.importContainer = ImportScreenContainer(state: resolvedRuntime.state, mainViewModel: mainViewModel)
         self.detailContainer = DetailScreenContainer(
             state: resolvedRuntime.state,
+            groupTagController: groupTagController,
             detailSnapshot: { [weak mainViewModel] sourceId in
                 mainViewModel?.detailSnapshot(for: sourceId)
             },
@@ -78,6 +92,7 @@ final class DesktopAppContainer {
         self.homeContainer = HomeScreenContainer(
             state: resolvedRuntime.state,
             mainViewModel: mainViewModel,
+            groupTagController: groupTagController,
             settingsViewModel: settingsViewModel,
             importContainer: importContainer,
             detailContainer: detailContainer

@@ -33,6 +33,7 @@ struct SkillFlowDesktopApp: App {
                 viewModel: container.mainViewModel,
                 settingsViewModel: container.settingsViewModel,
                 screenState: container.menuBarScreenState,
+                groupTagController: container.groupTagController,
                 navigation: container.navigation
             ) {
                 openWindow(id: "main-window")

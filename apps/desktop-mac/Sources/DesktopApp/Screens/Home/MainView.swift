@@ -36,6 +36,7 @@ struct MainView: View {
     private let topBarTitleSize: CGFloat = 17
 
     @Bindable var viewModel: MainViewModel
+    let homeContainer: HomeScreenContainer
     @Bindable var importScreenState: ImportScreenState
     @Bindable var homeViewModel: HomeViewModel
     @Bindable var settingsViewModel: SettingsViewModel
@@ -50,6 +51,7 @@ struct MainView: View {
 
     init(
         viewModel: MainViewModel,
+        homeContainer: HomeScreenContainer,
         navigation: NavigationActions,
         importScreenState: ImportScreenState,
         importContainer: ImportScreenContainer,
@@ -58,6 +60,7 @@ struct MainView: View {
         settingsViewModel: SettingsViewModel
     ) {
         self.viewModel = viewModel
+        self.homeContainer = homeContainer
         self.navigation = navigation
         self.importScreenState = importScreenState
         self.importContainer = importContainer
@@ -522,15 +525,16 @@ struct MainView: View {
                     )
                 }
             } else {
+                homeTagFilterBar
                 HStack {
                     Spacer(minLength: 0)
                     LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
                         ForEach(groupCards) { card in
-                                SharedGroupCard(
-                                    card: card,
-                                    theme: theme,
-                                    accent: accent,
-                                    displayMode: homeCardDisplayMode,
+                            SharedGroupCard(
+                                card: card,
+                                theme: theme,
+                                accent: accent,
+                                displayMode: homeCardDisplayMode,
                                 skillsCollapsed: false,
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
@@ -556,6 +560,11 @@ struct MainView: View {
                                 },
                                 onToggleAllTargets: {
                                     Task { await viewModel.toggleAllTargets(sourceId: card.id) }
+                                },
+                                groupTagItems: homeContainer.groupTags(for: card.id, locale: locale),
+                                groupTagSuggestions: homeContainer.tagSuggestions(for: card.id, locale: locale),
+                                onCreateGroupTag: { title, itemAccent in
+                                    homeContainer.addCustomTag(title, accent: itemAccent, toSourceId: card.id)
                                 }
                             )
                         }
@@ -751,7 +760,65 @@ struct MainView: View {
     }
 
     private var groupCards: [MainViewModel.GroupCardModel] {
-        viewModel.groupCards
+        homeContainer.visibleGroupCards(locale: locale)
+    }
+
+    private var homeTagFilterBar: some View {
+        let tags = homeContainer.availableHomeTags(locale: locale)
+        let selectedKey = homeContainer.selectedHomeTagFilterKey(locale: locale)
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                homeFilterPill(
+                    title: t("group_tag.filter.all"),
+                    accentValue: accent,
+                    isSelected: selectedKey == nil
+                ) {
+                    homeContainer.setSelectedHomeTagFilterKey(nil)
+                }
+
+                ForEach(tags) { item in
+                    homeFilterPill(
+                        title: item.title,
+                        accentValue: item.accent,
+                        isSelected: selectedKey == item.id
+                    ) {
+                        homeContainer.setSelectedHomeTagFilterKey(item.id)
+                    }
+                }
+            }
+        }
+    }
+
+    private func homeFilterPill(
+        title: String,
+        accentValue: DesktopAccentColor,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text("#\(title)")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AppTheme.brand(for: accentValue, in: theme))
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+                .background(
+                    AppTheme.brand(for: accentValue, in: theme).opacity(
+                        isSelected
+                            ? (theme == .dark ? 0.28 : 0.18)
+                            : (theme == .dark ? 0.22 : 0.14)
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(
+                            isSelected ? AppTheme.brand(for: accentValue, in: theme).opacity(0.35) : Color.clear,
+                            lineWidth: 0.5
+                        )
+                }
+        }
+        .buttonStyle(.plain)
     }
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {

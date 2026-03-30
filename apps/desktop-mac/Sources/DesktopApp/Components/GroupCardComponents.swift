@@ -197,6 +197,9 @@ struct SharedGroupCard: View {
     let actionButtonIcon: ActionIcon
     let actionButtonEnabled: Bool
     let onActionButton: (() -> Void)?
+    let groupTagItems: [GroupTagDisplayItem]
+    let groupTagSuggestions: [GroupTagDisplayItem]
+    let onCreateGroupTag: ((String, DesktopAccentColor?) -> Void)?
     let recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem]
     let recommendationDescription: String?
 
@@ -222,6 +225,9 @@ struct SharedGroupCard: View {
         actionButtonIcon: ActionIcon = .import,
         actionButtonEnabled: Bool = true,
         onActionButton: (() -> Void)? = nil,
+        groupTagItems: [GroupTagDisplayItem] = [],
+        groupTagSuggestions: [GroupTagDisplayItem] = [],
+        onCreateGroupTag: ((String, DesktopAccentColor?) -> Void)? = nil,
         recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem] = [],
         recommendationDescription: String? = nil
     ) {
@@ -243,6 +249,9 @@ struct SharedGroupCard: View {
         self.actionButtonIcon = actionButtonIcon
         self.actionButtonEnabled = actionButtonEnabled
         self.onActionButton = onActionButton
+        self.groupTagItems = groupTagItems
+        self.groupTagSuggestions = groupTagSuggestions
+        self.onCreateGroupTag = onCreateGroupTag
         self.recommendationBadgeItems = recommendationBadgeItems
         self.recommendationDescription = recommendationDescription
     }
@@ -279,8 +288,8 @@ struct SharedGroupCard: View {
                 dashedDivider
             }
 
-            if displayMode == .importRecommendation, showsRecommendationSummary {
-                recommendationSummarySection
+            if showsTagSummary {
+                tagSummarySection
                 dashedDivider
             }
 
@@ -546,14 +555,39 @@ struct SharedGroupCard: View {
         return t("group_card.loading.updating")
     }
 
-    private var showsRecommendationSummary: Bool {
-        !recommendationBadgeItems.isEmpty || ((recommendationDescription?.isEmpty) == false)
+    private var showsTagSummary: Bool {
+        !groupTagItems.isEmpty
+            || !recommendationBadgeItems.isEmpty
+            || onCreateGroupTag != nil
+            || ((recommendationDescription?.isEmpty) == false)
     }
 
-    private var recommendationSummarySection: some View {
+    private var tagSummarySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if !recommendationBadgeItems.isEmpty {
+            if !groupTagItems.isEmpty {
+                EditableGroupTagSection(
+                    theme: theme,
+                    accent: accent,
+                    controlHeight: scale.triStateHeight,
+                    cornerRadius: scale.cornerRadius - 2,
+                    inputWidth: max(88, scale.triStateWidth * 2.6),
+                    tagItems: groupTagItems,
+                    suggestions: [],
+                    onCreate: nil
+                )
+            } else if !recommendationBadgeItems.isEmpty {
                 recommendationBadgeRow
+            } else if let onCreateGroupTag {
+                EditableGroupTagSection(
+                    theme: theme,
+                    accent: accent,
+                    controlHeight: scale.triStateHeight,
+                    cornerRadius: scale.cornerRadius - 2,
+                    inputWidth: max(88, scale.triStateWidth * 2.6),
+                    tagItems: [],
+                    suggestions: groupTagSuggestions,
+                    onCreate: onCreateGroupTag
+                )
             }
 
             if let recommendationDescription, !recommendationDescription.isEmpty {

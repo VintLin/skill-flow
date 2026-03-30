@@ -5,6 +5,7 @@ struct MenuBarQuickConfigView: View {
     @Bindable var viewModel: MainViewModel
     @Bindable var settingsViewModel: SettingsViewModel
     @Bindable var screenState: MenuBarScreenState
+    let groupTagController: GroupTagController
 
     let navigation: DesktopAppContainer.RouteNavigation
     let openMainWindow: () -> Void
@@ -68,7 +69,10 @@ struct MenuBarQuickConfigView: View {
                             },
                             onToggleAllTargets: {
                                 Task { await viewModel.toggleAllTargets(sourceId: card.id) }
-                            }
+                            },
+                            groupTagItems: groupTagController.resolvedTags(forSourceId: card.id, locale: locale),
+                            groupTagSuggestions: [],
+                            onCreateGroupTag: nil
                         )
                         .onHover { isHovering in
                             guard menuUsesCompactDensity else { return }

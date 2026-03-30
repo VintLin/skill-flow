@@ -777,6 +777,14 @@ final class MainViewModel {
         }
     }
 
+    func sourceCanonicalRepo(for sourceId: String) -> String? {
+        summary(for: sourceId)?.sourceCanonicalRepo
+    }
+
+    func sourceLocator(for sourceId: String) -> String? {
+        summary(for: sourceId)?.sourceLocator
+    }
+
     func prefetchHomeGroupCardMetadataIfNeeded(_ sourceIds: [String]) async {
         guard currentRoute == .home else {
             return
@@ -1402,6 +1410,9 @@ final class MainViewModel {
                 refreshDoctor: true,
                 inspectSourceId: sourceId.nonEmpty
             )
+            if currentRoute != .importPage, let sourceId = sourceId.nonEmpty {
+                routeState?.view.currentRoute = .detail(sourceId: sourceId)
+            }
             showToast(style: .success, text: localizedText("toast.import.success"))
         } catch {
             showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
