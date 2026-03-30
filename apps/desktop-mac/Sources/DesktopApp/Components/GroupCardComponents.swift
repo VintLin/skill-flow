@@ -201,13 +201,15 @@ struct SharedGroupCard: View {
     let groupTagSuggestions: [GroupTagDisplayItem]
     let canCreateGroupTag: Bool
     let canDeleteGroupTags: Bool
-    let onCreateGroupTag: ((String, DesktopAccentColor?) -> Void)?
+    let onCreateGroupTag: ((String, DesktopAccentColor?) -> GroupTagMutationResult)?
     let onDeleteGroupTag: ((String) -> Void)?
+    let onSelectGroupTag: ((GroupTagDisplayItem) -> Void)?
     let recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem]
     let recommendationDescription: String?
 
     @State private var isActionMenuOpen = false
     @State private var isActionButtonHovered = false
+    @State private var isEditingTags = false
     @State private var isDeletingTags = false
 
     init(
@@ -233,8 +235,9 @@ struct SharedGroupCard: View {
         groupTagSuggestions: [GroupTagDisplayItem] = [],
         canCreateGroupTag: Bool = false,
         canDeleteGroupTags: Bool = false,
-        onCreateGroupTag: ((String, DesktopAccentColor?) -> Void)? = nil,
+        onCreateGroupTag: ((String, DesktopAccentColor?) -> GroupTagMutationResult)? = nil,
         onDeleteGroupTag: ((String) -> Void)? = nil,
+        onSelectGroupTag: ((GroupTagDisplayItem) -> Void)? = nil,
         recommendationBadgeItems: [ImportViewModel.RecommendationBadgeItem] = [],
         recommendationDescription: String? = nil
     ) {
@@ -262,6 +265,7 @@ struct SharedGroupCard: View {
         self.canDeleteGroupTags = canDeleteGroupTags
         self.onCreateGroupTag = onCreateGroupTag
         self.onDeleteGroupTag = onDeleteGroupTag
+        self.onSelectGroupTag = onSelectGroupTag
         self.recommendationBadgeItems = recommendationBadgeItems
         self.recommendationDescription = recommendationDescription
     }
@@ -334,6 +338,15 @@ struct SharedGroupCard: View {
         }
         .animation(.easeInOut(duration: 0.18), value: skillsCollapsed)
         .allowsHitTesting(!isBusy)
+        .onReceive(NotificationCenter.default.publisher(for: .groupTagEditorRequested)) { notification in
+            guard let sourceId = notification.userInfo?["sourceId"] as? String, sourceId != card.id else {
+                return
+            }
+            isEditingTags = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .groupTagEditorDismissRequested)) { _ in
+            isEditingTags = false
+        }
         .overlay {
             if isBusy {
                 RoundedRectangle(cornerRadius: scale.cornerRadius)
@@ -470,6 +483,11 @@ struct SharedGroupCard: View {
                 isDeletingTags = false
             }
         }
+        .onChange(of: groupTagItems) { _, items in
+            if items.isEmpty {
+                isDeletingTags = false
+            }
+        }
         .popover(isPresented: $isActionMenuOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 actionMenuButton(
@@ -488,6 +506,17 @@ struct SharedGroupCard: View {
                     isActionMenuOpen = false
                     onUpdate()
                 }
+                if onCreateGroupTag != nil {
+                    actionMenuButton(
+                        title: isEditingTags ? t("group_card.action.cancel_edit_tags") : t("group_card.action.edit_tags"),
+                        icon: .more,
+                        foreground: AppTheme.textMuted(for: theme)
+                    ) {
+                        isActionMenuOpen = false
+                        isDeletingTags = false
+                        setTagEditing(!isEditingTags)
+                    }
+                }
                 if canDeleteGroupTags {
                     actionMenuButton(
                         title: isDeletingTags ? t("group_card.action.done_delete_tags") : t("group_card.action.delete_tags"),
@@ -495,6 +524,7 @@ struct SharedGroupCard: View {
                         foreground: AppTheme.textMuted(for: theme)
                     ) {
                         isActionMenuOpen = false
+                        isEditingTags = false
                         isDeletingTags.toggle()
                     }
                 }
@@ -589,40 +619,29 @@ struct SharedGroupCard: View {
 
     private var tagSummarySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if !groupTagItems.isEmpty {
+            if onCreateGroupTag != nil {
                 EditableGroupTagSection(
                     theme: theme,
                     accent: accent,
                     controlHeight: scale.triStateHeight,
                     cornerRadius: scale.cornerRadius - 2,
-                    inputWidth: max(88, scale.triStateWidth * 2.6),
+                    inputWidth: 72,
                     tagItems: groupTagItems,
-                    suggestions: [],
+                    suggestions: groupTagSuggestions,
                     canAddMore: canCreateGroupTag,
-                    showsAddButtonWhenTagsExist: true,
+                    isEditing: isEditingTags,
                     isDeleteMode: isDeletingTags,
+                    onEditingChange: { isEditing in
+                        setTagEditing(isEditing)
+                    },
                     onCreate: onCreateGroupTag,
                     onDelete: { item in
                         onDeleteGroupTag?(item.id)
-                    }
+                    },
+                    onSelect: onSelectGroupTag
                 )
             } else if !recommendationBadgeItems.isEmpty {
                 recommendationBadgeRow
-            } else if let onCreateGroupTag {
-                EditableGroupTagSection(
-                    theme: theme,
-                    accent: accent,
-                    controlHeight: scale.triStateHeight,
-                    cornerRadius: scale.cornerRadius - 2,
-                    inputWidth: max(88, scale.triStateWidth * 2.6),
-                    tagItems: [],
-                    suggestions: groupTagSuggestions,
-                    canAddMore: canCreateGroupTag,
-                    showsAddButtonWhenTagsExist: true,
-                    isDeleteMode: false,
-                    onCreate: onCreateGroupTag,
-                    onDelete: nil
-                )
             }
 
             if let recommendationDescription, !recommendationDescription.isEmpty {
@@ -990,6 +1009,18 @@ struct SharedGroupCard: View {
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
         L10n.string(key, locale: locale, arguments: arguments)
+    }
+
+    private func setTagEditing(_ isEditing: Bool) {
+        isEditingTags = isEditing
+        if isEditing {
+            isDeletingTags = false
+            NotificationCenter.default.post(
+                name: .groupTagEditorRequested,
+                object: nil,
+                userInfo: ["sourceId": card.id]
+            )
+        }
     }
 }
 

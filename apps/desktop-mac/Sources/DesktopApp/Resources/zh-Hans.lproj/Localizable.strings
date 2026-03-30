@@ -148,8 +148,10 @@
 "group_card.action.pin" = "置顶";
 "group_card.action.unpin" = "取消置顶";
 "group_card.action.update" = "更新";
+"group_card.action.edit_tags" = "编辑标签";
+"group_card.action.cancel_edit_tags" = "取消编辑";
 "group_card.action.delete_tags" = "删除标签";
-"group_card.action.done_delete_tags" = "完成删除标签";
+"group_card.action.done_delete_tags" = "取消删除";
 "group_card.action.delete" = "删除";
 "group_card.loading.downloading" = "正在下载...";
 "group_tag.action.add" = "添加标签";

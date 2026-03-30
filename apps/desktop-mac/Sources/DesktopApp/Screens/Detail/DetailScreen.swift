@@ -43,6 +43,7 @@ enum DetailRouteBootstrap {
 
 struct DetailScreen: View {
     @Environment(\.locale) private var locale
+    @State private var isEditingTags = false
 
     private let detailHeaderMinHeight: CGFloat = DetailSidebarLayout.headerMinHeight
     private let detailToggleWidth: CGFloat = 34
@@ -204,6 +205,10 @@ struct DetailScreen: View {
         .overlay {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isEditingTags = false
         }
     }
 
@@ -645,18 +650,20 @@ struct DetailScreen: View {
                 accent: accent,
                 controlHeight: detailAgentItemHeight,
                 cornerRadius: 10,
-                inputWidth: 110,
+                inputWidth: 72,
                 tagItems: container.groupTags(for: groupId, locale: locale),
                 suggestions: container.tagSuggestions(for: groupId, locale: locale),
                 canAddMore: container.canAddTag(for: groupId, locale: locale),
-                showsAddButtonWhenTagsExist: true,
+                isEditing: isEditingTags,
                 isDeleteMode: false,
+                onEditingChange: { isEditingTags = $0 },
                 onCreate: { title, itemAccent in
                     container.addCustomTag(title, accent: itemAccent, toSourceId: groupId, locale: locale)
                 },
                 onDelete: { item in
                     container.removeCustomTag(item.id, fromSourceId: groupId, locale: locale)
-                }
+                },
+                onSelect: nil
             )
         }
     }

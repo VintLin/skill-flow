@@ -184,6 +184,7 @@ struct ImportScreen: View {
             canDeleteGroupTags: false,
             onCreateGroupTag: nil,
             onDeleteGroupTag: nil,
+            onSelectGroupTag: nil,
             recommendationBadgeItems: card.recommendationBadgeItems,
             recommendationDescription: card.recommendationDescription
         )

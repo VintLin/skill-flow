@@ -148,8 +148,10 @@
 "group_card.action.pin" = "Pin";
 "group_card.action.unpin" = "Unpin";
 "group_card.action.update" = "Update";
+"group_card.action.edit_tags" = "Edit Tags";
+"group_card.action.cancel_edit_tags" = "Cancel Edit";
 "group_card.action.delete_tags" = "Delete Tags";
-"group_card.action.done_delete_tags" = "Done Tag Delete";
+"group_card.action.done_delete_tags" = "Cancel Delete";
 "group_card.action.delete" = "Delete";
 "group_card.loading.downloading" = "Downloading...";
 "group_tag.action.add" = "Add tag";

@@ -82,7 +82,8 @@ struct MenuBarQuickConfigView: View {
                             canCreateGroupTag: false,
                             canDeleteGroupTags: false,
                             onCreateGroupTag: nil,
-                            onDeleteGroupTag: nil
+                            onDeleteGroupTag: nil,
+                            onSelectGroupTag: nil
                         )
                         .onHover { isHovering in
                             guard menuUsesCompactDensity else { return }

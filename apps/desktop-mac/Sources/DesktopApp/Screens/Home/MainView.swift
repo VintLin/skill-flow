@@ -502,6 +502,10 @@ struct MainView: View {
                 }
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            NotificationCenter.default.post(name: .groupTagEditorDismissRequested, object: nil)
+        }
     }
 
     private func gridSection(layout: LayoutMetrics) -> some View {
@@ -571,12 +575,15 @@ struct MainView: View {
                                 groupTagItems: homeContainer.groupTags(for: card.id, locale: locale),
                                 groupTagSuggestions: homeContainer.tagSuggestions(for: card.id, locale: locale),
                                 canCreateGroupTag: homeContainer.canAddTag(for: card.id, locale: locale),
-                                canDeleteGroupTags: homeContainer.hasRemovableTags(for: card.id),
+                                canDeleteGroupTags: homeContainer.hasTags(for: card.id, locale: locale),
                                 onCreateGroupTag: { title, itemAccent in
                                     homeContainer.addCustomTag(title, accent: itemAccent, toSourceId: card.id, locale: locale)
                                 },
                                 onDeleteGroupTag: { tagID in
                                     homeContainer.removeCustomTag(tagID, fromSourceId: card.id, locale: locale)
+                                },
+                                onSelectGroupTag: { item in
+                                    homeContainer.setSelectedHomeTagFilterKey(item.id)
                                 }
                             )
                         }
@@ -831,6 +838,7 @@ struct MainView: View {
                 }
         }
         .buttonStyle(.plain)
+        .opacity(isSelected ? 1.0 : 0.58)
     }
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {

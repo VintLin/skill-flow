@@ -1,5 +1,10 @@
 import SwiftUI
 
+extension Notification.Name {
+    static let groupTagEditorRequested = Notification.Name("groupTagEditorRequested")
+    static let groupTagEditorDismissRequested = Notification.Name("groupTagEditorDismissRequested")
+}
+
 struct EditableGroupTagSection: View {
     @Environment(\.locale) private var locale
     @FocusState private var isInputFocused: Bool
@@ -12,12 +17,13 @@ struct EditableGroupTagSection: View {
     let tagItems: [GroupTagDisplayItem]
     let suggestions: [GroupTagDisplayItem]
     let canAddMore: Bool
-    let showsAddButtonWhenTagsExist: Bool
+    let isEditing: Bool
     let isDeleteMode: Bool
-    let onCreate: ((String, DesktopAccentColor?) -> Void)?
+    let onEditingChange: (Bool) -> Void
+    let onCreate: ((String, DesktopAccentColor?) -> GroupTagMutationResult)?
     let onDelete: ((GroupTagDisplayItem) -> Void)?
+    let onSelect: ((GroupTagDisplayItem) -> Void)?
 
-    @State private var isEditing = false
     @State private var draftText = ""
     private let tagPillHeight: CGFloat = 24
 
@@ -34,28 +40,34 @@ struct EditableGroupTagSection: View {
                 resetEditingState()
             }
         }
+        .onChange(of: isEditing) { _, isActive in
+            if !isActive {
+                draftText = ""
+                isInputFocused = false
+            }
+        }
     }
 
     private var displayRow: some View {
         HStack(spacing: 6) {
-            if !tagItems.isEmpty {
-                tagRow(items: tagItems, showsDeleteControls: isDeleteMode)
-            }
-
             if shouldShowAddButton {
                 addButton
+            }
+
+            if !tagItems.isEmpty {
+                tagRow(items: tagItems, showsDeleteControls: isDeleteMode)
             }
         }
     }
 
     private var shouldShowAddButton: Bool {
-        guard onCreate != nil, canAddMore, !isDeleteMode else {
+        guard onCreate != nil, !isDeleteMode else {
             return false
         }
-        return showsAddButtonWhenTagsExist || tagItems.isEmpty
+        return true
     }
 
-    private func editableRow(onCreate: @escaping (String, DesktopAccentColor?) -> Void) -> some View {
+    private func editableRow(onCreate: @escaping (String, DesktopAccentColor?) -> GroupTagMutationResult) -> some View {
         HStack(spacing: 8) {
             TextField(
                 L10n.string("group_tag.input.placeholder", locale: locale),
@@ -77,8 +89,7 @@ struct EditableGroupTagSection: View {
             }
             .focused($isInputFocused)
             .onSubmit {
-                onCreate(draftText, nil)
-                resetEditingState()
+                handleCreateResult(onCreate(draftText, nil))
             }
 
             DashedTagDivider(color: AppTheme.cardBorder(for: theme))
@@ -88,8 +99,7 @@ struct EditableGroupTagSection: View {
                 HStack(spacing: 6) {
                     ForEach(suggestions) { item in
                         Button {
-                            onCreate(item.title, item.accent)
-                            resetEditingState()
+                            handleCreateResult(onCreate(item.title, item.accent))
                         } label: {
                             tagPill(item, showsDeleteControl: false)
                         }
@@ -106,36 +116,66 @@ struct EditableGroupTagSection: View {
 
     private var addButton: some View {
         Button {
-            isEditing = true
+            guard canAddMore else { return }
+            onEditingChange(true)
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: max(6, cornerRadius - 2))
-                    .fill(AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.28 : 0.18))
+                    .fill(
+                        canAddMore
+                            ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.28 : 0.18)
+                            : AppTheme.toolbarButtonBackground(for: theme)
+                    )
                 Text("+")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .foregroundStyle(
+                        canAddMore
+                            ? AppTheme.brand(for: accent, in: theme)
+                            : AppTheme.textMuted(for: theme)
+                    )
             }
             .frame(width: tagPillHeight, height: tagPillHeight)
             .overlay {
                 RoundedRectangle(cornerRadius: max(6, cornerRadius - 2))
-                    .stroke(AppTheme.brand(for: accent, in: theme).opacity(0.35), lineWidth: 0.5)
+                    .stroke(
+                        canAddMore
+                            ? AppTheme.brand(for: accent, in: theme).opacity(0.35)
+                            : AppTheme.cardBorder(for: theme),
+                        lineWidth: 0.5
+                    )
             }
         }
         .buttonStyle(.plain)
+        .disabled(!canAddMore)
         .help(L10n.string("group_tag.action.add", locale: locale))
+    }
+
+    private func handleCreateResult(_ result: GroupTagMutationResult) {
+        if result == .added {
+            resetEditingState()
+        }
     }
 
     private func resetEditingState() {
         draftText = ""
-        isEditing = false
         isInputFocused = false
+        onEditingChange(false)
     }
 
     private func tagRow(items: [GroupTagDisplayItem], showsDeleteControls: Bool) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(items) { item in
-                    tagPill(item, showsDeleteControl: showsDeleteControls && item.isRemovable)
+                    if showsDeleteControls || onSelect == nil {
+                        tagPill(item, showsDeleteControl: showsDeleteControls)
+                    } else {
+                        Button {
+                            onSelect?(item)
+                        } label: {
+                            tagPill(item, showsDeleteControl: false)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
@@ -152,9 +192,19 @@ struct EditableGroupTagSection: View {
                 Button {
                     onDelete?(item)
                 } label: {
-                    Text("x")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
+                    if let image = ActionIcon.close.image(size: 10) {
+                        Image(nsImage: image)
+                            .renderingMode(.template)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 10, height: 10)
+                            .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
+                    } else {
+                        Text("x")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
+                    }
                 }
                 .buttonStyle(.plain)
             }
