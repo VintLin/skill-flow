@@ -108,7 +108,7 @@ describe("StateStore", () => {
     expect(lock.deployments[0]?.leafId).toBe("alpha:browse");
   });
 
-  test("writes compact lock state without deployments or imported target metadata", async () => {
+  test("writes compact lock state without deployments and drops bootstrap metadata after projections exist", async () => {
     const store = new StateStore(stateRoot);
 
     await store.writeLock({
@@ -160,6 +160,18 @@ describe("StateStore", () => {
           contentHash: "hash",
           appliedAt: "2026-03-30T00:00:00.000Z",
           mode: "managed",
+        },
+        {
+          sourceId: "alpha",
+          leafId: "alpha:browse",
+          target: "codex",
+          targetPath: "/tmp/targets/browse",
+          targetRootPath: "/tmp/targets",
+          strategy: "symlink",
+          status: "active",
+          contentHash: "hash",
+          appliedAt: "2026-03-30T00:00:00.000Z",
+          mode: "bootstrap-imported",
         },
       ],
     });
