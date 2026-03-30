@@ -11,6 +11,7 @@ import type {
   SourceKind,
   UnifiedSourceSnapshotCacheEntry,
 } from "@skill-flow/domain/types";
+import { normalizeProjectionRecords } from "@skill-flow/domain/projection-compat";
 import {
   createEmptyImportDataCache,
   normalizeImportDataCache,
@@ -131,7 +132,7 @@ export class StateStore {
   async writeLock(lockFile: LockFile): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      await writeJsonFile(this.lockPath, lockFile);
+      await writeJsonFile(this.lockPath, this.serializeLockFile(lockFile));
     });
   }
 
@@ -139,7 +140,7 @@ export class StateStore {
     await this.withIoLock(async () => {
       await this.init();
       await writeJsonFile(this.manifestPath, manifest);
-      await writeJsonFile(this.lockPath, lockFile);
+      await writeJsonFile(this.lockPath, this.serializeLockFile(lockFile));
     });
   }
 
@@ -338,7 +339,7 @@ export class StateStore {
       await writeJsonFile(this.manifestPath, this.createEmptyManifest());
     }
     if (!(await pathExists(this.lockPath))) {
-      await writeJsonFile(this.lockPath, this.createEmptyLockFile());
+      await writeJsonFile(this.lockPath, this.serializeLockFile(this.createEmptyLockFile()));
     }
   }
 
@@ -378,8 +379,15 @@ export class StateStore {
   }
 
   private normalizeLockFile(lockFile: LockFile): LockFile {
+    const projections = normalizeProjectionRecords(lockFile);
+    const deployments = projections
+      .filter((projection) => projection.mode === "managed")
+      .map(({ mode: _mode, ...deployment }) => deployment);
+
     return {
       ...lockFile,
+      projections,
+      deployments,
       leafInventory: lockFile.leafInventory.map((leaf) => ({
         ...leaf,
         linkName:
@@ -389,6 +397,26 @@ export class StateStore {
             : path.basename(leaf.relativePath) || leaf.name),
         metadataWarnings: leaf.metadataWarnings ?? [],
       })),
+    };
+  }
+
+  private serializeLockFile(lockFile: LockFile): unknown {
+    const normalized = this.normalizeLockFile(lockFile);
+    return {
+      ...normalized,
+      sources: normalized.sources.map((source) => {
+        const hasBootstrapProjection = (normalized.projections ?? []).some(
+          (projection) =>
+            projection.mode === "bootstrap-imported" &&
+            projection.sourceId === source.id,
+        );
+        if (source.importedFromTargets?.length && !hasBootstrapProjection) {
+          return source;
+        }
+        const { importedFromTargets: _importedFromTargets, ...compactSource } = source;
+        return compactSource;
+      }),
+      deployments: undefined,
     };
   }
 
@@ -405,6 +433,7 @@ export class StateStore {
       schemaVersion: SCHEMA_VERSION,
       sources: [],
       leafInventory: [],
+      projections: [],
       deployments: [],
     };
   }

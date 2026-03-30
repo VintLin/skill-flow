@@ -22,6 +22,7 @@ import type {
   LeafRecord,
   LockFile,
   Manifest,
+  ProjectionRecord,
   Result,
   SkillCandidate,
   SourceMetadataResult,
@@ -35,6 +36,7 @@ import type {
   Warning,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
+import { getBootstrapImportedTargets, getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { StateStore } from "@skill-flow/storage/store";
 import {
   isImportDataCacheExpired,
@@ -205,6 +207,7 @@ export class SkillFlowApp {
     }
 
     const { manifest, lockFile } = await this.store.readState();
+    await this.ensureProjectionLedger(manifest, lockFile);
     const source = manifest.sources.find((item) => item.id === result.data.manifest.id);
     if (!source) {
       return fail({
@@ -244,6 +247,7 @@ export class SkillFlowApp {
         : "partial");
     result.data.manifest.selectionMode = source.selectionMode;
     manifest.bindings[source.id] = { targets: {} };
+    await this.ensureProjectionLedger(manifest, lockFile);
     await this.store.writeState(manifest, lockFile);
 
     const warnings = [...result.warnings];
@@ -459,7 +463,9 @@ export class SkillFlowApp {
 
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
     const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
-    const deployments = lockFile.deployments.filter((deployment) => deployment.sourceId === sourceId);
+    const deployments = getManagedDeployments(lockFile).filter(
+      (deployment) => deployment.sourceId === sourceId,
+    );
     return ok({ summary, source, binding, leafs, deployments });
   }
 
@@ -1545,6 +1551,9 @@ export class SkillFlowApp {
   ): Promise<Result<{ actions: DeploymentAction[]; draft: DraftBinding }>> {
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
+    await this.ensureProjectionLedger(manifest, lockFile);
+    const previousEnabledTargets = this.getEnabledTargetsForSource(manifest, sourceId);
+    const sourceLock = lockFile.sources.find((source) => source.id === sourceId);
     const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
 
     const plan = await this.planForAffectedSources(prepared.manifest, lockFile, sourceId);
@@ -1553,6 +1562,7 @@ export class SkillFlowApp {
     }
 
     const applyResult = await this.applier.applyPlan(lockFile, plan.data.actions);
+    await this.ensureProjectionLedger(prepared.manifest, lockFile);
     await this.store.writeState(prepared.manifest, lockFile);
 
     if (!applyResult.ok) {
@@ -1562,9 +1572,28 @@ export class SkillFlowApp {
       );
     }
 
+    const importedTargets = sourceLock?.importMode === "bootstrap-detected"
+      ? getBootstrapImportedTargets(lockFile, sourceLock)
+      : [];
+    const removedImportedTargets = [...new Set([
+      ...previousEnabledTargets,
+      ...importedTargets,
+    ])].filter((target) => !prepared.draft.enabledTargets.includes(target));
+    const importedCleanupWarnings = await this.cleanupImportedTargetPaths(
+      prepared.manifest,
+      lockFile,
+      [sourceId],
+      removedImportedTargets,
+    );
+
     return ok(
       { actions: plan.data.actions, draft: prepared.draft },
-      [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
+      [
+        ...prepared.warnings,
+        ...plan.warnings,
+        ...applyResult.warnings,
+        ...importedCleanupWarnings,
+      ],
     );
   }
 
@@ -1597,7 +1626,7 @@ export class SkillFlowApp {
       .filter((id) =>
         updated.data.updated.some((item) => item.sourceId === id) ||
         this.hasActiveTargets(manifest, id) ||
-        lockFile.deployments.some((deployment) => deployment.sourceId === id),
+        getManagedDeployments(lockFile).some((deployment) => deployment.sourceId === id),
       );
     const planned = await this.planAndApplySources(manifest, lockFile, planSourceIds);
     if (!planned.ok) {
@@ -1621,6 +1650,7 @@ export class SkillFlowApp {
       return fail(reconciled.errors, reconciled.warnings);
     }
     const { manifest, lockFile } = await this.store.readState();
+    await this.ensureProjectionLedger(manifest, lockFile);
     await this.persistNormalizedBindings(manifest, lockFile);
     const doctor = await this.doctorService.run(manifest, lockFile);
     if (!doctor.ok) {
@@ -1638,6 +1668,8 @@ export class SkillFlowApp {
   ): Promise<Result<{ actions: DeploymentAction[] }>> {
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
+    await this.ensureProjectionLedger(manifest, lockFile);
+    const warnings: Warning[] = [];
 
     const requestedIds = sourceIds?.length
       ? sourceIds
@@ -1654,15 +1686,34 @@ export class SkillFlowApp {
     const planSourceIds = requestedIds.filter(
       (sourceId) =>
         this.hasActiveTargets(manifest, sourceId) ||
-        lockFile.deployments.some((deployment) => deployment.sourceId === sourceId),
+        getManagedDeployments(lockFile).some((deployment) => deployment.sourceId === sourceId),
     );
+    for (const sourceId of requestedIds) {
+      if (planSourceIds.includes(sourceId)) {
+        continue;
+      }
+      const sourceLock = lockFile.sources.find((source) => source.id === sourceId);
+      if (
+        sourceLock?.importMode === "bootstrap-detected" ||
+        (lockFile.projections ?? []).some(
+          (projection) =>
+            projection.sourceId === sourceId &&
+            projection.mode === "bootstrap-imported",
+        )
+      ) {
+        warnings.push({
+          code: "REPAIR_TARGETS_SKIPPED_BOOTSTRAP_IMPORTED",
+          message: `Skipped repair for bootstrap-imported source '${sourceId}' because it has no managed target bindings.`,
+        });
+      }
+    }
     const planned = await this.planAndApplySources(manifest, lockFile, planSourceIds);
     if (!planned.ok) {
-      return fail(planned.errors, planned.warnings);
+      return fail(planned.errors, [...warnings, ...planned.warnings]);
     }
 
     await this.store.writeState(manifest, lockFile);
-    return ok({ actions: planned.data.actions }, planned.warnings);
+    return ok({ actions: planned.data.actions }, [...warnings, ...planned.warnings]);
   }
 
   async repairSource(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
@@ -1762,38 +1813,37 @@ export class SkillFlowApp {
     }>
   > {
     const { manifest, lockFile } = await this.store.readState();
+    await this.ensureProjectionLedger(manifest, lockFile);
     const warnings: string[] = [];
-    const targetRoots = await this.getTargetRootMap();
     const removedRefs = sourceIds
       .map((sourceId) => manifest.sources.find((source) => source.id === sourceId))
       .filter((source): source is Manifest["sources"][number] => Boolean(source));
 
     for (const sourceId of sourceIds) {
-      const deployments = lockFile.deployments.filter(
-        (deployment) => deployment.sourceId === sourceId,
+      const projections = (lockFile.projections ?? []).filter(
+        (projection) => projection.sourceId === sourceId,
       );
 
-      for (const deployment of deployments) {
-        if (!(await pathExists(deployment.targetPath))) {
+      for (const projection of projections) {
+        if (!(await pathExists(projection.targetPath))) {
           continue;
         }
-        if (
-          !this.isPathInsideManagedTargetRoot(
-            deployment.target,
-            deployment.targetPath,
-            targetRoots,
-            deployment.targetRootPath,
-          )
-        ) {
-          warnings.push(`Refusing to remove unmanaged target path ${deployment.targetPath}.`);
+        if (!this.isProjectionPathManaged(lockFile, projection)) {
+          warnings.push(`Refusing to remove unmanaged target path ${projection.targetPath}.`);
           continue;
         }
         try {
-          await removePath(deployment.targetPath);
+          if (!this.hasPersistentProjectionOwnerForPath(lockFile, projection)) {
+            await removePath(projection.targetPath);
+          }
         } catch (error) {
-          warnings.push(`Unable to remove ${deployment.targetPath}: ${String(error)}`);
+          warnings.push(`Unable to remove ${projection.targetPath}: ${String(error)}`);
         }
       }
+
+      lockFile.projections = (lockFile.projections ?? []).filter(
+        (projection) => projection.sourceId !== sourceId,
+      );
     }
 
     if (warnings.length > 0) {
@@ -1841,9 +1891,9 @@ export class SkillFlowApp {
 
   private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
     const { manifest, lockFile } = await this.store.readState();
+    await this.ensureProjectionLedger(manifest, lockFile);
     const removedSourceIds: string[] = [];
     const warnings: Warning[] = [];
-    const targetRoots = await this.getTargetRootMap();
 
     for (const source of lockFile.sources) {
       if (await pathExists(source.checkoutPath)) {
@@ -1856,33 +1906,28 @@ export class SkillFlowApp {
         message: `Removed ${source.displayName} because checkout is missing at ${source.checkoutPath}.`,
       });
 
-      const deployments = lockFile.deployments.filter(
-        (deployment) => deployment.sourceId === source.id,
+      const projections = (lockFile.projections ?? []).filter(
+        (projection) => projection.sourceId === source.id,
       );
-      for (const deployment of deployments) {
-        if (!(await pathExists(deployment.targetPath))) {
+      for (const projection of projections) {
+        if (!(await pathExists(projection.targetPath))) {
           continue;
         }
-        if (
-          !this.isPathInsideManagedTargetRoot(
-            deployment.target,
-            deployment.targetPath,
-            targetRoots,
-            deployment.targetRootPath,
-          )
-        ) {
+        if (!this.isProjectionPathManaged(lockFile, projection)) {
           warnings.push({
             code: "SOURCE_CHECKOUT_PRUNE_SKIPPED",
-            message: `Skipped unmanaged deployment path ${deployment.targetPath} while pruning ${source.displayName}.`,
+            message: `Skipped unmanaged deployment path ${projection.targetPath} while pruning ${source.displayName}.`,
           });
           continue;
         }
         try {
-          await removePath(deployment.targetPath);
+          if (!this.hasPersistentProjectionOwnerForPath(lockFile, projection)) {
+            await removePath(projection.targetPath);
+          }
         } catch (error) {
           return fail({
             code: "SOURCE_CHECKOUT_PRUNE_FAILED",
-            message: `Unable to clean deployment ${deployment.targetPath}: ${String(error)}`,
+            message: `Unable to clean deployment ${projection.targetPath}: ${String(error)}`,
           }, warnings);
         }
       }
@@ -1900,8 +1945,8 @@ export class SkillFlowApp {
     lockFile.leafInventory = lockFile.leafInventory.filter(
       (leaf) => !removedSourceIds.includes(leaf.sourceId),
     );
-    lockFile.deployments = lockFile.deployments.filter(
-      (deployment) => !removedSourceIds.includes(deployment.sourceId),
+    lockFile.projections = (lockFile.projections ?? []).filter(
+      (projection) => !removedSourceIds.includes(projection.sourceId),
     );
 
     await this.store.writeState(manifest, lockFile);
@@ -1921,6 +1966,20 @@ export class SkillFlowApp {
     );
   }
 
+  private getEnabledTargetsForSource(
+    manifest: Manifest,
+    sourceId: string,
+  ): DeploymentTargetName[] {
+    const binding = manifest.bindings[sourceId];
+    if (!binding) {
+      return [];
+    }
+
+    return Object.entries(binding.targets)
+      .filter(([, targetBinding]) => targetBinding?.enabled)
+      .map(([target]) => target as DeploymentTargetName);
+  }
+
   private isPathInsideManagedTargetRoot(
     target: DeploymentTargetName,
     targetPath: string,
@@ -1930,6 +1989,297 @@ export class SkillFlowApp {
     return [explicitRootPath, targetRoots.get(target)]
       .filter((value): value is string => Boolean(value))
       .some((rootPath) => isPathInside(rootPath, targetPath));
+  }
+
+  private async cleanupImportedTargetPaths(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceIds: string[],
+    restrictedTargets?: DeploymentTargetName[],
+  ): Promise<Warning[]> {
+    const warnings: Warning[] = [];
+    await this.ensureProjectionLedger(manifest, lockFile);
+    const projections = (lockFile.projections ?? []).filter(
+      (projection) =>
+        projection.mode === "bootstrap-imported" &&
+        sourceIds.includes(projection.sourceId) &&
+        (restrictedTargets ? restrictedTargets.includes(projection.target) : true),
+    );
+
+    for (const projection of projections) {
+      if (
+        await pathExists(projection.targetPath) &&
+        !this.isProjectionPathManaged(lockFile, projection)
+      ) {
+        warnings.push({
+          code: "IMPORTED_TARGET_PATH_INVALID",
+          message: `Refusing to remove unmanaged imported target path ${projection.targetPath}.`,
+        });
+        continue;
+      }
+
+      if (await pathExists(projection.targetPath)) {
+        try {
+          if (!this.hasPersistentProjectionOwnerForPath(lockFile, projection)) {
+            await removePath(projection.targetPath);
+          }
+        } catch (error) {
+          warnings.push({
+            code: "IMPORTED_TARGET_PATH_REMOVE_FAILED",
+            message: `Unable to remove imported target path ${projection.targetPath}: ${String(error)}`,
+          });
+          continue;
+        }
+      }
+
+      lockFile.projections = (lockFile.projections ?? []).filter(
+        (candidate) =>
+          !(
+            candidate.mode === "bootstrap-imported" &&
+            candidate.sourceId === projection.sourceId &&
+            candidate.leafId === projection.leafId &&
+            candidate.target === projection.target
+          ),
+      );
+    }
+
+    return warnings;
+  }
+
+  private buildImportedTargetPathsForSource(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceId: string,
+    target: DeploymentTargetName,
+    rootPath: string,
+    projectedLinkNames: Map<string, string>,
+  ): Set<string> {
+    const source = manifest.sources.find((item) => item.id === sourceId);
+    if (!source) {
+      return new Set();
+    }
+
+    const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
+    const groupAuthor =
+      parseGitHubRepo(source.locator)?.owner
+      ?? (source.originLocator ? parseGitHubRepo(source.originLocator)?.owner : undefined);
+    const candidatePaths = new Set<string>();
+
+    for (const leaf of leafs) {
+      const projectedLinkName = projectedLinkNames.get(leaf.id) ?? leaf.linkName;
+      for (const name of buildProjectedSkillNameCandidates({
+        preferredName: projectedLinkName,
+        groupId: source.id,
+        groupName: source.displayName,
+        groupAuthor,
+        skillName: leaf.linkName,
+      })) {
+        candidatePaths.add(path.join(rootPath, name));
+      }
+    }
+    return candidatePaths;
+  }
+
+  private async ensureProjectionLedger(
+    manifest: Manifest,
+    lockFile: LockFile,
+  ): Promise<void> {
+    const targetRoots = await this.getTargetRootMap();
+    const projectedNameCache = new Map<DeploymentTargetName, Map<string, string>>();
+    const managed: ProjectionRecord[] = getManagedDeployments(lockFile).map((deployment) => ({
+      ...deployment,
+      mode: "managed",
+    }));
+    const previousBootstrap = (lockFile.projections ?? []).filter(
+      (projection) => projection.mode === "bootstrap-imported",
+    );
+    const bootstrap: ProjectionRecord[] = [];
+
+    for (const sourceLock of lockFile.sources) {
+      const bootstrapTargets = getBootstrapImportedTargets(lockFile, sourceLock);
+      if (sourceLock.importMode !== "bootstrap-detected" || bootstrapTargets.length === 0) {
+        continue;
+      }
+
+      const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceLock.id);
+      const observedByTarget = new Map<DeploymentTargetName, {
+        target: DeploymentTargetName;
+        rootPath: string;
+        targetPath: string;
+      }>();
+      for (const observed of sourceLock.observedTargets ?? []) {
+        observedByTarget.set(observed.target, observed);
+      }
+      const targetEntries = [
+        ...observedByTarget.values(),
+        ...bootstrapTargets
+          .filter((target) => !observedByTarget.has(target))
+          .map((target) => ({ target, rootPath: targetRoots.get(target) ?? "", targetPath: "" })),
+      ];
+
+      for (const { target, rootPath: observedRootPath, targetPath: observedTargetPath } of targetEntries) {
+        const rootPath = targetRoots.get(target);
+        if (!rootPath) {
+          continue;
+        }
+
+        let projectedLinkNames = projectedNameCache.get(target);
+        if (!projectedLinkNames) {
+          projectedLinkNames = this.buildProjectedLinkNameMap(manifest, lockFile, target);
+          projectedNameCache.set(target, projectedLinkNames);
+        }
+
+        for (const leaf of leafs) {
+          const previous = previousBootstrap.find(
+            (projection) =>
+              projection.sourceId === sourceLock.id &&
+              projection.leafId === leaf.id &&
+              projection.target === target,
+          );
+          const targetPath = await this.resolveBootstrapProjectionTargetPath(
+            manifest,
+            lockFile,
+            sourceLock,
+            leaf,
+            rootPath,
+            projectedLinkNames,
+            observedRootPath === rootPath ? observedTargetPath : undefined,
+            previous?.targetPath,
+          );
+          if (!targetPath) {
+            continue;
+          }
+          bootstrap.push({
+            sourceId: sourceLock.id,
+            leafId: leaf.id,
+            target,
+            targetPath,
+            targetRootPath: rootPath,
+            strategy: "symlink",
+            status: "active",
+            contentHash: leaf.contentHash,
+            appliedAt: sourceLock.updatedAt,
+            mode: "bootstrap-imported",
+          });
+        }
+      }
+    }
+
+    lockFile.projections = [...managed, ...bootstrap];
+  }
+
+  private async resolveBootstrapProjectionTargetPath(
+    manifest: Manifest,
+    _lockFile: LockFile,
+    sourceLock: LockFile["sources"][number],
+    leaf: LeafRecord,
+    rootPath: string,
+    projectedLinkNames: Map<string, string>,
+    observedTargetPath?: string,
+    previousTargetPath?: string,
+  ): Promise<string | undefined> {
+    if (previousTargetPath && isPathInside(rootPath, previousTargetPath)) {
+      return previousTargetPath;
+    }
+
+    if (observedTargetPath && isPathInside(rootPath, observedTargetPath)) {
+      return observedTargetPath;
+    }
+
+    const scannedObservedTargetPath = await this.findObservedBootstrapTargetPath(
+      sourceLock,
+      rootPath,
+    );
+    if (scannedObservedTargetPath) {
+      return scannedObservedTargetPath;
+    }
+
+    const source = manifest.sources.find((item) => item.id === sourceLock.id);
+    const groupAuthor =
+      parseGitHubRepo(source?.locator ?? "")?.owner
+      ?? (source?.originLocator ? parseGitHubRepo(source.originLocator)?.owner : undefined);
+    const projectedLinkName = projectedLinkNames.get(leaf.id) ?? leaf.linkName;
+    const candidates = buildProjectedSkillNameCandidates({
+      preferredName: projectedLinkName,
+      groupId: sourceLock.id,
+      groupName: source?.displayName ?? sourceLock.id,
+      groupAuthor,
+      skillName: leaf.linkName,
+    }).map((name) => path.join(rootPath, name));
+
+    for (const candidate of candidates) {
+      if (await pathExists(candidate)) {
+        return candidate;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async findObservedBootstrapTargetPath(
+    sourceLock: LockFile["sources"][number],
+    rootPath: string,
+  ): Promise<string | undefined> {
+    if (!(await pathExists(rootPath))) {
+      return undefined;
+    }
+
+    const displayNamePath = path.join(rootPath, sourceLock.displayName);
+    if (await pathExists(displayNamePath)) {
+      return displayNamePath;
+    }
+
+    const observedRealpaths = new Set(
+      [sourceLock.locator, sourceLock.checkoutPath]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => path.resolve(value)),
+    );
+    const entries = await fs.readdir(rootPath, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const candidatePath = path.join(rootPath, entry.name);
+      const isDirectoryLike =
+        entry.isDirectory() ||
+        (entry.isSymbolicLink() &&
+          (await fs.stat(candidatePath).then((stats) => stats.isDirectory()).catch(() => false)));
+      if (!isDirectoryLike) {
+        continue;
+      }
+      if (!(await pathExists(path.join(candidatePath, "SKILL.md")))) {
+        continue;
+      }
+      const resolvedPath = await fs.realpath(candidatePath).catch(() => path.resolve(candidatePath));
+      if (observedRealpaths.has(resolvedPath)) {
+        return candidatePath;
+      }
+    }
+
+    return undefined;
+  }
+
+  private isProjectionPathManaged(
+    lockFile: LockFile,
+    projection: ProjectionRecord,
+  ): boolean {
+    return Boolean(
+      projection.targetRootPath &&
+      isPathInside(projection.targetRootPath, projection.targetPath),
+    );
+  }
+
+  private hasPersistentProjectionOwnerForPath(
+    lockFile: LockFile,
+    projection: ProjectionRecord,
+  ): boolean {
+    return (lockFile.projections ?? []).some(
+      (candidate) =>
+        candidate.targetPath === projection.targetPath &&
+        !(
+          candidate.mode === projection.mode &&
+          candidate.sourceId === projection.sourceId &&
+          candidate.leafId === projection.leafId &&
+          candidate.target === projection.target
+        ),
+    );
   }
 
   private async persistNormalizedBindings(
@@ -2268,7 +2618,7 @@ export class SkillFlowApp {
       });
     }
 
-    if (lockFile.deployments.some((deployment) => deployment.sourceId === sourceId)) {
+    if (getManagedDeployments(lockFile).some((deployment) => deployment.sourceId === sourceId)) {
       return fail({
         code: "ADD_ROLLBACK_HAS_DEPLOYMENTS",
         message: `Unable to roll back skills group id '${sourceId}' because deployments already exist.`,
@@ -2430,7 +2780,7 @@ export class SkillFlowApp {
     sourceIds?: string[],
   ): Promise<number> {
     const requested = sourceIds?.length ? new Set(sourceIds) : undefined;
-    const previousDeployments = lockFile.deployments;
+    const previousDeployments = getManagedDeployments(lockFile);
     const previousCount = previousDeployments.length;
     const previousByKey = new Map(
       previousDeployments.map((deployment) => [
@@ -2516,7 +2866,16 @@ export class SkillFlowApp {
       }
     }
 
-    lockFile.deployments = nextDeployments;
+    const bootstrapProjections = (lockFile.projections ?? []).filter(
+      (projection) => projection.mode === "bootstrap-imported",
+    );
+    lockFile.projections = [
+      ...bootstrapProjections,
+      ...nextDeployments.map((deployment) => ({
+        ...deployment,
+        mode: "managed" as const,
+      })),
+    ];
     return Math.max(0, previousCount - nextDeployments.length);
   }
 

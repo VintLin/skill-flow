@@ -129,6 +129,45 @@ describe.sequential("source lifecycle", () => {
     expect(result.data).not.toHaveProperty("sourceSnapshot");
   });
 
+  test("inspectSource reads managed deployment details from projections when deployments are empty", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:skills/review`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    const { manifest, lockFile } = await app.store.readState();
+    lockFile.deployments = [];
+    await app.store.writeState(manifest, lockFile);
+
+    const result = await app.inspectSource(sourceId);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.deployments).toHaveLength(1);
+    expect(result.data.deployments[0]?.leafId).toBe(leafId);
+    expect(result.data.deployments[0]?.target).toBe("claude-code");
+  });
+
   test("inspectSourceEnrichment returns metadata and snapshot without recomputing local shell", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),

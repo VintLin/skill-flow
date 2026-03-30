@@ -11,6 +11,7 @@ import type {
   Result,
   Warning,
 } from "@skill-flow/domain/types";
+import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import type { ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
 import {
   buildProjectedSkillNameCandidates,
@@ -30,7 +31,7 @@ export class DeploymentPlanner {
     const binding = manifest.bindings[sourceId] ?? { targets: {} };
     const source = manifest.sources.find((item) => item.id === sourceId);
     const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
-    const previousDeployments = lockFile.deployments.filter(
+    const previousDeployments = getManagedDeployments(lockFile).filter(
       (deployment) => deployment.sourceId === sourceId,
     );
     const actions: DeploymentAction[] = [];
@@ -187,10 +188,12 @@ export class DeploymentPlanner {
         if (
           diskState.managedBySkillFlow &&
           !(
-            existing &&
-            diskState.managedDeployment?.sourceId === existing.sourceId &&
-            diskState.managedDeployment?.leafId === existing.leafId &&
-            diskState.managedDeployment?.target === existing.target
+            (existing &&
+              diskState.managedDeployment?.sourceId === existing.sourceId &&
+              diskState.managedDeployment?.leafId === existing.leafId &&
+              diskState.managedDeployment?.target === existing.target) ||
+            (diskState.managedDeployment?.sourceId === sourceId &&
+              diskState.managedDeployment?.leafId === leaf.id)
           )
         ) {
           continue;
@@ -333,7 +336,7 @@ export class DeploymentPlanner {
     identity?: { name: string; description: string };
   }> {
     try {
-      const managedDeployment = lockFile.deployments.find(
+      const managedDeployment = getManagedDeployments(lockFile).find(
         (deployment) => deployment.targetPath === targetPath && deployment.status === "active",
       );
       const stats = await fs.lstat(targetPath);

@@ -120,6 +120,11 @@ export type SourceLockRecord = {
   versionMode?: "pinned" | "floating";
   originBranch?: string;
   importedFromTargets?: DeploymentTargetName[];
+  observedTargets?: Array<{
+    target: DeploymentTargetName;
+    rootPath: string;
+    targetPath: string;
+  }>;
   importMode?: "explicit-add" | "bootstrap-detected";
 };
 
@@ -150,10 +155,17 @@ export type DeploymentRecord = {
   appliedAt: string;
 };
 
+export type ProjectionMode = "managed" | "bootstrap-imported";
+
+export type ProjectionRecord = DeploymentRecord & {
+  mode: ProjectionMode;
+};
+
 export type LockFile = {
   schemaVersion: 1;
   sources: SourceLockRecord[];
   leafInventory: LeafRecord[];
+  projections?: ProjectionRecord[];
   deployments: DeploymentRecord[];
 };
 

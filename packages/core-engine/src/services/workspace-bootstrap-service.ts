@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { DeploymentTargetName, LockFile, Manifest } from "@skill-flow/domain/types";
+import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { getTargetScanRoots, TARGET_DEFINITIONS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
 import { hashDirectory, pathExists, readJsonFile } from "@skill-flow/integration/utils/fs";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
@@ -26,6 +27,11 @@ export type DetectedExternalSkill = {
   displayName: string;
   sourceId: string;
   importedFromTargets: DeploymentTargetName[];
+  observedTargets: Array<{
+    target: DeploymentTargetName;
+    rootPath: string;
+    targetPath: string;
+  }>;
   originLocator?: string;
   originRequestedPath?: string;
   originBranch?: string;
@@ -68,7 +74,7 @@ export class WorkspaceBootstrapService {
       lockFile.sources.map((source) => path.resolve(source.checkoutPath)),
     );
     const managedTargetPaths = new Set(
-      lockFile.deployments.map((deployment) => path.resolve(deployment.targetPath)),
+      getManagedDeployments(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
     );
     const agentsOrigins = await this.readAgentsOrigins();
     const grouped = new Map<
@@ -78,6 +84,11 @@ export class WorkspaceBootstrapService {
         displayName: string;
         hash: string;
         targets: Set<DeploymentTargetName>;
+        observedTargets: Array<{
+          target: DeploymentTargetName;
+          rootPath: string;
+          targetPath: string;
+        }>;
         origin: AgentsOrigin | undefined;
       }
     >();
@@ -123,10 +134,15 @@ export class WorkspaceBootstrapService {
           }
 
           const contentHash = await hashDirectory(resolvedPath);
-          const groupKey = `${entry.name}\n${contentHash}`;
+          const groupKey = `${resolvedPath}\n${contentHash}`;
           const current = grouped.get(groupKey);
           if (current) {
             current.targets.add(target);
+            current.observedTargets.push({
+              target,
+              rootPath: root,
+              targetPath: skillDir,
+            });
             continue;
           }
 
@@ -135,6 +151,11 @@ export class WorkspaceBootstrapService {
             displayName: entry.name,
             hash: contentHash,
             targets: new Set([target]),
+            observedTargets: [{
+              target,
+              rootPath: root,
+              targetPath: skillDir,
+            }],
             origin: agentsOrigins.get(entry.name),
           });
         }
@@ -153,6 +174,7 @@ export class WorkspaceBootstrapService {
         displayName: item.displayName,
         sourceId,
         importedFromTargets: TARGET_ORDER.filter((target) => item.targets.has(target)),
+        observedTargets: [...item.observedTargets],
         ...(item.origin?.originLocator ? { originLocator: item.origin.originLocator } : {}),
         ...(item.origin?.originRequestedPath
           ? { originRequestedPath: item.origin.originRequestedPath }

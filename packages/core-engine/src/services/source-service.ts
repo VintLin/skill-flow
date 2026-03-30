@@ -13,6 +13,7 @@ import type {
   SourceLockRecord,
   SourceManifestRecord,
 } from "@skill-flow/domain/types";
+import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { StateStore } from "@skill-flow/storage/store";
 import {
   copyDirectory,
@@ -53,6 +54,11 @@ export type AddSourceOptions = {
   originRequestedPath?: string;
   originBranch?: string;
   importedFromTargets?: DeploymentTargetName[];
+  observedTargets?: Array<{
+    target: DeploymentTargetName;
+    rootPath: string;
+    targetPath: string;
+  }>;
   importMode?: "explicit-add" | "bootstrap-detected";
 };
 
@@ -294,8 +300,8 @@ export class SourceService {
       lockFile.leafInventory = lockFile.leafInventory.filter(
         (leaf) => leaf.sourceId !== sourceId,
       );
-      lockFile.deployments = lockFile.deployments.filter(
-        (deployment) => deployment.sourceId !== sourceId,
+      lockFile.projections = (lockFile.projections ?? []).filter(
+        (projection) => projection.sourceId !== sourceId,
       );
       const checkoutRoot = this.store.getSourceRoot(currentSource.kind);
       if (!isPathInside(checkoutRoot, currentLock.checkoutPath)) {
@@ -333,7 +339,7 @@ export class SourceService {
       }
 
       const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
-      const sourceDeployments = lockFile.deployments.filter(
+      const sourceDeployments = getManagedDeployments(lockFile).filter(
         (deployment) => deployment.sourceId === sourceId,
       );
       if (
@@ -714,6 +720,9 @@ export class SourceService {
           ...(addOptions.originBranch ? { originBranch: addOptions.originBranch } : {}),
           ...(addOptions.importedFromTargets
             ? { importedFromTargets: addOptions.importedFromTargets }
+            : {}),
+          ...(addOptions.observedTargets
+            ? { observedTargets: addOptions.observedTargets }
             : {}),
           ...(addOptions.importMode ? { importMode: addOptions.importMode } : {}),
           ...(kind === "clawhub"

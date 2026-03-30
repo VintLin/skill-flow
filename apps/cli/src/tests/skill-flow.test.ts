@@ -86,6 +86,17 @@ describe.sequential("skill-flow", () => {
       return;
     }
     deployment.targetPath = externalPath;
+    const projection = (lock.projections ?? []).find(
+      (item) =>
+        item.mode === "managed" &&
+        item.sourceId === sourceId &&
+        item.leafId === leafId &&
+        item.target === "openclaw",
+    );
+    if (!projection) {
+      throw new Error("expected managed projection for openclaw");
+    }
+    projection.targetPath = externalPath;
     await app.store.writeLock(lock);
 
     const removed = await app.uninstall([sourceId]);
@@ -130,6 +141,18 @@ describe.sequential("skill-flow", () => {
     }
     deployment.targetPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
     deployment.targetRootPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
+    const projection = (lock.projections ?? []).find(
+      (item) =>
+        item.mode === "managed" &&
+        item.sourceId === sourceId &&
+        item.leafId === leafId &&
+        item.target === "openclaw",
+    );
+    if (!projection) {
+      throw new Error("expected managed projection for openclaw");
+    }
+    projection.targetPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
+    projection.targetRootPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
     await app.store.writeLock(lock);
 
     const removed = await app.uninstall([sourceId]);
@@ -186,6 +209,341 @@ describe.sequential("skill-flow", () => {
     });
     expect(removed.ok).toBe(true);
     expect(await pathExists(deployment.targetPath)).toBe(false);
+  });
+
+  test("uninstall removes an existing deployment after the target root changes", async () => {
+    const oldRoot = path.join(sandbox.targetsRoot, "codex-old");
+    const newRoot = path.join(sandbox.targetsRoot, "codex-new");
+    await fs.mkdir(oldRoot, { recursive: true });
+    await fs.mkdir(newRoot, { recursive: true });
+    process.env.SKILL_FLOW_TARGET_CODEX = oldRoot;
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+
+    const lockBefore = await app.store.readLock();
+    const deployment = lockBefore.deployments.find(
+      (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "codex",
+    );
+    expect(deployment).toBeTruthy();
+    if (!deployment) {
+      return;
+    }
+    expect(deployment.targetRootPath).toBe(oldRoot);
+    expect(await pathExists(deployment.targetPath)).toBe(true);
+
+    process.env.SKILL_FLOW_TARGET_CODEX = newRoot;
+
+    const removed = await app.uninstall([sourceId]);
+    expect(removed.ok).toBe(true);
+    expect(await pathExists(deployment.targetPath)).toBe(false);
+  });
+
+  test("uninstall removes bootstrap-detected codex projections without deployment records", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "gstack");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("gstack", "Workflow toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      importMode: "bootstrap-detected",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack");
+    await fs.symlink(externalSkillPath, targetPath, "junction");
+
+    const removed = await app.uninstall([sourceId]);
+    expect(removed.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+  });
+
+  test("applyDraft removes bootstrap-detected codex projections without deployment records", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "gstack");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("gstack", "Workflow toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      importMode: "bootstrap-detected",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = added.data.leafs[0]?.id;
+    expect(leafId).toBeTruthy();
+    if (!leafId) {
+      return;
+    }
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack");
+    await fs.symlink(externalSkillPath, targetPath, "junction");
+
+    const removed = await app.applyDraft(sourceId, {
+      enabledTargets: [],
+      selectedLeafIds: [leafId],
+    });
+    expect(removed.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+  });
+
+  test("applyDraft keeps a shared target path while another enabled target still points to the same root", async () => {
+    const sharedRoot = path.join(sandbox.targetsRoot, "shared-agents");
+    await fs.mkdir(sharedRoot, { recursive: true });
+    process.env.SKILL_FLOW_TARGET_CODEX = sharedRoot;
+    process.env.SKILL_FLOW_TARGET_GEMINI_CLI = sharedRoot;
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["codex", "gemini-cli"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+
+    const targetPath = path.join(sharedRoot, "browse");
+    expect(await pathExists(targetPath)).toBe(true);
+
+    const disabledFirst = await app.applyDraft(sourceId, {
+      enabledTargets: ["gemini-cli"],
+      selectedLeafIds: [leafId],
+    });
+    expect(disabledFirst.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(true);
+
+    const disabledFinal = await app.applyDraft(sourceId, {
+      enabledTargets: [],
+      selectedLeafIds: [],
+    });
+    expect(disabledFinal.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+  });
+
+  test("applyDraft keeps a shared target path when bootstrap-imported and managed ownership converge", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "browse");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("browse", "External browse skill."),
+    });
+    const managedRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Managed browse skill."),
+    });
+    const app = new SkillFlowApp();
+
+    const managedAdded = await app.addSource(managedRepoPath, { project: false });
+    const bootstrapAdded = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      importMode: "bootstrap-detected",
+    });
+    expect(managedAdded.ok).toBe(true);
+    expect(bootstrapAdded.ok).toBe(true);
+    if (!managedAdded.ok || !bootstrapAdded.ok) {
+      return;
+    }
+
+    const managedSourceId = managedAdded.data.manifest.id;
+    const managedLeafId = `${managedSourceId}:browse`;
+    const bootstrapSourceId = bootstrapAdded.data.manifest.id;
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "browse");
+
+    const managedApplied = await app.applyDraft(managedSourceId, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: [managedLeafId],
+    });
+    expect(managedApplied.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(true);
+
+    const bootstrapDisabled = await app.applyDraft(bootstrapSourceId, {
+      enabledTargets: [],
+      selectedLeafIds: [`${bootstrapSourceId}:.`],
+    });
+    expect(bootstrapDisabled.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(true);
+  });
+
+  test("applyDraft turning off a bootstrap-detected target succeeds when the mounted path was already deleted", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "gstack-missing-off");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("gstack", "Workflow toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      importMode: "bootstrap-detected",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack");
+    await fs.symlink(externalSkillPath, targetPath, "junction");
+    await fs.rm(targetPath, { recursive: true, force: true });
+
+    const removed = await app.applyDraft(sourceId, {
+      enabledTargets: [],
+      selectedLeafIds: [`${sourceId}:.`],
+    });
+    expect(removed.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+  });
+
+  test("uninstall succeeds when a bootstrap-detected mounted path was already deleted by the user", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "gstack-missing-uninstall");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("gstack", "Workflow toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      importMode: "bootstrap-detected",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack");
+    await fs.symlink(externalSkillPath, targetPath, "junction");
+    await fs.rm(targetPath, { recursive: true, force: true });
+
+    const removed = await app.uninstall([sourceId]);
+    expect(removed.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+  });
+
+  test("doctor prunes bootstrap-detected imported paths when the checkout is missing", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "gstack-prune");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("gstack", "Workflow toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      importMode: "bootstrap-detected",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack-prune");
+    const checkoutPath = app.store.getSourceCheckoutPath("local", sourceId);
+    await fs.symlink(externalSkillPath, targetPath, "junction");
+    await fs.rm(checkoutPath, { recursive: true, force: true });
+
+    const doctor = await app.doctor();
+    expect(doctor.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+
+    const manifest = await app.store.readManifest();
+    const lock = await app.store.readLock();
+    expect(manifest.sources.some((source) => source.id === sourceId)).toBe(false);
+    expect(lock.sources.some((source) => source.id === sourceId)).toBe(false);
+  });
+
+  test("repairTargets explicitly warns when asked to repair an imported-only bootstrap source", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "gstack-repair-bootstrap");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("gstack", "Workflow toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      importMode: "bootstrap-detected",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack-repair-bootstrap");
+    await fs.rm(targetPath, { recursive: true, force: true });
+
+    const repaired = await app.repairTargets([sourceId]);
+
+    expect(repaired.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+    expect(
+      repaired.warnings.some((warning) => warning.code === "REPAIR_TARGETS_SKIPPED_BOOTSTRAP_IMPORTED"),
+    ).toBe(true);
+  });
+
+  test("repairTargets restores managed paths from projections when deployments are empty", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "gstack/SKILL.md": skillDoc("gstack", "Workflow toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:gstack`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack");
+    const { manifest, lockFile } = await app.store.readState();
+    lockFile.deployments = [];
+    await app.store.writeState(manifest, lockFile);
+    await fs.rm(targetPath, { recursive: true, force: true });
+
+    const repaired = await app.repairTargets([sourceId]);
+
+    expect(repaired.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(true);
   });
 
   test("renames preview target when foreign content already exists at target path", async () => {
@@ -797,18 +1155,23 @@ description: |
 
     const lockPath = path.join(sandbox.stateRoot, "lock.json");
     const lockFile = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
-      deployments: Array<Record<string, string>>;
+      projections?: Array<Record<string, string>>;
     };
-    lockFile.deployments.push({
-      sourceId,
-      leafId,
-      target: "claude-code",
-      targetPath: legacyPath,
-      strategy: "symlink",
-      status: "active",
-      contentHash: "legacy",
-      appliedAt: new Date().toISOString(),
-    });
+    lockFile.projections = [
+      ...(lockFile.projections ?? []),
+      {
+        sourceId,
+        leafId,
+        target: "claude-code",
+        targetPath: legacyPath,
+        targetRootPath: process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!,
+        strategy: "symlink",
+        status: "active",
+        contentHash: "legacy",
+        appliedAt: new Date().toISOString(),
+        mode: "managed",
+      },
+    ];
     await fs.writeFile(lockPath, `${JSON.stringify(lockFile, null, 2)}\n`, "utf8");
 
     const applied = await app.applyDraft(sourceId, {
@@ -870,14 +1233,14 @@ description: |
 
     const lockPath = path.join(sandbox.stateRoot, "lock.json");
     const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
-      deployments: Array<{ sourceId: string; targetPath: string }>;
+      projections?: Array<{ sourceId: string; targetPath: string; mode?: string }>;
     };
-    expect(
-      lock.deployments.filter((deployment) =>
-        deployment.targetPath.endsWith(path.join("claude", "browse")),
-      ),
-    ).toHaveLength(1);
-    expect(lock.deployments[0]?.sourceId).toBe(sourceA);
+    const managedBrowseProjections = (lock.projections ?? []).filter((deployment) =>
+      deployment.mode === "managed" &&
+      deployment.targetPath.endsWith(path.join("claude", "browse")),
+    );
+    expect(managedBrowseProjections).toHaveLength(1);
+    expect(managedBrowseProjections[0]?.sourceId).toBe(sourceA);
   });
 
   test("renames cross-group projections when linkName matches but content differs", async () => {

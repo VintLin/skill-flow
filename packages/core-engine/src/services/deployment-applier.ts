@@ -4,8 +4,10 @@ import type {
   DeploymentAction,
   DeploymentRecord,
   LockFile,
+  ProjectionRecord,
   Result,
 } from "@skill-flow/domain/types";
+import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import type { ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
 import { copyDirectory, createSymlink, ensureDir, isPathInside, pathExists, removePath } from "@skill-flow/integration/utils/fs";
 import { ok } from "@skill-flow/integration/utils/result";
@@ -39,18 +41,23 @@ export class DeploymentApplier {
         action.targetRootPath,
       );
       if (action.kind === "remove") {
-        if (await pathExists(action.targetPath)) {
-          await removePath(action.targetPath);
+        const removeAction = action;
+        if (
+          (await pathExists(removeAction.targetPath)) &&
+          !(await this.hasPersistentOwnerForPath(lockFile, actions, removeAction))
+        ) {
+          await removePath(removeAction.targetPath);
         }
-        lockFile.deployments = lockFile.deployments.filter(
-          (deployment) =>
+        lockFile.projections = (lockFile.projections ?? []).filter(
+          (projection) =>
             !(
-              deployment.sourceId === action.sourceId &&
-              deployment.leafId === action.leafId &&
-              deployment.target === action.target
+              projection.mode === "managed" &&
+              projection.sourceId === removeAction.sourceId &&
+              projection.leafId === removeAction.leafId &&
+              projection.target === removeAction.target
             ),
         );
-        applied.push(action);
+        applied.push(removeAction);
         continue;
       }
 
@@ -66,7 +73,9 @@ export class DeploymentApplier {
           targetRoots,
           action.previousTargetRootPath,
         );
-        await removePath(action.previousTargetPath);
+        if (!(await this.hasPersistentOwnerForPath(lockFile, actions, action, action.previousTargetPath))) {
+          await removePath(action.previousTargetPath);
+        }
       }
 
       if (
@@ -100,22 +109,57 @@ export class DeploymentApplier {
         contentHash: action.contentHash,
         appliedAt: new Date().toISOString(),
       };
+      const nextProjection: ProjectionRecord = {
+        ...nextRecord,
+        mode: "managed",
+      };
 
-      lockFile.deployments = [
-        ...lockFile.deployments.filter(
-          (deployment) =>
+      lockFile.projections = [
+        ...(lockFile.projections ?? []).filter(
+          (projection) =>
             !(
-              deployment.sourceId === action.sourceId &&
-              deployment.leafId === action.leafId &&
-              deployment.target === action.target
+              projection.mode === "managed" &&
+              projection.sourceId === action.sourceId &&
+              projection.leafId === action.leafId &&
+              projection.target === action.target
             ),
         ),
-        nextRecord,
+        nextProjection,
       ];
       applied.push(action);
     }
 
     return ok({ applied });
+  }
+
+  private async hasPersistentOwnerForPath(
+    lockFile: LockFile,
+    actions: DeploymentAction[],
+    action: DeploymentAction,
+    targetPath = action.targetPath,
+  ): Promise<boolean> {
+    const samePathDeployments = getManagedDeployments(lockFile).filter(
+      (deployment) =>
+        deployment.targetPath === targetPath &&
+        !(
+          deployment.sourceId === action.sourceId &&
+          deployment.leafId === action.leafId &&
+          deployment.target === action.target
+        ),
+    );
+    if (samePathDeployments.length === 0) {
+      return false;
+    }
+
+    return samePathDeployments.some((deployment) => {
+      const plannedAction = actions.find(
+        (candidate) =>
+          candidate.sourceId === deployment.sourceId &&
+          candidate.leafId === deployment.leafId &&
+          candidate.target === deployment.target,
+      );
+      return plannedAction?.kind !== "remove";
+    });
   }
 
   private assertManagedTargetPath(

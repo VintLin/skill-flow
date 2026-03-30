@@ -32,6 +32,7 @@ describe.sequential("config integration", () => {
       schemaVersion: 1,
       sources: [],
       leafInventory: [],
+      projections: [],
       deployments: [],
     });
   });
@@ -58,8 +59,111 @@ describe.sequential("config integration", () => {
     );
 
     expect(detected.some((item) => item.displayName === "linked-skill")).toBe(true);
+    expect(
+      detected.find((item) => item.displayName === "linked-skill")?.observedTargets,
+    ).toEqual([
+      {
+        target: "codex",
+        rootPath: process.env.SKILL_FLOW_TARGET_CODEX!,
+        targetPath: path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "linked-skill"),
+      },
+    ]);
     expect(await app.store.readManifest()).toEqual(manifest);
     expect(await app.store.readLock()).toEqual(lock);
+  });
+
+  test("bootstrap ignores target paths already owned by managed projections even without deployments", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "linked-skill/SKILL.md": skillDoc("linked-skill", "Managed linked skill."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:linked-skill`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    const { manifest, lockFile } = await app.store.readState();
+    lockFile.deployments = [];
+    await app.store.writeState(manifest, lockFile);
+
+    const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
+      manifest,
+      lockFile,
+    );
+
+    expect(detected.some((item) => item.sourceId === sourceId)).toBe(false);
+  });
+
+  test("bootstrap collapses the same realpath discovered under different target entry names", async () => {
+    const app = new SkillFlowApp();
+    const externalRoot = path.join(sandbox.sandboxRoot, "external-skill-shared");
+    await writeRepoFiles(externalRoot, {
+      "SKILL.md": skillDoc("shared-skill", "Shared external skill."),
+    });
+
+    await fs.symlink(
+      externalRoot,
+      path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "shared-skill"),
+      "junction",
+    );
+    await fs.symlink(
+      externalRoot,
+      path.join(process.env.SKILL_FLOW_TARGET_GEMINI_CLI!, "renamed-shared-skill"),
+      "junction",
+    );
+
+    await app.store.init();
+    const manifest = await app.store.readManifest();
+    const lock = await app.store.readLock();
+    const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
+      manifest,
+      lock,
+    );
+    const externalRealPath = await fs.realpath(externalRoot);
+
+    expect(detected).toHaveLength(1);
+    expect(detected[0]?.path).toBe(externalRealPath);
+    expect(detected[0]?.importedFromTargets).toEqual(["codex", "gemini-cli"]);
+    expect(detected[0]?.observedTargets).toEqual([
+      {
+        target: "codex",
+        rootPath: process.env.SKILL_FLOW_TARGET_CODEX!,
+        targetPath: path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "shared-skill"),
+      },
+      {
+        target: "gemini-cli",
+        rootPath: process.env.SKILL_FLOW_TARGET_GEMINI_CLI!,
+        targetPath: path.join(process.env.SKILL_FLOW_TARGET_GEMINI_CLI!, "renamed-shared-skill"),
+      },
+    ]);
+
+    const imported = await app.addSource(detected[0]!.path, {
+      project: false,
+      importedFromTargets: detected[0]!.importedFromTargets,
+      observedTargets: detected[0]!.observedTargets,
+      importMode: "bootstrap-detected",
+    });
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+
+    const lockAfter = await app.store.readLock();
+    expect(
+      lockAfter.sources.find((source) => source.id === imported.data.manifest.id)?.observedTargets,
+    ).toEqual(detected[0]!.observedTargets);
   });
 
   test("config boot prunes groups whose local checkout is missing", async () => {

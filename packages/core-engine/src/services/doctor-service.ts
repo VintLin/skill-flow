@@ -8,6 +8,7 @@ import type {
   Manifest,
   Result,
 } from "@skill-flow/domain/types";
+import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { hashDirectory, isBrokenSymlink, pathExists } from "@skill-flow/integration/utils/fs";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
 import { ok } from "@skill-flow/integration/utils/result";
@@ -61,7 +62,7 @@ export class DoctorService {
           }
 
           const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
-          const deployment = lockFile.deployments.find(
+          const deployment = getManagedDeployments(lockFile).find(
             (item) =>
               item.sourceId === source.id &&
               item.leafId === leafId &&
@@ -162,7 +163,7 @@ export class DoctorService {
 
     await this.reportUnmanagedExternalSkills(lockFile, issues);
 
-    for (const deployment of lockFile.deployments) {
+    for (const deployment of getManagedDeployments(lockFile)) {
       const sourceStillExists = manifest.sources.some(
         (source) => source.id === deployment.sourceId,
       );
@@ -202,7 +203,7 @@ export class DoctorService {
     issues: DoctorIssue[],
   ): Promise<void> {
     const managedTargetPaths = new Set(
-      lockFile.deployments.map((deployment) => path.resolve(deployment.targetPath)),
+      getManagedDeployments(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
     );
     const seenPaths = new Set<string>();
 

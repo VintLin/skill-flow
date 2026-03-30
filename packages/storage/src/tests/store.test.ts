@@ -29,6 +29,7 @@ describe("StateStore", () => {
       schemaVersion: 1,
       sources: [],
       leafInventory: [],
+      projections: [],
       deployments: [],
     });
 
@@ -73,6 +74,102 @@ describe("StateStore", () => {
 
     expect(lock.leafInventory[0]?.linkName).toBe("browse");
     expect(lock.leafInventory[0]?.metadataWarnings).toEqual([]);
+  });
+
+  test("preserves managed projections when deployments are empty", async () => {
+    const store = new StateStore(stateRoot);
+
+    await store.writeLock({
+      schemaVersion: 1,
+      sources: [],
+      leafInventory: [],
+      deployments: [],
+      projections: [
+        {
+          sourceId: "alpha",
+          leafId: "alpha:browse",
+          target: "claude-code",
+          targetPath: "/tmp/alpha-browse",
+          targetRootPath: "/tmp",
+          strategy: "symlink",
+          status: "active",
+          contentHash: "hash",
+          appliedAt: "2026-03-30T00:00:00.000Z",
+          mode: "managed",
+        },
+      ],
+    });
+
+    const lock = await store.readLock();
+
+    expect(lock.projections ?? []).toHaveLength(1);
+    expect(lock.projections?.[0]?.mode).toBe("managed");
+    expect(lock.deployments).toHaveLength(1);
+    expect(lock.deployments[0]?.leafId).toBe("alpha:browse");
+  });
+
+  test("writes compact lock state without deployments or imported target metadata", async () => {
+    const store = new StateStore(stateRoot);
+
+    await store.writeLock({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "alpha",
+          locator: "/tmp/alpha",
+          kind: "local",
+          displayName: "alpha",
+          checkoutPath: "/tmp/alpha",
+          updatedAt: "2026-03-30T00:00:00.000Z",
+          leafIds: ["alpha:browse"],
+          invalidLeafs: [],
+          importMode: "bootstrap-detected",
+          importedFromTargets: ["codex"],
+          observedTargets: [
+            {
+              target: "codex",
+              rootPath: "/tmp/targets",
+              targetPath: "/tmp/targets/browse",
+            },
+          ],
+        },
+      ],
+      leafInventory: [],
+      deployments: [
+        {
+          sourceId: "alpha",
+          leafId: "alpha:browse",
+          target: "codex",
+          targetPath: "/tmp/targets/browse",
+          targetRootPath: "/tmp/targets",
+          strategy: "symlink",
+          status: "active",
+          contentHash: "hash",
+          appliedAt: "2026-03-30T00:00:00.000Z",
+        },
+      ],
+      projections: [
+        {
+          sourceId: "alpha",
+          leafId: "alpha:browse",
+          target: "codex",
+          targetPath: "/tmp/targets/browse",
+          targetRootPath: "/tmp/targets",
+          strategy: "symlink",
+          status: "active",
+          contentHash: "hash",
+          appliedAt: "2026-03-30T00:00:00.000Z",
+          mode: "managed",
+        },
+      ],
+    });
+
+    const raw = JSON.parse(await fs.readFile(store.lockPath, "utf8")) as Record<string, unknown>;
+    const sources = raw.sources as Array<Record<string, unknown>>;
+
+    expect(raw).not.toHaveProperty("deployments");
+    expect(sources[0]).not.toHaveProperty("importedFromTargets");
+    expect(raw).toHaveProperty("projections");
   });
 
   test("toggles pinned sources and prunes missing ids against the manifest", async () => {
