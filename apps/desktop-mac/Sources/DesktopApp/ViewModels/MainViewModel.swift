@@ -1020,7 +1020,7 @@ final class MainViewModel {
     }
 
     func toggleAllSkills(sourceId: String? = nil) async {
-        guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = workingDrafts[sourceId] else {
+        guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = draft(for: sourceId) else {
             return
         }
         guard !isSaving(sourceId: sourceId) else {
@@ -1042,7 +1042,7 @@ final class MainViewModel {
     }
 
     func setSkillEnabled(_ leafId: String, enabled: Bool, sourceId: String? = nil) async {
-        guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = workingDrafts[sourceId] else {
+        guard let sourceId = resolveSourceId(sourceId), let summary = summary(for: sourceId), var draft = draft(for: sourceId) else {
             return
         }
         guard !isSaving(sourceId: sourceId) else {
@@ -1078,7 +1078,7 @@ final class MainViewModel {
     }
 
     func toggleAllTargets(sourceId: String? = nil) async {
-        guard let sourceId = resolveSourceId(sourceId), var draft = workingDrafts[sourceId] else {
+        guard let sourceId = resolveSourceId(sourceId), var draft = draft(for: sourceId) else {
             return
         }
         guard !isSaving(sourceId: sourceId) else {
@@ -1886,7 +1886,7 @@ final class MainViewModel {
     }
 
     func setTargetEnabled(_ target: String, enabled: Bool, sourceId: String? = nil) async {
-        guard let groupId = resolveSourceId(sourceId), var draft = workingDrafts[groupId] else {
+        guard let groupId = resolveSourceId(sourceId), var draft = draft(for: groupId) else {
             return
         }
         guard !isSaving(sourceId: groupId) else {
@@ -2077,6 +2077,9 @@ final class MainViewModel {
                 }
             } else {
                 workingDrafts[summary.sourceId] = serverDraft
+                if savePhase == .saved {
+                    saveStateBySourceId[summary.sourceId] = SaveState(phase: .idle, detail: nil)
+                }
             }
 
             detectedTargets.formUnion(summary.enabledTargets)
@@ -2703,8 +2706,12 @@ final class MainViewModel {
         }
 
         let normalizedDraft = normalizeDraft(nextDraft)
+        let currentDraft = normalizeDraft(draft(for: sourceId) ?? normalizedDraft)
+        guard currentDraft != normalizedDraft else {
+            return
+        }
 
-        let previousDraft = draft(for: sourceId) ?? normalizedDraft
+        let previousDraft = currentDraft
         selectedSourceId = sourceId
         workingDrafts[sourceId] = normalizedDraft
         saveStateBySourceId[sourceId] = SaveState(phase: .saving, detail: nil)
