@@ -432,6 +432,7 @@ describe.sequential("source lifecycle", () => {
 
   test("find falls back to linkName when local skill title is a placeholder heading", async () => {
     vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
+    vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([]);
 
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "templated/SKILL.md": `---
