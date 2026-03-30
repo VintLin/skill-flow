@@ -4,7 +4,6 @@ struct GroupTagDisplayItem: Identifiable, Equatable {
     let id: String
     let title: String
     let accent: DesktopAccentColor
-    let isRemovable: Bool
 }
 
 enum GroupTagMutationResult: Equatable {
@@ -59,23 +58,15 @@ final class GroupTagController {
     }
 
     func resolvedTags(forSourceId sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
-        let preset = presetTags(
-            canonicalRepo: sourceCanonicalRepo(sourceId),
-            locator: sourceLocator(sourceId),
-            locale: locale
-        ) ?? []
-        let presetIDs = Set(preset.map(\.id))
-        let custom = (state.groupTags.customTagsBySourceId[sourceId] ?? []).compactMap { preference in
-            let item = GroupTagDisplayItem(
-                id: Self.customTagKey(for: preference.title),
-                title: preference.title,
-                accent: preference.accent,
-                isRemovable: true
-            )
-            return presetIDs.contains(item.id) ? nil : item
-        }
-
-        return Array((preset + custom).prefix(Self.maximumTagCount))
+        effectiveTagPreferences(forSourceId: sourceId, locale: locale)
+            .prefix(Self.maximumTagCount)
+            .map { preference in
+                GroupTagDisplayItem(
+                    id: Self.customTagKey(for: preference.title),
+                    title: preference.title,
+                    accent: preference.accent
+                )
+            }
     }
 
     func availableHomeTags(sourceIds: [String], locale: Locale) -> [GroupTagDisplayItem] {
@@ -126,8 +117,8 @@ final class GroupTagController {
         resolvedTags(forSourceId: sourceId, locale: locale).count < Self.maximumTagCount
     }
 
-    func hasRemovableTags(forSourceId sourceId: String) -> Bool {
-        !(state.groupTags.customTagsBySourceId[sourceId] ?? []).isEmpty
+    func hasTags(forSourceId sourceId: String, locale: Locale) -> Bool {
+        !resolvedTags(forSourceId: sourceId, locale: locale).isEmpty
     }
 
     func addCustomTag(
@@ -145,14 +136,9 @@ final class GroupTagController {
             return .empty
         }
 
-        let nextItem = GroupTagDisplayItem(
-            id: Self.customTagKey(for: title),
-            title: title,
-            accent: accent ?? randomAccent(),
-            isRemovable: true
-        )
+        var current = effectiveTagPreferences(forSourceId: sourceId, locale: locale)
         let existingTitles = Set(
-            resolvedTags(forSourceId: sourceId, locale: locale)
+            current
                 .map(\.title)
                 .map(Self.normalizedKey)
         )
@@ -160,42 +146,51 @@ final class GroupTagController {
             return .duplicate
         }
 
-        state.groupTags.customTagsBySourceId[sourceId, default: []].append(
-            GroupTagPreference(title: title, accentRawValue: nextItem.accent.rawValue)
+        current.append(
+            GroupTagPreference(title: title, accentRawValue: (accent ?? randomAccent()).rawValue)
         )
+        state.groupTags.customTagsBySourceId[sourceId] = Array(current.prefix(Self.maximumTagCount))
         store.saveCustomTags(state.groupTags.customTagsBySourceId)
         return .added
     }
 
-    func removeCustomTag(_ tagID: String, fromSourceId sourceId: String) -> GroupTagMutationResult {
-        let current = state.groupTags.customTagsBySourceId[sourceId] ?? []
+    func removeCustomTag(_ tagID: String, fromSourceId sourceId: String, locale: Locale) -> GroupTagMutationResult {
+        let current = effectiveTagPreferences(forSourceId: sourceId, locale: locale)
         let next = current.filter { Self.customTagKey(for: $0.title) != tagID }
 
         guard next.count != current.count else {
             return .notFound
         }
 
-        if next.isEmpty {
-            state.groupTags.customTagsBySourceId.removeValue(forKey: sourceId)
-        } else {
-            state.groupTags.customTagsBySourceId[sourceId] = next
-        }
+        state.groupTags.customTagsBySourceId[sourceId] = next
         store.saveCustomTags(state.groupTags.customTagsBySourceId)
         return .removed
     }
 
-    private func presetTags(canonicalRepo: String?, locator: String?, locale: Locale) -> [GroupTagDisplayItem]? {
+    private func effectiveTagPreferences(forSourceId sourceId: String, locale: Locale) -> [GroupTagPreference] {
+        if let stored = state.groupTags.customTagsBySourceId[sourceId] {
+            return Array(stored.prefix(Self.maximumTagCount))
+        }
+
+        return Array(
+            (presetTags(
+                canonicalRepo: sourceCanonicalRepo(sourceId),
+                locator: sourceLocator(sourceId),
+                locale: locale
+            ) ?? []).prefix(Self.maximumTagCount)
+        )
+    }
+
+    private func presetTags(canonicalRepo: String?, locator: String?, locale: Locale) -> [GroupTagPreference]? {
         guard let recommendation = matchingRecommendation(canonicalRepo: canonicalRepo, locator: locator) else {
             return nil
         }
 
         let tagIds = [recommendation.primaryTagId] + Array(recommendation.secondaryTagIds.prefix(2))
         return tagIds.map { tagId in
-            GroupTagDisplayItem(
-                id: Self.presetTagKey(for: tagId),
+            GroupTagPreference(
                 title: L10n.string("import.recommendation.tag.\(tagId)", locale: locale),
-                accent: SharedGroupCard.recommendationBadgeAccent(tagId: tagId),
-                isRemovable: false
+                accentRawValue: SharedGroupCard.recommendationBadgeAccent(tagId: tagId).rawValue
             )
         }
     }
@@ -213,11 +208,6 @@ final class GroupTagController {
     }
 
     private static func sortTags(_ lhs: GroupTagDisplayItem, _ rhs: GroupTagDisplayItem) -> Bool {
-        let lhsPreset = lhs.id.hasPrefix("preset:")
-        let rhsPreset = rhs.id.hasPrefix("preset:")
-        if lhsPreset != rhsPreset {
-            return lhsPreset
-        }
         return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
     }
 
@@ -229,10 +219,6 @@ final class GroupTagController {
         (value ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-    }
-
-    private static func presetTagKey(for tagId: String) -> String {
-        "preset:\(tagId)"
     }
 
     private static func customTagKey(for title: String) -> String {

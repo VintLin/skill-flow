@@ -83,19 +83,20 @@ final class HomeScreenContainer {
         groupTagController.canAddTag(forSourceId: sourceId, locale: locale)
     }
 
-    func hasRemovableTags(for sourceId: String) -> Bool {
-        groupTagController.hasRemovableTags(forSourceId: sourceId)
+    func hasTags(for sourceId: String, locale: Locale) -> Bool {
+        groupTagController.hasTags(forSourceId: sourceId, locale: locale)
     }
 
-    func addCustomTag(_ title: String, accent: DesktopAccentColor?, toSourceId sourceId: String, locale: Locale) {
+    func addCustomTag(_ title: String, accent: DesktopAccentColor?, toSourceId sourceId: String, locale: Locale) -> GroupTagMutationResult {
         let result = groupTagController.addCustomTag(title, accent: accent, toSourceId: sourceId, locale: locale)
         if let message = result.toastMessage(locale: locale) {
             mainViewModel.presentToast(message: message)
         }
+        return result
     }
 
     func removeCustomTag(_ tagID: String, fromSourceId sourceId: String, locale: Locale) {
-        let result = groupTagController.removeCustomTag(tagID, fromSourceId: sourceId)
+        let result = groupTagController.removeCustomTag(tagID, fromSourceId: sourceId, locale: locale)
         if let message = result.toastMessage(locale: locale) {
             mainViewModel.presentToast(message: message)
         }

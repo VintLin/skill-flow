@@ -3,11 +3,8 @@ import XCTest
 
 @MainActor
 final class GroupTagControllerTests: XCTestCase {
-    func testResolvedTagsMergePresetAndCustomTags() {
+    func testResolvedTagsFallBackToRecommendationTags() {
         let state = DesktopAppState()
-        state.groupTags.customTagsBySourceId["alpha"] = [
-            GroupTagPreference(title: "Ops", accentRawValue: DesktopAccentColor.orange.rawValue)
-        ]
         let controller = makeController(
             state: state,
             recommendations: [
@@ -26,8 +23,7 @@ final class GroupTagControllerTests: XCTestCase {
 
         let tags = controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "en"))
 
-        XCTAssertEqual(tags.map(\.title), ["General", "Development", "Ops"])
-        XCTAssertEqual(tags.map(\.isRemovable), [false, false, true])
+        XCTAssertEqual(tags.map(\.title), ["General", "Development"])
     }
 
     func testAddCustomTagPersistsTrimmedTitle() {
@@ -96,10 +92,35 @@ final class GroupTagControllerTests: XCTestCase {
         ]
         let controller = makeController(state: state)
 
-        let result = controller.removeCustomTag("custom:增长", fromSourceId: "alpha")
+        let result = controller.removeCustomTag("custom:增长", fromSourceId: "alpha", locale: Locale(identifier: "zh-Hans"))
 
         XCTAssertEqual(result, .removed)
         XCTAssertEqual(state.groupTags.customTagsBySourceId["alpha"]?.map(\.title), ["研究"])
+    }
+
+    func testRemoveRecommendationTagPersistsEmptyOverride() {
+        let state = DesktopAppState()
+        let controller = makeController(
+            state: state,
+            recommendations: [
+                ImportRecommendationEntry(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: [],
+                    descriptionKey: "desc",
+                    sortOrder: 1
+                )
+            ],
+            sourceCanonicalRepo: { sourceId in sourceId == "alpha" ? "anthropics/skills" : nil }
+        )
+
+        let result = controller.removeCustomTag("custom:general", fromSourceId: "alpha", locale: Locale(identifier: "en"))
+
+        XCTAssertEqual(result, .removed)
+        XCTAssertEqual(state.groupTags.customTagsBySourceId["alpha"], [])
+        XCTAssertEqual(controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "en")).map(\.title), [])
     }
 
     func testMatchesHomeFilterUsesEffectiveSelection() {
