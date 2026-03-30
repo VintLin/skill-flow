@@ -1011,15 +1011,14 @@ final class MainViewModel {
     }
 
     func targetSelectionState(sourceId: String? = nil) -> SelectionState {
-        guard let draft = draft(for: sourceId) else {
+        guard let sourceId = resolveSourceId(sourceId) else {
             return .empty
         }
         let targetIds = visibleTargetIds()
         guard !targetIds.isEmpty else {
             return .empty
         }
-        let enabledTargets = Set(draft.enabledTargets)
-        let selectedTargets = targetIds.filter { enabledTargets.contains($0) }
+        let selectedTargets = visibleEnabledTargets(for: sourceId, within: targetIds)
         return selectionState(allIds: targetIds, selectedIds: selectedTargets)
     }
 
@@ -1097,15 +1096,10 @@ final class MainViewModel {
         guard !targetIds.isEmpty else {
             return
         }
-        let visibleEnabledTargets = draft.enabledTargets.filter { targetIds.contains($0) }
-
-        let treeState = TreeSelectionState(
-            allLeafIds: targetIds,
-            selectedLeafIds: visibleEnabledTargets
-        )
-        let nextState = toggleParent(treeState)
+        let visibleEnabledTargets = visibleEnabledTargets(for: sourceId, within: targetIds)
         let hiddenTargets = draft.enabledTargets.filter { !targetIds.contains($0) }
-        draft.enabledTargets = normalizedTargets(hiddenTargets + nextState.selectedLeafIds)
+        let nextVisibleTargets = visibleEnabledTargets.count == targetIds.count ? [] : targetIds
+        draft.enabledTargets = normalizedTargets(hiddenTargets + nextVisibleTargets)
         await commitDraftChange(
             sourceId: sourceId,
             nextDraft: draft,
@@ -2249,6 +2243,14 @@ final class MainViewModel {
         }
 
         return serverDraft
+    }
+
+    private func visibleEnabledTargets(for sourceId: String, within targetIds: [String]) -> [String] {
+        guard let draft = draft(for: sourceId) else {
+            return []
+        }
+        let enabledTargets = Set(draft.enabledTargets)
+        return targetIds.filter { enabledTargets.contains($0) }
     }
 
     private func summary(for sourceId: String?) -> WorkflowSummary? {

@@ -146,6 +146,40 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(model.isTargetEnabled("cursor"))
     }
 
+    func testTargetStaysEnabledAfterClearingSkillsAndRefreshing() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+
+        await model.setTargetEnabled(
+            "claude-code",
+            enabled: false,
+            sourceId: "alpha",
+            expectedCurrentEnabled: true
+        )
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
+
+        await model.setSkillEnabled("alpha-a", enabled: false, sourceId: "alpha")
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .empty)
+
+        await model.setTargetEnabled(
+            "cursor",
+            enabled: true,
+            sourceId: "alpha",
+            expectedCurrentEnabled: false
+        )
+        XCTAssertTrue(model.isTargetEnabled("cursor"))
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .partial)
+
+        await model.refreshList()
+
+        XCTAssertTrue(model.isTargetEnabled("cursor"))
+        XCTAssertFalse(model.isTargetEnabled("claude-code"))
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .partial)
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.enabledTargetLabels, ["Cursor"])
+    }
+
     func testClawhubGroupSelectionIncludesAllClawhubSources() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
