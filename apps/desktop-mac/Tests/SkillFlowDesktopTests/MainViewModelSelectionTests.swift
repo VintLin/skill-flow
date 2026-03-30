@@ -180,6 +180,25 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.enabledTargetLabels, ["Cursor"])
     }
 
+    func testTargetToggleKeepsLoadingVisibleForMinimumDuration() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let startedAt = ContinuousClock.now
+
+        await model.setTargetEnabled(
+            "cursor",
+            enabled: true,
+            sourceId: "alpha",
+            expectedCurrentEnabled: false
+        )
+
+        let elapsed = startedAt.duration(to: ContinuousClock.now)
+        XCTAssertGreaterThanOrEqual(elapsed, .milliseconds(200))
+        XCTAssertEqual(model.saveState(for: "alpha").phase, .saved)
+    }
+
     func testClawhubGroupSelectionIncludesAllClawhubSources() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

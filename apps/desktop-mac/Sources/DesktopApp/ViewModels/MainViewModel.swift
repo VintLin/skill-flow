@@ -545,6 +545,7 @@ final class MainViewModel {
     @MainActor static var currentDateProvider: () -> Date = Date.init
 
     private static var targetOrder: [String] { AgentDisplayCatalog.defaultTargetOrder }
+    private static var minimumSaveLoadingDuration: Duration { .milliseconds(200) }
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
@@ -2737,6 +2738,7 @@ final class MainViewModel {
         }
 
         let previousDraft = currentDraft
+        let saveStartedAt = ContinuousClock.now
         selectedSourceId = sourceId
         workingDrafts[sourceId] = normalizedDraft
         saveStateBySourceId[sourceId] = SaveState(phase: .saving, detail: nil)
@@ -2747,16 +2749,27 @@ final class MainViewModel {
                 selectedLeafIds: normalizedDraft.selectedLeafIds,
                 enabledTargets: normalizedDraft.enabledTargets
             )
+            await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
             workingDrafts[sourceId] = normalizedDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
             showToast(style: successStyle, text: successMessage)
             scheduleDeferredDraftSync(for: sourceId)
         } catch {
             let firstReason = firstErrorLine(from: error)
+            await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
             workingDrafts[sourceId] = previousDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .failed, detail: firstReason)
             showToast(style: .error, text: localizedText("toast.save.failed", firstReason))
         }
+    }
+
+    private func ensureMinimumSaveLoadingDuration(since start: ContinuousClock.Instant) async {
+        let minimum = Self.minimumSaveLoadingDuration
+        let elapsed = start.duration(to: ContinuousClock.now)
+        guard elapsed < minimum else {
+            return
+        }
+        try? await Task.sleep(for: minimum - elapsed)
     }
 
     private func fetchListResponse() async throws -> BridgeResponse {
