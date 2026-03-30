@@ -1890,13 +1890,18 @@ final class MainViewModel {
     }
 
     func isTargetEnabled(_ target: String) -> Bool {
-        guard let groupId = selectedGroupId, let draft = workingDrafts[groupId] else {
+        guard let groupId = selectedGroupId, let draft = draft(for: groupId) else {
             return false
         }
         return draft.enabledTargets.contains(target)
     }
 
-    func setTargetEnabled(_ target: String, enabled: Bool, sourceId: String? = nil) async {
+    func setTargetEnabled(
+        _ target: String,
+        enabled: Bool,
+        sourceId: String? = nil,
+        expectedCurrentEnabled: Bool? = nil
+    ) async {
         guard let groupId = resolveSourceId(sourceId), var draft = draft(for: groupId) else {
             return
         }
@@ -1905,6 +1910,9 @@ final class MainViewModel {
         }
 
         let currentlyEnabled = draft.enabledTargets.contains(target)
+        if let expectedCurrentEnabled, currentlyEnabled != expectedCurrentEnabled {
+            return
+        }
         guard currentlyEnabled != enabled else {
             return
         }

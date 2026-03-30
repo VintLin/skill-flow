@@ -555,8 +555,15 @@ struct MainView: View {
                                 onToggleAllSkills: {
                                     Task { await viewModel.toggleAllSkills(sourceId: card.id) }
                                 },
-                                onToggleTarget: { targetId, enabled in
-                                    Task { await viewModel.setTargetEnabled(targetId, enabled: enabled, sourceId: card.id) }
+                                onToggleTarget: { targetId, enabled, expectedCurrentEnabled in
+                                    Task {
+                                        await viewModel.setTargetEnabled(
+                                            targetId,
+                                            enabled: enabled,
+                                            sourceId: card.id,
+                                            expectedCurrentEnabled: expectedCurrentEnabled
+                                        )
+                                    }
                                 },
                                 onToggleAllTargets: {
                                     Task { await viewModel.toggleAllTargets(sourceId: card.id) }

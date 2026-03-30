@@ -577,7 +577,14 @@ struct DetailScreen: View {
 
                     ForEach(detail?.targets ?? []) { target in
                         Button {
-                            Task { await container.setTargetEnabled(target.id, enabled: !target.isEnabled, sourceId: groupId) }
+                            Task {
+                                await container.setTargetEnabled(
+                                    target.id,
+                                    enabled: !target.isEnabled,
+                                    expectedCurrentEnabled: target.isEnabled,
+                                    sourceId: groupId
+                                )
+                            }
                         } label: {
                             HStack(spacing: 10) {
                                 if let image = AgentIconLibrary.symbolImage(

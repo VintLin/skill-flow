@@ -164,7 +164,7 @@ struct ImportScreen: View {
             onToggleAllSkills: {
                 container.toggleAllSkills(for: card)
             },
-            onToggleTarget: { targetId, enabled in
+            onToggleTarget: { targetId, enabled, _ in
                 container.setTarget(targetId, enabled: enabled, for: card)
             },
             onToggleAllTargets: {

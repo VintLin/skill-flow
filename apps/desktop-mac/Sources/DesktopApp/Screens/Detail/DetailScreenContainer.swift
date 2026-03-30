@@ -32,7 +32,7 @@ final class DetailScreenContainer {
     private let toggleAllSkillsAction: (String) async -> Void
     private let setSkillEnabledAction: (String, Bool, String) async -> Void
     private let toggleAllTargetsAction: (String) async -> Void
-    private let setTargetEnabledAction: (String, Bool, String) async -> Void
+    private let setTargetEnabledAction: (String, Bool, Bool, String) async -> Void
     let screenState = DetailScreenState()
 
     private static func defaultGroupTagController(state: DesktopAppState) -> GroupTagController {
@@ -59,7 +59,7 @@ final class DetailScreenContainer {
         toggleAllSkills: @escaping (String) async -> Void = { _ in },
         setSkillEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in },
         toggleAllTargets: @escaping (String) async -> Void = { _ in },
-        setTargetEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in }
+        setTargetEnabled: @escaping (String, Bool, Bool, String) async -> Void = { _, _, _, _ in }
     ) {
         self.state = state
         self.groupTagController = groupTagController
@@ -88,7 +88,7 @@ final class DetailScreenContainer {
         toggleAllSkills: @escaping (String) async -> Void = { _ in },
         setSkillEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in },
         toggleAllTargets: @escaping (String) async -> Void = { _ in },
-        setTargetEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in }
+        setTargetEnabled: @escaping (String, Bool, Bool, String) async -> Void = { _, _, _, _ in }
     ) {
         self.init(
             state: state,
@@ -178,7 +178,12 @@ final class DetailScreenContainer {
         await toggleAllTargetsAction(sourceId)
     }
 
-    func setTargetEnabled(_ targetId: String, enabled: Bool, sourceId: String) async {
-        await setTargetEnabledAction(targetId, enabled, sourceId)
+    func setTargetEnabled(
+        _ targetId: String,
+        enabled: Bool,
+        expectedCurrentEnabled: Bool,
+        sourceId: String
+    ) async {
+        await setTargetEnabledAction(targetId, enabled, expectedCurrentEnabled, sourceId)
     }
 }

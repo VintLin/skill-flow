@@ -123,6 +123,29 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.enabledTargetCount, 0)
     }
 
+    func testSetTargetEnabledIgnoresStaleRenderedState() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+
+        await model.setTargetEnabled(
+            "cursor",
+            enabled: true,
+            sourceId: "alpha",
+            expectedCurrentEnabled: false
+        )
+        XCTAssertTrue(model.isTargetEnabled("cursor"))
+
+        await model.setTargetEnabled(
+            "cursor",
+            enabled: false,
+            sourceId: "alpha",
+            expectedCurrentEnabled: false
+        )
+        XCTAssertTrue(model.isTargetEnabled("cursor"))
+    }
+
     func testClawhubGroupSelectionIncludesAllClawhubSources() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

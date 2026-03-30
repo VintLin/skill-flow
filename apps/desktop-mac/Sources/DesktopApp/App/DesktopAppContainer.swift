@@ -85,8 +85,13 @@ final class DesktopAppContainer {
             toggleAllTargets: { [weak mainViewModel] sourceId in
                 await mainViewModel?.toggleAllTargets(sourceId: sourceId)
             },
-            setTargetEnabled: { [weak mainViewModel] targetId, enabled, sourceId in
-                await mainViewModel?.setTargetEnabled(targetId, enabled: enabled, sourceId: sourceId)
+            setTargetEnabled: { [weak mainViewModel] targetId, enabled, expectedCurrentEnabled, sourceId in
+                await mainViewModel?.setTargetEnabled(
+                    targetId,
+                    enabled: enabled,
+                    sourceId: sourceId,
+                    expectedCurrentEnabled: expectedCurrentEnabled
+                )
             }
         )
         self.homeContainer = HomeScreenContainer(

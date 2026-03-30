@@ -191,7 +191,7 @@ struct SharedGroupCard: View {
     let onDelete: () -> Void
     let onToggleSkill: (String, Bool) -> Void
     let onToggleAllSkills: () -> Void
-    let onToggleTarget: (String, Bool) -> Void
+    let onToggleTarget: (String, Bool, Bool) -> Void
     let onToggleAllTargets: () -> Void
     let actionButtonTitle: String?
     let actionButtonIcon: ActionIcon
@@ -219,7 +219,7 @@ struct SharedGroupCard: View {
         onDelete: @escaping () -> Void,
         onToggleSkill: @escaping (String, Bool) -> Void,
         onToggleAllSkills: @escaping () -> Void,
-        onToggleTarget: @escaping (String, Bool) -> Void,
+        onToggleTarget: @escaping (String, Bool, Bool) -> Void,
         onToggleAllTargets: @escaping () -> Void,
         actionButtonTitle: String? = nil,
         actionButtonIcon: ActionIcon = .import,
@@ -627,7 +627,7 @@ struct SharedGroupCard: View {
         compact: Bool,
         loading: Bool,
         onToggleAll: @escaping () -> Void,
-        action: @escaping (String, Bool) -> Void
+        action: @escaping (String, Bool, Bool) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: scale.rowSpacing) {
             if displayMode.showsSectionTitles {
@@ -652,7 +652,7 @@ struct SharedGroupCard: View {
                     } else {
                         ForEach(items, id: \.id) { item in
                             Button {
-                                action(item.id, !item.isEnabled)
+                                action(item.id, !item.isEnabled, item.isEnabled)
                             } label: {
                                 if compact {
                                     targetToggle(
@@ -687,7 +687,9 @@ struct SharedGroupCard: View {
                     compact: false,
                     loading: card.skillsLoading,
                     onToggleAll: onToggleAllSkills,
-                    action: onToggleSkill
+                    action: { id, enabled, _ in
+                        onToggleSkill(id, enabled)
+                    }
                 )
             }
             .transition(.move(edge: .top).combined(with: .opacity))

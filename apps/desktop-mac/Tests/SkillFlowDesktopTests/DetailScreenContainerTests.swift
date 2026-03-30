@@ -198,7 +198,7 @@ final class DetailScreenContainerTests: XCTestCase {
             toggleAllTargets: { sourceId in
                 toggledAllTargetsSourceId = sourceId
             },
-            setTargetEnabled: { targetId, enabled, sourceId in
+            setTargetEnabled: { targetId, enabled, _, sourceId in
                 setTargetCall = (targetId, enabled, sourceId)
             }
         )
@@ -208,7 +208,12 @@ final class DetailScreenContainerTests: XCTestCase {
         await container.toggleAllSkills(sourceId: "alpha")
         await container.setSkillEnabled("browse", enabled: false, sourceId: "alpha")
         await container.toggleAllTargets(sourceId: "alpha")
-        await container.setTargetEnabled("claude-code", enabled: true, sourceId: "alpha")
+        await container.setTargetEnabled(
+            "claude-code",
+            enabled: true,
+            expectedCurrentEnabled: false,
+            sourceId: "alpha"
+        )
 
         XCTAssertEqual(selectedSourceId, "alpha")
         XCTAssertEqual(updateCurrentGroupCount, 1)
