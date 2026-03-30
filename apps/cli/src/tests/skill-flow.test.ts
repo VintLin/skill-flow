@@ -798,6 +798,28 @@ describe.sequential("skill-flow", () => {
     expect(doctor.data.issues.some((issue) => issue.code === "BROKEN_SYMLINK")).toBe(true);
   });
 
+  test("doctor removes orphan target symlinks that point into skillflow state without a matching projection", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "good/SKILL.md": skillDoc("good", "Good description."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, "orphan-good");
+    await fs.symlink(path.join(added.data.lock.checkoutPath, "good"), targetPath, "junction");
+
+    const doctor = await app.doctor();
+    expect(doctor.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+    expect(
+      doctor.warnings.some((warning) => warning.code === "ORPHAN_TARGET_SYMLINK_REMOVED"),
+    ).toBe(true);
+  });
+
   test("doctor reports invalidated selected leafs as errors", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "good/SKILL.md": skillDoc("good", "Good description."),
@@ -986,9 +1008,9 @@ describe.sequential("skill-flow", () => {
     expect(await pathExists(unmanagedTargetPath)).toBe(true);
   });
 
-  test("scans host directories too, but keeps the first discovered duplicate only", async () => {
+  test("returns only the root skill when a root SKILL.md exists", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
-      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+      "SKILL.md": skillDoc("browse", "Browser flow."),
       ".agents/skills/gstack-browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
     const app = new SkillFlowApp();
@@ -1000,18 +1022,13 @@ describe.sequential("skill-flow", () => {
       return;
     }
     expect(result.data.leafCount).toBe(1);
-    expect(
-      result.warnings.some((warning) =>
-        warning.message.includes("Duplicate skill content"),
-      ),
-    ).toBe(true);
     const list = await app.listWorkflows();
     expect(list.ok).toBe(true);
     if (!list.ok) {
       return;
     }
     expect(list.data.summaries[0]?.leafs.map((leaf) => leaf.relativePath)).toEqual([
-      "browse",
+      ".",
     ]);
     expect(list.data.summaries[0]?.lock?.invalidLeafs).toEqual([]);
   });
@@ -1080,7 +1097,7 @@ describe.sequential("skill-flow", () => {
     ).toBe(true);
   });
 
-  test("dedupes skills by metadata name and description", async () => {
+  test("dedupes skills by metadata name", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": `---
 name: browse
@@ -1113,7 +1130,7 @@ description: |
     ).toBe(true);
   });
 
-  test("keeps same-name skills when descriptions differ", async () => {
+  test("dedupes same-name skills even when descriptions differ", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Canonical browse skill."),
       "copy-of-browse/SKILL.md": skillDoc("browse", "Different browse skill."),
@@ -1126,7 +1143,12 @@ description: |
     if (!result.ok) {
       return;
     }
-    expect(result.data.leafCount).toBe(2);
+    expect(result.data.leafCount).toBe(1);
+    expect(
+      result.warnings.some((warning) =>
+        warning.message.includes("Duplicate skill content"),
+      ),
+    ).toBe(true);
   });
 
   test("apply uses natural skill names and removes legacy prefixed paths", async () => {

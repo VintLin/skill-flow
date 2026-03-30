@@ -1669,7 +1669,7 @@ export class SkillFlowApp {
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     await this.ensureProjectionLedger(manifest, lockFile);
-    const warnings: Warning[] = [];
+    const warnings: Warning[] = await this.cleanupOrphanTargetSymlinks(lockFile);
 
     const requestedIds = sourceIds?.length
       ? sourceIds
@@ -1892,6 +1892,7 @@ export class SkillFlowApp {
   private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
     const { manifest, lockFile } = await this.store.readState();
     await this.ensureProjectionLedger(manifest, lockFile);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
     const removedSourceIds: string[] = [];
     const warnings: Warning[] = [];
 
@@ -1934,7 +1935,10 @@ export class SkillFlowApp {
     }
 
     if (removedSourceIds.length === 0) {
-      return ok({ removedSourceIds: [] });
+      if (orphanWarnings.length > 0) {
+        await this.store.writeState(manifest, lockFile);
+      }
+      return ok({ removedSourceIds: [] }, orphanWarnings);
     }
 
     manifest.sources = manifest.sources.filter((source) => !removedSourceIds.includes(source.id));
@@ -1952,7 +1956,77 @@ export class SkillFlowApp {
     await this.store.writeState(manifest, lockFile);
     await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
 
-    return ok({ removedSourceIds }, warnings);
+    return ok({ removedSourceIds }, [...orphanWarnings, ...warnings]);
+  }
+
+  private async cleanupOrphanTargetSymlinks(lockFile: LockFile): Promise<Warning[]> {
+    const warnings: Warning[] = [];
+    const managedStateRoot = await fs.realpath(this.store.rootPath).catch(() =>
+      path.resolve(this.store.rootPath),
+    );
+
+    for (const adapter of this.adapters) {
+      const detection = await adapter.detect();
+      if (!detection.available || !(await pathExists(detection.rootPath))) {
+        continue;
+      }
+
+      const entries = await fs.readdir(detection.rootPath, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        const targetPath = path.join(detection.rootPath, entry.name);
+        const resolvedTargetPath = path.resolve(targetPath);
+        const realTargetPath = await fs.realpath(targetPath).catch(() => undefined);
+        const linkTarget = realTargetPath
+          ? realTargetPath
+          : await fs.readlink(targetPath)
+              .then((value) => path.resolve(path.dirname(targetPath), value))
+              .catch(() => undefined);
+        if (!linkTarget) {
+          continue;
+        }
+
+        const resolvedLinkTarget = path.resolve(linkTarget);
+        if (
+          !isPathInside(managedStateRoot, resolvedLinkTarget) &&
+          resolvedLinkTarget !== managedStateRoot
+        ) {
+          continue;
+        }
+
+        const matchingProjections = (lockFile.projections ?? []).filter(
+          (projection) => path.resolve(projection.targetPath) === resolvedTargetPath,
+        );
+        const hasResolvableProjection = matchingProjections.some((projection) =>
+          this.isProjectionStillResolvable(lockFile, projection),
+        );
+        if (hasResolvableProjection) {
+          continue;
+        }
+
+        await removePath(targetPath);
+        lockFile.projections = (lockFile.projections ?? []).filter(
+          (projection) => path.resolve(projection.targetPath) !== resolvedTargetPath,
+        );
+        warnings.push({
+          code: "ORPHAN_TARGET_SYMLINK_REMOVED",
+          message: `Removed orphan target symlink ${targetPath} because it points into managed state without a matching projection.`,
+        });
+      }
+    }
+
+    return warnings;
+  }
+
+  private isProjectionStillResolvable(lockFile: LockFile, projection: ProjectionRecord): boolean {
+    if (!lockFile.sources.some((source) => source.id === projection.sourceId)) {
+      return false;
+    }
+
+    if (projection.mode === "managed") {
+      return lockFile.leafInventory.some((leaf) => leaf.id === projection.leafId);
+    }
+
+    return true;
   }
 
   private async getTargetRootMap(): Promise<Map<DeploymentTargetName, string>> {
