@@ -759,4 +759,41 @@ description: |
     ).toContain("Browser flow, refreshed upstream.");
     expect(await fs.readFile(path.join(targetPath, "SKILL.md"), "utf8")).toBe(targetBefore);
   });
+
+  test("applyDraft writes an audit event with selected targets", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "audit-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    process.env.SKILL_FLOW_CALLER = "test-harness";
+    const applied = await app.applyDraft(added.data.manifest.id, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
+    });
+    delete process.env.SKILL_FLOW_CALLER;
+
+    expect(applied.ok).toBe(true);
+
+    const logLines = (await fs.readFile(path.join(sandbox.stateRoot, "audit.log.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const lastEvent = logLines.at(-1);
+
+    expect(lastEvent?.mutation).toBe("apply-draft");
+    expect(lastEvent?.caller).toBe("test-harness");
+    expect(lastEvent?.status).toBe("ok");
+    expect(lastEvent?.details).toEqual({
+      sourceId: added.data.manifest.id,
+      selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
+      enabledTargets: ["codex"],
+    });
+  });
 });

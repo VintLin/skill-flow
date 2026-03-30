@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs/promises";
 import type {
   ImportDataCache,
   ImportRecommendationFeed,
@@ -80,6 +81,10 @@ export class StateStore {
     return path.join(this.stateRoot, "preferences.json");
   }
 
+  get auditLogPath(): string {
+    return path.join(this.stateRoot, "audit.log.jsonl");
+  }
+
   get sourceMetadataPath(): string {
     return path.join(this.catalogStateRoot, "source-metadata.json");
   }
@@ -158,6 +163,13 @@ export class StateStore {
         this.preferencesPath,
         normalizeSharedPreferences(preferences),
       );
+    });
+  }
+
+  async appendAuditEvent(event: unknown): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      await fs.appendFile(this.auditLogPath, `${JSON.stringify(event)}\n`, "utf8");
     });
   }
 

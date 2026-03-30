@@ -175,6 +175,9 @@ final class BridgeClient: @unchecked Sendable {
             process.executableURL = URL(fileURLWithPath: nodeExecutable)
             process.arguments = [helperURL.path, "bridge", "--json"]
         }
+        process.environment = ProcessInfo.processInfo.environment.merging([
+            "SKILL_FLOW_CALLER": "desktop-bridge"
+        ]) { _, new in new }
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()

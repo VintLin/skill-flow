@@ -26,6 +26,8 @@ import { executeBridgeRequest } from "./bridge-command.js";
 const program = new Command();
 const app = new SkillFlowApp();
 
+process.env.SKILL_FLOW_CALLER ??= "cli";
+
 program
   .name("skill-flow")
   .description("Workflow-first skill projection manager")

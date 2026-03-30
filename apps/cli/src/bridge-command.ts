@@ -19,7 +19,10 @@ export async function executeBridgeRequest(
   request: BridgeRequest,
 ): Promise<BridgeResponse> {
   try {
-    switch (request.command) {
+    const previousCaller = process.env.SKILL_FLOW_CALLER;
+    process.env.SKILL_FLOW_CALLER = previousCaller?.trim() || "bridge";
+    try {
+      switch (request.command) {
       case "bootstrap": {
         const result = await app.bootstrapWorkspaceState();
         if (!result.ok) {
@@ -248,6 +251,13 @@ export async function executeBridgeRequest(
             },
           ],
         });
+      }
+    } finally {
+      if (previousCaller === undefined) {
+        delete process.env.SKILL_FLOW_CALLER;
+      } else {
+        process.env.SKILL_FLOW_CALLER = previousCaller;
+      }
     }
   } catch (error) {
     return buildResponseWithRequest({

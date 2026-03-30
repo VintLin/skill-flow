@@ -109,6 +109,23 @@ type GroupCardEnrichmentSnapshot = {
   sourceMetadata?: SourceMetadataResult;
   sourceSnapshot?: UnifiedSourceSnapshot;
 };
+type AuditMutationName =
+  | "add-source"
+  | "bootstrap"
+  | "import-source"
+  | "apply-draft"
+  | "update-sources"
+  | "doctor"
+  | "uninstall";
+type AuditEvent = {
+  timestamp: string;
+  mutation: AuditMutationName;
+  caller: string;
+  status: "ok" | "error" | "threw";
+  details: Record<string, unknown>;
+  warnings: Array<{ code: string; message: string }>;
+  errors: Array<{ code: string; message: string }>;
+};
 
 export class SkillFlowApp {
   private static readonly importGroupResolveConcurrency = 3;
@@ -154,7 +171,17 @@ export class SkillFlowApp {
     locator: string,
     options?: SkillFlowAddOptions,
   ): Promise<Result<AddSourceResult>> {
-    return this.runSerializedMutation(() => this.addSourceImpl(locator, options));
+    return this.runAuditedMutation(
+      "add-source",
+      {
+        locator,
+        project: options?.project !== false,
+        requestedPath: options?.path,
+        enabledTargets: options?.enabledTargets ?? [],
+        sourceIdOverride: options?.sourceIdOverride,
+      },
+      () => this.addSourceImpl(locator, options),
+    );
   }
 
   async prepareAddSource(
@@ -400,7 +427,15 @@ export class SkillFlowApp {
     locator: string,
     draft?: ImportDraft,
   ): Promise<Result<ImportSourceResult>> {
-    return this.runSerializedMutation(() => this.importSourceImpl(locator, draft));
+    return this.runAuditedMutation(
+      "import-source",
+      {
+        locator,
+        selectedSkillIds: draft?.selectedSkillIds ?? [],
+        enabledTargets: draft?.enabledTargets ?? [],
+      },
+      () => this.importSourceImpl(locator, draft),
+    );
   }
 
   async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[]; pinnedSourceIds: string[] }>> {
@@ -1407,7 +1442,11 @@ export class SkillFlowApp {
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
-    return this.runSerializedMutation(() => this.bootstrapWorkspaceStateImpl(onEvent));
+    return this.runAuditedMutation(
+      "bootstrap",
+      {},
+      () => this.bootstrapWorkspaceStateImpl(onEvent),
+    );
   }
 
   private async bootstrapWorkspaceStateImpl(
@@ -1542,7 +1581,15 @@ export class SkillFlowApp {
     sourceId: string,
     draft: DraftBinding,
   ): Promise<Result<{ actions: DeploymentAction[]; draft: DraftBinding }>> {
-    return this.runSerializedMutation(() => this.applyDraftImpl(sourceId, draft));
+    return this.runAuditedMutation(
+      "apply-draft",
+      {
+        sourceId,
+        selectedLeafIds: draft.selectedLeafIds,
+        enabledTargets: draft.enabledTargets,
+      },
+      () => this.applyDraftImpl(sourceId, draft),
+    );
   }
 
   private async applyDraftImpl(
@@ -1600,7 +1647,11 @@ export class SkillFlowApp {
   async updateSources(sourceIds?: string[]): Promise<
     Result<SourceUpdateResult>
   > {
-    return this.runSerializedMutation(() => this.updateSourcesImpl(sourceIds));
+    return this.runAuditedMutation(
+      "update-sources",
+      { sourceIds: sourceIds ?? [] },
+      () => this.updateSourcesImpl(sourceIds),
+    );
   }
 
   private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
@@ -1637,7 +1688,11 @@ export class SkillFlowApp {
   }
 
   async doctor(): Promise<Result<DoctorReport>> {
-    return this.runSerializedMutation(() => this.doctorImpl());
+    return this.runAuditedMutation(
+      "doctor",
+      {},
+      () => this.doctorImpl(),
+    );
   }
 
   private async doctorImpl(): Promise<Result<DoctorReport>> {
@@ -1802,7 +1857,11 @@ export class SkillFlowApp {
       warnings: string[];
     }>
   > {
-    return this.runSerializedMutation(() => this.uninstallImpl(sourceIds));
+    return this.runAuditedMutation(
+      "uninstall",
+      { sourceIds },
+      () => this.uninstallImpl(sourceIds),
+    );
   }
 
   private async uninstallImpl(sourceIds: string[]): Promise<
@@ -2377,6 +2436,64 @@ export class SkillFlowApp {
       () => undefined,
     );
     return run;
+  }
+
+  private async runAuditedMutation<T extends Result<unknown>>(
+    mutation: AuditMutationName,
+    details: Record<string, unknown>,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      const result = await this.runSerializedMutation(task);
+      await this.writeAuditEvent({
+        timestamp: new Date().toISOString(),
+        mutation,
+        caller: this.currentAuditCaller(),
+        status: result.ok ? "ok" : "error",
+        details,
+        warnings: result.warnings.map((warning) => ({
+          code: warning.code,
+          message: warning.message,
+        })),
+        errors: result.ok
+          ? []
+          : result.errors.map((error) => ({
+            code: error.code,
+            message: error.message,
+          })),
+      });
+      return result;
+    } catch (error) {
+      await this.writeAuditEvent({
+        timestamp: new Date().toISOString(),
+        mutation,
+        caller: this.currentAuditCaller(),
+        status: "threw",
+        details,
+        warnings: [],
+        errors: [{
+          code: "UNCAUGHT_EXCEPTION",
+          message: error instanceof Error ? error.message : String(error),
+        }],
+      });
+      throw error;
+    }
+  }
+
+  private currentAuditCaller(): string {
+    return process.env.SKILL_FLOW_CALLER?.trim()
+      ?? "unknown";
+  }
+
+  private async writeAuditEvent(event: AuditEvent): Promise<void> {
+    try {
+      const store = this.store as StateStore & {
+        appendAuditEvent?: (entry: AuditEvent) => Promise<void>;
+      };
+      await store.appendAuditEvent?.(event);
+    } catch {
+      // Audit logging must never block the mutation itself.
+    }
   }
 
   private normalizeBindings(manifest: Manifest, lockFile: LockFile): boolean {
