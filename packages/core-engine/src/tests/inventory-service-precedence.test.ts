@@ -9,9 +9,10 @@ import {
 describe.sequential("inventory discovery precedence", () => {
   const sandbox = useSkillFlowSandbox();
 
-  test("returns only the root skill when a root SKILL.md exists", async () => {
+  test("keeps the root skill and direct child skills when both exist", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "SKILL.md": skillDoc("browse", "Root browse skill."),
+      "autoplan/SKILL.md": skillDoc("autoplan", "Autoplan skill."),
       "alpha/browse/SKILL.md": skillDoc("browse", "Root browse skill."),
       "skills/browse/SKILL.md": skillDoc("browse", "Root browse skill."),
     });
@@ -19,10 +20,10 @@ describe.sequential("inventory discovery precedence", () => {
 
     const scanned = await inventory.scanSource("demo-source", repoPath, "demo");
 
-    expect(scanned.leafs).toHaveLength(1);
-    expect(scanned.leafs[0]?.relativePath).toBe(".");
-    expect(scanned.duplicateLeafs).toEqual([]);
-    expect(scanned.skillFileCount).toBe(1);
+    expect(scanned.leafs).toHaveLength(2);
+    expect(scanned.leafs.map((leaf) => leaf.relativePath)).toEqual([".", "autoplan"]);
+    expect(scanned.duplicateLeafs).toEqual([{ path: "skills/browse", keptPath: "." }]);
+    expect(scanned.skillFileCount).toBe(3);
   });
 
   test("uses standard skill buckets before recursive fallback", async () => {
@@ -83,5 +84,19 @@ describe.sequential("inventory discovery precedence", () => {
     const scanned = await inventory.scanSource("garrytan-gstack", repoPath, "gstack");
 
     expect(scanned.leafs[0]?.linkName).toBe("gstack");
+  });
+
+  test("detects gstack-style direct child skills alongside the root skill", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "SKILL.md": skillDoc("gstack", "Root skill."),
+      "browse/SKILL.md": skillDoc("browse", "Browse skill."),
+      "investigate/SKILL.md": skillDoc("investigate", "Investigate skill."),
+    });
+    const inventory = new InventoryService();
+
+    const scanned = await inventory.scanSource("garrytan-gstack", repoPath, "gstack");
+
+    expect(scanned.leafs.map((leaf) => leaf.relativePath)).toEqual([".", "browse", "investigate"]);
+    expect(scanned.skillFileCount).toBe(3);
   });
 });

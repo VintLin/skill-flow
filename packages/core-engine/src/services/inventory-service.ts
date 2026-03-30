@@ -123,8 +123,9 @@ export class InventoryService {
     if (await pathExists(rootSkillPath)) {
       discovered.push(rootSkillPath);
       seen.add(rootSkillPath);
-      return discovered;
     }
+
+    await this.collectDirectChildSkillFiles(rootPath, discovered, seen);
 
     for (const relativePath of InventoryService.PRIORITY_SKILL_DIRECTORIES) {
       await this.collectDirectChildSkillFiles(path.join(rootPath, relativePath), discovered, seen);
