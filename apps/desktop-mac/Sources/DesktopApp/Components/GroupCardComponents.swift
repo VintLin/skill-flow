@@ -343,9 +343,11 @@ struct SharedGroupCard: View {
                 return
             }
             isEditingTags = false
+            isDeletingTags = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .groupTagEditorDismissRequested)) { _ in
             isEditingTags = false
+            isDeletingTags = false
         }
         .overlay {
             if isBusy {
