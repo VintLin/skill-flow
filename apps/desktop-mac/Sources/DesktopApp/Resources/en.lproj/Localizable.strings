@@ -165,6 +165,7 @@
 "group_card.section.skills" = "Skills";
 "common.section.source" = "Source";
 "group_card.action.import" = "Import";
+"group_card.action.installed" = "Installed";
 "group_card.action.pin" = "Pin";
 "group_card.action.unpin" = "Unpin";
 "group_card.action.update" = "Update";

@@ -170,8 +170,9 @@ struct ImportScreen: View {
             onToggleAllTargets: {
                 container.toggleAllTargets(for: card)
             },
-            actionButtonTitle: nil,
+            actionButtonTitle: Self.importActionTitle(for: card, localized: { key in t(key) }),
             actionButtonIcon: ActionIcon.import,
+            isActionButtonDisabled: Self.importActionIsDisabled(for: card),
             onActionButton: {
                 Task {
                     await container.handleImportAction(for: card)
@@ -260,6 +261,20 @@ struct ImportScreen: View {
         default:
             return .partial
         }
+    }
+
+    static func importActionIsDisabled(for card: ImportViewModel.Card) -> Bool {
+        card.isInstalledLocally
+    }
+
+    static func importActionTitle(
+        for card: ImportViewModel.Card,
+        localized: (String) -> String
+    ) -> String? {
+        guard card.isInstalledLocally else {
+            return nil
+        }
+        return localized("group_card.action.installed")
     }
 
     private func emptyState(title: String, subtitle: String, chromed: Bool = true) -> some View {

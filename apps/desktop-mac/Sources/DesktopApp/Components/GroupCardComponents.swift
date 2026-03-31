@@ -220,6 +220,7 @@ struct SharedGroupCard: View {
     let onToggleAllTargets: () -> Void
     let actionButtonTitle: String?
     let actionButtonIcon: ActionIcon
+    let isActionButtonDisabled: Bool
     let onActionButton: (() -> Void)?
     let groupTagItems: [GroupTagDisplayItem]
     let groupTagSuggestions: [GroupTagDisplayItem]
@@ -257,6 +258,7 @@ struct SharedGroupCard: View {
         onToggleAllTargets: @escaping () -> Void,
         actionButtonTitle: String? = nil,
         actionButtonIcon: ActionIcon = .import,
+        isActionButtonDisabled: Bool = false,
         onActionButton: (() -> Void)? = nil,
         groupTagItems: [GroupTagDisplayItem] = [],
         groupTagSuggestions: [GroupTagDisplayItem] = [],
@@ -284,6 +286,7 @@ struct SharedGroupCard: View {
         self.onToggleAllTargets = onToggleAllTargets
         self.actionButtonTitle = actionButtonTitle
         self.actionButtonIcon = actionButtonIcon
+        self.isActionButtonDisabled = isActionButtonDisabled
         self.onActionButton = onActionButton
         self.groupTagItems = groupTagItems
         self.groupTagSuggestions = groupTagSuggestions
@@ -594,34 +597,58 @@ struct SharedGroupCard: View {
     }
 
     private var importButton: some View {
-        Button {
-            guard !isBusy else { return }
+        let isDisabled = isBusy || isActionButtonDisabled
+        let buttonTitle = actionButtonTitle ?? t("group_card.action.import")
+        let primaryForeground = isDisabled
+            ? AppTheme.textMuted(for: theme)
+            : AppTheme.brand(for: accent, in: theme)
+        let primaryBackground = isDisabled
+            ? AppTheme.surface(for: theme)
+            : AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30)
+        let filledForeground = isDisabled
+            ? AppTheme.textMuted(for: theme)
+            : AppTheme.pageBackground(for: theme)
+        let filledBackground = isDisabled
+            ? AppTheme.surface(for: theme)
+            : AppTheme.brand(for: accent, in: theme)
+
+        return Button {
+            guard !isDisabled else { return }
             onActionButton?()
         } label: {
             if displayMode.usesPlainPrimaryActionIcon {
                 actionIcon(actionButtonIcon, size: 12)
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .foregroundStyle(primaryForeground)
                     .frame(width: 28, height: 28)
-                    .background(AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30))
+                    .background(primaryBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: scale.cornerRadius - 2)
+                            .stroke(AppTheme.border(for: theme), lineWidth: isDisabled ? 1 : 0)
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
                     .contentShape(Rectangle())
             } else {
                 HStack(spacing: 6) {
                     actionIcon(actionButtonIcon, size: 11)
-                        .foregroundStyle(AppTheme.pageBackground(for: theme))
+                        .foregroundStyle(filledForeground)
 
-                    Text(actionButtonTitle ?? t("group_card.action.import"))
+                    Text(buttonTitle)
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(AppTheme.pageBackground(for: theme))
+                        .foregroundStyle(filledForeground)
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 24)
-                .background(AppTheme.brand(for: accent, in: theme))
+                .background(filledBackground)
+                .overlay(
+                    Capsule()
+                        .stroke(AppTheme.border(for: theme), lineWidth: isDisabled ? 1 : 0)
+                )
                 .clipShape(Capsule())
             }
         }
         .buttonStyle(.plain)
-        .disabled(isBusy)
+        .disabled(isDisabled)
+        .help(buttonTitle)
     }
 
     private var loadingMessage: String {

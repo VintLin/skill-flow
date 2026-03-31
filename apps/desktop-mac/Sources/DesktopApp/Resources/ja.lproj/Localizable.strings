@@ -165,6 +165,7 @@
 "group_card.section.skills" = "スキル";
 "common.section.source" = "ソース";
 "group_card.action.import" = "インポート";
+"group_card.action.installed" = "インストール済み";
 "group_card.action.pin" = "ピン留め";
 "group_card.action.unpin" = "ピン留め解除";
 "group_card.action.update" = "更新";

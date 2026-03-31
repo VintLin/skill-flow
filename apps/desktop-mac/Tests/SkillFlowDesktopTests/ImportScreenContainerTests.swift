@@ -195,6 +195,47 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(model.toast?.message, "This group is already available locally.")
     }
 
+    func testImportActionIsDisabledWhenCardIsAlreadyInstalledLocally() {
+        let installedCard = ImportViewModel.Card(
+            id: "anthropics-skills",
+            title: "Anthropic Skills",
+            locator: "anthropics/skills",
+            canonicalRepo: "anthropics/skills",
+            isInstalledLocally: true,
+            aliases: [],
+            summary: "",
+            subtitle: "by @anthropics",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+        let freshCard = ImportViewModel.Card(
+            id: "openai-skills",
+            title: "OpenAI Skills",
+            locator: "openai/skills",
+            canonicalRepo: "openai/skills",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @openai",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+
+        XCTAssertTrue(ImportScreen.importActionIsDisabled(for: installedCard))
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: freshCard))
+        XCTAssertEqual(
+            ImportScreen.importActionTitle(for: installedCard, localized: { key in key == "group_card.action.installed" ? "Installed" : key }),
+            "Installed"
+        )
+        XCTAssertNil(ImportScreen.importActionTitle(for: freshCard, localized: { $0 }))
+    }
+
     func testImportViewModelFallsBackToVisibleTargetsWhenPreviewTargetsAreUnavailable() {
         let viewModel = ImportViewModel(
             items: [

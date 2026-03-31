@@ -165,6 +165,7 @@
 "group_card.section.skills" = "技能";
 "common.section.source" = "来源";
 "group_card.action.import" = "导入";
+"group_card.action.installed" = "已安装";
 "group_card.action.pin" = "置顶";
 "group_card.action.unpin" = "取消置顶";
 "group_card.action.update" = "更新";
