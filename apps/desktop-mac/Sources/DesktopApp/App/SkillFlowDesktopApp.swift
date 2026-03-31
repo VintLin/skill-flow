@@ -1,17 +1,10 @@
 import SwiftUI
-import AppKit
 
 @main
 struct SkillFlowDesktopApp: App {
     @Environment(\.openWindow) private var openWindow
 
     @State private var container = DesktopAppContainer()
-
-    init() {
-        if let icon = AppIconLibrary.image() {
-            NSApplication.shared.applicationIconImage = icon
-        }
-    }
 
     var body: some Scene {
         Window(L10n.string("app.name", locale: selectedLocale), id: "main-window") {

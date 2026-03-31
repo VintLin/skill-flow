@@ -237,6 +237,14 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(image?.isTemplate, true)
     }
 
+    func testAppInitializationKeepsDockIconAtSystemSize() {
+        _ = SkillFlowDesktopApp()
+
+        let iconSize = NSApplication.shared.applicationIconImage?.size ?? .zero
+        XCTAssertLessThanOrEqual(iconSize.width, 128)
+        XCTAssertLessThanOrEqual(iconSize.height, 128)
+    }
+
     func testSurfaceLayerColorsFollowNeutralCardScale() {
         assertColor(AppTheme.pageBackground(for: .light), equalsGrayscale: 242)
         assertColor(AppTheme.headerBackground(for: .light), equalsGrayscale: 242)
