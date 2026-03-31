@@ -91,10 +91,37 @@ const summaries: WorkflowSummary[] = [
 
 describe("ConfigCoordinator", () => {
   test("boots config and derives initial drafts from normalized summaries", async () => {
+    const initialPreferences = {
+      schemaVersion: 1,
+      pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" as const },
+      recentProjects: [],
+      projectDrafts: {},
+    };
+    const refreshedPreferences = {
+      ...initialPreferences,
+      recentProjects: [
+        {
+          projectId: "acme/skill-flow",
+          title: "Skill Flow",
+          lastActivityAt: "2026-03-30T00:00:00.000Z",
+          tools: ["codex"],
+        },
+      ],
+    };
+
     const coordinator = new ConfigCoordinator({
       store: {
         init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
+        readPreferences: vi
+          .fn()
+          .mockResolvedValueOnce(initialPreferences)
+          .mockResolvedValueOnce(refreshedPreferences),
+        writePreferences: vi.fn().mockResolvedValue(undefined),
+      },
+      recentProjectService: {
+        listRecentProjects: vi.fn().mockResolvedValue(refreshedPreferences.recentProjects),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -138,14 +165,29 @@ describe("ConfigCoordinator", () => {
         selectedLeafIds: [],
       },
     });
+    expect(result.data.recentProjects[0]?.projectId).toBe("acme/skill-flow");
+    expect(result.data.selectedProjectScope).toEqual({ kind: "global" });
+    expect(result.data.projectDrafts).toEqual({});
   });
 
   test("keeps config boot usable when prune removes missing groups", async () => {
     const onEvent = vi.fn();
+    const preferences = {
+      schemaVersion: 1,
+      pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" as const },
+      recentProjects: [],
+      projectDrafts: {},
+    };
     const coordinator = new ConfigCoordinator({
       store: {
         init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
+        readPreferences: vi.fn().mockResolvedValue(preferences),
+        writePreferences: vi.fn().mockResolvedValue(undefined),
+      },
+      recentProjectService: {
+        listRecentProjects: vi.fn().mockResolvedValue([]),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -199,10 +241,22 @@ describe("ConfigCoordinator", () => {
       },
     ];
 
+    const preferences = {
+      schemaVersion: 1,
+      pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" as const },
+      recentProjects: [],
+      projectDrafts: {},
+    };
     const coordinator = new ConfigCoordinator({
       store: {
         init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
+        readPreferences: vi.fn().mockResolvedValue(preferences),
+        writePreferences: vi.fn().mockResolvedValue(undefined),
+      },
+      recentProjectService: {
+        listRecentProjects: vi.fn().mockResolvedValue([]),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),

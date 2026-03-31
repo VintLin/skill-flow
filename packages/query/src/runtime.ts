@@ -22,8 +22,11 @@ import type {
   LeafRecord,
   LockFile,
   Manifest,
+  ProjectScope,
   ProjectionRecord,
+  RecentProject,
   Result,
+  SharedPreferences,
   SkillCandidate,
   SourceMetadataResult,
   SourceStats,
@@ -91,6 +94,7 @@ import { ConfigCoordinator } from "./config-coordinator.js";
 import { DeploymentPlanner } from "@skill-flow/core-engine/services/deployment-planner";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
+import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { SourceService } from "@skill-flow/core-engine/services/source-service";
 import { WorkflowService } from "./workflow-service.js";
 import type {
@@ -102,6 +106,8 @@ import {
   WorkspaceBootstrapService,
   type BootstrapEvent,
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
+
+const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
 
 type SkillFlowAddOptions = AddSourceOptions &
   AddSourceDraftOptions & {
@@ -161,6 +167,7 @@ export class SkillFlowApp {
   readonly applier: DeploymentApplier;
   readonly doctorService: DoctorService;
   readonly workflowService: WorkflowService;
+  readonly recentProjectService: RecentProjectService;
   readonly workspaceBootstrapService: WorkspaceBootstrapService;
   readonly configCoordinator: ConfigCoordinator;
   private mutationQueue: Promise<void> = Promise.resolve();
@@ -179,9 +186,11 @@ export class SkillFlowApp {
     this.applier = new DeploymentApplier(adapters);
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
+    this.recentProjectService = new RecentProjectService();
     this.workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
     this.configCoordinator = new ConfigCoordinator({
       store: this.store,
+      recentProjectService: this.recentProjectService,
       doctorService: this.doctorService,
       workflowService: this.workflowService,
       getAvailableTargets: () => this.getAvailableTargets(),
@@ -231,6 +240,7 @@ export class SkillFlowApp {
     const applied = await this.applyDraftImpl(
       prepared.data.sourceId,
       addOptions.draft ?? prepared.data.draft,
+      { kind: "global" },
     );
     if (!applied.ok) {
       return fail(applied.errors, [...prepared.warnings, ...applied.warnings]);
@@ -461,12 +471,21 @@ export class SkillFlowApp {
     );
   }
 
-  async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[]; pinnedSourceIds: string[] }>> {
+  async listWorkflows(): Promise<
+    Result<{
+      summaries: WorkflowSummary[];
+      pinnedSourceIds: string[];
+      recentProjects: RecentProject[];
+      selectedProjectScope: ProjectScope;
+      groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
+    }>
+  > {
     return this.runSerializedMutation(() => this.listWorkflowsImpl());
   }
 
   async inspectSource(
     sourceId: string,
+    scope: ProjectScope = { kind: "global" },
   ): Promise<
     Result<{
       summary: WorkflowSummary;
@@ -476,7 +495,7 @@ export class SkillFlowApp {
       deployments: LockFile["deployments"];
     }>
   > {
-    return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId));
+    return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId, scope));
   }
 
   async inspectSourceEnrichment(
@@ -492,6 +511,7 @@ export class SkillFlowApp {
 
   private async inspectSourceImpl(
     sourceId: string,
+    scope: ProjectScope,
   ): Promise<
     Result<{
       summary: WorkflowSummary;
@@ -524,7 +544,33 @@ export class SkillFlowApp {
     const deployments = getManagedDeployments(lockFile).filter(
       (deployment) => deployment.sourceId === sourceId,
     );
-    return ok({ summary, source, binding, leafs, deployments });
+
+    if (scope.kind === "global") {
+      return ok({ summary, source, binding, leafs, deployments });
+    }
+
+    const initialDrafts: Record<string, DraftBinding> = {
+      [sourceId]: this.draftFromBinding(sourceId, binding, lockFile),
+    };
+    const preferences = await this.store.readPreferences();
+    const scopedDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
+
+    const scopedManifest = this.cloneManifest(manifest);
+    this.normalizeBindings(scopedManifest, lockFile);
+    const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
+    const scopedSource = prepared.manifest.sources.find((item) => item.id === sourceId) ?? source;
+    const scopedSummary =
+      this.workflowService.getSummaries(prepared.manifest, lockFile).find((item) => item.source.id === sourceId)
+      ?? summary;
+    const scopedBinding = prepared.manifest.bindings[sourceId] ?? binding;
+
+    return ok({
+      summary: scopedSummary,
+      source: scopedSource,
+      binding: scopedBinding,
+      leafs,
+      deployments,
+    });
   }
 
   private async inspectSourceEnrichmentImpl(
@@ -733,7 +779,7 @@ export class SkillFlowApp {
       });
     }
 
-    const applied = await this.applyDraftImpl(prepared.data.sourceId, finalDraft.data);
+    const applied = await this.applyDraftImpl(prepared.data.sourceId, finalDraft.data, { kind: "global" });
     if (!applied.ok) {
       await this.rollbackPreparedSourceInternal(prepared.data.sourceId);
       return ok({
@@ -1502,6 +1548,8 @@ export class SkillFlowApp {
     Result<{
       summaries: WorkflowSummary[];
       pinnedSourceIds: string[];
+      recentProjects: RecentProject[];
+      selectedProjectScope: ProjectScope;
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1518,7 +1566,13 @@ export class SkillFlowApp {
     const { manifest, lockFile } = await this.store.readState();
     await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
     await this.persistNormalizedBindings(manifest, lockFile);
+    const recentProjects = await this.recentProjectService.listRecentProjects().catch(() => []);
     const preferences = await this.store.pruneMissingSourceIds();
+    await this.store.writePreferences({
+      ...preferences,
+      recentProjects,
+    });
+    const reconciledPreferences = await this.store.readPreferences();
     const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(
       manifest,
       lockFile,
@@ -1526,7 +1580,9 @@ export class SkillFlowApp {
     return ok(
       {
         summaries: this.workflowService.getSummaries(manifest, lockFile),
-        pinnedSourceIds: preferences.pinnedSourceIds,
+        pinnedSourceIds: reconciledPreferences.pinnedSourceIds,
+        recentProjects: reconciledPreferences.recentProjects,
+        selectedProjectScope: reconciledPreferences.selectedProjectScope,
         groupCardEnrichmentBySourceId,
       },
       pruned.warnings,
@@ -1576,6 +1632,9 @@ export class SkillFlowApp {
       audit: DoctorReport;
       importedSourceIds: string[];
       pinnedSourceIds: string[];
+      recentProjects: RecentProject[];
+      selectedProjectScope: ProjectScope;
+      projectDrafts: SharedPreferences["projectDrafts"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1598,6 +1657,9 @@ export class SkillFlowApp {
       audit: DoctorReport;
       importedSourceIds: string[];
       pinnedSourceIds: string[];
+      recentProjects: RecentProject[];
+      selectedProjectScope: ProjectScope;
+      projectDrafts: SharedPreferences["projectDrafts"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1620,6 +1682,9 @@ export class SkillFlowApp {
       audit: boot.data.audit,
       importedSourceIds: [],
       pinnedSourceIds: preferences.pinnedSourceIds,
+      recentProjects: preferences.recentProjects,
+      selectedProjectScope: preferences.selectedProjectScope,
+      projectDrafts: preferences.projectDrafts,
       groupCardEnrichmentBySourceId,
     });
   }
@@ -1724,6 +1789,7 @@ export class SkillFlowApp {
   async applyDraft(
     sourceId: string,
     draft: DraftBinding,
+    scope: ProjectScope = { kind: "global" },
   ): Promise<Result<ApplyDraftResult>> {
     return this.runAuditedMutation(
       "apply-draft",
@@ -1731,18 +1797,20 @@ export class SkillFlowApp {
         sourceId,
         selectedLeafIds: draft.selectedLeafIds,
         enabledTargets: draft.enabledTargets,
+        scope,
       },
-      () => this.applyDraftAuditedImpl(sourceId, draft),
+      () => this.applyDraftAuditedImpl(sourceId, draft, scope),
     );
   }
 
   private async applyDraftAuditedImpl(
     sourceId: string,
     draft: DraftBinding,
+    scope: ProjectScope,
   ): Promise<AuditedMutationResult<ApplyDraftResult>> {
     const { manifest, lockFile } = await this.store.readState();
     const before = await this.captureSourceAuditSnapshot(manifest, lockFile, sourceId);
-    const result = await this.applyDraftImpl(sourceId, draft);
+    const result = await this.applyDraftImpl(sourceId, draft, scope);
     const { manifest: nextManifest, lockFile: nextLockFile } = await this.store.readState();
     const after = await this.captureSourceAuditSnapshot(nextManifest, nextLockFile, sourceId);
 
@@ -1761,7 +1829,46 @@ export class SkillFlowApp {
   private async applyDraftImpl(
     sourceId: string,
     draft: DraftBinding,
+    scope: ProjectScope,
   ): Promise<Result<ApplyDraftResult>> {
+    if (scope.kind === "project") {
+      const { manifest, lockFile } = await this.store.readState();
+      if (!manifest.sources.some((source) => source.id === sourceId)) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+
+      this.normalizeBindings(manifest, lockFile);
+      const scopedManifest = this.cloneManifest(manifest);
+      this.normalizeBindings(scopedManifest, lockFile);
+      const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, draft);
+
+      const preferences = await this.store.readPreferences();
+      await this.store.writePreferences({
+        ...preferences,
+        projectDrafts: {
+          ...preferences.projectDrafts,
+          [scope.projectId]: {
+            ...(preferences.projectDrafts[scope.projectId] ?? {}),
+            [sourceId]: prepared.draft,
+          },
+        },
+      });
+
+      const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
+      return ok(
+        {
+          actions: [],
+          draft: prepared.draft,
+          ...(freshState.summary ? { summary: freshState.summary } : {}),
+          ...(freshState.inspect ? { inspect: freshState.inspect } : {}),
+        },
+        prepared.warnings,
+      );
+    }
+
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     await this.ensureProjectionLedger(manifest, lockFile);
@@ -1802,7 +1909,7 @@ export class SkillFlowApp {
     const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
     await this.store.writeState(prepared.manifest, lockFile);
 
-    const freshState = await this.buildApplyDraftFreshState(sourceId);
+    const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
     return ok(
       {
         actions: plan.data.actions,
@@ -1823,8 +1930,9 @@ export class SkillFlowApp {
 
   private async buildApplyDraftFreshState(
     sourceId: string,
+    scope: ProjectScope,
   ): Promise<Pick<ApplyDraftResult, "summary" | "inspect">> {
-    const inspected = await this.inspectSourceImpl(sourceId);
+    const inspected = await this.inspectSourceImpl(sourceId, scope);
     if (!inspected.ok) {
       return {};
     }
@@ -2141,6 +2249,51 @@ export class SkillFlowApp {
     return {
       selectedLeafIds: [...draft.selectedLeafIds],
       targets,
+    };
+  }
+
+  private resolveDraftForScope(
+    sourceId: string,
+    initialDrafts: Record<string, DraftBinding>,
+    preferences: SharedPreferences,
+    scope: ProjectScope,
+  ): DraftBinding {
+    if (scope.kind === "global") {
+      return initialDrafts[sourceId] ?? EMPTY_DRAFT;
+    }
+
+    return (
+      preferences.projectDrafts[scope.projectId]?.[sourceId] ??
+      initialDrafts[sourceId] ??
+      EMPTY_DRAFT
+    );
+  }
+
+  private cloneManifest(manifest: Manifest): Manifest {
+    const bindings: Record<string, SourceBinding> = {};
+
+    for (const [sourceId, binding] of Object.entries(manifest.bindings)) {
+      const targets: SourceBinding["targets"] = {};
+      for (const [target, targetBinding] of Object.entries(binding.targets)) {
+        if (!targetBinding) {
+          continue;
+        }
+        targets[target as DeploymentTargetName] = {
+          enabled: targetBinding.enabled,
+          leafIds: [...targetBinding.leafIds],
+        };
+      }
+
+      bindings[sourceId] = {
+        ...(binding.selectedLeafIds ? { selectedLeafIds: [...binding.selectedLeafIds] } : {}),
+        targets,
+      };
+    }
+
+    return {
+      schemaVersion: manifest.schemaVersion,
+      sources: manifest.sources.map((source) => ({ ...source })),
+      bindings,
     };
   }
 

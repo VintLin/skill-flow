@@ -5,7 +5,11 @@ import type {
   DraftBinding,
   LockFile,
   Manifest,
+  ProjectScope,
+  RecentProject,
   Result,
+  ScopedSourceDrafts,
+  SharedPreferences,
   SourceUpdateResult,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
@@ -17,6 +21,11 @@ type ConfigCoordinatorDeps = {
   store: {
     init(): Promise<void>;
     readManifest(): Promise<Manifest>;
+    readPreferences(): Promise<SharedPreferences>;
+    writePreferences(preferences: SharedPreferences): Promise<void>;
+  };
+  recentProjectService: {
+    listRecentProjects(): Promise<RecentProject[]>;
   };
   doctorService: {
     run(manifest: Manifest, lockFile: LockFile): Promise<Result<DoctorReport>>;
@@ -43,6 +52,9 @@ export type ConfigBootstrapData = {
   initialDrafts: Record<string, DraftBinding>;
   audit: DoctorReport;
   bootStatus: ConfigBootStatus;
+  recentProjects: RecentProject[];
+  selectedProjectScope: ProjectScope;
+  projectDrafts: ScopedSourceDrafts;
 };
 
 export class ConfigCoordinator {
@@ -108,6 +120,17 @@ export class ConfigCoordinator {
       updatedSourceIds: [],
       failedSources: [],
     };
+
+    // Refresh recent projects and reconcile selected scope against them.
+    // This is preference-layer state, not part of manifest/lock global config.
+    const recentProjects = await this.deps.recentProjectService.listRecentProjects().catch(() => []);
+    const currentPreferences = await this.deps.store.readPreferences();
+    await this.deps.store.writePreferences({
+      ...currentPreferences,
+      recentProjects,
+    });
+    const reconciledPreferences = await this.deps.store.readPreferences();
+
     onEvent?.({
       phase: "done",
       level: "success",
@@ -122,6 +145,9 @@ export class ConfigCoordinator {
       initialDrafts: buildInitialDrafts(summaries),
       audit: audit.data,
       bootStatus,
+      recentProjects: reconciledPreferences.recentProjects,
+      selectedProjectScope: reconciledPreferences.selectedProjectScope,
+      projectDrafts: reconciledPreferences.projectDrafts,
     });
   }
 }
