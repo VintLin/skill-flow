@@ -34,6 +34,16 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(cards.contains(".desktopMotionChip("))
     }
 
+    func testHomeScrollingSurfacesUseLazyStacksInsideHorizontalScrollViews() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+        let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
+        let cards = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(home.contains("LazyHStack"))
+        XCTAssertTrue(tags.contains("LazyHStack"))
+        XCTAssertTrue(cards.contains("LazyHStack"))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

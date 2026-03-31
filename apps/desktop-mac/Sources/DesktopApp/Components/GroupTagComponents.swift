@@ -96,7 +96,7 @@ struct EditableGroupTagSection: View {
                 .frame(width: 1, height: tagPillHeight)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                LazyHStack(spacing: 6) {
                     ForEach(suggestions) { item in
                         Button {
                             handleCreateResult(onCreate(item.title, item.accent))
@@ -185,7 +185,7 @@ struct EditableGroupTagSection: View {
 
     private func tagRow(items: [GroupTagDisplayItem], showsDeleteControls: Bool) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            LazyHStack(spacing: 6) {
                 ForEach(items) { item in
                     if showsDeleteControls || onSelect == nil {
                         tagPill(item, showsDeleteControl: showsDeleteControls)

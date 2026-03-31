@@ -222,6 +222,29 @@ final class GroupTagControllerTests: XCTestCase {
         )
     }
 
+    func testHomeSnapshotPrecomputesAvailableTagsSuggestionsAndVisibleSourceIDs() {
+        let state = DesktopAppState()
+        state.groupTags.customTagsBySourceId = [
+            "alpha": [GroupTagPreference(title: "增长", accentRawValue: DesktopAccentColor.pink.rawValue)],
+            "beta": [GroupTagPreference(title: "研究", accentRawValue: DesktopAccentColor.yellow.rawValue)],
+            "gamma": [GroupTagPreference(title: "增长", accentRawValue: DesktopAccentColor.orange.rawValue)]
+        ]
+        state.groupTags.selectedHomeFilterKey = "custom:增长"
+        let controller = makeController(state: state)
+
+        let snapshot = controller.homeSnapshot(
+            sourceIds: ["alpha", "beta", "gamma"],
+            locale: Locale(identifier: "zh-Hans")
+        )
+
+        XCTAssertEqual(snapshot.availableTags.map(\.title), ["研究", "增长"])
+        XCTAssertEqual(snapshot.selectedKey, "custom:增长")
+        XCTAssertEqual(snapshot.visibleSourceIDs, ["alpha", "gamma"])
+        XCTAssertEqual(snapshot.tagsBySourceID["alpha"]?.map(\.title), ["增长"])
+        XCTAssertEqual(snapshot.suggestionsBySourceID["alpha"]?.map(\.title), ["研究"])
+        XCTAssertEqual(snapshot.suggestionsBySourceID["beta"]?.map(\.title), ["增长"])
+    }
+
     private func makeController(
         state: DesktopAppState = DesktopAppState(),
         recommendations: [ImportRecommendationEntry] = [],

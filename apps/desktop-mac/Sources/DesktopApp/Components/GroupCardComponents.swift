@@ -746,7 +746,7 @@ struct SharedGroupCard: View {
 
     private var readOnlyTagRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            LazyHStack(spacing: 6) {
                 ForEach(groupTagItems) { item in
                     Text("#\(item.title)")
                         .font(.system(size: scale.chipFontSize, weight: .regular))
@@ -762,7 +762,7 @@ struct SharedGroupCard: View {
 
     private var recommendationBadgeRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            LazyHStack(spacing: 6) {
                 ForEach(recommendationBadgeItems) { badge in
                     let badgeAccent = Self.recommendationBadgeAccent(tagId: badge.id)
                     Text("#\(badge.title)")
@@ -800,7 +800,7 @@ struct SharedGroupCard: View {
             }
 
             cardScroller {
-                HStack(spacing: scale.rowSpacing) {
+                LazyHStack(spacing: scale.rowSpacing) {
                     triStateSwitch(selection, loading: false, action: onToggleAll)
                     if loading {
                         ForEach(0..<3, id: \.self) { _ in
