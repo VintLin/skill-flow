@@ -47,10 +47,43 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
         XCTAssertEqual(model.saveState(for: "alpha").phase, .saved)
     }
+
+    func testRefreshFallsBackToGlobalWhenSelectedProjectDisappears() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        await model.selectProjectScope(.project("repo-a"))
+
+        query.listRecentProjects = []
+        query.listSelectedScope = .global
+
+        await model.refreshList()
+
+        XCTAssertEqual(model.selectedProjectScope, .global)
+        XCTAssertTrue(model.recentProjectScopes.isEmpty)
+    }
 }
 
 @MainActor
 private final class ProjectScopeQueryStub: DesktopQuerying {
+    var listRecentProjects: [[String: Any]] = [
+        [
+            "projectId": "repo-a",
+            "title": "Repo A",
+            "lastActivityAt": "2026-03-31T12:00:00.000Z",
+            "tools": ["codex"]
+        ]
+    ]
+    var listSelectedScope: ProjectScopeSelection = .global
+
     func bootstrap() async throws -> BridgeResponse {
         BridgeResponse.success(command: .bootstrap, payload: [
             "availableTargets": ["codex"],
@@ -93,7 +126,20 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
     }
 
     func list() async throws -> BridgeResponse {
-        try await bootstrap()
+        BridgeResponse.success(command: .list, payload: [
+            "summaries": [
+                summaryPayload(
+                    sourceId: "alpha",
+                    selectedLeafIds: ["alpha-a"],
+                    enabledTargets: ["codex"]
+                )
+            ],
+            "recentProjects": listRecentProjects,
+            "selectedProjectScope": [
+                "kind": listSelectedScope.kindValue,
+                "projectId": listSelectedScope.projectIdValue as Any
+            ].compactMapValues { $0 }
+        ])
     }
 
     func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
@@ -169,6 +215,26 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
             ],
             "health": "HEALTHY"
         ]
+    }
+}
+
+private extension ProjectScopeSelection {
+    var kindValue: String {
+        switch self {
+        case .global:
+            return "global"
+        case .project:
+            return "project"
+        }
+    }
+
+    var projectIdValue: String? {
+        switch self {
+        case .global:
+            return nil
+        case .project(let projectId):
+            return projectId
+        }
     }
 }
 

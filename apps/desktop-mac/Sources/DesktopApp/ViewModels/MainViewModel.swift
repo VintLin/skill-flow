@@ -540,6 +540,7 @@ final class MainViewModel {
     private let queryFacade: any DesktopQuerying
     private let commandFacade: any DesktopCommanding
     private let mutationCoordinator: DesktopMutationCoordinator
+    private let settingsStore: DesktopSettingsStore
 
     nonisolated private static var presentationLocale: Locale {
         let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
@@ -613,12 +614,16 @@ final class MainViewModel {
     var deploymentFilterTarget: String = "All"
     var deploymentFilterKind: String = "All"
     var pinnedSourceIds: [String]
+    private var projectScopeChangeToken: UInt64 = 0
+    private var cachedSelectedProjectScope: ProjectScopeSelection = .global
+    private var cachedRecentProjectScopes: [RecentProjectScopeItem] = []
 
     init(
         bridgeClient: BridgeClient,
         queryFacade: (any DesktopQuerying)? = nil,
         commandFacade: (any DesktopCommanding)? = nil,
         mutationCoordinator: DesktopMutationCoordinator? = nil,
+        settingsStore: DesktopSettingsStore = DesktopSettingsStore(),
         recommendationsProvider: @escaping () -> [ImportRecommendationEntry] = { ImportRecommendationLoader.load() }
     ) {
         let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
@@ -629,16 +634,30 @@ final class MainViewModel {
         self.queryFacade = resolvedQueryFacade
         self.commandFacade = resolvedCommandFacade
         self.mutationCoordinator = resolvedMutationCoordinator
+        self.settingsStore = settingsStore
         self.recommendationsProvider = recommendationsProvider
         self.pinnedSourceIds = []
     }
 
     func bindRouteState(_ state: DesktopAppState) {
         routeState = state
+        cachedSelectedProjectScope = state.settings.selectedProjectScope
+        cachedRecentProjectScopes = Array(state.settings.recentProjectScopes.prefix(10))
+        projectScopeChangeToken &+= 1
     }
 
     var availableGroups: [String] {
         sourceIds
+    }
+
+    var selectedProjectScope: ProjectScopeSelection {
+        _ = projectScopeChangeToken
+        return routeState?.settings.selectedProjectScope ?? cachedSelectedProjectScope
+    }
+
+    var recentProjectScopes: [RecentProjectScopeItem] {
+        _ = projectScopeChangeToken
+        return Array((routeState?.settings.recentProjectScopes ?? cachedRecentProjectScopes).prefix(10))
     }
 
     var selectedGroupId: String? {
@@ -1204,8 +1223,13 @@ final class MainViewModel {
         defer { isRefreshing = false }
 
         do {
+            let previousScope = currentProjectScope()
+            let sourceToReinspect = currentDetailSourceId ?? selectedSourceId
             let response = try await fetchListResponse()
             applyList(response)
+            if currentProjectScope() != previousScope, let sourceToReinspect {
+                await selectSource(sourceToReinspect)
+            }
             latestWarnings = response.warnings
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
         } catch {
@@ -1228,6 +1252,29 @@ final class MainViewModel {
             latestWarnings = response.warnings
         } catch {
             showToast(style: .error, text: localizedText("toast.details.load_failed", sourceId))
+        }
+    }
+
+    func selectProjectScope(_ scope: ProjectScopeSelection) async {
+        let normalizedScope: ProjectScopeSelection
+        switch scope {
+        case .global:
+            normalizedScope = .global
+        case .project(let projectId):
+            normalizedScope = recentProjectScopes.contains(where: { $0.projectId == projectId }) ? .project(projectId) : .global
+        }
+
+        guard selectedProjectScope != normalizedScope else {
+            return
+        }
+
+        cachedSelectedProjectScope = normalizedScope
+        routeState?.settings.selectedProjectScope = normalizedScope
+        persistProjectScopeSettingsIfNeeded()
+        projectScopeChangeToken &+= 1
+
+        if let sourceId = currentDetailSourceId ?? selectedSourceId {
+            await selectSource(sourceId)
         }
     }
 
@@ -1998,14 +2045,14 @@ final class MainViewModel {
     }
 
     private func applyProjectScopeState(_ data: [String: Any]) {
-        guard let routeState else {
-            return
-        }
-
         if let scope = parseProjectScopeSelection(data["selectedProjectScope"]) {
-            routeState.settings.selectedProjectScope = scope
+            cachedSelectedProjectScope = scope
+            routeState?.settings.selectedProjectScope = scope
         }
-        routeState.settings.recentProjectScopes = parseRecentProjectScopes(data["recentProjects"])
+        cachedRecentProjectScopes = parseRecentProjectScopes(data["recentProjects"])
+        routeState?.settings.recentProjectScopes = cachedRecentProjectScopes
+        persistProjectScopeSettingsIfNeeded()
+        projectScopeChangeToken &+= 1
     }
 
     private func applyCachedGroupCardEnrichment(_ data: [String: Any]) {
@@ -4252,7 +4299,7 @@ final class MainViewModel {
     }
 
     private func currentProjectScope() -> ProjectScopeSelection {
-        routeState?.settings.selectedProjectScope ?? .global
+        selectedProjectScope
     }
 
     private func scopedSourceKey(sourceId: String, scope: ProjectScopeSelection? = nil) -> ScopedSourceKey? {
@@ -4296,7 +4343,14 @@ final class MainViewModel {
                 lastActivityAt: lastActivityAt,
                 tools: uniqueSorted(item["tools"] as? [String] ?? [])
             )
-        }
+        }.prefix(10).map { $0 }
+    }
+
+    private func persistProjectScopeSettingsIfNeeded() {
+        var persisted = settingsStore.load()
+        persisted.selectedProjectScope = cachedSelectedProjectScope
+        persisted.recentProjectScopes = cachedRecentProjectScopes
+        settingsStore.save(persisted)
     }
 
     private func projectionSummaries() -> [ProjectionSourceSummary] {

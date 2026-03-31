@@ -529,6 +529,7 @@ struct MainView: View {
                     )
                 }
             } else {
+                homeProjectScopeBar
                 homeTagFilterBar
                 HStack {
                     Spacer(minLength: 0)
@@ -782,6 +783,38 @@ struct MainView: View {
         homeContainer.visibleGroupCards(locale: locale)
     }
 
+    private var homeProjectScopeBar: some View {
+        let projects = homeContainer.recentProjectScopes()
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                homeScopePill(
+                    title: "Global",
+                    isSelected: viewModel.selectedProjectScope == .global
+                ) {
+                    Task {
+                        await homeContainer.selectProjectScope(.global)
+                    }
+                }
+
+                Rectangle()
+                    .fill(AppTheme.textMuted(for: theme).opacity(0.25))
+                    .frame(width: 1, height: 18)
+
+                ForEach(projects, id: \.projectId) { item in
+                    homeScopePill(
+                        title: item.title,
+                        isSelected: viewModel.selectedProjectScope == .project(item.projectId)
+                    ) {
+                        Task {
+                            await homeContainer.selectProjectScope(.project(item.projectId))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private var homeTagFilterBar: some View {
         let tags = homeContainer.availableHomeTags(locale: locale)
         let selectedKey = homeContainer.selectedHomeTagFilterKey(locale: locale)
@@ -807,6 +840,37 @@ struct MainView: View {
                 }
             }
         }
+    }
+
+    private func homeScopePill(
+        title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .padding(.horizontal, 10)
+                .frame(height: 26)
+                .background(
+                    AppTheme.toolbarButtonBackground(for: theme).opacity(
+                        isSelected
+                            ? (theme == .dark ? 0.88 : 1.0)
+                            : (theme == .dark ? 0.5 : 0.82)
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(
+                            isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.4) : AppTheme.cardBorder(for: theme),
+                            lineWidth: 0.5
+                        )
+                }
+        }
+        .buttonStyle(.plain)
+        .opacity(isSelected ? 1.0 : 0.72)
     }
 
     private func homeFilterPill(
