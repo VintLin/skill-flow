@@ -57,15 +57,36 @@ struct DesktopRowHoverModifier: ViewModifier {
     }
 }
 
-private struct DesktopMotionButtonModifier: ViewModifier {
+private struct DesktopMotionButtonStyle: ButtonStyle {
     let kind: DesktopMotionButtonKind
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let isEnabled: Bool
     let isActive: Bool
 
+    func makeBody(configuration: Configuration) -> some View {
+        DesktopMotionButtonStyledLabel(
+            label: configuration.label,
+            kind: kind,
+            theme: theme,
+            accent: accent,
+            isEnabled: isEnabled,
+            isActive: isActive,
+            isPressed: configuration.isPressed
+        )
+    }
+}
+
+private struct DesktopMotionButtonStyledLabel<Label: View>: View {
+    let label: Label
+    let kind: DesktopMotionButtonKind
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let isEnabled: Bool
+    let isActive: Bool
+    let isPressed: Bool
+
     @State private var isHovered = false
-    @GestureState private var isPressed = false
 
     private var overlayOpacity: Double {
         guard isEnabled, !isActive else { return 0 }
@@ -77,12 +98,12 @@ private struct DesktopMotionButtonModifier: ViewModifier {
         return isPressed ? DesktopMotionTokens.buttonPressScale : 1
     }
 
-    func body(content: Content) -> some View {
-        content
+    var body: some View {
+        label
             .scaleEffect(scale)
             .overlay {
                 RoundedRectangle(cornerRadius: kind.cornerRadius)
-                    .fill(AppTheme.brand(for: accent, in: theme))
+                    .fill(AppTheme.toolbarButtonBackground(for: theme))
                     .opacity(overlayOpacity)
             }
             .animation(.easeOut(duration: DesktopMotionTokens.hoverDuration), value: isHovered)
@@ -94,13 +115,6 @@ private struct DesktopMotionButtonModifier: ViewModifier {
                 }
                 isHovered = hovering
             }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($isPressed) { _, state, _ in
-                        guard isEnabled else { return }
-                        state = true
-                    }
-            )
     }
 }
 
@@ -112,8 +126,8 @@ extension View {
         isEnabled: Bool,
         isActive: Bool = false
     ) -> some View {
-        modifier(
-            DesktopMotionButtonModifier(
+        buttonStyle(
+            DesktopMotionButtonStyle(
                 kind: kind,
                 theme: theme,
                 accent: accent,
@@ -129,7 +143,7 @@ extension View {
         isEnabled: Bool
     ) -> some View {
         modifier(
-            DesktopMotionCardModifier(
+            DesktopMotionCardScaleModifier(
                 theme: theme,
                 accent: accent,
                 isEnabled: isEnabled
@@ -144,8 +158,8 @@ extension View {
         isEnabled: Bool,
         isSelected: Bool
     ) -> some View {
-        modifier(
-            DesktopMotionChipModifier(
+        buttonStyle(
+            DesktopMotionChipStyle(
                 theme: theme,
                 accent: accent,
                 isEnabled: isEnabled,
@@ -161,7 +175,7 @@ extension View {
         isSelected: Bool = false
     ) -> some View {
         modifier(
-            DesktopRowHoverStatefulModifier(
+            DesktopRowHoverPassthroughModifier(
                 theme: theme,
                 accent: accent,
                 isEnabled: isEnabled,
@@ -171,59 +185,54 @@ extension View {
     }
 }
 
-private struct DesktopMotionCardModifier: ViewModifier {
+private struct DesktopMotionCardScaleModifier: ViewModifier {
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let isEnabled: Bool
 
-    @State private var isHovered = false
-    @GestureState private var isPressed = false
-
-    private var scale: CGFloat {
-        guard isEnabled else { return 1 }
-        return isPressed ? DesktopMotionTokens.chipPressScale : 1
-    }
-
-    private var overlayOpacity: Double {
-        guard isEnabled else { return 0 }
-        return isHovered ? DesktopMotionTokens.rowHoverOpacityDelta : 0
-    }
-
     func body(content: Content) -> some View {
         content
-            .scaleEffect(scale)
-            .overlay {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(AppTheme.brand(for: accent, in: theme))
-                    .opacity(overlayOpacity)
-            }
-            .animation(.easeOut(duration: DesktopMotionTokens.hoverDuration), value: isHovered)
-            .animation(.easeInOut(duration: DesktopMotionTokens.pressDuration), value: isPressed)
-            .onHover { hovering in
-                guard isEnabled else {
-                    isHovered = false
-                    return
-                }
-                isHovered = hovering
-            }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($isPressed) { _, state, _ in
-                        guard isEnabled else { return }
-                        state = true
-                    }
-            )
     }
 }
 
-private struct DesktopMotionChipModifier: ViewModifier {
+private struct DesktopMotionChipStyle: ButtonStyle {
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let isEnabled: Bool
     let isSelected: Bool
 
+    func makeBody(configuration: Configuration) -> some View {
+        DesktopMotionChipStyledLabel(
+            label: configuration.label,
+            theme: theme,
+            accent: accent,
+            isEnabled: isEnabled,
+            isSelected: isSelected,
+            isPressed: configuration.isPressed
+        )
+    }
+}
+
+private struct DesktopRowHoverPassthroughModifier: ViewModifier {
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let isEnabled: Bool
+    let isSelected: Bool
+
+    func body(content: Content) -> some View {
+        content
+    }
+}
+
+private struct DesktopMotionChipStyledLabel<Label: View>: View {
+    let label: Label
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let isEnabled: Bool
+    let isSelected: Bool
+    let isPressed: Bool
+
     @State private var isHovered = false
-    @GestureState private var isPressed = false
 
     private var scale: CGFloat {
         guard isEnabled else { return 1 }
@@ -238,54 +247,16 @@ private struct DesktopMotionChipModifier: ViewModifier {
         return isHovered ? DesktopMotionTokens.rowHoverOpacityDelta : 0
     }
 
-    func body(content: Content) -> some View {
-        content
+    var body: some View {
+        label
             .scaleEffect(scale)
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(AppTheme.brand(for: accent, in: theme))
+                    .fill(AppTheme.toolbarButtonBackground(for: theme))
                     .opacity(overlayOpacity)
             }
             .animation(.easeOut(duration: DesktopMotionTokens.hoverDuration), value: isHovered)
             .animation(.easeInOut(duration: DesktopMotionTokens.pressDuration), value: isPressed)
-            .onHover { hovering in
-                guard isEnabled else {
-                    isHovered = false
-                    return
-                }
-                isHovered = hovering
-            }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($isPressed) { _, state, _ in
-                        guard isEnabled else { return }
-                        state = true
-                    }
-            )
-    }
-}
-
-private struct DesktopRowHoverStatefulModifier: ViewModifier {
-    let theme: DesktopThemeMode
-    let accent: DesktopAccentColor
-    let isEnabled: Bool
-    let isSelected: Bool
-
-    @State private var isHovered = false
-
-    private var overlayOpacity: Double {
-        guard isEnabled, !isSelected else { return 0 }
-        return isHovered ? DesktopMotionTokens.rowHoverOpacityDelta : 0
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(AppTheme.brand(for: accent, in: theme))
-                    .opacity(overlayOpacity)
-            }
-            .animation(.easeOut(duration: DesktopMotionTokens.hoverDuration), value: isHovered)
             .onHover { hovering in
                 guard isEnabled else {
                     isHovered = false

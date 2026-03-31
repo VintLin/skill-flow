@@ -27,6 +27,21 @@ final class SettingsViewTests: XCTestCase {
         XCTAssertNotEqual(L10n.string("settings.agent_display.empty", locale: Locale(identifier: "zh-Hans")), "settings.agent_display.empty")
     }
 
+    func testCheckUpdatesLoadingIndicatorUsesCenteredControlColumnLayout() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertTrue(
+            matches(
+                source,
+                pattern: #"if viewModel\.updateStatus == \.checking \{\s*settingsActionLoadingIndicator\(\)\s*\}"#
+            )
+        )
+    }
+
+    func testSettingsActionLoadingIndicatorReusesActionButtonChrome() throws {
+        XCTAssertEqual(SettingsView.actionControlHeight, 32)
+    }
+
     private func assertColorsEqual(
         _ lhs: Color,
         _ rhs: Color,
@@ -42,5 +57,18 @@ final class SettingsViewTests: XCTestCase {
         XCTAssertEqual(left?.greenComponent ?? -1, right?.greenComponent ?? -2, accuracy: 0.001, file: file, line: line)
         XCTAssertEqual(left?.blueComponent ?? -1, right?.blueComponent ?? -2, accuracy: 0.001, file: file, line: line)
         XCTAssertEqual(left?.alphaComponent ?? -1, right?.alphaComponent ?? -2, accuracy: 0.001, file: file, line: line)
+    }
+
+    private func sourceText(at relativePath: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func matches(_ source: String, pattern: String) -> Bool {
+        source.range(of: pattern, options: .regularExpression) != nil
     }
 }

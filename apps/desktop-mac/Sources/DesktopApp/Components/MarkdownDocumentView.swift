@@ -8,6 +8,7 @@ import AppKit
 struct MarkdownDocumentView: View, Equatable {
     let document: MainViewModel.DocumentTab
     let theme: DesktopThemeMode
+    @State private var renderedContent: AttributedString?
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.document == rhs.document && lhs.theme == rhs.theme
@@ -20,15 +21,25 @@ struct MarkdownDocumentView: View, Equatable {
             }
 
             if !document.content.isEmpty {
-                StructuredText(markdown: document.content)
+                if let renderedContent {
+                    StructuredText(
+                        document.content,
+                        parser: CachedAttributedStringParser(attributedString: renderedContent)
+                    )
                     .textual.structuredTextStyle(.gitHub)
                     .textual.textSelection(.enabled)
                     .environment(\.openURL, openURLAction)
                     .id(document.renderCacheKey)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    loadingState
+                }
             }
         }
         .environment(\.colorScheme, colorScheme)
+        .task(id: document.renderCacheKey) {
+            await prepareRenderedContent()
+        }
     }
 
     private func metadataTable(_ metadata: [MainViewModel.MetadataEntry]) -> some View {
@@ -73,6 +84,34 @@ struct MarkdownDocumentView: View, Equatable {
 
     private var colorScheme: ColorScheme {
         theme == .dark ? .dark : .light
+    }
+
+    @MainActor
+    private func prepareRenderedContent() async {
+        if let cached = MarkdownDocumentRenderer.shared.cachedContent(for: document.renderCacheKey) {
+            renderedContent = cached
+            return
+        }
+
+        renderedContent = nil
+        let renderCacheKey = document.renderCacheKey
+        let content = await MarkdownDocumentRenderer.shared.renderedContent(for: document)
+        guard !Task.isCancelled, renderCacheKey == document.renderCacheKey else {
+            return
+        }
+        renderedContent = content
+    }
+
+    private var loadingState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+
+            Text(L10n.string("detail.loading.document"))
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

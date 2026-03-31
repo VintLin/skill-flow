@@ -192,9 +192,7 @@ struct SettingsView: View {
 
                         settingsRow(title: t("settings.row.check_updates.title"), description: updateStatusDescription) {
                             if viewModel.updateStatus == .checking {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .frame(width: controlColumnWidth, alignment: .trailing)
+                                settingsActionLoadingIndicator()
                             } else {
                                 settingsActionButton(t("settings.action.check_updates")) {
                                     Task {
@@ -569,7 +567,7 @@ struct SettingsView: View {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                .frame(width: controlColumnWidth, height: 32)
+                .frame(width: controlColumnWidth, height: Self.actionControlHeight)
                 .background(Self.controlBackground(for: .pageBackground, theme: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay {
@@ -580,6 +578,22 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .desktopMotionButton(kind: .primary, theme: theme, accent: currentAccent, isEnabled: true)
+    }
+
+    private func settingsActionLoadingIndicator() -> some View {
+        HStack {
+            Spacer(minLength: 0)
+            ProgressView()
+                .controlSize(.small)
+            Spacer(minLength: 0)
+        }
+        .frame(width: controlColumnWidth, height: Self.actionControlHeight)
+        .background(Self.controlBackground(for: .pageBackground, theme: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
     }
 
     @ViewBuilder
@@ -689,6 +703,8 @@ struct SettingsView: View {
     static func rowZIndex(isElevated: Bool) -> Double {
         isElevated ? 30 : 0
     }
+
+    static let actionControlHeight: CGFloat = 32
 
     static func controlBackground(for token: ControlSurfaceToken, theme: DesktopThemeMode) -> Color {
         switch token {
