@@ -196,37 +196,17 @@ struct SettingsView: View {
                                     .controlSize(.small)
                                     .frame(width: controlColumnWidth, alignment: .trailing)
                             } else {
-                                Button(t("settings.action.check_updates")) {
+                                settingsActionButton(t("settings.action.check_updates")) {
                                     Task {
                                         await viewModel.checkForUpdates()
                                     }
-                                }
-                                .buttonStyle(.plain)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                                .frame(width: controlColumnWidth, height: 32)
-                                .background(Self.controlBackground(for: .pageBackground, theme: theme))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                                 }
                             }
                         }
 
                         settingsRow(title: t("settings.row.open_releases.title"), description: t("settings.row.open_releases.description")) {
-                            Button(t("settings.action.open_releases")) {
+                            settingsActionButton(t("settings.action.open_releases")) {
                                 viewModel.openReleasePage()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                            .frame(width: controlColumnWidth, height: 32)
-                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                             }
                         }
                     }
@@ -272,34 +252,14 @@ struct SettingsView: View {
                     title: t("settings.section.maintenance"),
                     rows: {
                         settingsRow(title: t("settings.row.clear_cache.title"), description: t("settings.row.clear_cache.description")) {
-                            Button(t("settings.action.clear_cache")) {
+                            settingsActionButton(t("settings.action.clear_cache")) {
                                 viewModel.clearMetadataCache()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                            .frame(width: controlColumnWidth, height: 32)
-                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                             }
                         }
 
                         settingsRow(title: t("settings.row.reset_configuration.title"), description: t("settings.row.reset_configuration.description")) {
-                            Button(t("settings.action.reset_configuration")) {
+                            settingsActionButton(t("settings.action.reset_configuration")) {
                                 viewModel.resetConfiguration()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                            .frame(width: controlColumnWidth, height: 32)
-                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                             }
                         }
                     }
@@ -602,6 +562,23 @@ struct SettingsView: View {
             detectedTargetIds: detectedTargetIds
         )
         draggedAgentTargetId = nil
+    }
+
+    private func settingsActionButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+                .frame(width: controlColumnWidth, height: 32)
+                .background(Self.controlBackground(for: .pageBackground, theme: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder

@@ -407,7 +407,7 @@ struct SharedGroupCard: View {
             VStack(alignment: .leading, spacing: scale.headerSpacing) {
                 if let onOpen {
                     Button(action: onOpen) {
-                        headerPrimaryContent
+                        headerPrimaryButtonLabel
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -449,6 +449,12 @@ struct SharedGroupCard: View {
                 }
             }
         }
+    }
+
+    private var headerPrimaryButtonLabel: some View {
+        headerPrimaryContent
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 
     @ViewBuilder

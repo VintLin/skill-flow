@@ -450,15 +450,18 @@ struct DetailScreen: View {
 
             Spacer(minLength: 10)
 
-            Button(skill.isEnabled ? t("common.selection.on") : t("common.selection.off")) {
+            Button {
                 Task { await container.setSkillEnabled(skill.id, enabled: !skill.isEnabled, sourceId: groupId) }
+            } label: {
+                Text(skill.isEnabled ? t("common.selection.on") : t("common.selection.off"))
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: detailToggleWidth, height: detailToggleHeight)
+                    .background(AppTheme.selectionControlFill(skill.isEnabled ? .full : .empty, for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(AppTheme.selectionControlText(skill.isEnabled ? .full : .empty, for: theme))
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
-            .font(.system(size: 10, weight: .bold))
-            .frame(width: detailToggleWidth, height: detailToggleHeight)
-            .background(AppTheme.selectionControlFill(skill.isEnabled ? .full : .empty, for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(AppTheme.selectionControlText(skill.isEnabled ? .full : .empty, for: theme))
         }
         .frame(height: DetailSidebarLayout.skillRowHeight)
         .opacity(isPending ? 0.72 : 1)
