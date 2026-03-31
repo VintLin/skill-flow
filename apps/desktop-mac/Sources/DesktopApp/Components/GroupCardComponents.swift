@@ -537,6 +537,13 @@ struct SharedGroupCard: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(
+            kind: .icon,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isBusy,
+            isActive: isActionMenuOpen
+        )
         .disabled(isBusy)
         .onPreferenceChange(GroupCardActionButtonFrameKey.self) { frame in
             actionButtonFrame = frame
@@ -669,6 +676,12 @@ struct SharedGroupCard: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(
+            kind: displayMode.usesPlainPrimaryActionIcon ? .icon : .primary,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isDisabled
+        )
         .disabled(isDisabled)
         .help(buttonTitle)
     }
@@ -810,6 +823,13 @@ struct SharedGroupCard: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            .desktopMotionChip(
+                                kind: .pill,
+                                theme: theme,
+                                accent: accent,
+                                isEnabled: !isBusy,
+                                isSelected: item.isEnabled
+                            )
                             .disabled(isBusy)
                         }
                     }
@@ -971,6 +991,13 @@ struct SharedGroupCard: View {
             .frame(width: scale.triStateWidth, height: scale.triStateHeight)
         }
         .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .switch,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isSaving,
+            isSelected: selection == .full
+        )
         .disabled(isSaving)
     }
 

@@ -104,6 +104,13 @@ struct EditableGroupTagSection: View {
                             tagPill(item, showsDeleteControl: false)
                         }
                         .buttonStyle(.plain)
+                        .desktopMotionChip(
+                            kind: .pill,
+                            theme: theme,
+                            accent: item.accent,
+                            isEnabled: true,
+                            isSelected: false
+                        )
                     }
                 }
             }
@@ -153,6 +160,13 @@ struct EditableGroupTagSection: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .pill,
+            theme: theme,
+            accent: accent,
+            isEnabled: canAddMore,
+            isSelected: false
+        )
         .disabled(!canAddMore)
         .help(L10n.string("group_tag.action.add", locale: locale))
     }
@@ -182,6 +196,13 @@ struct EditableGroupTagSection: View {
                             tagPill(item, showsDeleteControl: false)
                         }
                         .buttonStyle(.plain)
+                        .desktopMotionChip(
+                            kind: .pill,
+                            theme: theme,
+                            accent: item.accent,
+                            isEnabled: true,
+                            isSelected: false
+                        )
                     }
                 }
             }

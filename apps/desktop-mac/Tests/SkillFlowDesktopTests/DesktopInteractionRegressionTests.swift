@@ -26,6 +26,14 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains(".desktopRowHover("))
     }
 
+    func testTagPillsAndCardChipsUseSharedChipMotion() throws {
+        let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
+        let cards = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(tags.contains(".desktopMotionChip("))
+        XCTAssertTrue(cards.contains(".desktopMotionChip("))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
