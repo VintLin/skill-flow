@@ -166,12 +166,14 @@ final class MainViewModel {
         let downloadCount: Int?
         let starCount: Int?
         let githubURL: String?
+        let localPath: String?
     }
 
     struct GroupCardModel: Identifiable {
         let id: String
         let title: String
         let byline: String?
+        let groupPath: String?
         let isPinned: Bool
         let health: String
         let warningCount: Int
@@ -735,11 +737,18 @@ final class MainViewModel {
             let enabledLeafIds = Set(draft.selectedLeafIds)
             let enabledTargets = Set(draft.enabledTargets)
             let metadata = groupCardMetadata(sourceId: row.id, summary: summary, row: row)
+            let payload = detailEnrichmentPayloadBySourceId[row.id] ?? [:]
+            let cachedGroupPath = (payload["groupPath"] as? String)?.nonEmpty
+            let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
+            let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
+            let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
+            let groupPath = cachedGroupPath ?? preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
 
             return GroupCardModel(
                 id: row.id,
                 title: row.displayName,
                 byline: metadata.byline,
+                groupPath: groupPath,
                 isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
                 warningCount: row.warningCount,
@@ -839,6 +848,10 @@ final class MainViewModel {
         let payload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
         let sourceSnapshot = parseSourceSnapshot(payload["sourceSnapshot"] as? [String: Any])
         let sourceMetadata = (payload["sourceMetadata"] as? [String: Any])?["data"] as? [String: Any]
+        let cachedGroupPath = (payload["groupPath"] as? String)?.nonEmpty
+        let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
+        let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
+        let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
 
         let byline = sourceSnapshot.map { "by @\($0.owner.slug)" }
             ?? ((sourceMetadata?["ownerHandle"] as? String)?.nonEmpty.map { "by \($0)" })
@@ -850,7 +863,8 @@ final class MainViewModel {
                 ?? sourceMetadata?["totalInstalls"] as? Int
                 ?? sourceMetadata?["downloadCount"] as? Int,
             starCount: sourceSnapshot?.repoStars ?? sourceMetadata?["starCount"] as? Int,
-            githubURL: sourceSnapshot?.repoURL ?? (sourceMetadata?["repoUrl"] as? String)?.nonEmpty
+            githubURL: sourceSnapshot?.repoURL ?? (sourceMetadata?["repoUrl"] as? String)?.nonEmpty,
+            localPath: cachedGroupPath ?? preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
         )
 
         return (byline, stats)
@@ -1973,6 +1987,9 @@ final class MainViewModel {
             }
             if let sourceSnapshot = payload["sourceSnapshot"] {
                 mergedPayload["sourceSnapshot"] = sourceSnapshot
+            }
+            if let groupPath = payload["groupPath"] {
+                mergedPayload["groupPath"] = groupPath
             }
             if !mergedPayload.isEmpty {
                 detailEnrichmentPayloadBySourceId[sourceId] = mergedPayload

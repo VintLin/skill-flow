@@ -259,6 +259,8 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(alpha?.stats.skillCount, 2)
         XCTAssertEqual(alpha?.stats.downloadCount, 5045)
         XCTAssertEqual(alpha?.stats.starCount, 1200)
+        XCTAssertTrue(alpha?.groupPath?.hasSuffix("/docs/alpha") == true)
+        XCTAssertTrue(alpha?.stats.localPath?.hasSuffix("/docs/alpha") == true)
     }
 
     func testDetailSnapshotUsesInspectPayload() async throws {
@@ -1098,6 +1100,7 @@ private struct TestFixture {
       return Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => {
         const status = source.metadataStatus || 'ready';
         const provider = source.metadataProvider || 'clawhub';
+        const groupPath = path.join(rootPath, 'docs', sourceId);
         const sourceMetadata = status === 'ready'
           ? {
               status: 'ready',
@@ -1119,7 +1122,7 @@ private struct TestFixture {
               ...(status === 'failed' ? { retryable: true } : {})
             };
 
-        return [sourceId, { sourceMetadata }];
+        return [sourceId, { sourceMetadata, groupPath }];
       }));
     }
 

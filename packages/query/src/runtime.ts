@@ -124,6 +124,7 @@ type GroupCardEnrichmentSnapshot = {
 type AuditMutationName =
   | "add-source"
   | "bootstrap"
+  groupPath?: string;
   | "import-source"
   | "apply-draft"
   | "update-sources"
@@ -1403,7 +1404,10 @@ export class SkillFlowApp {
     await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
     await this.persistNormalizedBindings(manifest, lockFile);
     const preferences = await this.store.pruneMissingSourceIds();
-    const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(manifest);
+    const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(
+      manifest,
+      lockFile,
+    );
     return ok(
       {
         summaries: this.workflowService.getSummaries(manifest, lockFile),
@@ -1529,7 +1533,11 @@ export class SkillFlowApp {
         entry.sourceSnapshot = cachedSnapshot;
       }
 
-      if (entry.sourceMetadata || entry.sourceSnapshot) {
+      if (sourceLock?.checkoutPath) {
+        entry.groupPath = sourceLock.checkoutPath;
+      }
+
+      if (entry.sourceMetadata || entry.sourceSnapshot || entry.groupPath) {
         entries[source.id] = entry;
       }
     }
@@ -1604,6 +1612,7 @@ export class SkillFlowApp {
       {
         sourceId,
         selectedLeafIds: draft.selectedLeafIds,
+      boot.data.lockFile,
         enabledTargets: draft.enabledTargets,
       },
       () => this.applyDraftAuditedImpl(sourceId, draft),
@@ -1621,6 +1630,7 @@ export class SkillFlowApp {
     const after = await this.captureSourceAuditSnapshot(nextManifest, nextLockFile, sourceId);
 
     return {
+    lockFile: LockFile,
       result,
       auditDetails: {
         stateTransition: {
@@ -1630,6 +1640,7 @@ export class SkillFlowApp {
         actionSummary: this.summarizeDeploymentActions(result.ok ? result.data.actions : []),
       },
     };
+      const sourceLock = lockFile.sources.find((item) => item.id === source.id);
   }
 
   private async applyDraftImpl(
