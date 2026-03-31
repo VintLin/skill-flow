@@ -7,6 +7,7 @@ enum GroupMetadataIconLibrary {
         case download = "group-metadata-download.svg"
         case star = "group-metadata-star.svg"
         case github = "group-metadata-github.svg"
+        case localFile = "group-metadata-local-file.svg"
     }
 
     static func image(for icon: Icon) -> NSImage? {

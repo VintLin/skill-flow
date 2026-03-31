@@ -16,7 +16,8 @@ final class DetailViewModelTests: XCTestCase {
                 skillCount: 2,
                 downloadCount: 211898,
                 starCount: 1200,
-                githubURL: "https://github.com/acme/alpha-hub"
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
             ),
             sourceDetailLines: [
                 "Provider: clawhub",

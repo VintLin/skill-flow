@@ -43,6 +43,13 @@ export type SourceSnapshot = {
   invalidLeafCount: number;
 };
 
+export type SourcePreview = {
+  locator: string;
+  displayName: string;
+  requestedPath?: string;
+  leafs: LockFile["leafInventory"];
+};
+
 export type AddSourceOptions = {
   path?: string;
   enabledTargets?: DeploymentTargetName[];
@@ -184,6 +191,53 @@ export class SourceService {
       leafCount: snapshot.data.leafs.length,
       invalidLeafCount: snapshot.data.lock.invalidLeafs.length,
     }, snapshot.warnings);
+  }
+
+  async previewSource(
+    locator: string,
+    options: AddSourceOptions = {},
+  ): Promise<Result<SourcePreview>> {
+    const resolved = await this.resolveSource(locator, options);
+    const tempCheckoutPath = path.join(
+      this.store.getSourceRoot(resolved.kind),
+      `.preview-${process.pid}-${crypto.randomUUID()}`,
+    );
+    await ensureDir(this.store.getSourceRoot(resolved.kind));
+
+    try {
+      await this.fetchSource(resolved, tempCheckoutPath);
+      const snapshot = await this.buildSnapshot(
+        resolved.kind,
+        resolved.sourceId,
+        resolved.locator,
+        resolved.displayName,
+        tempCheckoutPath,
+        resolved.requestedPath,
+        options,
+      );
+      if (!snapshot.ok) {
+        return fail(snapshot.errors, snapshot.warnings);
+      }
+
+      return ok({
+        locator: resolved.locator,
+        displayName: resolved.displayName,
+        ...(resolved.requestedPath ? { requestedPath: resolved.requestedPath } : {}),
+        leafs: snapshot.data.leafs,
+      }, snapshot.warnings);
+    } catch (error) {
+      return fail({
+        code:
+          resolved.kind === "git"
+            ? "GIT_PREVIEW_FAILED"
+            : resolved.kind === "local"
+              ? "LOCAL_PREVIEW_FAILED"
+              : "CLAWHUB_PREVIEW_FAILED",
+        message: `Unable to preview source '${resolved.locator}': ${String(error)}`,
+      });
+    } finally {
+      await removePath(tempCheckoutPath).catch(() => {});
+    }
   }
 
   async updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {

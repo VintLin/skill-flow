@@ -354,6 +354,16 @@ struct DetailScreen: View {
                     detailStatIcon(.github)
                 }
                 .buttonStyle(.plain)
+                .help(githubURL)
+            }
+            if let localPath = stats.localPath ?? container.viewModel?.groupPath {
+                Button {
+                    openPath(localPath)
+                } label: {
+                    detailStatIcon(.localFile)
+                }
+                .buttonStyle(.plain)
+                .help(localPath)
             }
             Spacer(minLength: 0)
         }
@@ -365,7 +375,7 @@ struct DetailScreen: View {
     }
 
     private var emptyStats: MainViewModel.GroupCardStats {
-        .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil)
+        .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil)
     }
 
     private func detailSkillHeader(skill: DetailViewModel.DetailSkill?, fallbackGroupId: String) -> some View {
@@ -1362,6 +1372,7 @@ private enum DetailHeaderStatIcon {
     case downloads
     case star
     case github
+    case localFile
 
     var image: NSImage? {
         switch self {
@@ -1373,6 +1384,8 @@ private enum DetailHeaderStatIcon {
             return GroupMetadataIconLibrary.image(for: .star)
         case .github:
             return GroupMetadataIconLibrary.image(for: .github)
+        case .localFile:
+            return GroupMetadataIconLibrary.image(for: .localFile)
         }
     }
 }

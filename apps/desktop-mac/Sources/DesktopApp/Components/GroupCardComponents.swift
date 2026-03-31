@@ -200,6 +200,7 @@ struct SharedGroupCard: View {
         case downloads
         case star
         case github
+        case localFile
     }
 
     @Environment(\.locale) private var locale
@@ -470,6 +471,17 @@ struct SharedGroupCard: View {
                 }
                 .buttonStyle(.plain)
                 .help(githubURL)
+            } else if usesImportStatPlaceholders {
+                statPlaceholder(width: 16)
+            }
+            if let groupPath = card.groupPath ?? card.stats.localPath {
+                Button {
+                    openPath(groupPath)
+                } label: {
+                    statIcon(.localFile)
+                }
+                .buttonStyle(.plain)
+                .help(groupPath)
             } else if usesImportStatPlaceholders {
                 statPlaceholder(width: 16)
             }
@@ -1069,6 +1081,11 @@ struct SharedGroupCard: View {
             )
         }
     }
+
+    private func openPath(_ path: String) {
+        let url = URL(fileURLWithPath: path)
+        NSWorkspace.shared.open(url)
+    }
 }
 
 extension SharedGroupCard {
@@ -1082,6 +1099,9 @@ extension SharedGroupCard {
         }
         if stats.githubURL != nil {
             kinds.append(.github)
+        }
+        if stats.localPath != nil {
+            kinds.append(.localFile)
         }
         return kinds
     }
@@ -1167,6 +1187,7 @@ private enum GroupCardStatIcon {
     case downloads
     case star
     case github
+    case localFile
 
     var image: NSImage? {
         switch self {
@@ -1178,6 +1199,8 @@ private enum GroupCardStatIcon {
             return GroupMetadataIconLibrary.image(for: .star)
         case .github:
             return GroupMetadataIconLibrary.image(for: .github)
+        case .localFile:
+            return GroupMetadataIconLibrary.image(for: .localFile)
         }
     }
 }

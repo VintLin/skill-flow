@@ -3,6 +3,7 @@ import { buildFindCommand } from "../utils/find-command.js";
 import {
   buildProjectedSkillName,
   formatGroupLabel,
+  parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "../utils/naming.js";
 import { deriveSourceId } from "../utils/source-id.js";
@@ -12,6 +13,7 @@ describe("find and naming utils", () => {
     const locators = [
       "https://github.com/garrytan/gstack",
       "https://github.com/garrytan/gstack.git",
+      "https://github.com/garrytan/gstack/tree/main/releases",
       "git@github.com:garrytan/gstack.git",
       "garrytan/gstack",
     ];
@@ -21,7 +23,21 @@ describe("find and naming utils", () => {
       "garrytan-gstack",
       "garrytan-gstack",
       "garrytan-gstack",
+      "garrytan-gstack",
     ]);
+  });
+
+  test("accepts repo root and tree URLs but rejects other GitHub page URLs", () => {
+    expect(parseGitHubRepo("https://github.com/garrytan/gstack")).toEqual({
+      owner: "garrytan",
+      repo: "gstack",
+    });
+    expect(parseGitHubRepo("https://github.com/garrytan/gstack/tree/main/releases")).toEqual({
+      owner: "garrytan",
+      repo: "gstack",
+    });
+    expect(parseGitHubRepo("https://github.com/garrytan/gstack/issues/1")).toBeNull();
+    expect(parseGitHubRepo("https://github.com/garrytan/gstack/blob/main/README.md")).toBeNull();
   });
 
   test("normalizes ClawHub locators to the same source id across version forms", () => {

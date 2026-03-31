@@ -16,16 +16,26 @@ type ProjectedSkillInput = {
 export function parseGitHubRepo(locator: string): { owner: string; repo: string } | null {
   const trimmed = locator.trim().replace(/\/+$/, "");
 
-  const httpsMatch = trimmed.match(
-    /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i,
-  );
-  if (httpsMatch) {
-    const owner = httpsMatch[1];
-    const repo = httpsMatch[2];
-    if (!owner || !repo) {
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      if (url.hostname.toLowerCase() === "github.com") {
+        const parts = url.pathname.split("/").filter(Boolean);
+        const [owner, rawRepo] = parts;
+        const repo = rawRepo?.replace(/\.git$/i, "");
+        const isRepoRoot = parts.length === 2;
+        const isTreePath = parts.length >= 4 && parts[2] === "tree";
+        if (!isRepoRoot && !isTreePath) {
+          return null;
+        }
+        if (!owner || !repo) {
+          return null;
+        }
+        return { owner, repo };
+      }
+    } catch {
       return null;
     }
-    return { owner, repo };
   }
 
   const sshMatch = trimmed.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);

@@ -93,7 +93,11 @@ import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
 import { SourceService } from "@skill-flow/core-engine/services/source-service";
 import { WorkflowService } from "./workflow-service.js";
-import type { AddSourceOptions, SourceSnapshot } from "@skill-flow/core-engine/services/source-service";
+import type {
+  AddSourceOptions,
+  SourcePreview,
+  SourceSnapshot,
+} from "@skill-flow/core-engine/services/source-service";
 import {
   WorkspaceBootstrapService,
   type BootstrapEvent,
@@ -120,11 +124,11 @@ type ApplyDraftResult = {
 type GroupCardEnrichmentSnapshot = {
   sourceMetadata?: SourceMetadataResult;
   sourceSnapshot?: UnifiedSourceSnapshot;
+  groupPath?: string;
 };
 type AuditMutationName =
   | "add-source"
   | "bootstrap"
-  groupPath?: string;
   | "import-source"
   | "apply-draft"
   | "update-sources"
@@ -583,6 +587,16 @@ export class SkillFlowApp {
       const manifest = await this.readManifestConsistently();
       const installedRepos = this.installedCanonicalRepos(manifest);
       const importCache = await this.store.readImportDataCache();
+      const directCandidate = await this.buildDirectImportGroupCandidate(
+        normalizedQuery,
+        manifest,
+      );
+      if (directCandidate) {
+        return ok({
+          groups: [directCandidate],
+          exact: true,
+        });
+      }
       const exactRepo = normalizeImportCanonicalRepo(normalizedQuery);
       if (exactRepo) {
         try {
@@ -648,6 +662,11 @@ export class SkillFlowApp {
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
     const canonicalRepo = normalizeImportCanonicalRepo(locator);
     if (!canonicalRepo) {
+      const localPreview = await this.previewDirectImportSource(locator);
+      if (localPreview) {
+        return localPreview;
+      }
+
       return ok({
         status: "failed",
         reasonCode: "provider_not_supported",
@@ -880,6 +899,37 @@ export class SkillFlowApp {
     };
   }
 
+  private async buildDirectImportGroupCandidate(
+    locator: string,
+    manifest: Manifest,
+  ): Promise<ImportGroupCandidate | null> {
+    const resolvedLocator = await this.resolveImportDirectLocator(locator);
+    if (!resolvedLocator) {
+      return null;
+    }
+
+    const aliases = [
+      locator.trim(),
+      resolvedLocator,
+      `file://${resolvedLocator}`,
+    ].filter((value, index, values) => value && values.indexOf(value) === index);
+
+    return {
+      id: resolvedLocator,
+      provider: "skills",
+      locator: resolvedLocator,
+      canonicalRepo: resolvedLocator,
+      aliases,
+      title: deriveDisplayName(resolvedLocator),
+      installed: manifest.sources.some(
+        (source) => source.kind === "local" && path.resolve(source.locator) === resolvedLocator,
+      ),
+      summary: `Import from ${resolvedLocator}`,
+      enrichState: { status: "idle" },
+      previewState: { status: "idle" },
+    };
+  }
+
   private async resolveRecommendedImportRepos(): Promise<string[]> {
     const [seedGroups, officialGroups, hotGroups, trendingGroups] = await Promise.all([
       this.resolveImportRecommendationFeed("seed"),
@@ -1047,6 +1097,71 @@ export class SkillFlowApp {
       }
       throw error;
     }
+  }
+
+  private async previewDirectImportSource(
+    locator: string,
+  ): Promise<Result<ImportPreviewResult> | null> {
+    const resolvedLocator = await this.resolveImportDirectLocator(locator);
+    if (!resolvedLocator) {
+      return null;
+    }
+
+    const preview = await this.sourceService.previewSource(resolvedLocator);
+    if (!preview.ok) {
+      return ok({
+        status: "failed",
+        reasonCode: this.inferImportReasonCode(preview.errors[0]),
+        retryable: this.importFailureRetryable(preview.errors[0]),
+      }, preview.warnings);
+    }
+
+    const availableTargets = await this.getAvailableTargets();
+
+    return ok(
+      this.buildDirectImportPreviewResult(resolvedLocator, preview.data, availableTargets),
+      preview.warnings,
+    );
+  }
+
+  private buildDirectImportPreviewResult(
+    locator: string,
+    preview: SourcePreview,
+    availableTargets: DeploymentTargetName[],
+  ): ImportPreviewResult {
+    return {
+      status: "ready",
+      locator,
+      canonicalRepo: locator,
+      selectedSkillIds: preview.leafs.map((leaf) => leaf.name),
+      enabledTargets: [],
+      skills: preview.leafs.map((leaf) => ({
+        id: leaf.name,
+        title: leaf.title,
+        summary: leaf.description,
+        selectedByDefault: true,
+      })),
+      targets: availableTargets.map((target) => ({
+        id: target,
+        selectedByDefault: false,
+      })),
+    };
+  }
+
+  private async resolveImportDirectLocator(locator: string): Promise<string | undefined> {
+    const trimmed = locator.trim();
+    if (!trimmed || normalizeImportCanonicalRepo(trimmed)) {
+      return undefined;
+    }
+
+    const resolvedPath = path.resolve(trimmed.startsWith("file://")
+      ? decodeURIComponent(new URL(trimmed).pathname)
+      : trimmed);
+    if (await pathExists(resolvedPath)) {
+      return resolvedPath;
+    }
+
+    return undefined;
   }
 
   private refreshImportSourceSnapshotInBackground(canonicalRepo: string): void {
@@ -1493,6 +1608,7 @@ export class SkillFlowApp {
     const preferences = await this.store.pruneMissingSourceIds();
     const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(
       boot.data.manifest,
+      boot.data.lockFile,
     );
 
     return ok({
@@ -1510,6 +1626,7 @@ export class SkillFlowApp {
 
   private async readCachedGroupCardEnrichmentBySourceId(
     manifest: Manifest,
+    lockFile: LockFile,
   ): Promise<Record<string, GroupCardEnrichmentSnapshot>> {
     const [sourceMetadataCache, importDataCache] = await Promise.all([
       this.store.readSourceMetadataCache(),
@@ -1519,6 +1636,7 @@ export class SkillFlowApp {
 
     for (const source of manifest.sources) {
       const entry: GroupCardEnrichmentSnapshot = {};
+      const sourceLock = lockFile.sources.find((item) => item.id === source.id);
       const cachedMetadata = sourceMetadataCache[source.id];
       if (cachedMetadata) {
         entry.sourceMetadata = sourceMetadataCacheEntryToResult(cachedMetadata);
@@ -1612,7 +1730,6 @@ export class SkillFlowApp {
       {
         sourceId,
         selectedLeafIds: draft.selectedLeafIds,
-      boot.data.lockFile,
         enabledTargets: draft.enabledTargets,
       },
       () => this.applyDraftAuditedImpl(sourceId, draft),
@@ -1630,7 +1747,6 @@ export class SkillFlowApp {
     const after = await this.captureSourceAuditSnapshot(nextManifest, nextLockFile, sourceId);
 
     return {
-    lockFile: LockFile,
       result,
       auditDetails: {
         stateTransition: {
@@ -1640,7 +1756,6 @@ export class SkillFlowApp {
         actionSummary: this.summarizeDeploymentActions(result.ok ? result.data.actions : []),
       },
     };
-      const sourceLock = lockFile.sources.find((item) => item.id === source.id);
   }
 
   private async applyDraftImpl(

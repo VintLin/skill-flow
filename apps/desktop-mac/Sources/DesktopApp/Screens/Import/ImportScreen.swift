@@ -210,6 +210,7 @@ struct ImportScreen: View {
             id: card.id,
             title: card.title,
             byline: card.subtitle,
+            groupPath: nil,
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,
@@ -220,7 +221,8 @@ struct ImportScreen: View {
                 skillCount: card.stats.skillCount,
                 downloadCount: card.stats.downloadCount,
                 starCount: card.stats.starCount,
-                githubURL: card.stats.githubURL
+                githubURL: card.stats.githubURL,
+                localPath: nil
             ),
             skillsLoading: card.skillsLoading,
             targetsLoading: card.targetsLoading,

@@ -95,7 +95,7 @@ final class DetailLoadingLayoutTests: XCTestCase {
             author: "@acme",
             originLabel: "GitHub",
             starCount: 12,
-            groupStats: .init(skillCount: 1, downloadCount: nil, starCount: 12, githubURL: nil),
+            groupStats: .init(skillCount: 1, downloadCount: nil, starCount: 12, githubURL: nil, localPath: nil),
             sourceDetailLines: [],
             sourceRepositoryURL: nil,
             locator: "acme/alpha",

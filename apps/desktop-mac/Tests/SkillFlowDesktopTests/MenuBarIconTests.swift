@@ -110,13 +110,14 @@ final class MenuBarIconTests: XCTestCase {
             id: "import-loading",
             title: "Loading",
             byline: "by @owner",
+            groupPath: nil,
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: true,
             targetsLoading: false,
             skills: [],
@@ -133,13 +134,14 @@ final class MenuBarIconTests: XCTestCase {
             id: "local",
             title: "Local Group",
             byline: "by @owner",
+            groupPath: "/tmp/local",
             isPinned: false,
             health: "LOCAL",
             warningCount: 0,
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: "/tmp/local"),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -156,13 +158,14 @@ final class MenuBarIconTests: XCTestCase {
             id: "menu",
             title: "Menu Group",
             byline: "by @owner",
+            groupPath: nil,
             isPinned: false,
             health: "READY",
             warningCount: 0,
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -179,12 +182,13 @@ final class MenuBarIconTests: XCTestCase {
             skillCount: 9,
             downloadCount: 12,
             starCount: 34,
-            githubURL: "https://github.com/example/repo"
+            githubURL: "https://github.com/example/repo",
+            localPath: "/tmp/example-repo"
         )
 
         XCTAssertEqual(
             SharedGroupCard.visibleHeaderStatKinds(stats: stats),
-            [.downloads, .star, .github]
+            [.downloads, .star, .github, .localFile]
         )
         XCTAssertFalse(SharedGroupCard.showsInlineHeaderStats(displayMode: .home))
     }

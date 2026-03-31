@@ -115,6 +115,44 @@ describe.sequential("import page flow", () => {
     });
   });
 
+  test("exact import search normalizes GitHub tree URLs to the repo root", async () => {
+    vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({
+      provider: "github",
+      repoLabel: "VintLin/skill-flow",
+      repoUrl: "https://github.com/VintLin/skill-flow",
+      starCount: 88,
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url === "https://skills.sh/vintlin/skill-flow") {
+        return responseWithHtml(`
+          <h1>VintLin<!-- -->/<!-- -->skill-flow</h1>
+          <span>9<!-- --> <!-- -->skills</span>
+          <span>1.2K<!-- --> total installs</span>
+          <a href="https://github.com/VintLin/skill-flow">GitHub</a>
+        `);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }));
+
+    const app = new SkillFlowApp();
+    const result = await app.searchImportGroups(
+      "https://github.com/VintLin/skill-flow/tree/main/releases",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.exact).toBe(true);
+    expect(result.data.groups[0]).toMatchObject({
+      locator: "vintlin/skill-flow",
+      canonicalRepo: "vintlin/skill-flow",
+      title: "skill-flow",
+    });
+  });
+
   test("previewImportSource is read-only and defaults to all skills with no agents", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
       const url = String(input);
@@ -190,6 +228,32 @@ describe.sequential("import page flow", () => {
       "https://skills.sh/anthropics/skills",
       "https://skills.sh/anthropics",
     ]);
+  });
+
+  test("previewImportSource supports local paths", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browse things."),
+      "review/SKILL.md": skillDoc("review", "Review things."),
+    });
+
+    const app = new SkillFlowApp();
+    const before = await app.store.readState();
+    const preview = await app.previewImportSource(repoPath);
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+
+    const after = await app.store.readState();
+    expect(after.manifest).toEqual(before.manifest);
+    expect(after.lockFile).toEqual(before.lockFile);
+    expect(preview.data.locator).toBe(repoPath);
+    expect(preview.data.canonicalRepo).toBe(repoPath);
+    expect(preview.data.selectedSkillIds).toEqual(["browse", "review"]);
+    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["browse", "review"]);
+    expect(preview.data.targets.every((target) => target.selectedByDefault === false)).toBe(true);
+    expect(preview.data.targets.length).toBeGreaterThan(0);
   });
 
   test("importSource applies selected skills and targets", async () => {
