@@ -419,6 +419,7 @@ struct DetailScreen: View {
         }
         .frame(height: DetailSidebarLayout.groupRowHeight)
         .contentShape(Rectangle())
+        .desktopRowHover(theme: theme, accent: accent, isEnabled: true, isSelected: isSelected)
         .onTapGesture {
             selectGroupOverview(groupId: groupId, detail: detail)
         }
@@ -462,10 +463,18 @@ struct DetailScreen: View {
                     .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
+            .desktopMotionChip(
+                kind: .switch,
+                theme: theme,
+                accent: accent,
+                isEnabled: true,
+                isSelected: skill.isEnabled
+            )
         }
         .frame(height: DetailSidebarLayout.skillRowHeight)
         .opacity(isPending ? 0.72 : 1)
         .contentShape(Rectangle())
+        .desktopRowHover(theme: theme, accent: accent, isEnabled: !isPending, isSelected: isSelected)
         .onTapGesture {
             scheduleSkillSelection(groupId: groupId, skill: skill)
         }
@@ -633,6 +642,13 @@ struct DetailScreen: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
+                        .desktopMotionChip(
+                            kind: .pill,
+                            theme: theme,
+                            accent: accent,
+                            isEnabled: true,
+                            isSelected: target.isEnabled
+                        )
                     }
 
                     if isLoading {
@@ -783,6 +799,7 @@ struct DetailScreen: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .desktopRowHover(theme: theme, accent: accent, isEnabled: true, isSelected: isSelected)
 
             if item.isDirectory && isExpanded {
                 ForEach(Array(item.children.enumerated()), id: \.element.id) { index, child in
@@ -1151,6 +1168,13 @@ struct DetailScreen: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .switch,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isLoading,
+            isSelected: selection == .full
+        )
     }
 
     private func detailSwitchLabel(_ selection: SelectionState) -> String {
@@ -1203,6 +1227,13 @@ struct DetailScreen: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.documentBlock(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .desktopMotionChip(
+            kind: .tab,
+            theme: theme,
+            accent: accent,
+            isEnabled: true,
+            isSelected: isSelected
+        )
     }
 
     @ViewBuilder

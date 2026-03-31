@@ -20,6 +20,12 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(card.contains(".desktopMotionCard("))
     }
 
+    func testDetailNavigationSurfacesUseSharedMotionHelpers() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Detail/DetailScreen.swift")
+        XCTAssertTrue(source.contains(".desktopMotionChip("))
+        XCTAssertTrue(source.contains(".desktopRowHover("))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

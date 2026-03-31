@@ -23,6 +23,12 @@ enum DesktopMotionButtonKind {
     }
 }
 
+enum DesktopMotionChipKind {
+    case tab
+    case `switch`
+    case pill
+}
+
 enum DesktopCardClickPolicy {
     case home
     case importSearch
@@ -130,6 +136,39 @@ extension View {
             )
         )
     }
+
+    func desktopMotionChip(
+        kind _: DesktopMotionChipKind,
+        theme: DesktopThemeMode,
+        accent: DesktopAccentColor,
+        isEnabled: Bool,
+        isSelected: Bool
+    ) -> some View {
+        modifier(
+            DesktopMotionChipModifier(
+                theme: theme,
+                accent: accent,
+                isEnabled: isEnabled,
+                isSelected: isSelected
+            )
+        )
+    }
+
+    func desktopRowHover(
+        theme: DesktopThemeMode,
+        accent: DesktopAccentColor,
+        isEnabled: Bool,
+        isSelected: Bool = false
+    ) -> some View {
+        modifier(
+            DesktopRowHoverStatefulModifier(
+                theme: theme,
+                accent: accent,
+                isEnabled: isEnabled,
+                isSelected: isSelected
+            )
+        )
+    }
 }
 
 private struct DesktopMotionCardModifier: ViewModifier {
@@ -174,5 +213,85 @@ private struct DesktopMotionCardModifier: ViewModifier {
                         state = true
                     }
             )
+    }
+}
+
+private struct DesktopMotionChipModifier: ViewModifier {
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let isEnabled: Bool
+    let isSelected: Bool
+
+    @State private var isHovered = false
+    @GestureState private var isPressed = false
+
+    private var scale: CGFloat {
+        guard isEnabled else { return 1 }
+        return isPressed ? DesktopMotionTokens.chipPressScale : 1
+    }
+
+    private var overlayOpacity: Double {
+        guard isEnabled else { return 0 }
+        if isSelected {
+            return isHovered ? 0.03 : 0
+        }
+        return isHovered ? DesktopMotionTokens.rowHoverOpacityDelta : 0
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(scale)
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(AppTheme.brand(for: accent, in: theme))
+                    .opacity(overlayOpacity)
+            }
+            .animation(.easeOut(duration: DesktopMotionTokens.hoverDuration), value: isHovered)
+            .animation(.easeInOut(duration: DesktopMotionTokens.pressDuration), value: isPressed)
+            .onHover { hovering in
+                guard isEnabled else {
+                    isHovered = false
+                    return
+                }
+                isHovered = hovering
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressed) { _, state, _ in
+                        guard isEnabled else { return }
+                        state = true
+                    }
+            )
+    }
+}
+
+private struct DesktopRowHoverStatefulModifier: ViewModifier {
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let isEnabled: Bool
+    let isSelected: Bool
+
+    @State private var isHovered = false
+
+    private var overlayOpacity: Double {
+        guard isEnabled, !isSelected else { return 0 }
+        return isHovered ? DesktopMotionTokens.rowHoverOpacityDelta : 0
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(AppTheme.brand(for: accent, in: theme))
+                    .opacity(overlayOpacity)
+            }
+            .animation(.easeOut(duration: DesktopMotionTokens.hoverDuration), value: isHovered)
+            .onHover { hovering in
+                guard isEnabled else {
+                    isHovered = false
+                    return
+                }
+                isHovered = hovering
+            }
     }
 }
