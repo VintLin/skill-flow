@@ -19,6 +19,11 @@ export type CodexSessionLike = {
   observedAt?: string;
 };
 
+type SessionPayload = {
+  cwd?: string;
+  git?: { repository_url?: string };
+};
+
 function basenameMaybe(inputPath: string | undefined): string | null {
   if (!inputPath) {
     return null;
@@ -71,9 +76,22 @@ function repositoryUrlToProjectId(repositoryUrl: string): string | null {
 export function collectProjectObservationsFromCodexSessions(
   codexSessions: CodexSessionLike[],
 ): ProjectObservation[] {
-  return codexSessions
+  return collectProjectObservationsFromSessionPayloads(
+    codexSessions.map((session) => ({
+      payload: session.session_meta?.payload,
+      observedAt: session.observedAt,
+    })),
+    "codex",
+  );
+}
+
+function collectProjectObservationsFromSessionPayloads(
+  sessions: Array<{ payload?: SessionPayload; observedAt?: string }>,
+  tool: ProjectObservation["tool"],
+): ProjectObservation[] {
+  return sessions
     .map((session) => {
-      const payload = session.session_meta?.payload;
+      const payload = session.payload;
       const repositoryUrl = payload?.git?.repository_url;
       const observedAt =
         toIsoString(session.observedAt) ?? new Date(0).toISOString();
@@ -91,7 +109,7 @@ export function collectProjectObservationsFromCodexSessions(
         : projectId;
 
       return {
-        tool: "codex",
+        tool,
         projectId,
         title,
         observedAt,
@@ -125,45 +143,100 @@ async function statMtimeIso(filePath: string): Promise<string | null> {
   }
 }
 
+async function collectFilesMatching(
+  rootDir: string,
+  matcher: (filePath: string) => boolean,
+  maxDepth = 4,
+): Promise<string[]> {
+  async function visit(currentDir: string, depth: number): Promise<string[]> {
+    if (depth > maxDepth) {
+      return [];
+    }
+
+    const entries = await fs.readdir(currentDir, { withFileTypes: true }).catch(() => []);
+    const matches: string[] = [];
+
+    for (const entry of entries) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        matches.push(...(await visit(entryPath, depth + 1)));
+        continue;
+      }
+      if (entry.isFile() && matcher(entryPath)) {
+        matches.push(entryPath);
+      }
+    }
+
+    return matches;
+  }
+
+  return visit(rootDir, 0);
+}
+
+async function readSessionPayloadFromJsonl(filePath: string): Promise<{
+  payload?: SessionPayload;
+  observedAt?: string;
+} | null> {
+  const content = await readFileSafe(filePath);
+  if (!content) {
+    return null;
+  }
+
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed) as {
+        type?: string;
+        payload?: unknown;
+        cwd?: string;
+        git?: { repository_url?: string };
+        timestamp?: string;
+      };
+      if (parsed.type === "session_meta" && parsed.payload && typeof parsed.payload === "object") {
+        return {
+          payload: parsed.payload as SessionPayload,
+          observedAt: (await statMtimeIso(filePath)) ?? undefined,
+        };
+      }
+      if (typeof parsed.cwd === "string" || typeof parsed.git?.repository_url === "string") {
+        return {
+          payload: {
+            ...(typeof parsed.cwd === "string" ? { cwd: parsed.cwd } : {}),
+            ...(typeof parsed.git?.repository_url === "string"
+              ? { git: { repository_url: parsed.git.repository_url } }
+              : {}),
+          },
+          observedAt: toIsoString(parsed.timestamp) ?? (await statMtimeIso(filePath)) ?? undefined,
+        };
+      }
+    } catch {
+      // Ignore malformed lines.
+    }
+  }
+
+  return null;
+}
+
 async function collectCodexObservations(homeDir: string): Promise<ProjectObservation[]> {
   const sessionsDir = path.join(homeDir, ".codex", "archived_sessions");
   const entries = await readDirSafe(sessionsDir);
   const jsonlFiles = entries.filter((entry) => entry.endsWith(".jsonl"));
 
-  const sessions: CodexSessionLike[] = [];
+  const sessions: Array<{ payload?: SessionPayload; observedAt?: string }> = [];
   for (const fileName of jsonlFiles) {
     const filePath = path.join(sessionsDir, fileName);
-    const content = await readFileSafe(filePath);
-    if (!content) {
+    const session = await readSessionPayloadFromJsonl(filePath);
+    if (!session?.payload) {
       continue;
     }
-
-    let payload: CodexSessionLike["session_meta"]["payload"] | undefined;
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const parsed = JSON.parse(trimmed) as { type?: string; payload?: unknown };
-        if (parsed?.type === "session_meta" && parsed.payload && typeof parsed.payload === "object") {
-          payload = parsed.payload as CodexSessionLike["session_meta"]["payload"];
-          break;
-        }
-      } catch {
-        // Ignore malformed lines.
-      }
-    }
-
-    if (!payload) {
-      continue;
-    }
-
-    sessions.push({
-      session_meta: { payload },
-      observedAt: (await statMtimeIso(filePath)) ?? undefined,
-    });
+    sessions.push(session);
   }
 
-  return collectProjectObservationsFromCodexSessions(sessions);
+  return collectProjectObservationsFromSessionPayloads(sessions, "codex");
 }
 
 type ClaudeLogLine = {
@@ -254,7 +327,52 @@ async function collectGeminiObservations(homeDir: string): Promise<ProjectObserv
 }
 
 async function collectOpencodeObservations(_homeDir: string): Promise<ProjectObservation[]> {
-  return [];
+  const candidateRoots = [
+    path.join(_homeDir, ".config", "opencode"),
+    path.join(_homeDir, ".opencode"),
+  ];
+  const observations: ProjectObservation[] = [];
+  const seen = new Set<string>();
+
+  for (const rootDir of candidateRoots) {
+    const projectRootFiles = await collectFilesMatching(
+      rootDir,
+      (filePath) => path.basename(filePath) === ".project_root",
+    );
+
+    for (const filePath of projectRootFiles) {
+      if (seen.has(filePath)) {
+        continue;
+      }
+      seen.add(filePath);
+
+      const content = await readFileSafe(filePath);
+      const projectRoot = content?.trim();
+      const projectId = basenameMaybe(projectRoot);
+      if (!projectId) {
+        continue;
+      }
+
+      observations.push({
+        tool: "opencode",
+        projectId,
+        title: projectId,
+        observedAt: (await statMtimeIso(filePath)) ?? new Date(0).toISOString(),
+      });
+    }
+
+    const jsonlFiles = await collectFilesMatching(
+      rootDir,
+      (filePath) => filePath.endsWith(".jsonl"),
+    );
+    const sessions = (
+      await Promise.all(jsonlFiles.map((filePath) => readSessionPayloadFromJsonl(filePath)))
+    ).filter((session): session is { payload?: SessionPayload; observedAt?: string } => session !== null);
+
+    observations.push(...collectProjectObservationsFromSessionPayloads(sessions, "opencode"));
+  }
+
+  return observations;
 }
 
 export async function collectProjectObservations(
@@ -267,4 +385,3 @@ export async function collectProjectObservations(
     ...(await collectOpencodeObservations(homeDir)),
   ];
 }
-

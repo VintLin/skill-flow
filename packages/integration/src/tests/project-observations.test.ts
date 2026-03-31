@@ -17,5 +17,16 @@ describe("project observations", () => {
       "fallback-project",
     ]);
   });
-});
 
+  test("collectProjectObservations normalizes git suffix from codex repository_url", () => {
+    const observations = collectProjectObservationsFromCodexSessions([
+      {
+        session_meta: {
+          payload: { git: { repository_url: "git@github.com:acme/skill-flow.git" } },
+        },
+      },
+    ]);
+
+    expect(observations[0]?.projectId).toBe("acme/skill-flow");
+  });
+});
