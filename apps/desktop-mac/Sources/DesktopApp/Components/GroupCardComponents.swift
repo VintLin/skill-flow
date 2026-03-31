@@ -1,6 +1,37 @@
 import SwiftUI
 import AppKit
 
+private enum GroupCardActionMenuPlacement {
+    case above
+    case below
+
+    var attachmentAnchor: PopoverAttachmentAnchor {
+        switch self {
+        case .above:
+            return .point(.top)
+        case .below:
+            return .point(.bottom)
+        }
+    }
+
+    var arrowEdge: Edge {
+        switch self {
+        case .above:
+            return .bottom
+        case .below:
+            return .top
+        }
+    }
+}
+
+private struct GroupCardActionButtonFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
+    }
+}
+
 enum GroupCardScale {
     case home
     case menu
@@ -162,13 +193,6 @@ enum GroupCardDisplayMode: Equatable {
             return false
         }
     }
-
-    var showsSourceFacts: Bool {
-        switch self {
-        case .home, .menu, .importSearch, .importRecommendation:
-            return false
-        }
-    }
 }
 
 struct SharedGroupCard: View {
@@ -195,7 +219,6 @@ struct SharedGroupCard: View {
     let onToggleAllTargets: () -> Void
     let actionButtonTitle: String?
     let actionButtonIcon: ActionIcon
-    let actionButtonEnabled: Bool
     let onActionButton: (() -> Void)?
     let groupTagItems: [GroupTagDisplayItem]
     let groupTagSuggestions: [GroupTagDisplayItem]
@@ -211,6 +234,10 @@ struct SharedGroupCard: View {
     @State private var isActionButtonHovered = false
     @State private var isEditingTags = false
     @State private var isDeletingTags = false
+    @State private var actionMenuPlacement: GroupCardActionMenuPlacement = .below
+    @State private var actionButtonFrame: CGRect = .zero
+
+    private let actionMenuWidth: CGFloat = 176
 
     init(
         card: MainViewModel.GroupCardModel,
@@ -229,7 +256,6 @@ struct SharedGroupCard: View {
         onToggleAllTargets: @escaping () -> Void,
         actionButtonTitle: String? = nil,
         actionButtonIcon: ActionIcon = .import,
-        actionButtonEnabled: Bool = true,
         onActionButton: (() -> Void)? = nil,
         groupTagItems: [GroupTagDisplayItem] = [],
         groupTagSuggestions: [GroupTagDisplayItem] = [],
@@ -257,7 +283,6 @@ struct SharedGroupCard: View {
         self.onToggleAllTargets = onToggleAllTargets
         self.actionButtonTitle = actionButtonTitle
         self.actionButtonIcon = actionButtonIcon
-        self.actionButtonEnabled = actionButtonEnabled
         self.onActionButton = onActionButton
         self.groupTagItems = groupTagItems
         self.groupTagSuggestions = groupTagSuggestions
@@ -304,11 +329,6 @@ struct SharedGroupCard: View {
 
             if showsTagSummary {
                 tagSummarySection
-                dashedDivider
-            }
-
-            if displayMode.showsSourceFacts && !card.sourceFacts.isEmpty {
-                sourceFactsSection
                 dashedDivider
             }
 
@@ -463,6 +483,7 @@ struct SharedGroupCard: View {
     private var pinButton: some View {
         Button {
             guard !isBusy else { return }
+            actionMenuPlacement = resolvedActionMenuPlacement()
             isActionMenuOpen.toggle()
         } label: {
             actionIcon(shouldShowPinnedIcon ? .pin : .more, size: 12)
@@ -470,8 +491,19 @@ struct SharedGroupCard: View {
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: GroupCardActionButtonFrameKey.self,
+                    value: proxy.frame(in: .global)
+                )
+            }
+        }
         .buttonStyle(.plain)
         .disabled(isBusy)
+        .onPreferenceChange(GroupCardActionButtonFrameKey.self) { frame in
+            actionButtonFrame = frame
+        }
         .onHover { isHovering in
             isActionButtonHovered = isHovering
         }
@@ -490,7 +522,11 @@ struct SharedGroupCard: View {
                 isDeletingTags = false
             }
         }
-        .popover(isPresented: $isActionMenuOpen, attachmentAnchor: .point(.bottom), arrowEdge: .top) {
+        .popover(
+            isPresented: $isActionMenuOpen,
+            attachmentAnchor: actionMenuPlacement.attachmentAnchor,
+            arrowEdge: actionMenuPlacement.arrowEdge
+        ) {
             VStack(alignment: .leading, spacing: 4) {
                 actionMenuButton(
                     title: card.isPinned ? t("group_card.action.unpin") : t("group_card.action.pin"),
@@ -511,7 +547,7 @@ struct SharedGroupCard: View {
                 if onCreateGroupTag != nil {
                     actionMenuButton(
                         title: isEditingTags ? t("group_card.action.cancel_edit_tags") : t("group_card.action.edit_tags"),
-                        icon: .more,
+                        icon: isEditingTags ? .close : .tagAdd,
                         foreground: AppTheme.textMuted(for: theme)
                     ) {
                         isActionMenuOpen = false
@@ -522,7 +558,7 @@ struct SharedGroupCard: View {
                 if canDeleteGroupTags {
                     actionMenuButton(
                         title: isDeletingTags ? t("group_card.action.done_delete_tags") : t("group_card.action.delete_tags"),
-                        icon: .delete,
+                        icon: isDeletingTags ? .close : .tagDelete,
                         foreground: AppTheme.textMuted(for: theme)
                     ) {
                         isActionMenuOpen = false
@@ -541,7 +577,7 @@ struct SharedGroupCard: View {
             }
             .padding(6)
             .background(AppTheme.pageBackground(for: theme))
-            .frame(width: 136)
+            .frame(width: actionMenuWidth)
         }
     }
 
@@ -552,19 +588,9 @@ struct SharedGroupCard: View {
         } label: {
             if displayMode.usesPlainPrimaryActionIcon {
                 actionIcon(actionButtonIcon, size: 12)
-                    .foregroundStyle(Self.primaryActionIconForeground(
-                        displayMode: displayMode,
-                        theme: theme,
-                        accent: accent,
-                        isEnabled: actionButtonEnabled
-                    ))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                     .frame(width: 28, height: 28)
-                    .background(Self.primaryActionIconBackground(
-                        displayMode: displayMode,
-                        theme: theme,
-                        accent: accent,
-                        isEnabled: actionButtonEnabled
-                    ))
+                    .background(AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30))
                     .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
                     .contentShape(Rectangle())
             } else {
@@ -584,22 +610,6 @@ struct SharedGroupCard: View {
         }
         .buttonStyle(.plain)
         .disabled(isBusy)
-    }
-
-    private var sourceFactsSection: some View {
-        VStack(alignment: .leading, spacing: max(6, scale.rowSpacing - 2)) {
-            Text(t("common.section.source"))
-                .font(.system(size: scale.sectionLabelSize, weight: .semibold))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .textCase(.uppercase)
-
-            Text(card.sourceFacts.joined(separator: " · "))
-                .font(.system(size: scale.metaSize, weight: .medium))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var loadingMessage: String {
@@ -673,7 +683,6 @@ struct SharedGroupCard: View {
                 }
             }
         }
-        .scrollDisabled(true)
     }
 
     private func cardRow(
@@ -896,13 +905,6 @@ struct SharedGroupCard: View {
             }
     }
 
-    private var hasHeaderStats: Bool {
-        card.stats.skillCount != nil
-            || card.stats.downloadCount != nil
-            || card.stats.starCount != nil
-            || card.stats.githubURL != nil
-    }
-
     private func statItem(icon: GroupCardStatIcon, text: String) -> some View {
         HStack(spacing: 4) {
             statIcon(icon)
@@ -983,11 +985,13 @@ struct SharedGroupCard: View {
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 10)
-            .frame(width: 124, height: 30, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30, alignment: .leading)
             .background(Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .contentShape(Rectangle())
@@ -1011,6 +1015,29 @@ struct SharedGroupCard: View {
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
         L10n.string(key, locale: locale, arguments: arguments)
+    }
+
+    private func resolvedActionMenuPlacement() -> GroupCardActionMenuPlacement {
+        guard !actionButtonFrame.equalTo(.zero) else {
+            return .below
+        }
+
+        let probePoint = CGPoint(x: actionButtonFrame.midX, y: actionButtonFrame.midY)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(probePoint) }) else {
+            return .below
+        }
+
+        let estimatedMenuHeight: CGFloat = 180
+        let spaceBelow = actionButtonFrame.minY - screen.visibleFrame.minY
+        let spaceAbove = screen.visibleFrame.maxY - actionButtonFrame.maxY
+
+        if spaceBelow >= estimatedMenuHeight {
+            return .below
+        }
+        if spaceAbove >= estimatedMenuHeight {
+            return .above
+        }
+        return spaceBelow >= spaceAbove ? .below : .above
     }
 
     private func setTagEditing(_ isEditing: Bool) {
@@ -1062,36 +1089,7 @@ extension SharedGroupCard {
         guard displayMode != .menu else {
             return false
         }
-        return displayMode.showsMetaLine || (displayMode.showsSourceFacts && !card.sourceFacts.isEmpty)
-    }
-
-    static func primaryActionIconForeground(
-        displayMode: GroupCardDisplayMode,
-        theme: DesktopThemeMode,
-        accent: DesktopAccentColor,
-        isEnabled: Bool
-    ) -> Color {
-        if displayMode.usesPlainPrimaryActionIcon {
-            return isEnabled ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme)
-        }
-        return AppTheme.pageBackground(for: theme)
-    }
-
-    static func primaryActionIconBackground(
-        displayMode: GroupCardDisplayMode,
-        theme: DesktopThemeMode,
-        accent: DesktopAccentColor,
-        isEnabled: Bool
-    ) -> Color {
-        guard displayMode.usesPlainPrimaryActionIcon else {
-            return .clear
-        }
-
-        if isEnabled {
-            return AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30)
-        }
-
-        return AppTheme.documentBlock(for: theme)
+        return displayMode.showsMetaLine
     }
 
     static func recommendationBadgeAccent(tagId: String) -> DesktopAccentColor {
@@ -1137,10 +1135,6 @@ extension SharedGroupCard {
         case .light:
             return Color.black.opacity(0.10)
         }
-    }
-
-    private static func hasHeaderStats(card: MainViewModel.GroupCardModel) -> Bool {
-        !visibleHeaderStatKinds(stats: card.stats).isEmpty
     }
 }
 

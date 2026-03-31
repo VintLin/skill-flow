@@ -172,7 +172,6 @@ struct ImportScreen: View {
             },
             actionButtonTitle: nil,
             actionButtonIcon: ActionIcon.import,
-            actionButtonEnabled: !card.isInstalledLocally,
             onActionButton: {
                 Task {
                     await container.handleImportAction(for: card)
@@ -210,8 +209,6 @@ struct ImportScreen: View {
         return MainViewModel.GroupCardModel(
             id: card.id,
             title: card.title,
-            subtitle: card.subtitle,
-            metaLine: t("common.meta.from", card.locator),
             byline: card.subtitle,
             isPinned: false,
             health: "DISCOVER",
@@ -227,7 +224,6 @@ struct ImportScreen: View {
             ),
             skillsLoading: card.skillsLoading,
             targetsLoading: card.targetsLoading,
-            sourceFacts: card.sourceFacts,
             skills: card.skills.map { skill in
                 MainViewModel.GroupCardSkill(
                     id: skill.id,

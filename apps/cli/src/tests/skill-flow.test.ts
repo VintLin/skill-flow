@@ -312,6 +312,42 @@ describe.sequential("skill-flow", () => {
     expect(await pathExists(targetPath)).toBe(false);
   });
 
+  test("applyDraft removes orphan codex symlinks that point to source checkout after projection state drifts away", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "dbs/SKILL.md": skillDoc("dbs", "Business toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:dbs`;
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "dbs");
+    await fs.symlink(path.join(added.data.lock.checkoutPath, "dbs"), targetPath, "junction");
+
+    const manifest = await app.store.readManifest();
+    manifest.bindings[sourceId] = {
+      selectedLeafIds: [leafId],
+      targets: {},
+    };
+    const lock = await app.store.readLock();
+    lock.projections = (lock.projections ?? []).filter((projection) => projection.sourceId !== sourceId);
+    await app.store.writeState(manifest, lock);
+
+    const removed = await app.applyDraft(sourceId, {
+      enabledTargets: [],
+      selectedLeafIds: [leafId],
+    });
+    expect(removed.ok).toBe(true);
+    expect(await pathExists(targetPath)).toBe(false);
+    expect(
+      removed.warnings.some((warning) => warning.code === "DETACHED_TARGET_SYMLINK_REMOVED"),
+    ).toBe(true);
+  });
+
   test("applyDraft keeps a shared target path while another enabled target still points to the same root", async () => {
     const sharedRoot = path.join(sandbox.targetsRoot, "shared-agents");
     await fs.mkdir(sharedRoot, { recursive: true });

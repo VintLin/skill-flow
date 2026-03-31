@@ -6,6 +6,43 @@ struct GroupTagDisplayItem: Identifiable, Equatable {
     let accent: DesktopAccentColor
 }
 
+struct GroupTagInputRule: Equatable {
+    let maximumCharacters: Int
+    let maximumWords: Int?
+
+    static func forLocale(_ locale: Locale) -> GroupTagInputRule {
+        switch DesktopLanguage.supportedIdentifier(for: locale.identifier) {
+        case DesktopLanguage.zhHans.rawValue:
+            return GroupTagInputRule(maximumCharacters: 4, maximumWords: nil)
+        case DesktopLanguage.ja.rawValue:
+            return GroupTagInputRule(maximumCharacters: 7, maximumWords: nil)
+        case DesktopLanguage.en.rawValue, nil:
+            return GroupTagInputRule(maximumCharacters: 20, maximumWords: 2)
+        default:
+            return GroupTagInputRule(maximumCharacters: 20, maximumWords: 2)
+        }
+    }
+
+    func normalizedTitle(from rawTitle: String) -> String {
+        let trimmed = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ""
+        }
+
+        let constrainedByWords: String
+        if let maximumWords {
+            constrainedByWords = trimmed
+                .split(whereSeparator: \.isWhitespace)
+                .prefix(maximumWords)
+                .joined(separator: " ")
+        } else {
+            constrainedByWords = trimmed
+        }
+
+        return String(constrainedByWords.prefix(maximumCharacters))
+    }
+}
+
 enum GroupTagMutationResult: Equatable {
     case added
     case removed
@@ -33,6 +70,26 @@ enum GroupTagMutationResult: Equatable {
 @MainActor
 final class GroupTagController {
     static let maximumTagCount = 3
+    private static let localizedTagIDs = [
+        "general",
+        "development",
+        "design",
+        "creation",
+        "marketing",
+        "research",
+        "teamwork",
+        "automation",
+        "frontend",
+        "backend",
+        "database",
+        "writing",
+        "content",
+        "video",
+        "productivity",
+        "education",
+        "knowledge",
+        "workflow",
+    ]
 
     private let state: DesktopAppState
     private let store: DesktopGroupTagStore
@@ -62,8 +119,8 @@ final class GroupTagController {
             .prefix(Self.maximumTagCount)
             .map { preference in
                 GroupTagDisplayItem(
-                    id: Self.customTagKey(for: preference.title),
-                    title: preference.title,
+                    id: Self.tagKey(for: preference),
+                    title: Self.displayTitle(for: preference, locale: locale),
                     accent: preference.accent
                 )
             }
@@ -131,23 +188,27 @@ final class GroupTagController {
             return .limitReached
         }
 
-        let title = Self.normalizedCustomTitle(rawTitle)
-        guard !title.isEmpty else {
+        let normalized = Self.normalizedTagInput(rawTitle, locale: locale)
+        guard !normalized.title.isEmpty else {
             return .empty
         }
 
         var current = effectiveTagPreferences(forSourceId: sourceId, locale: locale)
-        let existingTitles = Set(
-            current
-                .map(\.title)
-                .map(Self.normalizedKey)
+        let existingIdentities = Set(current.flatMap(Self.tagIdentities))
+        let candidateIdentities = Self.tagIdentities(
+            forTitle: normalized.title,
+            tagId: normalized.tagId
         )
-        guard !existingTitles.contains(Self.normalizedKey(title)) else {
+        guard existingIdentities.isDisjoint(with: candidateIdentities) else {
             return .duplicate
         }
 
         current.append(
-            GroupTagPreference(title: title, accentRawValue: (accent ?? randomAccent()).rawValue)
+            GroupTagPreference(
+                title: normalized.title,
+                accentRawValue: (accent ?? randomAccent()).rawValue,
+                tagId: normalized.tagId
+            )
         )
         state.groupTags.customTagsBySourceId[sourceId] = Array(current.prefix(Self.maximumTagCount))
         store.saveCustomTags(state.groupTags.customTagsBySourceId)
@@ -156,7 +217,7 @@ final class GroupTagController {
 
     func removeCustomTag(_ tagID: String, fromSourceId sourceId: String, locale: Locale) -> GroupTagMutationResult {
         let current = effectiveTagPreferences(forSourceId: sourceId, locale: locale)
-        let next = current.filter { Self.customTagKey(for: $0.title) != tagID }
+        let next = current.filter { Self.tagKey(for: $0) != tagID }
 
         guard next.count != current.count else {
             return .notFound
@@ -165,6 +226,14 @@ final class GroupTagController {
         state.groupTags.customTagsBySourceId[sourceId] = next
         store.saveCustomTags(state.groupTags.customTagsBySourceId)
         return .removed
+    }
+
+    static func inputRule(for locale: Locale) -> GroupTagInputRule {
+        GroupTagInputRule.forLocale(locale)
+    }
+
+    static func normalizedInputTitle(_ rawTitle: String, locale: Locale) -> String {
+        normalizedTagInput(rawTitle, locale: locale).title
     }
 
     private func effectiveTagPreferences(forSourceId sourceId: String, locale: Locale) -> [GroupTagPreference] {
@@ -190,7 +259,8 @@ final class GroupTagController {
         return tagIds.map { tagId in
             GroupTagPreference(
                 title: L10n.string("import.recommendation.tag.\(tagId)", locale: locale),
-                accentRawValue: SharedGroupCard.recommendationBadgeAccent(tagId: tagId).rawValue
+                accentRawValue: SharedGroupCard.recommendationBadgeAccent(tagId: tagId).rawValue,
+                tagId: tagId
             )
         }
     }
@@ -211,8 +281,61 @@ final class GroupTagController {
         return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
     }
 
-    private static func normalizedCustomTitle(_ rawTitle: String) -> String {
-        String(rawTitle.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4))
+    private static func normalizedTagInput(_ rawTitle: String, locale: Locale) -> (title: String, tagId: String?) {
+        let title = inputRule(for: locale).normalizedTitle(from: rawTitle)
+        guard !title.isEmpty else {
+            return ("", nil)
+        }
+
+        if let tagId = matchingLocalizedTagID(for: title) {
+            return (localizedTitle(forTagID: tagId, locale: locale), tagId)
+        }
+
+        return (title, nil)
+    }
+
+    private static func matchingLocalizedTagID(for rawTitle: String) -> String? {
+        let normalizedTitle = normalizedKey(rawTitle)
+        guard !normalizedTitle.isEmpty else {
+            return nil
+        }
+
+        for tagId in localizedTagIDs {
+            for localeIdentifier in [DesktopLanguage.en.rawValue, DesktopLanguage.zhHans.rawValue, DesktopLanguage.ja.rawValue] {
+                let localized = L10n.string(
+                    "import.recommendation.tag.\(tagId)",
+                    locale: Locale(identifier: localeIdentifier)
+                )
+                if normalizedKey(localized) == normalizedTitle {
+                    return tagId
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func localizedTitle(forTagID tagId: String, locale: Locale) -> String {
+        L10n.string("import.recommendation.tag.\(tagId)", locale: locale)
+    }
+
+    private static func displayTitle(for preference: GroupTagPreference, locale: Locale) -> String {
+        guard let tagId = preference.tagId else {
+            return preference.title
+        }
+        return localizedTitle(forTagID: tagId, locale: locale)
+    }
+
+    private static func tagIdentities(_ preference: GroupTagPreference) -> [String] {
+        tagIdentities(forTitle: preference.title, tagId: preference.tagId)
+    }
+
+    private static func tagIdentities(forTitle title: String, tagId: String?) -> [String] {
+        var identities = [normalizedKey(title)]
+        if let tagId {
+            identities.append("preset:\(tagId)")
+        }
+        return identities
     }
 
     private static func normalizedKey(_ value: String?) -> String {
@@ -221,7 +344,7 @@ final class GroupTagController {
             .lowercased()
     }
 
-    private static func customTagKey(for title: String) -> String {
-        "custom:\(normalizedKey(title))"
+    private static func tagKey(for preference: GroupTagPreference) -> String {
+        preference.tagId.map { "preset:\($0)" } ?? "custom:\(normalizedKey(preference.title))"
     }
 }

@@ -73,7 +73,7 @@ struct EditableGroupTagSection: View {
                 L10n.string("group_tag.input.placeholder", locale: locale),
                 text: Binding(
                     get: { draftText },
-                    set: { draftText = String($0.prefix(4)) }
+                    set: { draftText = GroupTagController.normalizedInputTitle($0, locale: locale) }
                 )
             )
             .textFieldStyle(.plain)
@@ -124,15 +124,22 @@ struct EditableGroupTagSection: View {
                     .fill(
                         canAddMore
                             ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.28 : 0.18)
-                            : AppTheme.toolbarButtonBackground(for: theme)
+                            : AppTheme.selectionControlFill(.empty, for: theme)
                     )
-                Text("+")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(
-                        canAddMore
-                            ? AppTheme.brand(for: accent, in: theme)
-                            : AppTheme.textMuted(for: theme)
-                    )
+                if let image = ActionIcon.plus.image(size: 10) {
+                    Image(nsImage: image)
+                        .renderingMode(.template)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 10, height: 10)
+                        .foregroundStyle(
+                            canAddMore
+                                ? AppTheme.brand(for: accent, in: theme)
+                                : AppTheme.selectionControlText(.empty, for: theme)
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                }
             }
             .frame(width: tagPillHeight, height: tagPillHeight)
             .overlay {
@@ -179,7 +186,6 @@ struct EditableGroupTagSection: View {
                 }
             }
         }
-        .scrollDisabled(true)
     }
 
     private func tagPill(_ item: GroupTagDisplayItem, showsDeleteControl: Bool) -> some View {

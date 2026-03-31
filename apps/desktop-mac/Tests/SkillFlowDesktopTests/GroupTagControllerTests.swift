@@ -40,6 +40,68 @@ final class GroupTagControllerTests: XCTestCase {
         XCTAssertEqual(DesktopGroupTagStore(userDefaults: defaults).loadCustomTags()["alpha"]?.map(\.title), ["设计系统"])
     }
 
+    func testNormalizedInputTitleUsesEnglishWordLimit() {
+        XCTAssertEqual(
+            GroupTagController.normalizedInputTitle(
+                "frontend platform automation workflows",
+                locale: Locale(identifier: "en")
+            ),
+            "frontend platform"
+        )
+    }
+
+    func testNormalizedInputTitleUsesJapaneseCharacterLimit() {
+        XCTAssertEqual(
+            GroupTagController.normalizedInputTitle(
+                "マーケティング戦略設計",
+                locale: Locale(identifier: "ja")
+            ),
+            "マーケティング"
+        )
+    }
+
+    func testAddCustomTagRecognizesLocalizedPresetTagInput() {
+        let state = DesktopAppState()
+        let controller = makeController(state: state)
+
+        let result = controller.addCustomTag("开发", accent: nil, toSourceId: "alpha", locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(result, .added)
+        XCTAssertEqual(state.groupTags.customTagsBySourceId["alpha"]?.first?.tagId, "development")
+        XCTAssertEqual(
+            controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "en")).map(\.title),
+            ["Development"]
+        )
+    }
+
+    func testAddCustomTagRecognizesNewLocalizedTagInput() {
+        let state = DesktopAppState()
+        let controller = makeController(state: state)
+
+        let result = controller.addCustomTag("前端", accent: nil, toSourceId: "alpha", locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(result, .added)
+        XCTAssertEqual(state.groupTags.customTagsBySourceId["alpha"]?.first?.tagId, "frontend")
+        XCTAssertEqual(
+            controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "ja")).map(\.title),
+            ["フロントエンド"]
+        )
+    }
+
+    func testAddCustomTagRecognizesKnowledgeTagAcrossLanguages() {
+        let state = DesktopAppState()
+        let controller = makeController(state: state)
+
+        let result = controller.addCustomTag("Knowledge", accent: nil, toSourceId: "alpha", locale: Locale(identifier: "en"))
+
+        XCTAssertEqual(result, .added)
+        XCTAssertEqual(state.groupTags.customTagsBySourceId["alpha"]?.first?.tagId, "knowledge")
+        XCTAssertEqual(
+            controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "zh-Hans")).map(\.title),
+            ["知识管理"]
+        )
+    }
+
     func testAddCustomTagRejectsDuplicateAgainstExistingTags() {
         let state = DesktopAppState()
         state.groupTags.customTagsBySourceId["alpha"] = [
@@ -48,6 +110,18 @@ final class GroupTagControllerTests: XCTestCase {
         let controller = makeController(state: state)
 
         let result = controller.addCustomTag("设计", accent: nil, toSourceId: "alpha", locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(result, .duplicate)
+    }
+
+    func testAddCustomTagRejectsDuplicateAcrossLocalizedPresetTags() {
+        let state = DesktopAppState()
+        state.groupTags.customTagsBySourceId["alpha"] = [
+            GroupTagPreference(title: "Development", accentRawValue: DesktopAccentColor.pink.rawValue, tagId: "development")
+        ]
+        let controller = makeController(state: state)
+
+        let result = controller.addCustomTag("开发", accent: nil, toSourceId: "alpha", locale: Locale(identifier: "zh-Hans"))
 
         XCTAssertEqual(result, .duplicate)
     }
@@ -116,7 +190,7 @@ final class GroupTagControllerTests: XCTestCase {
             sourceCanonicalRepo: { sourceId in sourceId == "alpha" ? "anthropics/skills" : nil }
         )
 
-        let result = controller.removeCustomTag("custom:general", fromSourceId: "alpha", locale: Locale(identifier: "en"))
+        let result = controller.removeCustomTag("preset:general", fromSourceId: "alpha", locale: Locale(identifier: "en"))
 
         XCTAssertEqual(result, .removed)
         XCTAssertEqual(state.groupTags.customTagsBySourceId["alpha"], [])

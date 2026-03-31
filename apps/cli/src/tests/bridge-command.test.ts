@@ -179,6 +179,34 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.ok).toBe(true);
   });
 
+  test("apply bridge response includes fresh summary and inspect payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "apply",
+      payload: {
+        sourceId: added.data.manifest.id,
+        draft: {
+          selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
+          enabledTargets: ["codex"],
+        },
+      },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("summary");
+    expect(response.data).toHaveProperty("inspect");
+  });
+
   test("accepts valid search-import-groups payload", async () => {
     vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({
       provider: "github",

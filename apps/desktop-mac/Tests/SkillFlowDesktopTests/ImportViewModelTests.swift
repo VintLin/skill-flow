@@ -256,14 +256,6 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertEqual(card.stats.githubURL, "https://github.com/anthropics/skills")
     }
 
-    func testCardNoLongerBuildsSourceFacts() {
-        let loading = makeItem(enrichPhase: .loading)
-        XCTAssertEqual(ImportViewModel.card(from: loading, locale: locale).sourceFacts, [])
-
-        let failed = makeItem(enrichPhase: .failed(.plain("Enrich failed")))
-        XCTAssertEqual(ImportViewModel.card(from: failed, locale: locale).sourceFacts, [])
-    }
-
     func testCardLoadingStateOnlyShowsSkillLoadingUntilPreviewDataArrives() {
         let loading = makeItem(previewPhase: .loading, skills: [], targets: [])
         let loadingCard = ImportViewModel.card(from: loading, locale: locale)

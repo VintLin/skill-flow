@@ -62,7 +62,6 @@ struct ImportViewModel: Equatable {
         let aliases: [String]
         let summary: String
         let subtitle: String
-        let sourceFacts: [String]
         let stats: Stats
         let skillsLoading: Bool
         let targetsLoading: Bool
@@ -80,7 +79,6 @@ struct ImportViewModel: Equatable {
             aliases: [String],
             summary: String,
             subtitle: String,
-            sourceFacts: [String],
             stats: Stats,
             skillsLoading: Bool,
             targetsLoading: Bool,
@@ -97,7 +95,6 @@ struct ImportViewModel: Equatable {
             self.aliases = aliases
             self.summary = summary
             self.subtitle = subtitle
-            self.sourceFacts = sourceFacts
             self.stats = stats
             self.skillsLoading = skillsLoading
             self.targetsLoading = targetsLoading
@@ -147,7 +144,6 @@ struct ImportViewModel: Equatable {
             aliases: item.aliases,
             summary: summary(for: item, locale: locale),
             subtitle: subtitle(for: item.locator, locale: locale),
-            sourceFacts: [],
             stats: stats(for: item),
             skillsLoading: shouldShowSkillLoadingState(for: item),
             targetsLoading: false,
@@ -188,7 +184,6 @@ struct ImportViewModel: Equatable {
                 aliases: baseCard.aliases,
                 summary: baseCard.summary,
                 subtitle: baseCard.subtitle,
-                sourceFacts: baseCard.sourceFacts,
                 stats: baseCard.stats,
                 skillsLoading: baseCard.skillsLoading,
                 targetsLoading: baseCard.targetsLoading,

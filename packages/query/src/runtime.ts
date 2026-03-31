@@ -105,6 +105,18 @@ type SkillFlowAddOptions = AddSourceOptions &
   };
 
 type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: boolean };
+type ApplyDraftResult = {
+  actions: DeploymentAction[];
+  draft: DraftBinding;
+  summary?: WorkflowSummary;
+  inspect?: {
+    summary: WorkflowSummary;
+    source: Manifest["sources"][number];
+    binding: SourceBinding;
+    leafs: LeafRecord[];
+    deployments: LockFile["deployments"];
+  };
+};
 type GroupCardEnrichmentSnapshot = {
   sourceMetadata?: SourceMetadataResult;
   sourceSnapshot?: UnifiedSourceSnapshot;
@@ -126,6 +138,12 @@ type AuditEvent = {
   warnings: Array<{ code: string; message: string }>;
   errors: Array<{ code: string; message: string }>;
 };
+type AuditedMutationResult<T> =
+  | Result<T>
+  | {
+      result: Result<T>;
+      auditDetails?: Record<string, unknown>;
+    };
 
 export class SkillFlowApp {
   private static readonly importGroupResolveConcurrency = 3;
@@ -311,7 +329,7 @@ export class SkillFlowApp {
   }
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
-    const { manifest, lockFile } = await this.store.readState();
+    const { manifest, lockFile } = await this.readStateConsistently();
     const normalizedQuery = this.normalizeSearchQuery(query);
     const warnings: Warning[] = [];
     const localKeys = new Set<string>();
@@ -453,7 +471,7 @@ export class SkillFlowApp {
       deployments: LockFile["deployments"];
     }>
   > {
-    return this.inspectSourceImpl(sourceId);
+    return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId));
   }
 
   async inspectSourceEnrichment(
@@ -512,7 +530,7 @@ export class SkillFlowApp {
       sourceSnapshot?: UnifiedSourceSnapshot;
     }>
   > {
-    const localInspect = await this.inspectSourceImpl(sourceId);
+    const localInspect = await this.inspectSource(sourceId);
     if (!localInspect.ok) {
       return fail(localInspect.errors, localInspect.warnings);
     }
@@ -533,7 +551,7 @@ export class SkillFlowApp {
   }
 
   private async listRecommendedImportGroupsImpl(): Promise<Result<{ groups: ImportGroupCandidate[] }>> {
-    const { manifest } = await this.store.readState();
+    const manifest = await this.readManifestConsistently();
     const installedRepos = this.installedCanonicalRepos(manifest);
     const recommendedRepos = await this.resolveRecommendedImportRepos();
     const importCache = await this.store.readImportDataCache();
@@ -561,7 +579,7 @@ export class SkillFlowApp {
         return ok({ groups: recommended.data.groups, exact: false }, recommended.warnings);
       }
 
-      const { manifest } = await this.store.readState();
+      const manifest = await this.readManifestConsistently();
       const installedRepos = this.installedCanonicalRepos(manifest);
       const importCache = await this.store.readImportDataCache();
       const exactRepo = normalizeImportCanonicalRepo(normalizedQuery);
@@ -1559,7 +1577,7 @@ export class SkillFlowApp {
     // config TUI state flow:
     //   draft -> previewDraft() -> plan only
     //   draft -> applyDraft()   -> plan + filesystem + manifest/lock writes
-    const { manifest, lockFile } = await this.store.readState();
+    const { manifest, lockFile } = await this.readStateConsistently();
     this.normalizeBindings(manifest, lockFile);
     const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
     const plan = await this.planForAffectedSources(
@@ -1580,7 +1598,7 @@ export class SkillFlowApp {
   async applyDraft(
     sourceId: string,
     draft: DraftBinding,
-  ): Promise<Result<{ actions: DeploymentAction[]; draft: DraftBinding }>> {
+  ): Promise<Result<ApplyDraftResult>> {
     return this.runAuditedMutation(
       "apply-draft",
       {
@@ -1588,14 +1606,36 @@ export class SkillFlowApp {
         selectedLeafIds: draft.selectedLeafIds,
         enabledTargets: draft.enabledTargets,
       },
-      () => this.applyDraftImpl(sourceId, draft),
+      () => this.applyDraftAuditedImpl(sourceId, draft),
     );
+  }
+
+  private async applyDraftAuditedImpl(
+    sourceId: string,
+    draft: DraftBinding,
+  ): Promise<AuditedMutationResult<ApplyDraftResult>> {
+    const { manifest, lockFile } = await this.store.readState();
+    const before = await this.captureSourceAuditSnapshot(manifest, lockFile, sourceId);
+    const result = await this.applyDraftImpl(sourceId, draft);
+    const { manifest: nextManifest, lockFile: nextLockFile } = await this.store.readState();
+    const after = await this.captureSourceAuditSnapshot(nextManifest, nextLockFile, sourceId);
+
+    return {
+      result,
+      auditDetails: {
+        stateTransition: {
+          before,
+          after,
+        },
+        actionSummary: this.summarizeDeploymentActions(result.ok ? result.data.actions : []),
+      },
+    };
   }
 
   private async applyDraftImpl(
     sourceId: string,
     draft: DraftBinding,
-  ): Promise<Result<{ actions: DeploymentAction[]; draft: DraftBinding }>> {
+  ): Promise<Result<ApplyDraftResult>> {
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     await this.ensureProjectionLedger(manifest, lockFile);
@@ -1632,16 +1672,41 @@ export class SkillFlowApp {
       [sourceId],
       removedImportedTargets,
     );
+    const detachedWarnings = await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
+    await this.store.writeState(prepared.manifest, lockFile);
 
+    const freshState = await this.buildApplyDraftFreshState(sourceId);
     return ok(
-      { actions: plan.data.actions, draft: prepared.draft },
+      {
+        actions: plan.data.actions,
+        draft: prepared.draft,
+        ...(freshState.summary ? { summary: freshState.summary } : {}),
+        ...(freshState.inspect ? { inspect: freshState.inspect } : {}),
+      },
       [
         ...prepared.warnings,
         ...plan.warnings,
         ...applyResult.warnings,
         ...importedCleanupWarnings,
+        ...detachedWarnings,
+        ...orphanWarnings,
       ],
     );
+  }
+
+  private async buildApplyDraftFreshState(
+    sourceId: string,
+  ): Promise<Pick<ApplyDraftResult, "summary" | "inspect">> {
+    const inspected = await this.inspectSourceImpl(sourceId);
+    if (!inspected.ok) {
+      return {};
+    }
+
+    return {
+      summary: inspected.data.summary,
+      inspect: inspected.data,
+    };
   }
 
   async updateSources(sourceIds?: string[]): Promise<
@@ -1905,6 +1970,11 @@ export class SkillFlowApp {
       );
     }
 
+    const detachedWarnings = await this.cleanupDetachedTargetSymlinksForSources(lockFile, sourceIds);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
+    warnings.push(...detachedWarnings.map((warning) => warning.message));
+    warnings.push(...orphanWarnings.map((warning) => warning.message));
+
     if (warnings.length > 0) {
       return fail(
         {
@@ -2069,6 +2139,70 @@ export class SkillFlowApp {
         warnings.push({
           code: "ORPHAN_TARGET_SYMLINK_REMOVED",
           message: `Removed orphan target symlink ${targetPath} because it points into managed state without a matching projection.`,
+        });
+      }
+    }
+
+    return warnings;
+  }
+
+  private async cleanupDetachedTargetSymlinksForSources(
+    lockFile: LockFile,
+    sourceIds: string[],
+  ): Promise<Warning[]> {
+    const warnings: Warning[] = [];
+    const checkoutRoots = new Map<string, string>();
+    for (const source of lockFile.sources.filter((item) => sourceIds.includes(item.id))) {
+      const resolvedCheckoutPath = await fs.realpath(source.checkoutPath).catch(() =>
+        path.resolve(source.checkoutPath),
+      );
+      checkoutRoots.set(source.id, resolvedCheckoutPath);
+    }
+    if (checkoutRoots.size === 0) {
+      return warnings;
+    }
+
+    for (const adapter of this.adapters) {
+      const detection = await adapter.detect();
+      if (!detection.available || !(await pathExists(detection.rootPath))) {
+        continue;
+      }
+
+      const entries = await fs.readdir(detection.rootPath, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        const targetPath = path.join(detection.rootPath, entry.name);
+        const resolvedTargetPath = path.resolve(targetPath);
+        const realTargetPath = await fs.realpath(targetPath).catch(() => undefined);
+        const linkTarget = realTargetPath
+          ? realTargetPath
+          : await fs.readlink(targetPath)
+              .then((value) => path.resolve(path.dirname(targetPath), value))
+              .catch(() => undefined);
+        if (!linkTarget) {
+          continue;
+        }
+
+        const resolvedLinkTarget = path.resolve(linkTarget);
+        const ownerSourceId = [...checkoutRoots.entries()].find(([, checkoutPath]) =>
+          resolvedLinkTarget === checkoutPath || isPathInside(checkoutPath, resolvedLinkTarget),
+        )?.[0];
+        if (!ownerSourceId) {
+          continue;
+        }
+
+        const matchingProjection = (lockFile.projections ?? []).some(
+          (projection) =>
+            projection.sourceId === ownerSourceId &&
+            path.resolve(projection.targetPath) === resolvedTargetPath,
+        );
+        if (matchingProjection) {
+          continue;
+        }
+
+        await removePath(targetPath);
+        warnings.push({
+          code: "DETACHED_TARGET_SYMLINK_REMOVED",
+          message: `Removed detached target symlink ${targetPath} because it points to source '${ownerSourceId}' without a matching projection.`,
         });
       }
     }
@@ -2426,6 +2560,56 @@ export class SkillFlowApp {
     await this.store.writeState(manifest, lockFile);
   }
 
+  private async readManifestConsistently(): Promise<Manifest> {
+    return this.runSerializedMutation(() => this.store.readManifest());
+  }
+
+  private async readStateConsistently(): Promise<{ manifest: Manifest; lockFile: LockFile }> {
+    return this.runSerializedMutation(() => this.store.readState());
+  }
+
+  private async captureSourceAuditSnapshot(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceId: string,
+  ): Promise<Record<string, unknown>> {
+    const source = manifest.sources.find((item) => item.id === sourceId);
+    const sourceLock = lockFile.sources.find((item) => item.id === sourceId);
+    const binding = manifest.bindings[sourceId];
+    const projections = (lockFile.projections ?? []).filter(
+      (projection) => projection.sourceId === sourceId,
+    );
+
+    return {
+      sourcePresent: Boolean(source),
+      checkoutPath: sourceLock?.checkoutPath,
+      checkoutExists: sourceLock ? await pathExists(sourceLock.checkoutPath) : false,
+      selectedLeafIds: binding?.selectedLeafIds ?? [],
+      enabledTargets: this.getEnabledTargetsForSource(manifest, sourceId),
+      projectionCount: projections.length,
+      projections: await Promise.all(
+        projections.map(async (projection) => ({
+          mode: projection.mode,
+          target: projection.target,
+          leafId: projection.leafId,
+          targetPath: projection.targetPath,
+          targetPathExists: await pathExists(projection.targetPath),
+        })),
+      ),
+    };
+  }
+
+  private summarizeDeploymentActions(actions: DeploymentAction[]): Record<string, unknown> {
+    return {
+      total: actions.length,
+      create: actions.filter((action) => action.kind === "create").length,
+      update: actions.filter((action) => action.kind === "update").length,
+      remove: actions.filter((action) => action.kind === "remove").length,
+      noop: actions.filter((action) => action.kind === "noop").length,
+      blocked: actions.filter((action) => action.kind === "blocked").length,
+    };
+  }
+
   private async runSerializedMutation<T>(task: () => Promise<T>): Promise<T> {
     const run = this.mutationQueue.then(
       () => this.store.withMutationLock(task),
@@ -2438,19 +2622,24 @@ export class SkillFlowApp {
     return run;
   }
 
-  private async runAuditedMutation<T extends Result<unknown>>(
+  private async runAuditedMutation<T>(
     mutation: AuditMutationName,
     details: Record<string, unknown>,
-    task: () => Promise<T>,
-  ): Promise<T> {
+    task: () => Promise<AuditedMutationResult<T>>,
+  ): Promise<Result<T>> {
     try {
-      const result = await this.runSerializedMutation(task);
+      const taskResult = await this.runSerializedMutation(task);
+      const normalized = this.normalizeAuditedMutationResult(taskResult);
+      const result = normalized.result;
       await this.writeAuditEvent({
         timestamp: new Date().toISOString(),
         mutation,
         caller: this.currentAuditCaller(),
         status: result.ok ? "ok" : "error",
-        details,
+        details: {
+          ...details,
+          ...(normalized.auditDetails ?? {}),
+        },
         warnings: result.warnings.map((warning) => ({
           code: warning.code,
           message: warning.message,
@@ -2478,6 +2667,16 @@ export class SkillFlowApp {
       });
       throw error;
     }
+  }
+
+  private normalizeAuditedMutationResult<T>(
+    taskResult: AuditedMutationResult<T>,
+  ): { result: Result<T>; auditDetails?: Record<string, unknown> } {
+    if ("ok" in taskResult) {
+      return { result: taskResult };
+    }
+
+    return taskResult;
   }
 
   private currentAuditCaller(): string {
@@ -2815,6 +3014,10 @@ export class SkillFlowApp {
         message: `Unable to roll back skills group id '${sourceId}' because deployments already exist.`,
       });
     }
+
+    await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]);
+    await this.cleanupOrphanTargetSymlinks(lockFile);
+    await this.store.writeState(manifest, lockFile);
 
     return this.sourceService.removeSource([sourceId]);
   }

@@ -199,6 +199,29 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.saveState(for: "alpha").phase, .saved)
     }
 
+    func testTargetToggleUsesApplyFreshStateWithoutDeferredListRefresh() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let listCountBefore = fixture.loggedRequests().filter { $0.command == "list" }.count
+
+        await model.setTargetEnabled(
+            "cursor",
+            enabled: true,
+            sourceId: "alpha",
+            expectedCurrentEnabled: false
+        )
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        let requests = fixture.loggedRequests()
+        let listCountAfter = requests.filter { $0.command == "list" }.count
+
+        XCTAssertEqual(listCountAfter, listCountBefore)
+        XCTAssertTrue(model.isTargetEnabled("cursor"))
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.enabledTargetLabels.sorted(), ["Claude Code", "Cursor"])
+    }
+
     func testClawhubGroupSelectionIncludesAllClawhubSources() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -1100,6 +1123,52 @@ private struct TestFixture {
       }));
     }
 
+    function buildInspectPayload(state, sourceId) {
+      const source = (state.sources || {})[sourceId] || {};
+      const targetIds = state.availableTargets || [];
+      const bindingsTargets = {};
+      for (const targetId of targetIds) {
+        bindingsTargets[targetId] = {
+          enabled: (source.enabledTargets || []).includes(targetId),
+          leafIds: (source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[targetId]) || []
+        };
+      }
+
+      return {
+        summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
+        source: {
+          id: sourceId,
+          kind: source.kind,
+          displayName: source.displayName,
+          locator: source.locator,
+          addedAt: '2026-03-25T12:00:00Z',
+          selectionMode: 'partial'
+        },
+        binding: {
+          selectedLeafIds: source.selectedLeafIds || [],
+          targets: bindingsTargets
+        },
+        leafs: (source.leafs || []).map((leaf) => ({
+          id: leaf.id,
+          sourceId,
+          title: leaf.name,
+          name: leaf.name,
+          linkName: leaf.linkName,
+          description: leaf.description,
+          relativePath: `${leaf.id}`,
+          absolutePath: path.join(rootPath, 'docs', sourceId, leaf.id),
+          skillFilePath: path.join(rootPath, 'docs', sourceId, leaf.id, 'SKILL.md'),
+          metadataWarnings: leaf.metadataWarnings || []
+        })),
+        deployments: (source.enabledTargets || []).map((target) => ({
+          sourceId,
+          leafId: ((source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[target]) || [])[0] || null,
+          target,
+          status: 'active'
+        }))
+      };
+    }
+
     function responseFor(request, ok, data, warnings, errors) {
       return {
         protocolVersion: '1.0',
@@ -1151,48 +1220,7 @@ private struct TestFixture {
 
       if (request.command === 'inspect') {
         const sourceId = request.payload && request.payload.sourceId;
-        const source = (state.sources || {})[sourceId] || {};
-        const targetIds = state.availableTargets || [];
-        const bindingsTargets = {};
-        for (const targetId of targetIds) {
-          bindingsTargets[targetId] = {
-            enabled: (source.enabledTargets || []).includes(targetId),
-            leafIds: (source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[targetId]) || []
-          };
-        }
-        process.stdout.write(JSON.stringify(responseFor(request, true, {
-          summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
-          source: {
-            id: sourceId,
-            kind: source.kind,
-            displayName: source.displayName,
-            locator: source.locator,
-            addedAt: '2026-03-25T12:00:00Z',
-            selectionMode: 'partial'
-          },
-          binding: {
-            selectedLeafIds: source.selectedLeafIds || [],
-            targets: bindingsTargets
-          },
-          leafs: (source.leafs || []).map((leaf) => ({
-            id: leaf.id,
-            sourceId,
-            title: leaf.name,
-            name: leaf.name,
-            linkName: leaf.linkName,
-            description: leaf.description,
-            relativePath: `${leaf.id}`,
-            absolutePath: path.join(rootPath, 'docs', sourceId, leaf.id),
-            skillFilePath: path.join(rootPath, 'docs', sourceId, leaf.id, 'SKILL.md'),
-            metadataWarnings: leaf.metadataWarnings || []
-          })),
-          deployments: (source.enabledTargets || []).map((target) => ({
-            sourceId,
-            leafId: ((source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[target]) || [])[0] || null,
-            target,
-            status: 'active'
-          }))
-        }, [], [])));
+        process.stdout.write(JSON.stringify(responseFor(request, true, buildInspectPayload(state, sourceId), [], [])));
         return;
       }
 
@@ -1258,9 +1286,19 @@ private struct TestFixture {
 
         state.sources[sourceId].selectedLeafIds = draft.selectedLeafIds || [];
         state.sources[sourceId].enabledTargets = draft.enabledTargets || [];
+        state.sources[sourceId].targetLeafIdsByTarget = Object.fromEntries(
+          (state.availableTargets || []).map((targetId) => [
+            targetId,
+            (draft.enabledTargets || []).includes(targetId)
+              ? (draft.selectedLeafIds || [])
+              : []
+          ])
+        );
         writeState(state);
         process.stdout.write(JSON.stringify(responseFor(request, true, {
-          sourceId
+          sourceId,
+          summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
+          inspect: buildInspectPayload(state, sourceId)
         }, [], [])));
         return;
       }

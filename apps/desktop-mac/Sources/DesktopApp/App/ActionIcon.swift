@@ -8,14 +8,18 @@ enum ActionIcon: String {
     case back
     case close
     case delete
+    case dragHandle = "drag-handle"
     case externalLink
     case `import`
     case more
     case pin
+    case plus
     case search
     case searchSubmitEnter = "search-submit-enter"
     case settings
     case star
+    case tagAdd = "tag-add"
+    case tagDelete = "tag-delete"
     case update
 
     func image(size: CGFloat? = nil, isTemplate: Bool = true) -> NSImage? {

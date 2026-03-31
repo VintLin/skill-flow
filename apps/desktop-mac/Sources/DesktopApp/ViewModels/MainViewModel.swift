@@ -171,8 +171,6 @@ final class MainViewModel {
     struct GroupCardModel: Identifiable {
         let id: String
         let title: String
-        let subtitle: String
-        let metaLine: String
         let byline: String?
         let isPinned: Bool
         let health: String
@@ -183,7 +181,6 @@ final class MainViewModel {
         let stats: GroupCardStats
         let skillsLoading: Bool
         let targetsLoading: Bool
-        let sourceFacts: [String]
         let skills: [GroupCardSkill]
         let targets: [GroupCardTarget]
         let saveState: SaveState
@@ -549,7 +546,6 @@ final class MainViewModel {
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
-    private let deferredDraftSyncDelay: Duration = .milliseconds(250)
     private let recommendationsProvider: () -> [ImportRecommendationEntry]
     private var workingDrafts: [String: DraftState] = [:]
     private var detectedTargets: Set<String> = []
@@ -575,8 +571,7 @@ final class MainViewModel {
     @ObservationIgnored private var importPreviewTasksByGroupId: [String: Task<BridgeResponse, Error>] = [:]
     private var importPreviewTokensByGroupId: [String: UInt64] = [:]
     private var importPreviewTokenSeed: UInt64 = 0
-    @ObservationIgnored private var deferredDraftSyncTask: Task<Void, Never>?
-    private var pendingDraftSyncSourceIds: Set<String> = []
+    @ObservationIgnored private var saveStateResetTasksBySourceId: [String: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -744,8 +739,6 @@ final class MainViewModel {
             return GroupCardModel(
                 id: row.id,
                 title: row.displayName,
-                subtitle: subtitleText(locator: row.locator, kind: row.kind),
-                metaLine: "from \(row.locator.isEmpty ? row.kind : row.locator)",
                 byline: metadata.byline,
                 isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
@@ -756,7 +749,6 @@ final class MainViewModel {
                 stats: metadata.stats,
                 skillsLoading: false,
                 targetsLoading: false,
-                sourceFacts: [],
                 skills: summary.leafs.map { leaf in
                     GroupCardSkill(
                         id: leaf.id,
@@ -1992,6 +1984,10 @@ final class MainViewModel {
         parseSummariesPayload(response.data?.value)
     }
 
+    private func parseSummaryPayload(_ summary: [String: Any]) -> WorkflowSummary? {
+        parseSummariesPayload(["summaries": [summary]]).first
+    }
+
     private func parseSummariesPayload(_ value: Any?) -> [WorkflowSummary] {
         guard
             let data = value as? [String: Any],
@@ -2744,7 +2740,7 @@ final class MainViewModel {
         saveStateBySourceId[sourceId] = SaveState(phase: .saving, detail: nil)
 
         do {
-            _ = try await bridgeClient.apply(
+            let response = try await bridgeClient.apply(
                 sourceId: sourceId,
                 selectedLeafIds: normalizedDraft.selectedLeafIds,
                 enabledTargets: normalizedDraft.enabledTargets
@@ -2752,8 +2748,11 @@ final class MainViewModel {
             await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
             workingDrafts[sourceId] = normalizedDraft
             saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
+            applyPostApplyResponse(response, sourceId: sourceId)
+            scheduleSaveStateReset(for: sourceId)
+            latestWarnings = response.warnings
+            healthStatus = response.warnings.isEmpty ? .healthy : .warnings
             showToast(style: successStyle, text: successMessage)
-            scheduleDeferredDraftSync(for: sourceId)
         } catch {
             let firstReason = firstErrorLine(from: error)
             await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
@@ -2933,33 +2932,50 @@ final class MainViewModel {
         await selectSource(inspectSourceId)
     }
 
-    private func scheduleDeferredDraftSync(for sourceId: String) {
-        pendingDraftSyncSourceIds.insert(sourceId)
-        deferredDraftSyncTask?.cancel()
-        deferredDraftSyncTask = Task { @MainActor in
-            try? await Task.sleep(for: deferredDraftSyncDelay)
-            guard !Task.isCancelled else { return }
+    private func cancelDeferredDraftSync() {
+        // Deferred full-list refresh after apply was removed once apply began
+        // returning fresh summary and inspect payloads directly.
+    }
 
-            let pendingSourceIds = pendingDraftSyncSourceIds
-            pendingDraftSyncSourceIds.removeAll()
-            deferredDraftSyncTask = nil
-            await refreshList()
+    private func applyPostApplyResponse(_ response: BridgeResponse, sourceId: String) {
+        guard let data = response.data?.value as? [String: Any] else {
+            return
+        }
 
-            guard let selectedSourceId,
-                  pendingSourceIds.contains(selectedSourceId),
-                  currentDetailSourceId == selectedSourceId
-            else {
-                return
-            }
+        if let summaryPayload = data["summary"] as? [String: Any],
+           let summary = parseSummaryPayload(summaryPayload) {
+            replaceSummary(summary)
+            saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
+        }
 
-            await selectSource(selectedSourceId)
+        if let inspectPayload = data["inspect"] as? [String: Any] {
+            inspectedPayloadBySourceId[sourceId] = inspectPayload
+            preparedDetailContentBySourceId.removeValue(forKey: sourceId)
+            scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
+            scheduleDetailEnrichmentFetch(sourceId: sourceId)
         }
     }
 
-    private func cancelDeferredDraftSync() {
-        deferredDraftSyncTask?.cancel()
-        deferredDraftSyncTask = nil
-        pendingDraftSyncSourceIds.removeAll()
+    private func replaceSummary(_ summary: WorkflowSummary) {
+        var nextSummaries = allSummaries
+        if let existingIndex = nextSummaries.firstIndex(where: { $0.sourceId == summary.sourceId }) {
+            nextSummaries[existingIndex] = summary
+        } else {
+            nextSummaries.append(summary)
+        }
+        applySummaries(nextSummaries)
+    }
+
+    private func scheduleSaveStateReset(for sourceId: String) {
+        saveStateResetTasksBySourceId[sourceId]?.cancel()
+        saveStateResetTasksBySourceId[sourceId] = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            if saveStateBySourceId[sourceId]?.phase == .saved {
+                saveStateBySourceId[sourceId] = SaveState(phase: .idle, detail: nil)
+            }
+            saveStateResetTasksBySourceId.removeValue(forKey: sourceId)
+        }
     }
 
     private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {

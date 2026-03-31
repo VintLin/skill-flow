@@ -150,6 +150,27 @@ describe.sequential("source lifecycle", () => {
     expect(result.data).not.toHaveProperty("sourceSnapshot");
   });
 
+  test("inspectSource runs under the shared mutation lock", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const lockSpy = vi.spyOn(app.store, "withMutationLock");
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    lockSpy.mockClear();
+
+    const inspected = await app.inspectSource(added.data.manifest.id);
+
+    expect(inspected.ok).toBe(true);
+    expect(lockSpy).toHaveBeenCalledTimes(1);
+  });
+
   test("inspectSource reads managed deployment details from projections when deployments are empty", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
@@ -187,6 +208,60 @@ describe.sequential("source lifecycle", () => {
     expect(result.data.deployments).toHaveLength(1);
     expect(result.data.deployments[0]?.leafId).toBe(leafId);
     expect(result.data.deployments[0]?.target).toBe("claude-code");
+  });
+
+  test("applyDraft returns fresh summary and inspect payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:skills/review`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    expect(applied.data.summary?.source.id).toBe(sourceId);
+    expect(applied.data.summary?.bindings.targets.codex?.enabled).toBe(true);
+    expect(applied.data.inspect?.summary.source.id).toBe(sourceId);
+    expect(applied.data.inspect?.binding.targets.codex?.enabled).toBe(true);
+    expect(applied.data.inspect?.deployments[0]?.target).toBe("codex");
+  });
+
+  test("previewDraft runs under the shared mutation lock", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const lockSpy = vi.spyOn(app.store, "withMutationLock");
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    lockSpy.mockClear();
+
+    const preview = await app.previewDraft(added.data.manifest.id, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
+    });
+
+    expect(preview.ok).toBe(true);
+    expect(lockSpy).toHaveBeenCalledTimes(1);
   });
 
   test("inspectSourceEnrichment returns metadata and snapshot without recomputing local shell", async () => {
@@ -849,10 +924,19 @@ description: |
     expect(lastEvent?.mutation).toBe("apply-draft");
     expect(lastEvent?.caller).toBe("test-harness");
     expect(lastEvent?.status).toBe("ok");
-    expect(lastEvent?.details).toEqual({
+    expect(lastEvent?.details).toMatchObject({
       sourceId: added.data.manifest.id,
       selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
       enabledTargets: ["codex"],
+      stateTransition: {
+        after: {
+          sourcePresent: true,
+          enabledTargets: ["codex"],
+        },
+      },
     });
+    expect(lastEvent?.details).toHaveProperty("actionSummary");
+    expect(lastEvent?.details).toHaveProperty("stateTransition.before");
+    expect(lastEvent?.details).toHaveProperty("stateTransition.after.projections");
   });
 });

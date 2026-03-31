@@ -1,9 +1,13 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.locale) private var locale
     @State private var openDropdown: DropdownKind?
     @State private var draggedAgentTargetId: String?
+    @State private var hoveredAgentHandleTargetId: String?
+    @State private var targetedAgentRowTargetId: String?
+    @State private var isTargetingAgentListEnd = false
     @Bindable var viewModel: SettingsViewModel
 
     var theme: DesktopThemeMode = .light
@@ -346,6 +350,13 @@ struct SettingsView: View {
                         }
                         moveAgentIfNeeded(sourceId: sourceId, destinationIndex: agentRows.count)
                         return true
+                    } isTargeted: { isTargeted in
+                        isTargetingAgentListEnd = isTargeted
+                    }
+                    .overlay(alignment: .top) {
+                        if isTargetingAgentListEnd {
+                            agentInsertIndicator
+                        }
                     }
             }
         }
@@ -408,20 +419,47 @@ struct SettingsView: View {
     private func agentDisplayRow(_ row: SettingsViewModel.AgentDisplayRow) -> some View {
         let contentOpacity = row.isVisible ? 1.0 : 0.45
         let backgroundOpacity = row.isVisible ? 1.0 : 0.55
+        let isHandleHovered = hoveredAgentHandleTargetId == row.targetId
 
         return HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .frame(width: 20)
-                .contentShape(Rectangle())
-                .draggable(row.targetId)
+            actionIcon(.dragHandle, size: 14)
+                .foregroundStyle(isHandleHovered ? AppTheme.brand(for: currentAccent, in: theme) : AppTheme.textMuted(for: theme))
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(
+                            isHandleHovered
+                                ? AppTheme.brand(for: currentAccent, in: theme).opacity(theme == .dark ? 0.22 : 0.14)
+                                : Self.controlBackground(for: .pageBackground, theme: theme).opacity(0.7)
+                        )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(
+                            isHandleHovered
+                                ? AppTheme.brand(for: currentAccent, in: theme).opacity(0.45)
+                                : AppTheme.cardBorder(for: theme),
+                            lineWidth: 0.5
+                        )
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .draggable(row.targetId) {
+                    settingsAgentDragPreview(row: row)
+                }
+                .onHover { isHovering in
+                    hoveredAgentHandleTargetId = isHovering ? row.targetId : (hoveredAgentHandleTargetId == row.targetId ? nil : hoveredAgentHandleTargetId)
+                }
+                .opacity(contentOpacity)
+
+            settingsAgentIcon(targetId: row.targetId, fallbackText: row.shortLabel)
                 .opacity(contentOpacity)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text(row.mountPath)
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
@@ -459,12 +497,96 @@ struct SettingsView: View {
             return true
         } isTargeted: { isTargeted in
             draggedAgentTargetId = isTargeted ? row.targetId : nil
-        }
-        .overlay {
-            if draggedAgentTargetId == row.targetId {
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(AppTheme.brand(for: currentAccent, in: theme), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+            targetedAgentRowTargetId = isTargeted ? row.targetId : (targetedAgentRowTargetId == row.targetId ? nil : targetedAgentRowTargetId)
+            if isTargeted {
+                isTargetingAgentListEnd = false
             }
+        }
+        .overlay(alignment: .top) {
+            if targetedAgentRowTargetId == row.targetId {
+                agentInsertIndicator
+            }
+        }
+    }
+
+    private var agentInsertIndicator: some View {
+        Rectangle()
+            .fill(AppTheme.brand(for: currentAccent, in: theme))
+            .frame(height: 2)
+            .padding(.horizontal, 8)
+    }
+
+    @ViewBuilder
+    private func settingsAgentIcon(targetId: String, fallbackText: String) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8)
+        let foreground = AppTheme.textPrimary(for: theme)
+
+        ZStack {
+            shape
+                .fill(Self.controlBackground(for: .pageBackground, theme: theme))
+
+            if let image = AgentIconLibrary.symbolImage(
+                for: targetId,
+                foreground: NSColor(foreground),
+                cropToVisibleBounds: true
+            ) {
+                Image(nsImage: image)
+                    .renderingMode(.original)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .padding(6)
+            } else {
+                Text(fallbackText)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(foreground)
+            }
+        }
+        .frame(width: 28, height: 28)
+        .clipShape(shape)
+        .overlay {
+            shape
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    private func settingsAgentDragPreview(row: SettingsViewModel.AgentDisplayRow) -> some View {
+        HStack(spacing: 10) {
+            settingsAgentIcon(targetId: row.targetId, fallbackText: row.shortLabel)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+                Text(row.mountPath)
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Self.controlBackground(for: .pageBackground, theme: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    @ViewBuilder
+    private func actionIcon(_ icon: ActionIcon, size: CGFloat) -> some View {
+        if let image = icon.image(size: size) {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+        } else {
+            Color.clear.frame(width: size, height: size)
         }
     }
 

@@ -28,7 +28,6 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertTrue(GroupCardDisplayMode.importSearch.showsSectionTitles)
         XCTAssertFalse(GroupCardDisplayMode.importSearch.supportsCollapsedSkills)
         XCTAssertTrue(GroupCardDisplayMode.importSearch.usesPlainPrimaryActionIcon)
-        XCTAssertFalse(GroupCardDisplayMode.importSearch.showsSourceFacts)
         XCTAssertEqual(GroupCardDisplayMode.importSearch.scale, .home)
 
         XCTAssertTrue(GroupCardDisplayMode.importRecommendation.showsSubtitle)
@@ -36,42 +35,12 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertTrue(GroupCardDisplayMode.importRecommendation.showsSectionTitles)
         XCTAssertFalse(GroupCardDisplayMode.importRecommendation.supportsCollapsedSkills)
         XCTAssertTrue(GroupCardDisplayMode.importRecommendation.usesPlainPrimaryActionIcon)
-        XCTAssertFalse(GroupCardDisplayMode.importRecommendation.showsSourceFacts)
         XCTAssertEqual(GroupCardDisplayMode.importRecommendation.scale, .home)
     }
 
     func testCardDensityProjectsToExpectedGroupCardDisplayMode() {
         XCTAssertEqual(MainView.groupCardDisplayMode(for: .comfortable), .home)
         XCTAssertEqual(MainView.groupCardDisplayMode(for: .compact), .menu)
-    }
-
-    func testImportPrimaryActionIconUsesAccentColor() {
-        let foreground = SharedGroupCard.primaryActionIconForeground(
-            displayMode: .importSearch,
-            theme: .light,
-            accent: .green,
-            isEnabled: true
-        )
-
-        assertColorsEqual(foreground, AppTheme.brand(for: .green, in: .light))
-    }
-
-    func testDisabledImportPrimaryActionUsesMutedForegroundAndNeutralBackground() {
-        let foreground = SharedGroupCard.primaryActionIconForeground(
-            displayMode: .importRecommendation,
-            theme: .light,
-            accent: .green,
-            isEnabled: false
-        )
-        let background = SharedGroupCard.primaryActionIconBackground(
-            displayMode: .importRecommendation,
-            theme: .light,
-            accent: .green,
-            isEnabled: false
-        )
-
-        assertColorsEqual(foreground, AppTheme.textMuted(for: .light))
-        assertColorsEqual(background, AppTheme.documentBlock(for: .light))
     }
 
     func testRecommendationBadgeAccentUsesStablePerTagPalette() {
@@ -140,8 +109,6 @@ final class MenuBarIconTests: XCTestCase {
         let loadingCard = MainViewModel.GroupCardModel(
             id: "import-loading",
             title: "Loading",
-            subtitle: "by @owner",
-            metaLine: "",
             byline: "by @owner",
             isPinned: false,
             health: "DISCOVER",
@@ -152,7 +119,6 @@ final class MenuBarIconTests: XCTestCase {
             stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
             skillsLoading: true,
             targetsLoading: false,
-            sourceFacts: [],
             skills: [],
             targets: [],
             saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
@@ -166,8 +132,6 @@ final class MenuBarIconTests: XCTestCase {
         let localCard = MainViewModel.GroupCardModel(
             id: "local",
             title: "Local Group",
-            subtitle: "by @owner",
-            metaLine: "",
             byline: "by @owner",
             isPinned: false,
             health: "LOCAL",
@@ -178,7 +142,6 @@ final class MenuBarIconTests: XCTestCase {
             stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
             skillsLoading: false,
             targetsLoading: false,
-            sourceFacts: [],
             skills: [],
             targets: [],
             saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
