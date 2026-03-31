@@ -25,4 +25,9 @@ DMG_PATH="$ARTIFACT_DIR/$HOST_ARCH/Skill-Flow-$HOST_ARCH.dmg"
   "$ARTIFACT_DIR/universal/Skill Flow.app" \
   "arm64,x86_64"
 
+"$ROOT_DIR/scripts/release/build-desktop-mac.sh" all "$ARTIFACT_DIR/batch"
+for target_arch in arm64 x86_64 universal; do
+  [[ -f "$ARTIFACT_DIR/batch/$target_arch/Skill-Flow-$target_arch.dmg" ]]
+done
+
 echo "mac packaging test passed"

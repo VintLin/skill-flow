@@ -17,6 +17,7 @@ BUILD_MODE="release"
 BUILD_VERSION=""
 DEV_SUFFIX=""
 VOLNAME="$APP_DISPLAY_NAME"
+SKIP_JS_BUILD=0
 
 usage() {
   cat <<'EOF'
@@ -25,6 +26,7 @@ Usage: package-desktop-mac.sh [options]
 Options:
   --arch <arm64|x86_64|universal>  Build architecture. Default: universal
   --output <dir>                   Output root. Default: dist/desktop-mac
+  --skip-js-build                  Reuse existing CLI/package dist output
   --dev                            Mark artifacts as dev packages
   --help                           Show this help
 EOF
@@ -39,6 +41,10 @@ while [[ $# -gt 0 ]]; do
     --output)
       OUTPUT_DIR="${2:-}"
       shift 2
+      ;;
+    --skip-js-build)
+      SKIP_JS_BUILD=1
+      shift
       ;;
     --dev)
       BUILD_MODE="dev"
@@ -102,7 +108,9 @@ rm -rf "$APP_BUNDLE" "$DMG_PATH" "$HELPER_STAGE" "$DMG_STAGE" "$WORK_DIR"
 mkdir -p "$OUTPUT_ARCH_DIR" "$WORK_DIR"
 
 cd "$ROOT_DIR"
-npm run build
+if [[ "$SKIP_JS_BUILD" -eq 0 ]]; then
+  npm run build
+fi
 
 build_swift_binary() {
   local target_arch="$1"

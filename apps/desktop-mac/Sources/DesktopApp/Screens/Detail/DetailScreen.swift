@@ -238,7 +238,7 @@ struct DetailScreen: View {
                     HStack(spacing: 8) {
                         ForEach(skill.documents) { document in
                             documentTabChip(
-                                title: document.title,
+                                title: Self.localizedDocumentTitle(document, locale: locale),
                                 isSelected: selectedDocument(for: skill)?.id == document.id,
                                 externalURL: document.externalURL
                             ) {
@@ -541,7 +541,7 @@ struct DetailScreen: View {
                 HStack(spacing: 8) {
                     ForEach(detail.groupDocuments) { document in
                         documentTabChip(
-                            title: document.title,
+                            title: Self.localizedDocumentTitle(document, locale: locale),
                             isSelected: selectedGroupDocument(for: detail, groupId: groupId)?.id == document.id,
                             externalURL: document.externalURL
                         ) {
@@ -1228,6 +1228,15 @@ struct DetailScreen: View {
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
         L10n.string(key, locale: locale, arguments: arguments)
+    }
+}
+
+extension DetailScreen {
+    static func localizedDocumentTitle(_ document: DetailViewModel.DocumentTab, locale: Locale) -> String {
+        if document.id == "group:filetree" {
+            return L10n.string("detail.document.file_tree", locale: locale)
+        }
+        return document.title
     }
 }
 

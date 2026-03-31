@@ -255,14 +255,14 @@ scripts/release/package-desktop-mac.sh --arch universal
 Open-source macOS release flow:
 
 ```bash
-scripts/release/package-desktop-mac.sh --arch universal
-scripts/release/package-desktop-mac-zip.sh universal
-scripts/release/generate-sha256.sh universal
+scripts/release/release-github.sh all
 ```
 
 Unsigned macOS install notes:
 
-- Download `Skill-Flow-universal.dmg` from GitHub Releases, copy `Skill Flow.app` to `Applications`, then open it once with Finder's `Open` action if Gatekeeper blocks it.
+- Apple Silicon Macs can use `Skill-Flow-arm64.dmg` or `Skill-Flow-universal.dmg`.
+- Intel Macs can use `Skill-Flow-x86_64.dmg` or `Skill-Flow-universal.dmg`.
+- Copy `Skill Flow.app` to `Applications`, then open it once with Finder's `Open` action if Gatekeeper blocks it.
 - If macOS still marks the app as quarantined, run:
 
 ```bash

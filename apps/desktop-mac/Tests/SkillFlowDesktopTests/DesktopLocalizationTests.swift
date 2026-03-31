@@ -50,6 +50,45 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("detail.updated.unavailable", locale: Locale(identifier: "ja")), "更新時刻を取得できません")
     }
 
+    @MainActor
+    func testDetailScreenLocalizesGroupFileTreeDocumentTitlePerLocale() {
+        let fileTreeDocument = MainViewModel.DocumentTab(
+            id: "group:filetree",
+            title: "File Tree",
+            path: ".",
+            metadata: [],
+            content: "",
+            renderCacheKey: "group:filetree:.",
+            externalURL: nil
+        )
+        let markdownDocument = MainViewModel.DocumentTab(
+            id: "group:README.md",
+            title: "README.md",
+            path: "README.md",
+            metadata: [],
+            content: "",
+            renderCacheKey: "group:README.md",
+            externalURL: nil
+        )
+
+        XCTAssertEqual(
+            DetailScreen.localizedDocumentTitle(fileTreeDocument, locale: Locale(identifier: "en")),
+            "File Tree"
+        )
+        XCTAssertEqual(
+            DetailScreen.localizedDocumentTitle(fileTreeDocument, locale: Locale(identifier: "zh-Hans")),
+            "文件树"
+        )
+        XCTAssertEqual(
+            DetailScreen.localizedDocumentTitle(fileTreeDocument, locale: Locale(identifier: "ja")),
+            "ファイルツリー"
+        )
+        XCTAssertEqual(
+            DetailScreen.localizedDocumentTitle(markdownDocument, locale: Locale(identifier: "zh-Hans")),
+            "README.md"
+        )
+    }
+
     func testBridgeClientErrorsUseSelectedDesktopLanguage() {
         UserDefaults.standard.set(DesktopLanguage.ja.rawValue, forKey: DesktopLanguage.storageKey)
         XCTAssertEqual(

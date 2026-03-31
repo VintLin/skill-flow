@@ -151,6 +151,29 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: localCard, displayMode: .home))
     }
 
+    func testMenuCardsKeepHeaderDividerEvenWithoutMetaLine() {
+        let menuCard = MainViewModel.GroupCardModel(
+            id: "menu",
+            title: "Menu Group",
+            byline: "by @owner",
+            isPinned: false,
+            health: "READY",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+        )
+
+        XCTAssertFalse(GroupCardDisplayMode.menu.showsMetaLine)
+        XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: menuCard, displayMode: .menu))
+    }
+
     func testGroupCardHeaderStatsExcludeSkillCount() {
         let stats = MainViewModel.GroupCardStats(
             skillCount: 9,

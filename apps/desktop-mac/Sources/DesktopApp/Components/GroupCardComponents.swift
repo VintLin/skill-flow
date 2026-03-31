@@ -652,6 +652,8 @@ struct SharedGroupCard: View {
                     },
                     onSelect: onSelectGroupTag
                 )
+            } else if !groupTagItems.isEmpty {
+                readOnlyTagRow
             } else if !recommendationBadgeItems.isEmpty {
                 recommendationBadgeRow
             }
@@ -666,6 +668,22 @@ struct SharedGroupCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var readOnlyTagRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(groupTagItems) { item in
+                    Text("#\(item.title)")
+                        .font(.system(size: scale.chipFontSize, weight: .regular))
+                        .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(AppTheme.brand(for: item.accent, in: theme).opacity(theme == .dark ? 0.22 : 0.14))
+                        .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
+                }
+            }
+        }
     }
 
     private var recommendationBadgeRow: some View {
@@ -1086,10 +1104,7 @@ extension SharedGroupCard {
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
-        guard displayMode != .menu else {
-            return false
-        }
-        return displayMode.showsMetaLine
+        displayMode.showsMetaLine || displayMode == .menu
     }
 
     static func recommendationBadgeAccent(tagId: String) -> DesktopAccentColor {
