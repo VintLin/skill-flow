@@ -208,6 +208,7 @@ struct SharedGroupCard: View {
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let displayMode: GroupCardDisplayMode
+    let clickPolicy: DesktopCardClickPolicy
     let skillsCollapsed: Bool
     let isUpdating: Bool
     let onOpen: (() -> Void)?
@@ -246,6 +247,7 @@ struct SharedGroupCard: View {
         theme: DesktopThemeMode,
         accent: DesktopAccentColor,
         displayMode: GroupCardDisplayMode,
+        clickPolicy: DesktopCardClickPolicy,
         skillsCollapsed: Bool,
         isUpdating: Bool,
         onOpen: (() -> Void)?,
@@ -274,6 +276,7 @@ struct SharedGroupCard: View {
         self.theme = theme
         self.accent = accent
         self.displayMode = displayMode
+        self.clickPolicy = clickPolicy
         self.skillsCollapsed = skillsCollapsed
         self.isUpdating = isUpdating
         self.onOpen = onOpen
@@ -361,7 +364,20 @@ struct SharedGroupCard: View {
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
         }
         .animation(.easeInOut(duration: 0.18), value: skillsCollapsed)
+        .desktopMotionCard(
+            theme: theme,
+            accent: accent,
+            isEnabled: clickPolicy.allowsWholeCardTap && onOpen != nil && !isBusy
+        )
         .allowsHitTesting(!isBusy)
+        .contentShape(RoundedRectangle(cornerRadius: scale.cornerRadius))
+        .gesture(
+            TapGesture().onEnded {
+                guard clickPolicy.allowsWholeCardTap, !isBusy else { return }
+                onOpen?()
+            },
+            including: clickPolicy.allowsWholeCardTap ? .gesture : .none
+        )
         .onReceive(NotificationCenter.default.publisher(for: .groupTagEditorRequested)) { notification in
             guard let sourceId = notification.userInfo?["sourceId"] as? String, sourceId != card.id else {
                 return

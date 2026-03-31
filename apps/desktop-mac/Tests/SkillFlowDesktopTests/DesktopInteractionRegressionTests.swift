@@ -12,6 +12,14 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains(".desktopMotionButton("))
     }
 
+    func testHomeUsesWholeCardTapButImportAndMenuDoNot() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+        let card = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(home.contains("clickPolicy: .home"))
+        XCTAssertTrue(card.contains(".desktopMotionCard("))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

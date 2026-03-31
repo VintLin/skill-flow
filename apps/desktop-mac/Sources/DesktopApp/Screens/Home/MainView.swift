@@ -539,6 +539,7 @@ struct MainView: View {
                                 theme: theme,
                                 accent: accent,
                                 displayMode: homeCardDisplayMode,
+                                clickPolicy: .home,
                                 skillsCollapsed: false,
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {

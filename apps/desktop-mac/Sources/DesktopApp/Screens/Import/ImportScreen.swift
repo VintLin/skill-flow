@@ -152,6 +152,7 @@ struct ImportScreen: View {
             theme: theme,
             accent: accent,
             displayMode: displayMode,
+            clickPolicy: .importSearch,
             skillsCollapsed: false,
             isUpdating: importingGroupId == card.id,
             onOpen: nil,

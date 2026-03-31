@@ -31,6 +31,10 @@ enum DesktopCardClickPolicy {
     static func allowsWholeCardTap(for policy: DesktopCardClickPolicy) -> Bool {
         policy == .home
     }
+
+    var allowsWholeCardTap: Bool {
+        Self.allowsWholeCardTap(for: self)
+    }
 }
 
 struct DesktopRowHoverModifier: ViewModifier {
@@ -111,5 +115,64 @@ extension View {
                 isActive: isActive
             )
         )
+    }
+
+    func desktopMotionCard(
+        theme: DesktopThemeMode,
+        accent: DesktopAccentColor,
+        isEnabled: Bool
+    ) -> some View {
+        modifier(
+            DesktopMotionCardModifier(
+                theme: theme,
+                accent: accent,
+                isEnabled: isEnabled
+            )
+        )
+    }
+}
+
+private struct DesktopMotionCardModifier: ViewModifier {
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let isEnabled: Bool
+
+    @State private var isHovered = false
+    @GestureState private var isPressed = false
+
+    private var scale: CGFloat {
+        guard isEnabled else { return 1 }
+        return isPressed ? DesktopMotionTokens.chipPressScale : 1
+    }
+
+    private var overlayOpacity: Double {
+        guard isEnabled else { return 0 }
+        return isHovered ? DesktopMotionTokens.rowHoverOpacityDelta : 0
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(scale)
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(AppTheme.brand(for: accent, in: theme))
+                    .opacity(overlayOpacity)
+            }
+            .animation(.easeOut(duration: DesktopMotionTokens.hoverDuration), value: isHovered)
+            .animation(.easeInOut(duration: DesktopMotionTokens.pressDuration), value: isPressed)
+            .onHover { hovering in
+                guard isEnabled else {
+                    isHovered = false
+                    return
+                }
+                isHovered = hovering
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressed) { _, state, _ in
+                        guard isEnabled else { return }
+                        state = true
+                    }
+            )
     }
 }

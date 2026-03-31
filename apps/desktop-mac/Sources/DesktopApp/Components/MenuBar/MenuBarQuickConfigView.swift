@@ -46,6 +46,7 @@ struct MenuBarQuickConfigView: View {
                             theme: theme,
                             accent: accent,
                             displayMode: cardDisplayMode,
+                            clickPolicy: .menu,
                             skillsCollapsed: menuUsesCompactDensity && hoveredGroupId != card.id,
                             isUpdating: viewModel.isUpdatingSource(card.id),
                             onOpen: nil,
