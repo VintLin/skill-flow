@@ -1,0 +1,270 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+export type ProjectObservation = {
+  tool: "claude-code" | "codex" | "gemini-cli" | "opencode";
+  projectId: string;
+  title: string;
+  observedAt: string;
+};
+
+export type CodexSessionLike = {
+  session_meta?: {
+    payload?: {
+      cwd?: string;
+      git?: { repository_url?: string };
+    };
+  };
+  observedAt?: string;
+};
+
+function basenameMaybe(inputPath: string | undefined): string | null {
+  if (!inputPath) {
+    return null;
+  }
+  const base = path.basename(inputPath);
+  return base || null;
+}
+
+function toIsoString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+}
+
+function repositoryUrlToProjectId(repositoryUrl: string): string | null {
+  // Accept common Git URL forms and extract the first 2 path segments.
+  let rawPath: string | null = null;
+
+  if (/^https?:\/\//i.test(repositoryUrl)) {
+    try {
+      const url = new URL(repositoryUrl);
+      rawPath = url.pathname;
+    } catch {
+      rawPath = null;
+    }
+  } else {
+    const scpLike = repositoryUrl.match(/^[^@]+@[^:]+:(.+)$/);
+    if (scpLike) {
+      rawPath = `/${scpLike[1]}`;
+    }
+  }
+
+  if (!rawPath) {
+    return null;
+  }
+
+  const cleaned = rawPath.replace(/\.git$/i, "").replace(/^\/+/, "");
+  const parts = cleaned.split("/").filter(Boolean);
+  if (parts.length < 2) {
+    return null;
+  }
+  return `${parts[0]}/${parts[1]}`;
+}
+
+export function collectProjectObservationsFromCodexSessions(
+  codexSessions: CodexSessionLike[],
+): ProjectObservation[] {
+  return codexSessions
+    .map((session) => {
+      const payload = session.session_meta?.payload;
+      const repositoryUrl = payload?.git?.repository_url;
+      const observedAt =
+        toIsoString(session.observedAt) ?? new Date(0).toISOString();
+
+      const projectId =
+        (repositoryUrl ? repositoryUrlToProjectId(repositoryUrl) : null) ??
+        basenameMaybe(payload?.cwd);
+
+      if (!projectId) {
+        return null;
+      }
+
+      const title = projectId.includes("/")
+        ? projectId.split("/").at(-1) ?? projectId
+        : projectId;
+
+      return {
+        tool: "codex",
+        projectId,
+        title,
+        observedAt,
+      } satisfies ProjectObservation;
+    })
+    .filter((observation): observation is ProjectObservation => observation !== null);
+}
+
+async function readDirSafe(dirPath: string): Promise<string[]> {
+  try {
+    return await fs.readdir(dirPath);
+  } catch {
+    return [];
+  }
+}
+
+async function readFileSafe(filePath: string): Promise<string | null> {
+  try {
+    return await fs.readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+async function statMtimeIso(filePath: string): Promise<string | null> {
+  try {
+    const stat = await fs.stat(filePath);
+    return stat.mtime.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+async function collectCodexObservations(homeDir: string): Promise<ProjectObservation[]> {
+  const sessionsDir = path.join(homeDir, ".codex", "archived_sessions");
+  const entries = await readDirSafe(sessionsDir);
+  const jsonlFiles = entries.filter((entry) => entry.endsWith(".jsonl"));
+
+  const sessions: CodexSessionLike[] = [];
+  for (const fileName of jsonlFiles) {
+    const filePath = path.join(sessionsDir, fileName);
+    const content = await readFileSafe(filePath);
+    if (!content) {
+      continue;
+    }
+
+    let payload: CodexSessionLike["session_meta"]["payload"] | undefined;
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed) as { type?: string; payload?: unknown };
+        if (parsed?.type === "session_meta" && parsed.payload && typeof parsed.payload === "object") {
+          payload = parsed.payload as CodexSessionLike["session_meta"]["payload"];
+          break;
+        }
+      } catch {
+        // Ignore malformed lines.
+      }
+    }
+
+    if (!payload) {
+      continue;
+    }
+
+    sessions.push({
+      session_meta: { payload },
+      observedAt: (await statMtimeIso(filePath)) ?? undefined,
+    });
+  }
+
+  return collectProjectObservationsFromCodexSessions(sessions);
+}
+
+type ClaudeLogLine = {
+  timestamp?: string;
+  cwd?: string;
+  git?: { repository_url?: string };
+};
+
+async function collectClaudeObservations(homeDir: string): Promise<ProjectObservation[]> {
+  const projectsRoot = path.join(homeDir, ".claude", "projects");
+  const projectDirs = await readDirSafe(projectsRoot);
+
+  const observations: ProjectObservation[] = [];
+  for (const projectDir of projectDirs) {
+    const sessionsDir = path.join(projectsRoot, projectDir);
+    const sessionFiles = (await readDirSafe(sessionsDir)).filter((f) => f.endsWith(".jsonl"));
+
+    for (const fileName of sessionFiles) {
+      const filePath = path.join(sessionsDir, fileName);
+      const content = await readFileSafe(filePath);
+      if (!content) continue;
+
+      let lastTimestamp: string | null = null;
+      let lastCwd: string | null = null;
+      let lastRepoUrl: string | null = null;
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed) as ClaudeLogLine;
+          const ts = toIsoString(parsed.timestamp);
+          if (ts) lastTimestamp = ts;
+          if (typeof parsed.cwd === "string") lastCwd = parsed.cwd;
+          const repoUrl = parsed.git?.repository_url;
+          if (typeof repoUrl === "string") lastRepoUrl = repoUrl;
+        } catch {
+          // Ignore malformed lines.
+        }
+      }
+
+      const observedAt =
+        lastTimestamp ?? (await statMtimeIso(filePath)) ?? new Date(0).toISOString();
+
+      const projectId =
+        (lastRepoUrl ? repositoryUrlToProjectId(lastRepoUrl) : null) ??
+        basenameMaybe(lastCwd);
+      if (!projectId) continue;
+
+      const title = projectId.includes("/")
+        ? projectId.split("/").at(-1) ?? projectId
+        : projectId;
+
+      observations.push({
+        tool: "claude-code",
+        projectId,
+        title,
+        observedAt,
+      });
+    }
+  }
+
+  return observations;
+}
+
+async function collectGeminiObservations(homeDir: string): Promise<ProjectObservation[]> {
+  const historyRoot = path.join(homeDir, ".gemini", "history");
+  const entries = await readDirSafe(historyRoot);
+
+  const observations: ProjectObservation[] = [];
+  for (const entry of entries) {
+    const projectRootFile = path.join(historyRoot, entry, ".project_root");
+    const content = await readFileSafe(projectRootFile);
+    if (!content) continue;
+
+    const projectRoot = content.trim();
+    const projectId = basenameMaybe(projectRoot);
+    if (!projectId) continue;
+
+    observations.push({
+      tool: "gemini-cli",
+      projectId,
+      title: projectId,
+      observedAt: (await statMtimeIso(projectRootFile)) ?? new Date(0).toISOString(),
+    });
+  }
+
+  return observations;
+}
+
+async function collectOpencodeObservations(_homeDir: string): Promise<ProjectObservation[]> {
+  return [];
+}
+
+export async function collectProjectObservations(
+  homeDir = os.homedir(),
+): Promise<ProjectObservation[]> {
+  return [
+    ...(await collectClaudeObservations(homeDir)),
+    ...(await collectCodexObservations(homeDir)),
+    ...(await collectGeminiObservations(homeDir)),
+    ...(await collectOpencodeObservations(homeDir)),
+  ];
+}
+
