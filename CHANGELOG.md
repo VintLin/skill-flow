@@ -2,6 +2,24 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.2.0 - 2026-03-31
+
+### Changed
+
+- Bumped the CLI and all internal workspace packages from `1.1.0` to `1.2.0`.
+- Expanded the macOS release helpers so one release flow can produce Apple Silicon, Intel, and universal installers.
+- Reduced redundant packaging work by reusing a single workspace JS build across batch desktop packaging.
+
+### Release Artifacts
+
+- Built and validated macOS desktop release artifacts for `arm64`, `x86_64`, and `universal`.
+- Generated release `.dmg`, `.zip`, and `sha256.txt` files for all three desktop targets under `dist/desktop-mac/`.
+
+### Verification
+
+- `npm run build`
+- `scripts/release/release-github.sh all`
+
 ## v1.1.0 - 2026-03-29
 
 ### Added

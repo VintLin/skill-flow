@@ -70,9 +70,8 @@ scripts/release/package-desktop-mac.sh --arch universal
 GitHub Releases helpers:
 
 ```bash
-scripts/release/release-github.sh
-scripts/release/package-desktop-mac-zip.sh universal
-scripts/release/generate-sha256.sh universal
+scripts/release/release-github.sh all
+scripts/release/publish-github-release.sh
 ```
 
 Validation script:
@@ -95,18 +94,24 @@ Packaging writes per architecture:
 
 - `dist/desktop-mac/arm64/Skill Flow.app`
 - `dist/desktop-mac/arm64/Skill-Flow-arm64.dmg`
+- `dist/desktop-mac/arm64/Skill-Flow-arm64.zip`
+- `dist/desktop-mac/arm64/sha256.txt`
 - `dist/desktop-mac/x86_64/Skill Flow.app`
 - `dist/desktop-mac/x86_64/Skill-Flow-x86_64.dmg`
+- `dist/desktop-mac/x86_64/Skill-Flow-x86_64.zip`
+- `dist/desktop-mac/x86_64/sha256.txt`
 - `dist/desktop-mac/universal/Skill Flow.app`
 - `dist/desktop-mac/universal/Skill-Flow-universal.dmg`
 - `dist/desktop-mac/universal/Skill-Flow-universal.zip`
 - `dist/desktop-mac/universal/sha256.txt`
+- `dist/desktop-mac/sha256.txt` when packaging with `all`
 
 ## Notes
 
 - Shared packaging keeps the internal executable name `SkillFlowDesktop` and only changes the external app bundle name to `Skill Flow`.
 - `universal` packaging builds `arm64` and `x86_64` binaries separately and merges them with `lipo`.
-- For unsigned GitHub releases, upload the universal `.dmg`, `.zip`, and `sha256.txt` together.
+- `release-github.sh all` builds Apple Silicon, Intel, and universal installers in one pass and reuses a single JS build across all three packages.
+- `publish-github-release.sh` uploads all three architecture variants plus one merged `sha256.txt` to the GitHub release tagged with the current CLI version.
 - Debug helper override is for development only.
 - Mutation work is serialized to avoid apply/update/uninstall races.
 - Unsigned packages still expect `node` to exist in `PATH` on the target machine.
