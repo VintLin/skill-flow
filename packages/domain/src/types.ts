@@ -89,9 +89,25 @@ export type Manifest = {
   bindings: Record<string, SourceBinding>;
 };
 
+export type ProjectScope =
+  | { kind: "global" }
+  | { kind: "project"; projectId: string };
+
+export type RecentProject = {
+  projectId: string;
+  title: string;
+  lastActivityAt: string;
+  tools?: string[];
+};
+
+export type ScopedSourceDrafts = Record<string, Record<string, DraftBinding>>;
+
 export type SharedPreferences = {
   schemaVersion: 1;
   pinnedSourceIds: string[];
+  selectedProjectScope: ProjectScope;
+  recentProjects: RecentProject[];
+  projectDrafts: ScopedSourceDrafts;
 };
 
 export type InvalidLeafRecord = {
