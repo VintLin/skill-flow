@@ -439,7 +439,7 @@ export class SkillFlowApp {
   }
 
   async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[]; pinnedSourceIds: string[] }>> {
-    return this.listWorkflowsImpl();
+    return this.runSerializedMutation(() => this.listWorkflowsImpl());
   }
 
   async inspectSource(

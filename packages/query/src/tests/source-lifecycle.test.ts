@@ -92,6 +92,27 @@ describe.sequential("source lifecycle", () => {
     ]);
   });
 
+  test("listWorkflows runs under the shared mutation lock", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const lockSpy = vi.spyOn(app.store, "withMutationLock");
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    lockSpy.mockClear();
+
+    const listed = await app.listWorkflows();
+
+    expect(listed.ok).toBe(true);
+    expect(lockSpy).toHaveBeenCalledTimes(1);
+  });
+
   test("inspectSource still returns local detail state when reconcileInventory fails", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
@@ -240,6 +261,44 @@ describe.sequential("source lifecycle", () => {
     } finally {
       process.env.SKILL_FLOW_TARGET_CODEX = originalCodexTarget;
     }
+  });
+
+  test("listWorkflows preserves bootstrap import metadata after reconcile", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "gstack-bootstrap-preserve");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("gstack", "Workflow toolkit."),
+    });
+    const app = new SkillFlowApp();
+    const observedTargets = [
+      {
+        target: "codex" as const,
+        rootPath: process.env.SKILL_FLOW_TARGET_CODEX!,
+        targetPath: path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack-bootstrap-preserve"),
+      },
+    ];
+
+    const added = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      observedTargets,
+      importMode: "bootstrap-detected",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+
+    const lock = await app.store.readLock();
+    const sourceLock = lock.sources.find((source) => source.id === added.data.manifest.id);
+
+    expect(sourceLock?.importMode).toBe("bootstrap-detected");
+    expect(sourceLock?.observedTargets).toEqual(observedTargets);
   });
 
   test("rejects add path when it does not resolve to a valid skill", async () => {

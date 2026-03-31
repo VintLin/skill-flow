@@ -247,7 +247,9 @@ export class SourceService {
         );
 
         lockFile.sources = lockFile.sources.map((item) =>
-          item.id === sourceId ? snapshot.data.lock : item,
+          item.id === sourceId
+            ? this.mergePersistentLockMetadata(item, snapshot.data.lock)
+            : item,
         );
         lockFile.leafInventory = [
           ...lockFile.leafInventory.filter((leaf) => leaf.sourceId !== sourceId),
@@ -383,7 +385,9 @@ export class SourceService {
       }
 
       lockFile.sources = lockFile.sources.map((item) =>
-        item.id === sourceId ? snapshot.data.lock : item,
+        item.id === sourceId
+          ? this.mergePersistentLockMetadata(currentLock, snapshot.data.lock)
+          : item,
       );
       lockFile.leafInventory = [
         ...lockFile.leafInventory.filter((leaf) => leaf.sourceId !== sourceId),
@@ -619,6 +623,19 @@ export class SourceService {
 
     const normalized = requestedPath.replace(/^\.\/+/, "").replace(/\/+$/, "");
     return normalized.length > 0 ? normalized : undefined;
+  }
+
+  private mergePersistentLockMetadata(
+    currentLock: SourceLockRecord,
+    nextLock: SourceLockRecord,
+  ): SourceLockRecord {
+    return {
+      ...nextLock,
+      ...(currentLock.originBranch ? { originBranch: currentLock.originBranch } : {}),
+      ...(currentLock.importMode ? { importMode: currentLock.importMode } : {}),
+      ...(currentLock.observedTargets ? { observedTargets: currentLock.observedTargets } : {}),
+      ...(currentLock.importedFromTargets ? { importedFromTargets: currentLock.importedFromTargets } : {}),
+    };
   }
 
   private isWithinRequestedPath(relativePath: string, requestedPath?: string): boolean {
