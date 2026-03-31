@@ -940,6 +940,7 @@ struct MainView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(kind: .icon, theme: theme, accent: accent, isEnabled: true)
         .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
         .contentShape(Rectangle())
         .background(AppTheme.headerControlFill(for: theme))

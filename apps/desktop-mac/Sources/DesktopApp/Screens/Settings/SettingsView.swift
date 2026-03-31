@@ -579,6 +579,7 @@ struct SettingsView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(kind: .primary, theme: theme, accent: currentAccent, isEnabled: true)
     }
 
     @ViewBuilder
@@ -621,6 +622,13 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(
+            kind: .primary,
+            theme: theme,
+            accent: currentAccent,
+            isEnabled: true,
+            isActive: openDropdown == kind
+        )
         .overlay(alignment: .topTrailing) {
             if openDropdown == kind {
                 VStack(alignment: .leading, spacing: 4) {
@@ -655,6 +663,13 @@ struct SettingsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .desktopMotionButton(
+                            kind: .subtle,
+                            theme: theme,
+                            accent: currentAccent,
+                            isEnabled: true,
+                            isActive: option.id == selectedId
+                        )
                     }
                 }
                 .padding(6)
