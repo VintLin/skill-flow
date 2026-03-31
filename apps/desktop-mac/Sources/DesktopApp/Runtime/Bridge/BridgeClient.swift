@@ -74,8 +74,14 @@ final class BridgeClient: @unchecked Sendable {
         try await send(command: .list)
     }
 
-    func inspect(sourceId: String) async throws -> BridgeResponse {
-        try await send(command: .inspect, payload: ["sourceId": AnyCodable(sourceId)])
+    func inspect(sourceId: String, scope: ProjectScopeSelection = .global) async throws -> BridgeResponse {
+        try await send(
+            command: .inspect,
+            payload: [
+                "sourceId": AnyCodable(sourceId),
+                "scope": AnyCodable(scope.bridgePayload),
+            ]
+        )
     }
 
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
@@ -145,12 +151,13 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
-    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+    func apply(sourceId: String, scope: ProjectScopeSelection = .global, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(
                 command: .apply,
                 payload: [
                     "sourceId": AnyCodable(sourceId),
+                    "scope": AnyCodable(scope.bridgePayload),
                     "draft": AnyCodable([
                         "selectedLeafIds": selectedLeafIds,
                         "enabledTargets": enabledTargets,

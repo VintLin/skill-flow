@@ -46,6 +46,48 @@ struct BridgeResponse: Codable, Sendable {
     let errors: [BridgeIssue]
 }
 
+enum ProjectScopeSelection: Equatable, Codable, Sendable {
+    case global
+    case project(String)
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case projectId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try container.decode(String.self, forKey: .kind)
+
+        switch kind {
+        case "project":
+            self = .project(try container.decode(String.self, forKey: .projectId))
+        default:
+            self = .global
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .global:
+            try container.encode("global", forKey: .kind)
+        case .project(let projectId):
+            try container.encode("project", forKey: .kind)
+            try container.encode(projectId, forKey: .projectId)
+        }
+    }
+
+    var bridgePayload: [String: Any] {
+        switch self {
+        case .global:
+            return ["kind": "global"]
+        case .project(let projectId):
+            return ["kind": "project", "projectId": projectId]
+        }
+    }
+}
+
 struct AnyCodable: Codable, @unchecked Sendable {
     let value: Any
 

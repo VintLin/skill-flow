@@ -142,7 +142,7 @@ private struct StubCommandFacade: DesktopCommanding {
     func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse { fatalError("unused") }
     func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
+    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
     func doctor() async throws -> BridgeResponse { fatalError("unused") }
 }
 
@@ -161,7 +161,7 @@ private final class StubQueryFacade: DesktopQuerying {
     }
 
     func list() async throws -> BridgeResponse { fatalError("unused") }
-    func inspect(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
+    func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse { fatalError("unused") }
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
     func searchImportGroups(query: String?) async throws -> BridgeResponse { fatalError("unused") }
     func previewImportSource(locator: String) async throws -> BridgeResponse { fatalError("unused") }

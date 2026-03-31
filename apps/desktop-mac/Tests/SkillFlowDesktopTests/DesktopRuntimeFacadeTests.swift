@@ -9,12 +9,12 @@ final class DesktopRuntimeFacadeTests: XCTestCase {
         let facade = DesktopBridgeQueryFacade(bridgeClient: bridge)
 
         _ = try await facade.bootstrap()
-        _ = try await facade.inspect(sourceId: "alpha")
+        _ = try await facade.inspect(sourceId: "alpha", scope: .project("repo-a"))
         _ = try await facade.inspectEnrichment(sourceId: "alpha")
 
         XCTAssertEqual(bridge.recordedCommands, [
             "bootstrap",
-            "inspect:alpha",
+            "inspect:alpha:project(repo-a)",
             "inspect-enrichment:alpha",
         ])
     }
@@ -25,10 +25,12 @@ final class DesktopRuntimeFacadeTests: XCTestCase {
 
         _ = try await facade.togglePinnedSource(sourceId: "alpha")
         _ = try await facade.updateSources(["alpha"])
+        _ = try await facade.apply(sourceId: "alpha", scope: .project("repo-a"), selectedLeafIds: ["alpha:a"], enabledTargets: ["codex"])
 
         XCTAssertEqual(bridge.recordedCommands, [
             "toggle-pin:alpha",
             "update:[\"alpha\"]",
+            "apply:alpha:project(repo-a)",
         ])
     }
 }
@@ -46,8 +48,8 @@ private final class StubBridgeTransport: DesktopBridgeTransporting, @unchecked S
         return .success(command: .list)
     }
 
-    func inspect(sourceId: String) async throws -> BridgeResponse {
-        recordedCommands.append("inspect:\(sourceId)")
+    func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
+        recordedCommands.append("inspect:\(sourceId):\(describe(scope))")
         return .success(command: .inspect)
     }
 
@@ -86,14 +88,23 @@ private final class StubBridgeTransport: DesktopBridgeTransporting, @unchecked S
         return .success(command: .uninstall)
     }
 
-    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        recordedCommands.append("apply:\(sourceId)")
+    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        recordedCommands.append("apply:\(sourceId):\(describe(scope))")
         return .success(command: .apply)
     }
 
     func doctor() async throws -> BridgeResponse {
         recordedCommands.append("doctor")
         return .success(command: .doctor)
+    }
+}
+
+private func describe(_ scope: ProjectScopeSelection) -> String {
+    switch scope {
+    case .global:
+        return "global"
+    case .project(let projectId):
+        return "project(\(projectId))"
     }
 }
 

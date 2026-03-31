@@ -5,11 +5,14 @@ import XCTest
 
 final class BridgeClientExecutionTests: XCTestCase {
     private var fixture: SlowBridgeFixture?
+    private var recordingFixture: RecordingBridgeFixture?
     private var savedNodeOverride: String?
 
     override func tearDownWithError() throws {
         try fixture?.tearDown()
         fixture = nil
+        try recordingFixture?.tearDown()
+        recordingFixture = nil
         if let savedNodeOverride {
             setenv("SKILL_FLOW_DESKTOP_NODE_OVERRIDE", savedNodeOverride, 1)
         } else {
@@ -78,6 +81,39 @@ final class BridgeClientExecutionTests: XCTestCase {
             "`npx` is required for ClawHub imports. Install Node.js/npm, then retry. README: https://github.com/VintLin/skill-flow#desktop-prerequisites"
         )
     }
+
+    func testApplyEncodesProjectScopePayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.apply(
+            sourceId: "alpha",
+            scope: .project("repo-a"),
+            selectedLeafIds: ["alpha:a"],
+            enabledTargets: ["codex"]
+        )
+
+        let payload = try fixture.lastPayload()
+        let scope = try XCTUnwrap(payload["scope"] as? [String: Any])
+        XCTAssertEqual(scope["kind"] as? String, "project")
+        XCTAssertEqual(scope["projectId"] as? String, "repo-a")
+    }
+
+    func testInspectEncodesProjectScopePayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.inspect(sourceId: "alpha", scope: .project("repo-a"))
+
+        let payload = try fixture.lastPayload()
+        let scope = try XCTUnwrap(payload["scope"] as? [String: Any])
+        XCTAssertEqual(scope["kind"] as? String, "project")
+        XCTAssertEqual(scope["projectId"] as? String, "repo-a")
+    }
 }
 
 private final class SlowBridgeFixture {
@@ -136,6 +172,75 @@ private final class SlowBridgeFixture {
             };
             process.stdout.write(JSON.stringify(response));
           }, \(delayMilliseconds));
+        });
+        """
+    }
+}
+
+private final class RecordingBridgeFixture {
+    private let rootURL: URL
+    private let payloadURL: URL
+    private let savedHelperOverride: String?
+
+    private init(rootURL: URL, payloadURL: URL, savedHelperOverride: String?) {
+        self.rootURL = rootURL
+        self.payloadURL = payloadURL
+        self.savedHelperOverride = savedHelperOverride
+    }
+
+    static func install() throws -> RecordingBridgeFixture {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("skillflow-desktop-bridge-payload-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        let payloadURL = rootURL.appendingPathComponent("payload.json")
+        let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
+        try recordingHelperScript(payloadPath: payloadURL.path).write(to: helperURL, atomically: true, encoding: .utf8)
+
+        let savedHelperOverride = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_HELPER_OVERRIDE"]
+        setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
+
+        return RecordingBridgeFixture(rootURL: rootURL, payloadURL: payloadURL, savedHelperOverride: savedHelperOverride)
+    }
+
+    func lastPayload() throws -> [String: Any] {
+        let data = try Data(contentsOf: payloadURL)
+        let object = try JSONSerialization.jsonObject(with: data)
+        let root = try XCTUnwrap(object as? [String: Any])
+        return try XCTUnwrap(root["payload"] as? [String: Any])
+    }
+
+    func tearDown() throws {
+        if let savedHelperOverride {
+            setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", savedHelperOverride, 1)
+        } else {
+            unsetenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE")
+        }
+
+        if FileManager.default.fileExists(atPath: rootURL.path) {
+            try FileManager.default.removeItem(at: rootURL)
+        }
+    }
+
+    private static func recordingHelperScript(payloadPath: String) -> String {
+        """
+        const fs = require("node:fs");
+        const input = [];
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", chunk => input.push(chunk));
+        process.stdin.on("end", () => {
+          const request = JSON.parse(input.join("") || "{}");
+          fs.writeFileSync(\(String(reflecting: payloadPath)), JSON.stringify(request), "utf8");
+          const response = {
+            protocolVersion: "1.0",
+            requestId: request.requestId ?? null,
+            command: request.command ?? "list",
+            ok: true,
+            data: { command: request.command ?? "list" },
+            warnings: [],
+            errors: []
+          };
+          process.stdout.write(JSON.stringify(response));
         });
         """
     }

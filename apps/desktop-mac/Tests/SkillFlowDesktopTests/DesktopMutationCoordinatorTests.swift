@@ -53,7 +53,7 @@ private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked
         fatalError("unused")
     }
 
-    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         fatalError("unused")
     }
 
