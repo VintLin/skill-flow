@@ -46,7 +46,7 @@ struct BridgeResponse: Codable, Sendable {
     let errors: [BridgeIssue]
 }
 
-enum ProjectScopeSelection: Equatable, Codable, Sendable {
+enum ProjectScopeSelection: Hashable, Codable, Sendable {
     case global
     case project(String)
 

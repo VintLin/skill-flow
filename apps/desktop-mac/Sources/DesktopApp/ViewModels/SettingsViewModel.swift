@@ -32,6 +32,8 @@ final class SettingsViewModel {
     nonisolated static let themeAccentKey = "desktop.themeAccent"
     nonisolated static let homeCardDensityKey = "desktop.homeCardDensity"
     nonisolated static let menuCardDensityKey = "desktop.menuCardDensity"
+    nonisolated static let selectedProjectScopeKey = "desktop.selectedProjectScope"
+    nonisolated static let recentProjectScopesKey = "desktop.recentProjectScopes"
     nonisolated static let agentDisplayPreferencesKey = "desktop.agentDisplayPreferences"
 
     private let state: DesktopAppState
