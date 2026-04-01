@@ -39,8 +39,8 @@ final class DetailViewModel {
         let sourceFacts: [String]
         let deploymentFacts: [String]
         let fileTree: [FileTreeItem]
-        let groupDocuments: [DocumentTab]
-        let groupDocumentDescriptors: [DocumentDescriptor]
+        let groupDocuments: [DocumentDescriptor]
+        let groupDocumentTabsByID: [String: DocumentTab]
         let targets: [DetailTarget]
         let skills: [DetailSkill]
     }
@@ -71,8 +71,8 @@ final class DetailViewModel {
     let sourceFacts: [String]
     let deploymentFacts: [String]
     let fileTree: [MainViewModel.FileTreeItem]
-    let groupDocuments: [MainViewModel.DocumentTab]
-    let groupDocumentDescriptors: [MainViewModel.DocumentDescriptor]
+    let groupDocuments: [MainViewModel.DocumentDescriptor]
+    private let groupDocumentTabsByID: [String: MainViewModel.DocumentTab]
     let targets: [MainViewModel.DetailTarget]
     let skills: [MainViewModel.DetailSkill]
 
@@ -104,16 +104,19 @@ final class DetailViewModel {
         deploymentFacts = snapshot.deploymentFacts
         fileTree = snapshot.fileTree
         groupDocuments = snapshot.groupDocuments
-        groupDocumentDescriptors = snapshot.groupDocumentDescriptors
+        groupDocumentTabsByID = snapshot.groupDocumentTabsByID
         targets = snapshot.targets
         skills = snapshot.skills
+    }
+
+    func resolvedGroupDocument(id: String) -> MainViewModel.DocumentTab? {
+        groupDocumentTabsByID[id]
     }
 }
 
 extension DetailViewModel.Snapshot {
     init(
         sourceId: String,
-        revision: String,
         title: String,
         subtitle: String,
         author: String,
@@ -139,80 +142,11 @@ extension DetailViewModel.Snapshot {
         sourceFacts: [String],
         deploymentFacts: [String],
         fileTree: [MainViewModel.FileTreeItem],
-        groupDocuments: [MainViewModel.DocumentTab],
-        groupDocumentDescriptors: [MainViewModel.DocumentDescriptor]? = nil,
+        groupDocuments: [MainViewModel.DocumentDescriptor],
+        groupDocumentTabsByID: [String: MainViewModel.DocumentTab] = [:],
         targets: [MainViewModel.DetailTarget],
         skills: [MainViewModel.DetailSkill]
     ) {
-        let descriptors = groupDocumentDescriptors ?? MainViewModel.documentDescriptors(groupDocuments)
-        self.init(
-            sourceId: sourceId,
-            revision: revision,
-            title: title,
-            subtitle: subtitle,
-            author: author,
-            originLabel: originLabel,
-            starCount: starCount,
-            groupStats: groupStats,
-            sourceDetailLines: sourceDetailLines,
-            sourceRepositoryURL: sourceRepositoryURL,
-            locator: locator,
-            groupPath: groupPath,
-            updatedAt: updatedAt,
-            updatedRelative: updatedRelative,
-            health: health,
-            warningCount: warningCount,
-            errorCount: errorCount,
-            enabledSkillCount: enabledSkillCount,
-            totalSkillCount: totalSkillCount,
-            enabledTargetCount: enabledTargetCount,
-            saveState: saveState,
-            skillSelection: skillSelection,
-            targetSelection: targetSelection,
-            enabledTargetLabels: enabledTargetLabels,
-            sourceFacts: sourceFacts,
-            deploymentFacts: deploymentFacts,
-            fileTree: fileTree,
-            groupDocuments: groupDocuments,
-            groupDocumentDescriptors: descriptors,
-            targets: targets,
-            skills: skills
-        )
-    }
-
-    init(
-        sourceId: String,
-        title: String,
-        subtitle: String,
-        author: String,
-        originLabel: String,
-        starCount: Int?,
-        groupStats: MainViewModel.GroupCardStats,
-        sourceDetailLines: [String],
-        sourceRepositoryURL: String?,
-        locator: String,
-        groupPath: String?,
-        updatedAt: String,
-        updatedRelative: String,
-        health: String,
-        warningCount: Int,
-        errorCount: Int,
-        enabledSkillCount: Int,
-        totalSkillCount: Int,
-        enabledTargetCount: Int,
-        saveState: MainViewModel.SaveState,
-        skillSelection: SelectionState,
-        targetSelection: SelectionState,
-        enabledTargetLabels: [String],
-        sourceFacts: [String],
-        deploymentFacts: [String],
-        fileTree: [MainViewModel.FileTreeItem],
-        groupDocuments: [MainViewModel.DocumentTab],
-        groupDocumentDescriptors: [MainViewModel.DocumentDescriptor]? = nil,
-        targets: [MainViewModel.DetailTarget],
-        skills: [MainViewModel.DetailSkill]
-    ) {
-        let descriptors = groupDocumentDescriptors ?? MainViewModel.documentDescriptors(groupDocuments)
         self.init(
             sourceId: sourceId,
             revision: Self.buildRevision(
@@ -241,7 +175,7 @@ extension DetailViewModel.Snapshot {
                 sourceFacts: sourceFacts,
                 deploymentFacts: deploymentFacts,
                 fileTree: fileTree,
-                groupDocumentDescriptors: descriptors,
+                groupDocuments: groupDocuments,
                 targets: targets,
                 skills: skills
             ),
@@ -271,7 +205,7 @@ extension DetailViewModel.Snapshot {
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
             groupDocuments: groupDocuments,
-            groupDocumentDescriptors: descriptors,
+            groupDocumentTabsByID: groupDocumentTabsByID,
             targets: targets,
             skills: skills
         )
@@ -306,8 +240,8 @@ extension DetailViewModel.Snapshot {
             sourceFacts: detail.sourceFacts,
             deploymentFacts: detail.deploymentFacts,
             fileTree: detail.fileTree,
-            groupDocuments: detail.groupDocuments,
-            groupDocumentDescriptors: MainViewModel.documentDescriptors(detail.groupDocuments),
+            groupDocuments: MainViewModel.documentDescriptors(detail.groupDocuments),
+            groupDocumentTabsByID: Dictionary(uniqueKeysWithValues: detail.groupDocuments.map { ($0.id, $0) }),
             targets: detail.targets,
             skills: detail.skills
         )
@@ -339,7 +273,7 @@ extension DetailViewModel.Snapshot {
         sourceFacts: [String],
         deploymentFacts: [String],
         fileTree: [MainViewModel.FileTreeItem],
-        groupDocumentDescriptors: [MainViewModel.DocumentDescriptor],
+        groupDocuments: [MainViewModel.DocumentDescriptor],
         targets: [MainViewModel.DetailTarget],
         skills: [MainViewModel.DetailSkill]
     ) -> String {

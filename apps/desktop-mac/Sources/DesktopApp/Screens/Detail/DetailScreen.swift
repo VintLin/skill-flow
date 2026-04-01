@@ -637,7 +637,7 @@ struct DetailScreen: View {
                     ForEach(detail.groupDocuments) { document in
                         documentTabChip(
                             title: Self.localizedDocumentTitle(document, locale: locale),
-                            isSelected: selectedGroupDocument(for: detail, groupId: groupId)?.id == document.id,
+                            isSelected: selectedGroupDocumentDescriptor(for: detail, groupId: groupId)?.id == document.id,
                             externalURL: document.externalURL
                         ) {
                             scheduleGroupDocumentSelection(groupId: groupId, documentId: document.id)
@@ -650,12 +650,16 @@ struct DetailScreen: View {
                 detailContentCard {
                     detailDocumentLoadingPlaceholder()
                 }
-            } else if let selectedDocument = selectedGroupDocument(for: detail, groupId: groupId) {
+            } else if let selectedDocument = selectedGroupDocumentDescriptor(for: detail, groupId: groupId) {
                 if selectedDocument.id == detail.groupDocuments.first?.id {
                     detailFileTreeCard(groupId: groupId, detail: detail)
+                } else if let resolvedDocument = detail.resolvedGroupDocument(id: selectedDocument.id) {
+                    detailContentCard {
+                        detailDocumentContent(document: resolvedDocument)
+                    }
                 } else {
                     detailContentCard {
-                        detailDocumentContent(document: selectedDocument)
+                        detailDocumentLoadingPlaceholder()
                     }
                 }
             }
@@ -911,10 +915,10 @@ struct DetailScreen: View {
         return skill.documents.first(where: { $0.id == selectedId }) ?? skill.documents.first
     }
 
-    private func selectedGroupDocument(
+    private func selectedGroupDocumentDescriptor(
         for detail: DetailViewModel,
         groupId: String
-    ) -> DetailViewModel.DocumentTab? {
+    ) -> DetailViewModel.DocumentDescriptor? {
         let selectedId = screenState.pendingDetailDocumentIdByGroup[groupId]
             ?? screenState.detailDocumentTabIdByGroup[groupId]
             ?? detail.groupDocuments.first?.id
@@ -1337,6 +1341,13 @@ struct DetailScreen: View {
 }
 
 extension DetailScreen {
+    static func localizedDocumentTitle(_ document: DetailViewModel.DocumentDescriptor, locale: Locale) -> String {
+        if document.id == "group:filetree" {
+            return L10n.string("detail.document.file_tree", locale: locale)
+        }
+        return document.title
+    }
+
     static func localizedDocumentTitle(_ document: DetailViewModel.DocumentTab, locale: Locale) -> String {
         if document.id == "group:filetree" {
             return L10n.string("detail.document.file_tree", locale: locale)

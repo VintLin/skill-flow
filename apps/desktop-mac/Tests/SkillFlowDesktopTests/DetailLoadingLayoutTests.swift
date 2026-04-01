@@ -116,7 +116,7 @@ final class DetailLoadingLayoutTests: XCTestCase {
             deploymentFacts: [],
             fileTree: [],
             groupDocuments: [
-                .init(id: "readme", title: "README.md", path: "README.md", metadata: [], content: "# Readme", renderCacheKey: "readme", externalURL: nil)
+                .init(id: "readme", title: "README.md", path: "README.md", metadata: [], renderCacheKey: "readme", externalURL: nil)
             ],
             targets: [],
             skills: [

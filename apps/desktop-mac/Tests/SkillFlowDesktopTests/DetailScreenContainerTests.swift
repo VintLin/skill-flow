@@ -54,19 +54,6 @@ final class DetailScreenContainerTests: XCTestCase {
                 )
             ],
             groupDocuments: [
-                MainViewModel.DocumentTab(
-                    id: "readme",
-                    title: "README.md",
-                    path: "README.md",
-                    metadata: [
-                        MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
-                    ],
-                    content: "Hello",
-                    renderCacheKey: "readme-cache",
-                    externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
-                )
-            ],
-            groupDocumentDescriptors: [
                 MainViewModel.DocumentDescriptor(
                     id: "readme",
                     title: "README.md",
@@ -74,6 +61,19 @@ final class DetailScreenContainerTests: XCTestCase {
                     metadata: [
                         MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
                     ],
+                    renderCacheKey: "readme-cache",
+                    externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
+                )
+            ],
+            groupDocumentTabsByID: [
+                "readme": MainViewModel.DocumentTab(
+                    id: "readme",
+                    title: "README.md",
+                    path: "README.md",
+                    metadata: [
+                        MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
+                    ],
+                    content: "Hello",
                     renderCacheKey: "readme-cache",
                     externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
                 )
@@ -160,7 +160,7 @@ final class DetailScreenContainerTests: XCTestCase {
                 sourceId: "alpha",
                 revision: "alpha:rev-1",
                 title: title,
-                groupDocumentDescriptors: groupDocuments
+                groupDocuments: groupDocuments
             )
         }
 
@@ -336,8 +336,8 @@ private extension DetailViewModel.Snapshot {
         sourceId: String = "alpha",
         revision: String,
         title: String = "AlphaHub",
-        groupDocuments: [MainViewModel.DocumentTab] = [],
-        groupDocumentDescriptors: [MainViewModel.DocumentDescriptor]? = nil,
+        groupDocuments: [MainViewModel.DocumentDescriptor] = [],
+        groupDocumentTabsByID: [String: MainViewModel.DocumentTab] = [:],
         targets: [MainViewModel.DetailTarget] = [
             MainViewModel.DetailTarget(
                 id: "claude-code",
@@ -382,7 +382,7 @@ private extension DetailViewModel.Snapshot {
             deploymentFacts: [],
             fileTree: [],
             groupDocuments: groupDocuments,
-            groupDocumentDescriptors: groupDocumentDescriptors,
+            groupDocumentTabsByID: groupDocumentTabsByID,
             targets: targets,
             skills: []
         )

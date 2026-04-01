@@ -64,6 +64,19 @@ final class DetailViewModelTests: XCTestCase {
                 )
             ],
             groupDocuments: [
+                MainViewModel.DocumentDescriptor(
+                    id: "readme",
+                    title: "README.md",
+                    path: "README.md",
+                    metadata: [
+                        MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
+                    ],
+                    renderCacheKey: "readme-cache",
+                    externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
+                )
+            ],
+            groupDocumentTabsByID: [
+                "readme":
                 MainViewModel.DocumentTab(
                     id: "readme",
                     title: "README.md",
@@ -138,6 +151,7 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.groupDocuments.count, snapshot.groupDocuments.count)
         XCTAssertEqual(viewModel.groupDocuments.first?.title, snapshot.groupDocuments.first?.title)
         XCTAssertEqual(viewModel.groupDocuments.first?.metadata.first?.key, snapshot.groupDocuments.first?.metadata.first?.key)
+        XCTAssertEqual(viewModel.resolvedGroupDocument(id: "readme")?.content, "Hello")
         XCTAssertEqual(viewModel.targets.count, snapshot.targets.count)
         XCTAssertEqual(viewModel.targets.first?.label, snapshot.targets.first?.label)
         XCTAssertEqual(viewModel.targets.first?.shortLabel, snapshot.targets.first?.shortLabel)
@@ -147,7 +161,7 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.skills.first?.documents.first?.externalURL, snapshot.skills.first?.documents.first?.externalURL)
     }
 
-    func testSnapshotPreservesFullGroupDocumentsWhenDescriptorsAreProvidedSeparately() {
+    func testSnapshotPreservesDescriptorsAndResolvedGroupDocumentsSeparately() {
         let document = MainViewModel.DocumentTab(
             id: "readme",
             title: "README.md",
@@ -200,13 +214,13 @@ final class DetailViewModelTests: XCTestCase {
             sourceFacts: [],
             deploymentFacts: [],
             fileTree: [],
-            groupDocuments: [document],
-            groupDocumentDescriptors: [descriptor],
+            groupDocuments: [descriptor],
+            groupDocumentTabsByID: ["readme": document],
             targets: [],
             skills: []
         )
 
-        XCTAssertEqual(snapshot.groupDocuments.first?.content, "Hello")
-        XCTAssertEqual(snapshot.groupDocumentDescriptors.first?.renderCacheKey, "descriptor-cache")
+        XCTAssertEqual(snapshot.groupDocuments.first?.renderCacheKey, "descriptor-cache")
+        XCTAssertEqual(snapshot.groupDocumentTabsByID["readme"]?.content, "Hello")
     }
 }

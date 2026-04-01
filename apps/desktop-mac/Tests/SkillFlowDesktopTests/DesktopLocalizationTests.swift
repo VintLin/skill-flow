@@ -52,21 +52,19 @@ final class DesktopLocalizationTests: XCTestCase {
 
     @MainActor
     func testDetailScreenLocalizesGroupFileTreeDocumentTitlePerLocale() {
-        let fileTreeDocument = MainViewModel.DocumentTab(
+        let fileTreeDocument = MainViewModel.DocumentDescriptor(
             id: "group:filetree",
             title: "File Tree",
             path: ".",
             metadata: [],
-            content: "",
             renderCacheKey: "group:filetree:.",
             externalURL: nil
         )
-        let markdownDocument = MainViewModel.DocumentTab(
+        let markdownDocument = MainViewModel.DocumentDescriptor(
             id: "group:README.md",
             title: "README.md",
             path: "README.md",
             metadata: [],
-            content: "",
             renderCacheKey: "group:README.md",
             externalURL: nil
         )
