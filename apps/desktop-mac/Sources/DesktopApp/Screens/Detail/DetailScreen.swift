@@ -1155,6 +1155,10 @@ struct DetailScreen: View {
     }
 
     private func scheduleSkillDocumentSelection(skillId: String, documentId: String) {
+        let currentId = screenState.detailDocumentTabIdBySkill[skillId]
+        if currentId == documentId, screenState.pendingDetailDocumentIdBySkill[skillId] == nil {
+            return
+        }
         screenState.pendingDetailDocumentIdBySkill[skillId] = documentId
         let token = nextSelectionToken(screenState.detailDocumentSelectionTokenBySkill[skillId])
         screenState.detailDocumentSelectionTokenBySkill[skillId] = token
@@ -1168,6 +1172,10 @@ struct DetailScreen: View {
     }
 
     private func scheduleGroupDocumentSelection(groupId: String, documentId: String) {
+        let currentId = screenState.detailDocumentTabIdByGroup[groupId]
+        if currentId == documentId, screenState.pendingDetailDocumentIdByGroup[groupId] == nil {
+            return
+        }
         screenState.pendingDetailDocumentIdByGroup[groupId] = documentId
         let token = nextSelectionToken(screenState.detailDocumentSelectionTokenByGroup[groupId])
         screenState.detailDocumentSelectionTokenByGroup[groupId] = token

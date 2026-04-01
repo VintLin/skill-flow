@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 final class DetailDocumentStore {
-    struct LoadedDocument: Equatable {
+    struct LoadedDocument: Equatable, Sendable {
         let id: String
         let metadata: [MainViewModel.MetadataEntry]
         let content: String
@@ -16,12 +16,7 @@ final class DetailDocumentStore {
     private var loadCountsByPath: [String: Int] = [:]
     private let fileReader: FileReader
 
-    init(fileReader: @escaping FileReader = { path in
-        if let content = try? String(contentsOfFile: path, encoding: .utf8) {
-            return content
-        }
-        return MainViewModel.localizedWarmup("detail.document.skill_unavailable")
-    }) {
+    init(fileReader: @escaping FileReader = DetailDocumentStore.defaultFileReader) {
         self.fileReader = fileReader
     }
 
@@ -33,7 +28,7 @@ final class DetailDocumentStore {
             return try await task.value
         }
 
-        let task = Task { [fileReader] in
+        let task = Task.detached { [fileReader, descriptor] in
             let raw = try fileReader(descriptor.path)
             let parsed = MainViewModel.parseDetailDocument(raw)
             return LoadedDocument(
@@ -59,5 +54,17 @@ final class DetailDocumentStore {
 
     func debugLoadCount(for path: String) -> Int {
         loadCountsByPath[path, default: 0]
+    }
+
+    nonisolated private static func defaultFileReader(path: String) throws -> String {
+        do {
+            return try String(contentsOfFile: path, encoding: .utf8)
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoSuchFileError {
+                return MainViewModel.localizedWarmup("detail.document.skill_unavailable")
+            }
+            throw error
+        }
     }
 }
