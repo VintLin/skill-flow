@@ -610,6 +610,39 @@ final class MainViewModelSelectionTests: XCTestCase {
         try await fixture.waitForDetailHydration(model, sourceId: "alpha", timeoutNanoseconds: 3_000_000_000)
     }
 
+    func testDetailWarmupIgnoresStalePreparedContentAfterNewerInspectPayloadArrives() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.locator = "https://github.com/acme/alpha-old"
+        try fixture.reset(state: state)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.detailWarmupDelay = .milliseconds(200)
+        await model.bootstrap()
+        await model.selectSource("alpha")
+
+        var nextState = state
+        nextState.sources["alpha"]?.locator = "https://github.com/acme/alpha-new"
+        try fixture.reset(state: nextState)
+        await model.selectSource("alpha")
+
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            if let document = model.detailSnapshot(for: "alpha")?
+                .groupDocuments
+                .first(where: { $0.title == "README.md" }),
+               document.externalURL?.contains("/acme/alpha-new/") == true {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        let document = model.detailSnapshot(for: "alpha")?
+            .groupDocuments
+            .first(where: { $0.title == "README.md" })
+        XCTAssertTrue(document?.externalURL?.contains("/acme/alpha-new/") == true)
+    }
+
     private func heavySkillDocument(name: String) -> String {
         let repeatedSection = String(repeating: """
         ## Notes

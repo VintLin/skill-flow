@@ -599,6 +599,8 @@ final class MainViewModel {
     private var detailEnrichmentTokensBySourceId: [String: UInt64] = [:]
     private var detailEnrichmentTokenSeed: UInt64 = 0
     @ObservationIgnored private var detailWarmupTasksBySourceId: [String: Task<Void, Never>] = [:]
+    private var detailWarmupTokensBySourceId: [String: UInt64] = [:]
+    private var detailWarmupTokenSeed: UInt64 = 0
     @ObservationIgnored private var importSearchTasksByQuery: [String: Task<BridgeResponse, Error>] = [:]
     private var importSearchTokensByQuery: [String: UInt64] = [:]
     private var importSearchTokenSeed: UInt64 = 0
@@ -640,6 +642,7 @@ final class MainViewModel {
     var deploymentFilterTarget: String = "All"
     var deploymentFilterKind: String = "All"
     var pinnedSourceIds: [String]
+    @ObservationIgnored var detailWarmupDelay: Duration = .milliseconds(40)
 
     init(
         bridgeClient: BridgeClient,
@@ -1243,7 +1246,7 @@ final class MainViewModel {
             let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
                 inspectedPayloadBySourceId[sourceId] = payload
-                preparedDetailContentBySourceId.removeValue(forKey: sourceId)
+                invalidatePreparedDetailContent(for: sourceId)
                 scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
                 scheduleDetailEnrichmentFetch(sourceId: sourceId)
             }
@@ -1904,7 +1907,8 @@ final class MainViewModel {
             workingDrafts.removeValue(forKey: sourceId)
             inspectedPayloadBySourceId.removeValue(forKey: sourceId)
             detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
-            preparedDetailContentBySourceId.removeValue(forKey: sourceId)
+            invalidatePreparedDetailContent(for: sourceId)
+            detailWarmupTokensBySourceId.removeValue(forKey: sourceId)
             cancelDeferredDraftSync()
             await synchronizeState(refreshDoctor: true)
 
@@ -2673,9 +2677,20 @@ final class MainViewModel {
             return
         }
         let input = buildPreparedDetailWarmupInput(sourceId: sourceId, summary: summary, payload: payload)
+        let token: UInt64
+        if let currentToken = detailWarmupTokensBySourceId[sourceId] {
+            token = currentToken
+        } else {
+            detailWarmupTokenSeed &+= 1
+            token = detailWarmupTokenSeed
+            detailWarmupTokensBySourceId[sourceId] = token
+        }
 
-        let task = Task { [weak self, sourceId, input] in
-            try? await Task.sleep(for: .milliseconds(40))
+        var task: Task<Void, Never>?
+        task = Task { [weak self, sourceId, input] in
+            guard let self else { return }
+            let delay = await MainActor.run { self.detailWarmupDelay }
+            try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
 
             let prepared = await Task.detached {
@@ -2683,12 +2698,27 @@ final class MainViewModel {
             }.value
 
             await MainActor.run {
-                guard let self, !Task.isCancelled else { return }
+                guard self.detailWarmupTasksBySourceId[sourceId] == task else { return }
+                defer {
+                    self.detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
+                }
+                guard !Task.isCancelled,
+                      self.detailWarmupTokensBySourceId[sourceId] == token
+                else {
+                    return
+                }
                 self.preparedDetailContentBySourceId[sourceId] = prepared
-                self.detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
             }
         }
         detailWarmupTasksBySourceId[sourceId] = task
+    }
+
+    private func invalidatePreparedDetailContent(for sourceId: String) {
+        preparedDetailContentBySourceId.removeValue(forKey: sourceId)
+        detailWarmupTasksBySourceId[sourceId]?.cancel()
+        detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
+        detailWarmupTokenSeed &+= 1
+        detailWarmupTokensBySourceId[sourceId] = detailWarmupTokenSeed
     }
 
     private func buildPreparedDetailWarmupInput(
@@ -3073,7 +3103,7 @@ final class MainViewModel {
 
         if let inspectPayload = data["inspect"] as? [String: Any] {
             inspectedPayloadBySourceId[sourceId] = inspectPayload
-            preparedDetailContentBySourceId.removeValue(forKey: sourceId)
+            invalidatePreparedDetailContent(for: sourceId)
             scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
             scheduleDetailEnrichmentFetch(sourceId: sourceId)
         }

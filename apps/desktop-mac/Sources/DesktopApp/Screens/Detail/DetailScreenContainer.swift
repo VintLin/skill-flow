@@ -160,6 +160,12 @@ final class DetailScreenContainer {
             return cachedDetailViewModel
         }
 
+        if cachedDetailSourceId != sourceId || cachedDetailRevision != snapshot.revision {
+            documentTasksByRenderCacheKey.values.forEach { $0.cancel() }
+            documentTasksByRenderCacheKey.removeAll()
+            cachedDocumentsByRenderCacheKey.removeAll()
+        }
+
         let nextViewModel = DetailViewModel(snapshot: snapshot)
         cachedDetailSourceId = sourceId
         cachedDetailRevision = snapshot.revision

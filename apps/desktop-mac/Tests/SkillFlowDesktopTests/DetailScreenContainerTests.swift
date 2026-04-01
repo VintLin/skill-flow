@@ -498,6 +498,41 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertFalse(firstViewModel === secondViewModel)
     }
 
+    func testDetailContainerPrunesResolvedDocumentCacheWhenRevisionChanges() async throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var revision = "alpha:rev-1"
+        let oldDocument = MainViewModel.DocumentTab(
+            id: "doc",
+            title: "README.md",
+            path: "/tmp/README.md",
+            metadata: [],
+            content: "# old",
+            renderCacheKey: "doc:rev-1",
+            externalURL: nil
+        )
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in
+                DetailViewModel.Snapshot.fixture(sourceId: "alpha", revision: revision)
+            },
+            groupDocument: { _, _ in oldDocument }
+        )
+
+        _ = try XCTUnwrap(container.viewModel)
+        await container.loadDocument(sourceId: "alpha", documentId: "doc", renderCacheKey: "doc:rev-1")
+        XCTAssertEqual(
+            container.groupDocument(sourceId: "alpha", documentId: "doc", renderCacheKey: "doc:rev-1")?.content,
+            "# old"
+        )
+
+        revision = "alpha:rev-2"
+        _ = try XCTUnwrap(container.viewModel)
+
+        XCTAssertNil(container.groupDocument(sourceId: "alpha", documentId: "doc", renderCacheKey: "doc:rev-1"))
+    }
+
     func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
         let state = DesktopAppState()
         let container = DetailScreenContainer(state: state) { _ in nil }
