@@ -2049,12 +2049,17 @@ final class MainViewModel {
     }
 
     private func applyProjectScopeState(_ data: [String: Any]) {
-        if let scope = parseProjectScopeSelection(data["selectedProjectScope"]) {
+        if data.keys.contains("selectedProjectScope"),
+           let scope = parseProjectScopeSelection(data["selectedProjectScope"]) {
             cachedSelectedProjectScope = scope
             routeState?.settings.selectedProjectScope = scope
         }
-        cachedRecentProjectScopes = parseRecentProjectScopes(data["recentProjects"])
-        routeState?.settings.recentProjectScopes = cachedRecentProjectScopes
+
+        if data.keys.contains("recentProjects") {
+            cachedRecentProjectScopes = parseRecentProjectScopes(data["recentProjects"])
+            routeState?.settings.recentProjectScopes = cachedRecentProjectScopes
+        }
+
         persistProjectScopeSettingsIfNeeded()
         projectScopeChangeToken &+= 1
     }

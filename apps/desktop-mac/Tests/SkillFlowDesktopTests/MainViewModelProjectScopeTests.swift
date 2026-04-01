@@ -109,6 +109,27 @@ final class MainViewModelProjectScopeTests: XCTestCase {
 
         XCTAssertEqual(model.recentProjectScopes.first?.projectPath, "/Users/test/src/repo-a")
     }
+
+    func testGlobalTargetTogglePreservesRecentProjectScopesWhenApplyOmitsProjectState() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        XCTAssertEqual(model.recentProjectScopes.map(\.projectId), ["repo-a"])
+
+        await model.setTargetEnabled("codex", enabled: false, sourceId: "alpha")
+
+        XCTAssertEqual(command.recordedScopes, [.global])
+        XCTAssertEqual(model.recentProjectScopes.map(\.projectId), ["repo-a"])
+        XCTAssertEqual(state.settings.recentProjectScopes.map(\.projectId), ["repo-a"])
+    }
 }
 
 @MainActor
