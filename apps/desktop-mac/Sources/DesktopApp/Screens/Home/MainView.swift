@@ -46,6 +46,7 @@ struct MainView: View {
 
     @State private var updateButtonRotation: Double = 0
     @State private var searchFocusResetToken = 0
+    @State private var showsProjectScopeBar = false
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -172,6 +173,7 @@ struct MainView: View {
                     topBarTitleRow
                     HStack(spacing: 8) {
                         searchField
+                        projectScopeToggleButton
                         importButton
                         homeUpdateButton
                         settingsButton
@@ -186,6 +188,7 @@ struct MainView: View {
                         .frame(width: Self.headerLeadingWidth, alignment: .leading)
                     searchField
                     Spacer(minLength: 0)
+                    projectScopeToggleButton
                     importButton
                     homeUpdateButton
                     settingsButton
@@ -387,6 +390,14 @@ struct MainView: View {
         toolbarIconButton(.import) { navigation.showImportPage() }
     }
 
+    private var projectScopeToggleButton: some View {
+        toolbarIconButton(.project, showsAlertBadge: showsProjectScopeHiddenWarning) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showsProjectScopeBar.toggle()
+            }
+        }
+    }
+
     @ViewBuilder
     private var importSearchActionButton: some View {
         switch importSearchActionState {
@@ -539,7 +550,9 @@ struct MainView: View {
                     )
                 }
             } else {
-                homeProjectScopeBar
+                if showsProjectScopeBar {
+                    homeProjectScopeBar
+                }
                 homeTagFilterBar(snapshot: homeTagSnapshot)
                 HStack {
                     Spacer(minLength: 0)
@@ -952,6 +965,10 @@ struct MainView: View {
         .opacity(isSelected ? 1.0 : 0.58)
     }
 
+    private var showsProjectScopeHiddenWarning: Bool {
+        !showsProjectScopeBar && Self.projectScopeShowsHiddenWarning(for: viewModel.selectedProjectScope)
+    }
+
     static func projectScopePillBackground(
         isSelected: Bool,
         accent: DesktopAccentColor,
@@ -1064,12 +1081,25 @@ struct MainView: View {
         }
     }
 
-    private func toolbarIconButton(_ icon: ActionIcon, action: @escaping () -> Void) -> some View {
+    private func toolbarIconButton(
+        _ icon: ActionIcon,
+        showsAlertBadge: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            actionIcon(icon, size: 14)
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
-                .contentShape(Rectangle())
+            ZStack(alignment: .topTrailing) {
+                actionIcon(icon, size: 14)
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
+                    .contentShape(Rectangle())
+
+                if showsAlertBadge {
+                    actionIcon(.projectWarning, size: 10)
+                        .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                        .frame(width: 12, height: 12)
+                        .offset(x: -5, y: 5)
+                }
+            }
         }
         .buttonStyle(.plain)
         .desktopMotionButton(kind: .icon, theme: theme, accent: accent, isEnabled: true)
@@ -1111,6 +1141,15 @@ extension MainView {
 
     static func projectScopeShowsLegacySubtitle(isSelected: Bool) -> Bool {
         false
+    }
+
+    static func projectScopeShowsHiddenWarning(for scope: ProjectScopeSelection) -> Bool {
+        switch scope {
+        case .global:
+            return false
+        case .project:
+            return true
+        }
     }
 
     static func homeLeadingFixedButtonWidth(for locale: Locale) -> CGFloat {

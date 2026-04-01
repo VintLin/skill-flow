@@ -14,6 +14,8 @@ enum ActionIcon: String {
     case more
     case pin
     case plus
+    case project
+    case projectWarning = "project-warning"
     case search
     case searchSubmitEnter = "search-submit-enter"
     case settings

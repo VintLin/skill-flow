@@ -254,11 +254,26 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertNil(MainView.projectScopePillOpacityLabel(isSelected: false, theme: .light))
     }
 
+    func testHiddenProjectWarningAppearsOnlyForNonGlobalScope() {
+        XCTAssertFalse(MainView.projectScopeShowsHiddenWarning(for: .global))
+        XCTAssertTrue(MainView.projectScopeShowsHiddenWarning(for: .project("repo-a")))
+    }
+
     func testMenuBarIconLoadsTemplateSvg() {
         let image = MenuBarIcon.image()
 
         XCTAssertNotNil(image)
         XCTAssertEqual(image?.isTemplate, true)
+    }
+
+    func testProjectActionIconsLoadTemplateSvgs() {
+        let project = ActionIcon.project.image(size: 14)
+        let warning = ActionIcon.projectWarning.image(size: 10)
+
+        XCTAssertNotNil(project)
+        XCTAssertEqual(project?.isTemplate, true)
+        XCTAssertNotNil(warning)
+        XCTAssertEqual(warning?.isTemplate, true)
     }
 
     func testAppInitializationKeepsDockIconAtSystemSize() {

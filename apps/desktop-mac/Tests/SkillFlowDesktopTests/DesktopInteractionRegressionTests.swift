@@ -41,6 +41,14 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(home.contains(".desktopMotionChip("))
     }
 
+    func testHeaderContainsProjectToggleButtonAndHiddenWarningHook() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(home.contains("projectScopeToggleButton"))
+        XCTAssertTrue(home.contains("showsProjectScopeHiddenWarning"))
+        XCTAssertTrue(home.contains("showsAlertBadge"))
+    }
+
     func testHomeScrollingSurfacesUseLazyStacksInsideHorizontalScrollViews() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
         let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
