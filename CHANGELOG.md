@@ -6,8 +6,9 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ### Changed
 
-- Bumped the CLI and all internal workspace packages from `1.3.0` to `1.3.1`.
-- Updated the published release references and desktop update-check expectations to `v1.3.1`.
+- Added a clearer project-scope entry point on the macOS home screen, including tighter menu bar icon coverage around scope state changes.
+- Unified desktop group card presentation rules across Home, menu, and import contexts, so compact sizing, loading states, and supporting UI elements stay consistent.
+- Polished desktop tag interactions and update-related coverage with cleaner tag presentation, hover-based add affordances, and synchronized release metadata checks.
 
 ## v1.3.0 - 2026-04-01
 

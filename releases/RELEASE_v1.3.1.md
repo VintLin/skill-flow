@@ -2,25 +2,31 @@
 
 ## Summary
 
-- `v1.3.1` rolls the current desktop interaction and group-card refinements into a patch release.
-- This release keeps the package set aligned at `1.3.1` and updates release metadata used by the desktop app.
+- `v1.3.1` is a desktop-focused patch release that tightens project navigation, unifies group card presentation, and cleans up tag interactions.
+- It also refreshes the release metadata consumed by the desktop update flow.
 
 ## Highlights
 
-### 1. Desktop group-card presentation cleanup
+### 1. Clearer project scope entry
 
-- Group card presentation rules now derive from a single profile, so compact, menu, and import contexts stay visually consistent.
-- Loading states, minimum-height behavior, and import placeholders now follow the same display profile instead of mixing local checks.
+- Home now exposes project scope more directly from the header flow.
+- Menu bar icon handling is covered more thoroughly so scope-related states stay easier to distinguish.
 
-### 2. Tag interaction polish
+### 2. Unified group card presentation
 
-- Tags now use a cleaner text-only treatment with tighter compact sizing.
-- The tag add affordance appears on hover, making the compact desktop card layout cleaner while keeping editing available.
+- Desktop group cards now follow one presentation profile model across Home, menu, and import contexts.
+- Compact layouts, loading behavior, and supporting chrome now stay aligned instead of drifting by context.
+
+### 3. Cleaner tag and settings interactions
+
+- Tag presentation is lighter and more compact, with hover-based add behavior that keeps dense layouts cleaner.
+- Settings update checks now stay aligned with the current published release metadata.
 
 ## User-visible changes
 
-- Compact desktop cards keep a tighter layout without the extra reserved height on Home.
-- Tag presentation and hover editing behavior are more consistent across desktop group cards.
+- Project scope is easier to reach and reason about from the desktop home flow.
+- Group cards look and behave more consistently across desktop surfaces.
+- Tags and update-related desktop behavior feel cleaner and more predictable.
 
 ## Release Artifacts
 
