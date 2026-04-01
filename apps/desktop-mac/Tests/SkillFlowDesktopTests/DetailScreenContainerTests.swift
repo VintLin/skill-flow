@@ -130,25 +130,39 @@ final class DetailScreenContainerTests: XCTestCase {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
-        let descriptor = MainViewModel.DocumentDescriptor(
-            id: "group:/tmp/README.md",
-            title: "README.md",
-            path: "/tmp/README.md",
-            metadata: [],
-            renderCacheKey: "group:/tmp/README.md:rev-1",
-            externalURL: nil
-        )
-        let snapshot = DetailViewModel.Snapshot.fixture(
-            sourceId: "alpha",
-            revision: "alpha:rev-1",
-            groupDocuments: [descriptor]
-        )
+        var title = "AlphaHub"
+        var groupDocuments = [
+            MainViewModel.DocumentDescriptor(
+                id: "group:/tmp/README.md",
+                title: "README.md",
+                path: "/tmp/README.md",
+                metadata: [],
+                renderCacheKey: "group:/tmp/README.md:rev-1",
+                externalURL: nil
+            )
+        ]
 
         let container = DetailScreenContainer(state: state) { _ in
-            snapshot
+            DetailViewModel.Snapshot.fixture(
+                sourceId: "alpha",
+                revision: "alpha:rev-1",
+                title: title,
+                groupDocuments: groupDocuments
+            )
         }
 
         let firstViewModel = try XCTUnwrap(container.viewModel)
+        title = "AlphaHub v2"
+        groupDocuments = [
+            MainViewModel.DocumentDescriptor(
+                id: "group:/tmp/README.md",
+                title: "Guide.md",
+                path: "/tmp/GUIDE.md",
+                metadata: [],
+                renderCacheKey: "group:/tmp/GUIDE.md:rev-2",
+                externalURL: nil
+            )
+        ]
         let secondViewModel = try XCTUnwrap(container.viewModel)
 
         XCTAssertTrue(firstViewModel === secondViewModel)
@@ -168,6 +182,37 @@ final class DetailScreenContainerTests: XCTestCase {
 
         let secondViewModel = try XCTUnwrap(container.viewModel)
         XCTAssertFalse(firstViewModel === secondViewModel)
+    }
+
+    func testDetailContainerReusesViewModelForProductionSnapshotsWhenOnlyDocumentStateChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var renderCacheKey = "group:/tmp/README.md:rev-1"
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot(
+                detail: MainViewModel.DetailViewData.fixture(
+                    revision: "alpha:rev-1",
+                    groupDocuments: [
+                        MainViewModel.DocumentTab(
+                            id: "group:/tmp/README.md",
+                            title: "README.md",
+                            path: "/tmp/README.md",
+                            metadata: [],
+                            content: "# Alpha",
+                            renderCacheKey: renderCacheKey,
+                            externalURL: nil
+                        )
+                    ]
+                )
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        renderCacheKey = "group:/tmp/README.md:rev-2"
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertTrue(firstViewModel === secondViewModel)
     }
 
     func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
@@ -277,6 +322,7 @@ private extension DetailViewModel.Snapshot {
     static func fixture(
         sourceId: String = "alpha",
         revision: String,
+        title: String = "AlphaHub",
         groupDocuments: [MainViewModel.DocumentDescriptor] = [],
         targets: [MainViewModel.DetailTarget] = [
             MainViewModel.DetailTarget(
@@ -290,7 +336,7 @@ private extension DetailViewModel.Snapshot {
         Self(
             sourceId: sourceId,
             revision: revision,
-            title: "AlphaHub",
+            title: title,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
@@ -324,6 +370,61 @@ private extension DetailViewModel.Snapshot {
             groupDocuments: groupDocuments,
             targets: targets,
             skills: []
+        )
+    }
+}
+
+private extension MainViewModel.DetailViewData {
+    static func fixture(
+        sourceId: String = "alpha",
+        revision: String,
+        groupDocuments: [MainViewModel.DocumentTab] = [],
+        skills: [MainViewModel.DetailSkill] = []
+    ) -> Self {
+        Self(
+            sourceId: sourceId,
+            revision: revision,
+            title: "AlphaHub",
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: max(skills.count, 1),
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: groupDocuments,
+            targets: [
+                MainViewModel.DetailTarget(
+                    id: "claude-code",
+                    label: "Claude Code",
+                    shortLabel: "Claude",
+                    isEnabled: true
+                )
+            ],
+            skills: skills
         )
     }
 }

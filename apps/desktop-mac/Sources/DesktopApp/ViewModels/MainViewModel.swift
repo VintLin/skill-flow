@@ -339,6 +339,7 @@ final class MainViewModel {
 
     struct DetailViewData {
         let sourceId: String
+        let revision: String
         let title: String
         let subtitle: String
         let author: String
@@ -2438,28 +2439,31 @@ final class MainViewModel {
         }
 
         let fileTree = preparedDetailContent?.fileTree ?? []
-
-        return DetailViewData(
+        let groupDocuments = preparedDetailContent?.groupDocuments ?? []
+        let title = Self.preferredDetailGroupTitle(
             sourceId: summary.sourceId,
-            title: Self.preferredDetailGroupTitle(
-                sourceId: summary.sourceId,
-                displayName: (sourcePayload["displayName"] as? String)?.nonEmpty
-                    ?? (summarySourcePayload["displayName"] as? String)?.nonEmpty
-                    ?? summary.sourceDisplayName,
-                snapshotTitle: sourceSnapshot?.title,
-                locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator
-            ),
-            subtitle: (sourcePayload["kind"] as? String)?.nonEmpty ?? summary.sourceKind,
+            displayName: (sourcePayload["displayName"] as? String)?.nonEmpty
+                ?? (summarySourcePayload["displayName"] as? String)?.nonEmpty
+                ?? summary.sourceDisplayName,
+            snapshotTitle: sourceSnapshot?.title,
+            locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator
+        )
+        let subtitle = (sourcePayload["kind"] as? String)?.nonEmpty ?? summary.sourceKind
+        let locator = (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator
+        let updatedAt = (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt
+        let revision = Self.detailRevision(
+            sourceId: summary.sourceId,
+            title: title,
+            subtitle: subtitle,
             author: author,
             originLabel: originLabel,
             starCount: starCount,
             groupStats: groupStats,
             sourceDetailLines: [],
             sourceRepositoryURL: groupStats.githubURL,
-            locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
+            locator: locator,
             groupPath: groupPath,
-            updatedAt: (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt,
-            updatedRelative: relativeUpdateLabel((lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt),
+            updatedAt: updatedAt,
             health: summary.health,
             warningCount: summary.warningCount,
             errorCount: summary.errorCount,
@@ -2473,7 +2477,39 @@ final class MainViewModel {
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
-            groupDocuments: preparedDetailContent?.groupDocuments ?? [],
+            targets: targets,
+            skills: skills
+        )
+
+        return DetailViewData(
+            sourceId: summary.sourceId,
+            revision: revision,
+            title: title,
+            subtitle: subtitle,
+            author: author,
+            originLabel: originLabel,
+            starCount: starCount,
+            groupStats: groupStats,
+            sourceDetailLines: [],
+            sourceRepositoryURL: groupStats.githubURL,
+            locator: locator,
+            groupPath: groupPath,
+            updatedAt: updatedAt,
+            updatedRelative: relativeUpdateLabel(updatedAt),
+            health: summary.health,
+            warningCount: summary.warningCount,
+            errorCount: summary.errorCount,
+            enabledSkillCount: draft.selectedLeafIds.count,
+            totalSkillCount: skills.count,
+            enabledTargetCount: draft.enabledTargets.count,
+            saveState: saveState(for: sourceId),
+            skillSelection: skillSelectionState(sourceId: sourceId),
+            targetSelection: targetSelectionState(sourceId: sourceId),
+            enabledTargetLabels: enabledTargetLabels,
+            sourceFacts: sourceFacts,
+            deploymentFacts: deploymentFacts,
+            fileTree: fileTree,
+            groupDocuments: groupDocuments,
             targets: targets,
             skills: skills
         )
@@ -4027,6 +4063,105 @@ final class MainViewModel {
         }
 
         return nil
+    }
+
+    nonisolated static func documentDescriptors(_ tabs: [DocumentTab]) -> [DocumentDescriptor] {
+        tabs.map { tab in
+            DocumentDescriptor(
+                id: tab.id,
+                title: tab.title,
+                path: tab.path,
+                metadata: tab.metadata,
+                renderCacheKey: tab.renderCacheKey,
+                externalURL: tab.externalURL
+            )
+        }
+    }
+
+    nonisolated static func detailRevision(
+        sourceId: String,
+        title: String,
+        subtitle: String,
+        author: String,
+        originLabel: String,
+        starCount: Int?,
+        groupStats: GroupCardStats,
+        sourceDetailLines: [String],
+        sourceRepositoryURL: String?,
+        locator: String,
+        groupPath: String?,
+        updatedAt: String,
+        health: String,
+        warningCount: Int,
+        errorCount: Int,
+        enabledSkillCount: Int,
+        totalSkillCount: Int,
+        enabledTargetCount: Int,
+        saveState: SaveState,
+        skillSelection: SelectionState,
+        targetSelection: SelectionState,
+        enabledTargetLabels: [String],
+        sourceFacts: [String],
+        deploymentFacts: [String],
+        fileTree: [FileTreeItem],
+        targets: [DetailTarget],
+        skills: [DetailSkill]
+    ) -> String {
+        let targetRevision = targets.map { target in
+            "\(target.id):\(target.isEnabled)"
+        }
+        .joined(separator: "\u{1F}")
+        let skillRevision = skills.map { skill in
+            [
+                skill.id,
+                skill.title,
+                skill.summary,
+                skill.version ?? "",
+                skill.author,
+                skill.originLabel,
+                skill.starCount.map(String.init) ?? "",
+                skill.folderPath ?? "",
+                skill.relativeFolderPath ?? "",
+                skill.isEnabled ? "1" : "0",
+                String(skill.warningCount)
+            ]
+            .joined(separator: "\u{1D}")
+        }
+        .joined(separator: "\u{1F}")
+        var components: [String] = []
+        components.append(sourceId)
+        components.append(title)
+        components.append(subtitle)
+        components.append(author)
+        components.append(originLabel)
+        components.append(starCount.map(String.init) ?? "")
+        components.append(groupStats.skillCount.map(String.init) ?? "")
+        components.append(groupStats.downloadCount.map(String.init) ?? "")
+        components.append(groupStats.starCount.map(String.init) ?? "")
+        components.append(groupStats.githubURL ?? "")
+        components.append(groupStats.localPath ?? "")
+        components.append(sourceDetailLines.joined(separator: "\u{1F}"))
+        components.append(sourceRepositoryURL ?? "")
+        components.append(locator)
+        components.append(groupPath ?? "")
+        components.append(updatedAt)
+        components.append(health)
+        components.append(String(warningCount))
+        components.append(String(errorCount))
+        components.append(String(enabledSkillCount))
+        components.append(String(totalSkillCount))
+        components.append(String(enabledTargetCount))
+        components.append(saveState.phase.rawValue)
+        components.append(saveState.detail ?? "")
+        components.append(skillSelection.rawValue)
+        components.append(targetSelection.rawValue)
+        components.append(enabledTargetLabels.joined(separator: "\u{1F}"))
+        components.append(sourceFacts.joined(separator: "\u{1F}"))
+        components.append(deploymentFacts.joined(separator: "\u{1F}"))
+        components.append(fileTree.map(\.id).joined(separator: "\u{1F}"))
+        components.append(targetRevision)
+        components.append(skillRevision)
+        return components.joined(separator: "\u{1C}")
     }
 
     private func buildReadySourceDetailLines(sourceStatsPayload: [String: Any]) -> [String] {
