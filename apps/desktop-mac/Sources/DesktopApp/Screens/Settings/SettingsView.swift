@@ -192,41 +192,19 @@ struct SettingsView: View {
 
                         settingsRow(title: t("settings.row.check_updates.title"), description: updateStatusDescription) {
                             if viewModel.updateStatus == .checking {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .frame(width: controlColumnWidth, alignment: .trailing)
+                                settingsActionLoadingIndicator()
                             } else {
-                                Button(t("settings.action.check_updates")) {
+                                settingsActionButton(t("settings.action.check_updates")) {
                                     Task {
                                         await viewModel.checkForUpdates()
                                     }
-                                }
-                                .buttonStyle(.plain)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                                .frame(width: controlColumnWidth, height: 32)
-                                .background(Self.controlBackground(for: .pageBackground, theme: theme))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                                 }
                             }
                         }
 
                         settingsRow(title: t("settings.row.open_releases.title"), description: t("settings.row.open_releases.description")) {
-                            Button(t("settings.action.open_releases")) {
+                            settingsActionButton(t("settings.action.open_releases")) {
                                 viewModel.openReleasePage()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                            .frame(width: controlColumnWidth, height: 32)
-                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                             }
                         }
                     }
@@ -272,34 +250,14 @@ struct SettingsView: View {
                     title: t("settings.section.maintenance"),
                     rows: {
                         settingsRow(title: t("settings.row.clear_cache.title"), description: t("settings.row.clear_cache.description")) {
-                            Button(t("settings.action.clear_cache")) {
+                            settingsActionButton(t("settings.action.clear_cache")) {
                                 viewModel.clearMetadataCache()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                            .frame(width: controlColumnWidth, height: 32)
-                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                             }
                         }
 
                         settingsRow(title: t("settings.row.reset_configuration.title"), description: t("settings.row.reset_configuration.description")) {
-                            Button(t("settings.action.reset_configuration")) {
+                            settingsActionButton(t("settings.action.reset_configuration")) {
                                 viewModel.resetConfiguration()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-                            .frame(width: controlColumnWidth, height: 32)
-                            .background(Self.controlBackground(for: .pageBackground, theme: theme))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                             }
                         }
                     }
@@ -604,6 +562,40 @@ struct SettingsView: View {
         draggedAgentTargetId = nil
     }
 
+    private func settingsActionButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+                .frame(width: controlColumnWidth, height: Self.actionControlHeight)
+                .background(Self.controlBackground(for: .pageBackground, theme: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .desktopMotionButton(kind: .primary, theme: theme, accent: currentAccent, isEnabled: true)
+    }
+
+    private func settingsActionLoadingIndicator() -> some View {
+        HStack {
+            Spacer(minLength: 0)
+            ProgressView()
+                .controlSize(.small)
+            Spacer(minLength: 0)
+        }
+        .frame(width: controlColumnWidth, height: Self.actionControlHeight)
+        .background(Self.controlBackground(for: .pageBackground, theme: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
     @ViewBuilder
     private func dropdownControl(
         kind: DropdownKind,
@@ -644,6 +636,13 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(
+            kind: .primary,
+            theme: theme,
+            accent: currentAccent,
+            isEnabled: true,
+            isActive: openDropdown == kind
+        )
         .overlay(alignment: .topTrailing) {
             if openDropdown == kind {
                 VStack(alignment: .leading, spacing: 4) {
@@ -678,6 +677,13 @@ struct SettingsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .desktopMotionButton(
+                            kind: .subtle,
+                            theme: theme,
+                            accent: currentAccent,
+                            isEnabled: true,
+                            isActive: option.id == selectedId
+                        )
                     }
                 }
                 .padding(6)
@@ -697,6 +703,8 @@ struct SettingsView: View {
     static func rowZIndex(isElevated: Bool) -> Double {
         isElevated ? 30 : 0
     }
+
+    static let actionControlHeight: CGFloat = 32
 
     static func controlBackground(for token: ControlSurfaceToken, theme: DesktopThemeMode) -> Color {
         switch token {

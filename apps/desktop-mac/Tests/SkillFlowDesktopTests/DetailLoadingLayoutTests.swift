@@ -116,7 +116,7 @@ final class DetailLoadingLayoutTests: XCTestCase {
             deploymentFacts: [],
             fileTree: [],
             groupDocuments: [
-                .init(id: "readme", title: "README.md", path: "README.md", metadata: [], content: "# Readme", renderCacheKey: "readme", externalURL: nil)
+                .init(id: "readme", title: "README.md", path: "README.md", metadata: [], renderCacheKey: "readme", externalURL: nil)
             ],
             targets: [],
             skills: [
@@ -147,6 +147,197 @@ final class DetailLoadingLayoutTests: XCTestCase {
         XCTAssertEqual(state.detailDocumentTabIdByGroup["alpha"], "readme")
         XCTAssertEqual(state.detailDocumentTabIdBySkill["browse"], "skill-md")
         XCTAssertEqual(state.detailShowsGroupOverviewByGroup["alpha"], true)
+    }
+
+    @MainActor
+    func testDisplayedDetailSkillPrefersPendingSelectionDuringSidebarTransition() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "browse"
+        state.pendingDetailSkillIdByGroup["alpha"] = "debug"
+
+        let detail = DetailViewModel(snapshot: .init(
+            sourceId: "alpha",
+            title: "Alpha",
+            subtitle: "github",
+            author: "@acme",
+            originLabel: "GitHub",
+            starCount: 12,
+            groupStats: .init(skillCount: 2, downloadCount: nil, starCount: 12, githubURL: nil, localPath: nil),
+            sourceDetailLines: [],
+            sourceRepositoryURL: nil,
+            locator: "acme/alpha",
+            groupPath: nil,
+            updatedAt: "",
+            updatedRelative: "",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 2,
+            totalSkillCount: 2,
+            enabledTargetCount: 0,
+            saveState: .init(phase: .idle, detail: nil),
+            skillSelection: .full,
+            targetSelection: .empty,
+            enabledTargetLabels: [],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: [],
+            targets: [],
+            skills: [
+                .init(
+                    id: "browse",
+                    title: "Browse",
+                    summary: "Browse things",
+                    version: "1.0.0",
+                    author: "@acme",
+                    originLabel: "GitHub",
+                    starCount: 12,
+                    folderPath: nil,
+                    relativeFolderPath: nil,
+                    documents: [],
+                    detailLines: [],
+                    documentContent: "# Browse",
+                    isEnabled: true,
+                    warningCount: 0
+                ),
+                .init(
+                    id: "debug",
+                    title: "Debug",
+                    summary: "Debug things",
+                    version: "1.0.0",
+                    author: "@acme",
+                    originLabel: "GitHub",
+                    starCount: 12,
+                    folderPath: nil,
+                    relativeFolderPath: nil,
+                    documents: [],
+                    detailLines: [],
+                    documentContent: "# Debug",
+                    isEnabled: true,
+                    warningCount: 0
+                )
+            ]
+        ))
+
+        XCTAssertEqual(
+            DetailRouteBootstrap.displayedDetailSkill(state: state, sourceId: "alpha", detail: detail)?.id,
+            "debug"
+        )
+    }
+
+    @MainActor
+    func testSkillContentLoadingTurnsOnWhileSelectionIsPending() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "browse"
+        state.pendingDetailSkillIdByGroup["alpha"] = "debug"
+
+        let detail = DetailViewModel(snapshot: .init(
+            sourceId: "alpha",
+            title: "Alpha",
+            subtitle: "github",
+            author: "@acme",
+            originLabel: "GitHub",
+            starCount: 12,
+            groupStats: .init(skillCount: 2, downloadCount: nil, starCount: 12, githubURL: nil, localPath: nil),
+            sourceDetailLines: [],
+            sourceRepositoryURL: nil,
+            locator: "acme/alpha",
+            groupPath: nil,
+            updatedAt: "",
+            updatedRelative: "",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 2,
+            totalSkillCount: 2,
+            enabledTargetCount: 0,
+            saveState: .init(phase: .idle, detail: nil),
+            skillSelection: .full,
+            targetSelection: .empty,
+            enabledTargetLabels: [],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: [],
+            targets: [],
+            skills: [
+                .init(
+                    id: "browse",
+                    title: "Browse",
+                    summary: "Browse things",
+                    version: "1.0.0",
+                    author: "@acme",
+                    originLabel: "GitHub",
+                    starCount: 12,
+                    folderPath: nil,
+                    relativeFolderPath: nil,
+                    documents: [],
+                    detailLines: [],
+                    documentContent: "# Browse",
+                    isEnabled: true,
+                    warningCount: 0
+                ),
+                .init(
+                    id: "debug",
+                    title: "Debug",
+                    summary: "Debug things",
+                    version: "1.0.0",
+                    author: "@acme",
+                    originLabel: "GitHub",
+                    starCount: 12,
+                    folderPath: nil,
+                    relativeFolderPath: nil,
+                    documents: [],
+                    detailLines: [],
+                    documentContent: "# Debug",
+                    isEnabled: true,
+                    warningCount: 0
+                )
+            ]
+        ))
+
+        XCTAssertTrue(
+            DetailRouteBootstrap.isSkillContentLoading(state: state, sourceId: "alpha", detail: detail)
+        )
+    }
+
+    @MainActor
+    func testSidebarSelectedItemPrefersPendingSkillSelection() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "browse"
+        state.pendingDetailSkillIdByGroup["alpha"] = "debug"
+
+        XCTAssertEqual(
+            DetailRouteBootstrap.selectedSidebarItemId(state: state, sourceId: "alpha"),
+            "skill:debug"
+        )
+    }
+
+    @MainActor
+    func testSidebarSelectionUsesPendingSkillForRowHighlight() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "browse"
+        state.pendingDetailSkillIdByGroup["alpha"] = "debug"
+
+        XCTAssertTrue(
+            DetailRouteBootstrap.isSidebarSkillSelected(
+                state: state,
+                sourceId: "alpha",
+                skillId: "debug"
+            )
+        )
+        XCTAssertFalse(
+            DetailRouteBootstrap.isSidebarSkillSelected(
+                state: state,
+                sourceId: "alpha",
+                skillId: "browse"
+            )
+        )
     }
 
     func testDetailRouteBootstrapOnlyFetchesInspectWhenPayloadIsMissing() {

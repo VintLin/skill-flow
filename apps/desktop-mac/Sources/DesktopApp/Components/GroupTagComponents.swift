@@ -96,7 +96,7 @@ struct EditableGroupTagSection: View {
                 .frame(width: 1, height: tagPillHeight)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                LazyHStack(spacing: 6) {
                     ForEach(suggestions) { item in
                         Button {
                             handleCreateResult(onCreate(item.title, item.accent))
@@ -104,6 +104,13 @@ struct EditableGroupTagSection: View {
                             tagPill(item, showsDeleteControl: false)
                         }
                         .buttonStyle(.plain)
+                        .desktopMotionChip(
+                            kind: .pill,
+                            theme: theme,
+                            accent: item.accent,
+                            isEnabled: true,
+                            isSelected: false
+                        )
                     }
                 }
             }
@@ -153,6 +160,13 @@ struct EditableGroupTagSection: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .pill,
+            theme: theme,
+            accent: accent,
+            isEnabled: canAddMore,
+            isSelected: false
+        )
         .disabled(!canAddMore)
         .help(L10n.string("group_tag.action.add", locale: locale))
     }
@@ -171,7 +185,7 @@ struct EditableGroupTagSection: View {
 
     private func tagRow(items: [GroupTagDisplayItem], showsDeleteControls: Bool) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            LazyHStack(spacing: 6) {
                 ForEach(items) { item in
                     if showsDeleteControls || onSelect == nil {
                         tagPill(item, showsDeleteControl: showsDeleteControls)
@@ -182,6 +196,13 @@ struct EditableGroupTagSection: View {
                             tagPill(item, showsDeleteControl: false)
                         }
                         .buttonStyle(.plain)
+                        .desktopMotionChip(
+                            kind: .pill,
+                            theme: theme,
+                            accent: item.accent,
+                            isEnabled: true,
+                            isSelected: false
+                        )
                     }
                 }
             }

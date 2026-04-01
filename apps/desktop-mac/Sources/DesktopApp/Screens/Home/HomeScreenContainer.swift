@@ -55,6 +55,17 @@ final class HomeScreenContainer {
         }
     }
 
+    func homeTagSnapshot(locale: Locale) -> GroupTagController.HomeSnapshot {
+        groupTagController.homeSnapshot(sourceIds: mainViewModel.sourceIds, locale: locale)
+    }
+
+    func visibleGroupCards(
+        from cards: [MainViewModel.GroupCardModel],
+        snapshot: GroupTagController.HomeSnapshot
+    ) -> [MainViewModel.GroupCardModel] {
+        cards.filter { snapshot.contains(sourceId: $0.id) }
+    }
+
     func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
         groupTagController.resolvedTags(forSourceId: sourceId, locale: locale)
     }

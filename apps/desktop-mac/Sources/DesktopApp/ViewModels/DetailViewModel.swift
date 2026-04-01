@@ -7,11 +7,13 @@ final class DetailViewModel {
     typealias SaveState = MainViewModel.SaveState
     typealias FileTreeItem = MainViewModel.FileTreeItem
     typealias DocumentTab = MainViewModel.DocumentTab
+    typealias DocumentDescriptor = MainViewModel.DocumentDescriptor
     typealias DetailTarget = MainViewModel.DetailTarget
     typealias DetailSkill = MainViewModel.DetailSkill
 
-    struct Snapshot {
+    struct Snapshot: Equatable {
         let sourceId: String
+        let revision: String
         let title: String
         let subtitle: String
         let author: String
@@ -37,7 +39,7 @@ final class DetailViewModel {
         let sourceFacts: [String]
         let deploymentFacts: [String]
         let fileTree: [FileTreeItem]
-        let groupDocuments: [DocumentTab]
+        let groupDocuments: [DocumentDescriptor]
         let targets: [DetailTarget]
         let skills: [DetailSkill]
     }
@@ -68,7 +70,7 @@ final class DetailViewModel {
     let sourceFacts: [String]
     let deploymentFacts: [String]
     let fileTree: [MainViewModel.FileTreeItem]
-    let groupDocuments: [MainViewModel.DocumentTab]
+    let groupDocuments: [MainViewModel.DocumentDescriptor]
     let targets: [MainViewModel.DetailTarget]
     let skills: [MainViewModel.DetailSkill]
 
@@ -106,35 +108,194 @@ final class DetailViewModel {
 }
 
 extension DetailViewModel.Snapshot {
+    init(
+        sourceId: String,
+        title: String,
+        subtitle: String,
+        author: String,
+        originLabel: String,
+        starCount: Int?,
+        groupStats: MainViewModel.GroupCardStats,
+        sourceDetailLines: [String],
+        sourceRepositoryURL: String?,
+        locator: String,
+        groupPath: String?,
+        updatedAt: String,
+        updatedRelative: String,
+        health: String,
+        warningCount: Int,
+        errorCount: Int,
+        enabledSkillCount: Int,
+        totalSkillCount: Int,
+        enabledTargetCount: Int,
+        saveState: MainViewModel.SaveState,
+        skillSelection: SelectionState,
+        targetSelection: SelectionState,
+        enabledTargetLabels: [String],
+        sourceFacts: [String],
+        deploymentFacts: [String],
+        fileTree: [MainViewModel.FileTreeItem],
+        groupDocuments: [MainViewModel.DocumentDescriptor],
+        targets: [MainViewModel.DetailTarget],
+        skills: [MainViewModel.DetailSkill]
+    ) {
+        self.init(
+            sourceId: sourceId,
+            revision: Self.buildRevision(
+                sourceId: sourceId,
+                title: title,
+                subtitle: subtitle,
+                author: author,
+                originLabel: originLabel,
+                starCount: starCount,
+                groupStats: groupStats,
+                sourceDetailLines: sourceDetailLines,
+                sourceRepositoryURL: sourceRepositoryURL,
+                locator: locator,
+                groupPath: groupPath,
+                updatedAt: updatedAt,
+                health: health,
+                warningCount: warningCount,
+                errorCount: errorCount,
+                enabledSkillCount: enabledSkillCount,
+                totalSkillCount: totalSkillCount,
+                enabledTargetCount: enabledTargetCount,
+                saveState: saveState,
+                skillSelection: skillSelection,
+                targetSelection: targetSelection,
+                enabledTargetLabels: enabledTargetLabels,
+                sourceFacts: sourceFacts,
+                deploymentFacts: deploymentFacts,
+                fileTree: fileTree,
+                groupDocuments: groupDocuments,
+                targets: targets,
+                skills: skills
+            ),
+            title: title,
+            subtitle: subtitle,
+            author: author,
+            originLabel: originLabel,
+            starCount: starCount,
+            groupStats: groupStats,
+            sourceDetailLines: sourceDetailLines,
+            sourceRepositoryURL: sourceRepositoryURL,
+            locator: locator,
+            groupPath: groupPath,
+            updatedAt: updatedAt,
+            updatedRelative: updatedRelative,
+            health: health,
+            warningCount: warningCount,
+            errorCount: errorCount,
+            enabledSkillCount: enabledSkillCount,
+            totalSkillCount: totalSkillCount,
+            enabledTargetCount: enabledTargetCount,
+            saveState: saveState,
+            skillSelection: skillSelection,
+            targetSelection: targetSelection,
+            enabledTargetLabels: enabledTargetLabels,
+            sourceFacts: sourceFacts,
+            deploymentFacts: deploymentFacts,
+            fileTree: fileTree,
+            groupDocuments: groupDocuments,
+            targets: targets,
+            skills: skills
+        )
+    }
+
     init(detail: MainViewModel.DetailViewData) {
-        sourceId = detail.sourceId
-        title = detail.title
-        subtitle = detail.subtitle
-        author = detail.author
-        originLabel = detail.originLabel
-        starCount = detail.starCount
-        groupStats = detail.groupStats
-        sourceDetailLines = detail.sourceDetailLines
-        sourceRepositoryURL = detail.sourceRepositoryURL
-        locator = detail.locator
-        groupPath = detail.groupPath
-        updatedAt = detail.updatedAt
-        updatedRelative = detail.updatedRelative
-        health = detail.health
-        warningCount = detail.warningCount
-        errorCount = detail.errorCount
-        enabledSkillCount = detail.enabledSkillCount
-        totalSkillCount = detail.totalSkillCount
-        enabledTargetCount = detail.enabledTargetCount
-        saveState = detail.saveState
-        skillSelection = detail.skillSelection
-        targetSelection = detail.targetSelection
-        enabledTargetLabels = detail.enabledTargetLabels
-        sourceFacts = detail.sourceFacts
-        deploymentFacts = detail.deploymentFacts
-        fileTree = detail.fileTree
-        groupDocuments = detail.groupDocuments
-        targets = detail.targets
-        skills = detail.skills
+        self.init(
+            sourceId: detail.sourceId,
+            revision: detail.revision,
+            title: detail.title,
+            subtitle: detail.subtitle,
+            author: detail.author,
+            originLabel: detail.originLabel,
+            starCount: detail.starCount,
+            groupStats: detail.groupStats,
+            sourceDetailLines: detail.sourceDetailLines,
+            sourceRepositoryURL: detail.sourceRepositoryURL,
+            locator: detail.locator,
+            groupPath: detail.groupPath,
+            updatedAt: detail.updatedAt,
+            updatedRelative: detail.updatedRelative,
+            health: detail.health,
+            warningCount: detail.warningCount,
+            errorCount: detail.errorCount,
+            enabledSkillCount: detail.enabledSkillCount,
+            totalSkillCount: detail.totalSkillCount,
+            enabledTargetCount: detail.enabledTargetCount,
+            saveState: detail.saveState,
+            skillSelection: detail.skillSelection,
+            targetSelection: detail.targetSelection,
+            enabledTargetLabels: detail.enabledTargetLabels,
+            sourceFacts: detail.sourceFacts,
+            deploymentFacts: detail.deploymentFacts,
+            fileTree: detail.fileTree,
+            groupDocuments: MainViewModel.documentDescriptors(detail.groupDocuments),
+            targets: detail.targets,
+            skills: detail.skills
+        )
+    }
+
+    private static func buildRevision(
+        sourceId: String,
+        title: String,
+        subtitle: String,
+        author: String,
+        originLabel: String,
+        starCount: Int?,
+        groupStats: MainViewModel.GroupCardStats,
+        sourceDetailLines: [String],
+        sourceRepositoryURL: String?,
+        locator: String,
+        groupPath: String?,
+        updatedAt: String,
+        health: String,
+        warningCount: Int,
+        errorCount: Int,
+        enabledSkillCount: Int,
+        totalSkillCount: Int,
+        enabledTargetCount: Int,
+        saveState: MainViewModel.SaveState,
+        skillSelection: SelectionState,
+        targetSelection: SelectionState,
+        enabledTargetLabels: [String],
+        sourceFacts: [String],
+        deploymentFacts: [String],
+        fileTree: [MainViewModel.FileTreeItem],
+        groupDocuments: [MainViewModel.DocumentDescriptor],
+        targets: [MainViewModel.DetailTarget],
+        skills: [MainViewModel.DetailSkill]
+    ) -> String {
+        MainViewModel.detailRevision(
+            sourceId: sourceId,
+            title: title,
+            subtitle: subtitle,
+            author: author,
+            originLabel: originLabel,
+            starCount: starCount,
+            groupStats: groupStats,
+            sourceDetailLines: sourceDetailLines,
+            sourceRepositoryURL: sourceRepositoryURL,
+            locator: locator,
+            groupPath: groupPath,
+            updatedAt: updatedAt,
+            health: health,
+            warningCount: warningCount,
+            errorCount: errorCount,
+            enabledSkillCount: enabledSkillCount,
+            totalSkillCount: totalSkillCount,
+            enabledTargetCount: enabledTargetCount,
+            saveState: saveState,
+            skillSelection: skillSelection,
+            targetSelection: targetSelection,
+            enabledTargetLabels: enabledTargetLabels,
+            sourceFacts: sourceFacts,
+            deploymentFacts: deploymentFacts,
+            fileTree: fileTree,
+            groupDocuments: groupDocuments,
+            targets: targets,
+            skills: skills
+        )
     }
 }

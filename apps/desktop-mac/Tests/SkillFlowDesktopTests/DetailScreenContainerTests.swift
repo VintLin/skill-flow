@@ -10,6 +10,7 @@ final class DetailScreenContainerTests: XCTestCase {
 
         let detail = DetailViewModel.Snapshot(
             sourceId: "alpha",
+            revision: "alpha:rev-1",
             title: "AlphaHub",
             subtitle: "clawhub",
             author: "Acme",
@@ -53,14 +54,13 @@ final class DetailScreenContainerTests: XCTestCase {
                 )
             ],
             groupDocuments: [
-                MainViewModel.DocumentTab(
+                MainViewModel.DocumentDescriptor(
                     id: "readme",
                     title: "README.md",
                     path: "README.md",
                     metadata: [
                         MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
                     ],
-                    content: "Hello",
                     renderCacheKey: "readme-cache",
                     externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
                 )
@@ -124,6 +124,198 @@ final class DetailScreenContainerTests: XCTestCase {
         }
 
         XCTAssertNil(container.viewModel)
+    }
+
+    func testDetailContainerRebuildsViewModelWhenComputedRevisionChangesWithDescriptors() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var title = "AlphaHub"
+        var groupDocuments = [
+            MainViewModel.DocumentDescriptor(
+                id: "group:/tmp/README.md",
+                title: "README.md",
+                path: "/tmp/README.md",
+                metadata: [],
+                renderCacheKey: "group:/tmp/README.md:rev-1",
+                externalURL: nil
+            )
+        ]
+
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot.fixture(
+                sourceId: "alpha",
+                title: title,
+                groupDocuments: groupDocuments
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        title = "AlphaHub v2"
+        groupDocuments = [
+            MainViewModel.DocumentDescriptor(
+                id: "group:/tmp/README.md",
+                title: "Guide.md",
+                path: "/tmp/GUIDE.md",
+                metadata: [],
+                renderCacheKey: "group:/tmp/GUIDE.md:rev-2",
+                externalURL: nil
+            )
+        ]
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+    }
+
+    func testDetailContainerRebuildsViewModelWhenDescriptorMetadataChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var groupDocuments = [
+            MainViewModel.DocumentDescriptor(
+                id: "group:/tmp/README.md",
+                title: "README.md",
+                path: "/tmp/README.md",
+                metadata: [
+                    MainViewModel.MetadataEntry(id: "m1", key: "name", value: "AlphaHub")
+                ],
+                renderCacheKey: "group:/tmp/README.md:rev-1",
+                externalURL: nil
+            )
+        ]
+
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot.fixture(
+                sourceId: "alpha",
+                groupDocuments: groupDocuments
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        groupDocuments = [
+            MainViewModel.DocumentDescriptor(
+                id: "group:/tmp/README.md",
+                title: "README.md",
+                path: "/tmp/README.md",
+                metadata: [
+                    MainViewModel.MetadataEntry(id: "m1", key: "name", value: "AlphaHub v2")
+                ],
+                renderCacheKey: "group:/tmp/README.md:rev-1",
+                externalURL: nil
+            )
+        ]
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+        XCTAssertEqual(secondViewModel.groupDocuments.first?.metadata.first?.value, "AlphaHub v2")
+    }
+
+    func testResolvesGroupDocumentOutsideCachedViewModelBoundary() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var tab = MainViewModel.DocumentTab(
+            id: "group:/tmp/README.md",
+            title: "README.md",
+            path: "/tmp/README.md",
+            metadata: [],
+            content: "# Alpha v1",
+            renderCacheKey: "group:/tmp/README.md:rev-1",
+            externalURL: nil
+        )
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: tab.id,
+            title: tab.title,
+            path: tab.path,
+            metadata: tab.metadata,
+            renderCacheKey: tab.renderCacheKey,
+            externalURL: tab.externalURL
+        )
+
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in
+                DetailViewModel.Snapshot.fixture(
+                    revision: "alpha:rev-1",
+                    groupDocuments: [descriptor]
+                )
+            },
+            groupDocument: { sourceId, documentId in
+                XCTAssertEqual(sourceId, "alpha")
+                XCTAssertEqual(documentId, descriptor.id)
+                return tab
+            }
+        )
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        XCTAssertEqual(
+            try XCTUnwrap(container.groupDocument(sourceId: "alpha", documentId: descriptor.id)).content,
+            "# Alpha v1"
+        )
+
+        tab = MainViewModel.DocumentTab(
+            id: tab.id,
+            title: tab.title,
+            path: tab.path,
+            metadata: tab.metadata,
+            content: "# Alpha v2",
+            renderCacheKey: tab.renderCacheKey,
+            externalURL: tab.externalURL
+        )
+
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertTrue(firstViewModel === secondViewModel)
+        XCTAssertEqual(
+            try XCTUnwrap(container.groupDocument(sourceId: "alpha", documentId: descriptor.id)).content,
+            "# Alpha v2"
+        )
+    }
+
+    func testDetailContainerRebuildsViewModelWhenRevisionChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var revision = "alpha:rev-1"
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot.fixture(revision: revision)
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        revision = "alpha:rev-2"
+
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+        XCTAssertFalse(firstViewModel === secondViewModel)
+    }
+
+    func testDetailContainerRebuildsViewModelForProductionSnapshotsWhenDocumentDescriptorIdentityChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var renderCacheKey = "group:/tmp/README.md:rev-1"
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot(
+                detail: MainViewModel.DetailViewData.fixture(
+                    groupDocuments: [
+                        MainViewModel.DocumentTab(
+                            id: "group:/tmp/README.md",
+                            title: "README.md",
+                            path: "/tmp/README.md",
+                            metadata: [],
+                            content: "# Alpha",
+                            renderCacheKey: renderCacheKey,
+                            externalURL: nil
+                        )
+                    ]
+                )
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        renderCacheKey = "group:/tmp/README.md:rev-2"
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
     }
 
     func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
@@ -226,5 +418,196 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertEqual(setTargetCall?.id, "claude-code")
         XCTAssertEqual(setTargetCall?.enabled, true)
         XCTAssertEqual(setTargetCall?.sourceId, "alpha")
+    }
+}
+
+private extension DetailViewModel.Snapshot {
+    static func fixture(
+        sourceId: String = "alpha",
+        revision: String? = nil,
+        title: String = "AlphaHub",
+        groupDocuments: [MainViewModel.DocumentDescriptor] = [],
+        targets: [MainViewModel.DetailTarget] = [
+            MainViewModel.DetailTarget(
+                id: "claude-code",
+                label: "Claude Code",
+                shortLabel: "Claude",
+                isEnabled: true
+            )
+        ]
+    ) -> Self {
+        let resolvedRevision = revision ?? MainViewModel.detailRevision(
+            sourceId: sourceId,
+            title: title,
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 2,
+            enabledTargetCount: targets.filter(\.isEnabled).count,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .partial,
+            enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: groupDocuments,
+            targets: targets,
+            skills: []
+        )
+        return Self(
+            sourceId: sourceId,
+            revision: resolvedRevision,
+            title: title,
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 2,
+            enabledTargetCount: targets.filter(\.isEnabled).count,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .partial,
+            enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: groupDocuments,
+            targets: targets,
+            skills: []
+        )
+    }
+}
+
+private extension MainViewModel.DetailViewData {
+    static func fixture(
+        sourceId: String = "alpha",
+        revision: String? = nil,
+        groupDocuments: [MainViewModel.DocumentTab] = [],
+        skills: [MainViewModel.DetailSkill] = []
+    ) -> Self {
+        let descriptors = MainViewModel.documentDescriptors(groupDocuments)
+        let resolvedRevision = revision ?? MainViewModel.detailRevision(
+            sourceId: sourceId,
+            title: "AlphaHub",
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: max(skills.count, 1),
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: descriptors,
+            targets: [
+                MainViewModel.DetailTarget(
+                    id: "claude-code",
+                    label: "Claude Code",
+                    shortLabel: "Claude",
+                    isEnabled: true
+                )
+            ],
+            skills: skills
+        )
+        return Self(
+            sourceId: sourceId,
+            revision: resolvedRevision,
+            title: "AlphaHub",
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: max(skills.count, 1),
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: groupDocuments,
+            targets: [
+                MainViewModel.DetailTarget(
+                    id: "claude-code",
+                    label: "Claude Code",
+                    shortLabel: "Claude",
+                    isEnabled: true
+                )
+            ],
+            skills: skills
+        )
     }
 }

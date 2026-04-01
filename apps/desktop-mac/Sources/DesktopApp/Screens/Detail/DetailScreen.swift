@@ -36,8 +36,75 @@ enum DetailRouteBootstrap {
         !hasInspectPayload && !isInspectRequestInFlight
     }
 
+    @MainActor
+    static func displayedDetailSkill(
+        state: DetailScreenState,
+        sourceId: String,
+        detail: DetailViewModel?
+    ) -> DetailViewModel.DetailSkill? {
+        guard let detail else {
+            return nil
+        }
+
+        let selectedId = state.pendingDetailSkillIdByGroup[sourceId]
+            ?? state.detailSkillIdByGroup[sourceId]
+            ?? preferredDetailSkillId(for: detail)
+
+        if state.detailSkillIdByGroup[sourceId] == nil, let selectedId {
+            state.detailSkillIdByGroup[sourceId] = selectedId
+        }
+
+        return detail.skills.first(where: { $0.id == selectedId }) ?? detail.skills.first
+    }
+
+    @MainActor
+    static func isSkillContentLoading(
+        state: DetailScreenState,
+        sourceId: String,
+        detail: DetailViewModel?
+    ) -> Bool {
+        if state.pendingDetailSkillIdByGroup[sourceId] != nil {
+            return true
+        }
+        guard state.detailShowsGroupOverviewByGroup[sourceId] != true else {
+            return false
+        }
+        return detail == nil
+    }
+
+    @MainActor
+    static func selectedSidebarItemId(state: DetailScreenState, sourceId: String) -> String {
+        if state.detailShowsGroupOverviewByGroup[sourceId] ?? false {
+            return detailGroupItemId(groupId: sourceId)
+        }
+        if let skillId = state.pendingDetailSkillIdByGroup[sourceId] ?? state.detailSkillIdByGroup[sourceId] {
+            return detailSkillItemId(skillId: skillId)
+        }
+        return detailGroupItemId(groupId: sourceId)
+    }
+
+    @MainActor
+    static func isSidebarSkillSelected(
+        state: DetailScreenState,
+        sourceId: String,
+        skillId: String
+    ) -> Bool {
+        guard state.detailShowsGroupOverviewByGroup[sourceId] != true else {
+            return false
+        }
+        return (state.pendingDetailSkillIdByGroup[sourceId] ?? state.detailSkillIdByGroup[sourceId]) == skillId
+    }
+
     private static func preferredDetailSkillId(for detail: DetailViewModel) -> String? {
         detail.skills.first(where: \.isEnabled)?.id ?? detail.skills.first?.id
+    }
+
+    private static func detailGroupItemId(groupId: String) -> String {
+        "group:\(groupId)"
+    }
+
+    private static func detailSkillItemId(skillId: String) -> String {
+        "skill:\(skillId)"
     }
 }
 
@@ -87,8 +154,7 @@ struct DetailScreen: View {
                     detailSidebar(
                         groupId: sourceId,
                         detail: detail,
-                        fallbackRow: fallbackRow,
-                        selectedSkillId: screenState.detailSkillIdByGroup[sourceId]
+                        fallbackRow: fallbackRow
                     )
                     detailMain(groupId: sourceId, detail: detail, fallbackRow: fallbackRow)
                 }
@@ -118,11 +184,10 @@ struct DetailScreen: View {
     private func detailSidebar(
         groupId: String,
         detail: DetailViewModel?,
-        fallbackRow: MainViewModel.SourceRow?,
-        selectedSkillId: String?
+        fallbackRow: MainViewModel.SourceRow?
     ) -> some View {
         let skills = detail?.skills ?? []
-        let selectedItemId = detailSelectedItemId(groupId: groupId, selectedSkillId: selectedSkillId)
+        let selectedItemId = DetailRouteBootstrap.selectedSidebarItemId(state: screenState, sourceId: groupId)
 
         return VStack(alignment: .leading, spacing: 0) {
             ScrollView {
@@ -166,7 +231,11 @@ struct DetailScreen: View {
     ) -> some View {
         let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
         let showingGroupOverview = isShowingGroupOverview(groupId)
-        let isSkillLoading = detail == nil && !showingGroupOverview
+        let isSkillLoading = DetailRouteBootstrap.isSkillContentLoading(
+            state: screenState,
+            sourceId: groupId,
+            detail: detail
+        )
 
         return VStack(alignment: .leading, spacing: 0) {
             if showingGroupOverview {
@@ -419,6 +488,7 @@ struct DetailScreen: View {
         }
         .frame(height: DetailSidebarLayout.groupRowHeight)
         .contentShape(Rectangle())
+        .desktopRowHover(theme: theme, accent: accent, isEnabled: true, isSelected: isSelected)
         .onTapGesture {
             selectGroupOverview(groupId: groupId, detail: detail)
         }
@@ -435,7 +505,11 @@ struct DetailScreen: View {
 
     private func detailSkillListRow(groupId: String, skill: DetailViewModel.DetailSkill) -> some View {
         let isPending = screenState.pendingDetailSkillIdByGroup[groupId] == skill.id
-        let isSelected = !isShowingGroupOverview(groupId) && selectedDetailSkill(for: groupId, detail: container.viewModel)?.id == skill.id
+        let isSelected = DetailRouteBootstrap.isSidebarSkillSelected(
+            state: screenState,
+            sourceId: groupId,
+            skillId: skill.id
+        )
 
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
@@ -450,19 +524,30 @@ struct DetailScreen: View {
 
             Spacer(minLength: 10)
 
-            Button(skill.isEnabled ? t("common.selection.on") : t("common.selection.off")) {
+            Button {
                 Task { await container.setSkillEnabled(skill.id, enabled: !skill.isEnabled, sourceId: groupId) }
+            } label: {
+                Text(skill.isEnabled ? t("common.selection.on") : t("common.selection.off"))
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: detailToggleWidth, height: detailToggleHeight)
+                    .background(AppTheme.selectionControlFill(skill.isEnabled ? .full : .empty, for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(AppTheme.selectionControlText(skill.isEnabled ? .full : .empty, for: theme))
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
-            .font(.system(size: 10, weight: .bold))
-            .frame(width: detailToggleWidth, height: detailToggleHeight)
-            .background(AppTheme.selectionControlFill(skill.isEnabled ? .full : .empty, for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(AppTheme.selectionControlText(skill.isEnabled ? .full : .empty, for: theme))
+            .desktopMotionChip(
+                kind: .switch,
+                theme: theme,
+                accent: accent,
+                isEnabled: true,
+                isSelected: skill.isEnabled
+            )
         }
         .frame(height: DetailSidebarLayout.skillRowHeight)
         .opacity(isPending ? 0.72 : 1)
         .contentShape(Rectangle())
+        .desktopRowHover(theme: theme, accent: accent, isEnabled: !isPending, isSelected: isSelected)
         .onTapGesture {
             scheduleSkillSelection(groupId: groupId, skill: skill)
         }
@@ -552,7 +637,7 @@ struct DetailScreen: View {
                     ForEach(detail.groupDocuments) { document in
                         documentTabChip(
                             title: Self.localizedDocumentTitle(document, locale: locale),
-                            isSelected: selectedGroupDocument(for: detail, groupId: groupId)?.id == document.id,
+                            isSelected: selectedGroupDocumentDescriptor(for: detail, groupId: groupId)?.id == document.id,
                             externalURL: document.externalURL
                         ) {
                             scheduleGroupDocumentSelection(groupId: groupId, documentId: document.id)
@@ -565,12 +650,16 @@ struct DetailScreen: View {
                 detailContentCard {
                     detailDocumentLoadingPlaceholder()
                 }
-            } else if let selectedDocument = selectedGroupDocument(for: detail, groupId: groupId) {
+            } else if let selectedDocument = selectedGroupDocumentDescriptor(for: detail, groupId: groupId) {
                 if selectedDocument.id == detail.groupDocuments.first?.id {
                     detailFileTreeCard(groupId: groupId, detail: detail)
+                } else if let resolvedDocument = container.groupDocument(sourceId: groupId, documentId: selectedDocument.id) {
+                    detailContentCard {
+                        detailDocumentContent(document: resolvedDocument)
+                    }
                 } else {
                     detailContentCard {
-                        detailDocumentContent(document: selectedDocument)
+                        detailDocumentLoadingPlaceholder()
                     }
                 }
             }
@@ -630,6 +719,13 @@ struct DetailScreen: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
+                        .desktopMotionChip(
+                            kind: .pill,
+                            theme: theme,
+                            accent: accent,
+                            isEnabled: true,
+                            isSelected: target.isEnabled
+                        )
                     }
 
                     if isLoading {
@@ -780,6 +876,7 @@ struct DetailScreen: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .desktopRowHover(theme: theme, accent: accent, isEnabled: true, isSelected: isSelected)
 
             if item.isDirectory && isExpanded {
                 ForEach(Array(item.children.enumerated()), id: \.element.id) { index, child in
@@ -818,24 +915,14 @@ struct DetailScreen: View {
         return skill.documents.first(where: { $0.id == selectedId }) ?? skill.documents.first
     }
 
-    private func selectedGroupDocument(
+    private func selectedGroupDocumentDescriptor(
         for detail: DetailViewModel,
         groupId: String
-    ) -> DetailViewModel.DocumentTab? {
+    ) -> DetailViewModel.DocumentDescriptor? {
         let selectedId = screenState.pendingDetailDocumentIdByGroup[groupId]
             ?? screenState.detailDocumentTabIdByGroup[groupId]
             ?? detail.groupDocuments.first?.id
         return detail.groupDocuments.first(where: { $0.id == selectedId }) ?? detail.groupDocuments.first
-    }
-
-    private func detailSelectedItemId(groupId: String, selectedSkillId: String?) -> String {
-        if isShowingGroupOverview(groupId) {
-            return detailGroupItemId(groupId)
-        }
-        if let selectedSkillId {
-            return detailSkillItemId(selectedSkillId)
-        }
-        return detailGroupItemId(groupId)
     }
 
     private func detailGroupItemId(_ groupId: String) -> String {
@@ -897,13 +984,11 @@ struct DetailScreen: View {
     }
 
     private func selectedDetailSkill(for groupId: String, detail: DetailViewModel?) -> DetailViewModel.DetailSkill? {
-        guard let detail else { return nil }
-        let selectedId = screenState.detailSkillIdByGroup[groupId]
-            ?? preferredDetailSkillId(for: detail)
-        if screenState.detailSkillIdByGroup[groupId] == nil, let selectedId {
-            screenState.detailSkillIdByGroup[groupId] = selectedId
-        }
-        return detail.skills.first(where: { $0.id == selectedId }) ?? detail.skills.first
+        DetailRouteBootstrap.displayedDetailSkill(
+            state: screenState,
+            sourceId: groupId,
+            detail: detail
+        )
     }
 
     private func scheduleSkillSelection(groupId: String, skill: DetailViewModel.DetailSkill) {
@@ -1148,6 +1233,13 @@ struct DetailScreen: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .switch,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isLoading,
+            isSelected: selection == .full
+        )
     }
 
     private func detailSwitchLabel(_ selection: SelectionState) -> String {
@@ -1200,6 +1292,13 @@ struct DetailScreen: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.22) : AppTheme.documentBlock(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .desktopMotionChip(
+            kind: .tab,
+            theme: theme,
+            accent: accent,
+            isEnabled: true,
+            isSelected: isSelected
+        )
     }
 
     @ViewBuilder
@@ -1242,6 +1341,13 @@ struct DetailScreen: View {
 }
 
 extension DetailScreen {
+    static func localizedDocumentTitle(_ document: DetailViewModel.DocumentDescriptor, locale: Locale) -> String {
+        if document.id == "group:filetree" {
+            return L10n.string("detail.document.file_tree", locale: locale)
+        }
+        return document.title
+    }
+
     static func localizedDocumentTitle(_ document: DetailViewModel.DocumentTab, locale: Locale) -> String {
         if document.id == "group:filetree" {
             return L10n.string("detail.document.file_tree", locale: locale)

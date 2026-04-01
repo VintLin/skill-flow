@@ -208,6 +208,7 @@ struct SharedGroupCard: View {
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let displayMode: GroupCardDisplayMode
+    let clickPolicy: DesktopCardClickPolicy
     let skillsCollapsed: Bool
     let isUpdating: Bool
     let onOpen: (() -> Void)?
@@ -246,6 +247,7 @@ struct SharedGroupCard: View {
         theme: DesktopThemeMode,
         accent: DesktopAccentColor,
         displayMode: GroupCardDisplayMode,
+        clickPolicy: DesktopCardClickPolicy,
         skillsCollapsed: Bool,
         isUpdating: Bool,
         onOpen: (() -> Void)?,
@@ -274,6 +276,7 @@ struct SharedGroupCard: View {
         self.theme = theme
         self.accent = accent
         self.displayMode = displayMode
+        self.clickPolicy = clickPolicy
         self.skillsCollapsed = skillsCollapsed
         self.isUpdating = isUpdating
         self.onOpen = onOpen
@@ -361,7 +364,20 @@ struct SharedGroupCard: View {
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
         }
         .animation(.easeInOut(duration: 0.18), value: skillsCollapsed)
+        .desktopMotionCard(
+            theme: theme,
+            accent: accent,
+            isEnabled: clickPolicy.allowsWholeCardTap && onOpen != nil && !isBusy
+        )
         .allowsHitTesting(!isBusy)
+        .contentShape(RoundedRectangle(cornerRadius: scale.cornerRadius))
+        .gesture(
+            TapGesture().onEnded {
+                guard clickPolicy.allowsWholeCardTap, !isBusy else { return }
+                onOpen?()
+            },
+            including: clickPolicy.allowsWholeCardTap ? .gesture : .none
+        )
         .onReceive(NotificationCenter.default.publisher(for: .groupTagEditorRequested)) { notification in
             guard let sourceId = notification.userInfo?["sourceId"] as? String, sourceId != card.id else {
                 return
@@ -407,7 +423,7 @@ struct SharedGroupCard: View {
             VStack(alignment: .leading, spacing: scale.headerSpacing) {
                 if let onOpen {
                     Button(action: onOpen) {
-                        headerPrimaryContent
+                        headerPrimaryButtonLabel
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -449,6 +465,12 @@ struct SharedGroupCard: View {
                 }
             }
         }
+    }
+
+    private var headerPrimaryButtonLabel: some View {
+        headerPrimaryContent
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 
     @ViewBuilder
@@ -515,6 +537,13 @@ struct SharedGroupCard: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(
+            kind: .icon,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isBusy,
+            isActive: isActionMenuOpen
+        )
         .disabled(isBusy)
         .onPreferenceChange(GroupCardActionButtonFrameKey.self) { frame in
             actionButtonFrame = frame
@@ -647,6 +676,12 @@ struct SharedGroupCard: View {
             }
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(
+            kind: displayMode.usesPlainPrimaryActionIcon ? .icon : .primary,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isDisabled
+        )
         .disabled(isDisabled)
         .help(buttonTitle)
     }
@@ -711,7 +746,7 @@ struct SharedGroupCard: View {
 
     private var readOnlyTagRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            LazyHStack(spacing: 6) {
                 ForEach(groupTagItems) { item in
                     Text("#\(item.title)")
                         .font(.system(size: scale.chipFontSize, weight: .regular))
@@ -727,7 +762,7 @@ struct SharedGroupCard: View {
 
     private var recommendationBadgeRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            LazyHStack(spacing: 6) {
                 ForEach(recommendationBadgeItems) { badge in
                     let badgeAccent = Self.recommendationBadgeAccent(tagId: badge.id)
                     Text("#\(badge.title)")
@@ -765,7 +800,7 @@ struct SharedGroupCard: View {
             }
 
             cardScroller {
-                HStack(spacing: scale.rowSpacing) {
+                LazyHStack(spacing: scale.rowSpacing) {
                     triStateSwitch(selection, loading: false, action: onToggleAll)
                     if loading {
                         ForEach(0..<3, id: \.self) { _ in
@@ -788,6 +823,13 @@ struct SharedGroupCard: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            .desktopMotionChip(
+                                kind: .pill,
+                                theme: theme,
+                                accent: accent,
+                                isEnabled: !isBusy,
+                                isSelected: item.isEnabled
+                            )
                             .disabled(isBusy)
                         }
                     }
@@ -949,6 +991,13 @@ struct SharedGroupCard: View {
             .frame(width: scale.triStateWidth, height: scale.triStateHeight)
         }
         .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .switch,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isSaving,
+            isSelected: selection == .full
+        )
         .disabled(isSaving)
     }
 

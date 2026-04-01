@@ -1,0 +1,55 @@
+import XCTest
+
+final class DesktopInteractionRegressionTests: XCTestCase {
+    func testToolbarButtonsUseSharedMotionButtonStyle() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+        XCTAssertTrue(source.contains(".desktopMotionButton("))
+    }
+
+    func testSettingsActionButtonsAndDropdownTriggerUseSharedMotionButtonStyle() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+        XCTAssertTrue(source.contains("settingsActionButton"))
+        XCTAssertTrue(source.contains(".desktopMotionButton("))
+    }
+
+    func testHomeUsesWholeCardTapButImportAndMenuDoNot() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+        let card = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(home.contains("clickPolicy: .home"))
+        XCTAssertTrue(card.contains(".desktopMotionCard("))
+    }
+
+    func testDetailNavigationSurfacesUseSharedMotionHelpers() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Detail/DetailScreen.swift")
+        XCTAssertTrue(source.contains(".desktopMotionChip("))
+        XCTAssertTrue(source.contains(".desktopRowHover("))
+    }
+
+    func testTagPillsAndCardChipsUseSharedChipMotion() throws {
+        let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
+        let cards = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(tags.contains(".desktopMotionChip("))
+        XCTAssertTrue(cards.contains(".desktopMotionChip("))
+    }
+
+    func testHomeScrollingSurfacesUseLazyStacksInsideHorizontalScrollViews() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+        let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
+        let cards = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(home.contains("LazyHStack"))
+        XCTAssertTrue(tags.contains("LazyHStack"))
+        XCTAssertTrue(cards.contains("LazyHStack"))
+    }
+
+    private func sourceText(at relativePath: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+}

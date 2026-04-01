@@ -23,6 +23,7 @@ final class DetailScreenContainer {
     private let state: DesktopAppState
     private let groupTagController: GroupTagController
     private let detailSnapshot: (String) -> DetailViewModel.Snapshot?
+    private let groupDocumentProvider: (String, String) -> MainViewModel.DocumentTab?
     private let fallbackRowProvider: (String) -> MainViewModel.SourceRow?
     private let toastPresenter: (MainViewModel.ToastStyle, String) -> Void
     private let hasInspectPayloadProvider: (String) -> Bool
@@ -34,6 +35,9 @@ final class DetailScreenContainer {
     private let setSkillEnabledAction: (String, Bool, String) async -> Void
     private let toggleAllTargetsAction: (String) async -> Void
     private let setTargetEnabledAction: (String, Bool, Bool, String) async -> Void
+    private var cachedDetailSourceId: String?
+    private var cachedDetailRevision: String?
+    private var cachedDetailViewModel: DetailViewModel?
     let screenState = DetailScreenState()
 
     private static func defaultGroupTagController(state: DesktopAppState) -> GroupTagController {
@@ -51,6 +55,7 @@ final class DetailScreenContainer {
         state: DesktopAppState,
         groupTagController: GroupTagController,
         detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
+        groupDocument: @escaping (String, String) -> MainViewModel.DocumentTab? = { _, _ in nil },
         fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
         toastPresenter: @escaping (MainViewModel.ToastStyle, String) -> Void = { _, _ in },
         hasInspectPayload: @escaping (String) -> Bool = { _ in false },
@@ -66,6 +71,7 @@ final class DetailScreenContainer {
         self.state = state
         self.groupTagController = groupTagController
         self.detailSnapshot = detailSnapshot
+        self.groupDocumentProvider = groupDocument
         self.fallbackRowProvider = fallbackRow
         self.toastPresenter = toastPresenter
         self.hasInspectPayloadProvider = hasInspectPayload
@@ -82,6 +88,7 @@ final class DetailScreenContainer {
     convenience init(
         state: DesktopAppState,
         detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
+        groupDocument: @escaping (String, String) -> MainViewModel.DocumentTab? = { _, _ in nil },
         fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
         toastPresenter: @escaping (MainViewModel.ToastStyle, String) -> Void = { _, _ in },
         hasInspectPayload: @escaping (String) -> Bool = { _ in false },
@@ -98,6 +105,7 @@ final class DetailScreenContainer {
             state: state,
             groupTagController: Self.defaultGroupTagController(state: state),
             detailSnapshot: detailSnapshot,
+            groupDocument: groupDocument,
             fallbackRow: fallbackRow,
             toastPresenter: toastPresenter,
             hasInspectPayload: hasInspectPayload,
@@ -144,7 +152,21 @@ final class DetailScreenContainer {
             return nil
         }
 
-        return DetailViewModel(snapshot: snapshot)
+        if cachedDetailSourceId == sourceId,
+           cachedDetailRevision == snapshot.revision,
+           let cachedDetailViewModel {
+            return cachedDetailViewModel
+        }
+
+        let nextViewModel = DetailViewModel(snapshot: snapshot)
+        cachedDetailSourceId = sourceId
+        cachedDetailRevision = snapshot.revision
+        cachedDetailViewModel = nextViewModel
+        return nextViewModel
+    }
+
+    func groupDocument(sourceId: String, documentId: String) -> MainViewModel.DocumentTab? {
+        groupDocumentProvider(sourceId, documentId)
     }
 
     func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {

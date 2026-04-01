@@ -488,14 +488,20 @@ struct MainView: View {
     }
 
     private func configPage(layout: LayoutMetrics) -> some View {
-        Group {
-            if groupCards.isEmpty {
-                gridSection(layout: layout)
+        let homeTagSnapshot = homeContainer.homeTagSnapshot(locale: locale)
+        let visibleCards = homeContainer.visibleGroupCards(
+            from: viewModel.groupCards,
+            snapshot: homeTagSnapshot
+        )
+
+        return Group {
+            if visibleCards.isEmpty {
+                gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 ScrollView {
-                    gridSection(layout: layout)
+                    gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
                         .padding(.bottom, 24)
@@ -508,7 +514,11 @@ struct MainView: View {
         }
     }
 
-    private func gridSection(layout: LayoutMetrics) -> some View {
+    private func gridSection(
+        layout: LayoutMetrics,
+        homeTagSnapshot: GroupTagController.HomeSnapshot,
+        groupCards: [MainViewModel.GroupCardModel]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if groupCards.isEmpty {
                 let loading = {
@@ -530,7 +540,7 @@ struct MainView: View {
                 }
             } else {
                 homeProjectScopeBar
-                homeTagFilterBar
+                homeTagFilterBar(snapshot: homeTagSnapshot)
                 HStack {
                     Spacer(minLength: 0)
                     LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
@@ -540,6 +550,7 @@ struct MainView: View {
                                 theme: theme,
                                 accent: accent,
                                 displayMode: homeCardDisplayMode,
+                                clickPolicy: .home,
                                 skillsCollapsed: false,
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
@@ -573,10 +584,10 @@ struct MainView: View {
                                 onToggleAllTargets: {
                                     Task { await viewModel.toggleAllTargets(sourceId: card.id) }
                                 },
-                                groupTagItems: homeContainer.groupTags(for: card.id, locale: locale),
-                                groupTagSuggestions: homeContainer.tagSuggestions(for: card.id, locale: locale),
-                                canCreateGroupTag: homeContainer.canAddTag(for: card.id, locale: locale),
-                                canDeleteGroupTags: homeContainer.hasTags(for: card.id, locale: locale),
+                                groupTagItems: homeTagSnapshot.tagsBySourceID[card.id] ?? [],
+                                groupTagSuggestions: homeTagSnapshot.suggestionsBySourceID[card.id] ?? [],
+                                canCreateGroupTag: (homeTagSnapshot.tagsBySourceID[card.id] ?? []).count < GroupTagController.maximumTagCount,
+                                canDeleteGroupTags: !(homeTagSnapshot.tagsBySourceID[card.id] ?? []).isEmpty,
                                 onCreateGroupTag: { title, itemAccent in
                                     homeContainer.addCustomTag(title, accent: itemAccent, toSourceId: card.id, locale: locale)
                                 },
@@ -779,10 +790,6 @@ struct MainView: View {
         Array(repeating: GridItem(.fixed(304), spacing: 14), count: layout.gridColumnCount)
     }
 
-    private var groupCards: [MainViewModel.GroupCardModel] {
-        homeContainer.visibleGroupCards(locale: locale)
-    }
-
     private var homeProjectScopeBar: some View {
         let projects = homeContainer.recentProjectScopes()
 
@@ -817,12 +824,12 @@ struct MainView: View {
         }
     }
 
-    private var homeTagFilterBar: some View {
-        let tags = homeContainer.availableHomeTags(locale: locale)
-        let selectedKey = homeContainer.selectedHomeTagFilterKey(locale: locale)
+    private func homeTagFilterBar(snapshot: GroupTagController.HomeSnapshot) -> some View {
+        let tags = snapshot.availableTags
+        let selectedKey = snapshot.selectedKey
 
         return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            LazyHStack(spacing: 6) {
                 homeFilterPill(
                     title: t("group_tag.filter.all"),
                     accentValue: accent,
@@ -1018,6 +1025,7 @@ struct MainView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .desktopMotionButton(kind: .icon, theme: theme, accent: accent, isEnabled: true)
         .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
         .contentShape(Rectangle())
         .background(AppTheme.headerControlFill(for: theme))

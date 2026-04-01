@@ -64,14 +64,13 @@ final class DetailViewModelTests: XCTestCase {
                 )
             ],
             groupDocuments: [
-                MainViewModel.DocumentTab(
+                MainViewModel.DocumentDescriptor(
                     id: "readme",
                     title: "README.md",
                     path: "README.md",
                     metadata: [
                         MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
                     ],
-                    content: "Hello",
                     renderCacheKey: "readme-cache",
                     externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
                 )
@@ -145,5 +144,57 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.skills.first?.title, snapshot.skills.first?.title)
         XCTAssertEqual(viewModel.skills.first?.documents.first?.title, snapshot.skills.first?.documents.first?.title)
         XCTAssertEqual(viewModel.skills.first?.documents.first?.externalURL, snapshot.skills.first?.documents.first?.externalURL)
+    }
+
+    func testSnapshotStoresOnlyDescriptorDrivenGroupDocuments() {
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: "readme",
+            title: "README.md",
+            path: "README.md",
+            metadata: [],
+            renderCacheKey: "descriptor-cache",
+            externalURL: nil
+        )
+
+        let snapshot = DetailViewModel.Snapshot(
+            sourceId: "alpha",
+            revision: "alpha:rev-1",
+            title: "AlphaHub",
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 2,
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: [descriptor],
+            targets: [],
+            skills: []
+        )
+
+        XCTAssertEqual(snapshot.groupDocuments.first?.renderCacheKey, "descriptor-cache")
     }
 }

@@ -69,6 +69,20 @@ enum GroupTagMutationResult: Equatable {
 
 @MainActor
 final class GroupTagController {
+    struct HomeSnapshot {
+        let availableTags: [GroupTagDisplayItem]
+        let selectedKey: String?
+        let visibleSourceIDs: [String]
+        let tagsBySourceID: [String: [GroupTagDisplayItem]]
+        let suggestionsBySourceID: [String: [GroupTagDisplayItem]]
+
+        fileprivate let visibleSourceIDSet: Set<String>
+
+        func contains(sourceId: String) -> Bool {
+            visibleSourceIDSet.contains(sourceId)
+        }
+    }
+
     static let maximumTagCount = 3
     private static let localizedTagIDs = [
         "general",
@@ -126,26 +140,66 @@ final class GroupTagController {
             }
     }
 
-    func availableHomeTags(sourceIds: [String], locale: Locale) -> [GroupTagDisplayItem] {
-        var ordered: [GroupTagDisplayItem] = []
-        var seen = Set<String>()
+    func homeSnapshot(sourceIds: [String], locale: Locale) -> HomeSnapshot {
+        var tagsBySourceID: [String: [GroupTagDisplayItem]] = [:]
+        tagsBySourceID.reserveCapacity(sourceIds.count)
+
+        var availableTags: [GroupTagDisplayItem] = []
+        var seenTagIDs = Set<String>()
 
         for sourceId in sourceIds {
-            for item in resolvedTags(forSourceId: sourceId, locale: locale) where seen.insert(item.id).inserted {
-                ordered.append(item)
+            let tags = resolvedTags(forSourceId: sourceId, locale: locale)
+            tagsBySourceID[sourceId] = tags
+
+            for item in tags where seenTagIDs.insert(item.id).inserted {
+                availableTags.append(item)
             }
         }
 
-        return ordered.sorted(by: Self.sortTags)
+        availableTags.sort(by: Self.sortTags)
+
+        let selectedKey: String?
+        if let selected = state.groupTags.selectedHomeFilterKey,
+           seenTagIDs.contains(selected) {
+            selectedKey = selected
+        } else {
+            selectedKey = nil
+        }
+
+        let visibleSourceIDs = sourceIds.filter { sourceId in
+            guard let selectedKey else {
+                return true
+            }
+
+            return tagsBySourceID[sourceId, default: []].contains(where: { $0.id == selectedKey })
+        }
+        let visibleSourceIDSet = Set(visibleSourceIDs)
+
+        var suggestionsBySourceID: [String: [GroupTagDisplayItem]] = [:]
+        suggestionsBySourceID.reserveCapacity(sourceIds.count)
+        for sourceId in sourceIds {
+            let currentTagIDs = Set(tagsBySourceID[sourceId, default: []].map(\.id))
+            suggestionsBySourceID[sourceId] = currentTagIDs.count < Self.maximumTagCount
+                ? availableTags.filter { !currentTagIDs.contains($0.id) }
+                : []
+        }
+
+        return HomeSnapshot(
+            availableTags: availableTags,
+            selectedKey: selectedKey,
+            visibleSourceIDs: visibleSourceIDs,
+            tagsBySourceID: tagsBySourceID,
+            suggestionsBySourceID: suggestionsBySourceID,
+            visibleSourceIDSet: visibleSourceIDSet
+        )
+    }
+
+    func availableHomeTags(sourceIds: [String], locale: Locale) -> [GroupTagDisplayItem] {
+        homeSnapshot(sourceIds: sourceIds, locale: locale).availableTags
     }
 
     func effectiveSelectedHomeFilterKey(sourceIds: [String], locale: Locale) -> String? {
-        guard let selected = state.groupTags.selectedHomeFilterKey else {
-            return nil
-        }
-
-        let availableKeys = Set(availableHomeTags(sourceIds: sourceIds, locale: locale).map(\.id))
-        return availableKeys.contains(selected) ? selected : nil
+        homeSnapshot(sourceIds: sourceIds, locale: locale).selectedKey
     }
 
     func setSelectedHomeFilterKey(_ key: String?) {
@@ -153,21 +207,11 @@ final class GroupTagController {
     }
 
     func matchesHomeFilter(sourceId: String, sourceIds: [String], locale: Locale) -> Bool {
-        guard let selected = effectiveSelectedHomeFilterKey(sourceIds: sourceIds, locale: locale) else {
-            return true
-        }
-
-        return resolvedTags(forSourceId: sourceId, locale: locale).contains(where: { $0.id == selected })
+        homeSnapshot(sourceIds: sourceIds, locale: locale).visibleSourceIDSet.contains(sourceId)
     }
 
     func tagSuggestions(sourceIds: [String], excluding sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
-        let currentTagIDs = Set(resolvedTags(forSourceId: sourceId, locale: locale).map(\.id))
-        guard currentTagIDs.count < Self.maximumTagCount else {
-            return []
-        }
-
-        return availableHomeTags(sourceIds: sourceIds, locale: locale)
-            .filter { !currentTagIDs.contains($0.id) }
+        homeSnapshot(sourceIds: sourceIds, locale: locale).suggestionsBySourceID[sourceId] ?? []
     }
 
     func canAddTag(forSourceId sourceId: String, locale: Locale) -> Bool {
