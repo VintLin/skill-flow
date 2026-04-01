@@ -653,7 +653,7 @@ struct DetailScreen: View {
             } else if let selectedDocument = selectedGroupDocumentDescriptor(for: detail, groupId: groupId) {
                 if selectedDocument.id == detail.groupDocuments.first?.id {
                     detailFileTreeCard(groupId: groupId, detail: detail)
-                } else if let resolvedDocument = detail.resolvedGroupDocument(id: selectedDocument.id) {
+                } else if let resolvedDocument = container.groupDocument(sourceId: groupId, documentId: selectedDocument.id) {
                     detailContentCard {
                         detailDocumentContent(document: resolvedDocument)
                     }

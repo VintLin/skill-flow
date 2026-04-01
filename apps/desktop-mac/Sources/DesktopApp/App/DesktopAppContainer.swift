@@ -58,6 +58,9 @@ final class DesktopAppContainer {
             detailSnapshot: { [weak mainViewModel] sourceId in
                 mainViewModel?.detailSnapshot(for: sourceId)
             },
+            groupDocument: { [weak mainViewModel] sourceId, documentId in
+                mainViewModel?.groupDocument(for: sourceId, documentId: documentId)
+            },
             fallbackRow: { [weak mainViewModel] sourceId in
                 mainViewModel?.sourceRows.first(where: { $0.id == sourceId })
             },

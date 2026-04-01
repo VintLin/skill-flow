@@ -40,7 +40,6 @@ final class DetailViewModel {
         let deploymentFacts: [String]
         let fileTree: [FileTreeItem]
         let groupDocuments: [DocumentDescriptor]
-        let groupDocumentTabsByID: [String: DocumentTab]
         let targets: [DetailTarget]
         let skills: [DetailSkill]
     }
@@ -72,7 +71,6 @@ final class DetailViewModel {
     let deploymentFacts: [String]
     let fileTree: [MainViewModel.FileTreeItem]
     let groupDocuments: [MainViewModel.DocumentDescriptor]
-    private let groupDocumentTabsByID: [String: MainViewModel.DocumentTab]
     let targets: [MainViewModel.DetailTarget]
     let skills: [MainViewModel.DetailSkill]
 
@@ -104,13 +102,8 @@ final class DetailViewModel {
         deploymentFacts = snapshot.deploymentFacts
         fileTree = snapshot.fileTree
         groupDocuments = snapshot.groupDocuments
-        groupDocumentTabsByID = snapshot.groupDocumentTabsByID
         targets = snapshot.targets
         skills = snapshot.skills
-    }
-
-    func resolvedGroupDocument(id: String) -> MainViewModel.DocumentTab? {
-        groupDocumentTabsByID[id]
     }
 }
 
@@ -143,7 +136,6 @@ extension DetailViewModel.Snapshot {
         deploymentFacts: [String],
         fileTree: [MainViewModel.FileTreeItem],
         groupDocuments: [MainViewModel.DocumentDescriptor],
-        groupDocumentTabsByID: [String: MainViewModel.DocumentTab] = [:],
         targets: [MainViewModel.DetailTarget],
         skills: [MainViewModel.DetailSkill]
     ) {
@@ -205,7 +197,6 @@ extension DetailViewModel.Snapshot {
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
             groupDocuments: groupDocuments,
-            groupDocumentTabsByID: groupDocumentTabsByID,
             targets: targets,
             skills: skills
         )
@@ -241,7 +232,6 @@ extension DetailViewModel.Snapshot {
             deploymentFacts: detail.deploymentFacts,
             fileTree: detail.fileTree,
             groupDocuments: MainViewModel.documentDescriptors(detail.groupDocuments),
-            groupDocumentTabsByID: Dictionary(uniqueKeysWithValues: detail.groupDocuments.map { ($0.id, $0) }),
             targets: detail.targets,
             skills: detail.skills
         )

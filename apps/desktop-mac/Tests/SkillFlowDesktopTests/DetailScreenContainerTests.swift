@@ -65,19 +65,6 @@ final class DetailScreenContainerTests: XCTestCase {
                     externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
                 )
             ],
-            groupDocumentTabsByID: [
-                "readme": MainViewModel.DocumentTab(
-                    id: "readme",
-                    title: "README.md",
-                    path: "README.md",
-                    metadata: [
-                        MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
-                    ],
-                    content: "Hello",
-                    renderCacheKey: "readme-cache",
-                    externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
-                )
-            ],
             targets: [
                 MainViewModel.DetailTarget(
                     id: "claude-code",
@@ -178,6 +165,68 @@ final class DetailScreenContainerTests: XCTestCase {
         let secondViewModel = try XCTUnwrap(container.viewModel)
 
         XCTAssertFalse(firstViewModel === secondViewModel)
+    }
+
+    func testResolvesGroupDocumentOutsideCachedViewModelBoundary() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var tab = MainViewModel.DocumentTab(
+            id: "group:/tmp/README.md",
+            title: "README.md",
+            path: "/tmp/README.md",
+            metadata: [],
+            content: "# Alpha v1",
+            renderCacheKey: "group:/tmp/README.md:rev-1",
+            externalURL: nil
+        )
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: tab.id,
+            title: tab.title,
+            path: tab.path,
+            metadata: tab.metadata,
+            renderCacheKey: tab.renderCacheKey,
+            externalURL: tab.externalURL
+        )
+
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in
+                DetailViewModel.Snapshot.fixture(
+                    revision: "alpha:rev-1",
+                    groupDocuments: [descriptor]
+                )
+            },
+            groupDocument: { sourceId, documentId in
+                XCTAssertEqual(sourceId, "alpha")
+                XCTAssertEqual(documentId, descriptor.id)
+                return tab
+            }
+        )
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        XCTAssertEqual(
+            try XCTUnwrap(container.groupDocument(sourceId: "alpha", documentId: descriptor.id)).content,
+            "# Alpha v1"
+        )
+
+        tab = MainViewModel.DocumentTab(
+            id: tab.id,
+            title: tab.title,
+            path: tab.path,
+            metadata: tab.metadata,
+            content: "# Alpha v2",
+            renderCacheKey: tab.renderCacheKey,
+            externalURL: tab.externalURL
+        )
+
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertTrue(firstViewModel === secondViewModel)
+        XCTAssertEqual(
+            try XCTUnwrap(container.groupDocument(sourceId: "alpha", documentId: descriptor.id)).content,
+            "# Alpha v2"
+        )
     }
 
     func testDetailContainerRebuildsViewModelWhenRevisionChanges() throws {
@@ -335,7 +384,6 @@ private extension DetailViewModel.Snapshot {
         revision: String? = nil,
         title: String = "AlphaHub",
         groupDocuments: [MainViewModel.DocumentDescriptor] = [],
-        groupDocumentTabsByID: [String: MainViewModel.DocumentTab] = [:],
         targets: [MainViewModel.DetailTarget] = [
             MainViewModel.DetailTarget(
                 id: "claude-code",
@@ -416,7 +464,6 @@ private extension DetailViewModel.Snapshot {
             deploymentFacts: [],
             fileTree: [],
             groupDocuments: groupDocuments,
-            groupDocumentTabsByID: groupDocumentTabsByID,
             targets: targets,
             skills: []
         )

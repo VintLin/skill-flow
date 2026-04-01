@@ -2524,6 +2524,10 @@ final class MainViewModel {
         return DetailViewModel.Snapshot(detail: detail)
     }
 
+    func groupDocument(for sourceId: String, documentId: String) -> DocumentTab? {
+        detailViewData(for: sourceId)?.groupDocuments.first(where: { $0.id == documentId })
+    }
+
     func hasInspectPayload(for sourceId: String) -> Bool {
         inspectedPayloadBySourceId[sourceId] != nil
     }
