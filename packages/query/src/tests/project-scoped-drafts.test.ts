@@ -358,6 +358,70 @@ describe.sequential("project scoped drafts", () => {
     expect(await pathExists(path.join(sandbox.targetsRoot, "codex", "review"))).toBe(false);
   });
 
+  test("applyDraft(project) does not persist a new project draft when scoped apply fails", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      recentProjects: [{
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      }],
+    });
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "alpha", project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      projectDrafts: {
+        "repo-a": {
+          [added.data.manifest.id]: {
+            enabledTargets: [],
+            selectedLeafIds: [],
+          },
+        },
+      },
+    });
+
+    vi.spyOn(app.applier, "applyPlan").mockResolvedValue({
+      ok: false,
+      warnings: [],
+      errors: [{
+        code: "TARGET_WRITE_FAILED",
+        message: "disk is blocked",
+      }],
+    });
+
+    const applied = await app.applyDraft(
+      added.data.manifest.id,
+      {
+        enabledTargets: ["codex"],
+        selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
+      },
+      { kind: "project", projectId: "repo-a" },
+    );
+
+    expect(applied.ok).toBe(false);
+    if (applied.ok) {
+      return;
+    }
+
+    const preferences = await app.store.readPreferences();
+    expect(preferences.projectDrafts["repo-a"]?.[added.data.manifest.id]).toEqual({
+      enabledTargets: [],
+      selectedLeafIds: [],
+    });
+  });
+
   test("applyDraft(project) removes invalid project scope data when the project path disappears", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
@@ -409,5 +473,8 @@ describe.sequential("project scoped drafts", () => {
     expect(preferences.selectedProjectScope).toEqual({ kind: "global" });
     expect(preferences.recentProjects).toEqual([]);
     expect(preferences.projectDrafts["repo-a"]).toBeUndefined();
+    expect(applied.data?.selectedProjectScope).toEqual({ kind: "global" });
+    expect(applied.data?.recentProjects).toEqual([]);
+    expect(applied.data?.projectDrafts).toEqual({});
   });
 });

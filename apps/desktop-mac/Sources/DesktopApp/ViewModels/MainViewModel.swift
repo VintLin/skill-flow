@@ -1261,6 +1261,7 @@ final class MainViewModel {
             }
             latestWarnings = response.warnings
         } catch {
+            applyProjectScopeStateIfAvailable(from: error)
             showToast(style: .error, text: localizedText("toast.details.load_failed", sourceId))
         }
     }
@@ -2932,6 +2933,7 @@ final class MainViewModel {
         } catch {
             let firstReason = firstErrorLine(from: error)
             await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
+            applyProjectScopeStateIfAvailable(from: error)
             workingDrafts[key] = previousDraft
             saveStateBySourceId[key] = SaveState(phase: .failed, detail: firstReason)
             showToast(style: .error, text: localizedText("toast.save.failed", firstReason))
@@ -3485,6 +3487,16 @@ final class MainViewModel {
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .first(where: { !$0.isEmpty }) ?? error.localizedDescription
+    }
+
+    private func applyProjectScopeStateIfAvailable(from error: Error) {
+        guard let bridgeError = error as? BridgeClientError,
+              case .commandFailed(_, let response) = bridgeError,
+              let data = response?.data?.value as? [String: Any] else {
+            return
+        }
+
+        applyProjectScopeState(data)
     }
 
     nonisolated private static func localizedWarmup(_ key: String, _ arguments: String...) -> String {

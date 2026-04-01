@@ -798,12 +798,14 @@ struct MainView: View {
                 title: t("project_scope.global"),
                 projectPath: nil,
                 isSelected: viewModel.selectedProjectScope == .global
+                ,
+                centersContent: Self.homeLeadingFixedButtonsAreCentered
             ) {
                 Task {
                     await homeContainer.selectProjectScope(.global)
                 }
             }
-            .frame(width: Self.homeProjectLeadingFixedWidth)
+            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
 
             Self.homeFilterDivider(theme: theme)
 
@@ -837,7 +839,7 @@ struct MainView: View {
             ) {
                 homeContainer.setSelectedHomeTagFilterKey(nil)
             }
-            .frame(width: Self.homeFilterLeadingFixedWidth)
+            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
 
             Self.homeFilterDivider(theme: theme)
 
@@ -861,6 +863,7 @@ struct MainView: View {
         title: String,
         projectPath: String?,
         isSelected: Bool,
+        centersContent: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         return ZStack(alignment: .trailing) {
@@ -877,10 +880,10 @@ struct MainView: View {
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
                         .lineLimit(1)
                 }
-                    .padding(.leading, 10)
-                    .padding(.trailing, projectPath == nil ? 10 : 30)
+                    .frame(maxWidth: .infinity, alignment: centersContent ? .center : .leading)
+                    .padding(.leading, centersContent ? 0 : 10)
+                    .padding(.trailing, centersContent ? 0 : (projectPath == nil ? 10 : 30))
                     .frame(height: Self.homeProjectPillHeight, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1085,12 +1088,13 @@ struct MainView: View {
 extension MainView {
     static let toolbarButtonSize: CGFloat = 34
     static let headerLeadingWidth: CGFloat = 220
-    static let homeProjectLeadingFixedWidth: CGFloat = 88
-    static let homeFilterLeadingFixedWidth: CGFloat = 76
     static let homeProjectPillHeight: CGFloat = 28
     static let homeFilterPillHeight: CGFloat = 28
     static let homeProjectPillCornerRadius: CGFloat = 8
     static let homeFilterPillCornerRadius: CGFloat = 8
+    static let homeLeadingFixedButtonsAreCentered = true
+    private static let homeLeadingButtonHorizontalPadding: CGFloat = 20
+    private static let homeLeadingProjectIndicatorAllowance: CGFloat = 12
 
     static func groupCardDisplayMode(for density: DesktopCardDensity) -> GroupCardDisplayMode {
         switch density {
@@ -1107,6 +1111,16 @@ extension MainView {
 
     static func projectScopeShowsLegacySubtitle(isSelected: Bool) -> Bool {
         false
+    }
+
+    static func homeLeadingFixedButtonWidth(for locale: Locale) -> CGFloat {
+        let projectTitle = L10n.string("project_scope.global", locale: locale)
+        let filterTitle = "#\(L10n.string("group_tag.filter.all", locale: locale))"
+        let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        let projectWidth = ceil((projectTitle as NSString).size(withAttributes: [.font: font]).width)
+        let filterWidth = ceil((filterTitle as NSString).size(withAttributes: [.font: font]).width)
+        let contentWidth = max(projectWidth + homeLeadingProjectIndicatorAllowance, filterWidth)
+        return contentWidth + homeLeadingButtonHorizontalPadding
     }
 
     @ViewBuilder

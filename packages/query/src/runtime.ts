@@ -128,6 +128,9 @@ type ApplyDraftResult = {
     leafs: LeafRecord[];
     deployments: LockFile["deployments"];
   };
+  recentProjects?: RecentProject[];
+  selectedProjectScope?: ProjectScope;
+  projectDrafts?: SharedPreferences["projectDrafts"];
 };
 type GroupCardEnrichmentSnapshot = {
   sourceMetadata?: SourceMetadataResult;
@@ -1895,7 +1898,19 @@ export class SkillFlowApp {
         ? ok({} as TargetRootOverrides)
         : await this.resolveProjectTargetRoots(scope, scopedTargets);
       if (!targetRootOverrides.ok) {
-        return fail(targetRootOverrides.errors, prepared.warnings);
+        const preferencesAfterFailure = await this.store.readPreferences();
+        return {
+          ok: false,
+          data: {
+            actions: [],
+            draft: prepared.draft,
+            recentProjects: preferencesAfterFailure.recentProjects,
+            selectedProjectScope: preferencesAfterFailure.selectedProjectScope,
+            projectDrafts: preferencesAfterFailure.projectDrafts,
+          },
+          warnings: [...prepared.warnings, ...targetRootOverrides.warnings],
+          errors: targetRootOverrides.errors,
+        };
       }
       const scopedDeployments = scopedTargets.length === 0
         ? []
@@ -1905,7 +1920,7 @@ export class SkillFlowApp {
           sourceId,
           targetRootOverrides.data,
         );
-      await this.store.writePreferences({
+      const nextPreferences: SharedPreferences = {
         ...preferences,
         projectDrafts: {
           ...preferences.projectDrafts,
@@ -1914,7 +1929,7 @@ export class SkillFlowApp {
             [sourceId]: prepared.draft,
           },
         },
-      });
+      };
 
       if (scopedTargets.length > 0) {
         const scopedLockFile = this.cloneLockFileForScopedDeployments(lockFile, scopedDeployments);
@@ -1948,6 +1963,7 @@ export class SkillFlowApp {
           return fail(scopedApply.errors, scopedApply.warnings);
         }
 
+        await this.store.writePreferences(nextPreferences);
         const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
         return ok(
           {
@@ -1960,6 +1976,7 @@ export class SkillFlowApp {
         );
       }
 
+      await this.store.writePreferences(nextPreferences);
       const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
       return ok(
         {

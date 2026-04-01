@@ -251,6 +251,49 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertTrue(model.recentProjectScopes.isEmpty)
         XCTAssertTrue(state.settings.recentProjectScopes.isEmpty)
     }
+
+    func testFailedProjectSaveAppliesReturnedProjectScopeState() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        command.applyError = .commandFailed(
+            "Project scope 'repo-a' is unavailable.",
+            response: BridgeResponse(
+                protocolVersion: "1.0",
+                requestId: UUID().uuidString,
+                command: .apply,
+                ok: false,
+                data: AnyCodable([
+                    "recentProjects": [],
+                    "selectedProjectScope": [
+                        "kind": "global"
+                    ]
+                ]),
+                warnings: [],
+                errors: [
+                    BridgeIssue(
+                        code: "PROJECT_SCOPE_PATH_UNAVAILABLE",
+                        message: "Project scope 'repo-a' is unavailable."
+                    )
+                ]
+            )
+        )
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        await model.selectProjectScope(.project("repo-a"))
+        await model.setTargetEnabled("codex", enabled: false, sourceId: "alpha")
+
+        XCTAssertEqual(model.selectedProjectScope, .global)
+        XCTAssertTrue(model.recentProjectScopes.isEmpty)
+        XCTAssertEqual(state.settings.selectedProjectScope, .global)
+        XCTAssertTrue(state.settings.recentProjectScopes.isEmpty)
+    }
 }
 
 @MainActor
@@ -436,6 +479,7 @@ private extension ProjectScopeSelection {
 private final class ProjectScopeCommandStub: DesktopCommanding {
     private(set) var recordedScopes: [ProjectScopeSelection] = []
     var applyProjectScopePayload: [String: Any] = [:]
+    var applyError: BridgeClientError?
 
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
         fatalError("unused")
@@ -455,6 +499,9 @@ private final class ProjectScopeCommandStub: DesktopCommanding {
 
     func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         recordedScopes.append(scope)
+        if let applyError {
+            throw applyError
+        }
         return BridgeResponse.success(command: .apply, payload: [
             "summary": [
                 "source": [

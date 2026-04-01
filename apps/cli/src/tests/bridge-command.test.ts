@@ -240,6 +240,28 @@ describe.sequential("bridge command dispatcher", () => {
     );
   });
 
+  test("rejects malformed project scope payload instead of downgrading to global", async () => {
+    const app = new SkillFlowApp();
+    const applySpy = vi.spyOn(app, "applyDraft");
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "apply",
+      payload: {
+        sourceId: "alpha",
+        scope: { kind: "project" },
+        draft: {
+          selectedLeafIds: ["alpha:a"],
+          enabledTargets: ["codex"],
+        },
+      },
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+    expect(applySpy).not.toHaveBeenCalled();
+  });
+
   test("accepts valid search-import-groups payload", async () => {
     vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({
       provider: "github",

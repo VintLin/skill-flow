@@ -396,15 +396,29 @@ function expectOptionalImportDraft(value: JsonValue | undefined): ImportDraft | 
 }
 
 function expectProjectScope(value: JsonValue | undefined): ProjectScope {
-  if (!isJsonObject(value) || typeof value.kind !== "string") {
+  if (value === undefined) {
     return { kind: "global" };
   }
 
-  if (value.kind === "project" && typeof value.projectId === "string" && value.projectId.length > 0) {
-    return { kind: "project", projectId: value.projectId };
+  if (!isJsonObject(value) || typeof value.kind !== "string") {
+    throw new Error(
+      "Field 'scope' must be a JSON object with kind 'global' or kind 'project' and a non-empty string 'projectId'.",
+    );
   }
 
-  return { kind: "global" };
+  if (value.kind === "global") {
+    return { kind: "global" };
+  }
+
+  if (value.kind === "project") {
+    if (typeof value.projectId === "string" && value.projectId.length > 0) {
+      return { kind: "project", projectId: value.projectId };
+    }
+
+    throw new Error("Field 'scope.projectId' must be a non-empty string when scope.kind is 'project'.");
+  }
+
+  throw new Error("Field 'scope.kind' must be either 'global' or 'project'.");
 }
 
 function sanitizeForJson<T>(value: T): JsonValue {

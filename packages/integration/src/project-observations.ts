@@ -25,11 +25,20 @@ type SessionPayload = {
   git?: { repository_url?: string };
 };
 
-function basenameMaybe(inputPath: string | undefined): string | null {
+function normalizeProjectPath(inputPath: string | undefined): string | null {
   if (!inputPath) {
     return null;
   }
-  const base = path.basename(inputPath);
+  const normalized = path.normalize(inputPath).replace(/[\\/]+$/, "");
+  return normalized || null;
+}
+
+function basenameMaybe(inputPath: string | undefined): string | null {
+  const normalizedPath = normalizeProjectPath(inputPath);
+  if (!normalizedPath) {
+    return null;
+  }
+  const base = path.basename(normalizedPath);
   return base || null;
 }
 
@@ -74,6 +83,26 @@ function repositoryUrlToProjectId(repositoryUrl: string): string | null {
   return `${parts[0]}/${parts[1]}`;
 }
 
+function deriveProjectIdentity(args: {
+  repositoryUrl: string | undefined;
+  projectPath: string | undefined;
+}): { projectId: string; title: string } | null {
+  const projectPath = normalizeProjectPath(args.projectPath);
+  const repositoryProjectId = args.repositoryUrl
+    ? repositoryUrlToProjectId(args.repositoryUrl)
+    : null;
+  const projectId = repositoryProjectId ?? projectPath;
+
+  if (!projectId) {
+    return null;
+  }
+
+  return {
+    projectId,
+    title: basenameMaybe(projectPath ?? projectId) ?? projectId,
+  };
+}
+
 export function collectProjectObservationsFromCodexSessions(
   codexSessions: CodexSessionLike[],
 ): ProjectObservation[] {
@@ -95,26 +124,21 @@ function collectProjectObservationsFromSessionPayloads(
   return sessions
     .map((session) => {
       const payload = session.payload;
-      const repositoryUrl = payload?.git?.repository_url;
       const observedAt =
         toIsoString(session.observedAt) ?? new Date(0).toISOString();
+      const project = deriveProjectIdentity({
+        repositoryUrl: payload?.git?.repository_url,
+        projectPath: payload?.cwd,
+      });
 
-      const projectId =
-        (repositoryUrl ? repositoryUrlToProjectId(repositoryUrl) : null) ??
-        basenameMaybe(payload?.cwd);
-
-      if (!projectId) {
+      if (!project) {
         return null;
       }
 
-      const title = projectId.includes("/")
-        ? projectId.split("/").at(-1) ?? projectId
-        : projectId;
-
       return {
         tool,
-        projectId,
-        title,
+        projectId: project.projectId,
+        title: project.title,
         observedAt,
         ...(payload?.cwd ? { projectPath: payload.cwd } : {}),
       } satisfies ProjectObservation;
@@ -285,20 +309,16 @@ async function collectClaudeObservations(homeDir: string): Promise<ProjectObserv
 
       const observedAt =
         lastTimestamp ?? (await statMtimeIso(filePath)) ?? new Date(0).toISOString();
-
-      const projectId =
-        (lastRepoUrl ? repositoryUrlToProjectId(lastRepoUrl) : null) ??
-        basenameMaybe(lastCwd ?? undefined);
-      if (!projectId) continue;
-
-      const title = projectId.includes("/")
-        ? projectId.split("/").at(-1) ?? projectId
-        : projectId;
+      const project = deriveProjectIdentity({
+        repositoryUrl: lastRepoUrl ?? undefined,
+        projectPath: lastCwd ?? undefined,
+      });
+      if (!project) continue;
 
       observations.push({
         tool: "claude-code",
-        projectId,
-        title,
+        projectId: project.projectId,
+        title: project.title,
         observedAt,
         ...(lastCwd ? { projectPath: lastCwd } : {}),
       });
@@ -318,14 +338,13 @@ async function collectGeminiObservations(homeDir: string): Promise<ProjectObserv
     const content = await readFileSafe(projectRootFile);
     if (!content) continue;
 
-    const projectRoot = content.trim();
-    const projectId = basenameMaybe(projectRoot);
-    if (!projectId) continue;
+    const projectRoot = normalizeProjectPath(content.trim());
+    if (!projectRoot) continue;
 
     observations.push({
       tool: "gemini-cli",
-      projectId,
-      title: projectId,
+      projectId: projectRoot,
+      title: basenameMaybe(projectRoot) ?? projectRoot,
       observedAt: (await statMtimeIso(projectRootFile)) ?? new Date(0).toISOString(),
       projectPath: projectRoot,
     });
@@ -355,18 +374,17 @@ async function collectOpencodeObservations(_homeDir: string): Promise<ProjectObs
       seen.add(filePath);
 
       const content = await readFileSafe(filePath);
-      const projectRoot = content?.trim();
-      const projectId = basenameMaybe(projectRoot);
-      if (!projectId) {
+      const projectRoot = normalizeProjectPath(content?.trim());
+      if (!projectRoot) {
         continue;
       }
 
       observations.push({
         tool: "opencode",
-        projectId,
-        title: projectId,
+        projectId: projectRoot,
+        title: basenameMaybe(projectRoot) ?? projectRoot,
         observedAt: (await statMtimeIso(filePath)) ?? new Date(0).toISOString(),
-        projectPath: projectRoot ?? "",
+        projectPath: projectRoot,
       });
     }
 

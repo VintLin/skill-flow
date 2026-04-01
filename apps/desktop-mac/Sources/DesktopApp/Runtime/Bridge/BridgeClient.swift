@@ -9,7 +9,7 @@ enum RuntimeDependency: String {
 enum BridgeClientError: Error, LocalizedError {
     case helperMissing
     case invalidResponse
-    case commandFailed(String)
+    case commandFailed(String, response: BridgeResponse? = nil)
     case timeout(UInt64)
     case emptyResponse
     case concurrentMutationRejected
@@ -26,7 +26,7 @@ enum BridgeClientError: Error, LocalizedError {
             return L10n.string("bridge.error.helper_missing", locale: locale)
         case .invalidResponse:
             return L10n.string("bridge.error.invalid_response", locale: locale)
-        case .commandFailed(let message):
+        case .commandFailed(let message, _):
             return message
         case .timeout(let timeoutMs):
             return L10n.string("bridge.error.timeout", locale: locale, arguments: [String(timeoutMs)])
@@ -269,7 +269,7 @@ final class BridgeClient: @unchecked Sendable {
         if let dependencyError = Self.dependencyError(for: message) {
             throw dependencyError
         }
-        throw BridgeClientError.commandFailed(message)
+        throw BridgeClientError.commandFailed(message, response: response)
     }
 
     private func resolveHelperURL() throws -> URL {

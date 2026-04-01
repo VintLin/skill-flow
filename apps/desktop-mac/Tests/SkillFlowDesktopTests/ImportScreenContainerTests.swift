@@ -356,8 +356,17 @@ final class ImportScreenContainerTests: XCTestCase {
     }
 
     func testHomeFilterBarsUseFixedLeadingButtonsAndSharedPillMetrics() {
-        XCTAssertEqual(MainView.homeFilterLeadingFixedWidth, 76)
-        XCTAssertEqual(MainView.homeProjectLeadingFixedWidth, 88)
+        let zhWidth = MainView.homeLeadingFixedButtonWidth(for: Locale(identifier: "zh-Hans"))
+        let enWidth = MainView.homeLeadingFixedButtonWidth(for: Locale(identifier: "en"))
+        let jaWidth = MainView.homeLeadingFixedButtonWidth(for: Locale(identifier: "ja"))
+
+        XCTAssertEqual(zhWidth, MainView.homeLeadingFixedButtonWidth(for: Locale(identifier: "zh-Hans")))
+        XCTAssertEqual(enWidth, MainView.homeLeadingFixedButtonWidth(for: Locale(identifier: "en")))
+        XCTAssertGreaterThan(zhWidth, 0)
+        XCTAssertGreaterThan(enWidth, 0)
+        XCTAssertGreaterThan(jaWidth, 0)
+        XCTAssertGreaterThanOrEqual(jaWidth, enWidth)
+        XCTAssertGreaterThanOrEqual(jaWidth, zhWidth)
         XCTAssertEqual(MainView.homeProjectPillHeight, MainView.homeFilterPillHeight)
         XCTAssertEqual(MainView.homeProjectPillCornerRadius, MainView.homeFilterPillCornerRadius)
     }
@@ -367,6 +376,10 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(MainView.projectScopeShowsSelectionIndicator(isSelected: false))
         XCTAssertFalse(MainView.projectScopeShowsLegacySubtitle(isSelected: true))
         XCTAssertFalse(MainView.projectScopeShowsLegacySubtitle(isSelected: false))
+    }
+
+    func testLeadingFixedButtonsUseCenteredAlignmentForStableWidth() {
+        XCTAssertTrue(MainView.homeLeadingFixedButtonsAreCentered)
     }
 
     func testSearchPromptHidesOnFocusEvenWhenQueryIsEmpty() {

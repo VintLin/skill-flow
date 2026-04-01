@@ -8,7 +8,7 @@ import {
 } from "../project-observations.js";
 
 describe("project observations", () => {
-  test("collectProjectObservations prefers codex repository_url and falls back to cwd basename", () => {
+  test("collectProjectObservations prefers codex repository_url and falls back to unique cwd project roots", () => {
     const observations = collectProjectObservationsFromCodexSessions([
       {
         session_meta: {
@@ -23,11 +23,15 @@ describe("project observations", () => {
 
     expect(observations.map((observation) => observation.projectId)).toEqual([
       "acme/skill-flow",
-      "fallback-project",
+      "/tmp/fallback-project",
     ]);
     expect(observations.map((observation) => observation.projectPath)).toEqual([
       "/Users/test/src/skill-flow",
       "/tmp/fallback-project",
+    ]);
+    expect(observations.map((observation) => observation.title)).toEqual([
+      "skill-flow",
+      "fallback-project",
     ]);
   });
 
@@ -41,6 +45,19 @@ describe("project observations", () => {
     ]);
 
     expect(observations[0]?.projectId).toBe("acme/skill-flow");
+  });
+
+  test("collectProjectObservations keeps cwd fallback project ids unique per project root", () => {
+    const observations = collectProjectObservationsFromCodexSessions([
+      { session_meta: { payload: { cwd: "/work/client-a/app" } } },
+      { session_meta: { payload: { cwd: "/work/client-b/app" } } },
+    ]);
+
+    expect(observations.map((observation) => observation.projectId)).toEqual([
+      "/work/client-a/app",
+      "/work/client-b/app",
+    ]);
+    expect(observations.map((observation) => observation.title)).toEqual(["app", "app"]);
   });
 
   test("collectProjectObservations preserves projectPath for claude, gemini, and opencode", async () => {
