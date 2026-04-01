@@ -1903,12 +1903,13 @@ export class SkillFlowApp {
 
       if (scopedTargets.length > 0) {
         const scopedLockFile = this.cloneLockFileForScopedDeployments(lockFile, scopedDeployments);
-        const scopedApply = await this.withScopedTargetRoots(targetRootOverrides.data, async () => {
+        const scopedApply = await this.withScopedTargetRoots<Result<{ actions: DeploymentAction[] }>>(
+          targetRootOverrides.data,
+          async () => {
           const plan = await this.planForSources(
             prepared.manifest,
             scopedLockFile,
             [sourceId],
-            targetRootOverrides.data,
           );
           if (!plan.ok) {
             return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
@@ -1926,9 +1927,10 @@ export class SkillFlowApp {
             { actions: plan.data.actions },
             [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
           );
-        });
+          },
+        );
         if (!scopedApply.ok) {
-          return scopedApply;
+          return fail(scopedApply.errors, scopedApply.warnings);
         }
 
         const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
@@ -3477,20 +3479,18 @@ export class SkillFlowApp {
     manifest: Manifest,
     lockFile: LockFile,
     primarySourceId: string,
-    targetRootOverrides?: TargetRootOverrides,
   ): Promise<Result<DeploymentPlan>> {
     const sourceIds = manifest.sources
       .map((source) => source.id)
       .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
 
-    return this.planForSources(manifest, lockFile, sourceIds, targetRootOverrides);
+    return this.planForSources(manifest, lockFile, sourceIds);
   }
 
   private async planForSources(
     manifest: Manifest,
     lockFile: LockFile,
     sourceIds: string[],
-    targetRootOverrides?: TargetRootOverrides,
   ): Promise<Result<DeploymentPlan>> {
     const uniqueSourceIds = [...new Set(sourceIds)];
 
@@ -3498,9 +3498,7 @@ export class SkillFlowApp {
     const warnings: Warning[] = [];
 
     for (const sourceId of uniqueSourceIds) {
-      const plan = await this.planner.planForSource(sourceId, manifest, lockFile, {
-        targetRootOverrides,
-      });
+      const plan = await this.planner.planForSource(sourceId, manifest, lockFile);
       if (!plan.ok) {
         return fail(plan.errors, [...warnings, ...plan.warnings]);
       }
@@ -3657,7 +3655,6 @@ export class SkillFlowApp {
           ...detection,
           available: true,
           rootPath: overrideRootPath,
-          reason: undefined,
         };
       };
 

@@ -27,9 +27,6 @@ export class DeploymentPlanner {
     sourceId: string,
     manifest: Manifest,
     lockFile: LockFile,
-    options?: {
-      targetRootOverrides?: Partial<Record<DeploymentTargetName, string>>;
-    },
   ): Promise<Result<DeploymentPlan>> {
     const binding = manifest.bindings[sourceId] ?? { targets: {} };
     const source = manifest.sources.find((item) => item.id === sourceId);
@@ -42,8 +39,6 @@ export class DeploymentPlanner {
 
     for (const adapter of this.adapters) {
       const detection = await adapter.detect();
-      const targetRootOverride = options?.targetRootOverrides?.[adapter.target]?.trim();
-      const targetRootPath = targetRootOverride || detection.rootPath;
       const targetBinding = binding.targets[adapter.target];
       const desiredLeafIds =
         targetBinding?.enabled === true ? new Set(targetBinding.leafIds) : new Set<string>();
@@ -56,9 +51,9 @@ export class DeploymentPlanner {
       const plannedForTarget = await this.planTarget(
         sourceId,
         adapter,
-        targetRootOverride ? true : detection.available,
-        targetRootPath,
-        targetRootOverride ? undefined : detection.reason,
+        detection.available,
+        detection.rootPath,
+        detection.reason,
         desiredLeafIds,
         leafs,
         previousDeployments,
