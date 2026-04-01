@@ -65,6 +65,7 @@ import {
   parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
+import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import { searchClawHubSkills } from "@skill-flow/integration/utils/clawhub";
 import { deriveDisplayName, deriveSourceId } from "@skill-flow/integration/utils/source-id";
@@ -115,6 +116,7 @@ type SkillFlowAddOptions = AddSourceOptions &
   };
 
 type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: boolean };
+type TargetRootOverrides = Partial<Record<DeploymentTargetName, string>>;
 type ApplyDraftResult = {
   actions: DeploymentAction[];
   draft: DraftBinding;
@@ -563,13 +565,22 @@ export class SkillFlowApp {
       this.workflowService.getSummaries(prepared.manifest, lockFile).find((item) => item.source.id === sourceId)
       ?? summary;
     const scopedBinding = prepared.manifest.bindings[sourceId] ?? binding;
+    const scopedDeployments = scopedDraft.enabledTargets.length === 0
+      ? []
+      : await this.resolveScopedInspectDeployments(
+        prepared.manifest,
+        lockFile,
+        sourceId,
+        scope,
+        scopedDraft.enabledTargets,
+      );
 
     return ok({
       summary: scopedSummary,
       source: scopedSource,
       binding: scopedBinding,
       leafs,
-      deployments,
+      deployments: scopedDeployments,
     });
   }
 
@@ -1841,11 +1852,44 @@ export class SkillFlowApp {
       }
 
       this.normalizeBindings(manifest, lockFile);
+      const preferences = await this.store.readPreferences();
+      const initialDrafts: Record<string, DraftBinding> = {
+        [sourceId]: this.draftFromBinding(
+          sourceId,
+          manifest.bindings[sourceId] ?? { targets: {} },
+          lockFile,
+        ),
+      };
+      const previousDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
+      const previousScopedManifest = this.cloneManifest(manifest);
+      this.normalizeBindings(previousScopedManifest, lockFile);
+      const previousPrepared = this.prepareManifestForDraft(
+        previousScopedManifest,
+        lockFile,
+        sourceId,
+        previousDraft,
+      );
       const scopedManifest = this.cloneManifest(manifest);
       this.normalizeBindings(scopedManifest, lockFile);
       const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, draft);
-
-      const preferences = await this.store.readPreferences();
+      const scopedTargets = [...new Set([
+        ...previousDraft.enabledTargets,
+        ...prepared.draft.enabledTargets,
+      ])];
+      const targetRootOverrides = scopedTargets.length === 0
+        ? ok({} as TargetRootOverrides)
+        : await this.resolveProjectTargetRoots(scope, scopedTargets);
+      if (!targetRootOverrides.ok) {
+        return fail(targetRootOverrides.errors, prepared.warnings);
+      }
+      const scopedDeployments = scopedTargets.length === 0
+        ? []
+        : await this.findScopedDeploymentsOnDisk(
+          previousPrepared.manifest,
+          lockFile,
+          sourceId,
+          targetRootOverrides.data,
+        );
       await this.store.writePreferences({
         ...preferences,
         projectDrafts: {
@@ -1856,6 +1900,48 @@ export class SkillFlowApp {
           },
         },
       });
+
+      if (scopedTargets.length > 0) {
+        const scopedLockFile = this.cloneLockFileForScopedDeployments(lockFile, scopedDeployments);
+        const scopedApply = await this.withScopedTargetRoots(targetRootOverrides.data, async () => {
+          const plan = await this.planForSources(
+            prepared.manifest,
+            scopedLockFile,
+            [sourceId],
+            targetRootOverrides.data,
+          );
+          if (!plan.ok) {
+            return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
+          }
+
+          const applyResult = await this.applier.applyPlan(scopedLockFile, plan.data.actions);
+          if (!applyResult.ok) {
+            return fail(
+              applyResult.errors,
+              [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
+            );
+          }
+
+          return ok(
+            { actions: plan.data.actions },
+            [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
+          );
+        });
+        if (!scopedApply.ok) {
+          return scopedApply;
+        }
+
+        const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
+        return ok(
+          {
+            actions: scopedApply.data.actions,
+            draft: prepared.draft,
+            ...(freshState.summary ? { summary: freshState.summary } : {}),
+            ...(freshState.inspect ? { inspect: freshState.inspect } : {}),
+          },
+          scopedApply.warnings,
+        );
+      }
 
       const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
       return ok(
@@ -3391,18 +3477,20 @@ export class SkillFlowApp {
     manifest: Manifest,
     lockFile: LockFile,
     primarySourceId: string,
+    targetRootOverrides?: TargetRootOverrides,
   ): Promise<Result<DeploymentPlan>> {
     const sourceIds = manifest.sources
       .map((source) => source.id)
       .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
 
-    return this.planForSources(manifest, lockFile, sourceIds);
+    return this.planForSources(manifest, lockFile, sourceIds, targetRootOverrides);
   }
 
   private async planForSources(
     manifest: Manifest,
     lockFile: LockFile,
     sourceIds: string[],
+    targetRootOverrides?: TargetRootOverrides,
   ): Promise<Result<DeploymentPlan>> {
     const uniqueSourceIds = [...new Set(sourceIds)];
 
@@ -3410,7 +3498,9 @@ export class SkillFlowApp {
     const warnings: Warning[] = [];
 
     for (const sourceId of uniqueSourceIds) {
-      const plan = await this.planner.planForSource(sourceId, manifest, lockFile);
+      const plan = await this.planner.planForSource(sourceId, manifest, lockFile, {
+        targetRootOverrides,
+      });
       if (!plan.ok) {
         return fail(plan.errors, [...warnings, ...plan.warnings]);
       }
@@ -3424,6 +3514,165 @@ export class SkillFlowApp {
       warnings,
       blocked: actions.filter((action) => action.kind === "blocked"),
     }, warnings);
+  }
+
+  // Project-local path application happens here: scope resolves to concrete target roots
+  // before planner/applier mutate the filesystem.
+  private async resolveProjectTargetRoots(
+    scope: Extract<ProjectScope, { kind: "project" }>,
+    targets: DeploymentTargetName[],
+  ): Promise<Result<TargetRootOverrides>> {
+    const preferences = await this.store.readPreferences();
+    const projectPath = preferences.recentProjects.find(
+      (project) => project.projectId === scope.projectId,
+    )?.projectPath?.trim();
+    if (!projectPath) {
+      return fail({
+        code: "PROJECT_SCOPE_PATH_UNAVAILABLE",
+        message: `Project scope '${scope.projectId}' is missing a projectPath, so project-local skills cannot be mounted.`,
+      });
+    }
+
+    const overrides: TargetRootOverrides = {};
+    for (const target of [...new Set(targets)]) {
+      const resolvedPath = resolveDocumentedProjectSkillPath(target, projectPath);
+      if (!resolvedPath) {
+        return fail({
+          code: "PROJECT_SCOPE_PATH_UNAVAILABLE",
+          message: `Target '${target}' does not expose a documented project-local skill path for project '${scope.projectId}'.`,
+        });
+      }
+      overrides[target] = resolvedPath;
+    }
+
+    return ok(overrides);
+  }
+
+  private cloneLockFileForScopedDeployments(
+    lockFile: LockFile,
+    deployments: LockFile["deployments"],
+  ): LockFile {
+    return {
+      ...lockFile,
+      sources: lockFile.sources.map((source) => ({
+        ...source,
+        ...(source.observedTargets
+          ? { observedTargets: source.observedTargets.map((entry) => ({ ...entry })) }
+          : {}),
+      })),
+      leafInventory: lockFile.leafInventory.map((leaf) => ({ ...leaf })),
+      deployments: deployments.map((deployment) => ({ ...deployment })),
+      projections: deployments.map((deployment) => ({
+        ...deployment,
+        mode: "managed" as const,
+      })),
+    };
+  }
+
+  private async resolveScopedInspectDeployments(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceId: string,
+    scope: Extract<ProjectScope, { kind: "project" }>,
+    targets: DeploymentTargetName[],
+  ): Promise<LockFile["deployments"]> {
+    const targetRootOverrides = await this.resolveProjectTargetRoots(scope, targets);
+    if (!targetRootOverrides.ok) {
+      return [];
+    }
+
+    return this.findScopedDeploymentsOnDisk(
+      manifest,
+      lockFile,
+      sourceId,
+      targetRootOverrides.data,
+    );
+  }
+
+  private async findScopedDeploymentsOnDisk(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceId: string,
+    targetRootOverrides: TargetRootOverrides,
+  ): Promise<LockFile["deployments"]> {
+    const source = manifest.sources.find((item) => item.id === sourceId);
+    if (!source) {
+      return [];
+    }
+
+    const binding = manifest.bindings[sourceId] ?? { targets: {} };
+    const scopedDeployments: LockFile["deployments"] = [];
+
+    for (const [target, rootPath] of Object.entries(targetRootOverrides) as Array<[DeploymentTargetName, string]>) {
+      const targetBinding = binding.targets[target];
+      if (!targetBinding?.enabled) {
+        continue;
+      }
+
+      const adapter = this.adapters.find((candidate) => candidate.target === target);
+      if (!adapter) {
+        continue;
+      }
+
+      const projectedLinkNames = this.buildProjectedLinkNameMap(manifest, lockFile, target);
+      for (const leafId of targetBinding.leafIds) {
+        const leaf = lockFile.leafInventory.find(
+          (candidate) => candidate.sourceId === sourceId && candidate.id === leafId,
+        );
+        if (!leaf) {
+          continue;
+        }
+
+        const deployment = await this.findManagedDeploymentOnDisk(
+          source,
+          leaf,
+          target,
+          adapter.strategy,
+          rootPath,
+          projectedLinkNames,
+        );
+        if (deployment) {
+          scopedDeployments.push(deployment);
+        }
+      }
+    }
+
+    return scopedDeployments;
+  }
+
+  private async withScopedTargetRoots<T>(
+    targetRootOverrides: TargetRootOverrides,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const restores = this.adapters.map((adapter) => {
+      const overrideRootPath = targetRootOverrides[adapter.target]?.trim();
+      if (!overrideRootPath) {
+        return () => {};
+      }
+
+      const originalDetect = adapter.detect.bind(adapter);
+      adapter.detect = async () => {
+        const detection = await originalDetect();
+        return {
+          ...detection,
+          available: true,
+          rootPath: overrideRootPath,
+          reason: undefined,
+        };
+      };
+
+      return () => {
+        adapter.detect = originalDetect;
+      };
+    });
+
+    try {
+      return await operation();
+    } finally {
+      for (const restore of restores.reverse()) {
+        restore();
+      }
+    }
   }
 
   private async planAndApplySources(

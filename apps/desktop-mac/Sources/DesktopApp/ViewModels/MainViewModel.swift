@@ -2519,13 +2519,7 @@ final class MainViewModel {
         .compactMap { $0?.nonEmpty }
 
         let deploymentFacts = deploymentsPayload.prefix(4).compactMap { deployment -> String? in
-            guard let target = deployment["target"] as? String,
-                  let status = deployment["status"] as? String
-            else {
-                return nil
-            }
-            let leafId = (deployment["leafId"] as? String)?.nonEmpty ?? "unknown"
-            return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(leafId)"
+            deploymentFact(from: deployment)
         }
 
         let targets = visibleTargetIds().map { targetId in
@@ -3777,6 +3771,32 @@ final class MainViewModel {
         }
         let suffix = String(standardizedTarget.dropFirst(standardizedBase.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return suffix.isEmpty ? "." : suffix
+    }
+
+    private func deploymentFact(from deployment: [String: Any]) -> String? {
+        guard let target = deployment["target"] as? String,
+              let status = deployment["status"] as? String
+        else {
+            return nil
+        }
+
+        if let projectPath = currentProjectPath(),
+           let targetPath = (deployment["targetPath"] as? String)?.nonEmpty,
+           let relativeTargetPath = Self.relativePath(from: projectPath, to: targetPath)
+        {
+            return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(relativeTargetPath)"
+        }
+
+        let leafId = (deployment["leafId"] as? String)?.nonEmpty ?? "unknown"
+        return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(leafId)"
+    }
+
+    private func currentProjectPath() -> String? {
+        guard case .project(let projectId) = currentProjectScope() else {
+            return nil
+        }
+
+        return recentProjectScopes.first(where: { $0.projectId == projectId })?.projectPath
     }
 
     nonisolated private static func projectedRelativeFolderPath(

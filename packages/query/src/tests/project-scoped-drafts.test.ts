@@ -1,7 +1,9 @@
+import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
+import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
 import { SkillFlowApp } from "../runtime.js";
-import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
+import { createRepo, pathExists, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("project scoped drafts", () => {
   const sandbox = useSkillFlowSandbox();
@@ -76,19 +78,29 @@ describe.sequential("project scoped drafts", () => {
   });
 
   test("applyDraft(project) only updates the project layer", async () => {
-    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
-      {
-        projectId: "acme/skill-flow",
-        title: "Skill Flow",
-        lastActivityAt: "2026-03-30T00:00:00.000Z",
-        tools: ["codex"],
-      },
-    ]);
-
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
+    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
+      {
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      },
+    ]);
     const app = new SkillFlowApp();
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      recentProjects: [{
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      }],
+    });
 
     const added = await app.addSource(repoPath, { sourceIdOverride: "alpha" });
     expect(added.ok).toBe(true);
@@ -140,19 +152,29 @@ describe.sequential("project scoped drafts", () => {
   });
 
   test("applyDraft returns fresh source state without project scope metadata", async () => {
-    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
-      {
-        projectId: "acme/skill-flow",
-        title: "Skill Flow",
-        lastActivityAt: "2026-03-30T00:00:00.000Z",
-        tools: ["codex"],
-      },
-    ]);
-
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
+    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
+      {
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      },
+    ]);
     const app = new SkillFlowApp();
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      recentProjects: [{
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      }],
+    });
 
     const added = await app.addSource(repoPath, { sourceIdOverride: "alpha" });
     expect(added.ok).toBe(true);
@@ -176,5 +198,122 @@ describe.sequential("project scoped drafts", () => {
     expect(applied.data).not.toHaveProperty("recentProjects");
     expect(applied.data).not.toHaveProperty("selectedProjectScope");
     expect(applied.data).not.toHaveProperty("projectDrafts");
+  });
+
+  test("applyDraft(project) mounts enabled targets into the documented project path", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
+      {
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      },
+    ]);
+    const app = new SkillFlowApp();
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      recentProjects: [{
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      }],
+    });
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "alpha", project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:skills/review`;
+    const projectTargetRoot = resolveDocumentedProjectSkillPath("codex", repoPath);
+    expect(projectTargetRoot).toBeTruthy();
+    if (!projectTargetRoot) {
+      return;
+    }
+
+    const applied = await app.applyDraft(
+      sourceId,
+      { enabledTargets: ["codex"], selectedLeafIds: [leafId] },
+      { kind: "project", projectId: "repo-a" },
+    );
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    const expectedTargetPath = path.join(projectTargetRoot, "review");
+    expect(await pathExists(expectedTargetPath)).toBe(true);
+    expect(await pathExists(path.join(sandbox.targetsRoot, "codex", "review"))).toBe(false);
+
+    const inspected = await app.inspectSource(sourceId, { kind: "project", projectId: "repo-a" });
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+
+    expect(inspected.data.deployments).toEqual([
+      expect.objectContaining({
+        target: "codex",
+        targetRootPath: projectTargetRoot,
+        targetPath: expectedTargetPath,
+      }),
+    ]);
+  });
+
+  test("applyDraft(project) fails when the selected project has no projectPath", async () => {
+    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
+      {
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        tools: ["codex"],
+      },
+    ]);
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      recentProjects: [{
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        tools: ["codex"],
+      }],
+    });
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "alpha", project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const applied = await app.applyDraft(
+      added.data.manifest.id,
+      {
+        enabledTargets: ["codex"],
+        selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
+      },
+      { kind: "project", projectId: "repo-a" },
+    );
+
+    expect(applied.ok).toBe(false);
+    if (applied.ok) {
+      return;
+    }
+
+    expect(applied.errors[0]?.code).toBe("PROJECT_SCOPE_PATH_UNAVAILABLE");
+    expect(await pathExists(path.join(sandbox.targetsRoot, "codex", "review"))).toBe(false);
   });
 });

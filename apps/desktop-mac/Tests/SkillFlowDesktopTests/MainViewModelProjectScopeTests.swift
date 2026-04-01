@@ -180,6 +180,30 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertEqual(model.recentProjectScopes.first?.projectPath, "/Users/test/src/repo-a")
     }
 
+    func testProjectScopedDetailSurfacesProjectLocalDeploymentPath() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        await model.selectProjectScope(.project("repo-a"))
+        await model.selectSource("alpha")
+        let deadline = Date().addingTimeInterval(1)
+        var detail = model.detailSnapshot(for: "alpha")
+        while Date() < deadline, detail?.deploymentFacts.contains(where: { $0.contains(".agents/skills/review") }) != true {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            detail = model.detailSnapshot(for: "alpha")
+        }
+
+        XCTAssertTrue(detail?.deploymentFacts.contains(where: { $0.contains(".agents/skills/review") }) == true)
+    }
+
     func testGlobalTargetTogglePreservesRecentProjectScopesWhenApplyOmitsProjectState() async {
         let query = ProjectScopeQueryStub()
         let command = ProjectScopeCommandStub()
@@ -306,6 +330,16 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
         BridgeResponse.success(command: .inspect, payload: [
             "source": [
                 "id": sourceId
+            ],
+            "deployments": [
+                [
+                    "target": "codex",
+                    "status": "active",
+                    "leafId": scope == .global ? "alpha-a" : "alpha-b",
+                    "targetPath": scope == .global
+                        ? "/Users/test/.codex/skills/review"
+                        : "/Users/test/src/repo-a/.agents/skills/review"
+                ]
             ],
             "summary": summaryPayload(
                 sourceId: sourceId,
