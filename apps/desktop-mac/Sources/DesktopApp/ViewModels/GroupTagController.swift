@@ -71,6 +71,7 @@ enum GroupTagMutationResult: Equatable {
 final class GroupTagController {
     struct HomeSnapshot {
         let availableTags: [GroupTagDisplayItem]
+        let tagCountsByID: [String: Int]
         let selectedKey: String?
         let visibleSourceIDs: [String]
         let tagsBySourceID: [String: [GroupTagDisplayItem]]
@@ -145,14 +146,18 @@ final class GroupTagController {
         tagsBySourceID.reserveCapacity(sourceIds.count)
 
         var availableTags: [GroupTagDisplayItem] = []
+        var tagCountsByID: [String: Int] = [:]
         var seenTagIDs = Set<String>()
 
         for sourceId in sourceIds {
             let tags = resolvedTags(forSourceId: sourceId, locale: locale)
             tagsBySourceID[sourceId] = tags
 
-            for item in tags where seenTagIDs.insert(item.id).inserted {
-                availableTags.append(item)
+            for item in tags {
+                tagCountsByID[item.id, default: 0] += 1
+                if seenTagIDs.insert(item.id).inserted {
+                    availableTags.append(item)
+                }
             }
         }
 
@@ -186,6 +191,7 @@ final class GroupTagController {
 
         return HomeSnapshot(
             availableTags: availableTags,
+            tagCountsByID: tagCountsByID,
             selectedKey: selectedKey,
             visibleSourceIDs: visibleSourceIDs,
             tagsBySourceID: tagsBySourceID,

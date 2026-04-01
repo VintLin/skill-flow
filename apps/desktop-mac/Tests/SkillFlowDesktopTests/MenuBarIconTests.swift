@@ -229,6 +229,11 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(MainView.toolbarButtonSize, 34)
     }
 
+    func testHeaderToolbarAlertBadgeAnchorsToTopTrailingEdge() {
+        XCTAssertEqual(MainView.toolbarAlertBadgeOffset.width, 4)
+        XCTAssertEqual(MainView.toolbarAlertBadgeOffset.height, -4)
+    }
+
     func testHeaderLayoutUsesStableLeadingAndSearchWidths() {
         XCTAssertEqual(MainView.headerLeadingWidth, 220)
         XCTAssertEqual(MainView.headerSearchFieldWidth, 384)

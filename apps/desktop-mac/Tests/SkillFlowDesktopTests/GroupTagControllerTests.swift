@@ -238,6 +238,8 @@ final class GroupTagControllerTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.availableTags.map(\.title), ["研究", "增长"])
+        XCTAssertEqual(snapshot.tagCountsByID["custom:增长"], 2)
+        XCTAssertEqual(snapshot.tagCountsByID["custom:研究"], 1)
         XCTAssertEqual(snapshot.selectedKey, "custom:增长")
         XCTAssertEqual(snapshot.visibleSourceIDs, ["alpha", "gamma"])
         XCTAssertEqual(snapshot.tagsBySourceID["alpha"]?.map(\.title), ["增长"])

@@ -861,6 +861,7 @@ struct MainView: View {
                     ForEach(tags) { item in
                         homeFilterPill(
                             title: item.title,
+                            count: snapshot.tagCountsByID[item.id],
                             accentValue: item.accent,
                             isSelected: selectedKey == item.id
                         ) {
@@ -934,13 +935,22 @@ struct MainView: View {
 
     private func homeFilterPill(
         title: String,
+        count: Int? = nil,
         accentValue: DesktopAccentColor,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Text("#\(title)")
-                .font(.system(size: 12, weight: .regular))
+            HStack(spacing: 4) {
+                Text("#\(title)")
+                    .font(.system(size: 12, weight: .regular))
+
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .regular))
+                        .opacity(0.78)
+                }
+            }
                 .foregroundStyle(AppTheme.brand(for: accentValue, in: theme))
                 .padding(.horizontal, 10)
                 .frame(height: Self.homeFilterPillHeight)
@@ -1087,19 +1097,10 @@ struct MainView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            ZStack(alignment: .topTrailing) {
-                actionIcon(icon, size: 14)
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
-                    .contentShape(Rectangle())
-
-                if showsAlertBadge {
-                    actionIcon(.projectWarning, size: 10)
-                        .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                        .frame(width: 12, height: 12)
-                        .offset(x: -5, y: 5)
-                }
-            }
+            actionIcon(icon, size: 14)
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .desktopMotionButton(kind: .icon, theme: theme, accent: accent, isEnabled: true)
@@ -1112,11 +1113,23 @@ struct MainView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
         }
+        .overlay(alignment: .topTrailing) {
+            if showsAlertBadge {
+                actionIcon(.projectWarning, size: 10)
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .frame(width: 12, height: 12)
+                    .offset(
+                        x: Self.toolbarAlertBadgeOffset.width,
+                        y: Self.toolbarAlertBadgeOffset.height
+                    )
+            }
+        }
     }
 }
 
 extension MainView {
     static let toolbarButtonSize: CGFloat = 34
+    static let toolbarAlertBadgeOffset = CGSize(width: 4, height: -4)
     static let headerLeadingWidth: CGFloat = 220
     static let homeProjectPillHeight: CGFloat = 28
     static let homeFilterPillHeight: CGFloat = 28
