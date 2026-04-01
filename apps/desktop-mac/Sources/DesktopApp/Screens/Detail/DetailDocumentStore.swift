@@ -29,7 +29,21 @@ final class DetailDocumentStore {
         }
 
         let task = Task.detached { [fileReader, descriptor] in
-            let raw = try fileReader(descriptor.path)
+            let raw: String
+            do {
+                raw = try fileReader(descriptor.path)
+            } catch {
+                let nsError = error as NSError
+                if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoSuchFileError {
+                    let title = descriptor.title
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    raw = title == "SKILL.md"
+                        ? MainViewModel.localizedWarmup("detail.document.skill_unavailable")
+                        : "\(title.isEmpty ? "Document" : title) unavailable."
+                } else {
+                    throw error
+                }
+            }
             let parsed = MainViewModel.parseDetailDocument(raw)
             return LoadedDocument(
                 id: descriptor.id,
@@ -57,14 +71,6 @@ final class DetailDocumentStore {
     }
 
     nonisolated private static func defaultFileReader(path: String) throws -> String {
-        do {
-            return try String(contentsOfFile: path, encoding: .utf8)
-        } catch {
-            let nsError = error as NSError
-            if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoSuchFileError {
-                return MainViewModel.localizedWarmup("detail.document.skill_unavailable")
-            }
-            throw error
-        }
+        try String(contentsOfFile: path, encoding: .utf8)
     }
 }

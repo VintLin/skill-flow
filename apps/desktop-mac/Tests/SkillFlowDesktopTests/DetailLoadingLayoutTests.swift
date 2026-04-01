@@ -340,6 +340,27 @@ final class DetailLoadingLayoutTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testSelectingGroupOverviewCancelsPendingSkillSelectionIntent() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "browse"
+        state.pendingDetailSkillIdByGroup["alpha"] = "debug"
+        state.detailSkillSelectionTokenByGroup["alpha"] = 7
+        state.detailSelectedTreeItemIdByGroup["alpha"] = "skill:debug"
+
+        DetailRouteBootstrap.selectGroupOverview(
+            state: state,
+            sourceId: "alpha",
+            detail: nil
+        )
+
+        XCTAssertEqual(state.detailShowsGroupOverviewByGroup["alpha"], true)
+        XCTAssertNil(state.pendingDetailSkillIdByGroup["alpha"])
+        XCTAssertEqual(state.detailSkillSelectionTokenByGroup["alpha"], 8)
+        XCTAssertNil(state.detailSelectedTreeItemIdByGroup["alpha"])
+    }
+
     func testDetailRouteBootstrapOnlyFetchesInspectWhenPayloadIsMissing() {
         XCTAssertTrue(DetailRouteBootstrap.shouldFetchInspect(hasInspectPayload: false, isInspectRequestInFlight: false))
         XCTAssertFalse(DetailRouteBootstrap.shouldFetchInspect(hasInspectPayload: true, isInspectRequestInFlight: false))

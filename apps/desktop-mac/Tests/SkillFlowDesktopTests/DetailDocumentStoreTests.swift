@@ -143,7 +143,7 @@ final class DetailDocumentStoreTests: XCTestCase {
 
         let document = try await store.document(for: descriptor)
 
-        XCTAssertEqual(document.content, "SKILL.md unavailable.")
+        XCTAssertEqual(document.content, "README.md unavailable.")
     }
 
     func testDefaultStorePropagatesNonMissingReadErrors() async throws {

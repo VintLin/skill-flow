@@ -95,8 +95,29 @@ enum DetailRouteBootstrap {
         return (state.pendingDetailSkillIdByGroup[sourceId] ?? state.detailSkillIdByGroup[sourceId]) == skillId
     }
 
+    @MainActor
+    static func selectGroupOverview(
+        state: DetailScreenState,
+        sourceId: String,
+        detail: DetailViewModel?
+    ) {
+        if state.detailSkillIdByGroup[sourceId] == nil, let detail {
+            state.detailSkillIdByGroup[sourceId] = preferredDetailSkillId(for: detail)
+        }
+        state.pendingDetailSkillIdByGroup[sourceId] = nil
+        state.detailSkillSelectionTokenByGroup[sourceId] = nextSelectionToken(
+            state.detailSkillSelectionTokenByGroup[sourceId]
+        )
+        state.detailShowsGroupOverviewByGroup[sourceId] = true
+        state.detailSelectedTreeItemIdByGroup[sourceId] = nil
+    }
+
     private static func preferredDetailSkillId(for detail: DetailViewModel) -> String? {
         detail.skills.first(where: \.isEnabled)?.id ?? detail.skills.first?.id
+    }
+
+    private static func nextSelectionToken(_ current: UInt64?) -> UInt64 {
+        (current ?? 0) &+ 1
     }
 
     private static func detailGroupItemId(groupId: String) -> String {
@@ -1022,11 +1043,11 @@ struct DetailScreen: View {
     }
 
     private func selectGroupOverview(groupId: String, detail: DetailViewModel?) {
-        if screenState.detailSkillIdByGroup[groupId] == nil, let detail {
-            screenState.detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
-        }
-        screenState.detailShowsGroupOverviewByGroup[groupId] = true
-        screenState.detailSelectedTreeItemIdByGroup[groupId] = nil
+        DetailRouteBootstrap.selectGroupOverview(
+            state: screenState,
+            sourceId: groupId,
+            detail: detail
+        )
     }
 
     private func selectedDetailSkill(for groupId: String, detail: DetailViewModel?) -> DetailViewModel.DetailSkill? {
