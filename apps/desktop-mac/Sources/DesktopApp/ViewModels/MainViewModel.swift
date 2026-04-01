@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import CryptoKit
 import Yams
 
 @MainActor
@@ -4175,6 +4176,12 @@ final class MainViewModel {
     }
 
     nonisolated private static func documentRenderCacheKey(path: String) -> String {
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe]) {
+            let digest = SHA256.hash(data: data)
+            let contentHash = digest.compactMap { String(format: "%02x", $0) }.joined()
+            return "\(path):\(contentHash)"
+        }
+
         let url = URL(fileURLWithPath: path)
         let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
         let modifiedAt = values?.contentModificationDate?.timeIntervalSince1970 ?? 0

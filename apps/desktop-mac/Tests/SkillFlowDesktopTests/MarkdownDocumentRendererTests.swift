@@ -16,6 +16,28 @@ final class MarkdownDocumentRendererTests: XCTestCase {
         }
     }
 
+    actor RenderState {
+        private var didObserveCancellation = false
+        private var invocationCount = 0
+
+        func markCancelled() {
+            didObserveCancellation = true
+        }
+
+        func observedCancellation() -> Bool {
+            didObserveCancellation
+        }
+
+        func nextInvocation() -> Int {
+            invocationCount += 1
+            return invocationCount
+        }
+
+        func renderedCount() -> Int {
+            invocationCount
+        }
+    }
+
     func testMarkdownViewModelEqualityDistinguishesLoadingFromLoadedState() {
         let descriptor = MainViewModel.DocumentDescriptor(
             id: "group:/tmp/README.md",
@@ -116,6 +138,86 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
         XCTAssertNil(renderer.cachedContent(for: "doc-a"))
         XCTAssertEqual(String(renderer.cachedContent(for: "doc-b")?.characters ?? AttributedString().characters), "# B")
+    }
+
+    @MainActor
+    func testRendererCancelsInFlightRenderWhenLastWaiterCancels() async {
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: "readme",
+            title: "README.md",
+            path: "/tmp/README.md",
+            metadata: [],
+            renderCacheKey: "readme-cache",
+            externalURL: nil
+        )
+        let document = MarkdownDocumentView.Model(descriptor: descriptor, content: "# Hello", metadata: [])
+        let renderStarted = expectation(description: "render started")
+        let renderState = RenderState()
+        let renderer = MarkdownDocumentRenderer { model in
+            renderStarted.fulfill()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            await renderState.markCancelled()
+            return AttributedString(model.content ?? "")
+        }
+
+        let requestTask = Task {
+            await renderer.renderedContent(for: document)
+        }
+
+        await fulfillment(of: [renderStarted], timeout: 1.0)
+        requestTask.cancel()
+        _ = await requestTask.value
+
+        let observedCancellation = await renderState.observedCancellation()
+        XCTAssertTrue(observedCancellation)
+        XCTAssertNil(renderer.cachedContent(for: document.renderCacheKey))
+    }
+
+    @MainActor
+    func testRendererStartsFreshRenderWhenCancelledDocumentIsReopened() async {
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: "readme",
+            title: "README.md",
+            path: "/tmp/README.md",
+            metadata: [],
+            renderCacheKey: "readme-cache",
+            externalURL: nil
+        )
+        let document = MarkdownDocumentView.Model(descriptor: descriptor, content: "# Hello", metadata: [])
+        let renderStarted = expectation(description: "first render started")
+        let renderCancelled = expectation(description: "first render cancelled")
+        let renderState = RenderState()
+        let renderer = MarkdownDocumentRenderer { model in
+            let invocation = await renderState.nextInvocation()
+            if invocation == 1 {
+                renderStarted.fulfill()
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(10))
+                }
+                renderCancelled.fulfill()
+                try? await Task.sleep(for: .milliseconds(50))
+                return AttributedString()
+            }
+            return AttributedString(model.content ?? "")
+        }
+
+        let firstRequest = Task {
+            await renderer.renderedContent(for: document)
+        }
+
+        await fulfillment(of: [renderStarted], timeout: 1.0)
+        firstRequest.cancel()
+        await fulfillment(of: [renderCancelled], timeout: 1.0)
+
+        let reopened = await renderer.renderedContent(for: document)
+
+        _ = await firstRequest.value
+        let renderedCount = await renderState.renderedCount()
+        XCTAssertEqual(String(reopened.characters), "# Hello")
+        XCTAssertEqual(renderedCount, 2)
+        XCTAssertEqual(String(renderer.cachedContent(for: document.renderCacheKey)?.characters ?? AttributedString().characters), "# Hello")
     }
 
     @MainActor

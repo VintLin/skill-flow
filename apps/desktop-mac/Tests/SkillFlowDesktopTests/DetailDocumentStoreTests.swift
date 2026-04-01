@@ -26,6 +26,49 @@ final class DetailDocumentStoreTests: XCTestCase {
         }
     }
 
+    final class LockedFlagBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Bool
+
+        init(_ value: Bool) {
+            self.value = value
+        }
+
+        func read() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+
+        func write(_ newValue: Bool) {
+            lock.lock()
+            value = newValue
+            lock.unlock()
+        }
+    }
+
+    final class LockedIntBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Int
+
+        init(_ value: Int) {
+            self.value = value
+        }
+
+        func incrementAndRead() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            value += 1
+            return value
+        }
+
+        func read() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+    }
+
     func testDocumentStoreLoadsMarkdownOnlyWhenRequested() async throws {
         let url = try makeMarkdownFile(
             named: "README.md",
@@ -126,6 +169,102 @@ final class DetailDocumentStoreTests: XCTestCase {
         let document = try await store.document(for: descriptor)
 
         XCTAssertEqual(document.content, "# Hello")
+    }
+
+    func testDocumentStoreCancelsInFlightLoadWhenLastWaiterCancels() async throws {
+        let url = try makeMarkdownFile(
+            named: "README.md",
+            contents: """
+            # Hello
+            """
+        )
+        let loadStarted = expectation(description: "load started")
+        let releaseLoad = LockedFlagBox(false)
+        let observedCancellation = LockedFlagBox(false)
+        let store = DetailDocumentStore(fileReader: { path in
+            XCTAssertEqual(path, url.path)
+            loadStarted.fulfill()
+            while !releaseLoad.read() {
+                if withUnsafeCurrentTask(body: { task in task?.isCancelled ?? false }) {
+                    observedCancellation.write(true)
+                    throw CancellationError()
+                }
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+            return "# Hello"
+        })
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: "group:\(url.path)",
+            title: "README.md",
+            path: url.path,
+            metadata: [],
+            renderCacheKey: "\(url.path):rev-1",
+            externalURL: nil
+        )
+
+        let requestTask = Task {
+            try await store.document(for: descriptor)
+        }
+
+        await fulfillment(of: [loadStarted], timeout: 1.0)
+        requestTask.cancel()
+        try? await Task.sleep(for: .milliseconds(50))
+        releaseLoad.write(true)
+
+        await XCTAssertThrowsErrorAsync(try await requestTask.value)
+        XCTAssertTrue(observedCancellation.read())
+        XCTAssertEqual(store.debugLoadCount(for: url.path), 1)
+    }
+
+    func testDocumentStoreStartsFreshLoadWhenCancelledDocumentIsReopened() async throws {
+        let url = try makeMarkdownFile(
+            named: "README.md",
+            contents: """
+            # Hello
+            """
+        )
+        let loadStarted = expectation(description: "first load started")
+        let firstLoadCancelled = expectation(description: "first load cancelled")
+        let invocationCount = LockedIntBox(0)
+        let store = DetailDocumentStore(fileReader: { path in
+            XCTAssertEqual(path, url.path)
+            let invocation = invocationCount.incrementAndRead()
+            if invocation == 1 {
+                loadStarted.fulfill()
+                while true {
+                    if withUnsafeCurrentTask(body: { task in task?.isCancelled ?? false }) {
+                        firstLoadCancelled.fulfill()
+                        Thread.sleep(forTimeInterval: 0.05)
+                        throw CancellationError()
+                    }
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+            }
+            return "# Reopened"
+        })
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: "group:\(url.path)",
+            title: "README.md",
+            path: url.path,
+            metadata: [],
+            renderCacheKey: "\(url.path):rev-1",
+            externalURL: nil
+        )
+
+        let firstRequest = Task {
+            try await store.document(for: descriptor)
+        }
+
+        await fulfillment(of: [loadStarted], timeout: 1.0)
+        firstRequest.cancel()
+        await fulfillment(of: [firstLoadCancelled], timeout: 1.0)
+
+        let reopened = try await store.document(for: descriptor)
+
+        await XCTAssertThrowsErrorAsync(try await firstRequest.value)
+        XCTAssertEqual(reopened.content, "# Reopened")
+        XCTAssertEqual(invocationCount.read(), 2)
+        XCTAssertEqual(store.debugLoadCount(for: url.path), 2)
     }
 
     func testDefaultStoreReturnsUnavailableContentForMissingFile() async throws {

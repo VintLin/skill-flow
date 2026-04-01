@@ -339,6 +339,28 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(skillDocuments.allSatisfy { !$0.renderCacheKey.isEmpty })
     }
 
+    func testDetailSnapshotChangesRenderCacheKeyWhenMarkdownContentChangesWithoutMetadataDelta() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let fixedDate = Date(timeIntervalSince1970: 1_710_000_000)
+        try fixture.writeGroupDocument(sourceId: "alpha", name: "README.md", content: "alpha")
+        try fixture.setModificationDate(fixedDate, forGroupDocumentIn: "alpha", name: "README.md")
+
+        let initialModel = try await fixture.makeModel()
+        let initialSnapshot = try XCTUnwrap(initialModel.detailSnapshot(for: "alpha"))
+        let initialKey = try XCTUnwrap(initialSnapshot.groupDocuments.first(where: { $0.title == "README.md" })?.renderCacheKey)
+
+        try fixture.writeGroupDocument(sourceId: "alpha", name: "README.md", content: "bravo")
+        try fixture.setModificationDate(fixedDate, forGroupDocumentIn: "alpha", name: "README.md")
+
+        let updatedModel = try await fixture.makeModel()
+        let updatedSnapshot = try XCTUnwrap(updatedModel.detailSnapshot(for: "alpha"))
+        let updatedKey = try XCTUnwrap(updatedSnapshot.groupDocuments.first(where: { $0.title == "README.md" })?.renderCacheKey)
+
+        XCTAssertNotEqual(initialKey, updatedKey)
+    }
+
     func testDetailFileTreeKeepsSkillRootFilesButPrunesNonSkillNestedDirectories() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -1109,6 +1131,25 @@ private struct TestFixture {
             atomically: true,
             encoding: .utf8
         )
+    }
+
+    func writeGroupDocument(sourceId: String, name: String, content: String) throws {
+        let folderURL = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+        try content.write(
+            to: folderURL.appendingPathComponent(name),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    func setModificationDate(_ date: Date, forGroupDocumentIn sourceId: String, name: String) throws {
+        let url = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(name)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
     }
 
     private func writeSkillDocuments(state: State) throws {
