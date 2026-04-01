@@ -27,6 +27,12 @@ final class MarkdownDocumentRenderer {
         cache[renderCacheKey]
     }
 
+    func reset(renderCacheKey: String) {
+        cache[renderCacheKey] = nil
+        inFlightTasks[renderCacheKey]?.cancel()
+        inFlightTasks[renderCacheKey] = nil
+    }
+
     func renderedContent(for document: MarkdownDocumentView.Model) async -> AttributedString {
         if let cached = cache[document.renderCacheKey] {
             return cached
