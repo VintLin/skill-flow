@@ -16,7 +16,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
         }
     }
 
-    func testMarkdownViewModelEqualityIgnoresBodyState() {
+    func testMarkdownViewModelEqualityDistinguishesLoadingFromLoadedState() {
         let descriptor = MainViewModel.DocumentDescriptor(
             id: "group:/tmp/README.md",
             title: "README.md",
@@ -26,7 +26,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
             externalURL: nil
         )
 
-        XCTAssertEqual(
+        XCTAssertNotEqual(
             MarkdownDocumentView.Model(descriptor: descriptor, content: nil, metadata: []),
             MarkdownDocumentView.Model(descriptor: descriptor, content: "# Hello", metadata: [])
         )

@@ -24,7 +24,7 @@ struct MarkdownDocumentView: View, Equatable {
         init(document: MainViewModel.DocumentTab) {
             self.init(
                 descriptor: MainViewModel.documentDescriptor(for: document),
-                content: document.content,
+                content: document.isLoaded ? document.content : nil,
                 metadata: document.metadata
             )
         }
@@ -37,9 +37,14 @@ struct MarkdownDocumentView: View, Equatable {
             descriptor.path.lowercased().hasSuffix(".md")
         }
 
+        var hasRenderableContent: Bool {
+            !(content?.isEmpty ?? true)
+        }
+
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.descriptor.renderCacheKey == rhs.descriptor.renderCacheKey &&
-                lhs.metadata == rhs.metadata
+                lhs.metadata == rhs.metadata &&
+                lhs.hasRenderableContent == rhs.hasRenderableContent
         }
     }
 

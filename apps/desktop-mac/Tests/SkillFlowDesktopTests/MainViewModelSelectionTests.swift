@@ -460,6 +460,19 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(document?.content, "SKILL.md unavailable.")
     }
 
+    func testDetailDocumentResolutionLoadsSkillMarkdownBody() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let documentId = try XCTUnwrap(detail.skills.first?.documents.first?.id)
+        let document = await model.groupDocument(for: "alpha", documentId: documentId)
+
+        XCTAssertTrue(document?.content.contains("## Usage") == true)
+        XCTAssertFalse(document?.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     func testDetailDocumentResolutionReturnsTerminalErrorContentForNonMissingReadFailure() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
