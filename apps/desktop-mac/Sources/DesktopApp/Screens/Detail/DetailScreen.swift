@@ -322,6 +322,7 @@ struct DetailScreen: View {
     private func detailSkillOverview(groupId: String, skill: DetailViewModel.DetailSkill) -> some View {
         let isDocumentLoading = screenState.pendingDetailDocumentIdBySkill[skill.id] != nil
         let selectedSkillDocument = selectedDocument(for: skill)
+        _ = screenState.detailDocumentLoadRevision
 
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 10) {
@@ -662,6 +663,7 @@ struct DetailScreen: View {
     private func detailGroupDocuments(_ detail: DetailViewModel, groupId: String) -> some View {
         let isDocumentLoading = screenState.pendingDetailDocumentIdByGroup[groupId] != nil
         let selectedDocument = selectedGroupDocumentDescriptor(for: detail, groupId: groupId)
+        _ = screenState.detailDocumentLoadRevision
 
         return VStack(alignment: .leading, spacing: 10) {
             Text(t("detail.section.documents"))

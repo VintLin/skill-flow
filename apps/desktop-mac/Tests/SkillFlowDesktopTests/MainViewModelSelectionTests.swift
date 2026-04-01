@@ -656,6 +656,54 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(document?.externalURL?.contains("/acme/alpha-new/") == true)
     }
 
+    func testDetailSnapshotEventuallyHydratesSkillDocumentsAfterSelectSource() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.detailWarmupDelay = .milliseconds(200)
+        await model.bootstrap()
+        await model.selectSource("alpha")
+
+        let initialDetail = model.detailSnapshot(for: "alpha")
+        XCTAssertTrue(initialDetail?.skills.contains(where: { $0.documents.isEmpty }) == true)
+
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            if let detail = model.detailSnapshot(for: "alpha"),
+               detail.skills.allSatisfy({ !$0.documents.isEmpty }) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTAssertTrue(model.detailSnapshot(for: "alpha")?.skills.allSatisfy({ !$0.documents.isEmpty }) == true)
+    }
+
+    func testHydratedSkillDocumentTabsRemainUnloadedUntilOpened() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let document = try XCTUnwrap(detail.skills.first?.documents.first)
+
+        XCTAssertFalse(document.isLoaded)
+        XCTAssertTrue(document.content.isEmpty)
+    }
+
+    func testHydratedSkillDocumentContentFeedsSubtitleMetrics() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let skill = try XCTUnwrap(detail.skills.first)
+
+        XCTAssertFalse(skill.documentContent.isEmpty)
+        XCTAssertNotNil(DetailInfoLayout.wordCount(from: skill.documentContent))
+    }
+
     private func heavySkillDocument(name: String) -> String {
         let repeatedSection = String(repeating: """
         ## Notes

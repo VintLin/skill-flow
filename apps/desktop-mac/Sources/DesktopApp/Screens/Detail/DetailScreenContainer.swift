@@ -16,6 +16,7 @@ final class DetailScreenState {
     var detailSkillSelectionTokenByGroup: [String: UInt64] = [:]
     var detailDocumentSelectionTokenByGroup: [String: UInt64] = [:]
     var detailDocumentSelectionTokenBySkill: [String: UInt64] = [:]
+    var detailDocumentLoadRevision: UInt64 = 0
 }
 
 @MainActor
@@ -207,6 +208,7 @@ final class DetailScreenContainer {
         let document = await task.value
         if let document {
             cachedDocumentsByRenderCacheKey[renderCacheKey] = document
+            screenState.detailDocumentLoadRevision &+= 1
         }
         documentTasksByRenderCacheKey[renderCacheKey] = nil
     }

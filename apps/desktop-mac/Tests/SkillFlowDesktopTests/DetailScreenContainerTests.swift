@@ -533,6 +533,36 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertNil(container.groupDocument(sourceId: "alpha", documentId: "doc", renderCacheKey: "doc:rev-1"))
     }
 
+    func testLoadDocumentBumpsObservableRevisionWhenSkillDocumentResolves() async {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        let loaded = MainViewModel.DocumentTab(
+            id: "skill:/tmp/SKILL.md",
+            title: "SKILL.md",
+            path: "/tmp/SKILL.md",
+            metadata: [],
+            content: "# Browse\nLoaded content.",
+            renderCacheKey: "skill:/tmp/SKILL.md:rev-1",
+            externalURL: nil
+        )
+
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in DetailViewModel.Snapshot.fixture(sourceId: "alpha") },
+            groupDocument: { _, _ in loaded }
+        )
+
+        let initialRevision = container.screenState.detailDocumentLoadRevision
+        await container.loadDocument(
+            sourceId: "alpha",
+            documentId: loaded.id,
+            renderCacheKey: loaded.renderCacheKey
+        )
+
+        XCTAssertEqual(container.screenState.detailDocumentLoadRevision, initialRevision + 1)
+    }
+
     func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
         let state = DesktopAppState()
         let container = DetailScreenContainer(state: state) { _ in nil }

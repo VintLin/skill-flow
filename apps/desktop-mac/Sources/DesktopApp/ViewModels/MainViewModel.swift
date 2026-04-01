@@ -2802,6 +2802,7 @@ final class MainViewModel {
             let relativeFolderPath = input.groupPath.flatMap { basePath in
                 folderPath.flatMap { relativePath(from: basePath, to: $0) }
             } ?? leaf.relativePath
+            let documentContent = leaf.skillFilePath.flatMap(loadDetailDocumentBody) ?? leaf.description
 
             skillsByLeafId[leaf.id] = PreparedDetailSkillContent(
                 title: title,
@@ -2809,7 +2810,7 @@ final class MainViewModel {
                 folderPath: folderPath,
                 relativeFolderPath: relativeFolderPath,
                 documents: documents,
-                documentContent: leaf.skillFilePath == nil ? leaf.description : ""
+                documentContent: documentContent
             )
 
             lightweightSkills.append(
@@ -2832,7 +2833,7 @@ final class MainViewModel {
                     ),
                     documents: documents,
                     detailLines: [],
-                    documentContent: leaf.skillFilePath == nil ? leaf.description : "",
+                    documentContent: documentContent,
                     isEnabled: false,
                     warningCount: leaf.warningCount
                 )
@@ -3525,6 +3526,14 @@ final class MainViewModel {
         )
     }
 
+    nonisolated private static func loadDetailDocumentBody(path: String) -> String? {
+        guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return nil
+        }
+        let parsed = parseDetailDocument(raw)
+        return parsed.body.isEmpty ? nil : parsed.body
+    }
+
     nonisolated static func parseDetailDocument(_ content: String) -> (metadata: [MetadataEntry], body: String) {
         let parsed = parseDocument(content)
         return (metadata: parsed.metadata, body: parsed.body)
@@ -3991,7 +4000,8 @@ final class MainViewModel {
                     path: document.path,
                     groupPath: groupPath,
                     gitHubRepoContext: gitHubRepoContext
-                )
+                ),
+                isLoaded: document.isLoaded
             )
         }
     }
