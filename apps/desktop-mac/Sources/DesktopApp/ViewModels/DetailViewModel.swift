@@ -303,6 +303,7 @@ extension DetailViewModel.Snapshot {
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
+            groupDocuments: groupDocuments,
             targets: targets,
             skills: skills
         )

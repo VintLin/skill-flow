@@ -139,7 +139,7 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertNil(container.viewModel)
     }
 
-    func testDetailContainerReusesViewModelWhenRevisionAndDescriptorsStayStable() throws {
+    func testDetailContainerRebuildsViewModelWhenComputedRevisionChangesWithDescriptors() throws {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
@@ -158,7 +158,6 @@ final class DetailScreenContainerTests: XCTestCase {
         let container = DetailScreenContainer(state: state) { _ in
             DetailViewModel.Snapshot.fixture(
                 sourceId: "alpha",
-                revision: "alpha:rev-1",
                 title: title,
                 groupDocuments: groupDocuments
             )
@@ -178,7 +177,7 @@ final class DetailScreenContainerTests: XCTestCase {
         ]
         let secondViewModel = try XCTUnwrap(container.viewModel)
 
-        XCTAssertTrue(firstViewModel === secondViewModel)
+        XCTAssertFalse(firstViewModel === secondViewModel)
     }
 
     func testDetailContainerRebuildsViewModelWhenRevisionChanges() throws {
@@ -197,7 +196,7 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertFalse(firstViewModel === secondViewModel)
     }
 
-    func testDetailContainerReusesViewModelForProductionSnapshotsWhenOnlyDocumentStateChanges() throws {
+    func testDetailContainerRebuildsViewModelForProductionSnapshotsWhenDocumentDescriptorIdentityChanges() throws {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
@@ -205,7 +204,6 @@ final class DetailScreenContainerTests: XCTestCase {
         let container = DetailScreenContainer(state: state) { _ in
             DetailViewModel.Snapshot(
                 detail: MainViewModel.DetailViewData.fixture(
-                    revision: "alpha:rev-1",
                     groupDocuments: [
                         MainViewModel.DocumentTab(
                             id: "group:/tmp/README.md",
@@ -225,7 +223,7 @@ final class DetailScreenContainerTests: XCTestCase {
         renderCacheKey = "group:/tmp/README.md:rev-2"
         let secondViewModel = try XCTUnwrap(container.viewModel)
 
-        XCTAssertTrue(firstViewModel === secondViewModel)
+        XCTAssertFalse(firstViewModel === secondViewModel)
     }
 
     func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
@@ -334,7 +332,7 @@ final class DetailScreenContainerTests: XCTestCase {
 private extension DetailViewModel.Snapshot {
     static func fixture(
         sourceId: String = "alpha",
-        revision: String,
+        revision: String? = nil,
         title: String = "AlphaHub",
         groupDocuments: [MainViewModel.DocumentDescriptor] = [],
         groupDocumentTabsByID: [String: MainViewModel.DocumentTab] = [:],
@@ -347,9 +345,45 @@ private extension DetailViewModel.Snapshot {
             )
         ]
     ) -> Self {
-        Self(
+        let resolvedRevision = revision ?? MainViewModel.detailRevision(
             sourceId: sourceId,
-            revision: revision,
+            title: title,
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 2,
+            enabledTargetCount: targets.filter(\.isEnabled).count,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .partial,
+            enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: groupDocuments,
+            targets: targets,
+            skills: []
+        )
+        return Self(
+            sourceId: sourceId,
+            revision: resolvedRevision,
             title: title,
             subtitle: "clawhub",
             author: "Acme",
@@ -392,13 +426,57 @@ private extension DetailViewModel.Snapshot {
 private extension MainViewModel.DetailViewData {
     static func fixture(
         sourceId: String = "alpha",
-        revision: String,
+        revision: String? = nil,
         groupDocuments: [MainViewModel.DocumentTab] = [],
         skills: [MainViewModel.DetailSkill] = []
     ) -> Self {
-        Self(
+        let descriptors = MainViewModel.documentDescriptors(groupDocuments)
+        let resolvedRevision = revision ?? MainViewModel.detailRevision(
             sourceId: sourceId,
-            revision: revision,
+            title: "AlphaHub",
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: max(skills.count, 1),
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: descriptors,
+            targets: [
+                MainViewModel.DetailTarget(
+                    id: "claude-code",
+                    label: "Claude Code",
+                    shortLabel: "Claude",
+                    isEnabled: true
+                )
+            ],
+            skills: skills
+        )
+        return Self(
+            sourceId: sourceId,
+            revision: resolvedRevision,
             title: "AlphaHub",
             subtitle: "clawhub",
             author: "Acme",

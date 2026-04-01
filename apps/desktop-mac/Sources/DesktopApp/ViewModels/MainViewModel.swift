@@ -2440,6 +2440,7 @@ final class MainViewModel {
 
         let fileTree = preparedDetailContent?.fileTree ?? []
         let groupDocuments = preparedDetailContent?.groupDocuments ?? []
+        let groupDocumentDescriptors = Self.documentDescriptors(groupDocuments)
         let title = Self.preferredDetailGroupTitle(
             sourceId: summary.sourceId,
             displayName: (sourcePayload["displayName"] as? String)?.nonEmpty
@@ -2477,6 +2478,7 @@ final class MainViewModel {
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
+            groupDocuments: groupDocumentDescriptors,
             targets: targets,
             skills: skills
         )
@@ -4104,6 +4106,7 @@ final class MainViewModel {
         sourceFacts: [String],
         deploymentFacts: [String],
         fileTree: [FileTreeItem],
+        groupDocuments: [DocumentDescriptor],
         targets: [DetailTarget],
         skills: [DetailSkill]
     ) -> String {
@@ -4126,6 +4129,17 @@ final class MainViewModel {
                 String(skill.warningCount)
             ]
             .joined(separator: "\u{1D}")
+        }
+        .joined(separator: "\u{1F}")
+        let groupDocumentRevision = groupDocuments.map { document in
+            [
+                document.id,
+                document.title,
+                document.path,
+                document.renderCacheKey,
+                document.externalURL ?? ""
+            ]
+            .joined(separator: "\u{1E}")
         }
         .joined(separator: "\u{1F}")
         var components: [String] = []
@@ -4159,6 +4173,7 @@ final class MainViewModel {
         components.append(sourceFacts.joined(separator: "\u{1F}"))
         components.append(deploymentFacts.joined(separator: "\u{1F}"))
         components.append(fileTree.map(\.id).joined(separator: "\u{1F}"))
+        components.append(groupDocumentRevision)
         components.append(targetRevision)
         components.append(skillRevision)
         return components.joined(separator: "\u{1C}")
