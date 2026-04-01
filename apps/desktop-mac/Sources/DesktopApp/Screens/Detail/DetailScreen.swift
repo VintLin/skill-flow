@@ -300,6 +300,7 @@ struct DetailScreen: View {
 
     private func detailSkillOverview(groupId: String, skill: DetailViewModel.DetailSkill) -> some View {
         let isDocumentLoading = screenState.pendingDetailDocumentIdBySkill[skill.id] != nil
+        let selectedSkillDocument = selectedDocument(for: skill)
 
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 10) {
@@ -308,7 +309,7 @@ struct DetailScreen: View {
                         ForEach(skill.documents) { document in
                             documentTabChip(
                                 title: Self.localizedDocumentTitle(document, locale: locale),
-                                isSelected: selectedDocument(for: skill)?.id == document.id,
+                                isSelected: selectedSkillDocument?.id == document.id,
                                 externalURL: document.externalURL
                             ) {
                                 scheduleSkillDocumentSelection(skillId: skill.id, documentId: document.id)
@@ -320,7 +321,7 @@ struct DetailScreen: View {
                 detailContentCard {
                     if isDocumentLoading {
                         detailDocumentLoadingPlaceholder()
-                    } else if let document = selectedDocument(for: skill) {
+                    } else if let document = selectedSkillDocument {
                         if let resolvedDocument = resolvedSkillDocument(sourceId: groupId, document: document) {
                             detailDocumentContent(document: resolvedDocument)
                         } else {
@@ -335,6 +336,16 @@ struct DetailScreen: View {
                     }
                 }
             }
+        }
+        .task(id: selectedSkillDocument?.renderCacheKey) {
+            guard let selectedSkillDocument, !selectedSkillDocument.isLoaded else {
+                return
+            }
+            await container.loadDocument(
+                sourceId: groupId,
+                documentId: selectedSkillDocument.id,
+                renderCacheKey: selectedSkillDocument.renderCacheKey
+            )
         }
     }
 
@@ -629,6 +640,7 @@ struct DetailScreen: View {
 
     private func detailGroupDocuments(_ detail: DetailViewModel, groupId: String) -> some View {
         let isDocumentLoading = screenState.pendingDetailDocumentIdByGroup[groupId] != nil
+        let selectedDocument = selectedGroupDocumentDescriptor(for: detail, groupId: groupId)
 
         return VStack(alignment: .leading, spacing: 10) {
             Text(t("detail.section.documents"))
@@ -654,10 +666,14 @@ struct DetailScreen: View {
                 detailContentCard {
                     detailDocumentLoadingPlaceholder()
                 }
-            } else if let selectedDocument = selectedGroupDocumentDescriptor(for: detail, groupId: groupId) {
+            } else if let selectedDocument {
                 if selectedDocument.id == detail.groupDocuments.first?.id {
                     detailFileTreeCard(groupId: groupId, detail: detail)
-                } else if let resolvedDocument = container.groupDocument(sourceId: groupId, documentId: selectedDocument.id) {
+                } else if let resolvedDocument = container.groupDocument(
+                    sourceId: groupId,
+                    documentId: selectedDocument.id,
+                    renderCacheKey: selectedDocument.renderCacheKey
+                ) {
                     detailContentCard {
                         detailDocumentContent(document: resolvedDocument)
                     }
@@ -667,6 +683,18 @@ struct DetailScreen: View {
                     }
                 }
             }
+        }
+        .task(id: selectedDocument?.renderCacheKey) {
+            guard let selectedDocument,
+                  selectedDocument.id != detail.groupDocuments.first?.id
+            else {
+                return
+            }
+            await container.loadDocument(
+                sourceId: groupId,
+                documentId: selectedDocument.id,
+                renderCacheKey: selectedDocument.renderCacheKey
+            )
         }
     }
 
@@ -923,10 +951,14 @@ struct DetailScreen: View {
         sourceId: String,
         document: DetailViewModel.DocumentTab
     ) -> DetailViewModel.DocumentTab? {
-        if !document.content.isEmpty || !document.isMarkdown {
+        if document.isLoaded {
             return document
         }
-        return container.groupDocument(sourceId: sourceId, documentId: document.id)
+        return container.groupDocument(
+            sourceId: sourceId,
+            documentId: document.id,
+            renderCacheKey: document.renderCacheKey
+        )
     }
 
     private func selectedGroupDocumentDescriptor(

@@ -228,6 +228,27 @@ final class MainViewModel {
         let content: String
         let renderCacheKey: String
         let externalURL: String?
+        let isLoaded: Bool
+
+        init(
+            id: String,
+            title: String,
+            path: String,
+            metadata: [MetadataEntry],
+            content: String,
+            renderCacheKey: String,
+            externalURL: String?,
+            isLoaded: Bool = true
+        ) {
+            self.id = id
+            self.title = title
+            self.path = path
+            self.metadata = metadata
+            self.content = content
+            self.renderCacheKey = renderCacheKey
+            self.externalURL = externalURL
+            self.isLoaded = isLoaded
+        }
     }
 
     struct DetailTarget: Identifiable, Equatable, Sendable {
@@ -2526,7 +2547,7 @@ final class MainViewModel {
         return DetailViewModel.Snapshot(detail: detail)
     }
 
-    func groupDocument(for sourceId: String, documentId: String) -> DocumentTab? {
+    func groupDocument(for sourceId: String, documentId: String) async -> DocumentTab? {
         let prepared = preparedDetailContentBySourceId[sourceId]
         if prepared == nil {
             _ = detailSnapshot(for: sourceId)
@@ -2550,7 +2571,7 @@ final class MainViewModel {
                 )
             }
 
-            return loadedDocumentTab(from: descriptor)
+            return await loadedDocumentTab(from: descriptor)
         }
 
         guard let placeholder = preparedContent.skillsByLeafId.values
@@ -2564,11 +2585,11 @@ final class MainViewModel {
             return placeholder
         }
 
-        return loadedDocumentTab(from: Self.documentDescriptor(for: placeholder))
+        return await loadedDocumentTab(from: Self.documentDescriptor(for: placeholder))
     }
 
-    private func loadedDocumentTab(from descriptor: DocumentDescriptor) -> DocumentTab? {
-        guard let loaded = try? detailDocumentStore.loadSynchronously(for: descriptor) else {
+    private func loadedDocumentTab(from descriptor: DocumentDescriptor) async -> DocumentTab? {
+        guard let loaded = try? await detailDocumentStore.document(for: descriptor) else {
             return nil
         }
 
@@ -3460,7 +3481,8 @@ final class MainViewModel {
             metadata: [],
             content: "",
             renderCacheKey: documentRenderCacheKey(path: path),
-            externalURL: nil
+            externalURL: nil,
+            isLoaded: false
         )
     }
 
@@ -4097,7 +4119,8 @@ final class MainViewModel {
                 metadata: descriptor.metadata,
                 content: "",
                 renderCacheKey: descriptor.renderCacheKey,
-                externalURL: descriptor.externalURL
+                externalURL: descriptor.externalURL,
+                isLoaded: false
             )
         }
     }

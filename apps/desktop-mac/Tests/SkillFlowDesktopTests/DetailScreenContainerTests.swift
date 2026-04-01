@@ -320,7 +320,7 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertEqual(secondViewModel.updatedRelative, "Updated just now")
     }
 
-    func testResolvesGroupDocumentOutsideCachedViewModelBoundary() throws {
+    func testResolvesGroupDocumentOutsideCachedViewModelBoundary() async throws {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
@@ -358,8 +358,19 @@ final class DetailScreenContainerTests: XCTestCase {
         )
 
         let firstViewModel = try XCTUnwrap(container.viewModel)
+        await container.loadDocument(
+            sourceId: "alpha",
+            documentId: descriptor.id,
+            renderCacheKey: descriptor.renderCacheKey
+        )
         XCTAssertEqual(
-            try XCTUnwrap(container.groupDocument(sourceId: "alpha", documentId: descriptor.id)).content,
+            try XCTUnwrap(
+                container.groupDocument(
+                    sourceId: "alpha",
+                    documentId: descriptor.id,
+                    renderCacheKey: descriptor.renderCacheKey
+                )
+            ).content,
             "# Alpha v1"
         )
 
@@ -376,8 +387,19 @@ final class DetailScreenContainerTests: XCTestCase {
         let secondViewModel = try XCTUnwrap(container.viewModel)
 
         XCTAssertTrue(firstViewModel === secondViewModel)
+        await container.loadDocument(
+            sourceId: "alpha",
+            documentId: descriptor.id,
+            renderCacheKey: "group:/tmp/README.md:rev-2"
+        )
         XCTAssertEqual(
-            try XCTUnwrap(container.groupDocument(sourceId: "alpha", documentId: descriptor.id)).content,
+            try XCTUnwrap(
+                container.groupDocument(
+                    sourceId: "alpha",
+                    documentId: descriptor.id,
+                    renderCacheKey: "group:/tmp/README.md:rev-2"
+                )
+            ).content,
             "# Alpha v2"
         )
     }

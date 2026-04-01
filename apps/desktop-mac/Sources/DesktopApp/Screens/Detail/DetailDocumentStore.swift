@@ -26,10 +26,10 @@ final class DetailDocumentStore {
     }
 
     func document(for descriptor: MainViewModel.DocumentDescriptor) async throws -> LoadedDocument {
-        if let cached = cache[descriptor.id] {
+        if let cached = cache[descriptor.renderCacheKey] {
             return cached
         }
-        if let task = inFlight[descriptor.id] {
+        if let task = inFlight[descriptor.renderCacheKey] {
             return try await task.value
         }
 
@@ -43,36 +43,18 @@ final class DetailDocumentStore {
                 renderCacheKey: descriptor.renderCacheKey
             )
         }
-        inFlight[descriptor.id] = task
+        inFlight[descriptor.renderCacheKey] = task
         loadCountsByPath[descriptor.path, default: 0] += 1
 
         do {
             let loaded = try await task.value
-            cache[descriptor.id] = loaded
-            inFlight[descriptor.id] = nil
+            cache[descriptor.renderCacheKey] = loaded
+            inFlight[descriptor.renderCacheKey] = nil
             return loaded
         } catch {
-            inFlight[descriptor.id] = nil
+            inFlight[descriptor.renderCacheKey] = nil
             throw error
         }
-    }
-
-    func loadSynchronously(for descriptor: MainViewModel.DocumentDescriptor) throws -> LoadedDocument {
-        if let cached = cache[descriptor.id] {
-            return cached
-        }
-
-        loadCountsByPath[descriptor.path, default: 0] += 1
-        let raw = try fileReader(descriptor.path)
-        let parsed = MainViewModel.parseDetailDocument(raw)
-        let loaded = LoadedDocument(
-            id: descriptor.id,
-            metadata: parsed.metadata,
-            content: parsed.body,
-            renderCacheKey: descriptor.renderCacheKey
-        )
-        cache[descriptor.id] = loaded
-        return loaded
     }
 
     func debugLoadCount(for path: String) -> Int {

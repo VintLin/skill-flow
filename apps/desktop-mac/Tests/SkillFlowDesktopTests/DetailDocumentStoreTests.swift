@@ -5,6 +5,27 @@ import XCTest
 
 @MainActor
 final class DetailDocumentStoreTests: XCTestCase {
+    final class LockedContentBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: String
+
+        init(_ value: String) {
+            self.value = value
+        }
+
+        func read() -> String {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+
+        func write(_ newValue: String) {
+            lock.lock()
+            value = newValue
+            lock.unlock()
+        }
+    }
+
     func testDocumentStoreLoadsMarkdownOnlyWhenRequested() async throws {
         let url = try makeMarkdownFile(
             named: "README.md",
@@ -37,6 +58,46 @@ final class DetailDocumentStoreTests: XCTestCase {
         XCTAssertEqual(first.metadata.first?.key, "name")
         XCTAssertEqual(second.content, "# Hello")
         XCTAssertEqual(store.debugLoadCount(for: url.path), 1)
+    }
+
+    func testDocumentStoreInvalidatesCachedDocumentWhenRenderCacheKeyChanges() async throws {
+        let url = try makeMarkdownFile(
+            named: "README.md",
+            contents: """
+            # Initial
+            """
+        )
+
+        let currentContents = LockedContentBox("# Initial")
+        let store = DetailDocumentStore(fileReader: { path in
+            XCTAssertEqual(path, url.path)
+            return currentContents.read()
+        })
+
+        let firstDescriptor = MainViewModel.DocumentDescriptor(
+            id: "group:\(url.path)",
+            title: "README.md",
+            path: url.path,
+            metadata: [],
+            renderCacheKey: "\(url.path):rev-1",
+            externalURL: nil
+        )
+        let first = try await store.document(for: firstDescriptor)
+
+        currentContents.write("# Updated")
+        let secondDescriptor = MainViewModel.DocumentDescriptor(
+            id: firstDescriptor.id,
+            title: firstDescriptor.title,
+            path: firstDescriptor.path,
+            metadata: [],
+            renderCacheKey: "\(url.path):rev-2",
+            externalURL: nil
+        )
+        let second = try await store.document(for: secondDescriptor)
+
+        XCTAssertEqual(first.content, "# Initial")
+        XCTAssertEqual(second.content, "# Updated")
+        XCTAssertEqual(store.debugLoadCount(for: url.path), 2)
     }
 
     private func makeMarkdownFile(named name: String, contents: String) throws -> URL {

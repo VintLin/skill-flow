@@ -455,7 +455,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         let model = try await fixture.makeModel()
         let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
         let documentId = try XCTUnwrap(detail.skills.first?.documents.first?.id)
-        let document = model.groupDocument(for: "alpha", documentId: documentId)
+        let document = await model.groupDocument(for: "alpha", documentId: documentId)
 
         XCTAssertEqual(document?.content, "SKILL.md unavailable.")
     }
