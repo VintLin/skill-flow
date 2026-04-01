@@ -16,21 +16,37 @@ final class MarkdownDocumentRendererTests: XCTestCase {
         }
     }
 
+    func testMarkdownViewModelEqualityIgnoresBodyState() {
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: "group:/tmp/README.md",
+            title: "README.md",
+            path: "/tmp/README.md",
+            metadata: [],
+            renderCacheKey: "readme-cache",
+            externalURL: nil
+        )
+
+        XCTAssertEqual(
+            MarkdownDocumentView.Model(descriptor: descriptor, content: nil, metadata: []),
+            MarkdownDocumentView.Model(descriptor: descriptor, content: "# Hello", metadata: [])
+        )
+    }
+
     @MainActor
     func testRendererCachesRenderedMarkdownByRenderCacheKey() async {
-        let document = MainViewModel.DocumentTab(
+        let descriptor = MainViewModel.DocumentDescriptor(
             id: "readme",
             title: "README.md",
             path: "/tmp/README.md",
             metadata: [],
-            content: "# Hello",
             renderCacheKey: "readme-cache",
             externalURL: nil
         )
+        let document = MarkdownDocumentView.Model(descriptor: descriptor, content: "# Hello", metadata: [])
         let renderCounter = RenderCounter()
-        let renderer = MarkdownDocumentRenderer { tab in
+        let renderer = MarkdownDocumentRenderer { model in
             await renderCounter.increment()
-            return AttributedString(tab.content)
+            return AttributedString(model.content ?? "")
         }
 
         let first = await renderer.renderedContent(for: document)
@@ -45,20 +61,20 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
     @MainActor
     func testRendererSharesInFlightRenderTaskForSameDocument() async {
-        let document = MainViewModel.DocumentTab(
+        let descriptor = MainViewModel.DocumentDescriptor(
             id: "readme",
             title: "README.md",
             path: "/tmp/README.md",
             metadata: [],
-            content: "# Hello",
             renderCacheKey: "readme-cache",
             externalURL: nil
         )
+        let document = MarkdownDocumentView.Model(descriptor: descriptor, content: "# Hello", metadata: [])
         let renderCounter = RenderCounter()
-        let renderer = MarkdownDocumentRenderer { tab in
+        let renderer = MarkdownDocumentRenderer { model in
             await renderCounter.increment()
             try? await Task.sleep(for: .milliseconds(25))
-            return AttributedString(tab.content)
+            return AttributedString(model.content ?? "")
         }
 
         async let first = renderer.renderedContent(for: document)

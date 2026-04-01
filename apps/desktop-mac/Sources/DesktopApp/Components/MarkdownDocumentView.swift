@@ -6,38 +6,79 @@ import AppKit
 #endif
 
 struct MarkdownDocumentView: View, Equatable {
-    let document: MainViewModel.DocumentTab
+    struct Model: Equatable {
+        let descriptor: MainViewModel.DocumentDescriptor
+        let content: String?
+        let metadata: [MainViewModel.MetadataEntry]
+
+        init(
+            descriptor: MainViewModel.DocumentDescriptor,
+            content: String?,
+            metadata: [MainViewModel.MetadataEntry]
+        ) {
+            self.descriptor = descriptor
+            self.content = content
+            self.metadata = metadata
+        }
+
+        init(document: MainViewModel.DocumentTab) {
+            self.init(
+                descriptor: MainViewModel.documentDescriptor(for: document),
+                content: document.content,
+                metadata: document.metadata
+            )
+        }
+
+        var renderCacheKey: String {
+            descriptor.renderCacheKey
+        }
+
+        var isMarkdown: Bool {
+            descriptor.path.lowercased().hasSuffix(".md")
+        }
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.descriptor.renderCacheKey == rhs.descriptor.renderCacheKey &&
+                lhs.metadata == rhs.metadata
+        }
+    }
+
+    let model: Model
     let theme: DesktopThemeMode
     @State private var renderedContent: AttributedString?
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.document == rhs.document && lhs.theme == rhs.theme
+        lhs.model == rhs.model && lhs.theme == rhs.theme
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !document.metadata.isEmpty {
-                metadataTable(document.metadata)
+            if !model.metadata.isEmpty {
+                metadataTable(model.metadata)
             }
 
-            if !document.content.isEmpty {
-                if let renderedContent {
-                    StructuredText(
-                        document.content,
-                        parser: CachedAttributedStringParser(attributedString: renderedContent)
-                    )
-                    .textual.structuredTextStyle(.gitHub)
-                    .textual.textSelection(.enabled)
-                    .environment(\.openURL, openURLAction)
-                    .id(document.renderCacheKey)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    loadingState
+            if let content = model.content {
+                if !content.isEmpty {
+                    if let renderedContent {
+                        StructuredText(
+                            content,
+                            parser: CachedAttributedStringParser(attributedString: renderedContent)
+                        )
+                        .textual.structuredTextStyle(.gitHub)
+                        .textual.textSelection(.enabled)
+                        .environment(\.openURL, openURLAction)
+                        .id(model.renderCacheKey)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        loadingState
+                    }
                 }
+            } else {
+                loadingState
             }
         }
         .environment(\.colorScheme, colorScheme)
-        .task(id: document.renderCacheKey) {
+        .task(id: model.renderCacheKey) {
             await prepareRenderedContent()
         }
     }
@@ -88,18 +129,23 @@ struct MarkdownDocumentView: View, Equatable {
 
     @MainActor
     private func prepareRenderedContent() async {
-        if let cached = MarkdownDocumentRenderer.shared.cachedContent(for: document.renderCacheKey) {
+        guard let content = model.content, !content.isEmpty else {
+            renderedContent = nil
+            return
+        }
+
+        if let cached = MarkdownDocumentRenderer.shared.cachedContent(for: model.renderCacheKey) {
             renderedContent = cached
             return
         }
 
         renderedContent = nil
-        let renderCacheKey = document.renderCacheKey
-        let content = await MarkdownDocumentRenderer.shared.renderedContent(for: document)
-        guard !Task.isCancelled, renderCacheKey == document.renderCacheKey else {
+        let renderCacheKey = model.renderCacheKey
+        let rendered = await MarkdownDocumentRenderer.shared.renderedContent(for: model)
+        guard !Task.isCancelled, renderCacheKey == model.renderCacheKey else {
             return
         }
-        renderedContent = content
+        renderedContent = rendered
     }
 
     private var loadingState: some View {

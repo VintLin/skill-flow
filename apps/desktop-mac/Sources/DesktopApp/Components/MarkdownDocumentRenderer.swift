@@ -3,7 +3,7 @@ import Textual
 
 @MainActor
 final class MarkdownDocumentRenderer {
-    typealias RenderAction = @Sendable (MainViewModel.DocumentTab) async -> AttributedString
+    typealias RenderAction = @Sendable (MarkdownDocumentView.Model) async -> AttributedString
 
     static let shared = MarkdownDocumentRenderer()
 
@@ -27,7 +27,7 @@ final class MarkdownDocumentRenderer {
         cache[renderCacheKey]
     }
 
-    func renderedContent(for document: MainViewModel.DocumentTab) async -> AttributedString {
+    func renderedContent(for document: MarkdownDocumentView.Model) async -> AttributedString {
         if let cached = cache[document.renderCacheKey] {
             return cached
         }
@@ -47,11 +47,11 @@ final class MarkdownDocumentRenderer {
         return rendered
     }
 
-    private static func defaultRenderAction(document: MainViewModel.DocumentTab) async -> AttributedString {
+    private static func defaultRenderAction(document: MarkdownDocumentView.Model) async -> AttributedString {
         await Task.detached(priority: .userInitiated) {
             let options = AttributedString.MarkdownParsingOptions()
             return (try? AttributedString(
-                markdown: document.content,
+                markdown: document.content ?? "",
                 including: \.textual,
                 options: options
             )) ?? AttributedString()
