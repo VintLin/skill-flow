@@ -9,6 +9,7 @@ struct RecentProjectScopeItem: Codable, Equatable {
     var projectId: String
     var title: String
     var lastActivityAt: String
+    var projectPath: String? = nil
     var tools: [String]
 }
 

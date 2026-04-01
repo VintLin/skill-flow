@@ -73,6 +73,10 @@ function normalizeRecentProjects(value: unknown): RecentProject[] {
       lastActivityAt: entry.lastActivityAt,
     };
 
+    if (typeof entry.projectPath === "string" && entry.projectPath.length > 0) {
+      recentProject.projectPath = entry.projectPath;
+    }
+
     if (isStringArray(entry.tools)) {
       recentProject.tools = entry.tools;
     }

@@ -1272,6 +1272,10 @@ final class MainViewModel {
         routeState?.settings.selectedProjectScope = normalizedScope
         persistProjectScopeSettingsIfNeeded()
         projectScopeChangeToken &+= 1
+        showToast(
+            style: .success,
+            text: localizedText("toast.project_scope.switched", projectScopeTitle(for: normalizedScope))
+        )
 
         if let sourceId = currentDetailSourceId ?? selectedSourceId {
             await selectSource(sourceId)
@@ -4341,9 +4345,19 @@ final class MainViewModel {
                 projectId: projectId,
                 title: title,
                 lastActivityAt: lastActivityAt,
+                projectPath: (item["projectPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
                 tools: uniqueSorted(item["tools"] as? [String] ?? [])
             )
         }.prefix(10).map { $0 }
+    }
+
+    private func projectScopeTitle(for scope: ProjectScopeSelection) -> String {
+        switch scope {
+        case .global:
+            return localized("project_scope.global")
+        case .project(let projectId):
+            return recentProjectScopes.first(where: { $0.projectId == projectId })?.title ?? projectId
+        }
     }
 
     private func persistProjectScopeSettingsIfNeeded() {

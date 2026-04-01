@@ -31,6 +31,7 @@ Thumbs.db
 
 # Project specific
 PRD/
+docs
 docs/
 docs/*
 .superset/

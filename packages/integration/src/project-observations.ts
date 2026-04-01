@@ -7,6 +7,7 @@ export type ProjectObservation = {
   projectId: string;
   title: string;
   observedAt: string;
+  projectPath?: string;
 };
 
 export type CodexSessionLike = {
@@ -78,8 +79,10 @@ export function collectProjectObservationsFromCodexSessions(
 ): ProjectObservation[] {
   return collectProjectObservationsFromSessionPayloads(
     codexSessions.map((session) => ({
-      payload: session.session_meta?.payload,
-      observedAt: session.observedAt,
+      ...(session.session_meta?.payload
+        ? { payload: session.session_meta.payload }
+        : {}),
+      ...(session.observedAt ? { observedAt: session.observedAt } : {}),
     })),
     "codex",
   );
@@ -113,6 +116,7 @@ function collectProjectObservationsFromSessionPayloads(
         projectId,
         title,
         observedAt,
+        ...(payload?.cwd ? { projectPath: payload.cwd } : {}),
       } satisfies ProjectObservation;
     })
     .filter((observation): observation is ProjectObservation => observation !== null);
@@ -197,12 +201,14 @@ async function readSessionPayloadFromJsonl(filePath: string): Promise<{
         timestamp?: string;
       };
       if (parsed.type === "session_meta" && parsed.payload && typeof parsed.payload === "object") {
+        const observedAt = (await statMtimeIso(filePath)) ?? null;
         return {
           payload: parsed.payload as SessionPayload,
-          observedAt: (await statMtimeIso(filePath)) ?? undefined,
+          ...(observedAt ? { observedAt } : {}),
         };
       }
       if (typeof parsed.cwd === "string" || typeof parsed.git?.repository_url === "string") {
+        const observedAt = toIsoString(parsed.timestamp) ?? (await statMtimeIso(filePath)) ?? null;
         return {
           payload: {
             ...(typeof parsed.cwd === "string" ? { cwd: parsed.cwd } : {}),
@@ -210,7 +216,7 @@ async function readSessionPayloadFromJsonl(filePath: string): Promise<{
               ? { git: { repository_url: parsed.git.repository_url } }
               : {}),
           },
-          observedAt: toIsoString(parsed.timestamp) ?? (await statMtimeIso(filePath)) ?? undefined,
+          ...(observedAt ? { observedAt } : {}),
         };
       }
     } catch {
@@ -282,7 +288,7 @@ async function collectClaudeObservations(homeDir: string): Promise<ProjectObserv
 
       const projectId =
         (lastRepoUrl ? repositoryUrlToProjectId(lastRepoUrl) : null) ??
-        basenameMaybe(lastCwd);
+        basenameMaybe(lastCwd ?? undefined);
       if (!projectId) continue;
 
       const title = projectId.includes("/")

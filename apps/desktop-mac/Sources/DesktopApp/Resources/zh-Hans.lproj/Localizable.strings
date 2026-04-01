@@ -12,6 +12,7 @@
 "page.import.title" = "导入";
 "page.settings.title" = "设置";
 "page.detail.title" = "分组详情";
+"project_scope.global" = "全局";
 "placeholder.home.search_group_author" = "搜索分组 / 作者";
 "home.empty.title" = "没有匹配的分组";
 "home.empty.subtitle" = "试试更宽泛的搜索词。";
@@ -194,6 +195,7 @@
 "toast.import.invalid_response" = "导入失败：响应无效。";
 "toast.import.exists" = "该 Group 已存在于本地。";
 "toast.import.success" = "已导入来源。";
+"toast.project_scope.switched" = "已切换到 %@。";
 "toast.pin.failed" = "置顶失败：%@";
 "toast.details.load_failed" = "加载 %@ 详情失败。";
 "toast.update.none" = "没有可更新的分组。";

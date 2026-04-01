@@ -48,7 +48,13 @@ describe("preferences-store", () => {
       pinnedSourceIds: ["alpha"],
       selectedProjectScope: { kind: "project", projectId: "repo-a" },
       recentProjects: [
-        { projectId: "repo-a", title: "Repo A", lastActivityAt: "2026-03-30T00:00:00.000Z", tools: ["codex"] },
+        {
+          projectId: "repo-a",
+          title: "Repo A",
+          lastActivityAt: "2026-03-30T00:00:00.000Z",
+          projectPath: "/Users/test/src/repo-a",
+          tools: ["codex"],
+        },
         { projectId: "", title: "Trash", lastActivityAt: "2021-01-01T00:00:00.000Z" },
       ],
       projectDrafts: {
@@ -62,6 +68,7 @@ describe("preferences-store", () => {
 
     expect(normalized.selectedProjectScope).toEqual({ kind: "project", projectId: "repo-a" });
     expect(normalized.recentProjects.map((project) => project.projectId)).toEqual(["repo-a"]);
+    expect(normalized.recentProjects[0]?.projectPath).toBe("/Users/test/src/repo-a");
     expect(normalized.projectDrafts["repo-a"]?.alpha?.enabledTargets).toEqual(["codex"]);
   });
 

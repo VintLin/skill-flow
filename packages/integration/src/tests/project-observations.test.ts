@@ -6,7 +6,10 @@ describe("project observations", () => {
     const observations = collectProjectObservationsFromCodexSessions([
       {
         session_meta: {
-          payload: { git: { repository_url: "https://github.com/acme/skill-flow" } },
+          payload: {
+            cwd: "/Users/test/src/skill-flow",
+            git: { repository_url: "https://github.com/acme/skill-flow" },
+          },
         },
       },
       { session_meta: { payload: { cwd: "/tmp/fallback-project" } } },
@@ -15,6 +18,10 @@ describe("project observations", () => {
     expect(observations.map((observation) => observation.projectId)).toEqual([
       "acme/skill-flow",
       "fallback-project",
+    ]);
+    expect(observations.map((observation) => observation.projectPath)).toEqual([
+      "/Users/test/src/skill-flow",
+      "/tmp/fallback-project",
     ]);
   });
 

@@ -97,6 +97,7 @@ export type RecentProject = {
   projectId: string;
   title: string;
   lastActivityAt: string;
+  projectPath?: string;
   tools?: string[];
 };
 

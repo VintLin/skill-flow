@@ -16,6 +16,7 @@ export function aggregateRecentProjects(
         projectId: observation.projectId,
         title: observation.title,
         lastActivityAt: observation.observedAt,
+        ...(observation.projectPath ? { projectPath: observation.projectPath } : {}),
         tools: [observation.tool],
       });
       continue;
@@ -35,6 +36,13 @@ export function aggregateRecentProjects(
       title:
         latest === observation.observedAt ? observation.title : existing.title,
       lastActivityAt: latest,
+      ...(latest === observation.observedAt
+        ? observation.projectPath
+          ? { projectPath: observation.projectPath }
+          : {}
+        : existing.projectPath
+          ? { projectPath: existing.projectPath }
+          : {}),
       tools: Array.from(tools).sort(),
     });
   }
@@ -54,4 +62,3 @@ export class RecentProjectService {
     return aggregateRecentProjects(observations);
   }
 }
-

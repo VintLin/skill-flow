@@ -70,6 +70,45 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertEqual(model.selectedProjectScope, .global)
         XCTAssertTrue(model.recentProjectScopes.isEmpty)
     }
+
+    func testSelectProjectScopeShowsLocalizedToast() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        await model.selectProjectScope(.project("repo-a"))
+
+        XCTAssertEqual(model.toast?.style, .success)
+        XCTAssertEqual(model.toast?.message, "Switched to Repo A.")
+
+        await model.selectProjectScope(.global)
+
+        XCTAssertEqual(model.toast?.style, .success)
+        XCTAssertEqual(model.toast?.message, "Switched to Global.")
+    }
+
+    func testBootstrapParsesRecentProjectPath() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+
+        XCTAssertEqual(model.recentProjectScopes.first?.projectPath, "/Users/test/src/repo-a")
+    }
 }
 
 @MainActor
@@ -79,6 +118,7 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
             "projectId": "repo-a",
             "title": "Repo A",
             "lastActivityAt": "2026-03-31T12:00:00.000Z",
+            "projectPath": "/Users/test/src/repo-a",
             "tools": ["codex"]
         ]
     ]
@@ -105,6 +145,7 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
                     "projectId": "repo-a",
                     "title": "Repo A",
                     "lastActivityAt": "2026-03-31T12:00:00.000Z",
+                    "projectPath": "/Users/test/src/repo-a",
                     "tools": ["codex"]
                 ]
             ],

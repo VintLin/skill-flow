@@ -789,7 +789,8 @@ struct MainView: View {
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 homeScopePill(
-                    title: "Global",
+                    title: t("project_scope.global"),
+                    projectPath: nil,
                     isSelected: viewModel.selectedProjectScope == .global
                 ) {
                     Task {
@@ -804,6 +805,7 @@ struct MainView: View {
                 ForEach(projects, id: \.projectId) { item in
                     homeScopePill(
                         title: item.title,
+                        projectPath: item.projectPath,
                         isSelected: viewModel.selectedProjectScope == .project(item.projectId)
                     ) {
                         Task {
@@ -844,33 +846,45 @@ struct MainView: View {
 
     private func homeScopePill(
         title: String,
+        projectPath: String?,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-                .padding(.horizontal, 10)
-                .frame(height: 26)
-                .background(
-                    AppTheme.toolbarButtonBackground(for: theme).opacity(
-                        isSelected
-                            ? (theme == .dark ? 0.88 : 1.0)
-                            : (theme == .dark ? 0.5 : 0.82)
-                    )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(
-                            isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.4) : AppTheme.cardBorder(for: theme),
-                            lineWidth: 0.5
-                        )
+        ZStack(alignment: .trailing) {
+            Button(action: action) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+                    .padding(.leading, 10)
+                    .padding(.trailing, projectPath == nil ? 10 : 30)
+                    .frame(height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if let projectPath {
+                Button {
+                    openPath(projectPath)
+                } label: {
+                    actionIcon(.externalLink, size: 10)
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(width: 18, height: 18)
                 }
+                .buttonStyle(.plain)
+                .padding(.trailing, 6)
+            }
         }
-        .buttonStyle(.plain)
-        .opacity(isSelected ? 1.0 : 0.72)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(AppTheme.scopePillBackground(isSelected: isSelected, for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(
+                    isSelected ? AppTheme.scopePillBorder(for: theme) : Color.clear,
+                    lineWidth: 0.5
+                )
+        }
     }
 
     private func homeFilterPill(
@@ -1373,6 +1387,7 @@ enum AppTheme {
         case color1
         case color2
         case color3
+        case color4
     }
 
     private static func neutralCardColor(_ color: NeutralCardColor, for mode: DesktopThemeMode) -> Color {
@@ -1389,7 +1404,23 @@ enum AppTheme {
             return grayscaleColor(21)
         case (.dark, .color3):
             return grayscaleColor(34)
+        case (.light, .color4):
+            return grayscaleColor(230)
+        case (.dark, .color4):
+            return grayscaleColor(53)
         }
+    }
+
+    static func scopePillBackground(isSelected: Bool, for mode: DesktopThemeMode) -> Color {
+        neutralCardColor(.color1, for: mode).opacity(
+            isSelected
+                ? 1.0
+                : (mode == .dark ? 0.58 : 0.72)
+        )
+    }
+
+    static func scopePillBorder(for mode: DesktopThemeMode) -> Color {
+        neutralCardColor(.color4, for: mode)
     }
 
     private static func grayscaleColor(_ value: Double) -> Color {
