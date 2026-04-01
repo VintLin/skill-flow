@@ -158,6 +158,21 @@ type AuditedMutationResult<T> =
       auditDetails?: Record<string, unknown>;
     };
 
+async function resolveUsableProjectPath(projectPath: string | undefined): Promise<string | null> {
+  const trimmedPath = projectPath?.trim();
+  if (!trimmedPath) {
+    return null;
+  }
+
+  try {
+    const resolvedPath = await fs.realpath(trimmedPath);
+    const stat = await fs.stat(resolvedPath);
+    return stat.isDirectory() ? resolvedPath : null;
+  } catch {
+    return null;
+  }
+}
+
 export class SkillFlowApp {
   private static readonly importGroupResolveConcurrency = 3;
 
@@ -3521,13 +3536,14 @@ export class SkillFlowApp {
     targets: DeploymentTargetName[],
   ): Promise<Result<TargetRootOverrides>> {
     const preferences = await this.store.readPreferences();
-    const projectPath = preferences.recentProjects.find(
+    const projectPath = await resolveUsableProjectPath(preferences.recentProjects.find(
       (project) => project.projectId === scope.projectId,
-    )?.projectPath?.trim();
+    )?.projectPath);
     if (!projectPath) {
+      await this.removeUnavailableProjectScope(scope.projectId, preferences);
       return fail({
         code: "PROJECT_SCOPE_PATH_UNAVAILABLE",
-        message: `Project scope '${scope.projectId}' is missing a projectPath, so project-local skills cannot be mounted.`,
+        message: `Project scope '${scope.projectId}' is unavailable because its projectPath is missing or invalid, so project-local skills cannot be mounted.`,
       });
     }
 
@@ -3544,6 +3560,37 @@ export class SkillFlowApp {
     }
 
     return ok(overrides);
+  }
+
+  private async removeUnavailableProjectScope(
+    projectId: string,
+    preferences?: SharedPreferences,
+  ): Promise<void> {
+    const currentPreferences = preferences ?? await this.store.readPreferences();
+    if (
+      !currentPreferences.recentProjects.some((project) => project.projectId === projectId) &&
+      !(projectId in currentPreferences.projectDrafts) &&
+      !(
+        currentPreferences.selectedProjectScope.kind === "project" &&
+        currentPreferences.selectedProjectScope.projectId === projectId
+      )
+    ) {
+      return;
+    }
+
+    const { [projectId]: _removedDrafts, ...remainingProjectDrafts } = currentPreferences.projectDrafts;
+    await this.store.writePreferences({
+      ...currentPreferences,
+      selectedProjectScope:
+        currentPreferences.selectedProjectScope.kind === "project" &&
+          currentPreferences.selectedProjectScope.projectId === projectId
+          ? { kind: "global" }
+          : currentPreferences.selectedProjectScope,
+      recentProjects: currentPreferences.recentProjects.filter(
+        (project) => project.projectId !== projectId,
+      ),
+      projectDrafts: remainingProjectDrafts,
+    });
   }
 
   private cloneLockFileForScopedDeployments(

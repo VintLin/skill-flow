@@ -355,6 +355,20 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(MainView.headerSearchActionButtonSize, MainView.headerSearchFieldHeight)
     }
 
+    func testHomeFilterBarsUseFixedLeadingButtonsAndSharedPillMetrics() {
+        XCTAssertEqual(MainView.homeFilterLeadingFixedWidth, 76)
+        XCTAssertEqual(MainView.homeProjectLeadingFixedWidth, 88)
+        XCTAssertEqual(MainView.homeProjectPillHeight, MainView.homeFilterPillHeight)
+        XCTAssertEqual(MainView.homeProjectPillCornerRadius, MainView.homeFilterPillCornerRadius)
+    }
+
+    func testSelectedProjectScopeUsesIndicatorWithoutLegacySubtitle() {
+        XCTAssertTrue(MainView.projectScopeShowsSelectionIndicator(isSelected: true))
+        XCTAssertFalse(MainView.projectScopeShowsSelectionIndicator(isSelected: false))
+        XCTAssertFalse(MainView.projectScopeShowsLegacySubtitle(isSelected: true))
+        XCTAssertFalse(MainView.projectScopeShowsLegacySubtitle(isSelected: false))
+    }
+
     func testSearchPromptHidesOnFocusEvenWhenQueryIsEmpty() {
         XCTAssertTrue(MainView.shouldShowSearchPrompt(query: "", isFocused: false))
         XCTAssertFalse(MainView.shouldShowSearchPrompt(query: "", isFocused: true))

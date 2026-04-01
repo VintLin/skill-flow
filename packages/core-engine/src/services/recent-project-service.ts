@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import type { RecentProject } from "@skill-flow/domain";
 import {
   collectProjectObservations,
@@ -60,9 +61,46 @@ export function aggregateRecentProjects(
     .slice(0, 10);
 }
 
+export async function resolveUsableProjectPath(projectPath: string | undefined): Promise<string | null> {
+  const trimmedPath = projectPath?.trim();
+  if (!trimmedPath) {
+    return null;
+  }
+
+  try {
+    const resolvedPath = await fs.realpath(trimmedPath);
+    const stat = await fs.stat(resolvedPath);
+    return stat.isDirectory() ? resolvedPath : null;
+  } catch {
+    return null;
+  }
+}
+
 export class RecentProjectService {
   async listRecentProjects(): Promise<RecentProject[]> {
     const observations = await collectProjectObservations();
-    return aggregateRecentProjects(observations);
+    const validatedObservations = (
+      await Promise.all(
+        observations.map(async (observation) => {
+          if (!observation.projectPath) {
+            return observation;
+          }
+
+          const resolvedProjectPath = await resolveUsableProjectPath(observation.projectPath);
+          if (!resolvedProjectPath) {
+            return null;
+          }
+
+          return {
+            ...observation,
+            projectPath: resolvedProjectPath,
+          } satisfies ProjectObservation;
+        }),
+      )
+    ).filter((observation): observation is ProjectObservation => observation !== null);
+
+    return aggregateRecentProjects(validatedObservations).filter(
+      (project): project is RecentProject & { projectPath: string } => Boolean(project.projectPath),
+    );
   }
 }

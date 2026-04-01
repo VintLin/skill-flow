@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
@@ -75,6 +76,45 @@ describe.sequential("project scoped drafts", () => {
     expect(preferences.recentProjects.map((project) => project.projectId)).toEqual([
       "acme/skill-flow",
     ]);
+  });
+
+  test("bootstrapWorkspaceState falls back to global when project validation removes the selected project", async () => {
+    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([]);
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      selectedProjectScope: { kind: "project", projectId: "repo-a" },
+      recentProjects: [{
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      }],
+      projectDrafts: {
+        "repo-a": {
+          alpha: {
+            enabledTargets: ["codex"],
+            selectedLeafIds: ["alpha:skills/review"],
+          },
+        },
+      },
+    });
+
+    const result = await app.bootstrapWorkspaceState();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.selectedProjectScope).toEqual({ kind: "global" });
+    expect(result.data.recentProjects).toEqual([]);
   });
 
   test("applyDraft(project) only updates the project layer", async () => {
@@ -204,6 +244,7 @@ describe.sequential("project scoped drafts", () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
+    const resolvedRepoPath = await fs.realpath(repoPath);
     vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
       {
         projectId: "repo-a",
@@ -233,7 +274,7 @@ describe.sequential("project scoped drafts", () => {
 
     const sourceId = added.data.manifest.id;
     const leafId = `${sourceId}:skills/review`;
-    const projectTargetRoot = resolveDocumentedProjectSkillPath("codex", repoPath);
+    const projectTargetRoot = resolveDocumentedProjectSkillPath("codex", resolvedRepoPath);
     expect(projectTargetRoot).toBeTruthy();
     if (!projectTargetRoot) {
       return;
@@ -315,5 +356,58 @@ describe.sequential("project scoped drafts", () => {
 
     expect(applied.errors[0]?.code).toBe("PROJECT_SCOPE_PATH_UNAVAILABLE");
     expect(await pathExists(path.join(sandbox.targetsRoot, "codex", "review"))).toBe(false);
+  });
+
+  test("applyDraft(project) removes invalid project scope data when the project path disappears", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      selectedProjectScope: { kind: "project", projectId: "repo-a" },
+      recentProjects: [{
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: repoPath,
+        tools: ["codex"],
+      }],
+      projectDrafts: {
+        "repo-a": {
+          alpha: {
+            enabledTargets: ["codex"],
+            selectedLeafIds: ["alpha:skills/review"],
+          },
+        },
+      },
+    });
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "alpha", project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await fs.rm(repoPath, { recursive: true, force: true });
+
+    const applied = await app.applyDraft(
+      added.data.manifest.id,
+      {
+        enabledTargets: ["codex"],
+        selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
+      },
+      { kind: "project", projectId: "repo-a" },
+    );
+
+    expect(applied.ok).toBe(false);
+    if (applied.ok) {
+      return;
+    }
+
+    const preferences = await app.store.readPreferences();
+    expect(preferences.selectedProjectScope).toEqual({ kind: "global" });
+    expect(preferences.recentProjects).toEqual([]);
+    expect(preferences.projectDrafts["repo-a"]).toBeUndefined();
   });
 });
