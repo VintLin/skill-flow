@@ -304,6 +304,42 @@ final class DetailLoadingLayoutTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testSidebarSelectedItemPrefersPendingSkillSelection() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "browse"
+        state.pendingDetailSkillIdByGroup["alpha"] = "debug"
+
+        XCTAssertEqual(
+            DetailRouteBootstrap.selectedSidebarItemId(state: state, sourceId: "alpha"),
+            "skill:debug"
+        )
+    }
+
+    @MainActor
+    func testSidebarSelectionUsesPendingSkillForRowHighlight() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "browse"
+        state.pendingDetailSkillIdByGroup["alpha"] = "debug"
+
+        XCTAssertTrue(
+            DetailRouteBootstrap.isSidebarSkillSelected(
+                state: state,
+                sourceId: "alpha",
+                skillId: "debug"
+            )
+        )
+        XCTAssertFalse(
+            DetailRouteBootstrap.isSidebarSkillSelected(
+                state: state,
+                sourceId: "alpha",
+                skillId: "browse"
+            )
+        )
+    }
+
     func testDetailRouteBootstrapOnlyFetchesInspectWhenPayloadIsMissing() {
         XCTAssertTrue(DetailRouteBootstrap.shouldFetchInspect(hasInspectPayload: false, isInspectRequestInFlight: false))
         XCTAssertFalse(DetailRouteBootstrap.shouldFetchInspect(hasInspectPayload: true, isInspectRequestInFlight: false))

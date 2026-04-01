@@ -72,8 +72,39 @@ enum DetailRouteBootstrap {
         return detail == nil
     }
 
+    @MainActor
+    static func selectedSidebarItemId(state: DetailScreenState, sourceId: String) -> String {
+        if state.detailShowsGroupOverviewByGroup[sourceId] ?? false {
+            return detailGroupItemId(groupId: sourceId)
+        }
+        if let skillId = state.pendingDetailSkillIdByGroup[sourceId] ?? state.detailSkillIdByGroup[sourceId] {
+            return detailSkillItemId(skillId: skillId)
+        }
+        return detailGroupItemId(groupId: sourceId)
+    }
+
+    @MainActor
+    static func isSidebarSkillSelected(
+        state: DetailScreenState,
+        sourceId: String,
+        skillId: String
+    ) -> Bool {
+        guard state.detailShowsGroupOverviewByGroup[sourceId] != true else {
+            return false
+        }
+        return (state.pendingDetailSkillIdByGroup[sourceId] ?? state.detailSkillIdByGroup[sourceId]) == skillId
+    }
+
     private static func preferredDetailSkillId(for detail: DetailViewModel) -> String? {
         detail.skills.first(where: \.isEnabled)?.id ?? detail.skills.first?.id
+    }
+
+    private static func detailGroupItemId(groupId: String) -> String {
+        "group:\(groupId)"
+    }
+
+    private static func detailSkillItemId(skillId: String) -> String {
+        "skill:\(skillId)"
     }
 }
 
@@ -123,8 +154,7 @@ struct DetailScreen: View {
                     detailSidebar(
                         groupId: sourceId,
                         detail: detail,
-                        fallbackRow: fallbackRow,
-                        selectedSkillId: screenState.detailSkillIdByGroup[sourceId]
+                        fallbackRow: fallbackRow
                     )
                     detailMain(groupId: sourceId, detail: detail, fallbackRow: fallbackRow)
                 }
@@ -154,11 +184,10 @@ struct DetailScreen: View {
     private func detailSidebar(
         groupId: String,
         detail: DetailViewModel?,
-        fallbackRow: MainViewModel.SourceRow?,
-        selectedSkillId: String?
+        fallbackRow: MainViewModel.SourceRow?
     ) -> some View {
         let skills = detail?.skills ?? []
-        let selectedItemId = detailSelectedItemId(groupId: groupId, selectedSkillId: selectedSkillId)
+        let selectedItemId = DetailRouteBootstrap.selectedSidebarItemId(state: screenState, sourceId: groupId)
 
         return VStack(alignment: .leading, spacing: 0) {
             ScrollView {
@@ -476,7 +505,11 @@ struct DetailScreen: View {
 
     private func detailSkillListRow(groupId: String, skill: DetailViewModel.DetailSkill) -> some View {
         let isPending = screenState.pendingDetailSkillIdByGroup[groupId] == skill.id
-        let isSelected = !isShowingGroupOverview(groupId) && selectedDetailSkill(for: groupId, detail: container.viewModel)?.id == skill.id
+        let isSelected = DetailRouteBootstrap.isSidebarSkillSelected(
+            state: screenState,
+            sourceId: groupId,
+            skillId: skill.id
+        )
 
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
@@ -886,16 +919,6 @@ struct DetailScreen: View {
             ?? screenState.detailDocumentTabIdByGroup[groupId]
             ?? detail.groupDocuments.first?.id
         return detail.groupDocuments.first(where: { $0.id == selectedId }) ?? detail.groupDocuments.first
-    }
-
-    private func detailSelectedItemId(groupId: String, selectedSkillId: String?) -> String {
-        if isShowingGroupOverview(groupId) {
-            return detailGroupItemId(groupId)
-        }
-        if let selectedSkillId {
-            return detailSkillItemId(selectedSkillId)
-        }
-        return detailGroupItemId(groupId)
     }
 
     private func detailGroupItemId(_ groupId: String) -> String {
