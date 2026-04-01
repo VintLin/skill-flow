@@ -300,6 +300,7 @@ async function collectClaudeObservations(homeDir: string): Promise<ProjectObserv
         projectId,
         title,
         observedAt,
+        ...(lastCwd ? { projectPath: lastCwd } : {}),
       });
     }
   }
@@ -326,6 +327,7 @@ async function collectGeminiObservations(homeDir: string): Promise<ProjectObserv
       projectId,
       title: projectId,
       observedAt: (await statMtimeIso(projectRootFile)) ?? new Date(0).toISOString(),
+      projectPath: projectRoot,
     });
   }
 
@@ -364,6 +366,7 @@ async function collectOpencodeObservations(_homeDir: string): Promise<ProjectObs
         projectId,
         title: projectId,
         observedAt: (await statMtimeIso(filePath)) ?? new Date(0).toISOString(),
+        projectPath: projectRoot ?? "",
       });
     }
 
