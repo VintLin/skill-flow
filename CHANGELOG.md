@@ -4,9 +4,24 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## v1.3.0 - 2026-04-01
 
+### Added
+
+- The macOS desktop app now supports project-scoped skill views, so you can switch between a global setup and a specific project without mixing drafts and selections together.
+- The desktop home screen now shows recent projects, including detected OpenCode workspaces, making it faster to jump back into work you opened recently.
+- Local skill groups now show clearer source metadata and preview context, so it is easier to tell whether a group comes from a local install and where it lives.
+
 ### Changed
 
-- Bumped the CLI and all internal workspace packages from `1.2.0` to `1.3.0`.
+- Home controls on macOS are easier to use, with clearer project scope entry points, larger click targets, and smoother card selection.
+- Detail pages on macOS feel more stable during navigation, with faster markdown loading and less jarring refresh behavior when switching between groups.
+- The desktop interface now uses more motion and visual feedback across cards, tags, toolbars, settings, and detail navigation, making the app feel more responsive without changing the workflow.
+
+### Fixed
+
+- Fixed cases where global actions could accidentally clear project-specific state.
+- Fixed recent-project tracking so the same project is recognized more reliably from normalized paths.
+- Fixed markdown detail rendering so content updates refresh correctly and previous scroll position is preserved more consistently.
+- Fixed import flows so groups that are already installed locally are shown more clearly and no longer invite redundant import actions.
 
 ## v1.2.0 - 2026-03-31
 
