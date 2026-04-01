@@ -95,16 +95,16 @@ describe.sequential("project scoped drafts", () => {
     if (!added.ok) {
       return;
     }
-    expect(added.data.manifest.id).toBe("alpha");
+    const sourceId = added.data.manifest.id;
 
-    const globalBefore = await app.inspectSource(added.data.manifest.id);
+    const globalBefore = await app.inspectSource(sourceId);
     expect(globalBefore.ok).toBe(true);
     if (!globalBefore.ok) {
       return;
     }
 
     const projectApplied = await app.applyDraft(
-      added.data.manifest.id,
+      sourceId,
       { enabledTargets: [], selectedLeafIds: [] },
       { kind: "project", projectId: "repo-a" },
     );
@@ -113,14 +113,14 @@ describe.sequential("project scoped drafts", () => {
       return;
     }
 
-    const globalAfter = await app.inspectSource(added.data.manifest.id);
+    const globalAfter = await app.inspectSource(sourceId);
     expect(globalAfter.ok).toBe(true);
     if (!globalAfter.ok) {
       return;
     }
     expect(globalAfter.data.binding).toEqual(globalBefore.data.binding);
 
-    const projectInspect = await app.inspectSource(added.data.manifest.id, {
+    const projectInspect = await app.inspectSource(sourceId, {
       kind: "project",
       projectId: "repo-a",
     });
@@ -133,9 +133,48 @@ describe.sequential("project scoped drafts", () => {
     expect(projectInspect.data.binding.targets).toEqual({});
 
     const preferences = await app.store.readPreferences();
-    expect(preferences.projectDrafts["repo-a"]?.alpha).toEqual({
+    expect(preferences.projectDrafts["repo-a"]?.[sourceId]).toEqual({
       enabledTargets: [],
       selectedLeafIds: [],
     });
+  });
+
+  test("applyDraft returns fresh source state without project scope metadata", async () => {
+    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
+      {
+        projectId: "acme/skill-flow",
+        title: "Skill Flow",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        tools: ["codex"],
+      },
+    ]);
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "alpha" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const applied = await app.applyDraft(
+      added.data.manifest.id,
+      { enabledTargets: [], selectedLeafIds: [] },
+      { kind: "project", projectId: "repo-a" },
+    );
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    expect(applied.data.summary).toBeDefined();
+    expect(applied.data.inspect).toBeDefined();
+    expect(applied.data).not.toHaveProperty("recentProjects");
+    expect(applied.data).not.toHaveProperty("selectedProjectScope");
+    expect(applied.data).not.toHaveProperty("projectDrafts");
   });
 });

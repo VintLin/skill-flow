@@ -130,6 +130,33 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertEqual(model.recentProjectScopes.map(\.projectId), ["repo-a"])
         XCTAssertEqual(state.settings.recentProjectScopes.map(\.projectId), ["repo-a"])
     }
+
+    func testGlobalTargetToggleClearsRecentProjectScopesWhenApplyExplicitlyReturnsEmptyProjects() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        command.applyProjectScopePayload = [
+            "recentProjects": [],
+            "selectedProjectScope": [
+                "kind": "global"
+            ]
+        ]
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        XCTAssertEqual(model.recentProjectScopes.map(\.projectId), ["repo-a"])
+
+        await model.setTargetEnabled("codex", enabled: false, sourceId: "alpha")
+
+        XCTAssertEqual(command.recordedScopes, [.global])
+        XCTAssertTrue(model.recentProjectScopes.isEmpty)
+        XCTAssertTrue(state.settings.recentProjectScopes.isEmpty)
+    }
 }
 
 @MainActor
@@ -303,6 +330,7 @@ private extension ProjectScopeSelection {
 @MainActor
 private final class ProjectScopeCommandStub: DesktopCommanding {
     private(set) var recordedScopes: [ProjectScopeSelection] = []
+    var applyProjectScopePayload: [String: Any] = [:]
 
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
         fatalError("unused")
@@ -369,7 +397,7 @@ private final class ProjectScopeCommandStub: DesktopCommanding {
                     "id": sourceId
                 ]
             ]
-        ])
+        ].merging(applyProjectScopePayload) { _, updated in updated })
     }
 
     func doctor() async throws -> BridgeResponse {
