@@ -118,6 +118,36 @@ final class MarkdownDocumentRendererTests: XCTestCase {
         XCTAssertEqual(String(renderer.cachedContent(for: "doc-b")?.characters ?? AttributedString().characters), "# B")
     }
 
+    @MainActor
+    func testRendererBenchmarkWarmCacheIsFasterThanColdRender() async {
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: "benchmark",
+            title: "README.md",
+            path: "/tmp/README.md",
+            metadata: [],
+            renderCacheKey: "benchmark-cache",
+            externalURL: nil
+        )
+        let document = MarkdownDocumentView.Model(
+            descriptor: descriptor,
+            content: heavyMarkdownDocument(sectionCount: 1200),
+            metadata: []
+        )
+        let renderer = MarkdownDocumentRenderer()
+        let clock = ContinuousClock()
+
+        let coldStart = clock.now
+        _ = await renderer.renderedContent(for: document)
+        let coldDuration = coldStart.duration(to: clock.now)
+
+        let warmStart = clock.now
+        _ = await renderer.renderedContent(for: document)
+        let warmDuration = warmStart.duration(to: clock.now)
+
+        print("Markdown renderer benchmark cold=\(coldDuration) warm=\(warmDuration)")
+        XCTAssertLessThan(warmDuration, coldDuration)
+    }
+
     func testDocumentTabRecognizesMarkdownFilesByPath() {
         let markdownTab = MainViewModel.DocumentTab(
             id: "readme",
@@ -140,5 +170,25 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
         XCTAssertTrue(markdownTab.isMarkdown)
         XCTAssertFalse(fileTreeTab.isMarkdown)
+    }
+
+    private func heavyMarkdownDocument(sectionCount: Int) -> String {
+        let section = """
+        ## Notes
+
+        This is a heavy markdown benchmark section.
+
+        - one
+        - two
+        - three
+
+        ```swift
+        let value = "benchmark"
+        print(value)
+        ```
+
+        """
+
+        return "# Benchmark\n\n" + String(repeating: section, count: sectionCount)
     }
 }

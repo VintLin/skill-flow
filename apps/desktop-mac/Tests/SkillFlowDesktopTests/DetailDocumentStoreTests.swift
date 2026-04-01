@@ -166,6 +166,34 @@ final class DetailDocumentStoreTests: XCTestCase {
         XCTAssertEqual(store.debugLoadCount(for: directory.path), 2)
     }
 
+    func testDocumentStoreBenchmarkWarmCacheIsFasterThanColdLoad() async throws {
+        let url = try makeMarkdownFile(
+            named: "README.md",
+            contents: heavyMarkdownDocument(sectionCount: 1200)
+        )
+        let store = DetailDocumentStore()
+        let descriptor = MainViewModel.DocumentDescriptor(
+            id: "group:\(url.path)",
+            title: "README.md",
+            path: url.path,
+            metadata: [],
+            renderCacheKey: "\(url.path):benchmark",
+            externalURL: nil
+        )
+        let clock = ContinuousClock()
+
+        let coldStart = clock.now
+        _ = try await store.document(for: descriptor)
+        let coldDuration = coldStart.duration(to: clock.now)
+
+        let warmStart = clock.now
+        _ = try await store.document(for: descriptor)
+        let warmDuration = warmStart.duration(to: clock.now)
+
+        print("Detail document store benchmark cold=\(coldDuration) warm=\(warmDuration)")
+        XCTAssertLessThan(warmDuration, coldDuration)
+    }
+
     private func makeMarkdownFile(named name: String, contents: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("detail-document-store-tests-\(UUID().uuidString)", isDirectory: true)
@@ -186,5 +214,29 @@ final class DetailDocumentStoreTests: XCTestCase {
             XCTFail("Expected error to be thrown", file: file, line: line)
         } catch {
         }
+    }
+
+    private func heavyMarkdownDocument(sectionCount: Int) -> String {
+        let section = """
+        ---
+        name: Benchmark
+        ---
+
+        ## Section
+
+        This is a heavy markdown benchmark section.
+
+        - one
+        - two
+        - three
+
+        ```swift
+        let value = "benchmark"
+        print(value)
+        ```
+
+        """
+
+        return "# Benchmark\n\n" + String(repeating: section, count: sectionCount)
     }
 }
