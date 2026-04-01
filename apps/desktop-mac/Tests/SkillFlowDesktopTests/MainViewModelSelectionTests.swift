@@ -308,10 +308,9 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(detail?.fileTree.first?.children.contains(where: { $0.title == "alpha-a" && $0.isSkillRoot && $0.skillId == "alpha-a" }) == true)
         XCTAssertTrue(detail?.fileTree.first?.children.first(where: { $0.skillId == "alpha-a" })?.children.contains(where: { $0.title == "SKILL.md" && $0.skillId == "alpha-a" }) == true)
         XCTAssertTrue(detail?.skills.first?.detailLines.contains(where: { $0.contains("SKILL.md") }) == true)
-        XCTAssertEqual(detail?.skills.first?.documents.first?.metadata.map(\.key), ["description", "name"])
-        XCTAssertFalse(detail?.skills.first?.documents.first?.content.contains("---") == true)
-        XCTAssertTrue(detail?.skills.first?.documentContent.contains("# browse") == true)
-        XCTAssertTrue(detail?.skills.first?.documentContent.contains("Final verification line.") == true)
+        XCTAssertTrue(detail?.skills.first?.documents.first?.metadata.isEmpty == true)
+        XCTAssertEqual(detail?.skills.first?.documents.first?.content, "")
+        XCTAssertTrue(detail?.skills.first?.documents.first?.renderCacheKey.isEmpty == false)
         XCTAssertEqual(detail?.skills.first?.starCount, 1200)
     }
 
@@ -324,6 +323,20 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertFalse(snapshot.groupDocuments.isEmpty)
         XCTAssertTrue(snapshot.groupDocuments.allSatisfy { !$0.renderCacheKey.isEmpty })
+    }
+
+    func testDetailSnapshotBuildsSkillDocumentsWithoutReadingMarkdownBodies() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let snapshot = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let skillDocuments = try XCTUnwrap(snapshot.skills.first?.documents)
+
+        XCTAssertFalse(skillDocuments.isEmpty)
+        XCTAssertTrue(skillDocuments.allSatisfy { $0.metadata.isEmpty })
+        XCTAssertTrue(skillDocuments.allSatisfy { $0.content.isEmpty })
+        XCTAssertTrue(skillDocuments.allSatisfy { !$0.renderCacheKey.isEmpty })
     }
 
     func testDetailFileTreeKeepsSkillRootFilesButPrunesNonSkillNestedDirectories() async throws {
@@ -434,16 +447,17 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.groupStats.skillCount, 2)
     }
 
-    func testDetailSnapshotFallsBackWhenSkillDocumentIsMissing() async throws {
+    func testDetailDocumentResolutionFallsBackWhenSkillDocumentIsMissing() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
         try fixture.removeSkillDocument(sourceId: "alpha", leafId: "alpha-a")
 
         let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let documentId = try XCTUnwrap(detail.skills.first?.documents.first?.id)
+        let document = model.groupDocument(for: "alpha", documentId: documentId)
 
-        let detail = model.detailSnapshot(for: "alpha")
-
-        XCTAssertEqual(detail?.skills.first?.documentContent, "SKILL.md unavailable.")
+        XCTAssertEqual(document?.content, "SKILL.md unavailable.")
     }
 
     func testDetailSnapshotLocalizesDerivedDetailCopyForJapanese() async throws {
@@ -482,7 +496,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertFalse(localizedRelative?.contains("Updated") == true)
     }
 
-    func testDetailSkillTitlePrefersMetadataName() async throws {
+    func testDetailSkillTitleDoesNotDependOnSkillMarkdownMetadata() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
         try fixture.writeSkillDocument(
@@ -502,7 +516,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let detail = model.detailSnapshot(for: "alpha")
 
-        XCTAssertEqual(detail?.skills.first?.title, "Browser Metadata Name")
+        XCTAssertEqual(detail?.skills.first?.title, "alpha-a")
     }
 
     func testFileTreeUsesProjectedNameWhenSkillWouldBeDeduped() async throws {

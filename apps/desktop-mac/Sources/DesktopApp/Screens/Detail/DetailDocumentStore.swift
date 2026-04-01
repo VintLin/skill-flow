@@ -17,7 +17,10 @@ final class DetailDocumentStore {
     private let fileReader: FileReader
 
     init(fileReader: @escaping FileReader = { path in
-        try String(contentsOfFile: path, encoding: .utf8)
+        if let content = try? String(contentsOfFile: path, encoding: .utf8) {
+            return content
+        }
+        return MainViewModel.localizedWarmup("detail.document.skill_unavailable")
     }) {
         self.fileReader = fileReader
     }

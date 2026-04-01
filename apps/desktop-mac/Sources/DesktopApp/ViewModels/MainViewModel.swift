@@ -2532,24 +2532,42 @@ final class MainViewModel {
             _ = detailSnapshot(for: sourceId)
         }
 
-        guard let preparedContent = preparedDetailContentBySourceId[sourceId],
-              let descriptor = preparedContent.groupDocuments.first(where: { $0.id == documentId })
+        guard let preparedContent = preparedDetailContentBySourceId[sourceId]
         else {
             return nil
         }
 
-        if descriptor.id == "group:filetree" {
-            return DocumentTab(
-                id: descriptor.id,
-                title: descriptor.title,
-                path: descriptor.path,
-                metadata: descriptor.metadata,
-                content: Self.renderFileTree(preparedContent.fileTree),
-                renderCacheKey: descriptor.renderCacheKey,
-                externalURL: descriptor.externalURL
-            )
+        if let descriptor = preparedContent.groupDocuments.first(where: { $0.id == documentId }) {
+            if descriptor.id == "group:filetree" {
+                return DocumentTab(
+                    id: descriptor.id,
+                    title: descriptor.title,
+                    path: descriptor.path,
+                    metadata: descriptor.metadata,
+                    content: Self.renderFileTree(preparedContent.fileTree),
+                    renderCacheKey: descriptor.renderCacheKey,
+                    externalURL: descriptor.externalURL
+                )
+            }
+
+            return loadedDocumentTab(from: descriptor)
         }
 
+        guard let placeholder = preparedContent.skillsByLeafId.values
+            .flatMap(\.documents)
+            .first(where: { $0.id == documentId })
+        else {
+            return nil
+        }
+
+        if !placeholder.content.isEmpty || !placeholder.isMarkdown {
+            return placeholder
+        }
+
+        return loadedDocumentTab(from: Self.documentDescriptor(for: placeholder))
+    }
+
+    private func loadedDocumentTab(from descriptor: DocumentDescriptor) -> DocumentTab? {
         guard let loaded = try? detailDocumentStore.loadSynchronously(for: descriptor) else {
             return nil
         }
@@ -2693,58 +2711,31 @@ final class MainViewModel {
     }
 
     nonisolated private static func prepareDetailContent(input: PreparedDetailWarmupInput) -> PreparedDetailContent {
-        var rawDocumentCache: [String: String] = [:]
-        var parsedDocumentCache: [String: ParsedDocument] = [:]
-        var documentTabsCache: [String: [DocumentTab]] = [:]
         var skillsByLeafId: [String: PreparedDetailSkillContent] = [:]
         var lightweightSkills: [DetailSkill] = []
 
         for leaf in input.leaves {
             let folderPath = leaf.absolutePath
                 ?? leaf.skillFilePath.flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty }
-            let documentContent = leaf.skillFilePath
-                .map { path in
-                    parsedDocument(
-                        path: path,
-                        rawDocumentCache: &rawDocumentCache,
-                        parsedDocumentCache: &parsedDocumentCache
-                    ).body
-                }
-                .flatMap(\.nonEmpty)
-                ?? leaf.description
-            let parsedMetadata = leaf.skillFilePath.map { path in
-                parsedDocument(
-                    path: path,
-                    rawDocumentCache: &rawDocumentCache,
-                    parsedDocumentCache: &parsedDocumentCache
-                )
-            }
-            let metadata = parsedMetadata?.metadata ?? []
-            let metadataName = parsedMetadata?.frontMatter?.name?.nonEmpty
-            let version = parsedMetadata?.frontMatter?.version
             let documents = leaf.skillFilePath.map { path in
-                documentTabs(
+                documentPlaceholderTabs(
                     for: path,
                     groupPath: input.groupPath,
-                    gitHubRepoContext: input.gitHubRepoContext,
-                    rawDocumentCache: &rawDocumentCache,
-                    parsedDocumentCache: &parsedDocumentCache,
-                    documentTabsCache: &documentTabsCache
+                    gitHubRepoContext: input.gitHubRepoContext
                 )
             } ?? [
                 DocumentTab(
-                    id: "inline-skill-md",
+                    id: "inline-skill-md:\(leaf.id)",
                     title: "SKILL.md",
                     path: "SKILL.md",
-                    metadata: metadata,
-                    content: documentContent,
-                    renderCacheKey: "inline-skill-md:\(documentContent.hashValue)",
+                    metadata: [],
+                    content: leaf.description,
+                    renderCacheKey: "inline-skill-md:\(leaf.id):\(leaf.description.hashValue)",
                     externalURL: nil
                 )
             ]
             let projectedName = input.projectedNamesByLeafId[leaf.id]
-            let title = metadataName
-                ?? folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
+            let title = folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
                 ?? leaf.title
                 ?? leaf.name.nonEmpty
                 ?? leaf.linkName
@@ -2754,11 +2745,11 @@ final class MainViewModel {
 
             skillsByLeafId[leaf.id] = PreparedDetailSkillContent(
                 title: title,
-                version: version,
+                version: nil,
                 folderPath: folderPath,
                 relativeFolderPath: relativeFolderPath,
                 documents: documents,
-                documentContent: documentContent
+                documentContent: leaf.skillFilePath == nil ? leaf.description : ""
             )
 
             lightweightSkills.append(
@@ -2766,7 +2757,7 @@ final class MainViewModel {
                     id: leaf.id,
                     title: title,
                     summary: leaf.description.isEmpty ? leaf.linkName : leaf.description,
-                    version: version,
+                    version: nil,
                     author: input.sourceSnapshot.map { "@\($0.owner.slug)" }
                         ?? authorHandle(from: input.sourceLocator)
                         ?? "@\(input.summary.sourceKind.lowercased())",
@@ -2781,7 +2772,7 @@ final class MainViewModel {
                     ),
                     documents: documents,
                     detailLines: [],
-                    documentContent: documentContent,
+                    documentContent: leaf.skillFilePath == nil ? leaf.description : "",
                     isEnabled: false,
                     warningCount: leaf.warningCount
                 )
@@ -3381,7 +3372,7 @@ final class MainViewModel {
             .first(where: { !$0.isEmpty }) ?? error.localizedDescription
     }
 
-    nonisolated private static func localizedWarmup(_ key: String, _ arguments: String...) -> String {
+    nonisolated static func localizedWarmup(_ key: String, _ arguments: String...) -> String {
         PresentationText.localized(key, arguments).resolve(locale: presentationLocale)
     }
 
@@ -3422,59 +3413,16 @@ final class MainViewModel {
         return nil
     }
 
-    nonisolated private static func cachedSkillDocument(
-        path: String,
-        rawDocumentCache: inout [String: String]
-    ) -> String {
-        if let cached = rawDocumentCache[path] {
-            return cached
-        }
-
-        let document: String
-        if let raw = try? String(contentsOfFile: path, encoding: .utf8) {
-            document = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        } else {
-            document = localizedWarmup("detail.document.skill_unavailable")
-        }
-
-        rawDocumentCache[path] = document
-        return document
-    }
-
-    nonisolated private static func parsedDocument(
-        path: String,
-        rawDocumentCache: inout [String: String],
-        parsedDocumentCache: inout [String: ParsedDocument]
-    ) -> ParsedDocument {
-        if let cached = parsedDocumentCache[path] {
-            return cached
-        }
-
-        let content = cachedSkillDocument(path: path, rawDocumentCache: &rawDocumentCache)
-        let parsed = parseDocument(content)
-        parsedDocumentCache[path] = parsed
-        return parsed
-    }
-
-    nonisolated private static func documentTabs(
+    nonisolated private static func documentPlaceholderTabs(
         for skillFilePath: String,
         groupPath: String?,
-        gitHubRepoContext: GitHubRepoContext?,
-        rawDocumentCache: inout [String: String],
-        parsedDocumentCache: inout [String: ParsedDocument],
-        documentTabsCache: inout [String: [DocumentTab]]
+        gitHubRepoContext: GitHubRepoContext?
     ) -> [DocumentTab] {
-        if let cached = documentTabsCache[skillFilePath] {
-            return cached
-        }
-
         var tabs: [DocumentTab] = [
-            makeDocumentTab(
+            placeholderDocumentTab(
                 id: skillFilePath,
                 title: "SKILL.md",
-                path: skillFilePath,
-                rawDocumentCache: &rawDocumentCache,
-                parsedDocumentCache: &parsedDocumentCache
+                path: skillFilePath
             )
         ]
 
@@ -3484,46 +3432,34 @@ final class MainViewModel {
             for entry in entries.sorted() where entry.lowercased().hasSuffix(".md") {
                 let fullPath = (referencesPath as NSString).appendingPathComponent(entry)
                 tabs.append(
-                    makeDocumentTab(
+                    placeholderDocumentTab(
                         id: fullPath,
                         title: "references/\(entry)",
-                        path: fullPath,
-                        rawDocumentCache: &rawDocumentCache,
-                        parsedDocumentCache: &parsedDocumentCache
+                        path: fullPath
                     )
                 )
             }
         }
 
-        let enriched = enrichDocumentTabs(
+        return enrichDocumentTabs(
             tabs,
             groupPath: groupPath,
             gitHubRepoContext: gitHubRepoContext
         )
-        documentTabsCache[skillFilePath] = enriched
-        return enriched
     }
 
-    nonisolated private static func makeDocumentTab(
+    nonisolated private static func placeholderDocumentTab(
         id: String,
         title: String,
-        path: String,
-        rawDocumentCache: inout [String: String],
-        parsedDocumentCache: inout [String: ParsedDocument]
+        path: String
     ) -> DocumentTab {
-        let parsed = parsedDocument(
-            path: path,
-            rawDocumentCache: &rawDocumentCache,
-            parsedDocumentCache: &parsedDocumentCache
-        )
-        let rawContent = cachedSkillDocument(path: path, rawDocumentCache: &rawDocumentCache)
         return DocumentTab(
             id: id,
             title: title,
             path: path,
-            metadata: parsed.metadata,
-            content: parsed.body,
-            renderCacheKey: "\(path):\(rawContent.hashValue)",
+            metadata: [],
+            content: "",
+            renderCacheKey: documentRenderCacheKey(path: path),
             externalURL: nil
         )
     }
@@ -4139,6 +4075,17 @@ final class MainViewModel {
                 externalURL: tab.externalURL
             )
         }
+    }
+
+    nonisolated static func documentDescriptor(for tab: DocumentTab) -> DocumentDescriptor {
+        DocumentDescriptor(
+            id: tab.id,
+            title: tab.title,
+            path: tab.path,
+            metadata: tab.metadata,
+            renderCacheKey: tab.renderCacheKey,
+            externalURL: tab.externalURL
+        )
     }
 
     nonisolated static func placeholderDocumentTabs(_ descriptors: [DocumentDescriptor]) -> [DocumentTab] {

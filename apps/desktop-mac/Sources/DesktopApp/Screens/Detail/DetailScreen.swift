@@ -255,7 +255,7 @@ struct DetailScreen: View {
                     } else if isSkillLoading {
                         detailSkillLoadingPlaceholder()
                     } else if let selectedSkill {
-                        detailSkillOverview(skill: selectedSkill)
+                        detailSkillOverview(groupId: groupId, skill: selectedSkill)
                     } else if detail == nil {
                         detailSkillLoadingPlaceholder()
                     } else {
@@ -298,7 +298,7 @@ struct DetailScreen: View {
         }
     }
 
-    private func detailSkillOverview(skill: DetailViewModel.DetailSkill) -> some View {
+    private func detailSkillOverview(groupId: String, skill: DetailViewModel.DetailSkill) -> some View {
         let isDocumentLoading = screenState.pendingDetailDocumentIdBySkill[skill.id] != nil
 
         return VStack(alignment: .leading, spacing: 12) {
@@ -321,7 +321,11 @@ struct DetailScreen: View {
                     if isDocumentLoading {
                         detailDocumentLoadingPlaceholder()
                     } else if let document = selectedDocument(for: skill) {
-                        detailDocumentContent(document: document)
+                        if let resolvedDocument = resolvedSkillDocument(sourceId: groupId, document: document) {
+                            detailDocumentContent(document: resolvedDocument)
+                        } else {
+                            detailDocumentLoadingPlaceholder()
+                        }
                     } else {
                         Text(skill.documentContent)
                             .font(.system(size: 11, weight: .regular, design: .monospaced))
@@ -913,6 +917,16 @@ struct DetailScreen: View {
             ?? screenState.detailDocumentTabIdBySkill[skill.id]
             ?? skill.documents.first?.id
         return skill.documents.first(where: { $0.id == selectedId }) ?? skill.documents.first
+    }
+
+    private func resolvedSkillDocument(
+        sourceId: String,
+        document: DetailViewModel.DocumentTab
+    ) -> DetailViewModel.DocumentTab? {
+        if !document.content.isEmpty || !document.isMarkdown {
+            return document
+        }
+        return container.groupDocument(sourceId: sourceId, documentId: document.id)
     }
 
     private func selectedGroupDocumentDescriptor(
