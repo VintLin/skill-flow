@@ -36,13 +36,17 @@ export function aggregateRecentProjects(
       title:
         latest === observation.observedAt ? observation.title : existing.title,
       lastActivityAt: latest,
-      ...(latest === observation.observedAt
-        ? observation.projectPath
-          ? { projectPath: observation.projectPath }
-          : {}
-        : existing.projectPath
-          ? { projectPath: existing.projectPath }
-          : {}),
+      ...(
+        (latest === observation.observedAt
+          ? observation.projectPath ?? existing.projectPath
+          : existing.projectPath) ?
+          {
+            projectPath: latest === observation.observedAt
+              ? observation.projectPath ?? existing.projectPath
+              : existing.projectPath,
+          } :
+          {}
+      ),
       tools: Array.from(tools).sort(),
     });
   }

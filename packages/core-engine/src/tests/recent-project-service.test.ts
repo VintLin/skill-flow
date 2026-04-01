@@ -49,5 +49,31 @@ describe("recent project service", () => {
     expect(aggregated[0]?.projectId).toBe("repo-11");
     expect(aggregated[9]?.projectId).toBe("repo-2");
   });
-});
 
+  test("aggregateRecentProjects preserves an existing projectPath when a newer observation lacks one", () => {
+    const observations: ProjectObservation[] = [
+      {
+        tool: "codex",
+        projectId: "repo-a",
+        title: "repo-a",
+        observedAt: "2026-03-01T00:00:00.000Z",
+        projectPath: "/Users/test/src/repo-a",
+      },
+      {
+        tool: "claude-code",
+        projectId: "repo-a",
+        title: "repo-a",
+        observedAt: "2026-03-02T00:00:00.000Z",
+      },
+    ];
+
+    const aggregated = aggregateRecentProjects(observations);
+
+    expect(aggregated[0]).toMatchObject({
+      projectId: "repo-a",
+      lastActivityAt: "2026-03-02T00:00:00.000Z",
+      projectPath: "/Users/test/src/repo-a",
+      tools: ["claude-code", "codex"],
+    });
+  });
+});
