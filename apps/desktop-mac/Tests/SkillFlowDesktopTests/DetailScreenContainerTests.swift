@@ -210,6 +210,96 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertEqual(secondViewModel.groupDocuments.first?.metadata.first?.value, "AlphaHub v2")
     }
 
+    func testDetailContainerRebuildsViewModelWhenNestedFileTreeChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var fileTree = [
+            MainViewModel.FileTreeItem(
+                id: "root",
+                title: "alpha",
+                path: "/groups/alpha",
+                isDirectory: true,
+                isSkillRoot: false,
+                isSkillDocument: false,
+                skillId: nil,
+                children: [
+                    MainViewModel.FileTreeItem(
+                        id: "root/skill",
+                        title: "browse",
+                        path: "/groups/alpha/skills/browse",
+                        isDirectory: true,
+                        isSkillRoot: true,
+                        isSkillDocument: false,
+                        skillId: "browse",
+                        children: [
+                            MainViewModel.FileTreeItem(
+                                id: "root/skill/doc",
+                                title: "SKILL.md",
+                                path: "/groups/alpha/skills/browse/SKILL.md",
+                                isDirectory: false,
+                                isSkillRoot: false,
+                                isSkillDocument: true,
+                                skillId: "browse",
+                                children: []
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot.fixture(
+                sourceId: "alpha",
+                fileTree: fileTree
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        fileTree = [
+            MainViewModel.FileTreeItem(
+                id: "root",
+                title: "alpha",
+                path: "/groups/alpha",
+                isDirectory: true,
+                isSkillRoot: false,
+                isSkillDocument: false,
+                skillId: nil,
+                children: [
+                    MainViewModel.FileTreeItem(
+                        id: "root/skill",
+                        title: "browse",
+                        path: "/groups/alpha/skills/browse",
+                        isDirectory: true,
+                        isSkillRoot: true,
+                        isSkillDocument: false,
+                        skillId: "browse",
+                        children: [
+                            MainViewModel.FileTreeItem(
+                                id: "root/skill/doc-v2",
+                                title: "GUIDE.md",
+                                path: "/groups/alpha/skills/browse/GUIDE.md",
+                                isDirectory: false,
+                                isSkillRoot: false,
+                                isSkillDocument: true,
+                                skillId: "browse",
+                                children: []
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+        XCTAssertEqual(
+            secondViewModel.fileTree.first?.children.first?.children.first?.title,
+            "GUIDE.md"
+        )
+    }
+
     func testResolvesGroupDocumentOutsideCachedViewModelBoundary() throws {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
@@ -426,6 +516,7 @@ private extension DetailViewModel.Snapshot {
         sourceId: String = "alpha",
         revision: String? = nil,
         title: String = "AlphaHub",
+        fileTree: [MainViewModel.FileTreeItem] = [],
         groupDocuments: [MainViewModel.DocumentDescriptor] = [],
         targets: [MainViewModel.DetailTarget] = [
             MainViewModel.DetailTarget(
@@ -467,7 +558,7 @@ private extension DetailViewModel.Snapshot {
             enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
             sourceFacts: [],
             deploymentFacts: [],
-            fileTree: [],
+            fileTree: fileTree,
             groupDocuments: groupDocuments,
             targets: targets,
             skills: []
@@ -505,7 +596,7 @@ private extension DetailViewModel.Snapshot {
             enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
             sourceFacts: [],
             deploymentFacts: [],
-            fileTree: [],
+            fileTree: fileTree,
             groupDocuments: groupDocuments,
             targets: targets,
             skills: []

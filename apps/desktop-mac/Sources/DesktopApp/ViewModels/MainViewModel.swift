@@ -4135,6 +4135,7 @@ final class MainViewModel {
             .joined(separator: "\u{1D}")
         }
         .joined(separator: "\u{1F}")
+        let fileTreeRevision = recursiveFileTreeRevision(fileTree)
         let groupDocumentRevision = groupDocuments.map { document in
             let metadataRevision = document.metadata.map { entry in
                 [entry.id, entry.key, entry.value].joined(separator: "\u{1C}")
@@ -4181,11 +4182,28 @@ final class MainViewModel {
         components.append(enabledTargetLabels.joined(separator: "\u{1F}"))
         components.append(sourceFacts.joined(separator: "\u{1F}"))
         components.append(deploymentFacts.joined(separator: "\u{1F}"))
-        components.append(fileTree.map(\.id).joined(separator: "\u{1F}"))
+        components.append(fileTreeRevision)
         components.append(groupDocumentRevision)
         components.append(targetRevision)
         components.append(skillRevision)
         return components.joined(separator: "\u{1C}")
+    }
+
+    nonisolated private static func recursiveFileTreeRevision(_ items: [FileTreeItem]) -> String {
+        items.map { item in
+            [
+                item.id,
+                item.title,
+                item.path,
+                item.isDirectory ? "1" : "0",
+                item.isSkillRoot ? "1" : "0",
+                item.isSkillDocument ? "1" : "0",
+                item.skillId ?? "",
+                recursiveFileTreeRevision(item.children)
+            ]
+            .joined(separator: "\u{1E}")
+        }
+        .joined(separator: "\u{1F}")
     }
 
     private func buildReadySourceDetailLines(sourceStatsPayload: [String: Any]) -> [String] {
