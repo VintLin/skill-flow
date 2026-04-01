@@ -2589,19 +2589,28 @@ final class MainViewModel {
     }
 
     private func loadedDocumentTab(from descriptor: DocumentDescriptor) async -> DocumentTab? {
-        guard let loaded = try? await detailDocumentStore.document(for: descriptor) else {
-            return nil
+        do {
+            let loaded = try await detailDocumentStore.document(for: descriptor)
+            return DocumentTab(
+                id: loaded.id,
+                title: descriptor.title,
+                path: descriptor.path,
+                metadata: loaded.metadata,
+                content: loaded.content,
+                renderCacheKey: loaded.renderCacheKey,
+                externalURL: descriptor.externalURL
+            )
+        } catch {
+            return DocumentTab(
+                id: descriptor.id,
+                title: descriptor.title,
+                path: descriptor.path,
+                metadata: [],
+                content: Self.documentLoadFailureContent,
+                renderCacheKey: descriptor.renderCacheKey,
+                externalURL: descriptor.externalURL
+            )
         }
-
-        return DocumentTab(
-            id: loaded.id,
-            title: descriptor.title,
-            path: descriptor.path,
-            metadata: loaded.metadata,
-            content: loaded.content,
-            renderCacheKey: loaded.renderCacheKey,
-            externalURL: descriptor.externalURL
-        )
     }
 
     func hasInspectPayload(for sourceId: String) -> Bool {
@@ -4133,6 +4142,10 @@ final class MainViewModel {
         return "\(path):\(modifiedAt):\(fileSize)"
     }
 
+    nonisolated private static var documentLoadFailureContent: String {
+        "Failed to load document."
+    }
+
     nonisolated static func detailRevision(
         sourceId: String,
         title: String,
@@ -4169,7 +4182,19 @@ final class MainViewModel {
         }
         .joined(separator: "\u{1F}")
         let skillRevision = skills.map { skill in
-            [
+            let documentsRevision = skill.documents.map { document in
+                [
+                    document.id,
+                    document.title,
+                    document.path,
+                    document.renderCacheKey,
+                    document.externalURL ?? "",
+                    document.isLoaded ? "1" : "0"
+                ]
+                .joined(separator: "\u{1E}")
+            }
+            .joined(separator: "\u{1F}")
+            return [
                 skill.id,
                 skill.title,
                 skill.summary,
@@ -4179,6 +4204,7 @@ final class MainViewModel {
                 skill.starCount.map(String.init) ?? "",
                 skill.folderPath ?? "",
                 skill.relativeFolderPath ?? "",
+                documentsRevision,
                 skill.isEnabled ? "1" : "0",
                 String(skill.warningCount)
             ]

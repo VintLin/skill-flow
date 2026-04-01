@@ -450,6 +450,54 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertFalse(firstViewModel === secondViewModel)
     }
 
+    func testDetailContainerRebuildsViewModelWhenSkillDocumentRenderCacheKeyChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var renderCacheKey = "skill:/tmp/SKILL.md:rev-1"
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot(
+                detail: MainViewModel.DetailViewData.fixture(
+                    skills: [
+                        MainViewModel.DetailSkill(
+                            id: "alpha-a",
+                            title: "browse",
+                            summary: "Browse things.",
+                            version: nil,
+                            author: "Acme",
+                            originLabel: "ClawHub",
+                            starCount: 1200,
+                            folderPath: "/tmp/alpha-a",
+                            relativeFolderPath: "alpha-a",
+                            documents: [
+                                MainViewModel.DocumentTab(
+                                    id: "skill:/tmp/SKILL.md",
+                                    title: "SKILL.md",
+                                    path: "/tmp/SKILL.md",
+                                    metadata: [],
+                                    content: "",
+                                    renderCacheKey: renderCacheKey,
+                                    externalURL: nil,
+                                    isLoaded: false
+                                )
+                            ],
+                            detailLines: [],
+                            documentContent: "",
+                            isEnabled: true,
+                            warningCount: 0
+                        )
+                    ]
+                )
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        renderCacheKey = "skill:/tmp/SKILL.md:rev-2"
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+    }
+
     func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
         let state = DesktopAppState()
         let container = DetailScreenContainer(state: state) { _ in nil }

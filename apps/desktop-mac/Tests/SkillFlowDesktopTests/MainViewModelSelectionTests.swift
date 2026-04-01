@@ -460,6 +460,20 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(document?.content, "SKILL.md unavailable.")
     }
 
+    func testDetailDocumentResolutionReturnsTerminalErrorContentForNonMissingReadFailure() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        try fixture.replaceSkillDocumentWithDirectory(sourceId: "alpha", leafId: "alpha-a")
+
+        let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let documentId = try XCTUnwrap(detail.skills.first?.documents.first?.id)
+        let document = await model.groupDocument(for: "alpha", documentId: documentId)
+
+        XCTAssertEqual(document?.content, "Failed to load document.")
+        XCTAssertEqual(document?.isLoaded, true)
+    }
+
     func testDetailSnapshotLocalizesDerivedDetailCopyForJapanese() async throws {
         UserDefaults.standard.set(DesktopLanguage.ja.rawValue, forKey: DesktopLanguage.storageKey)
 
@@ -965,6 +979,16 @@ private struct TestFixture {
             .appendingPathComponent(leafId, isDirectory: true)
             .appendingPathComponent("SKILL.md")
         try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    func replaceSkillDocumentWithDirectory(sourceId: String, leafId: String) throws {
+        let url = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(leafId, isDirectory: true)
+            .appendingPathComponent("SKILL.md", isDirectory: false)
+        try? FileManager.default.removeItem(at: url)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
 
     func writeReferenceDocument(sourceId: String, leafId: String, name: String, content: String) throws {
