@@ -12,6 +12,8 @@
 "page.import.title" = "Import";
 "page.settings.title" = "Settings";
 "page.detail.title" = "Group Detail";
+"project_scope.global" = "Global";
+"project_scope.project" = "Project";
 "placeholder.home.search_group_author" = "Search Group / Author";
 "home.empty.title" = "No groups matched";
 "home.empty.subtitle" = "Try a broader search query.";
@@ -194,6 +196,8 @@
 "toast.import.invalid_response" = "Import failed: invalid response.";
 "toast.import.exists" = "This group is already available locally.";
 "toast.import.success" = "Imported source.";
+"toast.project_scope.switched" = "Switched to %@.";
+"toast.project_scope.initialized" = "Initialized project config for %@.";
 "toast.pin.failed" = "Pin failed: %@";
 "toast.details.load_failed" = "Failed to load %@ details.";
 "toast.update.none" = "No groups to update.";

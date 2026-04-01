@@ -5,6 +5,14 @@ enum DesktopCardDensity: String, CaseIterable, Equatable {
     case compact
 }
 
+struct RecentProjectScopeItem: Codable, Equatable {
+    var projectId: String
+    var title: String
+    var lastActivityAt: String
+    var projectPath: String? = nil
+    var tools: [String]
+}
+
 struct SettingsState: Equatable {
     var autoLaunch: Bool = false
     var logLevel: String = "info"
@@ -14,5 +22,7 @@ struct SettingsState: Equatable {
     var themeAccentRawValue: String = DesktopAccentColor.blue.rawValue
     var homeCardDensityRawValue: String = DesktopCardDensity.comfortable.rawValue
     var menuCardDensityRawValue: String = DesktopCardDensity.compact.rawValue
+    var selectedProjectScope: ProjectScopeSelection = .global
+    var recentProjectScopes: [RecentProjectScopeItem] = []
     var agentDisplayPreferences: [AgentDisplayPreference] = []
 }

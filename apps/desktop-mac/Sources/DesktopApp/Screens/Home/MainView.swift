@@ -539,6 +539,7 @@ struct MainView: View {
                     )
                 }
             } else {
+                homeProjectScopeBar
                 homeTagFilterBar(snapshot: homeTagSnapshot)
                 HStack {
                     Spacer(minLength: 0)
@@ -789,30 +790,132 @@ struct MainView: View {
         Array(repeating: GridItem(.fixed(304), spacing: 14), count: layout.gridColumnCount)
     }
 
+    private var homeProjectScopeBar: some View {
+        let projects = homeContainer.recentProjectScopes()
+
+        return HStack(spacing: 8) {
+            homeScopePill(
+                title: t("project_scope.global"),
+                projectPath: nil,
+                isSelected: viewModel.selectedProjectScope == .global
+                ,
+                centersContent: Self.homeLeadingFixedButtonsAreCentered
+            ) {
+                Task {
+                    await homeContainer.selectProjectScope(.global)
+                }
+            }
+            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
+
+            Self.homeFilterDivider(theme: theme)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 8) {
+                    ForEach(projects, id: \.projectId) { item in
+                        homeScopePill(
+                            title: item.title,
+                            projectPath: item.projectPath,
+                            isSelected: viewModel.selectedProjectScope == .project(item.projectId)
+                        ) {
+                            Task {
+                                await homeContainer.selectProjectScope(.project(item.projectId))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func homeTagFilterBar(snapshot: GroupTagController.HomeSnapshot) -> some View {
         let tags = snapshot.availableTags
         let selectedKey = snapshot.selectedKey
 
-        return ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 6) {
-                homeFilterPill(
-                    title: t("group_tag.filter.all"),
-                    accentValue: accent,
-                    isSelected: selectedKey == nil
-                ) {
-                    homeContainer.setSelectedHomeTagFilterKey(nil)
-                }
+        return HStack(spacing: 8) {
+            homeFilterPill(
+                title: t("group_tag.filter.all"),
+                accentValue: accent,
+                isSelected: selectedKey == nil
+            ) {
+                homeContainer.setSelectedHomeTagFilterKey(nil)
+            }
+            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
 
-                ForEach(tags) { item in
-                    homeFilterPill(
-                        title: item.title,
-                        accentValue: item.accent,
-                        isSelected: selectedKey == item.id
-                    ) {
-                        homeContainer.setSelectedHomeTagFilterKey(item.id)
+            Self.homeFilterDivider(theme: theme)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 6) {
+                    ForEach(tags) { item in
+                        homeFilterPill(
+                            title: item.title,
+                            accentValue: item.accent,
+                            isSelected: selectedKey == item.id
+                        ) {
+                            homeContainer.setSelectedHomeTagFilterKey(item.id)
+                        }
                     }
                 }
             }
+        }
+    }
+
+    private func homeScopePill(
+        title: String,
+        projectPath: String?,
+        isSelected: Bool,
+        centersContent: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        return ZStack(alignment: .trailing) {
+            Button(action: action) {
+                HStack(spacing: 6) {
+                    if Self.projectScopeShowsSelectionIndicator(isSelected: isSelected) {
+                        Circle()
+                            .fill(AppTheme.brand(for: accent, in: theme))
+                            .frame(width: 6, height: 6)
+                    }
+
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .lineLimit(1)
+                }
+                    .frame(maxWidth: .infinity, alignment: centersContent ? .center : .leading)
+                    .padding(.leading, centersContent ? 0 : 10)
+                    .padding(.trailing, centersContent ? 0 : (projectPath == nil ? 10 : 30))
+                    .frame(height: Self.homeProjectPillHeight, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .desktopMotionChip(
+                kind: .pill,
+                theme: theme,
+                accent: accent,
+                isEnabled: true,
+                isSelected: isSelected
+            )
+
+            if let projectPath {
+                Button {
+                    openPath(projectPath)
+                } label: {
+                    actionIcon(.externalLink, size: 10)
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 6)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Self.projectScopePillBackground(isSelected: isSelected, accent: accent, theme: theme))
+        .clipShape(RoundedRectangle(cornerRadius: Self.homeProjectPillCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: Self.homeProjectPillCornerRadius)
+                .stroke(
+                    isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
+                    lineWidth: 0.5
+                )
         }
     }
 
@@ -826,8 +929,9 @@ struct MainView: View {
             Text("#\(title)")
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(AppTheme.brand(for: accentValue, in: theme))
-                .padding(.horizontal, 8)
-                .frame(height: 24)
+                .padding(.horizontal, 10)
+                .frame(height: Self.homeFilterPillHeight)
+                .frame(maxWidth: .infinity)
                 .background(
                     AppTheme.brand(for: accentValue, in: theme).opacity(
                         isSelected
@@ -835,9 +939,9 @@ struct MainView: View {
                             : (theme == .dark ? 0.22 : 0.14)
                     )
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: Self.homeFilterPillCornerRadius))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Self.homeFilterPillCornerRadius)
                         .stroke(
                             isSelected ? AppTheme.brand(for: accentValue, in: theme).opacity(0.35) : Color.clear,
                             lineWidth: 0.5
@@ -846,6 +950,27 @@ struct MainView: View {
         }
         .buttonStyle(.plain)
         .opacity(isSelected ? 1.0 : 0.58)
+    }
+
+    static func projectScopePillBackground(
+        isSelected: Bool,
+        accent: DesktopAccentColor,
+        theme: DesktopThemeMode
+    ) -> Color {
+        guard isSelected else {
+            return AppTheme.scopePillBackground(isSelected: false, for: theme)
+        }
+        return AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.28 : 0.18)
+    }
+
+    static func projectScopePillOpacityLabel(
+        isSelected: Bool,
+        theme: DesktopThemeMode
+    ) -> String? {
+        guard isSelected else {
+            return nil
+        }
+        return theme == .dark ? "alpha 28%" : "alpha 18%"
     }
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
@@ -963,6 +1088,14 @@ struct MainView: View {
 extension MainView {
     static let toolbarButtonSize: CGFloat = 34
     static let headerLeadingWidth: CGFloat = 220
+    static let homeProjectPillHeight: CGFloat = 28
+    static let homeFilterPillHeight: CGFloat = 28
+    static let homeProjectPillCornerRadius: CGFloat = 8
+    static let homeFilterPillCornerRadius: CGFloat = 8
+    static let homeLeadingFixedButtonsAreCentered = true
+    private static let homeLeadingButtonHorizontalPadding: CGFloat = 20
+    private static let homeLeadingProjectIndicatorAllowance: CGFloat = 12
+
     static func groupCardDisplayMode(for density: DesktopCardDensity) -> GroupCardDisplayMode {
         switch density {
         case .comfortable:
@@ -970,6 +1103,31 @@ extension MainView {
         case .compact:
             return .menu
         }
+    }
+
+    static func projectScopeShowsSelectionIndicator(isSelected: Bool) -> Bool {
+        isSelected
+    }
+
+    static func projectScopeShowsLegacySubtitle(isSelected: Bool) -> Bool {
+        false
+    }
+
+    static func homeLeadingFixedButtonWidth(for locale: Locale) -> CGFloat {
+        let projectTitle = L10n.string("project_scope.global", locale: locale)
+        let filterTitle = "#\(L10n.string("group_tag.filter.all", locale: locale))"
+        let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        let projectWidth = ceil((projectTitle as NSString).size(withAttributes: [.font: font]).width)
+        let filterWidth = ceil((filterTitle as NSString).size(withAttributes: [.font: font]).width)
+        let contentWidth = max(projectWidth + homeLeadingProjectIndicatorAllowance, filterWidth)
+        return contentWidth + homeLeadingButtonHorizontalPadding
+    }
+
+    @ViewBuilder
+    static func homeFilterDivider(theme: DesktopThemeMode) -> some View {
+        Rectangle()
+            .fill(AppTheme.textMuted(for: theme).opacity(0.25))
+            .frame(width: 1, height: 18)
     }
 }
 
@@ -1317,6 +1475,7 @@ enum AppTheme {
         case color1
         case color2
         case color3
+        case color4
     }
 
     private static func neutralCardColor(_ color: NeutralCardColor, for mode: DesktopThemeMode) -> Color {
@@ -1333,7 +1492,23 @@ enum AppTheme {
             return grayscaleColor(21)
         case (.dark, .color3):
             return grayscaleColor(34)
+        case (.light, .color4):
+            return grayscaleColor(230)
+        case (.dark, .color4):
+            return grayscaleColor(53)
         }
+    }
+
+    static func scopePillBackground(isSelected: Bool, for mode: DesktopThemeMode) -> Color {
+        neutralCardColor(.color1, for: mode).opacity(
+            isSelected
+                ? 1.0
+                : (mode == .dark ? 0.58 : 0.72)
+        )
+    }
+
+    static func scopePillBorder(for mode: DesktopThemeMode) -> Color {
+        neutralCardColor(.color4, for: mode)
     }
 
     private static func grayscaleColor(_ value: Double) -> Color {

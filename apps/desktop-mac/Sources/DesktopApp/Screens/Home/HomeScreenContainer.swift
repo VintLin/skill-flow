@@ -82,6 +82,14 @@ final class HomeScreenContainer {
         groupTagController.setSelectedHomeFilterKey(key)
     }
 
+    func recentProjectScopes() -> [RecentProjectScopeItem] {
+        mainViewModel.recentProjectScopes
+    }
+
+    func selectProjectScope(_ scope: ProjectScopeSelection) async {
+        await mainViewModel.selectProjectScope(scope)
+    }
+
     func tagSuggestions(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
         groupTagController.tagSuggestions(
             sourceIds: mainViewModel.sourceIds,

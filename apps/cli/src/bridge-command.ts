@@ -6,7 +6,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@skill-flow/shared-types/protocol";
-import type { DraftBinding, ImportDraft } from "@skill-flow/domain/types";
+import type { DraftBinding, ImportDraft, ProjectScope } from "@skill-flow/domain/types";
 import type { SkillFlowApp } from "@skill-flow/query/runtime";
 
 type BridgeFailure = {
@@ -56,7 +56,8 @@ export async function executeBridgeRequest(
       case "inspect": {
         const payload = expectObjectPayload(request.payload, "inspect");
         const sourceId = expectString(payload.sourceId, "sourceId", "inspect");
-        const result = await app.inspectSource(sourceId);
+        const scope = expectProjectScope(payload.scope);
+        const result = await app.inspectSource(sourceId, scope);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
         }
@@ -196,7 +197,8 @@ export async function executeBridgeRequest(
         const payload = expectObjectPayload(request.payload, "apply");
         const sourceId = expectString(payload.sourceId, "sourceId", "apply");
         const draft = expectDraftBinding(payload.draft);
-        const result = await app.applyDraft(sourceId, draft);
+        const scope = expectProjectScope(payload.scope);
+        const result = await app.applyDraft(sourceId, draft, scope);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
         }
@@ -391,6 +393,32 @@ function expectOptionalImportDraft(value: JsonValue | undefined): ImportDraft | 
     selectedSkillIds,
     enabledTargets: enabledTargets as ImportDraft["enabledTargets"],
   };
+}
+
+function expectProjectScope(value: JsonValue | undefined): ProjectScope {
+  if (value === undefined) {
+    return { kind: "global" };
+  }
+
+  if (!isJsonObject(value) || typeof value.kind !== "string") {
+    throw new Error(
+      "Field 'scope' must be a JSON object with kind 'global' or kind 'project' and a non-empty string 'projectId'.",
+    );
+  }
+
+  if (value.kind === "global") {
+    return { kind: "global" };
+  }
+
+  if (value.kind === "project") {
+    if (typeof value.projectId === "string" && value.projectId.length > 0) {
+      return { kind: "project", projectId: value.projectId };
+    }
+
+    throw new Error("Field 'scope.projectId' must be a non-empty string when scope.kind is 'project'.");
+  }
+
+  throw new Error("Field 'scope.kind' must be either 'global' or 'project'.");
 }
 
 function sanitizeForJson<T>(value: T): JsonValue {

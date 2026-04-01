@@ -19,8 +19,8 @@ struct DesktopBridgeCommandFacade<Transport: DesktopBridgeTransporting>: Desktop
         try await bridgeClient.uninstall(sourceIds: sourceIds)
     }
 
-    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        try await bridgeClient.apply(sourceId: sourceId, selectedLeafIds: selectedLeafIds, enabledTargets: enabledTargets)
+    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await bridgeClient.apply(sourceId: sourceId, scope: scope, selectedLeafIds: selectedLeafIds, enabledTargets: enabledTargets)
     }
 
     func doctor() async throws -> BridgeResponse {

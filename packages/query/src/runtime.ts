@@ -22,8 +22,11 @@ import type {
   LeafRecord,
   LockFile,
   Manifest,
+  ProjectScope,
   ProjectionRecord,
+  RecentProject,
   Result,
+  SharedPreferences,
   SkillCandidate,
   SourceMetadataResult,
   SourceStats,
@@ -62,6 +65,7 @@ import {
   parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
+import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import { searchClawHubSkills } from "@skill-flow/integration/utils/clawhub";
 import { deriveDisplayName, deriveSourceId } from "@skill-flow/integration/utils/source-id";
@@ -91,6 +95,7 @@ import { ConfigCoordinator } from "./config-coordinator.js";
 import { DeploymentPlanner } from "@skill-flow/core-engine/services/deployment-planner";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
+import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { SourceService } from "@skill-flow/core-engine/services/source-service";
 import { WorkflowService } from "./workflow-service.js";
 import type {
@@ -103,12 +108,15 @@ import {
   type BootstrapEvent,
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
 
+const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
+
 type SkillFlowAddOptions = AddSourceOptions &
   AddSourceDraftOptions & {
     project?: boolean;
   };
 
 type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: boolean };
+type TargetRootOverrides = Partial<Record<DeploymentTargetName, string>>;
 type ApplyDraftResult = {
   actions: DeploymentAction[];
   draft: DraftBinding;
@@ -120,6 +128,9 @@ type ApplyDraftResult = {
     leafs: LeafRecord[];
     deployments: LockFile["deployments"];
   };
+  recentProjects?: RecentProject[];
+  selectedProjectScope?: ProjectScope;
+  projectDrafts?: SharedPreferences["projectDrafts"];
 };
 type GroupCardEnrichmentSnapshot = {
   sourceMetadata?: SourceMetadataResult;
@@ -150,6 +161,21 @@ type AuditedMutationResult<T> =
       auditDetails?: Record<string, unknown>;
     };
 
+async function resolveUsableProjectPath(projectPath: string | undefined): Promise<string | null> {
+  const trimmedPath = projectPath?.trim();
+  if (!trimmedPath) {
+    return null;
+  }
+
+  try {
+    const resolvedPath = await fs.realpath(trimmedPath);
+    const stat = await fs.stat(resolvedPath);
+    return stat.isDirectory() ? resolvedPath : null;
+  } catch {
+    return null;
+  }
+}
+
 export class SkillFlowApp {
   private static readonly importGroupResolveConcurrency = 3;
 
@@ -161,6 +187,7 @@ export class SkillFlowApp {
   readonly applier: DeploymentApplier;
   readonly doctorService: DoctorService;
   readonly workflowService: WorkflowService;
+  readonly recentProjectService: RecentProjectService;
   readonly workspaceBootstrapService: WorkspaceBootstrapService;
   readonly configCoordinator: ConfigCoordinator;
   private mutationQueue: Promise<void> = Promise.resolve();
@@ -179,9 +206,11 @@ export class SkillFlowApp {
     this.applier = new DeploymentApplier(adapters);
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
+    this.recentProjectService = new RecentProjectService();
     this.workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
     this.configCoordinator = new ConfigCoordinator({
       store: this.store,
+      recentProjectService: this.recentProjectService,
       doctorService: this.doctorService,
       workflowService: this.workflowService,
       getAvailableTargets: () => this.getAvailableTargets(),
@@ -231,6 +260,7 @@ export class SkillFlowApp {
     const applied = await this.applyDraftImpl(
       prepared.data.sourceId,
       addOptions.draft ?? prepared.data.draft,
+      { kind: "global" },
     );
     if (!applied.ok) {
       return fail(applied.errors, [...prepared.warnings, ...applied.warnings]);
@@ -461,12 +491,21 @@ export class SkillFlowApp {
     );
   }
 
-  async listWorkflows(): Promise<Result<{ summaries: WorkflowSummary[]; pinnedSourceIds: string[] }>> {
+  async listWorkflows(): Promise<
+    Result<{
+      summaries: WorkflowSummary[];
+      pinnedSourceIds: string[];
+      recentProjects: RecentProject[];
+      selectedProjectScope: ProjectScope;
+      groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
+    }>
+  > {
     return this.runSerializedMutation(() => this.listWorkflowsImpl());
   }
 
   async inspectSource(
     sourceId: string,
+    scope: ProjectScope = { kind: "global" },
   ): Promise<
     Result<{
       summary: WorkflowSummary;
@@ -476,7 +515,7 @@ export class SkillFlowApp {
       deployments: LockFile["deployments"];
     }>
   > {
-    return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId));
+    return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId, scope));
   }
 
   async inspectSourceEnrichment(
@@ -492,6 +531,7 @@ export class SkillFlowApp {
 
   private async inspectSourceImpl(
     sourceId: string,
+    scope: ProjectScope,
   ): Promise<
     Result<{
       summary: WorkflowSummary;
@@ -524,7 +564,42 @@ export class SkillFlowApp {
     const deployments = getManagedDeployments(lockFile).filter(
       (deployment) => deployment.sourceId === sourceId,
     );
-    return ok({ summary, source, binding, leafs, deployments });
+
+    if (scope.kind === "global") {
+      return ok({ summary, source, binding, leafs, deployments });
+    }
+
+    const initialDrafts: Record<string, DraftBinding> = {
+      [sourceId]: this.draftFromBinding(sourceId, binding, lockFile),
+    };
+    const preferences = await this.store.readPreferences();
+    const scopedDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
+
+    const scopedManifest = this.cloneManifest(manifest);
+    this.normalizeBindings(scopedManifest, lockFile);
+    const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
+    const scopedSource = prepared.manifest.sources.find((item) => item.id === sourceId) ?? source;
+    const scopedSummary =
+      this.workflowService.getSummaries(prepared.manifest, lockFile).find((item) => item.source.id === sourceId)
+      ?? summary;
+    const scopedBinding = prepared.manifest.bindings[sourceId] ?? binding;
+    const scopedDeployments = scopedDraft.enabledTargets.length === 0
+      ? []
+      : await this.resolveScopedInspectDeployments(
+        prepared.manifest,
+        lockFile,
+        sourceId,
+        scope,
+        scopedDraft.enabledTargets,
+      );
+
+    return ok({
+      summary: scopedSummary,
+      source: scopedSource,
+      binding: scopedBinding,
+      leafs,
+      deployments: scopedDeployments,
+    });
   }
 
   private async inspectSourceEnrichmentImpl(
@@ -733,7 +808,7 @@ export class SkillFlowApp {
       });
     }
 
-    const applied = await this.applyDraftImpl(prepared.data.sourceId, finalDraft.data);
+    const applied = await this.applyDraftImpl(prepared.data.sourceId, finalDraft.data, { kind: "global" });
     if (!applied.ok) {
       await this.rollbackPreparedSourceInternal(prepared.data.sourceId);
       return ok({
@@ -1502,6 +1577,8 @@ export class SkillFlowApp {
     Result<{
       summaries: WorkflowSummary[];
       pinnedSourceIds: string[];
+      recentProjects: RecentProject[];
+      selectedProjectScope: ProjectScope;
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1518,7 +1595,13 @@ export class SkillFlowApp {
     const { manifest, lockFile } = await this.store.readState();
     await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
     await this.persistNormalizedBindings(manifest, lockFile);
+    const recentProjects = await this.recentProjectService.listRecentProjects().catch(() => []);
     const preferences = await this.store.pruneMissingSourceIds();
+    await this.store.writePreferences({
+      ...preferences,
+      recentProjects,
+    });
+    const reconciledPreferences = await this.store.readPreferences();
     const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(
       manifest,
       lockFile,
@@ -1526,7 +1609,9 @@ export class SkillFlowApp {
     return ok(
       {
         summaries: this.workflowService.getSummaries(manifest, lockFile),
-        pinnedSourceIds: preferences.pinnedSourceIds,
+        pinnedSourceIds: reconciledPreferences.pinnedSourceIds,
+        recentProjects: reconciledPreferences.recentProjects,
+        selectedProjectScope: reconciledPreferences.selectedProjectScope,
         groupCardEnrichmentBySourceId,
       },
       pruned.warnings,
@@ -1576,6 +1661,9 @@ export class SkillFlowApp {
       audit: DoctorReport;
       importedSourceIds: string[];
       pinnedSourceIds: string[];
+      recentProjects: RecentProject[];
+      selectedProjectScope: ProjectScope;
+      projectDrafts: SharedPreferences["projectDrafts"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1598,6 +1686,9 @@ export class SkillFlowApp {
       audit: DoctorReport;
       importedSourceIds: string[];
       pinnedSourceIds: string[];
+      recentProjects: RecentProject[];
+      selectedProjectScope: ProjectScope;
+      projectDrafts: SharedPreferences["projectDrafts"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1620,6 +1711,9 @@ export class SkillFlowApp {
       audit: boot.data.audit,
       importedSourceIds: [],
       pinnedSourceIds: preferences.pinnedSourceIds,
+      recentProjects: preferences.recentProjects,
+      selectedProjectScope: preferences.selectedProjectScope,
+      projectDrafts: preferences.projectDrafts,
       groupCardEnrichmentBySourceId,
     });
   }
@@ -1724,6 +1818,7 @@ export class SkillFlowApp {
   async applyDraft(
     sourceId: string,
     draft: DraftBinding,
+    scope: ProjectScope = { kind: "global" },
   ): Promise<Result<ApplyDraftResult>> {
     return this.runAuditedMutation(
       "apply-draft",
@@ -1731,18 +1826,20 @@ export class SkillFlowApp {
         sourceId,
         selectedLeafIds: draft.selectedLeafIds,
         enabledTargets: draft.enabledTargets,
+        scope,
       },
-      () => this.applyDraftAuditedImpl(sourceId, draft),
+      () => this.applyDraftAuditedImpl(sourceId, draft, scope),
     );
   }
 
   private async applyDraftAuditedImpl(
     sourceId: string,
     draft: DraftBinding,
+    scope: ProjectScope,
   ): Promise<AuditedMutationResult<ApplyDraftResult>> {
     const { manifest, lockFile } = await this.store.readState();
     const before = await this.captureSourceAuditSnapshot(manifest, lockFile, sourceId);
-    const result = await this.applyDraftImpl(sourceId, draft);
+    const result = await this.applyDraftImpl(sourceId, draft, scope);
     const { manifest: nextManifest, lockFile: nextLockFile } = await this.store.readState();
     const after = await this.captureSourceAuditSnapshot(nextManifest, nextLockFile, sourceId);
 
@@ -1761,7 +1858,137 @@ export class SkillFlowApp {
   private async applyDraftImpl(
     sourceId: string,
     draft: DraftBinding,
+    scope: ProjectScope,
   ): Promise<Result<ApplyDraftResult>> {
+    if (scope.kind === "project") {
+      const { manifest, lockFile } = await this.store.readState();
+      if (!manifest.sources.some((source) => source.id === sourceId)) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+
+      this.normalizeBindings(manifest, lockFile);
+      const preferences = await this.store.readPreferences();
+      const initialDrafts: Record<string, DraftBinding> = {
+        [sourceId]: this.draftFromBinding(
+          sourceId,
+          manifest.bindings[sourceId] ?? { targets: {} },
+          lockFile,
+        ),
+      };
+      const previousDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
+      const previousScopedManifest = this.cloneManifest(manifest);
+      this.normalizeBindings(previousScopedManifest, lockFile);
+      const previousPrepared = this.prepareManifestForDraft(
+        previousScopedManifest,
+        lockFile,
+        sourceId,
+        previousDraft,
+      );
+      const scopedManifest = this.cloneManifest(manifest);
+      this.normalizeBindings(scopedManifest, lockFile);
+      const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, draft);
+      const scopedTargets = [...new Set([
+        ...previousDraft.enabledTargets,
+        ...prepared.draft.enabledTargets,
+      ])];
+      const targetRootOverrides = scopedTargets.length === 0
+        ? ok({} as TargetRootOverrides)
+        : await this.resolveProjectTargetRoots(scope, scopedTargets);
+      if (!targetRootOverrides.ok) {
+        const preferencesAfterFailure = await this.store.readPreferences();
+        return {
+          ok: false,
+          data: {
+            actions: [],
+            draft: prepared.draft,
+            recentProjects: preferencesAfterFailure.recentProjects,
+            selectedProjectScope: preferencesAfterFailure.selectedProjectScope,
+            projectDrafts: preferencesAfterFailure.projectDrafts,
+          },
+          warnings: [...prepared.warnings, ...targetRootOverrides.warnings],
+          errors: targetRootOverrides.errors,
+        };
+      }
+      const scopedDeployments = scopedTargets.length === 0
+        ? []
+        : await this.findScopedDeploymentsOnDisk(
+          previousPrepared.manifest,
+          lockFile,
+          sourceId,
+          targetRootOverrides.data,
+        );
+      const nextPreferences: SharedPreferences = {
+        ...preferences,
+        projectDrafts: {
+          ...preferences.projectDrafts,
+          [scope.projectId]: {
+            ...(preferences.projectDrafts[scope.projectId] ?? {}),
+            [sourceId]: prepared.draft,
+          },
+        },
+      };
+
+      if (scopedTargets.length > 0) {
+        const scopedLockFile = this.cloneLockFileForScopedDeployments(lockFile, scopedDeployments);
+        const scopedApply = await this.withScopedTargetRoots<Result<{ actions: DeploymentAction[] }>>(
+          targetRootOverrides.data,
+          async () => {
+          const plan = await this.planForSources(
+            prepared.manifest,
+            scopedLockFile,
+            [sourceId],
+          );
+          if (!plan.ok) {
+            return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
+          }
+
+          const applyResult = await this.applier.applyPlan(scopedLockFile, plan.data.actions);
+          if (!applyResult.ok) {
+            return fail(
+              applyResult.errors,
+              [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
+            );
+          }
+
+          return ok(
+            { actions: plan.data.actions },
+            [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
+          );
+          },
+        );
+        if (!scopedApply.ok) {
+          return fail(scopedApply.errors, scopedApply.warnings);
+        }
+
+        await this.store.writePreferences(nextPreferences);
+        const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
+        return ok(
+          {
+            actions: scopedApply.data.actions,
+            draft: prepared.draft,
+            ...(freshState.summary ? { summary: freshState.summary } : {}),
+            ...(freshState.inspect ? { inspect: freshState.inspect } : {}),
+          },
+          scopedApply.warnings,
+        );
+      }
+
+      await this.store.writePreferences(nextPreferences);
+      const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
+      return ok(
+        {
+          actions: [],
+          draft: prepared.draft,
+          ...(freshState.summary ? { summary: freshState.summary } : {}),
+          ...(freshState.inspect ? { inspect: freshState.inspect } : {}),
+        },
+        prepared.warnings,
+      );
+    }
+
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     await this.ensureProjectionLedger(manifest, lockFile);
@@ -1802,7 +2029,7 @@ export class SkillFlowApp {
     const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
     await this.store.writeState(prepared.manifest, lockFile);
 
-    const freshState = await this.buildApplyDraftFreshState(sourceId);
+    const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
     return ok(
       {
         actions: plan.data.actions,
@@ -1823,8 +2050,9 @@ export class SkillFlowApp {
 
   private async buildApplyDraftFreshState(
     sourceId: string,
+    scope: ProjectScope,
   ): Promise<Pick<ApplyDraftResult, "summary" | "inspect">> {
-    const inspected = await this.inspectSourceImpl(sourceId);
+    const inspected = await this.inspectSourceImpl(sourceId, scope);
     if (!inspected.ok) {
       return {};
     }
@@ -2141,6 +2369,51 @@ export class SkillFlowApp {
     return {
       selectedLeafIds: [...draft.selectedLeafIds],
       targets,
+    };
+  }
+
+  private resolveDraftForScope(
+    sourceId: string,
+    initialDrafts: Record<string, DraftBinding>,
+    preferences: SharedPreferences,
+    scope: ProjectScope,
+  ): DraftBinding {
+    if (scope.kind === "global") {
+      return initialDrafts[sourceId] ?? EMPTY_DRAFT;
+    }
+
+    return (
+      preferences.projectDrafts[scope.projectId]?.[sourceId] ??
+      initialDrafts[sourceId] ??
+      EMPTY_DRAFT
+    );
+  }
+
+  private cloneManifest(manifest: Manifest): Manifest {
+    const bindings: Record<string, SourceBinding> = {};
+
+    for (const [sourceId, binding] of Object.entries(manifest.bindings)) {
+      const targets: SourceBinding["targets"] = {};
+      for (const [target, targetBinding] of Object.entries(binding.targets)) {
+        if (!targetBinding) {
+          continue;
+        }
+        targets[target as DeploymentTargetName] = {
+          enabled: targetBinding.enabled,
+          leafIds: [...targetBinding.leafIds],
+        };
+      }
+
+      bindings[sourceId] = {
+        ...(binding.selectedLeafIds ? { selectedLeafIds: [...binding.selectedLeafIds] } : {}),
+        targets,
+      };
+    }
+
+    return {
+      schemaVersion: manifest.schemaVersion,
+      sources: manifest.sources.map((source) => ({ ...source })),
+      bindings,
     };
   }
 
@@ -3271,6 +3544,196 @@ export class SkillFlowApp {
       warnings,
       blocked: actions.filter((action) => action.kind === "blocked"),
     }, warnings);
+  }
+
+  // Project-local path application happens here: scope resolves to concrete target roots
+  // before planner/applier mutate the filesystem.
+  private async resolveProjectTargetRoots(
+    scope: Extract<ProjectScope, { kind: "project" }>,
+    targets: DeploymentTargetName[],
+  ): Promise<Result<TargetRootOverrides>> {
+    const preferences = await this.store.readPreferences();
+    const projectPath = await resolveUsableProjectPath(preferences.recentProjects.find(
+      (project) => project.projectId === scope.projectId,
+    )?.projectPath);
+    if (!projectPath) {
+      await this.removeUnavailableProjectScope(scope.projectId, preferences);
+      return fail({
+        code: "PROJECT_SCOPE_PATH_UNAVAILABLE",
+        message: `Project scope '${scope.projectId}' is unavailable because its projectPath is missing or invalid, so project-local skills cannot be mounted.`,
+      });
+    }
+
+    const overrides: TargetRootOverrides = {};
+    for (const target of [...new Set(targets)]) {
+      const resolvedPath = resolveDocumentedProjectSkillPath(target, projectPath);
+      if (!resolvedPath) {
+        return fail({
+          code: "PROJECT_SCOPE_PATH_UNAVAILABLE",
+          message: `Target '${target}' does not expose a documented project-local skill path for project '${scope.projectId}'.`,
+        });
+      }
+      overrides[target] = resolvedPath;
+    }
+
+    return ok(overrides);
+  }
+
+  private async removeUnavailableProjectScope(
+    projectId: string,
+    preferences?: SharedPreferences,
+  ): Promise<void> {
+    const currentPreferences = preferences ?? await this.store.readPreferences();
+    if (
+      !currentPreferences.recentProjects.some((project) => project.projectId === projectId) &&
+      !(projectId in currentPreferences.projectDrafts) &&
+      !(
+        currentPreferences.selectedProjectScope.kind === "project" &&
+        currentPreferences.selectedProjectScope.projectId === projectId
+      )
+    ) {
+      return;
+    }
+
+    const { [projectId]: _removedDrafts, ...remainingProjectDrafts } = currentPreferences.projectDrafts;
+    await this.store.writePreferences({
+      ...currentPreferences,
+      selectedProjectScope:
+        currentPreferences.selectedProjectScope.kind === "project" &&
+          currentPreferences.selectedProjectScope.projectId === projectId
+          ? { kind: "global" }
+          : currentPreferences.selectedProjectScope,
+      recentProjects: currentPreferences.recentProjects.filter(
+        (project) => project.projectId !== projectId,
+      ),
+      projectDrafts: remainingProjectDrafts,
+    });
+  }
+
+  private cloneLockFileForScopedDeployments(
+    lockFile: LockFile,
+    deployments: LockFile["deployments"],
+  ): LockFile {
+    return {
+      ...lockFile,
+      sources: lockFile.sources.map((source) => ({
+        ...source,
+        ...(source.observedTargets
+          ? { observedTargets: source.observedTargets.map((entry) => ({ ...entry })) }
+          : {}),
+      })),
+      leafInventory: lockFile.leafInventory.map((leaf) => ({ ...leaf })),
+      deployments: deployments.map((deployment) => ({ ...deployment })),
+      projections: deployments.map((deployment) => ({
+        ...deployment,
+        mode: "managed" as const,
+      })),
+    };
+  }
+
+  private async resolveScopedInspectDeployments(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceId: string,
+    scope: Extract<ProjectScope, { kind: "project" }>,
+    targets: DeploymentTargetName[],
+  ): Promise<LockFile["deployments"]> {
+    const targetRootOverrides = await this.resolveProjectTargetRoots(scope, targets);
+    if (!targetRootOverrides.ok) {
+      return [];
+    }
+
+    return this.findScopedDeploymentsOnDisk(
+      manifest,
+      lockFile,
+      sourceId,
+      targetRootOverrides.data,
+    );
+  }
+
+  private async findScopedDeploymentsOnDisk(
+    manifest: Manifest,
+    lockFile: LockFile,
+    sourceId: string,
+    targetRootOverrides: TargetRootOverrides,
+  ): Promise<LockFile["deployments"]> {
+    const source = manifest.sources.find((item) => item.id === sourceId);
+    if (!source) {
+      return [];
+    }
+
+    const binding = manifest.bindings[sourceId] ?? { targets: {} };
+    const scopedDeployments: LockFile["deployments"] = [];
+
+    for (const [target, rootPath] of Object.entries(targetRootOverrides) as Array<[DeploymentTargetName, string]>) {
+      const targetBinding = binding.targets[target];
+      if (!targetBinding?.enabled) {
+        continue;
+      }
+
+      const adapter = this.adapters.find((candidate) => candidate.target === target);
+      if (!adapter) {
+        continue;
+      }
+
+      const projectedLinkNames = this.buildProjectedLinkNameMap(manifest, lockFile, target);
+      for (const leafId of targetBinding.leafIds) {
+        const leaf = lockFile.leafInventory.find(
+          (candidate) => candidate.sourceId === sourceId && candidate.id === leafId,
+        );
+        if (!leaf) {
+          continue;
+        }
+
+        const deployment = await this.findManagedDeploymentOnDisk(
+          source,
+          leaf,
+          target,
+          adapter.strategy,
+          rootPath,
+          projectedLinkNames,
+        );
+        if (deployment) {
+          scopedDeployments.push(deployment);
+        }
+      }
+    }
+
+    return scopedDeployments;
+  }
+
+  private async withScopedTargetRoots<T>(
+    targetRootOverrides: TargetRootOverrides,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const restores = this.adapters.map((adapter) => {
+      const overrideRootPath = targetRootOverrides[adapter.target]?.trim();
+      if (!overrideRootPath) {
+        return () => {};
+      }
+
+      const originalDetect = adapter.detect.bind(adapter);
+      adapter.detect = async () => {
+        const detection = await originalDetect();
+        return {
+          ...detection,
+          available: true,
+          rootPath: overrideRootPath,
+        };
+      };
+
+      return () => {
+        adapter.detect = originalDetect;
+      };
+    });
+
+    try {
+      return await operation();
+    } finally {
+      for (const restore of restores.reverse()) {
+        restore();
+      }
+    }
   }
 
   private async planAndApplySources(

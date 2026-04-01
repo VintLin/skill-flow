@@ -9,7 +9,7 @@ enum RuntimeDependency: String {
 enum BridgeClientError: Error, LocalizedError {
     case helperMissing
     case invalidResponse
-    case commandFailed(String)
+    case commandFailed(String, response: BridgeResponse? = nil)
     case timeout(UInt64)
     case emptyResponse
     case concurrentMutationRejected
@@ -26,7 +26,7 @@ enum BridgeClientError: Error, LocalizedError {
             return L10n.string("bridge.error.helper_missing", locale: locale)
         case .invalidResponse:
             return L10n.string("bridge.error.invalid_response", locale: locale)
-        case .commandFailed(let message):
+        case .commandFailed(let message, _):
             return message
         case .timeout(let timeoutMs):
             return L10n.string("bridge.error.timeout", locale: locale, arguments: [String(timeoutMs)])
@@ -74,8 +74,14 @@ final class BridgeClient: @unchecked Sendable {
         try await send(command: .list)
     }
 
-    func inspect(sourceId: String) async throws -> BridgeResponse {
-        try await send(command: .inspect, payload: ["sourceId": AnyCodable(sourceId)])
+    func inspect(sourceId: String, scope: ProjectScopeSelection = .global) async throws -> BridgeResponse {
+        try await send(
+            command: .inspect,
+            payload: [
+                "sourceId": AnyCodable(sourceId),
+                "scope": AnyCodable(scope.bridgePayload),
+            ]
+        )
     }
 
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
@@ -145,12 +151,13 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
-    func apply(sourceId: String, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+    func apply(sourceId: String, scope: ProjectScopeSelection = .global, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(
                 command: .apply,
                 payload: [
                     "sourceId": AnyCodable(sourceId),
+                    "scope": AnyCodable(scope.bridgePayload),
                     "draft": AnyCodable([
                         "selectedLeafIds": selectedLeafIds,
                         "enabledTargets": enabledTargets,
@@ -262,7 +269,7 @@ final class BridgeClient: @unchecked Sendable {
         if let dependencyError = Self.dependencyError(for: message) {
             throw dependencyError
         }
-        throw BridgeClientError.commandFailed(message)
+        throw BridgeClientError.commandFailed(message, response: response)
     }
 
     private func resolveHelperURL() throws -> URL {

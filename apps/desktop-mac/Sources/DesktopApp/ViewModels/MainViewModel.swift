@@ -6,6 +6,11 @@ import Yams
 @MainActor
 @Observable
 final class MainViewModel {
+    private struct ScopedSourceKey: Hashable {
+        let scope: ProjectScopeSelection
+        let sourceId: String
+    }
+
     enum Page: Equatable {
         case home
         case importPage
@@ -13,7 +18,7 @@ final class MainViewModel {
         case detail(sourceId: String)
     }
 
-    enum LoadState {
+    enum LoadState: Equatable {
         case idle
         case loading
         case ready
@@ -567,6 +572,7 @@ final class MainViewModel {
     private let queryFacade: any DesktopQuerying
     private let commandFacade: any DesktopCommanding
     private let mutationCoordinator: DesktopMutationCoordinator
+    private let settingsStore: DesktopSettingsStore
     private let detailDocumentStore = DetailDocumentStore()
 
     nonisolated private static var presentationLocale: Locale {
@@ -582,9 +588,9 @@ final class MainViewModel {
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
     private let recommendationsProvider: () -> [ImportRecommendationEntry]
-    private var workingDrafts: [String: DraftState] = [:]
+    private var workingDrafts: [ScopedSourceKey: DraftState] = [:]
     private var detectedTargets: Set<String> = []
-    private var inspectedPayloadBySourceId: [String: [String: Any]] = [:]
+    private var inspectedPayloadBySourceId: [ScopedSourceKey: [String: Any]] = [:]
     private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
     private var preparedDetailContentBySourceId: [String: PreparedDetailContent] = [:]
     @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
@@ -593,8 +599,8 @@ final class MainViewModel {
     @ObservationIgnored private var doctorRequestTask: Task<BridgeResponse, Error>?
     private var doctorRequestToken: UInt64 = 0
     private var activeDoctorRequestToken: UInt64?
-    @ObservationIgnored private var inspectRequestTasksBySourceId: [String: Task<BridgeResponse, Error>] = [:]
-    private var inspectRequestTokensBySourceId: [String: UInt64] = [:]
+    @ObservationIgnored private var inspectRequestTasksBySourceId: [ScopedSourceKey: Task<BridgeResponse, Error>] = [:]
+    private var inspectRequestTokensBySourceId: [ScopedSourceKey: UInt64] = [:]
     private var inspectRequestTokenSeed: UInt64 = 0
     @ObservationIgnored private var detailEnrichmentTasksBySourceId: [String: Task<Void, Never>] = [:]
     private var detailEnrichmentTokensBySourceId: [String: UInt64] = [:]
@@ -608,7 +614,7 @@ final class MainViewModel {
     @ObservationIgnored private var importPreviewTasksByGroupId: [String: Task<BridgeResponse, Error>] = [:]
     private var importPreviewTokensByGroupId: [String: UInt64] = [:]
     private var importPreviewTokenSeed: UInt64 = 0
-    @ObservationIgnored private var saveStateResetTasksBySourceId: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var saveStateResetTasksBySourceId: [ScopedSourceKey: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -634,7 +640,7 @@ final class MainViewModel {
 
     var isRefreshing: Bool = false
     var updatingSourceIds: Set<String> = []
-    var saveStateBySourceId: [String: SaveState] = [:]
+    private var saveStateBySourceId: [ScopedSourceKey: SaveState] = [:]
     var toast: ToastState?
 
     var doctorIssues: [DoctorIssueRow] = []
@@ -643,6 +649,9 @@ final class MainViewModel {
     var deploymentFilterTarget: String = "All"
     var deploymentFilterKind: String = "All"
     var pinnedSourceIds: [String]
+    private var projectScopeChangeToken: UInt64 = 0
+    private var cachedSelectedProjectScope: ProjectScopeSelection = .global
+    private var cachedRecentProjectScopes: [RecentProjectScopeItem] = []
     @ObservationIgnored var detailWarmupDelay: Duration = .milliseconds(40)
 
     init(
@@ -650,6 +659,7 @@ final class MainViewModel {
         queryFacade: (any DesktopQuerying)? = nil,
         commandFacade: (any DesktopCommanding)? = nil,
         mutationCoordinator: DesktopMutationCoordinator? = nil,
+        settingsStore: DesktopSettingsStore = DesktopSettingsStore(),
         recommendationsProvider: @escaping () -> [ImportRecommendationEntry] = { ImportRecommendationLoader.load() }
     ) {
         let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
@@ -660,16 +670,30 @@ final class MainViewModel {
         self.queryFacade = resolvedQueryFacade
         self.commandFacade = resolvedCommandFacade
         self.mutationCoordinator = resolvedMutationCoordinator
+        self.settingsStore = settingsStore
         self.recommendationsProvider = recommendationsProvider
         self.pinnedSourceIds = []
     }
 
     func bindRouteState(_ state: DesktopAppState) {
         routeState = state
+        cachedSelectedProjectScope = state.settings.selectedProjectScope
+        cachedRecentProjectScopes = Array(state.settings.recentProjectScopes.prefix(10))
+        projectScopeChangeToken &+= 1
     }
 
     var availableGroups: [String] {
         sourceIds
+    }
+
+    var selectedProjectScope: ProjectScopeSelection {
+        _ = projectScopeChangeToken
+        return routeState?.settings.selectedProjectScope ?? cachedSelectedProjectScope
+    }
+
+    var recentProjectScopes: [RecentProjectScopeItem] {
+        _ = projectScopeChangeToken
+        return Array((routeState?.settings.recentProjectScopes ?? cachedRecentProjectScopes).prefix(10))
     }
 
     var selectedGroupId: String? {
@@ -810,7 +834,7 @@ final class MainViewModel {
                         isEnabled: enabledTargets.contains(targetId)
                     )
                 },
-                saveState: saveStateBySourceId[row.id] ?? SaveState(phase: .idle, detail: nil)
+                saveState: saveState(for: row.id)
             )
         }
     }
@@ -1031,11 +1055,14 @@ final class MainViewModel {
         guard let groupId = selectedGroupId else {
             return SaveState(phase: .idle, detail: nil)
         }
-        return saveStateBySourceId[groupId] ?? SaveState(phase: .idle, detail: nil)
+        return saveState(for: groupId)
     }
 
     func saveState(for sourceId: String) -> SaveState {
-        saveStateBySourceId[sourceId] ?? SaveState(phase: .idle, detail: nil)
+        guard let key = scopedSourceKey(sourceId: sourceId) else {
+            return SaveState(phase: .idle, detail: nil)
+        }
+        return saveStateBySourceId[key] ?? SaveState(phase: .idle, detail: nil)
     }
 
     func isSaving(sourceId: String? = nil) -> Bool {
@@ -1211,7 +1238,7 @@ final class MainViewModel {
     func bootstrap() async {
         loadState = .loading
         do {
-            let bootstrap = try await bridgeClient.bootstrap()
+            let bootstrap = try await queryFacade.bootstrap()
             latestWarnings = bootstrap.warnings
             parseBootstrapData(bootstrap.data?.value)
             await migrateLegacyPinnedSourceIdsIfNeeded()
@@ -1232,8 +1259,13 @@ final class MainViewModel {
         defer { isRefreshing = false }
 
         do {
+            let previousScope = currentProjectScope()
+            let sourceToReinspect = currentDetailSourceId ?? selectedSourceId
             let response = try await fetchListResponse()
             applyList(response)
+            if currentProjectScope() != previousScope, let sourceToReinspect {
+                await selectSource(sourceToReinspect)
+            }
             latestWarnings = response.warnings
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
         } catch {
@@ -1246,14 +1278,51 @@ final class MainViewModel {
         do {
             let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
-                inspectedPayloadBySourceId[sourceId] = payload
+                if let key = scopedSourceKey(sourceId: sourceId) {
+                    inspectedPayloadBySourceId[key] = payload
+                }
                 invalidatePreparedDetailContent(for: sourceId)
                 scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
                 scheduleDetailEnrichmentFetch(sourceId: sourceId)
             }
             latestWarnings = response.warnings
         } catch {
+            applyProjectScopeStateIfAvailable(from: error)
             showToast(style: .error, text: localizedText("toast.details.load_failed", sourceId))
+        }
+    }
+
+    func selectProjectScope(_ scope: ProjectScopeSelection) async {
+        let normalizedScope: ProjectScopeSelection
+        switch scope {
+        case .global:
+            normalizedScope = .global
+        case .project(let projectId):
+            normalizedScope = recentProjectScopes.contains(where: { $0.projectId == projectId }) ? .project(projectId) : .global
+        }
+
+        guard selectedProjectScope != normalizedScope else {
+            return
+        }
+
+        let didInitializeProjectDrafts = ensureProjectDraftsInitializedIfNeeded(for: normalizedScope)
+
+        cachedSelectedProjectScope = normalizedScope
+        routeState?.settings.selectedProjectScope = normalizedScope
+        persistProjectScopeSettingsIfNeeded()
+        projectScopeChangeToken &+= 1
+        showToast(
+            style: .success,
+            text: localizedText(
+                didInitializeProjectDrafts
+                    ? "toast.project_scope.initialized"
+                    : "toast.project_scope.switched",
+                projectScopeTitle(for: normalizedScope)
+            )
+        )
+
+        if let sourceId = currentDetailSourceId ?? selectedSourceId {
+            await selectSource(sourceId)
         }
     }
 
@@ -1905,8 +1974,9 @@ final class MainViewModel {
             if selectedSourceId == sourceId {
                 selectedSourceId = nil
             }
-            workingDrafts.removeValue(forKey: sourceId)
-            inspectedPayloadBySourceId.removeValue(forKey: sourceId)
+            workingDrafts = workingDrafts.filter { $0.key.sourceId != sourceId }
+            inspectedPayloadBySourceId = inspectedPayloadBySourceId.filter { $0.key.sourceId != sourceId }
+            saveStateBySourceId = saveStateBySourceId.filter { $0.key.sourceId != sourceId }
             detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
             invalidatePreparedDetailContent(for: sourceId)
             detailWarmupTokensBySourceId.removeValue(forKey: sourceId)
@@ -1974,6 +2044,7 @@ final class MainViewModel {
 
         applyCachedGroupCardEnrichment(data)
         applyPinnedSourceIds(data)
+        applyProjectScopeState(data)
         applySummaries(parseSummariesPayload(data))
 
         if let availableTargets = data["availableTargets"] as? [String] {
@@ -1986,7 +2057,20 @@ final class MainViewModel {
                 let selectedLeafIds = uniqueSorted(draftObject["selectedLeafIds"] as? [String] ?? [])
                 let enabledTargets = normalizedTargets(draftObject["enabledTargets"] as? [String] ?? [])
                 let draft = DraftState(selectedLeafIds: selectedLeafIds, enabledTargets: enabledTargets)
-                workingDrafts[sourceId] = draft
+                workingDrafts[ScopedSourceKey(scope: .global, sourceId: sourceId)] = draft
+            }
+        }
+
+        if let projectDrafts = data["projectDrafts"] as? [String: Any] {
+            for (projectId, rawSourceDrafts) in projectDrafts {
+                guard let sourceDrafts = rawSourceDrafts as? [String: Any] else { continue }
+                for (sourceId, rawDraft) in sourceDrafts {
+                    guard let draftObject = rawDraft as? [String: Any] else { continue }
+                    let selectedLeafIds = uniqueSorted(draftObject["selectedLeafIds"] as? [String] ?? [])
+                    let enabledTargets = normalizedTargets(draftObject["enabledTargets"] as? [String] ?? [])
+                    let draft = DraftState(selectedLeafIds: selectedLeafIds, enabledTargets: enabledTargets)
+                    workingDrafts[ScopedSourceKey(scope: .project(projectId), sourceId: sourceId)] = draft
+                }
             }
         }
 
@@ -2003,9 +2087,26 @@ final class MainViewModel {
     private func applyList(_ response: BridgeResponse) {
         if let data = response.data?.value as? [String: Any] {
             applyCachedGroupCardEnrichment(data)
+            applyProjectScopeState(data)
         }
         applyPinnedSourceIds(response.data?.value)
         applySummaries(parseSummariesPayload(response.data?.value))
+    }
+
+    private func applyProjectScopeState(_ data: [String: Any]) {
+        if data.keys.contains("selectedProjectScope"),
+           let scope = parseProjectScopeSelection(data["selectedProjectScope"]) {
+            cachedSelectedProjectScope = scope
+            routeState?.settings.selectedProjectScope = scope
+        }
+
+        if data.keys.contains("recentProjects") {
+            cachedRecentProjectScopes = parseRecentProjectScopes(data["recentProjects"])
+            routeState?.settings.recentProjectScopes = cachedRecentProjectScopes
+        }
+
+        persistProjectScopeSettingsIfNeeded()
+        projectScopeChangeToken &+= 1
     }
 
     private func applyCachedGroupCardEnrichment(_ data: [String: Any]) {
@@ -2133,16 +2234,17 @@ final class MainViewModel {
 
         for summary in summaries {
             let serverDraft = buildInitialDraftFromSummary(summary)
-            let savePhase = saveStateBySourceId[summary.sourceId]?.phase ?? .idle
+            let key = ScopedSourceKey(scope: .global, sourceId: summary.sourceId)
+            let savePhase = saveStateBySourceId[key]?.phase ?? .idle
 
             if savePhase == .saving {
-                if workingDrafts[summary.sourceId] == nil {
-                    workingDrafts[summary.sourceId] = serverDraft
+                if workingDrafts[key] == nil {
+                    workingDrafts[key] = serverDraft
                 }
             } else {
-                workingDrafts[summary.sourceId] = serverDraft
+                workingDrafts[key] = serverDraft
                 if savePhase == .saved {
-                    saveStateBySourceId[summary.sourceId] = SaveState(phase: .idle, detail: nil)
+                    saveStateBySourceId[key] = SaveState(phase: .idle, detail: nil)
                 }
             }
 
@@ -2288,12 +2390,10 @@ final class MainViewModel {
         }
 
         let serverDraft = buildInitialDraftFromSummary(summary)
-        let savePhase = saveStateBySourceId[sourceId]?.phase ?? .idle
-        if savePhase == .saving || savePhase == .saved {
-            return workingDrafts[sourceId] ?? serverDraft
+        guard let key = scopedSourceKey(sourceId: sourceId) else {
+            return serverDraft
         }
-
-        return serverDraft
+        return workingDrafts[key] ?? serverDraft
     }
 
     private func visibleEnabledTargets(for sourceId: String, within targetIds: [String]) -> [String] {
@@ -2447,13 +2547,7 @@ final class MainViewModel {
         .compactMap { $0?.nonEmpty }
 
         let deploymentFacts = deploymentsPayload.prefix(4).compactMap { deployment -> String? in
-            guard let target = deployment["target"] as? String,
-                  let status = deployment["status"] as? String
-            else {
-                return nil
-            }
-            let leafId = (deployment["leafId"] as? String)?.nonEmpty ?? "unknown"
-            return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(leafId)"
+            deploymentFact(from: deployment)
         }
 
         let targets = visibleTargetIds().map { targetId in
@@ -2619,15 +2713,22 @@ final class MainViewModel {
     }
 
     func hasInspectPayload(for sourceId: String) -> Bool {
-        inspectedPayloadBySourceId[sourceId] != nil
+        guard let key = scopedSourceKey(sourceId: sourceId) else {
+            return false
+        }
+        return inspectedPayloadBySourceId[key] != nil
     }
 
     func isInspectRequestInFlight(for sourceId: String) -> Bool {
-        inspectRequestTasksBySourceId[sourceId] != nil
+        guard let key = scopedSourceKey(sourceId: sourceId) else {
+            return false
+        }
+        return inspectRequestTasksBySourceId[key] != nil
     }
 
     private func mergedDetailPayload(for sourceId: String) -> [String: Any] {
-        var payload = inspectedPayloadBySourceId[sourceId] ?? [:]
+        let key = scopedSourceKey(sourceId: sourceId)
+        var payload = key.flatMap { inspectedPayloadBySourceId[$0] } ?? [:]
         let enrichmentPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
         for (key, value) in enrichmentPayload {
             payload[key] = value
@@ -2674,7 +2775,11 @@ final class MainViewModel {
         guard detailWarmupTasksBySourceId[sourceId] == nil else {
             return
         }
-        guard let summary = summary(for: sourceId), let payload = inspectedPayloadBySourceId[sourceId], !payload.isEmpty else {
+        guard let summary = summary(for: sourceId),
+              let key = scopedSourceKey(sourceId: sourceId),
+              let payload = inspectedPayloadBySourceId[key],
+              !payload.isEmpty
+        else {
             return
         }
         let input = buildPreparedDetailWarmupInput(sourceId: sourceId, summary: summary, payload: payload)
@@ -2887,32 +2992,37 @@ final class MainViewModel {
         guard currentDraft != normalizedDraft else {
             return
         }
+        guard let key = scopedSourceKey(sourceId: sourceId) else {
+            return
+        }
 
         let previousDraft = currentDraft
         let saveStartedAt = ContinuousClock.now
         selectedSourceId = sourceId
-        workingDrafts[sourceId] = normalizedDraft
-        saveStateBySourceId[sourceId] = SaveState(phase: .saving, detail: nil)
+        workingDrafts[key] = normalizedDraft
+        saveStateBySourceId[key] = SaveState(phase: .saving, detail: nil)
 
         do {
-            let response = try await bridgeClient.apply(
+            let response = try await commandFacade.apply(
                 sourceId: sourceId,
+                scope: key.scope,
                 selectedLeafIds: normalizedDraft.selectedLeafIds,
                 enabledTargets: normalizedDraft.enabledTargets
             )
             await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
-            workingDrafts[sourceId] = normalizedDraft
-            saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
-            applyPostApplyResponse(response, sourceId: sourceId)
-            scheduleSaveStateReset(for: sourceId)
+            workingDrafts[key] = normalizedDraft
+            saveStateBySourceId[key] = SaveState(phase: .saved, detail: nil)
+            applyPostApplyResponse(response, sourceId: sourceId, scope: key.scope)
+            scheduleSaveStateReset(for: key)
             latestWarnings = response.warnings
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
             showToast(style: successStyle, text: successMessage)
         } catch {
             let firstReason = firstErrorLine(from: error)
             await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
-            workingDrafts[sourceId] = previousDraft
-            saveStateBySourceId[sourceId] = SaveState(phase: .failed, detail: firstReason)
+            applyProjectScopeStateIfAvailable(from: error)
+            workingDrafts[key] = previousDraft
+            saveStateBySourceId[key] = SaveState(phase: .failed, detail: firstReason)
             showToast(style: .error, text: localizedText("toast.save.failed", firstReason))
         }
     }
@@ -2933,7 +3043,7 @@ final class MainViewModel {
 
         listRequestToken &+= 1
         let token = listRequestToken
-        let task = Task { try await bridgeClient.list() }
+        let task = Task { try await queryFacade.list() }
         listRequestTask = task
         activeListRequestToken = token
 
@@ -2981,27 +3091,31 @@ final class MainViewModel {
     }
 
     private func fetchInspectResponse(sourceId: String) async throws -> BridgeResponse {
-        if let existingTask = inspectRequestTasksBySourceId[sourceId] {
+        guard let key = scopedSourceKey(sourceId: sourceId) else {
+            throw BridgeClientError.invalidResponse
+        }
+
+        if let existingTask = inspectRequestTasksBySourceId[key] {
             return try await existingTask.value
         }
 
         inspectRequestTokenSeed &+= 1
         let token = inspectRequestTokenSeed
-        let task = Task { try await bridgeClient.inspect(sourceId: sourceId) }
-        inspectRequestTasksBySourceId[sourceId] = task
-        inspectRequestTokensBySourceId[sourceId] = token
+        let task = Task { try await queryFacade.inspect(sourceId: sourceId, scope: key.scope) }
+        inspectRequestTasksBySourceId[key] = task
+        inspectRequestTokensBySourceId[key] = token
 
         do {
             let response = try await task.value
-            if inspectRequestTokensBySourceId[sourceId] == token {
-                inspectRequestTasksBySourceId.removeValue(forKey: sourceId)
-                inspectRequestTokensBySourceId.removeValue(forKey: sourceId)
+            if inspectRequestTokensBySourceId[key] == token {
+                inspectRequestTasksBySourceId.removeValue(forKey: key)
+                inspectRequestTokensBySourceId.removeValue(forKey: key)
             }
             return response
         } catch {
-            if inspectRequestTokensBySourceId[sourceId] == token {
-                inspectRequestTasksBySourceId.removeValue(forKey: sourceId)
-                inspectRequestTokensBySourceId.removeValue(forKey: sourceId)
+            if inspectRequestTokensBySourceId[key] == token {
+                inspectRequestTasksBySourceId.removeValue(forKey: key)
+                inspectRequestTokensBySourceId.removeValue(forKey: key)
             }
             throw error
         }
@@ -3092,23 +3206,51 @@ final class MainViewModel {
         // returning fresh summary and inspect payloads directly.
     }
 
-    private func applyPostApplyResponse(_ response: BridgeResponse, sourceId: String) {
+    private func applyPostApplyResponse(_ response: BridgeResponse, sourceId: String, scope: ProjectScopeSelection) {
         guard let data = response.data?.value as? [String: Any] else {
             return
         }
+        applyProjectScopeState(data)
 
         if let summaryPayload = data["summary"] as? [String: Any],
            let summary = parseSummaryPayload(summaryPayload) {
-            replaceSummary(summary)
-            saveStateBySourceId[sourceId] = SaveState(phase: .saved, detail: nil)
+            if scope == .global {
+                replaceSummary(summary)
+            } else {
+                workingDrafts[ScopedSourceKey(scope: scope, sourceId: sourceId)] = buildInitialDraftFromSummary(summary)
+            }
+            saveStateBySourceId[ScopedSourceKey(scope: scope, sourceId: sourceId)] = SaveState(phase: .saved, detail: nil)
         }
 
         if let inspectPayload = data["inspect"] as? [String: Any] {
-            inspectedPayloadBySourceId[sourceId] = inspectPayload
+            inspectedPayloadBySourceId[ScopedSourceKey(scope: scope, sourceId: sourceId)] = inspectPayload
             invalidatePreparedDetailContent(for: sourceId)
             scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
             scheduleDetailEnrichmentFetch(sourceId: sourceId)
         }
+    }
+
+    private func ensureProjectDraftsInitializedIfNeeded(for scope: ProjectScopeSelection) -> Bool {
+        guard case .project(let projectId) = scope else {
+            return false
+        }
+
+        var didInitialize = false
+        for summary in allSummaries {
+            let key = ScopedSourceKey(scope: .project(projectId), sourceId: summary.sourceId)
+            guard workingDrafts[key] == nil else {
+                continue
+            }
+
+            workingDrafts[key] = DraftState(
+                selectedLeafIds: summary.leafs.map(\.id),
+                enabledTargets: []
+            )
+            saveStateBySourceId[key] = SaveState(phase: .idle, detail: nil)
+            didInitialize = true
+        }
+
+        return didInitialize
     }
 
     private func replaceSummary(_ summary: WorkflowSummary) {
@@ -3121,15 +3263,15 @@ final class MainViewModel {
         applySummaries(nextSummaries)
     }
 
-    private func scheduleSaveStateReset(for sourceId: String) {
-        saveStateResetTasksBySourceId[sourceId]?.cancel()
-        saveStateResetTasksBySourceId[sourceId] = Task { @MainActor in
+    private func scheduleSaveStateReset(for key: ScopedSourceKey) {
+        saveStateResetTasksBySourceId[key]?.cancel()
+        saveStateResetTasksBySourceId[key] = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
-            if saveStateBySourceId[sourceId]?.phase == .saved {
-                saveStateBySourceId[sourceId] = SaveState(phase: .idle, detail: nil)
+            if saveStateBySourceId[key]?.phase == .saved {
+                saveStateBySourceId[key] = SaveState(phase: .idle, detail: nil)
             }
-            saveStateResetTasksBySourceId.removeValue(forKey: sourceId)
+            saveStateResetTasksBySourceId.removeValue(forKey: key)
         }
     }
 
@@ -3434,6 +3576,16 @@ final class MainViewModel {
             .first(where: { !$0.isEmpty }) ?? error.localizedDescription
     }
 
+    private func applyProjectScopeStateIfAvailable(from error: Error) {
+        guard let bridgeError = error as? BridgeClientError,
+              case .commandFailed(_, let response) = bridgeError,
+              let data = response?.data?.value as? [String: Any] else {
+            return
+        }
+
+        applyProjectScopeState(data)
+    }
+
     nonisolated static func localizedWarmup(_ key: String, _ arguments: String...) -> String {
         PresentationText.localized(key, arguments).resolve(locale: presentationLocale)
     }
@@ -3674,6 +3826,32 @@ final class MainViewModel {
         }
         let suffix = String(standardizedTarget.dropFirst(standardizedBase.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return suffix.isEmpty ? "." : suffix
+    }
+
+    private func deploymentFact(from deployment: [String: Any]) -> String? {
+        guard let target = deployment["target"] as? String,
+              let status = deployment["status"] as? String
+        else {
+            return nil
+        }
+
+        if let projectPath = currentProjectPath(),
+           let targetPath = (deployment["targetPath"] as? String)?.nonEmpty,
+           let relativeTargetPath = Self.relativePath(from: projectPath, to: targetPath)
+        {
+            return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(relativeTargetPath)"
+        }
+
+        let leafId = (deployment["leafId"] as? String)?.nonEmpty ?? "unknown"
+        return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(leafId)"
+    }
+
+    private func currentProjectPath() -> String? {
+        guard case .project(let projectId) = currentProjectScope() else {
+            return nil
+        }
+
+        return recentProjectScopes.first(where: { $0.projectId == projectId })?.projectPath
     }
 
     nonisolated private static func projectedRelativeFolderPath(
@@ -4501,6 +4679,71 @@ final class MainViewModel {
         saveStateBySourceId = pruneSourceMap(saveStateBySourceId, allowedSourceIds: allowedSourceIds)
     }
 
+    private func currentProjectScope() -> ProjectScopeSelection {
+        selectedProjectScope
+    }
+
+    private func scopedSourceKey(sourceId: String, scope: ProjectScopeSelection? = nil) -> ScopedSourceKey? {
+        guard let sourceId = resolveSourceId(sourceId) else {
+            return nil
+        }
+        return ScopedSourceKey(scope: scope ?? currentProjectScope(), sourceId: sourceId)
+    }
+
+    private func parseProjectScopeSelection(_ value: Any?) -> ProjectScopeSelection? {
+        guard let payload = value as? [String: Any] else {
+            return nil
+        }
+        let kind = payload["kind"] as? String ?? "global"
+        if kind == "project",
+           let projectId = (payload["projectId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !projectId.isEmpty {
+            return .project(projectId)
+        }
+        return .global
+    }
+
+    private func parseRecentProjectScopes(_ value: Any?) -> [RecentProjectScopeItem] {
+        guard let payload = value as? [[String: Any]] else {
+            return []
+        }
+
+        return payload.compactMap { item in
+            guard let projectId = (item["projectId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !projectId.isEmpty,
+                  let title = (item["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !title.isEmpty,
+                  let lastActivityAt = item["lastActivityAt"] as? String
+            else {
+                return nil
+            }
+
+            return RecentProjectScopeItem(
+                projectId: projectId,
+                title: title,
+                lastActivityAt: lastActivityAt,
+                projectPath: (item["projectPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty,
+                tools: uniqueSorted(item["tools"] as? [String] ?? [])
+            )
+        }.prefix(10).map { $0 }
+    }
+
+    private func projectScopeTitle(for scope: ProjectScopeSelection) -> String {
+        switch scope {
+        case .global:
+            return localized("project_scope.global")
+        case .project(let projectId):
+            return recentProjectScopes.first(where: { $0.projectId == projectId })?.title ?? projectId
+        }
+    }
+
+    private func persistProjectScopeSettingsIfNeeded() {
+        var persisted = settingsStore.load()
+        persisted.selectedProjectScope = cachedSelectedProjectScope
+        persisted.recentProjectScopes = cachedRecentProjectScopes
+        settingsStore.save(persisted)
+    }
+
     private func projectionSummaries() -> [ProjectionSourceSummary] {
         allSummaries.map { summary in
             ProjectionSourceSummary(
@@ -4590,6 +4833,10 @@ final class MainViewModel {
 
     private func pruneSourceMap<T>(_ sourceMap: [String: T], allowedSourceIds: Set<String>) -> [String: T] {
         Dictionary(uniqueKeysWithValues: sourceMap.filter { allowedSourceIds.contains($0.key) })
+    }
+
+    private func pruneSourceMap<T>(_ sourceMap: [ScopedSourceKey: T], allowedSourceIds: Set<String>) -> [ScopedSourceKey: T] {
+        Dictionary(uniqueKeysWithValues: sourceMap.filter { allowedSourceIds.contains($0.key.sourceId) })
     }
 
 }

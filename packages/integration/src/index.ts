@@ -1,4 +1,5 @@
 export * from "./adapters/channel-adapters.js";
+export * from "./project-observations.js";
 export * from "./utils/builtin-git-sources.js";
 export * from "./utils/clawhub.js";
 export * from "./utils/cli.js";

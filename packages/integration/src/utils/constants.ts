@@ -264,6 +264,24 @@ export const TARGET_DOCUMENTED_GLOBAL_PATHS: Record<DeploymentTargetName, string
     TARGET_ORDER.map((target) => [target, TARGET_DEFINITIONS[target].documentedGlobalPath]),
   ) as Record<DeploymentTargetName, string>;
 
+export function resolveDocumentedProjectSkillPath(
+  target: DeploymentTargetName,
+  projectPath: string,
+): string | null {
+  const normalizedProjectPath = projectPath.trim();
+  if (normalizedProjectPath.length === 0) {
+    return null;
+  }
+
+  const documentedProjectPath = TARGET_DEFINITIONS[target].documentedProjectPath?.trim();
+  if (!documentedProjectPath) {
+    return null;
+  }
+
+  const resolvedPath = path.join(normalizedProjectPath, documentedProjectPath);
+  return resolvedPath.endsWith(path.sep) ? resolvedPath.slice(0, -path.sep.length) : resolvedPath;
+}
+
 export const TARGET_ICON_ASSET_NAMES: Record<DeploymentTargetName, string | undefined> =
   Object.fromEntries(
     TARGET_ORDER.map((target) => [target, TARGET_DEFINITIONS[target].iconAssetName]),

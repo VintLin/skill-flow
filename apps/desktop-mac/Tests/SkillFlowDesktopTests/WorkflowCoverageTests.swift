@@ -151,6 +151,31 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertFalse(commands.contains("doctor"))
     }
 
+    func testHomeBootstrapsRecentProjectScopesFromBridgeState() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baselineWithRecentProjects)
+
+        let model = try await fixture.makeModel()
+
+        XCTAssertEqual(model.recentProjectScopes.map(\.projectId), ["repo-a", "repo-b"])
+        XCTAssertEqual(model.selectedProjectScope, .global)
+    }
+
+    func testDetailFetchUsesCurrentProjectScope() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baselineWithRecentProjects)
+
+        let model = try await fixture.makeModel()
+
+        await model.selectProjectScope(.project("repo-a"))
+        await model.selectSource("alpha")
+
+        let inspectRequests = fixture.loggedRequests().filter { $0.command == "inspect" }
+        let lastScope = inspectRequests.last?.payload?["scope"]?.value as? [String: Any]
+        XCTAssertEqual(lastScope?["kind"] as? String, "project")
+        XCTAssertEqual(lastScope?["projectId"] as? String, "repo-a")
+    }
+
     func testHomeBootstrapProjectsBridgeSourceIdsIntoFoundationState() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -678,12 +703,21 @@ private struct TestFixture {
         var enabledTargets: [String]
     }
 
+    struct RecentProjectState: Codable, Equatable {
+        var projectId: String
+        var title: String
+        var lastActivityAt: String
+        var tools: [String]
+    }
+
     struct State: Codable, Equatable {
         var availableTargets: [String]
         var sources: [String: SourceState]
         var applyFailures: [String: [String]]
         var pinnedSourceIds: [String]
+        var selectedProjectScope: String?
         var pinFailures: [String: [String]]
+        var recentProjects: [RecentProjectState]
         var importGroups: [ImportGroupState]
         var importFailures: [String: String]
 
@@ -711,7 +745,9 @@ private struct TestFixture {
             ],
             applyFailures: [:],
             pinnedSourceIds: [],
+            selectedProjectScope: nil,
             pinFailures: [:],
+            recentProjects: [],
             importGroups: [
                 ImportGroupState(
                     id: "anthropics-skills",
@@ -781,9 +817,48 @@ private struct TestFixture {
                 ]
             ],
             pinnedSourceIds: [],
+            selectedProjectScope: nil,
             pinFailures: [:],
+            recentProjects: [],
             importGroups: baseline.importGroups,
             importFailures: [:]
+        )
+
+        static let baselineWithRecentProjects = State(
+            availableTargets: baseline.availableTargets,
+            sources: baseline.sources,
+            applyFailures: baseline.applyFailures,
+            pinnedSourceIds: baseline.pinnedSourceIds,
+            selectedProjectScope: nil,
+            pinFailures: baseline.pinFailures,
+            recentProjects: [
+                RecentProjectState(
+                    projectId: "repo-a",
+                    title: "Repo A",
+                    lastActivityAt: "2026-03-31T10:00:00.000Z",
+                    tools: ["codex"]
+                ),
+                RecentProjectState(
+                    projectId: "repo-b",
+                    title: "Repo B",
+                    lastActivityAt: "2026-03-30T09:00:00.000Z",
+                    tools: ["claude-code"]
+                )
+            ],
+            importGroups: baseline.importGroups,
+            importFailures: baseline.importFailures
+        )
+
+        static let baselineWithoutRecentProjects = State(
+            availableTargets: baseline.availableTargets,
+            sources: baseline.sources,
+            applyFailures: baseline.applyFailures,
+            pinnedSourceIds: baseline.pinnedSourceIds,
+            selectedProjectScope: nil,
+            pinFailures: baseline.pinFailures,
+            recentProjects: [],
+            importGroups: baseline.importGroups,
+            importFailures: baseline.importFailures
         )
     }
 
@@ -1163,6 +1238,10 @@ private struct TestFixture {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
           pinnedSourceIds: state.pinnedSourceIds || [],
+          recentProjects: state.recentProjects || [],
+          selectedProjectScope: state.selectedProjectScope
+            ? { kind: 'project', projectId: state.selectedProjectScope }
+            : { kind: 'global' },
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
           audit: {
@@ -1177,7 +1256,11 @@ private struct TestFixture {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
-          pinnedSourceIds: state.pinnedSourceIds || []
+          pinnedSourceIds: state.pinnedSourceIds || [],
+          recentProjects: state.recentProjects || [],
+          selectedProjectScope: state.selectedProjectScope
+            ? { kind: 'project', projectId: state.selectedProjectScope }
+            : { kind: 'global' }
         }, [], [])));
         return;
       }

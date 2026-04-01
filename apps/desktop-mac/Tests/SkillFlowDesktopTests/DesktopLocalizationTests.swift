@@ -37,6 +37,9 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("page.settings.title", locale: Locale(identifier: "en")), "Settings")
         XCTAssertEqual(L10n.string("page.settings.title", locale: Locale(identifier: "zh-Hans")), "设置")
         XCTAssertEqual(L10n.string("page.settings.title", locale: Locale(identifier: "ja")), "設定")
+        XCTAssertEqual(L10n.string("project_scope.global", locale: Locale(identifier: "en")), "Global")
+        XCTAssertEqual(L10n.string("project_scope.global", locale: Locale(identifier: "zh-Hans")), "全局")
+        XCTAssertEqual(L10n.string("project_scope.global", locale: Locale(identifier: "ja")), "グローバル")
     }
 
     func testL10nFallsBackToEnglishBundleWhenKeyMissingInSelectedLocale() {
