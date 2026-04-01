@@ -29,11 +29,7 @@ struct MenuBarQuickConfigView: View {
     private let topBarControlCornerRadius: CGFloat = 8
 
     private var cardDisplayMode: GroupCardDisplayMode {
-        MainView.groupCardDisplayMode(for: settingsViewModel.currentMenuCardDensity)
-    }
-
-    private var menuUsesCompactDensity: Bool {
-        settingsViewModel.currentMenuCardDensity == .compact
+        MainView.menuGroupCardDisplayMode(for: settingsViewModel.currentMenuCardDensity)
     }
 
     var body: some View {
@@ -47,7 +43,7 @@ struct MenuBarQuickConfigView: View {
                             accent: accent,
                             displayMode: cardDisplayMode,
                             clickPolicy: .menu,
-                            skillsCollapsed: menuUsesCompactDensity && hoveredGroupId != card.id,
+                            skillsCollapsed: hoveredGroupId != card.id,
                             isUpdating: viewModel.isUpdatingSource(card.id),
                             onOpen: nil,
                             onUpdate: {
@@ -87,7 +83,6 @@ struct MenuBarQuickConfigView: View {
                             onSelectGroupTag: nil
                         )
                         .onHover { isHovering in
-                            guard menuUsesCompactDensity else { return }
                             if isHovering {
                                 scheduleHoverExpansion(for: card.id)
                             } else {

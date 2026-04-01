@@ -59,6 +59,30 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(cards.contains("LazyHStack"))
     }
 
+    func testGroupTagsRemoveFilledBackgroundsAndUseHoverEditAffordanceOnlyForEditableTags() throws {
+        let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
+        let cards = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertFalse(tags.contains(".background(AppTheme.brand(for: item.accent, in: theme).opacity"))
+        XCTAssertFalse(cards.contains(".background(AppTheme.brand(for: item.accent, in: theme).opacity"))
+        XCTAssertFalse(cards.contains(".background(AppTheme.brand(for: badgeAccent, in: theme).opacity"))
+        XCTAssertTrue(tags.contains("hoveredEditableTagID"))
+        XCTAssertTrue(tags.contains("showsHoverAddButton"))
+        XCTAssertTrue(tags.contains("addButton(isVisible:"))
+        XCTAssertTrue(tags.contains("onSelect?(item)"))
+        XCTAssertFalse(tags.contains("hoverEditButton(for:"))
+    }
+
+    func testEditableTagHoverKeepsAddButtonAliveLongEnoughToReachIt() throws {
+        let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
+
+        XCTAssertTrue(tags.contains("hoverCollapseTask"))
+        XCTAssertTrue(tags.contains("hoverCollapseDelay"))
+        XCTAssertTrue(tags.contains("Task.sleep(for: hoverCollapseDelay)"))
+        XCTAssertTrue(tags.contains("scheduleHoverCollapse"))
+        XCTAssertTrue(tags.contains("cancelHoverCollapse()"))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

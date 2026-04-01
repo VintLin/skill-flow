@@ -464,7 +464,7 @@ struct MainView: View {
     }
 
     private var homeCardDisplayMode: GroupCardDisplayMode {
-        Self.groupCardDisplayMode(for: settingsViewModel.currentHomeCardDensity)
+        Self.homeGroupCardDisplayMode(for: settingsViewModel.currentHomeCardDensity)
     }
 
     @ViewBuilder
@@ -1139,12 +1139,21 @@ extension MainView {
     private static let homeLeadingButtonHorizontalPadding: CGFloat = 20
     private static let homeLeadingProjectIndicatorAllowance: CGFloat = 12
 
-    static func groupCardDisplayMode(for density: DesktopCardDensity) -> GroupCardDisplayMode {
+    static func homeGroupCardDisplayMode(for density: DesktopCardDensity) -> GroupCardDisplayMode {
         switch density {
         case .comfortable:
-            return .home
+            return .homeComfortable
         case .compact:
-            return .menu
+            return .homeCompact
+        }
+    }
+
+    static func menuGroupCardDisplayMode(for density: DesktopCardDensity) -> GroupCardDisplayMode {
+        switch density {
+        case .comfortable:
+            return .menuComfortable
+        case .compact:
+            return .menuCompact
         }
     }
 

@@ -53,6 +53,12 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("detail.updated.unavailable", locale: Locale(identifier: "ja")), "更新時刻を取得できません")
     }
 
+    func testGroupTagInputPlaceholderStaysShortEnoughForCompactTagField() {
+        XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "en")), "Tag")
+        XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "zh-Hans")), "标签")
+        XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "ja")), "タグ")
+    }
+
     @MainActor
     func testDetailScreenLocalizesGroupFileTreeDocumentTitlePerLocale() {
         let fileTreeDocument = MainViewModel.DocumentDescriptor(

@@ -135,9 +135,9 @@
 "settings.row.open_releases.description" = "在浏览器中打开最新的 GitHub release 页面。";
 "settings.action.open_releases" = "打开";
 "settings.row.home_card_density.title" = "首页卡片密度";
-"settings.row.home_card_density.description" = "选择首页使用完整卡片还是菜单式紧凑卡片。";
+"settings.row.home_card_density.description" = "选择首页使用舒适版首页卡片还是紧凑版首页卡片。";
 "settings.row.menu_card_density.title" = "菜单栏卡片密度";
-"settings.row.menu_card_density.description" = "选择菜单栏列表使用紧凑卡片还是首页完整卡片。";
+"settings.row.menu_card_density.description" = "选择菜单栏列表使用舒适版菜单卡片还是紧凑版菜单卡片。";
 "settings.agent_display.target_id" = "target: %@";
 "settings.agent_display.empty" = "当前没有检测到 Agent。";
 "settings.agent_display.footer" = "拖拽即可调整顺序。变更会同步影响 Group Card 和 Group Detail。";
@@ -179,7 +179,7 @@
 "group_card.loading.downloading" = "正在下载...";
 "group_tag.action.add" = "添加标签";
 "group_tag.filter.all" = "ALL";
-"group_tag.input.placeholder" = "新标签";
+"group_tag.input.placeholder" = "标签";
 "group_tag.toast.duplicate" = "该标签已存在。";
 "group_tag.toast.limit" = "标签数量已达上限。";
 "group_tag.toast.empty" = "请先输入标签。";

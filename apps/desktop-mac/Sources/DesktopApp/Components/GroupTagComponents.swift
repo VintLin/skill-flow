@@ -19,13 +19,60 @@ struct EditableGroupTagSection: View {
     let canAddMore: Bool
     let isEditing: Bool
     let isDeleteMode: Bool
+    let pillHeight: CGFloat
+    let fontSize: CGFloat
+    let iconSize: CGFloat
+    let rowSpacing: CGFloat
     let onEditingChange: (Bool) -> Void
     let onCreate: ((String, DesktopAccentColor?) -> GroupTagMutationResult)?
     let onDelete: ((GroupTagDisplayItem) -> Void)?
     let onSelect: ((GroupTagDisplayItem) -> Void)?
 
     @State private var draftText = ""
-    private let tagPillHeight: CGFloat = 24
+    @State private var hoveredEditableTagID: String?
+    @State private var hoverCollapseTask: Task<Void, Never>?
+
+    private let hoverCollapseDelay: Duration = .seconds(1)
+
+    init(
+        theme: DesktopThemeMode,
+        accent: DesktopAccentColor,
+        controlHeight: CGFloat,
+        cornerRadius: CGFloat,
+        inputWidth: CGFloat,
+        tagItems: [GroupTagDisplayItem],
+        suggestions: [GroupTagDisplayItem],
+        canAddMore: Bool,
+        isEditing: Bool,
+        isDeleteMode: Bool,
+        pillHeight: CGFloat = 24,
+        fontSize: CGFloat = 12,
+        iconSize: CGFloat = 10,
+        rowSpacing: CGFloat = 6,
+        onEditingChange: @escaping (Bool) -> Void,
+        onCreate: ((String, DesktopAccentColor?) -> GroupTagMutationResult)?,
+        onDelete: ((GroupTagDisplayItem) -> Void)?,
+        onSelect: ((GroupTagDisplayItem) -> Void)?
+    ) {
+        self.theme = theme
+        self.accent = accent
+        self.controlHeight = controlHeight
+        self.cornerRadius = cornerRadius
+        self.inputWidth = inputWidth
+        self.tagItems = tagItems
+        self.suggestions = suggestions
+        self.canAddMore = canAddMore
+        self.isEditing = isEditing
+        self.isDeleteMode = isDeleteMode
+        self.pillHeight = pillHeight
+        self.fontSize = fontSize
+        self.iconSize = iconSize
+        self.rowSpacing = rowSpacing
+        self.onEditingChange = onEditingChange
+        self.onCreate = onCreate
+        self.onDelete = onDelete
+        self.onSelect = onSelect
+    }
 
     var body: some View {
         Group {
@@ -49,15 +96,17 @@ struct EditableGroupTagSection: View {
     }
 
     private var displayRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: rowSpacing) {
             if shouldShowAddButton {
-                addButton
+                addButton(isVisible: showsHoverAddButton)
             }
 
             if !tagItems.isEmpty {
                 tagRow(items: tagItems, showsDeleteControls: isDeleteMode)
+                    .offset(x: showsHoverAddButton ? GroupCardTagMetrics.hoverEditSpacing : 0)
             }
         }
+        .animation(.easeOut(duration: DesktopMotionTokens.hoverDuration), value: showsHoverAddButton)
     }
 
     private var shouldShowAddButton: Bool {
@@ -67,8 +116,17 @@ struct EditableGroupTagSection: View {
         return true
     }
 
+    private var showsHoverAddButton: Bool {
+        guard onSelect != nil, !isDeleteMode else {
+            return false
+        }
+        return canAddMore && hoveredEditableTagID != nil
+    }
+
     private func editableRow(onCreate: @escaping (String, DesktopAccentColor?) -> GroupTagMutationResult) -> some View {
-        HStack(spacing: 8) {
+        let inputCornerRadius = max(6, cornerRadius - 2)
+
+        return HStack(spacing: max(6, rowSpacing + 2)) {
             TextField(
                 L10n.string("group_tag.input.placeholder", locale: locale),
                 text: Binding(
@@ -77,14 +135,14 @@ struct EditableGroupTagSection: View {
                 )
             )
             .textFieldStyle(.plain)
-            .font(.system(size: 12, weight: .regular))
+            .font(.system(size: fontSize, weight: .regular))
             .foregroundStyle(AppTheme.textPrimary(for: theme))
             .padding(.horizontal, 10)
-            .frame(width: inputWidth, height: tagPillHeight, alignment: .leading)
+            .frame(width: inputWidth, height: pillHeight, alignment: .leading)
             .background(AppTheme.documentBlock(for: theme))
-            .clipShape(RoundedRectangle(cornerRadius: max(6, cornerRadius - 2)))
+            .clipShape(RoundedRectangle(cornerRadius: inputCornerRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: max(6, cornerRadius - 2))
+                RoundedRectangle(cornerRadius: inputCornerRadius)
                     .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
             }
             .focused($isInputFocused)
@@ -93,10 +151,10 @@ struct EditableGroupTagSection: View {
             }
 
             DashedTagDivider(color: AppTheme.cardBorder(for: theme))
-                .frame(width: 1, height: tagPillHeight)
+                .frame(width: 1, height: pillHeight)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 6) {
+                LazyHStack(spacing: rowSpacing) {
                     ForEach(suggestions) { item in
                         Button {
                             handleCreateResult(onCreate(item.title, item.accent))
@@ -121,7 +179,7 @@ struct EditableGroupTagSection: View {
         }
     }
 
-    private var addButton: some View {
+    private func addButton(isVisible: Bool) -> some View {
         Button {
             guard canAddMore else { return }
             onEditingChange(true)
@@ -139,7 +197,7 @@ struct EditableGroupTagSection: View {
                         .resizable()
                         .interpolation(.high)
                         .scaledToFit()
-                        .frame(width: 10, height: 10)
+                        .frame(width: iconSize, height: iconSize)
                         .foregroundStyle(
                             canAddMore
                                 ? AppTheme.brand(for: accent, in: theme)
@@ -148,7 +206,7 @@ struct EditableGroupTagSection: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
             }
-            .frame(width: tagPillHeight, height: tagPillHeight)
+            .frame(width: pillHeight, height: pillHeight)
             .overlay {
                 RoundedRectangle(cornerRadius: max(6, cornerRadius - 2))
                     .stroke(
@@ -164,11 +222,22 @@ struct EditableGroupTagSection: View {
             kind: .pill,
             theme: theme,
             accent: accent,
-            isEnabled: canAddMore,
+            isEnabled: canAddMore && isVisible,
             isSelected: false
         )
-        .disabled(!canAddMore)
+        .frame(width: isVisible ? pillHeight : 0, height: pillHeight, alignment: .leading)
+        .opacity(isVisible ? 1 : 0)
+        .allowsHitTesting(isVisible)
+        .clipped()
+        .disabled(!canAddMore || !isVisible)
         .help(L10n.string("group_tag.action.add", locale: locale))
+        .onHover { isHovering in
+            if isHovering {
+                cancelHoverCollapse()
+            } else {
+                scheduleHoverCollapse()
+            }
+        }
     }
 
     private func handleCreateResult(_ result: GroupTagMutationResult) {
@@ -178,42 +247,83 @@ struct EditableGroupTagSection: View {
     }
 
     private func resetEditingState() {
+        cancelHoverCollapse()
         draftText = ""
         isInputFocused = false
+        hoveredEditableTagID = nil
         onEditingChange(false)
     }
 
     private func tagRow(items: [GroupTagDisplayItem], showsDeleteControls: Bool) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 6) {
+            LazyHStack(spacing: rowSpacing) {
                 ForEach(items) { item in
-                    if showsDeleteControls || onSelect == nil {
+                    if showsDeleteControls {
                         tagPill(item, showsDeleteControl: showsDeleteControls)
+                    } else if onSelect != nil {
+                        editableSelectableTag(item)
                     } else {
-                        Button {
-                            onSelect?(item)
-                        } label: {
-                            tagPill(item, showsDeleteControl: false)
-                        }
-                        .buttonStyle(.plain)
-                        .desktopMotionChip(
-                            kind: .pill,
-                            theme: theme,
-                            accent: item.accent,
-                            isEnabled: true,
-                            isSelected: false
-                        )
+                        tagPill(item, showsDeleteControl: false)
                     }
                 }
             }
         }
     }
 
+    private func editableSelectableTag(_ item: GroupTagDisplayItem) -> some View {
+        Button {
+            onSelect?(item)
+        } label: {
+            tagTextLabel(item)
+        }
+        .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .pill,
+            theme: theme,
+            accent: item.accent,
+            isEnabled: true,
+            isSelected: false
+        )
+        .onHover { isHovering in
+            guard canAddMore, !isDeleteMode else { return }
+            if isHovering {
+                cancelHoverCollapse()
+                hoveredEditableTagID = item.id
+            } else {
+                scheduleHoverCollapse()
+            }
+        }
+    }
+
+    private func scheduleHoverCollapse() {
+        hoverCollapseTask?.cancel()
+        hoverCollapseTask = Task {
+            try? await Task.sleep(for: hoverCollapseDelay)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                hoveredEditableTagID = nil
+                hoverCollapseTask = nil
+            }
+        }
+    }
+
+    private func cancelHoverCollapse() {
+        hoverCollapseTask?.cancel()
+        hoverCollapseTask = nil
+    }
+
+    private func tagTextLabel(_ item: GroupTagDisplayItem) -> some View {
+        Text("#\(item.title)")
+            .font(.system(size: fontSize, weight: .regular))
+            .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
+            .padding(.horizontal, GroupCardTagMetrics.horizontalPadding)
+            .padding(.vertical, GroupCardTagMetrics.verticalPadding)
+            .contentShape(Rectangle())
+    }
+
     private func tagPill(_ item: GroupTagDisplayItem, showsDeleteControl: Bool) -> some View {
-        HStack(spacing: showsDeleteControl ? 6 : 0) {
-            Text("#\(item.title)")
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
+        HStack(spacing: showsDeleteControl ? rowSpacing : 0) {
+            tagTextLabel(item)
 
             if showsDeleteControl {
                 Button {
@@ -225,22 +335,18 @@ struct EditableGroupTagSection: View {
                             .resizable()
                             .interpolation(.high)
                             .scaledToFit()
-                            .frame(width: 10, height: 10)
+                            .frame(width: iconSize, height: iconSize)
                             .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
                     } else {
                         Text("x")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: iconSize, weight: .semibold))
                             .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
                     }
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.leading, 8)
-        .padding(.trailing, showsDeleteControl ? 6 : 8)
-        .frame(height: tagPillHeight)
-        .background(AppTheme.brand(for: item.accent, in: theme).opacity(theme == .dark ? 0.22 : 0.14))
-        .clipShape(RoundedRectangle(cornerRadius: max(6, cornerRadius - 2)))
+        .padding(.trailing, showsDeleteControl ? 4 : 0)
     }
 }
 

@@ -43,6 +43,12 @@ enum GroupCardScale {
         }
     }
 
+    // Compact density still comes from `factor`, but interactive controls
+    // should never shrink below their baseline tappable size.
+    private var controlFactor: CGFloat {
+        max(1.0, factor)
+    }
+
     var cardInset: CGFloat {
         12 * factor
     }
@@ -64,7 +70,7 @@ enum GroupCardScale {
     }
 
     var chipHeight: CGFloat {
-        34 * factor
+        34 * controlFactor
     }
 
     var chipFontSize: CGFloat {
@@ -72,7 +78,11 @@ enum GroupCardScale {
     }
 
     var targetSize: CGFloat {
-        34 * factor
+        34 * controlFactor
+    }
+
+    var targetScrollerHeight: CGFloat {
+        max(chipHeight, targetSize)
     }
 
     var targetFontSize: CGFloat {
@@ -80,11 +90,11 @@ enum GroupCardScale {
     }
 
     var triStateWidth: CGFloat {
-        34 * factor
+        34 * controlFactor
     }
 
     var triStateHeight: CGFloat {
-        34 * factor
+        34 * controlFactor
     }
 
     var triStateFontSize: CGFloat {
@@ -136,66 +146,192 @@ enum GroupCardScale {
     }
 }
 
+enum GroupCardTagMetrics {
+    static let pillHeight: CGFloat = 16
+    static let fontSize: CGFloat = 12
+    static let iconSize: CGFloat = 7
+    static let rowSpacing: CGFloat = 6
+    static let inputWidth: CGFloat = 48
+    static let horizontalPadding: CGFloat = 0
+    static let verticalPadding: CGFloat = 1
+    static let hoverEditSpacing: CGFloat = 4
+    static let hoverEditButtonWidth: CGFloat = 12
+}
+
 enum GroupCardDisplayMode: Equatable {
-    case home
-    case menu
+    enum BusyMessageStyle: Equatable {
+        case updating
+        case downloading
+    }
+
+    case homeComfortable
+    case homeCompact
+    case menuComfortable
+    case menuCompact
     case importSearch
     case importRecommendation
 
-    var scale: GroupCardScale {
+    struct PresentationProfile: Equatable {
+        let scale: GroupCardScale
+        let showsSubtitle: Bool
+        let showsMetaLine: Bool
+        let showsSectionTitles: Bool
+        let supportsCollapsedSkills: Bool
+        let usesPlainPrimaryActionIcon: Bool
+        let busyMessageStyle: BusyMessageStyle
+        let showsHeaderDivider: Bool
+        let showsSummaryDivider: Bool
+        let reservesMinimumHeight: Bool
+        let showsLoadingStatPlaceholders: Bool
+    }
+
+    var presentationProfile: PresentationProfile {
         switch self {
-        case .home, .importSearch, .importRecommendation:
-            return .home
-        case .menu:
-            return .menu
+        case .homeComfortable:
+            return PresentationProfile(
+                scale: .home,
+                showsSubtitle: true,
+                showsMetaLine: true,
+                showsSectionTitles: true,
+                supportsCollapsedSkills: false,
+                usesPlainPrimaryActionIcon: false,
+                busyMessageStyle: .updating,
+                showsHeaderDivider: true,
+                showsSummaryDivider: true,
+                reservesMinimumHeight: true,
+                showsLoadingStatPlaceholders: false
+            )
+        case .homeCompact:
+            return PresentationProfile(
+                scale: .home,
+                showsSubtitle: true,
+                showsMetaLine: false,
+                showsSectionTitles: false,
+                supportsCollapsedSkills: false,
+                usesPlainPrimaryActionIcon: false,
+                busyMessageStyle: .updating,
+                showsHeaderDivider: false,
+                showsSummaryDivider: false,
+                reservesMinimumHeight: false,
+                showsLoadingStatPlaceholders: false
+            )
+        case .menuComfortable:
+            return PresentationProfile(
+                scale: .menu,
+                showsSubtitle: true,
+                showsMetaLine: true,
+                showsSectionTitles: false,
+                supportsCollapsedSkills: true,
+                usesPlainPrimaryActionIcon: false,
+                busyMessageStyle: .updating,
+                showsHeaderDivider: false,
+                showsSummaryDivider: false,
+                reservesMinimumHeight: false,
+                showsLoadingStatPlaceholders: false
+            )
+        case .menuCompact:
+            return PresentationProfile(
+                scale: .menu,
+                showsSubtitle: true,
+                showsMetaLine: false,
+                showsSectionTitles: false,
+                supportsCollapsedSkills: true,
+                usesPlainPrimaryActionIcon: false,
+                busyMessageStyle: .updating,
+                showsHeaderDivider: false,
+                showsSummaryDivider: false,
+                reservesMinimumHeight: false,
+                showsLoadingStatPlaceholders: false
+            )
+        case .importSearch:
+            return PresentationProfile(
+                scale: .home,
+                showsSubtitle: true,
+                showsMetaLine: true,
+                showsSectionTitles: true,
+                supportsCollapsedSkills: false,
+                usesPlainPrimaryActionIcon: true,
+                busyMessageStyle: .downloading,
+                showsHeaderDivider: true,
+                showsSummaryDivider: false,
+                reservesMinimumHeight: true,
+                showsLoadingStatPlaceholders: true
+            )
+        case .importRecommendation:
+            return PresentationProfile(
+                scale: .home,
+                showsSubtitle: true,
+                showsMetaLine: true,
+                showsSectionTitles: true,
+                supportsCollapsedSkills: false,
+                usesPlainPrimaryActionIcon: true,
+                busyMessageStyle: .downloading,
+                showsHeaderDivider: true,
+                showsSummaryDivider: true,
+                reservesMinimumHeight: true,
+                showsLoadingStatPlaceholders: true
+            )
         }
+    }
+
+    var scale: GroupCardScale {
+        presentationProfile.scale
     }
 
     var showsSubtitle: Bool {
-        switch self {
-        case .home, .menu, .importSearch, .importRecommendation:
-            return true
-        }
+        presentationProfile.showsSubtitle
     }
 
     var showsMetaLine: Bool {
-        switch self {
-        case .home, .importSearch, .importRecommendation:
-            return true
-        case .menu:
-            return false
-        }
+        presentationProfile.showsMetaLine
     }
 
     var showsSectionTitles: Bool {
-        switch self {
-        case .home, .importSearch, .importRecommendation:
-            return true
-        case .menu:
-            return false
-        }
+        presentationProfile.showsSectionTitles
     }
 
     var supportsCollapsedSkills: Bool {
-        switch self {
-        case .home, .importSearch, .importRecommendation:
-            return false
-        case .menu:
-            return true
-        }
+        presentationProfile.supportsCollapsedSkills
     }
 
     var usesPlainPrimaryActionIcon: Bool {
-        switch self {
-        case .importSearch, .importRecommendation:
-            return true
-        case .home, .menu:
-            return false
-        }
+        presentationProfile.usesPlainPrimaryActionIcon
+    }
+
+    var showsHeaderDivider: Bool {
+        presentationProfile.showsHeaderDivider
+    }
+
+    var showsSummaryDivider: Bool {
+        presentationProfile.showsSummaryDivider
+    }
+
+    var reservesMinimumHeight: Bool {
+        presentationProfile.reservesMinimumHeight
+    }
+
+    var busyMessageStyle: BusyMessageStyle {
+        presentationProfile.busyMessageStyle
+    }
+
+    var showsLoadingStatPlaceholders: Bool {
+        presentationProfile.showsLoadingStatPlaceholders
     }
 }
 
 struct SharedGroupCard: View {
+    enum BodySection: Hashable {
+        case agents
+        case skills
+        case summary
+    }
+
+    enum SummaryKind: Hashable {
+        case editableTags
+        case readOnlyTags
+        case recommendation
+    }
+
     enum HeaderStatKind: Equatable {
         case downloads
         case star
@@ -330,28 +466,34 @@ struct SharedGroupCard: View {
         VStack(alignment: .leading, spacing: scale.cardSpacing) {
             header
 
-            if Self.showsHeaderDivider(card: card, displayMode: displayMode) {
+            if displayMode.showsHeaderDivider {
                 dashedDivider
             }
-
-            if showsTagSummary {
-                tagSummarySection
-                dashedDivider
+            ForEach(Self.contentSectionOrder(showsSummary: showsSummary, displayMode: displayMode, skillsCollapsed: skillsCollapsed), id: \.self) { section in
+                switch section {
+                case .agents:
+                    cardRow(
+                        title: t("common.section.agents"),
+                        selection: card.targetSelection,
+                        items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled, nil) },
+                        compact: true,
+                        loading: card.targetsLoading,
+                        onToggleAll: onToggleAllTargets,
+                        action: onToggleTarget
+                    )
+                    .padding(.horizontal, -scale.cardInset)
+                case .skills:
+                    skillsSection
+                        .padding(.horizontal, -scale.cardInset)
+                case .summary:
+                    Group {
+                        if displayMode.showsSummaryDivider {
+                            dashedDivider
+                        }
+                        summarySection
+                    }
+                }
             }
-
-            cardRow(
-                title: t("common.section.agents"),
-                selection: card.targetSelection,
-                items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled, nil) },
-                compact: true,
-                loading: card.targetsLoading,
-                onToggleAll: onToggleAllTargets,
-                action: onToggleTarget
-            )
-            .padding(.horizontal, -scale.cardInset)
-
-            skillsSection
-                .padding(.horizontal, -scale.cardInset)
         }
         .opacity(busyContentOpacity)
         .blur(radius: isBusy ? 0.8 : 0)
@@ -478,12 +620,12 @@ struct SharedGroupCard: View {
         HStack(spacing: 10) {
             if let downloadCount = card.stats.downloadCount {
                 statItem(icon: .downloads, text: countText(downloadCount))
-            } else if usesImportStatPlaceholders {
+            } else if showsLoadingStatPlaceholders {
                 statPlaceholder(width: 42)
             }
             if let starCount = card.stats.starCount {
                 statItem(icon: .star, text: countText(starCount))
-            } else if usesImportStatPlaceholders {
+            } else if showsLoadingStatPlaceholders {
                 statPlaceholder(width: 38)
             }
             if let githubURL = card.stats.githubURL {
@@ -496,7 +638,7 @@ struct SharedGroupCard: View {
                 }
                 .buttonStyle(.plain)
                 .help(githubURL)
-            } else if usesImportStatPlaceholders {
+            } else if showsLoadingStatPlaceholders {
                 statPlaceholder(width: 16)
             }
             if let groupPath = card.groupPath ?? card.stats.localPath {
@@ -507,7 +649,7 @@ struct SharedGroupCard: View {
                 }
                 .buttonStyle(.plain)
                 .help(groupPath)
-            } else if usesImportStatPlaceholders {
+            } else if showsLoadingStatPlaceholders {
                 statPlaceholder(width: 16)
             }
             Spacer(minLength: 0)
@@ -690,33 +832,48 @@ struct SharedGroupCard: View {
         if isSaving {
             return t("common.status.applying")
         }
-        if displayMode == .importSearch || displayMode == .importRecommendation {
+        if displayMode.busyMessageStyle == .downloading {
             return t("group_card.loading.downloading")
         }
         return t("group_card.loading.updating")
     }
 
-    private var showsTagSummary: Bool {
-        !groupTagItems.isEmpty
-            || !recommendationBadgeItems.isEmpty
-            || onCreateGroupTag != nil
+    private var summaryKind: SummaryKind? {
+        Self.resolvedSummaryKind(
+            hasEditableTags: onCreateGroupTag != nil,
+            hasReadOnlyTags: !groupTagItems.isEmpty,
+            hasRecommendationSummary: hasRecommendationSummary
+        )
+    }
+
+    private var showsSummary: Bool {
+        summaryKind != nil
+    }
+
+    private var hasRecommendationSummary: Bool {
+        !recommendationBadgeItems.isEmpty
             || ((recommendationDescription?.isEmpty) == false)
     }
 
-    private var tagSummarySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if onCreateGroupTag != nil {
+    private var summarySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            switch summaryKind {
+            case .editableTags:
                 EditableGroupTagSection(
                     theme: theme,
                     accent: accent,
                     controlHeight: scale.triStateHeight,
                     cornerRadius: scale.cornerRadius - 2,
-                    inputWidth: 72,
+                    inputWidth: GroupCardTagMetrics.inputWidth,
                     tagItems: groupTagItems,
                     suggestions: groupTagSuggestions,
                     canAddMore: canCreateGroupTag,
                     isEditing: isEditingTags,
                     isDeleteMode: isDeletingTags,
+                    pillHeight: GroupCardTagMetrics.pillHeight,
+                    fontSize: GroupCardTagMetrics.fontSize,
+                    iconSize: GroupCardTagMetrics.iconSize,
+                    rowSpacing: GroupCardTagMetrics.rowSpacing,
                     onEditingChange: { isEditing in
                         setTagEditing(isEditing)
                     },
@@ -726,9 +883,34 @@ struct SharedGroupCard: View {
                     },
                     onSelect: onSelectGroupTag
                 )
-            } else if !groupTagItems.isEmpty {
+            case .readOnlyTags:
                 readOnlyTagRow
-            } else if !recommendationBadgeItems.isEmpty {
+            case .recommendation:
+                recommendationSummary
+            case .none:
+                EmptyView()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var readOnlyTagRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: GroupCardTagMetrics.rowSpacing) {
+                ForEach(groupTagItems) { item in
+                    Text("#\(item.title)")
+                        .font(.system(size: GroupCardTagMetrics.fontSize, weight: .regular))
+                        .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
+                        .padding(.horizontal, GroupCardTagMetrics.horizontalPadding)
+                        .padding(.vertical, GroupCardTagMetrics.verticalPadding)
+                }
+            }
+        }
+    }
+
+    private var recommendationSummary: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !recommendationBadgeItems.isEmpty {
                 recommendationBadgeRow
             }
 
@@ -741,37 +923,18 @@ struct SharedGroupCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var readOnlyTagRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 6) {
-                ForEach(groupTagItems) { item in
-                    Text("#\(item.title)")
-                        .font(.system(size: scale.chipFontSize, weight: .regular))
-                        .foregroundStyle(AppTheme.brand(for: item.accent, in: theme))
-                        .padding(.horizontal, 8)
-                        .frame(height: 24)
-                        .background(AppTheme.brand(for: item.accent, in: theme).opacity(theme == .dark ? 0.22 : 0.14))
-                        .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
-                }
-            }
-        }
     }
 
     private var recommendationBadgeRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 6) {
+            LazyHStack(spacing: GroupCardTagMetrics.rowSpacing) {
                 ForEach(recommendationBadgeItems) { badge in
                     let badgeAccent = Self.recommendationBadgeAccent(tagId: badge.id)
                     Text("#\(badge.title)")
-                        .font(.system(size: scale.chipFontSize, weight: .regular))
+                        .font(.system(size: GroupCardTagMetrics.fontSize, weight: .regular))
                         .foregroundStyle(AppTheme.brand(for: badgeAccent, in: theme))
-                        .padding(.horizontal, 8)
-                        .frame(height: 24)
-                        .background(AppTheme.brand(for: badgeAccent, in: theme).opacity(theme == .dark ? 0.22 : 0.14))
-                        .clipShape(RoundedRectangle(cornerRadius: scale.cornerRadius - 2))
+                        .padding(.horizontal, GroupCardTagMetrics.horizontalPadding)
+                        .padding(.vertical, GroupCardTagMetrics.verticalPadding)
                 }
             }
         }
@@ -799,7 +962,7 @@ struct SharedGroupCard: View {
                 .padding(.top, scale.sectionTopPadding)
             }
 
-            cardScroller {
+            cardScroller(height: compact ? scale.targetScrollerHeight : scale.chipHeight) {
                 LazyHStack(spacing: scale.rowSpacing) {
                     triStateSwitch(selection, loading: false, action: onToggleAll)
                     if loading {
@@ -875,21 +1038,14 @@ struct SharedGroupCard: View {
     }
 
     private var minimumHeight: CGFloat? {
-        switch displayMode {
-        case .home, .importSearch, .importRecommendation:
+        if displayMode.reservesMinimumHeight {
             return scale.minHeight
-        case .menu:
-            return nil
         }
+        return nil
     }
 
-    private var usesImportStatPlaceholders: Bool {
-        switch displayMode {
-        case .importSearch, .importRecommendation:
-            return card.skillsLoading || card.targetsLoading
-        case .home, .menu:
-            return false
-        }
+    private var showsLoadingStatPlaceholders: Bool {
+        displayMode.showsLoadingStatPlaceholders && (card.skillsLoading || card.targetsLoading)
     }
 
     private func skillToggle(_ text: String, highlightQuery: String?, isOn: Bool) -> some View {
@@ -1043,9 +1199,12 @@ struct SharedGroupCard: View {
         return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
-    private func cardScroller<Content: View>(@ViewBuilder content: @escaping () -> Content) -> some View {
+    private func cardScroller<Content: View>(
+        height: CGFloat,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
         SharedHorizontalFadeScroll(
-            height: scale.chipHeight,
+            height: height,
             fadeWidth: scale.fadeWidth,
             fill: AppTheme.groupCardFill(for: theme),
             contentPadding: scale.cardInset,
@@ -1165,6 +1324,23 @@ struct SharedGroupCard: View {
 }
 
 extension SharedGroupCard {
+    static func resolvedSummaryKind(
+        hasEditableTags: Bool,
+        hasReadOnlyTags: Bool,
+        hasRecommendationSummary: Bool
+    ) -> SummaryKind? {
+        if hasRecommendationSummary {
+            return .recommendation
+        }
+        if hasEditableTags {
+            return .editableTags
+        }
+        if hasReadOnlyTags {
+            return .readOnlyTags
+        }
+        return nil
+    }
+
     static func visibleHeaderStatKinds(stats: MainViewModel.GroupCardStats) -> [HeaderStatKind] {
         var kinds: [HeaderStatKind] = []
         if stats.downloadCount != nil {
@@ -1190,17 +1366,14 @@ extension SharedGroupCard {
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
-        guard displayMode.showsMetaLine, displayMode != .menu else {
-            return false
-        }
-        return true
+        displayMode.showsMetaLine
     }
 
     static func showsHeaderDivider(
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
-        displayMode.showsMetaLine || displayMode == .menu
+        displayMode.showsHeaderDivider
     }
 
     static func recommendationBadgeAccent(tagId: String) -> DesktopAccentColor {
@@ -1224,6 +1397,21 @@ extension SharedGroupCard {
         default:
             return .blue
         }
+    }
+
+    static func contentSectionOrder(
+        showsSummary: Bool,
+        displayMode: GroupCardDisplayMode,
+        skillsCollapsed: Bool
+    ) -> [BodySection] {
+        var sections: [BodySection] = [.agents]
+        if !displayMode.supportsCollapsedSkills || !skillsCollapsed {
+            sections.append(.skills)
+        }
+        if showsSummary {
+            sections.append(.summary)
+        }
+        return sections
     }
 
     static func busyOverlayScrimColor(for theme: DesktopThemeMode) -> Color {

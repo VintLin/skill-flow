@@ -135,9 +135,9 @@
 "settings.row.open_releases.description" = "ブラウザで最新の GitHub release ページを開きます。";
 "settings.action.open_releases" = "開く";
 "settings.row.home_card_density.title" = "ホームカード密度";
-"settings.row.home_card_density.description" = "ホームで通常カードを使うか、メニュー用のコンパクトカードを使うかを選びます。";
+"settings.row.home_card_density.description" = "ホームで通常のホームカードを使うか、コンパクトなホームカードを使うかを選びます。";
 "settings.row.menu_card_density.title" = "メニューカード密度";
-"settings.row.menu_card_density.description" = "メニューバー一覧でコンパクトカードを使うか、ホームと同じ通常カードを使うかを選びます。";
+"settings.row.menu_card_density.description" = "メニューバー一覧で通常のメニューカードを使うか、コンパクトなメニューカードを使うかを選びます。";
 "settings.agent_display.target_id" = "target: %@";
 "settings.agent_display.empty" = "検出済みの Agent はありません。";
 "settings.agent_display.footer" = "ドラッグして並び替えます。変更は Group Card と Group Detail に反映されます。";
@@ -179,7 +179,7 @@
 "group_card.loading.downloading" = "ダウンロード中...";
 "group_tag.action.add" = "タグを追加";
 "group_tag.filter.all" = "ALL";
-"group_tag.input.placeholder" = "新しいタグ";
+"group_tag.input.placeholder" = "タグ";
 "group_tag.toast.duplicate" = "このタグは既に選択されています。";
 "group_tag.toast.limit" = "タグ数が上限に達しました。";
 "group_tag.toast.empty" = "先にタグを入力してください。";

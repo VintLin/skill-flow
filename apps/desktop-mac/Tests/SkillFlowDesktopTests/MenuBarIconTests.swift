@@ -6,20 +6,32 @@ import XCTest
 
 @MainActor
 final class MenuBarIconTests: XCTestCase {
-    func testGroupCardDisplayModeMenuHidesSecondaryChrome() {
-        XCTAssertTrue(GroupCardDisplayMode.menu.showsSubtitle)
-        XCTAssertFalse(GroupCardDisplayMode.menu.showsMetaLine)
-        XCTAssertFalse(GroupCardDisplayMode.menu.showsSectionTitles)
-        XCTAssertTrue(GroupCardDisplayMode.menu.supportsCollapsedSkills)
-        XCTAssertEqual(GroupCardDisplayMode.menu.scale, .menu)
+    func testGroupCardDisplayModeMenuModesStaySeparateFromHomeAndHideSecondaryChrome() {
+        XCTAssertTrue(GroupCardDisplayMode.menuComfortable.showsSubtitle)
+        XCTAssertTrue(GroupCardDisplayMode.menuComfortable.showsMetaLine)
+        XCTAssertFalse(GroupCardDisplayMode.menuComfortable.showsSectionTitles)
+        XCTAssertTrue(GroupCardDisplayMode.menuComfortable.supportsCollapsedSkills)
+        XCTAssertEqual(GroupCardDisplayMode.menuComfortable.scale, .menu)
+
+        XCTAssertTrue(GroupCardDisplayMode.menuCompact.showsSubtitle)
+        XCTAssertFalse(GroupCardDisplayMode.menuCompact.showsMetaLine)
+        XCTAssertFalse(GroupCardDisplayMode.menuCompact.showsSectionTitles)
+        XCTAssertTrue(GroupCardDisplayMode.menuCompact.supportsCollapsedSkills)
+        XCTAssertEqual(GroupCardDisplayMode.menuCompact.scale, .menu)
     }
 
-    func testGroupCardDisplayModeHomeKeepsFullLayout() {
-        XCTAssertTrue(GroupCardDisplayMode.home.showsSubtitle)
-        XCTAssertTrue(GroupCardDisplayMode.home.showsMetaLine)
-        XCTAssertTrue(GroupCardDisplayMode.home.showsSectionTitles)
-        XCTAssertFalse(GroupCardDisplayMode.home.supportsCollapsedSkills)
-        XCTAssertEqual(GroupCardDisplayMode.home.scale, .home)
+    func testGroupCardDisplayModeHomeModesStaySeparateFromMenu() {
+        XCTAssertTrue(GroupCardDisplayMode.homeComfortable.showsSubtitle)
+        XCTAssertTrue(GroupCardDisplayMode.homeComfortable.showsMetaLine)
+        XCTAssertTrue(GroupCardDisplayMode.homeComfortable.showsSectionTitles)
+        XCTAssertFalse(GroupCardDisplayMode.homeComfortable.supportsCollapsedSkills)
+        XCTAssertEqual(GroupCardDisplayMode.homeComfortable.scale, .home)
+
+        XCTAssertTrue(GroupCardDisplayMode.homeCompact.showsSubtitle)
+        XCTAssertFalse(GroupCardDisplayMode.homeCompact.showsMetaLine)
+        XCTAssertFalse(GroupCardDisplayMode.homeCompact.showsSectionTitles)
+        XCTAssertFalse(GroupCardDisplayMode.homeCompact.supportsCollapsedSkills)
+        XCTAssertEqual(GroupCardDisplayMode.homeCompact.scale, .home)
     }
 
     func testGroupCardDisplayModeImportUsesDedicatedChrome() {
@@ -38,9 +50,11 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(GroupCardDisplayMode.importRecommendation.scale, .home)
     }
 
-    func testCardDensityProjectsToExpectedGroupCardDisplayMode() {
-        XCTAssertEqual(MainView.groupCardDisplayMode(for: .comfortable), .home)
-        XCTAssertEqual(MainView.groupCardDisplayMode(for: .compact), .menu)
+    func testCardDensityProjectsToExpectedGroupCardDisplayModes() {
+        XCTAssertEqual(MainView.homeGroupCardDisplayMode(for: .comfortable), .homeComfortable)
+        XCTAssertEqual(MainView.homeGroupCardDisplayMode(for: .compact), .homeCompact)
+        XCTAssertEqual(MainView.menuGroupCardDisplayMode(for: .comfortable), .menuComfortable)
+        XCTAssertEqual(MainView.menuGroupCardDisplayMode(for: .compact), .menuCompact)
     }
 
     func testRecommendationBadgeAccentUsesStablePerTagPalette() {
@@ -129,6 +143,31 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: loadingCard, displayMode: .importSearch))
     }
 
+    func testCompactHomeCardsHideMetadataRowAndHeaderDivider() {
+        let card = MainViewModel.GroupCardModel(
+            id: "compact-home",
+            title: "Compact Home",
+            byline: "by @owner",
+            groupPath: nil,
+            isPinned: false,
+            health: "READY",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: 10, starCount: 12, githubURL: nil, localPath: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+        )
+
+        XCTAssertFalse(SharedGroupCard.reservesHeaderStatsRow(card: card, displayMode: .homeCompact))
+        XCTAssertFalse(SharedGroupCard.showsHeaderDivider(card: card, displayMode: .homeCompact))
+        XCTAssertFalse(GroupCardDisplayMode.homeCompact.showsSummaryDivider)
+    }
+
     func testHomeCardsReserveMetadataRowAndDividerEvenWhenStatsAreMissing() {
         let localCard = MainViewModel.GroupCardModel(
             id: "local",
@@ -149,11 +188,11 @@ final class MenuBarIconTests: XCTestCase {
             saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
         )
 
-        XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: localCard, displayMode: .home))
-        XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: localCard, displayMode: .home))
+        XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: localCard, displayMode: .homeComfortable))
+        XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: localCard, displayMode: .homeComfortable))
     }
 
-    func testMenuCardsKeepHeaderDividerEvenWithoutMetaLine() {
+    func testMenuComfortableCardsKeepMetadataRowButHideHeaderDivider() {
         let menuCard = MainViewModel.GroupCardModel(
             id: "menu",
             title: "Menu Group",
@@ -173,8 +212,36 @@ final class MenuBarIconTests: XCTestCase {
             saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
         )
 
-        XCTAssertFalse(GroupCardDisplayMode.menu.showsMetaLine)
-        XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: menuCard, displayMode: .menu))
+        XCTAssertTrue(GroupCardDisplayMode.menuComfortable.showsMetaLine)
+        XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: menuCard, displayMode: .menuComfortable))
+        XCTAssertFalse(SharedGroupCard.showsHeaderDivider(card: menuCard, displayMode: .menuComfortable))
+        XCTAssertFalse(GroupCardDisplayMode.menuComfortable.showsSummaryDivider)
+    }
+
+    func testMenuCompactCardsHideMetadataRowAndHeaderDivider() {
+        let menuCard = MainViewModel.GroupCardModel(
+            id: "menu-compact",
+            title: "Menu Group",
+            byline: "by @owner",
+            groupPath: nil,
+            isPinned: false,
+            health: "READY",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: 1, starCount: 2, githubURL: nil, localPath: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+        )
+
+        XCTAssertFalse(GroupCardDisplayMode.menuCompact.showsMetaLine)
+        XCTAssertFalse(SharedGroupCard.reservesHeaderStatsRow(card: menuCard, displayMode: .menuCompact))
+        XCTAssertFalse(SharedGroupCard.showsHeaderDivider(card: menuCard, displayMode: .menuCompact))
+        XCTAssertFalse(GroupCardDisplayMode.menuCompact.showsSummaryDivider)
     }
 
     func testGroupCardHeaderStatsExcludeSkillCount() {
@@ -190,7 +257,7 @@ final class MenuBarIconTests: XCTestCase {
             SharedGroupCard.visibleHeaderStatKinds(stats: stats),
             [.downloads, .star, .github, .localFile]
         )
-        XCTAssertFalse(SharedGroupCard.showsInlineHeaderStats(displayMode: .home))
+        XCTAssertFalse(SharedGroupCard.showsInlineHeaderStats(displayMode: .homeComfortable))
     }
 
     func testHealthStatusUsesStableMenuBarIcons() {

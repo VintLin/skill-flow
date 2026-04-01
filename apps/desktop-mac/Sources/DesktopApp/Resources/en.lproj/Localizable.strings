@@ -135,9 +135,9 @@
 "settings.row.open_releases.description" = "Open the latest GitHub release page in your browser.";
 "settings.action.open_releases" = "Open";
 "settings.row.home_card_density.title" = "Home card density";
-"settings.row.home_card_density.description" = "Choose whether home uses the full card or the compact menu card layout.";
+"settings.row.home_card_density.description" = "Choose whether home uses the comfortable home card or the compact home card.";
 "settings.row.menu_card_density.title" = "Menu card density";
-"settings.row.menu_card_density.description" = "Choose whether the menu bar list uses compact cards or the full home card layout.";
+"settings.row.menu_card_density.description" = "Choose whether the menu bar list uses the comfortable menu card or the compact menu card.";
 "settings.agent_display.target_id" = "target: %@";
 "settings.agent_display.empty" = "No detected agents.";
 "settings.agent_display.footer" = "Drag to reorder. Changes affect Group Card and Group Detail.";
@@ -179,7 +179,7 @@
 "group_card.loading.downloading" = "Downloading...";
 "group_tag.action.add" = "Add tag";
 "group_tag.filter.all" = "ALL";
-"group_tag.input.placeholder" = "New tag";
+"group_tag.input.placeholder" = "Tag";
 "group_tag.toast.duplicate" = "This tag is already selected.";
 "group_tag.toast.limit" = "Tag limit reached.";
 "group_tag.toast.empty" = "Enter a tag first.";
