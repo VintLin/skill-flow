@@ -2452,6 +2452,7 @@ final class MainViewModel {
         let subtitle = (sourcePayload["kind"] as? String)?.nonEmpty ?? summary.sourceKind
         let locator = (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator
         let updatedAt = (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt
+        let updatedRelative = relativeUpdateLabel(updatedAt)
         let revision = Self.detailRevision(
             sourceId: summary.sourceId,
             title: title,
@@ -2465,6 +2466,7 @@ final class MainViewModel {
             locator: locator,
             groupPath: groupPath,
             updatedAt: updatedAt,
+            updatedRelative: updatedRelative,
             health: summary.health,
             warningCount: summary.warningCount,
             errorCount: summary.errorCount,
@@ -2497,7 +2499,7 @@ final class MainViewModel {
             locator: locator,
             groupPath: groupPath,
             updatedAt: updatedAt,
-            updatedRelative: relativeUpdateLabel(updatedAt),
+            updatedRelative: updatedRelative,
             health: summary.health,
             warningCount: summary.warningCount,
             errorCount: summary.errorCount,
@@ -4097,6 +4099,7 @@ final class MainViewModel {
         locator: String,
         groupPath: String?,
         updatedAt: String,
+        updatedRelative: String,
         health: String,
         warningCount: Int,
         errorCount: Int,
@@ -4169,6 +4172,7 @@ final class MainViewModel {
         components.append(locator)
         components.append(groupPath ?? "")
         components.append(updatedAt)
+        components.append(updatedRelative)
         components.append(health)
         components.append(String(warningCount))
         components.append(String(errorCount))

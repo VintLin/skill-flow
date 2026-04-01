@@ -300,6 +300,26 @@ final class DetailScreenContainerTests: XCTestCase {
         )
     }
 
+    func testDetailContainerRebuildsViewModelWhenUpdatedRelativeChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var updatedRelative = "Updated 1 day ago"
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot.fixture(
+                sourceId: "alpha",
+                updatedRelative: updatedRelative
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        updatedRelative = "Updated just now"
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+        XCTAssertEqual(secondViewModel.updatedRelative, "Updated just now")
+    }
+
     func testResolvesGroupDocumentOutsideCachedViewModelBoundary() throws {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
@@ -516,6 +536,7 @@ private extension DetailViewModel.Snapshot {
         sourceId: String = "alpha",
         revision: String? = nil,
         title: String = "AlphaHub",
+        updatedRelative: String = "Updated 1 day ago",
         fileTree: [MainViewModel.FileTreeItem] = [],
         groupDocuments: [MainViewModel.DocumentDescriptor] = [],
         targets: [MainViewModel.DetailTarget] = [
@@ -546,6 +567,7 @@ private extension DetailViewModel.Snapshot {
             locator: "clawhub/alpha",
             groupPath: "/groups/alpha",
             updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: updatedRelative,
             health: "healthy",
             warningCount: 0,
             errorCount: 0,
@@ -583,7 +605,7 @@ private extension DetailViewModel.Snapshot {
             locator: "clawhub/alpha",
             groupPath: "/groups/alpha",
             updatedAt: "2026-03-25T12:00:00Z",
-            updatedRelative: "Updated 1 day ago",
+            updatedRelative: updatedRelative,
             health: "healthy",
             warningCount: 0,
             errorCount: 0,
@@ -631,6 +653,7 @@ private extension MainViewModel.DetailViewData {
             locator: "clawhub/alpha",
             groupPath: "/groups/alpha",
             updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
             health: "healthy",
             warningCount: 0,
             errorCount: 0,
