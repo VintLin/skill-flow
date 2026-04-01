@@ -206,18 +206,18 @@ final class SettingsViewModelTests: XCTestCase {
     @MainActor
     func testCheckForUpdatesMarksUpdateAvailableWhenLatestVersionIsNewer() async {
         let defaults = UserDefaults(suiteName: suiteName)!
-        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.0")!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.1")!
         let viewModel = SettingsViewModel(
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
-            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.0", releaseURL: releaseURL))),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.1", releaseURL: releaseURL))),
             currentVersionProvider: { "1.1.0" }
         )
 
         await viewModel.checkForUpdates()
 
         XCTAssertEqual(viewModel.currentVersion, "1.1.0")
-        XCTAssertEqual(viewModel.latestVersion, "1.3.0")
+        XCTAssertEqual(viewModel.latestVersion, "1.3.1")
         XCTAssertEqual(viewModel.updateStatus, .updateAvailable)
         XCTAssertEqual(viewModel.releaseURL, releaseURL)
     }
@@ -264,7 +264,7 @@ final class SettingsViewModelTests: XCTestCase {
         let viewModel = SettingsViewModel(
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
-            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.0", releaseURL: releaseURL))),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.1", releaseURL: releaseURL))),
             currentVersionProvider: { "1.1.0" },
             releaseURLOpener: { openedURL = $0 }
         )
@@ -279,7 +279,7 @@ final class SettingsViewModelTests: XCTestCase {
     func testCheckForUpdatesIfNeededOnlyRunsOnce() async {
         let defaults = UserDefaults(suiteName: suiteName)!
         let checker = CountingUpdateChecker(
-            result: .success(.init(version: "1.3.0", releaseURL: URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.0")!))
+            result: .success(.init(version: "1.3.1", releaseURL: URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.1")!))
         )
         let viewModel = SettingsViewModel(
             state: DesktopAppState(),
