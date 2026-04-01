@@ -188,7 +188,7 @@ final class MainViewModel {
         let saveState: SaveState
     }
 
-    struct DetailSkill: Identifiable, Sendable {
+    struct DetailSkill: Identifiable, Equatable, Sendable {
         let id: String
         let title: String
         let summary: String
@@ -221,7 +221,7 @@ final class MainViewModel {
         let externalURL: String?
     }
 
-    struct DetailTarget: Identifiable, Sendable {
+    struct DetailTarget: Identifiable, Equatable, Sendable {
         let id: String
         let label: String
         let shortLabel: String

@@ -126,6 +126,127 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertNil(container.viewModel)
     }
 
+    func testReusesDetailViewModelInstanceWhileSnapshotIdentityIsUnchanged() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        let snapshot = DetailViewModel.Snapshot(
+            sourceId: "alpha",
+            title: "AlphaHub",
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: 1200,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 211898,
+                starCount: 1200,
+                githubURL: "https://github.com/acme/alpha-hub",
+                localPath: "/groups/alpha"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://example.com/alpha",
+            locator: "clawhub/alpha",
+            groupPath: "/groups/alpha",
+            updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 2,
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .partial,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: [],
+            targets: [
+                MainViewModel.DetailTarget(
+                    id: "claude-code",
+                    label: "Claude Code",
+                    shortLabel: "Claude",
+                    isEnabled: true
+                )
+            ],
+            skills: []
+        )
+
+        let container = DetailScreenContainer(state: state) { _ in
+            snapshot
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertTrue(firstViewModel === secondViewModel)
+    }
+
+    func testRebuildsDetailViewModelWhenSnapshotChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var isEnabled = true
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot(
+                sourceId: "alpha",
+                title: "AlphaHub",
+                subtitle: "clawhub",
+                author: "Acme",
+                originLabel: "ClawHub",
+                starCount: 1200,
+                groupStats: MainViewModel.GroupCardStats(
+                    skillCount: 2,
+                    downloadCount: 211898,
+                    starCount: 1200,
+                    githubURL: "https://github.com/acme/alpha-hub",
+                    localPath: "/groups/alpha"
+                ),
+                sourceDetailLines: [],
+                sourceRepositoryURL: "https://example.com/alpha",
+                locator: "clawhub/alpha",
+                groupPath: "/groups/alpha",
+                updatedAt: "2026-03-25T12:00:00Z",
+                updatedRelative: "Updated 1 day ago",
+                health: "healthy",
+                warningCount: 0,
+                errorCount: 0,
+                enabledSkillCount: 1,
+                totalSkillCount: 2,
+                enabledTargetCount: isEnabled ? 1 : 0,
+                saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+                skillSelection: .partial,
+                targetSelection: isEnabled ? .full : .empty,
+                enabledTargetLabels: isEnabled ? ["Claude Code"] : [],
+                sourceFacts: [],
+                deploymentFacts: [],
+                fileTree: [],
+                groupDocuments: [],
+                targets: [
+                    MainViewModel.DetailTarget(
+                        id: "claude-code",
+                        label: "Claude Code",
+                        shortLabel: "Claude",
+                        isEnabled: isEnabled
+                    )
+                ],
+                skills: []
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        XCTAssertTrue(firstViewModel.targets[0].isEnabled)
+
+        isEnabled = false
+
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+        XCTAssertFalse(secondViewModel.targets[0].isEnabled)
+        XCTAssertFalse(firstViewModel === secondViewModel)
+    }
+
     func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
         let state = DesktopAppState()
         let container = DetailScreenContainer(state: state) { _ in nil }

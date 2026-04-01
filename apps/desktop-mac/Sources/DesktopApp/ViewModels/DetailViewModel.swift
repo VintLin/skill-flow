@@ -10,7 +10,7 @@ final class DetailViewModel {
     typealias DetailTarget = MainViewModel.DetailTarget
     typealias DetailSkill = MainViewModel.DetailSkill
 
-    struct Snapshot {
+    struct Snapshot: Equatable {
         let sourceId: String
         let title: String
         let subtitle: String

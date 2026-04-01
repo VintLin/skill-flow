@@ -36,6 +36,42 @@ enum DetailRouteBootstrap {
         !hasInspectPayload && !isInspectRequestInFlight
     }
 
+    @MainActor
+    static func displayedDetailSkill(
+        state: DetailScreenState,
+        sourceId: String,
+        detail: DetailViewModel?
+    ) -> DetailViewModel.DetailSkill? {
+        guard let detail else {
+            return nil
+        }
+
+        let selectedId = state.pendingDetailSkillIdByGroup[sourceId]
+            ?? state.detailSkillIdByGroup[sourceId]
+            ?? preferredDetailSkillId(for: detail)
+
+        if state.detailSkillIdByGroup[sourceId] == nil, let selectedId {
+            state.detailSkillIdByGroup[sourceId] = selectedId
+        }
+
+        return detail.skills.first(where: { $0.id == selectedId }) ?? detail.skills.first
+    }
+
+    @MainActor
+    static func isSkillContentLoading(
+        state: DetailScreenState,
+        sourceId: String,
+        detail: DetailViewModel?
+    ) -> Bool {
+        if state.pendingDetailSkillIdByGroup[sourceId] != nil {
+            return true
+        }
+        guard state.detailShowsGroupOverviewByGroup[sourceId] != true else {
+            return false
+        }
+        return detail == nil
+    }
+
     private static func preferredDetailSkillId(for detail: DetailViewModel) -> String? {
         detail.skills.first(where: \.isEnabled)?.id ?? detail.skills.first?.id
     }
@@ -166,7 +202,11 @@ struct DetailScreen: View {
     ) -> some View {
         let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
         let showingGroupOverview = isShowingGroupOverview(groupId)
-        let isSkillLoading = detail == nil && !showingGroupOverview
+        let isSkillLoading = DetailRouteBootstrap.isSkillContentLoading(
+            state: screenState,
+            sourceId: groupId,
+            detail: detail
+        )
 
         return VStack(alignment: .leading, spacing: 0) {
             if showingGroupOverview {
@@ -917,13 +957,11 @@ struct DetailScreen: View {
     }
 
     private func selectedDetailSkill(for groupId: String, detail: DetailViewModel?) -> DetailViewModel.DetailSkill? {
-        guard let detail else { return nil }
-        let selectedId = screenState.detailSkillIdByGroup[groupId]
-            ?? preferredDetailSkillId(for: detail)
-        if screenState.detailSkillIdByGroup[groupId] == nil, let selectedId {
-            screenState.detailSkillIdByGroup[groupId] = selectedId
-        }
-        return detail.skills.first(where: { $0.id == selectedId }) ?? detail.skills.first
+        DetailRouteBootstrap.displayedDetailSkill(
+            state: screenState,
+            sourceId: groupId,
+            detail: detail
+        )
     }
 
     private func scheduleSkillSelection(groupId: String, skill: DetailViewModel.DetailSkill) {

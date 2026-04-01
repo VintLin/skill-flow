@@ -34,6 +34,9 @@ final class DetailScreenContainer {
     private let setSkillEnabledAction: (String, Bool, String) async -> Void
     private let toggleAllTargetsAction: (String) async -> Void
     private let setTargetEnabledAction: (String, Bool, Bool, String) async -> Void
+    private var cachedDetailSourceId: String?
+    private var cachedDetailSnapshot: DetailViewModel.Snapshot?
+    private var cachedDetailViewModel: DetailViewModel?
     let screenState = DetailScreenState()
 
     private static func defaultGroupTagController(state: DesktopAppState) -> GroupTagController {
@@ -144,7 +147,17 @@ final class DetailScreenContainer {
             return nil
         }
 
-        return DetailViewModel(snapshot: snapshot)
+        if cachedDetailSourceId == sourceId,
+           cachedDetailSnapshot == snapshot,
+           let cachedDetailViewModel {
+            return cachedDetailViewModel
+        }
+
+        let nextViewModel = DetailViewModel(snapshot: snapshot)
+        cachedDetailSourceId = sourceId
+        cachedDetailSnapshot = snapshot
+        cachedDetailViewModel = nextViewModel
+        return nextViewModel
     }
 
     func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
