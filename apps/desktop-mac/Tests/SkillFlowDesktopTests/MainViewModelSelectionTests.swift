@@ -315,6 +315,17 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.skills.first?.starCount, 1200)
     }
 
+    func testDetailSnapshotBuildsGroupDocumentsWithoutReadingMarkdownBodies() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let snapshot = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+
+        XCTAssertFalse(snapshot.groupDocuments.isEmpty)
+        XCTAssertTrue(snapshot.groupDocuments.allSatisfy { !$0.renderCacheKey.isEmpty })
+    }
+
     func testDetailFileTreeKeepsSkillRootFilesButPrunesNonSkillNestedDirectories() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

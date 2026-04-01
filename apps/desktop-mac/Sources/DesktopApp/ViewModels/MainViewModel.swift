@@ -515,7 +515,7 @@ final class MainViewModel {
     private struct PreparedDetailContent: Sendable {
         let groupPath: String?
         let fileTree: [FileTreeItem]
-        let groupDocuments: [DocumentTab]
+        let groupDocuments: [DocumentDescriptor]
         let skillsByLeafId: [String: PreparedDetailSkillContent]
     }
 
@@ -545,6 +545,7 @@ final class MainViewModel {
     private let queryFacade: any DesktopQuerying
     private let commandFacade: any DesktopCommanding
     private let mutationCoordinator: DesktopMutationCoordinator
+    private let detailDocumentStore = DetailDocumentStore()
 
     nonisolated private static var presentationLocale: Locale {
         let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
@@ -2439,8 +2440,7 @@ final class MainViewModel {
         }
 
         let fileTree = preparedDetailContent?.fileTree ?? []
-        let groupDocuments = preparedDetailContent?.groupDocuments ?? []
-        let groupDocumentDescriptors = Self.documentDescriptors(groupDocuments)
+        let groupDocumentDescriptors = preparedDetailContent?.groupDocuments ?? []
         let title = Self.preferredDetailGroupTitle(
             sourceId: summary.sourceId,
             displayName: (sourcePayload["displayName"] as? String)?.nonEmpty
@@ -2513,7 +2513,7 @@ final class MainViewModel {
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
-            groupDocuments: groupDocuments,
+            groupDocuments: Self.placeholderDocumentTabs(groupDocumentDescriptors),
             targets: targets,
             skills: skills
         )
@@ -2527,7 +2527,42 @@ final class MainViewModel {
     }
 
     func groupDocument(for sourceId: String, documentId: String) -> DocumentTab? {
-        detailViewData(for: sourceId)?.groupDocuments.first(where: { $0.id == documentId })
+        let prepared = preparedDetailContentBySourceId[sourceId]
+        if prepared == nil {
+            _ = detailSnapshot(for: sourceId)
+        }
+
+        guard let preparedContent = preparedDetailContentBySourceId[sourceId],
+              let descriptor = preparedContent.groupDocuments.first(where: { $0.id == documentId })
+        else {
+            return nil
+        }
+
+        if descriptor.id == "group:filetree" {
+            return DocumentTab(
+                id: descriptor.id,
+                title: descriptor.title,
+                path: descriptor.path,
+                metadata: descriptor.metadata,
+                content: Self.renderFileTree(preparedContent.fileTree),
+                renderCacheKey: descriptor.renderCacheKey,
+                externalURL: descriptor.externalURL
+            )
+        }
+
+        guard let loaded = try? detailDocumentStore.loadSynchronously(for: descriptor) else {
+            return nil
+        }
+
+        return DocumentTab(
+            id: loaded.id,
+            title: descriptor.title,
+            path: descriptor.path,
+            metadata: loaded.metadata,
+            content: loaded.content,
+            renderCacheKey: loaded.renderCacheKey,
+            externalURL: descriptor.externalURL
+        )
     }
 
     func hasInspectPayload(for sourceId: String) -> Bool {
@@ -2754,12 +2789,9 @@ final class MainViewModel {
         }
 
         let fileTree = buildFileTreeItems(groupPath: input.groupPath, skills: lightweightSkills)
-        let groupDocuments = groupDocumentTabs(
+        let groupDocuments = groupDocumentDescriptors(
             groupPath: input.groupPath,
-            fileTree: fileTree,
-            gitHubRepoContext: input.gitHubRepoContext,
-            rawDocumentCache: &rawDocumentCache,
-            parsedDocumentCache: &parsedDocumentCache
+            gitHubRepoContext: input.gitHubRepoContext
         )
 
         return PreparedDetailContent(
@@ -3496,6 +3528,11 @@ final class MainViewModel {
         )
     }
 
+    nonisolated static func parseDetailDocument(_ content: String) -> (metadata: [MetadataEntry], body: String) {
+        let parsed = parseDocument(content)
+        return (metadata: parsed.metadata, body: parsed.body)
+    }
+
     nonisolated private static func parseDocument(_ content: String) -> ParsedDocument {
         let lines = content.components(separatedBy: .newlines)
         guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
@@ -3552,20 +3589,16 @@ final class MainViewModel {
         }
     }
 
-    nonisolated private static func groupDocumentTabs(
+    nonisolated private static func groupDocumentDescriptors(
         groupPath: String?,
-        fileTree: [FileTreeItem],
-        gitHubRepoContext: GitHubRepoContext?,
-        rawDocumentCache: inout [String: String],
-        parsedDocumentCache: inout [String: ParsedDocument]
-    ) -> [DocumentTab] {
-        var tabs: [DocumentTab] = [
-            DocumentTab(
+        gitHubRepoContext: GitHubRepoContext?
+    ) -> [DocumentDescriptor] {
+        var descriptors: [DocumentDescriptor] = [
+            DocumentDescriptor(
                 id: "group:filetree",
                 title: localizedWarmup("detail.document.file_tree"),
                 path: groupPath ?? ".",
                 metadata: [],
-                content: renderFileTree(fileTree),
                 renderCacheKey: "group:filetree:\(groupPath ?? ".")",
                 externalURL: nil
             )
@@ -3574,7 +3607,7 @@ final class MainViewModel {
         guard let groupPath,
               let entries = try? FileManager.default.contentsOfDirectory(atPath: groupPath)
         else {
-            return tabs
+            return descriptors
         }
 
         let markdownFiles = entries
@@ -3583,18 +3616,19 @@ final class MainViewModel {
 
         for entry in markdownFiles {
             let fullPath = (groupPath as NSString).appendingPathComponent(entry)
-            tabs.append(
-                makeDocumentTab(
+            descriptors.append(
+                DocumentDescriptor(
                     id: "group:\(fullPath)",
                     title: entry,
                     path: fullPath,
-                    rawDocumentCache: &rawDocumentCache,
-                    parsedDocumentCache: &parsedDocumentCache
+                    metadata: [],
+                    renderCacheKey: documentRenderCacheKey(path: fullPath),
+                    externalURL: nil
                 )
             )
         }
 
-        return enrichDocumentTabs(tabs, groupPath: groupPath, gitHubRepoContext: gitHubRepoContext)
+        return enrichDocumentDescriptors(descriptors, groupPath: groupPath, gitHubRepoContext: gitHubRepoContext)
     }
 
     nonisolated private static func compareRootDocumentNames(_ lhs: String, _ rhs: String) -> Bool {
@@ -3965,6 +3999,27 @@ final class MainViewModel {
         }
     }
 
+    nonisolated private static func enrichDocumentDescriptors(
+        _ descriptors: [DocumentDescriptor],
+        groupPath: String?,
+        gitHubRepoContext: GitHubRepoContext?
+    ) -> [DocumentDescriptor] {
+        descriptors.map { document in
+            DocumentDescriptor(
+                id: document.id,
+                title: document.title,
+                path: document.path,
+                metadata: document.metadata,
+                renderCacheKey: document.renderCacheKey,
+                externalURL: gitHubDocumentURL(
+                    path: document.path,
+                    groupPath: groupPath,
+                    gitHubRepoContext: gitHubRepoContext
+                )
+            )
+        }
+    }
+
     nonisolated private static func gitHubDocumentURL(
         path: String,
         groupPath: String?,
@@ -4084,6 +4139,28 @@ final class MainViewModel {
                 externalURL: tab.externalURL
             )
         }
+    }
+
+    nonisolated static func placeholderDocumentTabs(_ descriptors: [DocumentDescriptor]) -> [DocumentTab] {
+        descriptors.map { descriptor in
+            DocumentTab(
+                id: descriptor.id,
+                title: descriptor.title,
+                path: descriptor.path,
+                metadata: descriptor.metadata,
+                content: "",
+                renderCacheKey: descriptor.renderCacheKey,
+                externalURL: descriptor.externalURL
+            )
+        }
+    }
+
+    nonisolated private static func documentRenderCacheKey(path: String) -> String {
+        let url = URL(fileURLWithPath: path)
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let modifiedAt = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
+        let fileSize = values?.fileSize ?? 0
+        return "\(path):\(modifiedAt):\(fileSize)"
     }
 
     nonisolated static func detailRevision(

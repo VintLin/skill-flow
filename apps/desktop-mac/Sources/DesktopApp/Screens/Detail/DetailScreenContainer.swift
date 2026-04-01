@@ -166,7 +166,10 @@ final class DetailScreenContainer {
     }
 
     func groupDocument(sourceId: String, documentId: String) -> MainViewModel.DocumentTab? {
-        groupDocumentProvider(sourceId, documentId)
+        guard !sourceId.isEmpty, !documentId.isEmpty else {
+            return nil
+        }
+        return groupDocumentProvider(sourceId, documentId)
     }
 
     func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
