@@ -34,6 +34,13 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(cards.contains(".desktopMotionChip("))
     }
 
+    func testProjectScopePillsUseSharedChipMotion() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(home.contains("homeProjectScopeBar"))
+        XCTAssertTrue(home.contains(".desktopMotionChip("))
+    }
+
     func testHomeScrollingSurfacesUseLazyStacksInsideHorizontalScrollViews() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
         let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")

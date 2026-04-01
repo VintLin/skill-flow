@@ -94,6 +94,76 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertEqual(model.toast?.message, "Switched to Global.")
     }
 
+    func testSelectingProjectScopeInitializesMissingProjectDraftWithAllSkillsAndNoTargets() async {
+        let query = ProjectScopeQueryStub()
+        query.bootstrapProjectDrafts = [:]
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .partial)
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .full)
+
+        await model.selectProjectScope(.project("repo-a"))
+
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
+    }
+
+    func testSelectingProjectScopeDoesNotReinitializeExistingProjectDraft() async {
+        let query = ProjectScopeQueryStub()
+        query.bootstrapProjectDrafts = [:]
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        await model.selectProjectScope(.project("repo-a"))
+        await model.setTargetEnabled("codex", enabled: true, sourceId: "alpha")
+        await model.selectProjectScope(.global)
+        await model.selectProjectScope(.project("repo-a"))
+
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .full)
+    }
+
+    func testSelectingProjectScopeShowsInitializationToastOnlyWhenProjectDraftsAreCreated() async {
+        let query = ProjectScopeQueryStub()
+        query.bootstrapProjectDrafts = [:]
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        await model.selectProjectScope(.project("repo-a"))
+
+        XCTAssertEqual(model.toast?.style, .success)
+        XCTAssertEqual(model.toast?.message, "Initialized project config for Repo A.")
+
+        model.dismissToast()
+        await model.selectProjectScope(.global)
+        await model.selectProjectScope(.project("repo-a"))
+
+        XCTAssertEqual(model.toast?.message, "Switched to Repo A.")
+    }
+
     func testBootstrapParsesRecentProjectPath() async {
         let query = ProjectScopeQueryStub()
         let command = ProjectScopeCommandStub()
@@ -161,6 +231,14 @@ final class MainViewModelProjectScopeTests: XCTestCase {
 
 @MainActor
 private final class ProjectScopeQueryStub: DesktopQuerying {
+    var bootstrapProjectDrafts: [String: [String: [String: Any]]] = [
+        "repo-a": [
+            "alpha": [
+                "selectedLeafIds": ["alpha-b"],
+                "enabledTargets": ["codex"]
+            ]
+        ]
+    ]
     var listRecentProjects: [[String: Any]] = [
         [
             "projectId": "repo-a",
@@ -200,14 +278,7 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
             "selectedProjectScope": [
                 "kind": "global"
             ],
-            "projectDrafts": [
-                "repo-a": [
-                    "alpha": [
-                        "selectedLeafIds": ["alpha-b"],
-                        "enabledTargets": ["codex"]
-                    ]
-                ]
-            ],
+            "projectDrafts": bootstrapProjectDrafts,
             "audit": [
                 "issues": []
             ]

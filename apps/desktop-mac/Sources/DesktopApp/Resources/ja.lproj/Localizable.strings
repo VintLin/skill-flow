@@ -13,6 +13,7 @@
 "page.settings.title" = "設定";
 "page.detail.title" = "グループ詳細";
 "project_scope.global" = "グローバル";
+"project_scope.project" = "プロジェクト";
 "placeholder.home.search_group_author" = "グループ / 作者を検索";
 "home.empty.title" = "一致するグループがありません";
 "home.empty.subtitle" = "もっと広い検索語を試してください。";
@@ -196,6 +197,7 @@
 "toast.import.exists" = "この Group はすでにローカルに存在します。";
 "toast.import.success" = "ソースをインポートしました。";
 "toast.project_scope.switched" = "%@ に切り替えました。";
+"toast.project_scope.initialized" = "%@ のプロジェクト設定を初期化しました。";
 "toast.pin.failed" = "ピン留め失敗: %@";
 "toast.details.load_failed" = "%@ の詳細を読み込めませんでした。";
 "toast.update.none" = "更新できるグループがありません。";

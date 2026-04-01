@@ -234,6 +234,26 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(MainView.headerSearchFieldWidth, 384)
     }
 
+    func testSelectedProjectPillUsesAccentBackgroundOpacityInLightTheme() {
+        assertColorsEqual(
+            MainView.projectScopePillBackground(isSelected: true, accent: .green, theme: .light),
+            AppTheme.brand(for: .green, in: .light).opacity(0.18)
+        )
+    }
+
+    func testSelectedProjectPillUsesAccentBackgroundOpacityInDarkTheme() {
+        assertColorsEqual(
+            MainView.projectScopePillBackground(isSelected: true, accent: .green, theme: .dark),
+            AppTheme.brand(for: .green, in: .dark).opacity(0.28)
+        )
+    }
+
+    func testSelectedProjectPillTransparencyLabelMatchesThemeOpacity() {
+        XCTAssertEqual(MainView.projectScopePillOpacityLabel(isSelected: true, theme: .light), "alpha 18%")
+        XCTAssertEqual(MainView.projectScopePillOpacityLabel(isSelected: true, theme: .dark), "alpha 28%")
+        XCTAssertNil(MainView.projectScopePillOpacityLabel(isSelected: false, theme: .light))
+    }
+
     func testMenuBarIconLoadsTemplateSvg() {
         let image = MenuBarIcon.image()
 

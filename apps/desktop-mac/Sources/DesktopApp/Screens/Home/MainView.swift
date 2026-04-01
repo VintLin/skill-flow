@@ -794,7 +794,7 @@ struct MainView: View {
         let projects = homeContainer.recentProjectScopes()
 
         return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            LazyHStack(spacing: 8) {
                 homeScopePill(
                     title: t("project_scope.global"),
                     projectPath: nil,
@@ -857,18 +857,36 @@ struct MainView: View {
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        ZStack(alignment: .trailing) {
+        let scopeKindTitle = projectPath == nil ? t("project_scope.global") : t("project_scope.project")
+
+        return ZStack(alignment: .trailing) {
             Button(action: action) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    .lineLimit(1)
-                    .padding(.leading, 10)
-                    .padding(.trailing, projectPath == nil ? 10 : 30)
-                    .frame(height: 26)
-                    .contentShape(Rectangle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .lineLimit(1)
+
+                    if isSelected {
+                        Text("\(scopeKindTitle) · \(Self.projectScopePillOpacityLabel(isSelected: true, theme: theme) ?? "")")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.leading, 10)
+                .padding(.trailing, projectPath == nil ? 10 : 30)
+                .frame(minHeight: isSelected ? 34 : 26, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .desktopMotionChip(
+                kind: .pill,
+                theme: theme,
+                accent: accent,
+                isEnabled: true,
+                isSelected: isSelected
+            )
 
             if let projectPath {
                 Button {
@@ -883,12 +901,12 @@ struct MainView: View {
             }
         }
         .fixedSize(horizontal: false, vertical: true)
-        .background(AppTheme.scopePillBackground(isSelected: isSelected, for: theme))
+        .background(Self.projectScopePillBackground(isSelected: isSelected, accent: accent, theme: theme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(
-                    isSelected ? AppTheme.scopePillBorder(for: theme) : Color.clear,
+                    isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
                     lineWidth: 0.5
                 )
         }
@@ -924,6 +942,27 @@ struct MainView: View {
         }
         .buttonStyle(.plain)
         .opacity(isSelected ? 1.0 : 0.58)
+    }
+
+    static func projectScopePillBackground(
+        isSelected: Bool,
+        accent: DesktopAccentColor,
+        theme: DesktopThemeMode
+    ) -> Color {
+        guard isSelected else {
+            return AppTheme.scopePillBackground(isSelected: false, for: theme)
+        }
+        return AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.28 : 0.18)
+    }
+
+    static func projectScopePillOpacityLabel(
+        isSelected: Bool,
+        theme: DesktopThemeMode
+    ) -> String? {
+        guard isSelected else {
+            return nil
+        }
+        return theme == .dark ? "alpha 28%" : "alpha 18%"
     }
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {

@@ -7,6 +7,7 @@ const {
   getExplicitTargetNames,
   getTargetDetectionCandidates,
   getTargetScanRoots,
+  resolveDocumentedProjectSkillPath,
   TARGET_COMPAT_READ_CANDIDATES,
   TARGET_DEFINITIONS,
   TARGET_DOCUMENTED_GLOBAL_PATHS,
@@ -98,6 +99,16 @@ describe("target definitions", () => {
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["github-copilot"]).toBe("~/.copilot/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["roo-code"]).toBe("~/.roo/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.kiro).toBe("~/.kiro/skills/");
+  });
+
+  test("resolves documented project skill paths from project roots", () => {
+    expect(resolveDocumentedProjectSkillPath("codex", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.agents/skills",
+    );
+    expect(resolveDocumentedProjectSkillPath("claude-code", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.claude/skills",
+    );
+    expect(resolveDocumentedProjectSkillPath("codex", "   ")).toBeNull();
   });
 
   test("keeps icon metadata and documented slug aliases explicit", () => {

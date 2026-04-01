@@ -1278,13 +1278,20 @@ final class MainViewModel {
             return
         }
 
+        let didInitializeProjectDrafts = ensureProjectDraftsInitializedIfNeeded(for: normalizedScope)
+
         cachedSelectedProjectScope = normalizedScope
         routeState?.settings.selectedProjectScope = normalizedScope
         persistProjectScopeSettingsIfNeeded()
         projectScopeChangeToken &+= 1
         showToast(
             style: .success,
-            text: localizedText("toast.project_scope.switched", projectScopeTitle(for: normalizedScope))
+            text: localizedText(
+                didInitializeProjectDrafts
+                    ? "toast.project_scope.initialized"
+                    : "toast.project_scope.switched",
+                projectScopeTitle(for: normalizedScope)
+            )
         )
 
         if let sourceId = currentDetailSourceId ?? selectedSourceId {
@@ -3138,6 +3145,29 @@ final class MainViewModel {
             scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
             scheduleDetailEnrichmentFetch(sourceId: sourceId)
         }
+    }
+
+    private func ensureProjectDraftsInitializedIfNeeded(for scope: ProjectScopeSelection) -> Bool {
+        guard case .project(let projectId) = scope else {
+            return false
+        }
+
+        var didInitialize = false
+        for summary in allSummaries {
+            let key = ScopedSourceKey(scope: .project(projectId), sourceId: summary.sourceId)
+            guard workingDrafts[key] == nil else {
+                continue
+            }
+
+            workingDrafts[key] = DraftState(
+                selectedLeafIds: summary.leafs.map(\.id),
+                enabledTargets: []
+            )
+            saveStateBySourceId[key] = SaveState(phase: .idle, detail: nil)
+            didInitialize = true
+        }
+
+        return didInitialize
     }
 
     private func replaceSummary(_ summary: WorkflowSummary) {
