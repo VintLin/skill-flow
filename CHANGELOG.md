@@ -2,6 +2,12 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.0 - 2026-04-01
+
+### Changed
+
+- Bumped the CLI and all internal workspace packages from `1.2.0` to `1.3.0`.
+
 ## v1.2.0 - 2026-03-31
 
 ### Changed
