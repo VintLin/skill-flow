@@ -4,6 +4,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { StateStore } from "../store.js";
 
+const emptyPreferences = {
+  schemaVersion: 1,
+  selectedProjectScope: { kind: "global" },
+  recentProjects: [],
+  projectDrafts: {},
+};
+
 describe("StateStore", () => {
   let stateRoot = "";
 
@@ -201,16 +208,16 @@ describe("StateStore", () => {
     });
 
     expect(await store.togglePinnedSource("alpha")).toEqual({
-      schemaVersion: 1,
       pinnedSourceIds: ["alpha"],
+      ...emptyPreferences,
     });
     expect(await store.togglePinnedSource("beta")).toEqual({
-      schemaVersion: 1,
       pinnedSourceIds: ["alpha", "beta"],
+      ...emptyPreferences,
     });
     expect(await store.pruneMissingSourceIds()).toEqual({
-      schemaVersion: 1,
       pinnedSourceIds: ["alpha"],
+      ...emptyPreferences,
     });
   });
 

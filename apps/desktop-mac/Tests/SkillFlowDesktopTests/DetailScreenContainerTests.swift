@@ -210,7 +210,117 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertEqual(secondViewModel.groupDocuments.first?.metadata.first?.value, "AlphaHub v2")
     }
 
-    func testResolvesGroupDocumentOutsideCachedViewModelBoundary() throws {
+    func testDetailContainerRebuildsViewModelWhenNestedFileTreeChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var fileTree = [
+            MainViewModel.FileTreeItem(
+                id: "root",
+                title: "alpha",
+                path: "/groups/alpha",
+                isDirectory: true,
+                isSkillRoot: false,
+                isSkillDocument: false,
+                skillId: nil,
+                children: [
+                    MainViewModel.FileTreeItem(
+                        id: "root/skill",
+                        title: "browse",
+                        path: "/groups/alpha/skills/browse",
+                        isDirectory: true,
+                        isSkillRoot: true,
+                        isSkillDocument: false,
+                        skillId: "browse",
+                        children: [
+                            MainViewModel.FileTreeItem(
+                                id: "root/skill/doc",
+                                title: "SKILL.md",
+                                path: "/groups/alpha/skills/browse/SKILL.md",
+                                isDirectory: false,
+                                isSkillRoot: false,
+                                isSkillDocument: true,
+                                skillId: "browse",
+                                children: []
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot.fixture(
+                sourceId: "alpha",
+                fileTree: fileTree
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        fileTree = [
+            MainViewModel.FileTreeItem(
+                id: "root",
+                title: "alpha",
+                path: "/groups/alpha",
+                isDirectory: true,
+                isSkillRoot: false,
+                isSkillDocument: false,
+                skillId: nil,
+                children: [
+                    MainViewModel.FileTreeItem(
+                        id: "root/skill",
+                        title: "browse",
+                        path: "/groups/alpha/skills/browse",
+                        isDirectory: true,
+                        isSkillRoot: true,
+                        isSkillDocument: false,
+                        skillId: "browse",
+                        children: [
+                            MainViewModel.FileTreeItem(
+                                id: "root/skill/doc-v2",
+                                title: "GUIDE.md",
+                                path: "/groups/alpha/skills/browse/GUIDE.md",
+                                isDirectory: false,
+                                isSkillRoot: false,
+                                isSkillDocument: true,
+                                skillId: "browse",
+                                children: []
+                            )
+                        ]
+                    )
+                ]
+            )
+        ]
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+        XCTAssertEqual(
+            secondViewModel.fileTree.first?.children.first?.children.first?.title,
+            "GUIDE.md"
+        )
+    }
+
+    func testDetailContainerRebuildsViewModelWhenUpdatedRelativeChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var updatedRelative = "Updated 1 day ago"
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot.fixture(
+                sourceId: "alpha",
+                updatedRelative: updatedRelative
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        updatedRelative = "Updated just now"
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+        XCTAssertEqual(secondViewModel.updatedRelative, "Updated just now")
+    }
+
+    func testResolvesGroupDocumentOutsideCachedViewModelBoundary() async throws {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
@@ -248,8 +358,19 @@ final class DetailScreenContainerTests: XCTestCase {
         )
 
         let firstViewModel = try XCTUnwrap(container.viewModel)
+        await container.loadDocument(
+            sourceId: "alpha",
+            documentId: descriptor.id,
+            renderCacheKey: descriptor.renderCacheKey
+        )
         XCTAssertEqual(
-            try XCTUnwrap(container.groupDocument(sourceId: "alpha", documentId: descriptor.id)).content,
+            try XCTUnwrap(
+                container.groupDocument(
+                    sourceId: "alpha",
+                    documentId: descriptor.id,
+                    renderCacheKey: descriptor.renderCacheKey
+                )
+            ).content,
             "# Alpha v1"
         )
 
@@ -266,8 +387,19 @@ final class DetailScreenContainerTests: XCTestCase {
         let secondViewModel = try XCTUnwrap(container.viewModel)
 
         XCTAssertTrue(firstViewModel === secondViewModel)
+        await container.loadDocument(
+            sourceId: "alpha",
+            documentId: descriptor.id,
+            renderCacheKey: "group:/tmp/README.md:rev-2"
+        )
         XCTAssertEqual(
-            try XCTUnwrap(container.groupDocument(sourceId: "alpha", documentId: descriptor.id)).content,
+            try XCTUnwrap(
+                container.groupDocument(
+                    sourceId: "alpha",
+                    documentId: descriptor.id,
+                    renderCacheKey: "group:/tmp/README.md:rev-2"
+                )
+            ).content,
             "# Alpha v2"
         )
     }
@@ -316,6 +448,119 @@ final class DetailScreenContainerTests: XCTestCase {
         let secondViewModel = try XCTUnwrap(container.viewModel)
 
         XCTAssertFalse(firstViewModel === secondViewModel)
+    }
+
+    func testDetailContainerRebuildsViewModelWhenSkillDocumentRenderCacheKeyChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var renderCacheKey = "skill:/tmp/SKILL.md:rev-1"
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot(
+                detail: MainViewModel.DetailViewData.fixture(
+                    skills: [
+                        MainViewModel.DetailSkill(
+                            id: "alpha-a",
+                            title: "browse",
+                            summary: "Browse things.",
+                            version: nil,
+                            author: "Acme",
+                            originLabel: "ClawHub",
+                            starCount: 1200,
+                            folderPath: "/tmp/alpha-a",
+                            relativeFolderPath: "alpha-a",
+                            documents: [
+                                MainViewModel.DocumentTab(
+                                    id: "skill:/tmp/SKILL.md",
+                                    title: "SKILL.md",
+                                    path: "/tmp/SKILL.md",
+                                    metadata: [],
+                                    content: "",
+                                    renderCacheKey: renderCacheKey,
+                                    externalURL: nil,
+                                    isLoaded: false
+                                )
+                            ],
+                            detailLines: [],
+                            documentContent: "",
+                            isEnabled: true,
+                            warningCount: 0
+                        )
+                    ]
+                )
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        renderCacheKey = "skill:/tmp/SKILL.md:rev-2"
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+    }
+
+    func testDetailContainerPrunesResolvedDocumentCacheWhenRevisionChanges() async throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var revision = "alpha:rev-1"
+        let oldDocument = MainViewModel.DocumentTab(
+            id: "doc",
+            title: "README.md",
+            path: "/tmp/README.md",
+            metadata: [],
+            content: "# old",
+            renderCacheKey: "doc:rev-1",
+            externalURL: nil
+        )
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in
+                DetailViewModel.Snapshot.fixture(sourceId: "alpha", revision: revision)
+            },
+            groupDocument: { _, _ in oldDocument }
+        )
+
+        _ = try XCTUnwrap(container.viewModel)
+        await container.loadDocument(sourceId: "alpha", documentId: "doc", renderCacheKey: "doc:rev-1")
+        XCTAssertEqual(
+            container.groupDocument(sourceId: "alpha", documentId: "doc", renderCacheKey: "doc:rev-1")?.content,
+            "# old"
+        )
+
+        revision = "alpha:rev-2"
+        _ = try XCTUnwrap(container.viewModel)
+
+        XCTAssertNil(container.groupDocument(sourceId: "alpha", documentId: "doc", renderCacheKey: "doc:rev-1"))
+    }
+
+    func testLoadDocumentBumpsObservableRevisionWhenSkillDocumentResolves() async {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        let loaded = MainViewModel.DocumentTab(
+            id: "skill:/tmp/SKILL.md",
+            title: "SKILL.md",
+            path: "/tmp/SKILL.md",
+            metadata: [],
+            content: "# Browse\nLoaded content.",
+            renderCacheKey: "skill:/tmp/SKILL.md:rev-1",
+            externalURL: nil
+        )
+
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in DetailViewModel.Snapshot.fixture(sourceId: "alpha") },
+            groupDocument: { _, _ in loaded }
+        )
+
+        let initialRevision = container.screenState.detailDocumentLoadRevision
+        await container.loadDocument(
+            sourceId: "alpha",
+            documentId: loaded.id,
+            renderCacheKey: loaded.renderCacheKey
+        )
+
+        XCTAssertEqual(container.screenState.detailDocumentLoadRevision, initialRevision + 1)
     }
 
     func testScreenStatePersistsDetailSubselectionAcrossRouteRoundTrip() {
@@ -426,6 +671,8 @@ private extension DetailViewModel.Snapshot {
         sourceId: String = "alpha",
         revision: String? = nil,
         title: String = "AlphaHub",
+        updatedRelative: String = "Updated 1 day ago",
+        fileTree: [MainViewModel.FileTreeItem] = [],
         groupDocuments: [MainViewModel.DocumentDescriptor] = [],
         targets: [MainViewModel.DetailTarget] = [
             MainViewModel.DetailTarget(
@@ -455,6 +702,7 @@ private extension DetailViewModel.Snapshot {
             locator: "clawhub/alpha",
             groupPath: "/groups/alpha",
             updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: updatedRelative,
             health: "healthy",
             warningCount: 0,
             errorCount: 0,
@@ -467,7 +715,7 @@ private extension DetailViewModel.Snapshot {
             enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
             sourceFacts: [],
             deploymentFacts: [],
-            fileTree: [],
+            fileTree: fileTree,
             groupDocuments: groupDocuments,
             targets: targets,
             skills: []
@@ -492,7 +740,7 @@ private extension DetailViewModel.Snapshot {
             locator: "clawhub/alpha",
             groupPath: "/groups/alpha",
             updatedAt: "2026-03-25T12:00:00Z",
-            updatedRelative: "Updated 1 day ago",
+            updatedRelative: updatedRelative,
             health: "healthy",
             warningCount: 0,
             errorCount: 0,
@@ -505,7 +753,7 @@ private extension DetailViewModel.Snapshot {
             enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
             sourceFacts: [],
             deploymentFacts: [],
-            fileTree: [],
+            fileTree: fileTree,
             groupDocuments: groupDocuments,
             targets: targets,
             skills: []
@@ -540,6 +788,7 @@ private extension MainViewModel.DetailViewData {
             locator: "clawhub/alpha",
             groupPath: "/groups/alpha",
             updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
             health: "healthy",
             warningCount: 0,
             errorCount: 0,

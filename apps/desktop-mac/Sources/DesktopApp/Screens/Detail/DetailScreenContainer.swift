@@ -16,6 +16,7 @@ final class DetailScreenState {
     var detailSkillSelectionTokenByGroup: [String: UInt64] = [:]
     var detailDocumentSelectionTokenByGroup: [String: UInt64] = [:]
     var detailDocumentSelectionTokenBySkill: [String: UInt64] = [:]
+    var detailDocumentLoadRevision: UInt64 = 0
 }
 
 @MainActor
@@ -23,7 +24,7 @@ final class DetailScreenContainer {
     private let state: DesktopAppState
     private let groupTagController: GroupTagController
     private let detailSnapshot: (String) -> DetailViewModel.Snapshot?
-    private let groupDocumentProvider: (String, String) -> MainViewModel.DocumentTab?
+    private let groupDocumentProvider: (String, String) async -> MainViewModel.DocumentTab?
     private let fallbackRowProvider: (String) -> MainViewModel.SourceRow?
     private let toastPresenter: (MainViewModel.ToastStyle, String) -> Void
     private let hasInspectPayloadProvider: (String) -> Bool
@@ -38,6 +39,8 @@ final class DetailScreenContainer {
     private var cachedDetailSourceId: String?
     private var cachedDetailRevision: String?
     private var cachedDetailViewModel: DetailViewModel?
+    private var cachedDocumentsByRenderCacheKey: [String: MainViewModel.DocumentTab] = [:]
+    private var documentTasksByRenderCacheKey: [String: Task<MainViewModel.DocumentTab?, Never>] = [:]
     let screenState = DetailScreenState()
 
     private static func defaultGroupTagController(state: DesktopAppState) -> GroupTagController {
@@ -55,7 +58,7 @@ final class DetailScreenContainer {
         state: DesktopAppState,
         groupTagController: GroupTagController,
         detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
-        groupDocument: @escaping (String, String) -> MainViewModel.DocumentTab? = { _, _ in nil },
+        groupDocument: @escaping (String, String) async -> MainViewModel.DocumentTab? = { _, _ in nil },
         fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
         toastPresenter: @escaping (MainViewModel.ToastStyle, String) -> Void = { _, _ in },
         hasInspectPayload: @escaping (String) -> Bool = { _ in false },
@@ -88,7 +91,7 @@ final class DetailScreenContainer {
     convenience init(
         state: DesktopAppState,
         detailSnapshot: @escaping (String) -> DetailViewModel.Snapshot?,
-        groupDocument: @escaping (String, String) -> MainViewModel.DocumentTab? = { _, _ in nil },
+        groupDocument: @escaping (String, String) async -> MainViewModel.DocumentTab? = { _, _ in nil },
         fallbackRow: @escaping (String) -> MainViewModel.SourceRow? = { _ in nil },
         toastPresenter: @escaping (MainViewModel.ToastStyle, String) -> Void = { _, _ in },
         hasInspectPayload: @escaping (String) -> Bool = { _ in false },
@@ -158,6 +161,12 @@ final class DetailScreenContainer {
             return cachedDetailViewModel
         }
 
+        if cachedDetailSourceId != sourceId || cachedDetailRevision != snapshot.revision {
+            documentTasksByRenderCacheKey.values.forEach { $0.cancel() }
+            documentTasksByRenderCacheKey.removeAll()
+            cachedDocumentsByRenderCacheKey.removeAll()
+        }
+
         let nextViewModel = DetailViewModel(snapshot: snapshot)
         cachedDetailSourceId = sourceId
         cachedDetailRevision = snapshot.revision
@@ -165,8 +174,43 @@ final class DetailScreenContainer {
         return nextViewModel
     }
 
-    func groupDocument(sourceId: String, documentId: String) -> MainViewModel.DocumentTab? {
-        groupDocumentProvider(sourceId, documentId)
+    func groupDocument(
+        sourceId: String,
+        documentId: String,
+        renderCacheKey: String
+    ) -> MainViewModel.DocumentTab? {
+        guard !sourceId.isEmpty, !documentId.isEmpty, !renderCacheKey.isEmpty else {
+            return nil
+        }
+        return cachedDocumentsByRenderCacheKey[renderCacheKey]
+    }
+
+    func loadDocument(
+        sourceId: String,
+        documentId: String,
+        renderCacheKey: String
+    ) async {
+        guard !sourceId.isEmpty, !documentId.isEmpty, !renderCacheKey.isEmpty else {
+            return
+        }
+        if cachedDocumentsByRenderCacheKey[renderCacheKey] != nil {
+            return
+        }
+        if let task = documentTasksByRenderCacheKey[renderCacheKey] {
+            _ = await task.value
+            return
+        }
+
+        let task = Task { [groupDocumentProvider] in
+            await groupDocumentProvider(sourceId, documentId)
+        }
+        documentTasksByRenderCacheKey[renderCacheKey] = task
+        let document = await task.value
+        if let document {
+            cachedDocumentsByRenderCacheKey[renderCacheKey] = document
+            screenState.detailDocumentLoadRevision &+= 1
+        }
+        documentTasksByRenderCacheKey[renderCacheKey] = nil
     }
 
     func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {

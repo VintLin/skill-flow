@@ -308,11 +308,57 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(detail?.fileTree.first?.children.contains(where: { $0.title == "alpha-a" && $0.isSkillRoot && $0.skillId == "alpha-a" }) == true)
         XCTAssertTrue(detail?.fileTree.first?.children.first(where: { $0.skillId == "alpha-a" })?.children.contains(where: { $0.title == "SKILL.md" && $0.skillId == "alpha-a" }) == true)
         XCTAssertTrue(detail?.skills.first?.detailLines.contains(where: { $0.contains("SKILL.md") }) == true)
-        XCTAssertEqual(detail?.skills.first?.documents.first?.metadata.map(\.key), ["description", "name"])
-        XCTAssertFalse(detail?.skills.first?.documents.first?.content.contains("---") == true)
-        XCTAssertTrue(detail?.skills.first?.documentContent.contains("# browse") == true)
-        XCTAssertTrue(detail?.skills.first?.documentContent.contains("Final verification line.") == true)
+        XCTAssertTrue(detail?.skills.first?.documents.first?.metadata.isEmpty == true)
+        XCTAssertEqual(detail?.skills.first?.documents.first?.content, "")
+        XCTAssertTrue(detail?.skills.first?.documents.first?.renderCacheKey.isEmpty == false)
         XCTAssertEqual(detail?.skills.first?.starCount, 1200)
+    }
+
+    func testDetailSnapshotBuildsGroupDocumentsWithoutReadingMarkdownBodies() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let snapshot = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+
+        XCTAssertFalse(snapshot.groupDocuments.isEmpty)
+        XCTAssertTrue(snapshot.groupDocuments.allSatisfy { !$0.renderCacheKey.isEmpty })
+    }
+
+    func testDetailSnapshotBuildsSkillDocumentsWithoutReadingMarkdownBodies() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let snapshot = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let skillDocuments = try XCTUnwrap(snapshot.skills.first?.documents)
+
+        XCTAssertFalse(skillDocuments.isEmpty)
+        XCTAssertTrue(skillDocuments.allSatisfy { $0.metadata.isEmpty })
+        XCTAssertTrue(skillDocuments.allSatisfy { $0.content.isEmpty })
+        XCTAssertTrue(skillDocuments.allSatisfy { !$0.renderCacheKey.isEmpty })
+    }
+
+    func testDetailSnapshotChangesRenderCacheKeyWhenMarkdownContentChangesWithoutMetadataDelta() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let fixedDate = Date(timeIntervalSince1970: 1_710_000_000)
+        try fixture.writeGroupDocument(sourceId: "alpha", name: "README.md", content: "alpha")
+        try fixture.setModificationDate(fixedDate, forGroupDocumentIn: "alpha", name: "README.md")
+
+        let initialModel = try await fixture.makeModel()
+        let initialSnapshot = try XCTUnwrap(initialModel.detailSnapshot(for: "alpha"))
+        let initialKey = try XCTUnwrap(initialSnapshot.groupDocuments.first(where: { $0.title == "README.md" })?.renderCacheKey)
+
+        try fixture.writeGroupDocument(sourceId: "alpha", name: "README.md", content: "bravo")
+        try fixture.setModificationDate(fixedDate, forGroupDocumentIn: "alpha", name: "README.md")
+
+        let updatedModel = try await fixture.makeModel()
+        let updatedSnapshot = try XCTUnwrap(updatedModel.detailSnapshot(for: "alpha"))
+        let updatedKey = try XCTUnwrap(updatedSnapshot.groupDocuments.first(where: { $0.title == "README.md" })?.renderCacheKey)
+
+        XCTAssertNotEqual(initialKey, updatedKey)
     }
 
     func testDetailFileTreeKeepsSkillRootFilesButPrunesNonSkillNestedDirectories() async throws {
@@ -423,16 +469,44 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.groupStats.skillCount, 2)
     }
 
-    func testDetailSnapshotFallsBackWhenSkillDocumentIsMissing() async throws {
+    func testDetailDocumentResolutionFallsBackWhenSkillDocumentIsMissing() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
         try fixture.removeSkillDocument(sourceId: "alpha", leafId: "alpha-a")
 
         let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let documentId = try XCTUnwrap(detail.skills.first?.documents.first?.id)
+        let document = await model.groupDocument(for: "alpha", documentId: documentId)
 
-        let detail = model.detailSnapshot(for: "alpha")
+        XCTAssertEqual(document?.content, "SKILL.md unavailable.")
+    }
 
-        XCTAssertEqual(detail?.skills.first?.documentContent, "SKILL.md unavailable.")
+    func testDetailDocumentResolutionLoadsSkillMarkdownBody() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let documentId = try XCTUnwrap(detail.skills.first?.documents.first?.id)
+        let document = await model.groupDocument(for: "alpha", documentId: documentId)
+
+        XCTAssertTrue(document?.content.contains("## Usage") == true)
+        XCTAssertFalse(document?.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    func testDetailDocumentResolutionReturnsTerminalErrorContentForNonMissingReadFailure() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        try fixture.replaceSkillDocumentWithDirectory(sourceId: "alpha", leafId: "alpha-a")
+
+        let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let documentId = try XCTUnwrap(detail.skills.first?.documents.first?.id)
+        let document = await model.groupDocument(for: "alpha", documentId: documentId)
+
+        XCTAssertEqual(document?.content, "Failed to load document.")
+        XCTAssertEqual(document?.isLoaded, true)
     }
 
     func testDetailSnapshotLocalizesDerivedDetailCopyForJapanese() async throws {
@@ -471,7 +545,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertFalse(localizedRelative?.contains("Updated") == true)
     }
 
-    func testDetailSkillTitlePrefersMetadataName() async throws {
+    func testDetailSkillTitleDoesNotDependOnSkillMarkdownMetadata() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
         try fixture.writeSkillDocument(
@@ -491,7 +565,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let detail = model.detailSnapshot(for: "alpha")
 
-        XCTAssertEqual(detail?.skills.first?.title, "Browser Metadata Name")
+        XCTAssertEqual(detail?.skills.first?.title, "alpha-a")
     }
 
     func testFileTreeUsesProjectedNameWhenSkillWouldBeDeduped() async throws {
@@ -569,6 +643,87 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         try await pingTask.value
         try await fixture.waitForDetailHydration(model, sourceId: "alpha", timeoutNanoseconds: 3_000_000_000)
+    }
+
+    func testDetailWarmupIgnoresStalePreparedContentAfterNewerInspectPayloadArrives() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.locator = "https://github.com/acme/alpha-old"
+        try fixture.reset(state: state)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.detailWarmupDelay = .milliseconds(200)
+        await model.bootstrap()
+        await model.selectSource("alpha")
+
+        var nextState = state
+        nextState.sources["alpha"]?.locator = "https://github.com/acme/alpha-new"
+        try fixture.reset(state: nextState)
+        await model.selectSource("alpha")
+
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            if let document = model.detailSnapshot(for: "alpha")?
+                .groupDocuments
+                .first(where: { $0.title == "README.md" }),
+               document.externalURL?.contains("/acme/alpha-new/") == true {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        let document = model.detailSnapshot(for: "alpha")?
+            .groupDocuments
+            .first(where: { $0.title == "README.md" })
+        XCTAssertTrue(document?.externalURL?.contains("/acme/alpha-new/") == true)
+    }
+
+    func testDetailSnapshotEventuallyHydratesSkillDocumentsAfterSelectSource() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.detailWarmupDelay = .milliseconds(200)
+        await model.bootstrap()
+        await model.selectSource("alpha")
+
+        let initialDetail = model.detailSnapshot(for: "alpha")
+        XCTAssertTrue(initialDetail?.skills.contains(where: { $0.documents.isEmpty }) == true)
+
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            if let detail = model.detailSnapshot(for: "alpha"),
+               detail.skills.allSatisfy({ !$0.documents.isEmpty }) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTAssertTrue(model.detailSnapshot(for: "alpha")?.skills.allSatisfy({ !$0.documents.isEmpty }) == true)
+    }
+
+    func testHydratedSkillDocumentTabsRemainUnloadedUntilOpened() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let document = try XCTUnwrap(detail.skills.first?.documents.first)
+
+        XCTAssertFalse(document.isLoaded)
+        XCTAssertTrue(document.content.isEmpty)
+    }
+
+    func testHydratedSkillDocumentContentFeedsSubtitleMetrics() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        let skill = try XCTUnwrap(detail.skills.first)
+
+        XCTAssertFalse(skill.documentContent.isEmpty)
+        XCTAssertNotNil(DetailInfoLayout.wordCount(from: skill.documentContent))
     }
 
     private func heavySkillDocument(name: String) -> String {
@@ -942,6 +1097,16 @@ private struct TestFixture {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    func replaceSkillDocumentWithDirectory(sourceId: String, leafId: String) throws {
+        let url = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(leafId, isDirectory: true)
+            .appendingPathComponent("SKILL.md", isDirectory: false)
+        try? FileManager.default.removeItem(at: url)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
     func writeReferenceDocument(sourceId: String, leafId: String, name: String, content: String) throws {
         let referencesURL = rootURL
             .appendingPathComponent("docs", isDirectory: true)
@@ -966,6 +1131,25 @@ private struct TestFixture {
             atomically: true,
             encoding: .utf8
         )
+    }
+
+    func writeGroupDocument(sourceId: String, name: String, content: String) throws {
+        let folderURL = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+        try content.write(
+            to: folderURL.appendingPathComponent(name),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    func setModificationDate(_ date: Date, forGroupDocumentIn sourceId: String, name: String) throws {
+        let url = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(name)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
     }
 
     private func writeSkillDocuments(state: State) throws {

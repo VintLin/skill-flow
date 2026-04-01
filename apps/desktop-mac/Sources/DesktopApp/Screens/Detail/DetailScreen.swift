@@ -95,8 +95,29 @@ enum DetailRouteBootstrap {
         return (state.pendingDetailSkillIdByGroup[sourceId] ?? state.detailSkillIdByGroup[sourceId]) == skillId
     }
 
+    @MainActor
+    static func selectGroupOverview(
+        state: DetailScreenState,
+        sourceId: String,
+        detail: DetailViewModel?
+    ) {
+        if state.detailSkillIdByGroup[sourceId] == nil, let detail {
+            state.detailSkillIdByGroup[sourceId] = preferredDetailSkillId(for: detail)
+        }
+        state.pendingDetailSkillIdByGroup[sourceId] = nil
+        state.detailSkillSelectionTokenByGroup[sourceId] = nextSelectionToken(
+            state.detailSkillSelectionTokenByGroup[sourceId]
+        )
+        state.detailShowsGroupOverviewByGroup[sourceId] = true
+        state.detailSelectedTreeItemIdByGroup[sourceId] = nil
+    }
+
     private static func preferredDetailSkillId(for detail: DetailViewModel) -> String? {
         detail.skills.first(where: \.isEnabled)?.id ?? detail.skills.first?.id
+    }
+
+    private static func nextSelectionToken(_ current: UInt64?) -> UInt64 {
+        (current ?? 0) &+ 1
     }
 
     private static func detailGroupItemId(groupId: String) -> String {
@@ -255,7 +276,7 @@ struct DetailScreen: View {
                     } else if isSkillLoading {
                         detailSkillLoadingPlaceholder()
                     } else if let selectedSkill {
-                        detailSkillOverview(skill: selectedSkill)
+                        detailSkillOverview(groupId: groupId, skill: selectedSkill)
                     } else if detail == nil {
                         detailSkillLoadingPlaceholder()
                     } else {
@@ -298,8 +319,10 @@ struct DetailScreen: View {
         }
     }
 
-    private func detailSkillOverview(skill: DetailViewModel.DetailSkill) -> some View {
+    private func detailSkillOverview(groupId: String, skill: DetailViewModel.DetailSkill) -> some View {
         let isDocumentLoading = screenState.pendingDetailDocumentIdBySkill[skill.id] != nil
+        let selectedSkillDocument = selectedDocument(for: skill)
+        _ = screenState.detailDocumentLoadRevision
 
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 10) {
@@ -308,7 +331,7 @@ struct DetailScreen: View {
                         ForEach(skill.documents) { document in
                             documentTabChip(
                                 title: Self.localizedDocumentTitle(document, locale: locale),
-                                isSelected: selectedDocument(for: skill)?.id == document.id,
+                                isSelected: selectedSkillDocument?.id == document.id,
                                 externalURL: document.externalURL
                             ) {
                                 scheduleSkillDocumentSelection(skillId: skill.id, documentId: document.id)
@@ -320,8 +343,12 @@ struct DetailScreen: View {
                 detailContentCard {
                     if isDocumentLoading {
                         detailDocumentLoadingPlaceholder()
-                    } else if let document = selectedDocument(for: skill) {
-                        detailDocumentContent(document: document)
+                    } else if let document = selectedSkillDocument {
+                        if let resolvedDocument = resolvedSkillDocument(sourceId: groupId, document: document) {
+                            detailDocumentContent(document: resolvedDocument)
+                        } else {
+                            detailDocumentLoadingPlaceholder()
+                        }
                     } else {
                         Text(skill.documentContent)
                             .font(.system(size: 11, weight: .regular, design: .monospaced))
@@ -331,6 +358,16 @@ struct DetailScreen: View {
                     }
                 }
             }
+        }
+        .task(id: selectedSkillDocument?.renderCacheKey) {
+            guard let selectedSkillDocument, !selectedSkillDocument.isLoaded else {
+                return
+            }
+            await container.loadDocument(
+                sourceId: groupId,
+                documentId: selectedSkillDocument.id,
+                renderCacheKey: selectedSkillDocument.renderCacheKey
+            )
         }
     }
 
@@ -625,6 +662,8 @@ struct DetailScreen: View {
 
     private func detailGroupDocuments(_ detail: DetailViewModel, groupId: String) -> some View {
         let isDocumentLoading = screenState.pendingDetailDocumentIdByGroup[groupId] != nil
+        let selectedDocument = selectedGroupDocumentDescriptor(for: detail, groupId: groupId)
+        _ = screenState.detailDocumentLoadRevision
 
         return VStack(alignment: .leading, spacing: 10) {
             Text(t("detail.section.documents"))
@@ -650,10 +689,14 @@ struct DetailScreen: View {
                 detailContentCard {
                     detailDocumentLoadingPlaceholder()
                 }
-            } else if let selectedDocument = selectedGroupDocumentDescriptor(for: detail, groupId: groupId) {
+            } else if let selectedDocument {
                 if selectedDocument.id == detail.groupDocuments.first?.id {
                     detailFileTreeCard(groupId: groupId, detail: detail)
-                } else if let resolvedDocument = container.groupDocument(sourceId: groupId, documentId: selectedDocument.id) {
+                } else if let resolvedDocument = container.groupDocument(
+                    sourceId: groupId,
+                    documentId: selectedDocument.id,
+                    renderCacheKey: selectedDocument.renderCacheKey
+                ) {
                     detailContentCard {
                         detailDocumentContent(document: resolvedDocument)
                     }
@@ -663,6 +706,18 @@ struct DetailScreen: View {
                     }
                 }
             }
+        }
+        .task(id: selectedDocument?.renderCacheKey) {
+            guard let selectedDocument,
+                  selectedDocument.id != detail.groupDocuments.first?.id
+            else {
+                return
+            }
+            await container.loadDocument(
+                sourceId: groupId,
+                documentId: selectedDocument.id,
+                renderCacheKey: selectedDocument.renderCacheKey
+            )
         }
     }
 
@@ -895,8 +950,8 @@ struct DetailScreen: View {
 
     @ViewBuilder
     private func detailDocumentContent(document: DetailViewModel.DocumentTab) -> some View {
-        if document.isMarkdown {
-            MarkdownDocumentView(document: document, theme: theme)
+        if document.path.lowercased().hasSuffix(".md") {
+            MarkdownDocumentView(model: .init(document: document), theme: theme)
                 .equatable()
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -913,6 +968,20 @@ struct DetailScreen: View {
             ?? screenState.detailDocumentTabIdBySkill[skill.id]
             ?? skill.documents.first?.id
         return skill.documents.first(where: { $0.id == selectedId }) ?? skill.documents.first
+    }
+
+    private func resolvedSkillDocument(
+        sourceId: String,
+        document: DetailViewModel.DocumentTab
+    ) -> DetailViewModel.DocumentTab? {
+        if document.isLoaded {
+            return document
+        }
+        return container.groupDocument(
+            sourceId: sourceId,
+            documentId: document.id,
+            renderCacheKey: document.renderCacheKey
+        )
     }
 
     private func selectedGroupDocumentDescriptor(
@@ -976,11 +1045,11 @@ struct DetailScreen: View {
     }
 
     private func selectGroupOverview(groupId: String, detail: DetailViewModel?) {
-        if screenState.detailSkillIdByGroup[groupId] == nil, let detail {
-            screenState.detailSkillIdByGroup[groupId] = preferredDetailSkillId(for: detail)
-        }
-        screenState.detailShowsGroupOverviewByGroup[groupId] = true
-        screenState.detailSelectedTreeItemIdByGroup[groupId] = nil
+        DetailRouteBootstrap.selectGroupOverview(
+            state: screenState,
+            sourceId: groupId,
+            detail: detail
+        )
     }
 
     private func selectedDetailSkill(for groupId: String, detail: DetailViewModel?) -> DetailViewModel.DetailSkill? {
@@ -1109,6 +1178,10 @@ struct DetailScreen: View {
     }
 
     private func scheduleSkillDocumentSelection(skillId: String, documentId: String) {
+        let currentId = screenState.detailDocumentTabIdBySkill[skillId]
+        if currentId == documentId, screenState.pendingDetailDocumentIdBySkill[skillId] == nil {
+            return
+        }
         screenState.pendingDetailDocumentIdBySkill[skillId] = documentId
         let token = nextSelectionToken(screenState.detailDocumentSelectionTokenBySkill[skillId])
         screenState.detailDocumentSelectionTokenBySkill[skillId] = token
@@ -1122,6 +1195,10 @@ struct DetailScreen: View {
     }
 
     private func scheduleGroupDocumentSelection(groupId: String, documentId: String) {
+        let currentId = screenState.detailDocumentTabIdByGroup[groupId]
+        if currentId == documentId, screenState.pendingDetailDocumentIdByGroup[groupId] == nil {
+            return
+        }
         screenState.pendingDetailDocumentIdByGroup[groupId] = documentId
         let token = nextSelectionToken(screenState.detailDocumentSelectionTokenByGroup[groupId])
         screenState.detailDocumentSelectionTokenByGroup[groupId] = token
