@@ -167,6 +167,49 @@ final class DetailScreenContainerTests: XCTestCase {
         XCTAssertFalse(firstViewModel === secondViewModel)
     }
 
+    func testDetailContainerRebuildsViewModelWhenDescriptorMetadataChanges() throws {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        var groupDocuments = [
+            MainViewModel.DocumentDescriptor(
+                id: "group:/tmp/README.md",
+                title: "README.md",
+                path: "/tmp/README.md",
+                metadata: [
+                    MainViewModel.MetadataEntry(id: "m1", key: "name", value: "AlphaHub")
+                ],
+                renderCacheKey: "group:/tmp/README.md:rev-1",
+                externalURL: nil
+            )
+        ]
+
+        let container = DetailScreenContainer(state: state) { _ in
+            DetailViewModel.Snapshot.fixture(
+                sourceId: "alpha",
+                groupDocuments: groupDocuments
+            )
+        }
+
+        let firstViewModel = try XCTUnwrap(container.viewModel)
+        groupDocuments = [
+            MainViewModel.DocumentDescriptor(
+                id: "group:/tmp/README.md",
+                title: "README.md",
+                path: "/tmp/README.md",
+                metadata: [
+                    MainViewModel.MetadataEntry(id: "m1", key: "name", value: "AlphaHub v2")
+                ],
+                renderCacheKey: "group:/tmp/README.md:rev-1",
+                externalURL: nil
+            )
+        ]
+        let secondViewModel = try XCTUnwrap(container.viewModel)
+
+        XCTAssertFalse(firstViewModel === secondViewModel)
+        XCTAssertEqual(secondViewModel.groupDocuments.first?.metadata.first?.value, "AlphaHub v2")
+    }
+
     func testResolvesGroupDocumentOutsideCachedViewModelBoundary() throws {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")

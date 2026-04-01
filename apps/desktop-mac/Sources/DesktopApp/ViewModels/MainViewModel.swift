@@ -4136,10 +4136,15 @@ final class MainViewModel {
         }
         .joined(separator: "\u{1F}")
         let groupDocumentRevision = groupDocuments.map { document in
-            [
+            let metadataRevision = document.metadata.map { entry in
+                [entry.id, entry.key, entry.value].joined(separator: "\u{1C}")
+            }
+            .joined(separator: "\u{1D}")
+            return [
                 document.id,
                 document.title,
                 document.path,
+                metadataRevision,
                 document.renderCacheKey,
                 document.externalURL ?? ""
             ]
