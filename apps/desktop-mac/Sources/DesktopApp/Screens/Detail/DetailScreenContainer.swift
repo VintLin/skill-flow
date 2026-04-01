@@ -35,7 +35,7 @@ final class DetailScreenContainer {
     private let toggleAllTargetsAction: (String) async -> Void
     private let setTargetEnabledAction: (String, Bool, Bool, String) async -> Void
     private var cachedDetailSourceId: String?
-    private var cachedDetailSnapshot: DetailViewModel.Snapshot?
+    private var cachedDetailRevision: String?
     private var cachedDetailViewModel: DetailViewModel?
     let screenState = DetailScreenState()
 
@@ -148,14 +148,14 @@ final class DetailScreenContainer {
         }
 
         if cachedDetailSourceId == sourceId,
-           cachedDetailSnapshot == snapshot,
+           cachedDetailRevision == snapshot.revision,
            let cachedDetailViewModel {
             return cachedDetailViewModel
         }
 
         let nextViewModel = DetailViewModel(snapshot: snapshot)
         cachedDetailSourceId = sourceId
-        cachedDetailSnapshot = snapshot
+        cachedDetailRevision = snapshot.revision
         cachedDetailViewModel = nextViewModel
         return nextViewModel
     }

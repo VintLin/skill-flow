@@ -211,6 +211,15 @@ final class MainViewModel {
         let value: String
     }
 
+    struct DocumentDescriptor: Identifiable, Equatable, Sendable {
+        let id: String
+        let title: String
+        let path: String
+        let metadata: [MetadataEntry]
+        let renderCacheKey: String
+        let externalURL: String?
+    }
+
     struct DocumentTab: Identifiable, Equatable, Sendable {
         let id: String
         let title: String
