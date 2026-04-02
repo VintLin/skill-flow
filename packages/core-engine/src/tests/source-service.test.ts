@@ -288,12 +288,49 @@ describe.sequential("source service", () => {
     );
   });
 
-  test("non-github git sources still fail when git is unavailable", async () => {
+  test("gitlab sources fall back to zip download when git is unavailable", async () => {
+    const sourceService = createSourceService();
+    const repoRoot = path.join(sandbox.sandboxRoot, "gitlab-zip");
+    const archivePath = path.join(sandbox.sandboxRoot, "gitlab-zip.zip");
+    await writeRepoFiles(repoRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow from gitlab zip."),
+    });
+    await createZipArchive(repoRoot, archivePath);
+
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
+    vi.spyOn(gitUtils, "git").mockRejectedValue(new Error("git missing"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        expect(String(input)).toContain(
+          "https://gitlab.com/api/v4/projects/example%2Fskills/repository/archive.zip?sha=main",
+        );
+        return new Response(await fs.readFile(archivePath), {
+          status: 200,
+          headers: { "content-type": "application/zip" },
+        });
+      }) as typeof fetch,
+    );
+
+    const added = await sourceService.addSource("https://gitlab.com/example/skills.git");
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const checkoutPath = added.data.lock.checkoutPath;
+    expect(await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8")).toContain(
+      "Browser flow from gitlab zip.",
+    );
+  });
+
+  test("unsupported git hosts still fail when git is unavailable", async () => {
     const sourceService = createSourceService();
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
     vi.spyOn(gitUtils, "git").mockRejectedValue(new Error("git missing"));
 
-    const added = await sourceService.addSource("https://gitlab.com/example/skills.git");
+    const added = await sourceService.addSource("https://example.com/example/skills.git");
 
     expect(added.ok).toBe(false);
     if (added.ok) {

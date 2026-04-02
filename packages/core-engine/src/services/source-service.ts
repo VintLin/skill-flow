@@ -28,7 +28,7 @@ import {
   installClawHubSkill,
 } from "@skill-flow/integration/utils/clawhub";
 import { git, isGitAvailable } from "@skill-flow/integration/utils/git";
-import { parseGitHubRepo } from "@skill-flow/integration/utils/naming";
+import { parseGitHubRepo, parseHostedGitRepo } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import { deriveDisplayName, deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
@@ -1133,7 +1133,7 @@ export class SourceService {
 
     if (source.kind === "git") {
       if (!(await isGitAvailable())) {
-        await this.fetchGitHubArchive(source.gitLocator!, checkoutPath);
+        await this.fetchGitArchive(source.gitLocator!, checkoutPath);
         return;
       }
       await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
@@ -1164,7 +1164,7 @@ export class SourceService {
 
     if (source.kind === "git") {
       if (!(await isGitAvailable())) {
-        return this.refreshGitHubArchiveCheckout(source, currentLock);
+        return this.refreshGitArchiveCheckout(source, currentLock);
       }
       await git(["pull", "--ff-only"], { cwd: currentLock.checkoutPath });
       const latestCommitSha = await git(["rev-parse", "HEAD"], {
@@ -1275,7 +1275,7 @@ export class SourceService {
     return {};
   }
 
-  private async refreshGitHubArchiveCheckout(
+  private async refreshGitArchiveCheckout(
     source: SourceManifestRecord,
     currentLock: SourceLockRecord,
   ): Promise<boolean> {
@@ -1283,7 +1283,7 @@ export class SourceService {
     const backupPath = `${currentLock.checkoutPath}.${process.pid}.${crypto.randomUUID()}.backup`;
 
     try {
-      await this.fetchGitHubArchive(source.locator, tempCheckoutPath, currentLock.originBranch);
+      await this.fetchGitArchive(source.locator, tempCheckoutPath, currentLock.originBranch);
       const nextHash = await hashDirectory(tempCheckoutPath);
       const checkoutExists = await pathExists(currentLock.checkoutPath);
       const currentHash =
@@ -1315,14 +1315,14 @@ export class SourceService {
     }
   }
 
-  private async fetchGitHubArchive(
+  private async fetchGitArchive(
     locator: string,
     checkoutPath: string,
     preferredBranch?: string,
   ): Promise<void> {
-    const repo = parseGitHubRepo(locator);
-    if (!repo) {
-      throw new Error(`Git is unavailable and '${locator}' is not a supported GitHub repository.`);
+    const archiveRepo = this.parseArchiveRepo(locator);
+    if (!archiveRepo) {
+      throw new Error(`Git is unavailable and '${locator}' is not a supported archive source.`);
     }
 
     const tempRoot = `${checkoutPath}.${process.pid}.${crypto.randomUUID()}.archive`;
@@ -1341,12 +1341,26 @@ export class SourceService {
       let lastError: Error | undefined;
       for (const branch of branchCandidates) {
         try {
-          await this.downloadGitHubArchive(repo.owner, repo.repo, branch, archivePath);
+          if (archiveRepo.provider === "github") {
+            await this.downloadGitHubArchive(
+              archiveRepo.owner,
+              archiveRepo.repo,
+              branch,
+              archivePath,
+            );
+          } else {
+            await this.downloadGitLabArchive(
+              archiveRepo.host,
+              archiveRepo.projectPath,
+              branch,
+              archivePath,
+            );
+          }
           await this.extractZipArchive(archivePath, extractPath);
           await this.copyExtractedArchive(
             extractPath,
             checkoutPath,
-            `${repo.repo}-${branch}`,
+            `${archiveRepo.repo}-${branch}`,
           );
           return;
         } catch (error) {
@@ -1356,10 +1370,77 @@ export class SourceService {
         }
       }
 
-      throw lastError ?? new Error(`Unable to download GitHub archive for '${locator}'.`);
+      throw lastError ?? new Error(`Unable to download archive for '${locator}'.`);
     } finally {
       await removePath(tempRoot).catch(() => {});
     }
+  }
+
+  private parseArchiveRepo(
+    locator: string,
+  ): { provider: "github"; owner: string; repo: string }
+    | { provider: "gitlab"; host: string; projectPath: string; repo: string }
+    | null {
+    const githubRepo = parseGitHubRepo(locator);
+    if (githubRepo) {
+      return { provider: "github", owner: githubRepo.owner, repo: githubRepo.repo };
+    }
+
+    const hostedRepo = parseHostedGitRepo(locator);
+    if (!hostedRepo || !this.isGitLabHost(hostedRepo.host)) {
+      return null;
+    }
+
+    const projectPath = this.extractGitLabProjectPath(locator);
+    if (!projectPath) {
+      return null;
+    }
+
+    return {
+      provider: "gitlab",
+      host: hostedRepo.host,
+      projectPath,
+      repo: hostedRepo.repo,
+    };
+  }
+
+  private isGitLabHost(host: string): boolean {
+    const normalizedHost = host.toLowerCase();
+    const configuredHost = process.env.GITLAB_HOST?.trim().toLowerCase();
+    return (
+      normalizedHost === "gitlab.com" ||
+      normalizedHost.includes("gitlab") ||
+      (configuredHost ? normalizedHost === configuredHost : false)
+    );
+  }
+
+  private extractGitLabProjectPath(locator: string): string | undefined {
+    const trimmed = locator.trim().replace(/\/+$/, "");
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const url = new URL(trimmed);
+        const parts = url.pathname
+          .split("/")
+          .filter(Boolean)
+          .map((part, index, values) =>
+            index === values.length - 1 ? part.replace(/\.git$/i, "") : part
+          );
+        return parts.length >= 2 ? parts.join("/") : undefined;
+      } catch {
+        return undefined;
+      }
+    }
+
+    const sshMatch = trimmed.match(/^git@([^:\s]+):(.+?)(?:\.git)?$/i);
+    if (!sshMatch) {
+      return undefined;
+    }
+
+    const projectPath = sshMatch[2]
+      ?.split("/")
+      .filter(Boolean)
+      .join("/");
+    return projectPath || undefined;
   }
 
   private async downloadGitHubArchive(
@@ -1373,6 +1454,30 @@ export class SourceService {
     );
     if (!response.ok) {
       throw new Error(`GitHub archive download failed with status ${response.status} for branch '${branch}'.`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.writeFile(archivePath, buffer);
+  }
+
+  private async downloadGitLabArchive(
+    host: string,
+    projectPath: string,
+    branch: string,
+    archivePath: string,
+  ): Promise<void> {
+    const response = await fetch(
+      `https://${host}/api/v4/projects/${encodeURIComponent(projectPath)}/repository/archive.zip?sha=${encodeURIComponent(branch)}`,
+      {
+        headers: {
+          ...(process.env.GITLAB_TOKEN
+            ? { "PRIVATE-TOKEN": process.env.GITLAB_TOKEN }
+            : {}),
+        },
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`GitLab archive download failed with status ${response.status} for branch '${branch}'.`);
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
