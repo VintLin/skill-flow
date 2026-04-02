@@ -2,7 +2,7 @@ import type { DeploymentTargetName, LockFile, ProjectionRecord, SourceLockRecord
 
 export function getManagedDeployments(lockFile: LockFile): LockFile["deployments"] {
   if (!(lockFile.projections?.length)) {
-    return lockFile.deployments;
+    return lockFile.deployments ?? [];
   }
 
   return (lockFile.projections ?? [])

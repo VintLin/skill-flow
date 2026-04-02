@@ -15,7 +15,7 @@ import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import type { ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
 import {
   buildProjectedSkillNameCandidates,
-  parseGitHubRepo,
+  getHostedGitOwner,
   resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
@@ -62,7 +62,7 @@ export class DeploymentPlanner {
         {
           id: sourceId,
           displayName: source?.displayName ?? sourceId,
-          author: parseGitHubRepo(source?.locator ?? "")?.owner,
+          author: getHostedGitOwner(source?.locator ?? ""),
         },
       );
 
@@ -528,7 +528,7 @@ export class DeploymentPlanner {
         leafId: leaf.id,
         groupId: leaf.sourceId,
         groupName: sourcesById.get(leaf.sourceId)?.displayName ?? leaf.sourceId,
-        groupAuthor: parseGitHubRepo(sourcesById.get(leaf.sourceId)?.locator ?? "")?.owner,
+        groupAuthor: getHostedGitOwner(sourcesById.get(leaf.sourceId)?.locator ?? ""),
         skillName: leaf.linkName,
       })),
     );

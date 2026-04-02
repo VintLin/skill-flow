@@ -13,41 +13,54 @@ type ProjectedSkillInput = {
   skillName: string;
 };
 
-export function parseGitHubRepo(locator: string): { owner: string; repo: string } | null {
+export function parseHostedGitRepo(
+  locator: string,
+): { host: string; owner: string; repo: string } | null {
   const trimmed = locator.trim().replace(/\/+$/, "");
 
   if (/^https?:\/\//i.test(trimmed)) {
     try {
       const url = new URL(trimmed);
-      if (url.hostname.toLowerCase() === "github.com") {
-        const parts = url.pathname.split("/").filter(Boolean);
-        const [owner, rawRepo] = parts;
-        const repo = rawRepo?.replace(/\.git$/i, "");
-        const isRepoRoot = parts.length === 2;
-        const isTreePath = parts.length >= 4 && parts[2] === "tree";
-        if (!isRepoRoot && !isTreePath) {
-          return null;
-        }
-        if (!owner || !repo) {
-          return null;
-        }
-        return { owner, repo };
+      const host = url.hostname.toLowerCase();
+      const parts = url.pathname.split("/").filter(Boolean);
+      const [owner, rawRepo] = parts;
+      const repo = rawRepo?.replace(/\.git$/i, "");
+      const isRepoRoot = parts.length === 2;
+      const isTreePath = parts.length >= 4 && parts[2] === "tree";
+      if (!isRepoRoot && !isTreePath) {
+        return null;
       }
+      if (!host || !owner || !repo) {
+        return null;
+      }
+      return { host, owner, repo };
     } catch {
       return null;
     }
   }
 
-  const sshMatch = trimmed.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
-  if (sshMatch) {
-    const owner = sshMatch[1];
-    const repo = sshMatch[2];
-    if (!owner || !repo) {
-      return null;
-    }
-    return { owner, repo };
+  const sshMatch = trimmed.match(/^git@([^:\s]+):([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
+  if (!sshMatch) {
+    return null;
   }
 
+  const host = sshMatch[1]?.toLowerCase();
+  const owner = sshMatch[2];
+  const repo = sshMatch[3];
+  if (!host || !owner || !repo) {
+    return null;
+  }
+
+  return { host, owner, repo };
+}
+
+export function parseGitHubRepo(locator: string): { owner: string; repo: string } | null {
+  const hostedRepo = parseHostedGitRepo(locator);
+  if (hostedRepo?.host === "github.com") {
+    return { owner: hostedRepo.owner, repo: hostedRepo.repo };
+  }
+
+  const trimmed = locator.trim().replace(/\/+$/, "");
   const shorthandMatch = trimmed.match(/^([^/\s:]+)\/([^/\s]+)$/);
   if (shorthandMatch) {
     const owner = shorthandMatch[1];
@@ -73,11 +86,15 @@ export function formatGroupLabel(source: SourceLike): string {
     return `${source.displayName}@clawhub`;
   }
 
-  const githubRepo = parseGitHubRepo(source.locator);
-  if (!githubRepo) {
+  const hostedRepo = parseHostedGitRepo(source.locator);
+  if (!hostedRepo) {
     return source.displayName;
   }
-  return `${source.displayName}@${githubRepo.owner}`;
+  return `${source.displayName}@${hostedRepo.owner}`;
+}
+
+export function getHostedGitOwner(locator: string): string | undefined {
+  return parseHostedGitRepo(locator)?.owner ?? parseGitHubRepo(locator)?.owner;
 }
 
 export function formatGroupRef(source: SourceLike): string {

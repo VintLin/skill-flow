@@ -3,6 +3,8 @@ import { buildFindCommand } from "../utils/find-command.js";
 import {
   buildProjectedSkillName,
   formatGroupLabel,
+  getHostedGitOwner,
+  parseHostedGitRepo,
   parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "../utils/naming.js";
@@ -38,6 +40,15 @@ describe("find and naming utils", () => {
     });
     expect(parseGitHubRepo("https://github.com/garrytan/gstack/issues/1")).toBeNull();
     expect(parseGitHubRepo("https://github.com/garrytan/gstack/blob/main/README.md")).toBeNull();
+  });
+
+  test("parses hosted git URLs from gitlab for owner-aware naming", () => {
+    expect(parseHostedGitRepo("https://gitlab.com/example/skills.git")).toEqual({
+      host: "gitlab.com",
+      owner: "example",
+      repo: "skills",
+    });
+    expect(getHostedGitOwner("git@gitlab.com:example/skills.git")).toBe("example");
   });
 
   test("normalizes ClawHub locators to the same source id across version forms", () => {
@@ -94,6 +105,16 @@ describe("find and naming utils", () => {
         displayName: "gstack",
       }),
     ).toBe("gstack@garrytan");
+  });
+
+  test("formats GitLab groups as groupName(@owner)", () => {
+    expect(
+      formatGroupLabel({
+        id: "example-skills",
+        locator: "https://gitlab.com/example/skills.git",
+        displayName: "skills",
+      }),
+    ).toBe("skills@example");
   });
 
   test("prefers groupName-skillName for projected collisions", () => {

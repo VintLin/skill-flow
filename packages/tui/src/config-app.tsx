@@ -13,7 +13,7 @@ import { TARGET_LABELS, TARGET_ORDER } from "@skill-flow/integration/utils/const
 import {
   buildProjectedSkillName,
   formatGroupLabel,
-  parseGitHubRepo,
+  getHostedGitOwner,
   resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
 import {
@@ -666,7 +666,7 @@ export function buildProjectionWarningMap({
       leafId: candidate.leaf.id,
       groupId: candidate.source.id,
       groupName: candidate.source.displayName,
-      groupAuthor: parseGitHubRepo(candidate.source.locator)?.owner,
+      groupAuthor: getHostedGitOwner(candidate.source.locator),
       skillName: candidate.leaf.linkName,
     })),
     ...currentSummary.leafs
@@ -675,7 +675,7 @@ export function buildProjectionWarningMap({
         leafId: leaf.id,
         groupId: currentSummary.source.id,
         groupName: currentSummary.source.displayName,
-        groupAuthor: parseGitHubRepo(currentSummary.source.locator)?.owner,
+        groupAuthor: getHostedGitOwner(currentSummary.source.locator),
         skillName: leaf.linkName,
       })),
   ]);
@@ -704,7 +704,7 @@ export function buildProjectionWarningMap({
         buildProjectedSkillName(
           currentSummary.source.displayName,
           leaf.linkName,
-          parseGitHubRepo(currentSummary.source.locator)?.owner,
+          getHostedGitOwner(currentSummary.source.locator),
         );
       warningsByLeafId[leaf.id] = [
         `conflicts with ${formatGroupLabel(renameConflict.source)}, will deploy as ${projectedName}`,
@@ -754,7 +754,7 @@ function buildProjectionNameMap({
           leafId: leaf.id,
           groupId: summary.source.id,
           groupName: summary.source.displayName,
-          groupAuthor: parseGitHubRepo(summary.source.locator)?.owner,
+          groupAuthor: getHostedGitOwner(summary.source.locator),
           skillName: leaf.linkName,
         }));
     }),
@@ -764,7 +764,7 @@ function buildProjectionNameMap({
         leafId: leaf.id,
         groupId: currentSummary.source.id,
         groupName: currentSummary.source.displayName,
-        groupAuthor: parseGitHubRepo(currentSummary.source.locator)?.owner,
+        groupAuthor: getHostedGitOwner(currentSummary.source.locator),
         skillName: leaf.linkName,
       })),
   ]);

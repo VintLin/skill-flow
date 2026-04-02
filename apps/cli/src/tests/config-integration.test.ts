@@ -317,6 +317,43 @@ describe.sequential("config integration", () => {
     expect(await fs.readFile(lockPath, "utf8")).toBe(mutatedLock);
   });
 
+  test("previewDraft tolerates legacy lock files without deployments", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const lockPath = path.join(sandbox.stateRoot, "lock.json");
+    const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as Record<string, unknown>;
+    delete lock.deployments;
+    await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
+
+    const preview = await app.previewDraft(sourceId, {
+      enabledTargets: ["claude-code"],
+      selectedLeafIds: [`${sourceId}:browse`],
+    });
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) {
+      return;
+    }
+    expect(preview.data.plan.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceId,
+          leafId: `${sourceId}:browse`,
+          target: "claude-code",
+        }),
+      ]),
+    );
+  });
+
   test("getConfigData normalizes per-target bindings to the config draft model", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),

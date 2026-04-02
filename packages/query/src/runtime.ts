@@ -62,6 +62,7 @@ import { getBuiltinGitSources } from "@skill-flow/integration/utils/builtin-git-
 import { fetchGitHubSkillPaths } from "@skill-flow/integration/utils/github-catalog";
 import {
   buildProjectedSkillNameCandidates,
+  getHostedGitOwner,
   parseGitHubRepo,
   resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
@@ -2727,8 +2728,8 @@ export class SkillFlowApp {
 
     const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
     const groupAuthor =
-      parseGitHubRepo(source.locator)?.owner
-      ?? (source.originLocator ? parseGitHubRepo(source.originLocator)?.owner : undefined);
+      getHostedGitOwner(source.locator)
+      ?? (source.originLocator ? getHostedGitOwner(source.originLocator) : undefined);
     const candidatePaths = new Set<string>();
 
     for (const leaf of leafs) {
@@ -2862,8 +2863,8 @@ export class SkillFlowApp {
 
     const source = manifest.sources.find((item) => item.id === sourceLock.id);
     const groupAuthor =
-      parseGitHubRepo(source?.locator ?? "")?.owner
-      ?? (source?.originLocator ? parseGitHubRepo(source.originLocator)?.owner : undefined);
+      getHostedGitOwner(source?.locator ?? "")
+      ?? (source?.originLocator ? getHostedGitOwner(source.originLocator) : undefined);
     const projectedLinkName = projectedLinkNames.get(leaf.id) ?? leaf.linkName;
     const candidates = buildProjectedSkillNameCandidates({
       preferredName: projectedLinkName,
@@ -3881,7 +3882,7 @@ export class SkillFlowApp {
             leafId: leaf.id,
             groupId: source.id,
             groupName: source.displayName,
-            groupAuthor: parseGitHubRepo(source.locator)?.owner,
+            groupAuthor: getHostedGitOwner(source.locator),
             skillName: leaf.linkName,
           }));
       }),
@@ -3902,7 +3903,7 @@ export class SkillFlowApp {
       preferredName: projectedLinkName,
       groupId: source.id,
       groupName: source.displayName,
-      groupAuthor: parseGitHubRepo(source.locator)?.owner,
+      groupAuthor: getHostedGitOwner(source.locator),
       skillName: leaf.linkName,
     }).map((name) => path.join(rootPath, name));
 
