@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import * as clawhubUtils from "@skill-flow/integration/utils/clawhub";
 import * as builtinGitSources from "@skill-flow/integration/utils/builtin-git-sources";
+import * as gitUtils from "@skill-flow/integration/utils/git";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
@@ -394,6 +395,23 @@ describe.sequential("source lifecycle", () => {
   });
 
   test("parses GitHub tree URLs as repo sources with path filtering", async () => {
+    const upstreamRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/find-skills/SKILL.md": skillDoc("find-skills", "Find skills."),
+    });
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
+      if (args[0] === "clone" && args[3] === "https://github.com/vercel-labs/skills.git") {
+        await fs.cp(upstreamRepo, args[4]!, { recursive: true });
+        return "";
+      }
+
+      if (args[0] === "rev-parse" && args[1] === "HEAD") {
+        return "test-commit-sha";
+      }
+
+      throw new Error(`Unexpected git call: ${args.join(" ")}`);
+    });
+
     const app = new SkillFlowApp();
     const result = await app.addSource(
       "https://github.com/vercel-labs/skills/tree/main/skills/find-skills",
@@ -409,6 +427,23 @@ describe.sequential("source lifecycle", () => {
   }, 30000);
 
   test("combines GitHub tree paths with --path relative to the tree location", async () => {
+    const upstreamRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/find-skills/SKILL.md": skillDoc("find-skills", "Find skills."),
+    });
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
+      if (args[0] === "clone" && args[3] === "https://github.com/vercel-labs/skills.git") {
+        await fs.cp(upstreamRepo, args[4]!, { recursive: true });
+        return "";
+      }
+
+      if (args[0] === "rev-parse" && args[1] === "HEAD") {
+        return "test-commit-sha";
+      }
+
+      throw new Error(`Unexpected git call: ${args.join(" ")}`);
+    });
+
     const app = new SkillFlowApp();
     const result = await app.addSource(
       "https://github.com/vercel-labs/skills/tree/main/skills",
@@ -425,6 +460,24 @@ describe.sequential("source lifecycle", () => {
   }, 30000);
 
   test("adds a ClawHub source and stores ClawHub lock metadata", async () => {
+    vi.spyOn(clawhubUtils, "installClawHubSkill").mockImplementation(async (slug, version) => {
+      const workdir = await fs.mkdtemp(path.join(sandbox.sandboxRoot, "clawhub-install-"));
+      const installedPath = path.join(workdir, "skills", slug);
+      await writeRepoFiles(installedPath, {
+        "SKILL.md": skillDoc("find-skills", "Find skills from ClawHub."),
+        ".clawhub/origin.json": JSON.stringify({
+          slug,
+          installedVersion: version ?? "1.0.0",
+        }),
+      });
+      return {
+        workdir,
+        installedPath,
+        slug,
+        resolvedVersion: version ?? "1.0.0",
+      };
+    });
+
     const app = new SkillFlowApp();
 
     const result = await app.addSource("clawhub:find-skills-skill");
@@ -442,6 +495,25 @@ describe.sequential("source lifecycle", () => {
   }, 20000);
 
   test("keeps a pinned ClawHub source unchanged on update", async () => {
+    vi.spyOn(clawhubUtils, "installClawHubSkill").mockImplementation(async (slug, version) => {
+      const resolvedVersion = version ?? "1.0.0";
+      const workdir = await fs.mkdtemp(path.join(sandbox.sandboxRoot, "clawhub-install-"));
+      const installedPath = path.join(workdir, "skills", slug);
+      await writeRepoFiles(installedPath, {
+        "SKILL.md": skillDoc("find-skills", "Find skills from ClawHub."),
+        ".clawhub/origin.json": JSON.stringify({
+          slug,
+          installedVersion: resolvedVersion,
+        }),
+      });
+      return {
+        workdir,
+        installedPath,
+        slug,
+        resolvedVersion,
+      };
+    });
+
     const app = new SkillFlowApp();
 
     const added = await app.addSource("clawhub:find-skills-skill@1.0.0");
@@ -464,6 +536,25 @@ describe.sequential("source lifecycle", () => {
   }, 20000);
 
   test("keeps a floating ClawHub source unchanged when no newer version exists", async () => {
+    vi.spyOn(clawhubUtils, "installClawHubSkill").mockImplementation(async (slug, version) => {
+      const resolvedVersion = version ?? "1.0.0";
+      const workdir = await fs.mkdtemp(path.join(sandbox.sandboxRoot, "clawhub-install-"));
+      const installedPath = path.join(workdir, "skills", slug);
+      await writeRepoFiles(installedPath, {
+        "SKILL.md": skillDoc("find-skills", "Find skills from ClawHub."),
+        ".clawhub/origin.json": JSON.stringify({
+          slug,
+          installedVersion: resolvedVersion,
+        }),
+      });
+      return {
+        workdir,
+        installedPath,
+        slug,
+        resolvedVersion,
+      };
+    });
+
     const app = new SkillFlowApp();
 
     const added = await app.addSource("clawhub:find-skills-skill");
