@@ -256,6 +256,48 @@ describe.sequential("import page flow", () => {
     expect(preview.data.targets.length).toBeGreaterThan(0);
   });
 
+  test("exact import search treats GitLab locators as direct import candidates", async () => {
+    const app = new SkillFlowApp();
+    const result = await app.searchImportGroups("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.exact).toBe(true);
+    expect(result.data.groups).toHaveLength(1);
+    expect(result.data.groups[0]).toMatchObject({
+      locator: "https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git",
+      canonicalRepo: "https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git",
+      title: "gitlab-mr-review-skill",
+    });
+  });
+
+  test("previewImportSource supports GitLab HTTPS locators", async () => {
+    const app = new SkillFlowApp();
+    const before = await app.store.readState();
+    const preview = await app.previewImportSource(
+      "https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git",
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+
+    const after = await app.store.readState();
+    expect(after.manifest).toEqual(before.manifest);
+    expect(after.lockFile).toEqual(before.lockFile);
+    expect(preview.data.locator).toBe("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
+    expect(preview.data.skills).toHaveLength(1);
+    expect(preview.data.skills[0]).toMatchObject({
+      id: "gitlab-mr-comments",
+      title: "GitLab MR Comments",
+      selectedByDefault: true,
+    });
+  });
+
   test("importSource applies selected skills and targets", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browse things."),

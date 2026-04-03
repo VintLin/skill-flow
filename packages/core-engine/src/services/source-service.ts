@@ -1136,7 +1136,15 @@ export class SourceService {
         await this.fetchGitArchive(source.gitLocator!, checkoutPath);
         return;
       }
-      await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
+      try {
+        await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
+      } catch (error) {
+        const fallbackLocator = this.resolveGitCloneFallbackLocator(source.gitLocator!);
+        if (!fallbackLocator) {
+          throw error;
+        }
+        await git(["clone", "--depth", "1", fallbackLocator, checkoutPath]);
+      }
       return;
     }
 
@@ -1441,6 +1449,25 @@ export class SourceService {
       .filter(Boolean)
       .join("/");
     return projectPath || undefined;
+  }
+
+  private resolveGitCloneFallbackLocator(locator: string): string | undefined {
+    const trimmed = locator.trim();
+    if (!trimmed.startsWith("git@")) {
+      return undefined;
+    }
+
+    const hostedRepo = parseHostedGitRepo(trimmed);
+    if (!hostedRepo || !this.isGitLabHost(hostedRepo.host)) {
+      return undefined;
+    }
+
+    const projectPath = this.extractGitLabProjectPath(trimmed);
+    if (!projectPath) {
+      return undefined;
+    }
+
+    return `https://${hostedRepo.host}/${projectPath}.git`;
   }
 
   private async downloadGitHubArchive(

@@ -325,6 +325,52 @@ describe.sequential("source service", () => {
     );
   });
 
+  test("gitlab ssh sources fall back to https clone when ssh clone fails", async () => {
+    const sourceService = createSourceService();
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow from https fallback."),
+    });
+
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    const gitSpy = vi.spyOn(gitUtils, "git").mockImplementation(async (args, options) => {
+      if (args[0] === "clone" && args[3] === "git@gitlab.com:example/skills.git") {
+        throw new Error("ssh auth failed");
+      }
+
+      if (args[0] === "clone" && args[3] === "https://gitlab.com/example/skills.git") {
+        await fs.cp(repoPath, args[4]!, { recursive: true });
+        return "";
+      }
+
+      if (args[0] === "rev-parse" && args[1] === "HEAD" && options?.cwd) {
+        return "test-commit-sha";
+      }
+
+      throw new Error(`Unexpected git call: ${args.join(" ")}`);
+    });
+
+    const added = await sourceService.addSource("git@gitlab.com:example/skills.git");
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    expect(gitSpy).toHaveBeenNthCalledWith(
+      1,
+      ["clone", "--depth", "1", "git@gitlab.com:example/skills.git", expect.any(String)],
+    );
+    expect(gitSpy).toHaveBeenNthCalledWith(
+      2,
+      ["clone", "--depth", "1", "https://gitlab.com/example/skills.git", expect.any(String)],
+    );
+
+    const checkoutPath = added.data.lock.checkoutPath;
+    expect(await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8")).toContain(
+      "Browser flow from https fallback.",
+    );
+  });
+
   test("unsupported git hosts still fail when git is unavailable", async () => {
     const sourceService = createSourceService();
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);

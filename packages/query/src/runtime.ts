@@ -64,6 +64,7 @@ import {
   buildProjectedSkillNameCandidates,
   getHostedGitOwner,
   parseGitHubRepo,
+  parseHostedGitRepo,
   resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
 import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
@@ -979,7 +980,7 @@ export class SkillFlowApp {
     locator: string,
     manifest: Manifest,
   ): Promise<ImportGroupCandidate | null> {
-    const resolvedLocator = await this.resolveImportDirectLocator(locator);
+    const resolvedLocator = await this.resolveDirectImportLocator(locator);
     if (!resolvedLocator) {
       return null;
     }
@@ -1178,7 +1179,7 @@ export class SkillFlowApp {
   private async previewDirectImportSource(
     locator: string,
   ): Promise<Result<ImportPreviewResult> | null> {
-    const resolvedLocator = await this.resolveImportDirectLocator(locator);
+    const resolvedLocator = await this.resolveDirectImportLocator(locator);
     if (!resolvedLocator) {
       return null;
     }
@@ -1224,10 +1225,15 @@ export class SkillFlowApp {
     };
   }
 
-  private async resolveImportDirectLocator(locator: string): Promise<string | undefined> {
+  private async resolveDirectImportLocator(locator: string): Promise<string | undefined> {
     const trimmed = locator.trim();
     if (!trimmed || normalizeImportCanonicalRepo(trimmed)) {
       return undefined;
+    }
+
+    const hostedRepo = parseHostedGitRepo(trimmed);
+    if (hostedRepo?.host.includes("gitlab")) {
+      return trimmed;
     }
 
     const resolvedPath = path.resolve(trimmed.startsWith("file://")
