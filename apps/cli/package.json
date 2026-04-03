@@ -16,6 +16,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.tsx",
+    "prepack": "node ../../scripts/release/sync-cli-package-files.mjs prepare",
+    "postpack": "node ../../scripts/release/sync-cli-package-files.mjs restore",
     "test": "vitest run",
     "test:watch": "vitest"
   },
