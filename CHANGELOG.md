@@ -2,6 +2,24 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.2 - 2026-04-03
+
+### Added
+
+- Added GitLab archive fallback support for Git-based source imports so GUI and shared runtime flows can still continue when direct clone handling is not available.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.1` to `1.3.2`.
+- Included `README.md`, `README.zh.md`, and `LICENSE` in the published CLI package and added release sync helpers to keep those files aligned during pack flows.
+- Expanded query, integration, core-engine, and CLI coverage around source lifecycle, naming, preview, and package output behavior.
+
+### Fixed
+
+- Fixed GUI import flows so GitLab sources can complete through the same shared runtime path used by other source types.
+- Fixed add preview handling to tolerate legacy lock files instead of failing before projection state is prepared.
+- Fixed query source lifecycle tests so they stay isolated from network state during verification.
+
 ## v1.3.1 - 2026-04-02
 
 ### Changed
