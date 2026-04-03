@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
+import { ok } from "@skill-flow/integration/utils/result";
+import { SourceService } from "@skill-flow/core-engine/services/source-service";
 import { SkillFlowApp } from "../runtime.js";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
@@ -275,6 +277,26 @@ describe.sequential("import page flow", () => {
   });
 
   test("previewImportSource supports GitLab HTTPS locators", async () => {
+    const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockResolvedValue(
+      ok({
+        locator: "https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git",
+        displayName: "gitlab-mr-review-skill",
+        leafs: [
+          {
+            id: "gitlab-mr-review-skill:gitlab-mr-comments",
+            sourceId: "gitlab-mr-review-skill",
+            relativePath: ".",
+            absolutePath: "/tmp/gitlab-mr-review-skill",
+            skillFilePath: "/tmp/gitlab-mr-review-skill/SKILL.md",
+            name: "gitlab-mr-comments",
+            title: "GitLab MR Comments",
+            description: "GitLab MR review helper.",
+            linkName: "gitlab-mr-comments",
+          },
+        ],
+      }),
+    );
+
     const app = new SkillFlowApp();
     const before = await app.store.readState();
     const preview = await app.previewImportSource(
@@ -289,6 +311,7 @@ describe.sequential("import page flow", () => {
     const after = await app.store.readState();
     expect(after.manifest).toEqual(before.manifest);
     expect(after.lockFile).toEqual(before.lockFile);
+    expect(previewSpy).toHaveBeenCalledWith("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
     expect(preview.data.locator).toBe("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
     expect(preview.data.skills).toHaveLength(1);
     expect(preview.data.skills[0]).toMatchObject({
