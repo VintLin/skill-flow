@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
+import type { SharedPreferences } from "@skill-flow/domain/types";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import {
@@ -15,6 +16,112 @@ import {
 
 describe.sequential("skill-flow", () => {
   const sandbox = useSkillFlowSandbox();
+
+  async function installCustomTarget(
+    app: SkillFlowApp,
+    customTarget: SharedPreferences["customTargets"][number],
+    recentProjects: SharedPreferences["recentProjects"] = [],
+  ) {
+    const preferences = await app.store.readPreferences();
+    await app.store.writePreferences({
+      ...preferences,
+      recentProjects,
+      customTargets: [customTarget],
+      agentDisplayOrder: [...preferences.agentDisplayOrder, customTarget.id],
+    });
+  }
+
+  test("applyDraft deploys to a custom global target", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const customRoot = path.join(sandbox.targetsRoot, "my-agent-global");
+    await fs.mkdir(customRoot, { recursive: true });
+
+    const app = new SkillFlowApp();
+    await installCustomTarget(app, {
+      id: "my-agent",
+      name: "My Agent",
+      globalPath: customRoot,
+      projectPathTemplate: ".my-agent/skills",
+      strategy: "copy",
+      createdAt: "2026-04-08T00:00:00.000Z",
+      updatedAt: "2026-04-08T00:00:00.000Z",
+    });
+
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.sourceId;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["my-agent"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+
+    const lock = await app.store.readLock();
+    const deployment = lock.deployments.find(
+      (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "my-agent",
+    );
+    expect(deployment?.targetRootPath).toBe(customRoot);
+    expect(deployment?.targetPath).toBe(path.join(customRoot, "browse"));
+    expect(await pathExists(path.join(customRoot, "browse", "SKILL.md"))).toBe(true);
+  });
+
+  test("applyDraft deploys to a custom project target using the project-relative template", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const customRoot = path.join(sandbox.targetsRoot, "my-agent-global");
+    await fs.mkdir(customRoot, { recursive: true });
+
+    const app = new SkillFlowApp();
+    await installCustomTarget(
+      app,
+      {
+        id: "my-agent",
+        name: "My Agent",
+        globalPath: customRoot,
+        projectPathTemplate: ".my-agent/project-skills",
+        strategy: "copy",
+        createdAt: "2026-04-08T00:00:00.000Z",
+        updatedAt: "2026-04-08T00:00:00.000Z",
+      },
+      [
+        {
+          projectId: "repo-a",
+          title: "Repo A",
+          lastActivityAt: "2026-04-08T00:00:00.000Z",
+          projectPath: repoPath,
+          tools: [],
+        },
+      ],
+    );
+
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.sourceId;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(
+      sourceId,
+      {
+        enabledTargets: ["my-agent"],
+        selectedLeafIds: [leafId],
+      },
+      { kind: "project", projectId: "repo-a" },
+    );
+    expect(applied.ok).toBe(true);
+    const projectRoot = path.join(repoPath, ".my-agent", "project-skills");
+    expect(await pathExists(path.join(projectRoot, "browse", "SKILL.md"))).toBe(true);
+  });
 
   test("uninstall removes managed copied projections even when they drifted", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {

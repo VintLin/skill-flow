@@ -12,6 +12,8 @@ struct SettingsView: View {
 
     var theme: DesktopThemeMode = .light
     var detectedTargetIds: [String] = []
+    var onAddCustomAgent: () -> Void = {}
+    var onEditCustomAgent: (String) -> Void = { _ in }
 
     private enum DropdownKind: Hashable {
         case accent
@@ -176,6 +178,9 @@ struct SettingsView: View {
                 settingsSection(
                     title: t("settings.section.agent_display"),
                     description: t("settings.section.agent_display.description"),
+                    headerTrailing: {
+                        addCustomAgentButton
+                    },
                     rows: {
                         agentDisplayRows
                     }
@@ -323,13 +328,18 @@ struct SettingsView: View {
     private func settingsSection<Rows: View>(
         title: String,
         description: String? = nil,
+        @ViewBuilder headerTrailing: () -> some View = { EmptyView() },
         @ViewBuilder rows: () -> Rows
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 11, weight: .bold))
-                .textCase(.uppercase)
-                .foregroundStyle(AppTheme.textMuted(for: theme))
+            HStack(alignment: .center, spacing: 12) {
+                Text(title)
+                    .font(.system(size: 11, weight: .bold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                Spacer(minLength: 0)
+                headerTrailing()
+            }
             if let description {
                 Text(description)
                     .font(.system(size: 12, weight: .regular))
@@ -426,6 +436,22 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .opacity(contentOpacity)
+
+            if !row.isBuiltIn {
+                HStack(spacing: 8) {
+                    Button(t("settings.action.edit")) {
+                        onEditCustomAgent(row.targetId)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(t("settings.action.delete")) {
+                        viewModel.deleteCustomAgent(id: row.targetId)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+            }
 
             Toggle("", isOn: Binding(
                 get: { row.isVisible },
@@ -580,6 +606,28 @@ struct SettingsView: View {
         .desktopMotionButton(kind: .primary, theme: theme, accent: currentAccent, isEnabled: true)
     }
 
+    private var addCustomAgentButton: some View {
+        Button {
+            onAddCustomAgent()
+        } label: {
+            HStack(spacing: 6) {
+                actionIcon(.plus, size: 12)
+                Text(t("settings.action.add_custom_agent"))
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
+            .padding(.horizontal, 10)
+            .frame(height: Self.actionControlHeight)
+            .background(Self.controlBackground(for: .pageBackground, theme: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private func settingsActionLoadingIndicator() -> some View {
         HStack {
             Spacer(minLength: 0)
@@ -710,6 +758,105 @@ struct SettingsView: View {
         switch token {
         case .pageBackground:
             return AppTheme.pageBackground(for: theme)
+        }
+    }
+}
+
+struct EditCustomAgentSheet: View {
+    let title: String
+    @Binding var draft: SettingsViewModel.CustomAgentDraft
+    let errors: [String: String]
+    let theme: DesktopThemeMode
+    let globalPathExample: String
+    let projectPathExample: String
+    let t: (String) -> String
+    let onCancel: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+
+            customAgentFieldRow(
+                label: t("settings.custom_agents.name_label"),
+                text: $draft.name,
+                prompt: t("settings.custom_agents.name_example")
+            )
+            validationText(errors["name"])
+
+            customAgentFieldRow(
+                label: t("settings.custom_agents.global_path_label"),
+                text: $draft.globalPath,
+                prompt: globalPathExample
+            )
+            validationText(errors["globalPath"])
+
+            customAgentFieldRow(
+                label: t("settings.custom_agents.project_path_label"),
+                text: $draft.projectPathTemplate,
+                prompt: projectPathExample
+            )
+            Text(t("settings.custom_agents.project_path_hint"))
+                .font(.system(size: 12))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+            validationText(errors["projectPathTemplate"])
+
+            HStack {
+                Spacer()
+                Button(t("settings.action.cancel")) {
+                    onCancel()
+                }
+                Button(t("settings.action.save")) {
+                    onSave()
+                }
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 560, alignment: .topLeading)
+        .background(AppTheme.pageBackground(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    @ViewBuilder
+    private func validationText(_ message: String?) -> some View {
+        if let message {
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func customAgentFieldRow(
+        label: String,
+        text: Binding<String>,
+        prompt: String
+    ) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            Text(label)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .frame(width: 96, alignment: .leading)
+
+            TextField(
+                "",
+                text: text,
+                prompt: Text(prompt).foregroundStyle(AppTheme.textMuted(for: theme))
+            )
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 10)
+            .frame(height: SettingsView.actionControlHeight)
+            .background(AppTheme.surface(for: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+            }
         }
     }
 }

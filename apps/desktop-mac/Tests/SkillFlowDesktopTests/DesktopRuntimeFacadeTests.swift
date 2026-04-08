@@ -23,11 +23,13 @@ final class DesktopRuntimeFacadeTests: XCTestCase {
         let bridge = StubBridgeTransport()
         let facade = DesktopBridgeCommandFacade(bridgeClient: bridge)
 
+        _ = try await facade.saveSettings(customTargets: [], agentDisplayOrder: ["codex"])
         _ = try await facade.togglePinnedSource(sourceId: "alpha")
         _ = try await facade.updateSources(["alpha"])
         _ = try await facade.apply(sourceId: "alpha", scope: .project("repo-a"), selectedLeafIds: ["alpha:a"], enabledTargets: ["codex"])
 
         XCTAssertEqual(bridge.recordedCommands, [
+            "save-settings:[\"codex\"]",
             "toggle-pin:alpha",
             "update:[\"alpha\"]",
             "apply:alpha:project(repo-a)",
@@ -66,6 +68,11 @@ private final class StubBridgeTransport: DesktopBridgeTransporting, @unchecked S
     func previewImportSource(locator: String) async throws -> BridgeResponse {
         recordedCommands.append("preview-import-source:\(locator)")
         return .success(command: .previewImportSource)
+    }
+
+    func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
+        recordedCommands.append("save-settings:\(agentDisplayOrder)")
+        return .success(command: .saveSettings, payload: [:])
     }
 
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {

@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { createChannelAdapters } from "@skill-flow/integration/adapters/channel-adapters";
+import { getMergedTargetDefinitions } from "@skill-flow/integration/utils/constants";
 import type {
   DoctorIssue,
   DoctorReport,
@@ -12,12 +13,17 @@ import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { hashDirectory, isBrokenSymlink, pathExists } from "@skill-flow/integration/utils/fs";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
 import { ok } from "@skill-flow/integration/utils/result";
+import { StateStore } from "@skill-flow/storage/store";
 
 export class DoctorService {
-  private readonly adapters = createChannelAdapters();
+  constructor(private readonly store = new StateStore()) {}
 
   async run(manifest: Manifest, lockFile: LockFile): Promise<Result<DoctorReport>> {
     const issues: DoctorIssue[] = [];
+    const preferences = await this.store.readPreferences();
+    const adapters = createChannelAdapters(
+      getMergedTargetDefinitions(preferences.customTargets, preferences.agentDisplayOrder),
+    );
 
     for (const source of manifest.sources) {
       const binding = manifest.bindings[source.id] ?? { targets: {} };
@@ -26,7 +32,7 @@ export class DoctorService {
         sourceLock?.invalidLeafs.map((leaf) => leaf.path) ?? [],
       );
 
-      for (const adapter of this.adapters) {
+      for (const adapter of adapters) {
         const configured = binding.targets[adapter.target];
         if (!configured?.enabled) {
           continue;
@@ -161,7 +167,7 @@ export class DoctorService {
       }
     }
 
-    await this.reportUnmanagedExternalSkills(lockFile, issues);
+    await this.reportUnmanagedExternalSkills(lockFile, issues, adapters);
 
     for (const deployment of getManagedDeployments(lockFile)) {
       const sourceStillExists = manifest.sources.some(
@@ -201,13 +207,14 @@ export class DoctorService {
   private async reportUnmanagedExternalSkills(
     lockFile: LockFile,
     issues: DoctorIssue[],
+    adapters = createChannelAdapters(),
   ): Promise<void> {
     const managedTargetPaths = new Set(
       getManagedDeployments(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
     );
     const seenPaths = new Set<string>();
 
-    for (const adapter of this.adapters) {
+    for (const adapter of adapters) {
       const detection = await adapter.detect();
       if (!detection.available) {
         continue;

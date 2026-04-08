@@ -39,7 +39,7 @@ final class DesktopAppContainer {
             commandFacade: resolvedCommandFacade,
             mutationCoordinator: mutationCoordinator
         )
-        self.settingsViewModel = SettingsViewModel(state: resolvedRuntime.state)
+        self.settingsViewModel = SettingsViewModel(state: resolvedRuntime.state, commandFacade: resolvedCommandFacade)
         self.groupTagController = GroupTagController(
             state: resolvedRuntime.state,
             store: groupTagStore,

@@ -1,6 +1,6 @@
 import type {
   ConfigBootStatus,
-  DeploymentTargetName,
+  DeploymentTargetId,
   DoctorReport,
   DraftBinding,
   LockFile,
@@ -37,7 +37,7 @@ type ConfigCoordinatorDeps = {
       audit?: DoctorReport,
     ): WorkflowSummary[];
   };
-  getAvailableTargets(): Promise<DeploymentTargetName[]>;
+  getAvailableTargets(): Promise<DeploymentTargetId[]>;
   pruneMissingCheckouts(): Promise<Result<{ removedSourceIds: string[] }>>;
   getConfigData(): Promise<
     Result<{ manifest: Manifest; lockFile: LockFile; summaries: WorkflowSummary[] }>
@@ -45,7 +45,7 @@ type ConfigCoordinatorDeps = {
 };
 
 export type ConfigBootstrapData = {
-  availableTargets: DeploymentTargetName[];
+  availableTargets: DeploymentTargetId[];
   manifest: Manifest;
   lockFile: LockFile;
   summaries: WorkflowSummary[];

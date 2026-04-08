@@ -15,6 +15,7 @@ final class SettingsStateTests: XCTestCase {
         XCTAssertEqual(state.settings.selectedProjectScope, .global)
         XCTAssertTrue(state.settings.recentProjectScopes.isEmpty)
         XCTAssertTrue(state.settings.agentDisplayPreferences.isEmpty)
+        XCTAssertTrue(state.settings.customAgents.isEmpty)
     }
 
     func testSettingsStoreLoadsAndPersistsState() {
@@ -39,6 +40,17 @@ final class SettingsStateTests: XCTestCase {
             AgentDisplayPreference(targetId: "codex", isVisible: false, sortOrder: 0),
             AgentDisplayPreference(targetId: "claude-code", isVisible: true, sortOrder: 1),
         ]
+        state.customAgents = [
+            CustomAgentDefinition(
+                id: "my-agent",
+                name: "My Agent",
+                globalPath: "/Users/test/.my-agent/skills",
+                projectPathTemplate: ".my-agent/skills",
+                strategy: "copy",
+                createdAt: "2026-04-08T00:00:00.000Z",
+                updatedAt: "2026-04-08T01:00:00.000Z"
+            )
+        ]
         store.save(state)
 
         let reloaded = store.load()
@@ -50,5 +62,7 @@ final class SettingsStateTests: XCTestCase {
         XCTAssertEqual(reloaded.recentProjectScopes.first?.title, "Repo A")
         XCTAssertEqual(reloaded.agentDisplayPreferences.prefix(2).map(\.targetId), ["codex", "claude-code"])
         XCTAssertEqual(reloaded.agentDisplayPreferences.first?.isVisible, false)
+        XCTAssertEqual(reloaded.customAgents.first?.id, "my-agent")
+        XCTAssertEqual(reloaded.customAgents.first?.projectPathTemplate, ".my-agent/skills")
     }
 }

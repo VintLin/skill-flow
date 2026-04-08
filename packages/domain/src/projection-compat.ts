@@ -1,4 +1,4 @@
-import type { DeploymentTargetName, LockFile, ProjectionRecord, SourceLockRecord } from "./types.js";
+import type { DeploymentTargetId, LockFile, ProjectionRecord, SourceLockRecord } from "./types.js";
 
 export function getManagedDeployments(lockFile: LockFile): LockFile["deployments"] {
   if (!(lockFile.projections?.length)) {
@@ -13,7 +13,7 @@ export function getManagedDeployments(lockFile: LockFile): LockFile["deployments
 export function getBootstrapImportedTargets(
   lockFile: LockFile,
   sourceLock: SourceLockRecord,
-): DeploymentTargetName[] {
+): DeploymentTargetId[] {
   return [
     ...new Set([
       ...(lockFile.projections ?? [])

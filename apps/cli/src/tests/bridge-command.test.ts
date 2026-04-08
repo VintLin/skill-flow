@@ -42,6 +42,36 @@ describe.sequential("bridge command dispatcher", () => {
 
     expect(response.ok).toBe(true);
     expect(response.data).toHaveProperty("pinnedSourceIds", [added.data.manifest.id]);
+    expect(response.data).toHaveProperty("customTargets");
+    expect(response.data).toHaveProperty("agentDisplayOrder");
+  });
+
+  test("save-settings writes normalized custom targets to shared preferences", async () => {
+    const app = new SkillFlowApp();
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "save-settings",
+      payload: {
+        customTargets: [
+          {
+            id: "my-agent",
+            name: "My Agent",
+            globalPath: "/Users/test/.my-agent/skills",
+            projectPathTemplate: "./.my-agent/skills",
+            strategy: "copy",
+            createdAt: "2026-04-08T00:00:00.000Z",
+            updatedAt: "2026-04-08T01:00:00.000Z",
+          },
+        ],
+        agentDisplayOrder: ["codex", "my-agent"],
+      },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("customTargets");
+    expect(response.data).toHaveProperty("agentDisplayOrder");
+    expect((response.data as any).customTargets[0].projectPathTemplate).toBe(".my-agent/skills");
   });
 
   test("rejects invalid apply payload", async () => {

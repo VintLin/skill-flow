@@ -738,12 +738,12 @@ final class MainViewModel {
         let targetIds = visibleTargetIds()
 
         return targetIds.map { target in
-            TargetOption(id: target, label: AgentDisplayCatalog.label(for: target))
+            TargetOption(id: target, label: AgentDisplayCatalog.label(for: target, customAgents: routeState?.settings.customAgents ?? []))
         }
     }
 
     var detectedTargetIdsForSettings: [String] {
-        AgentDisplayCatalog.orderedTargetIds(in: detectedTargets)
+        AgentDisplayCatalog.orderedTargetIds(in: detectedTargets, customAgents: routeState?.settings.customAgents ?? [])
     }
 
     var sourceRows: [SourceRow] {
@@ -829,8 +829,8 @@ final class MainViewModel {
                 targets: visibleTargetIds().map { targetId in
                     GroupCardTarget(
                         id: targetId,
-                        label: AgentDisplayCatalog.label(for: targetId),
-                        shortLabel: AgentDisplayCatalog.shortLabel(for: targetId),
+                        label: AgentDisplayCatalog.label(for: targetId, customAgents: routeState?.settings.customAgents ?? []),
+                        shortLabel: AgentDisplayCatalog.shortLabel(for: targetId, customAgents: routeState?.settings.customAgents ?? []),
                         isEnabled: enabledTargets.contains(targetId)
                     )
                 },
@@ -1201,7 +1201,7 @@ final class MainViewModel {
             }
 
             for target in enabledTargets {
-                let targetLabel = AgentDisplayCatalog.label(for: target)
+                let targetLabel = AgentDisplayCatalog.label(for: target, customAgents: routeState?.settings.customAgents ?? [])
 
                 if selectedLeafIds.isEmpty {
                     rows.append(
@@ -2105,6 +2105,28 @@ final class MainViewModel {
             routeState?.settings.recentProjectScopes = cachedRecentProjectScopes
         }
 
+        if data.keys.contains("customTargets") {
+            let customAgents = parseCustomAgents(data["customTargets"])
+            routeState?.settings.customAgents = customAgents
+        }
+
+        if data.keys.contains("agentDisplayOrder") {
+            let order = (data["agentDisplayOrder"] as? [String]) ?? []
+            let existingPreferences = routeState?.settings.agentDisplayPreferences ?? []
+            let existingById = Dictionary(uniqueKeysWithValues: existingPreferences.map { ($0.targetId, $0) })
+            let rebuilt = order.enumerated().map { index, targetId in
+                AgentDisplayPreference(
+                    targetId: targetId,
+                    isVisible: existingById[targetId]?.isVisible ?? true,
+                    sortOrder: index
+                )
+            }
+            routeState?.settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(
+                rebuilt,
+                customAgents: routeState?.settings.customAgents ?? []
+            )
+        }
+
         persistProjectScopeSettingsIfNeeded()
         projectScopeChangeToken &+= 1
     }
@@ -2420,21 +2442,28 @@ final class MainViewModel {
     }
 
     private func visibleTargetIds() -> [String] {
-        let preferences = AgentDisplayCatalog.normalize(routeState?.settings.agentDisplayPreferences ?? [])
+        let preferences = AgentDisplayCatalog.normalize(
+            routeState?.settings.agentDisplayPreferences ?? [],
+            customAgents: routeState?.settings.customAgents ?? []
+        )
         let visibleTargetIds = preferences
             .filter(\.isVisible)
             .map(\.targetId)
+        let customTargetIds = Set((routeState?.settings.customAgents ?? []).map(\.id))
 
         if showAllTargets {
             return visibleTargetIds
         }
 
-        return Array(visibleTargetIds.filter { detectedTargets.contains($0) }.prefix(10))
+        return Array(
+            visibleTargetIds
+                .filter { detectedTargets.contains($0) || customTargetIds.contains($0) }
+                .prefix(10)
+        )
     }
 
     private func normalizedTargets(_ values: [String]) -> [String] {
-        let selected = Set(values)
-        return Self.targetOrder.filter { selected.contains($0) }
+        return AgentDisplayCatalog.orderedTargetIds(in: values, customAgents: routeState?.settings.customAgents ?? [])
     }
 
     private func normalizeDraft(_ draft: DraftState) -> DraftState {
@@ -2460,7 +2489,7 @@ final class MainViewModel {
         let preparedDetailContent = preparedDetailContentBySourceId[sourceId]
 
         let selectedLeafIds = Set(draft.selectedLeafIds)
-        let enabledTargetLabels = draft.enabledTargets.map { AgentDisplayCatalog.label(for: $0) }
+        let enabledTargetLabels = draft.enabledTargets.map { AgentDisplayCatalog.label(for: $0, customAgents: routeState?.settings.customAgents ?? []) }
         let enabledTargets = Set(draft.enabledTargets)
         let inspectedLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
@@ -2553,8 +2582,8 @@ final class MainViewModel {
         let targets = visibleTargetIds().map { targetId in
             DetailTarget(
                 id: targetId,
-                label: AgentDisplayCatalog.label(for: targetId),
-                shortLabel: AgentDisplayCatalog.shortLabel(for: targetId),
+                label: AgentDisplayCatalog.label(for: targetId, customAgents: routeState?.settings.customAgents ?? []),
+                shortLabel: AgentDisplayCatalog.shortLabel(for: targetId, customAgents: routeState?.settings.customAgents ?? []),
                 isEnabled: enabledTargets.contains(targetId)
             )
         }
@@ -3336,7 +3365,7 @@ final class MainViewModel {
     }
 
     private func targetLabel(for targetId: String) -> String {
-        AgentDisplayCatalog.label(for: targetId)
+        AgentDisplayCatalog.label(for: targetId, customAgents: routeState?.settings.customAgents ?? [])
     }
 
     private func compactSkillToastMessage(sourceId: String, leafId: String, enabled: Bool) -> PresentationText {
@@ -3839,11 +3868,11 @@ final class MainViewModel {
            let targetPath = (deployment["targetPath"] as? String)?.nonEmpty,
            let relativeTargetPath = Self.relativePath(from: projectPath, to: targetPath)
         {
-            return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(relativeTargetPath)"
+            return "\(AgentDisplayCatalog.label(for: target, customAgents: routeState?.settings.customAgents ?? [])) · \(status) · \(relativeTargetPath)"
         }
 
         let leafId = (deployment["leafId"] as? String)?.nonEmpty ?? "unknown"
-        return "\(AgentDisplayCatalog.label(for: target)) · \(status) · \(leafId)"
+        return "\(AgentDisplayCatalog.label(for: target, customAgents: routeState?.settings.customAgents ?? [])) · \(status) · \(leafId)"
     }
 
     private func currentProjectPath() -> String? {
@@ -4741,7 +4770,43 @@ final class MainViewModel {
         var persisted = settingsStore.load()
         persisted.selectedProjectScope = cachedSelectedProjectScope
         persisted.recentProjectScopes = cachedRecentProjectScopes
+        if let customAgents = routeState?.settings.customAgents {
+            persisted.customAgents = customAgents
+        }
+        if let preferences = routeState?.settings.agentDisplayPreferences {
+            persisted.agentDisplayPreferences = preferences
+        }
         settingsStore.save(persisted)
+    }
+
+    private func parseCustomAgents(_ value: Any?) -> [CustomAgentDefinition] {
+        guard let entries = value as? [[String: Any]] else {
+            return []
+        }
+
+        return entries.compactMap { entry in
+            guard
+                let id = entry["id"] as? String,
+                let name = entry["name"] as? String,
+                let globalPath = entry["globalPath"] as? String,
+                let projectPathTemplate = entry["projectPathTemplate"] as? String,
+                let strategy = entry["strategy"] as? String,
+                let createdAt = entry["createdAt"] as? String,
+                let updatedAt = entry["updatedAt"] as? String
+            else {
+                return nil
+            }
+
+            return CustomAgentDefinition(
+                id: id,
+                name: name,
+                globalPath: globalPath,
+                projectPathTemplate: projectPathTemplate,
+                strategy: strategy,
+                createdAt: createdAt,
+                updatedAt: updatedAt
+            )
+        }
     }
 
     private func projectionSummaries() -> [ProjectionSourceSummary] {

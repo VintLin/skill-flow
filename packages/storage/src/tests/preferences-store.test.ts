@@ -13,6 +13,23 @@ describe("preferences-store", () => {
       selectedProjectScope: { kind: "global" },
       recentProjects: [],
       projectDrafts: {},
+      customTargets: [],
+      agentDisplayOrder: [
+        "claude-code",
+        "codex",
+        "cursor",
+        "github-copilot",
+        "gemini-cli",
+        "opencode",
+        "openclaw",
+        "pi",
+        "trae",
+        "windsurf",
+        "roo-code",
+        "cline",
+        "amp",
+        "kiro",
+      ],
     });
   });
 
@@ -39,6 +56,23 @@ describe("preferences-store", () => {
       selectedProjectScope: { kind: "global" },
       recentProjects: [],
       projectDrafts: {},
+      customTargets: [],
+      agentDisplayOrder: [
+        "claude-code",
+        "codex",
+        "cursor",
+        "github-copilot",
+        "gemini-cli",
+        "opencode",
+        "openclaw",
+        "pi",
+        "trae",
+        "windsurf",
+        "roo-code",
+        "cline",
+        "amp",
+        "kiro",
+      ],
     });
   });
 
@@ -62,6 +96,23 @@ describe("preferences-store", () => {
           alpha: { enabledTargets: ["codex"], selectedLeafIds: [] },
         },
       },
+      customTargets: [],
+      agentDisplayOrder: [
+        "claude-code",
+        "codex",
+        "cursor",
+        "github-copilot",
+        "gemini-cli",
+        "opencode",
+        "openclaw",
+        "pi",
+        "trae",
+        "windsurf",
+        "roo-code",
+        "cline",
+        "amp",
+        "kiro",
+      ],
     };
 
     const normalized = normalizeSharedPreferences(prefs);
@@ -79,10 +130,157 @@ describe("preferences-store", () => {
       selectedProjectScope: { kind: "project", projectId: "missing-repo" },
       recentProjects: [],
       projectDrafts: {},
+      customTargets: [],
+      agentDisplayOrder: ["codex"],
     };
 
     const normalized = normalizeSharedPreferences(prefs);
 
     expect(normalized.selectedProjectScope).toEqual({ kind: "global" });
+    expect(normalized.agentDisplayOrder).toEqual([
+      "codex",
+      "claude-code",
+      "cursor",
+      "github-copilot",
+      "gemini-cli",
+      "opencode",
+      "openclaw",
+      "pi",
+      "trae",
+      "windsurf",
+      "roo-code",
+      "cline",
+      "amp",
+      "kiro",
+    ]);
+  });
+
+  test("keeps valid custom targets and appends them to normalized display order", () => {
+    const prefs = normalizeSharedPreferences({
+      schemaVersion: 1,
+      pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" },
+      recentProjects: [],
+      projectDrafts: {},
+      customTargets: [
+        {
+          id: "my-agent",
+          name: "My Agent",
+          globalPath: "  /Users/test/.my-agent/skills  ",
+          projectPathTemplate: "./.my-agent/skills",
+          strategy: "copy",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T01:00:00.000Z",
+        },
+      ],
+      agentDisplayOrder: ["codex"],
+    });
+
+    expect(prefs.customTargets).toEqual([
+      {
+        id: "my-agent",
+        name: "My Agent",
+        globalPath: "/Users/test/.my-agent/skills",
+        projectPathTemplate: ".my-agent/skills",
+        strategy: "copy",
+        createdAt: "2026-04-08T00:00:00.000Z",
+        updatedAt: "2026-04-08T01:00:00.000Z",
+      },
+    ]);
+    expect(prefs.agentDisplayOrder).toEqual([
+      "codex",
+      "claude-code",
+      "cursor",
+      "github-copilot",
+      "gemini-cli",
+      "opencode",
+      "openclaw",
+      "pi",
+      "trae",
+      "windsurf",
+      "roo-code",
+      "cline",
+      "amp",
+      "kiro",
+      "my-agent",
+    ]);
+  });
+
+  test("prunes invalid and colliding custom targets during normalization", () => {
+    const prefs = normalizeSharedPreferences({
+      schemaVersion: 1,
+      pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" },
+      recentProjects: [],
+      projectDrafts: {},
+      customTargets: [
+        {
+          id: "my-agent",
+          name: "My Agent",
+          globalPath: "/Users/test/.my-agent/skills",
+          projectPathTemplate: ".my-agent/skills",
+          strategy: "symlink",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T01:00:00.000Z",
+        },
+        {
+          id: "codex",
+          name: "Collides Builtin",
+          globalPath: "/Users/test/.codex-alt/skills",
+          projectPathTemplate: ".codex-alt/skills",
+          strategy: "symlink",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T01:00:00.000Z",
+        },
+        {
+          id: "my-agent",
+          name: "Duplicate Id",
+          globalPath: "/Users/test/.dupe/skills",
+          projectPathTemplate: ".dupe/skills",
+          strategy: "symlink",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T01:00:00.000Z",
+        },
+        {
+          id: "absolute-project",
+          name: "Absolute Project",
+          globalPath: "/Users/test/.absolute/skills",
+          projectPathTemplate: "/Users/test/project/skills",
+          strategy: "symlink",
+          createdAt: "2026-04-08T00:00:00.000Z",
+          updatedAt: "2026-04-08T01:00:00.000Z",
+        },
+      ],
+      agentDisplayOrder: ["missing-target", "my-agent", "codex", "my-agent"],
+    });
+
+    expect(prefs.customTargets).toEqual([
+      {
+        id: "my-agent",
+        name: "My Agent",
+        globalPath: "/Users/test/.my-agent/skills",
+        projectPathTemplate: ".my-agent/skills",
+        strategy: "symlink",
+        createdAt: "2026-04-08T00:00:00.000Z",
+        updatedAt: "2026-04-08T01:00:00.000Z",
+      },
+    ]);
+    expect(prefs.agentDisplayOrder).toEqual([
+      "my-agent",
+      "codex",
+      "claude-code",
+      "cursor",
+      "github-copilot",
+      "gemini-cli",
+      "opencode",
+      "openclaw",
+      "pi",
+      "trae",
+      "windsurf",
+      "roo-code",
+      "cline",
+      "amp",
+      "kiro",
+    ]);
   });
 });

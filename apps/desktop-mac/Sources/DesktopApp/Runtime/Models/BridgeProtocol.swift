@@ -14,6 +14,7 @@ enum BridgeCommand: String, Codable, Sendable {
     case apply
     case update
     case uninstall
+    case saveSettings = "save-settings"
 }
 
 struct BridgeRequest: Codable, Sendable {

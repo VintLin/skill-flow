@@ -1,11 +1,11 @@
 import type {
   DeploymentPlan,
-  DeploymentTargetName,
+  DeploymentTargetId,
   DraftBinding,
   LeafRecord,
   SourceManifestRecord,
 } from "@skill-flow/domain/types";
-import { TARGET_DEFINITIONS, TARGET_LABELS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
+import { getMergedTargetDefinitionById } from "@skill-flow/integration/utils/constants";
 import { countActions, formatActionSummary, formatTargetName } from "@skill-flow/integration/utils/format";
 import { formatGroupRef } from "@skill-flow/integration/utils/naming";
 
@@ -31,7 +31,7 @@ export const ALL_AGENTS_CHOICE_ID = "__all_agents__";
 export type AddFlowPrepared = {
   source: SourceManifestRecord;
   leafs: LeafRecord[];
-  availableTargets: DeploymentTargetName[];
+  availableTargets: DeploymentTargetId[];
   draft: DraftBinding;
   importWarnings: string[];
   requestedPath?: string;
@@ -74,19 +74,18 @@ export function buildLeafChoices(leafs: LeafRecord[]): AddChoice[] {
 }
 
 export function buildTargetChoices(
-  targets: DeploymentTargetName[],
+  targets: DeploymentTargetId[],
 ): AddChoice[] {
-  const orderedTargets = [...targets].sort(
-    (left, right) => TARGET_ORDER.indexOf(left) - TARGET_ORDER.indexOf(right),
-  );
-
-  return orderedTargets.map((target) => ({
+  return targets.map((target) => {
+    const definition = getMergedTargetDefinitionById(target);
+    return {
     id: target,
     label: formatTargetName(target),
-    ...(TARGET_DEFINITIONS[target].writeRootCandidates[0]
-      ? { hint: TARGET_DEFINITIONS[target].writeRootCandidates[0] }
+    ...(definition?.globalPath
+      ? { hint: definition.globalPath }
       : {}),
-  }));
+  };
+  });
 }
 
 export function withAllChoice(choices: AddChoice[], label: string, id: string): AddChoice[] {
@@ -125,22 +124,22 @@ export function resolveRequestedLeafIds(
 }
 
 export function resolveRequestedTargets(
-  availableTargets: DeploymentTargetName[],
+  availableTargets: DeploymentTargetId[],
   requestedAgents: string[],
-): { ok: true; value: DeploymentTargetName[] } | { ok: false; message: string } {
+) : { ok: true; value: DeploymentTargetId[] } | { ok: false; message: string } {
   const availableSet = new Set(availableTargets);
-  const resolvedTargets: DeploymentTargetName[] = [];
+  const resolvedTargets: DeploymentTargetId[] = [];
 
   for (const requestedAgent of requestedAgents) {
     const normalized = normalizeSearch(requestedAgent);
-    const matches = TARGET_ORDER.filter((target) => {
+    const matches = availableTargets.filter((target) => {
       if (!availableSet.has(target)) {
         return false;
       }
 
       return [
         target,
-        TARGET_LABELS[target],
+        formatTargetName(target),
       ].some((value) => normalizeSearch(value) === normalized);
     });
 
@@ -159,7 +158,7 @@ export function resolveRequestedTargets(
 
 export function buildInitialDraft(
   leafs: LeafRecord[],
-  availableTargets: DeploymentTargetName[],
+  availableTargets: DeploymentTargetId[],
   options: {
     requestedPath?: string;
     requestedSkills?: string[];

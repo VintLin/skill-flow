@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createChannelAdapters } from "@skill-flow/integration/adapters/channel-adapters";
+import { createChannelAdapters, type ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
 import type {
   AddSourceDraftOptions,
   AddSourcePreparation,
+  DeploymentTargetId,
   DraftBinding,
   DeploymentAction,
   DeploymentPlan,
@@ -67,7 +68,10 @@ import {
   parseHostedGitRepo,
   resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
-import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
+import {
+  getMergedTargetDefinitions,
+  resolveDocumentedProjectSkillPath,
+} from "@skill-flow/integration/utils/constants";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import { searchClawHubSkills } from "@skill-flow/integration/utils/clawhub";
 import { deriveDisplayName, deriveSourceId } from "@skill-flow/integration/utils/source-id";
@@ -118,7 +122,7 @@ type SkillFlowAddOptions = AddSourceOptions &
   };
 
 type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: boolean };
-type TargetRootOverrides = Partial<Record<DeploymentTargetName, string>>;
+type TargetRootOverrides = Partial<Record<DeploymentTargetId, string>>;
 type ApplyDraftResult = {
   actions: DeploymentAction[];
   draft: DraftBinding;
@@ -182,11 +186,11 @@ export class SkillFlowApp {
   private static readonly importGroupResolveConcurrency = 3;
 
   readonly store: StateStore;
-  readonly adapters;
+  adapters: ChannelAdapter[];
   readonly inventoryService: InventoryService;
   readonly sourceService: SourceService;
-  readonly planner: DeploymentPlanner;
-  readonly applier: DeploymentApplier;
+  planner: DeploymentPlanner;
+  applier: DeploymentApplier;
   readonly doctorService: DoctorService;
   readonly workflowService: WorkflowService;
   readonly recentProjectService: RecentProjectService;
@@ -199,14 +203,14 @@ export class SkillFlowApp {
   private importRecommendationRefreshesByFeed = new Map<ImportRecommendationFeedId, Promise<ImportRecommendationFeed>>();
 
   constructor() {
-    const adapters = createChannelAdapters();
     this.store = new StateStore();
+    const adapters = createChannelAdapters();
     this.adapters = adapters;
     this.inventoryService = new InventoryService();
     this.sourceService = new SourceService(this.store, this.inventoryService);
     this.planner = new DeploymentPlanner(adapters);
     this.applier = new DeploymentApplier(adapters);
-    this.doctorService = new DoctorService();
+    this.doctorService = new DoctorService(this.store);
     this.workflowService = new WorkflowService();
     this.recentProjectService = new RecentProjectService();
     this.workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
@@ -219,6 +223,18 @@ export class SkillFlowApp {
       pruneMissingCheckouts: () => this.pruneMissingCheckoutsImpl(),
       getConfigData: () => this.getConfigDataImpl(),
     });
+  }
+
+  private async refreshAdapters(): Promise<ChannelAdapter[]> {
+    const preferences = await this.store.readPreferences();
+    const targetDefinitions = getMergedTargetDefinitions(
+      preferences.customTargets,
+      preferences.agentDisplayOrder,
+    );
+    this.adapters = createChannelAdapters(targetDefinitions);
+    this.planner = new DeploymentPlanner(this.adapters);
+    this.applier = new DeploymentApplier(this.adapters);
+    return this.adapters;
   }
 
   async addSource(
@@ -499,10 +515,35 @@ export class SkillFlowApp {
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
       selectedProjectScope: ProjectScope;
+      customTargets: SharedPreferences["customTargets"];
+      agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
     return this.runSerializedMutation(() => this.listWorkflowsImpl());
+  }
+
+  async saveSettings(input: {
+    customTargets: SharedPreferences["customTargets"];
+    agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
+  }): Promise<Result<{
+    customTargets: SharedPreferences["customTargets"];
+    agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
+  }>> {
+    return this.runSerializedMutation(async () => {
+      const preferences = await this.store.readPreferences();
+      await this.store.writePreferences({
+        ...preferences,
+        customTargets: input.customTargets,
+        agentDisplayOrder: input.agentDisplayOrder,
+      });
+      const saved = await this.store.readPreferences();
+      await this.refreshAdapters();
+      return ok({
+        customTargets: saved.customTargets,
+        agentDisplayOrder: saved.agentDisplayOrder,
+      });
+    });
   }
 
   async inspectSource(
@@ -1204,7 +1245,7 @@ export class SkillFlowApp {
   private buildDirectImportPreviewResult(
     locator: string,
     preview: SourcePreview,
-    availableTargets: DeploymentTargetName[],
+    availableTargets: DeploymentTargetId[],
   ): ImportPreviewResult {
     return {
       status: "ready",
@@ -1586,6 +1627,8 @@ export class SkillFlowApp {
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
       selectedProjectScope: ProjectScope;
+      customTargets: SharedPreferences["customTargets"];
+      agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1619,6 +1662,8 @@ export class SkillFlowApp {
         pinnedSourceIds: reconciledPreferences.pinnedSourceIds,
         recentProjects: reconciledPreferences.recentProjects,
         selectedProjectScope: reconciledPreferences.selectedProjectScope,
+        customTargets: reconciledPreferences.customTargets,
+        agentDisplayOrder: reconciledPreferences.agentDisplayOrder,
         groupCardEnrichmentBySourceId,
       },
       pruned.warnings,
@@ -1660,7 +1705,7 @@ export class SkillFlowApp {
     onEvent?: (event: BootstrapEvent) => void,
   ): Promise<
     Result<{
-      availableTargets: DeploymentTargetName[];
+      availableTargets: DeploymentTargetId[];
       manifest: Manifest;
       lockFile: LockFile;
       summaries: WorkflowSummary[];
@@ -1671,6 +1716,8 @@ export class SkillFlowApp {
       recentProjects: RecentProject[];
       selectedProjectScope: ProjectScope;
       projectDrafts: SharedPreferences["projectDrafts"];
+      customTargets: SharedPreferences["customTargets"];
+      agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1685,7 +1732,7 @@ export class SkillFlowApp {
     onEvent?: (event: BootstrapEvent) => void,
   ): Promise<
     Result<{
-      availableTargets: DeploymentTargetName[];
+      availableTargets: DeploymentTargetId[];
       manifest: Manifest;
       lockFile: LockFile;
       summaries: WorkflowSummary[];
@@ -1696,6 +1743,8 @@ export class SkillFlowApp {
       recentProjects: RecentProject[];
       selectedProjectScope: ProjectScope;
       projectDrafts: SharedPreferences["projectDrafts"];
+      customTargets: SharedPreferences["customTargets"];
+      agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1721,6 +1770,8 @@ export class SkillFlowApp {
       recentProjects: preferences.recentProjects,
       selectedProjectScope: preferences.selectedProjectScope,
       projectDrafts: preferences.projectDrafts,
+      customTargets: preferences.customTargets,
+      agentDisplayOrder: preferences.agentDisplayOrder,
       groupCardEnrichmentBySourceId,
     });
   }
@@ -1783,9 +1834,9 @@ export class SkillFlowApp {
     return ok({ pinnedSourceIds: preferences.pinnedSourceIds });
   }
 
-  async getAvailableTargets(): Promise<DeploymentTargetName[]> {
-    const adapters = createChannelAdapters();
-    const availableTargets: DeploymentTargetName[] = [];
+  async getAvailableTargets(): Promise<DeploymentTargetId[]> {
+    const adapters = await this.refreshAdapters();
+    const availableTargets: DeploymentTargetId[] = [];
 
     for (const adapter of adapters) {
       const detection = await adapter.detect();
@@ -2366,7 +2417,7 @@ export class SkillFlowApp {
   }
 
   bindingFromDraft(draft: DraftBinding): SourceBinding {
-    const targets: Partial<Record<DeploymentTargetName, TargetBinding>> = {};
+    const targets: Partial<Record<DeploymentTargetId, TargetBinding>> = {};
     for (const target of draft.enabledTargets) {
       targets[target] = {
         enabled: true,
@@ -2499,8 +2550,9 @@ export class SkillFlowApp {
     const managedStateRoot = await fs.realpath(this.store.rootPath).catch(() =>
       path.resolve(this.store.rootPath),
     );
+    const adapters = await this.refreshAdapters();
 
-    for (const adapter of this.adapters) {
+    for (const adapter of adapters) {
       const detection = await adapter.detect();
       if (!detection.available || !(await pathExists(detection.rootPath))) {
         continue;
@@ -2557,6 +2609,7 @@ export class SkillFlowApp {
     sourceIds: string[],
   ): Promise<Warning[]> {
     const warnings: Warning[] = [];
+    const adapters = await this.refreshAdapters();
     const checkoutRoots = new Map<string, string>();
     for (const source of lockFile.sources.filter((item) => sourceIds.includes(item.id))) {
       const resolvedCheckoutPath = await fs.realpath(source.checkoutPath).catch(() =>
@@ -2568,7 +2621,7 @@ export class SkillFlowApp {
       return warnings;
     }
 
-    for (const adapter of this.adapters) {
+    for (const adapter of adapters) {
       const detection = await adapter.detect();
       if (!detection.available || !(await pathExists(detection.rootPath))) {
         continue;
@@ -2628,10 +2681,11 @@ export class SkillFlowApp {
     return true;
   }
 
-  private async getTargetRootMap(): Promise<Map<DeploymentTargetName, string>> {
+  private async getTargetRootMap(): Promise<Map<DeploymentTargetId, string>> {
+    const adapters = await this.refreshAdapters();
     return new Map(
       await Promise.all(
-        this.adapters.map(async (adapter) => {
+        adapters.map(async (adapter) => {
           const detection = await adapter.detect();
           return [adapter.target, detection.rootPath] as const;
         }),
@@ -2642,7 +2696,7 @@ export class SkillFlowApp {
   private getEnabledTargetsForSource(
     manifest: Manifest,
     sourceId: string,
-  ): DeploymentTargetName[] {
+  ): DeploymentTargetId[] {
     const binding = manifest.bindings[sourceId];
     if (!binding) {
       return [];
@@ -2650,13 +2704,13 @@ export class SkillFlowApp {
 
     return Object.entries(binding.targets)
       .filter(([, targetBinding]) => targetBinding?.enabled)
-      .map(([target]) => target as DeploymentTargetName);
+      .map(([target]) => target as DeploymentTargetId);
   }
 
   private isPathInsideManagedTargetRoot(
-    target: DeploymentTargetName,
+    target: DeploymentTargetId,
     targetPath: string,
-    targetRoots: Map<DeploymentTargetName, string>,
+    targetRoots: Map<DeploymentTargetId, string>,
     explicitRootPath?: string,
   ): boolean {
     return [explicitRootPath, targetRoots.get(target)]
@@ -2668,7 +2722,7 @@ export class SkillFlowApp {
     manifest: Manifest,
     lockFile: LockFile,
     sourceIds: string[],
-    restrictedTargets?: DeploymentTargetName[],
+    restrictedTargets?: DeploymentTargetId[],
   ): Promise<Warning[]> {
     const warnings: Warning[] = [];
     await this.ensureProjectionLedger(manifest, lockFile);
@@ -2723,7 +2777,7 @@ export class SkillFlowApp {
     manifest: Manifest,
     lockFile: LockFile,
     sourceId: string,
-    target: DeploymentTargetName,
+    target: DeploymentTargetId,
     rootPath: string,
     projectedLinkNames: Map<string, string>,
   ): Set<string> {
@@ -2758,7 +2812,7 @@ export class SkillFlowApp {
     lockFile: LockFile,
   ): Promise<void> {
     const targetRoots = await this.getTargetRootMap();
-    const projectedNameCache = new Map<DeploymentTargetName, Map<string, string>>();
+    const projectedNameCache = new Map<DeploymentTargetId, Map<string, string>>();
     const managed: ProjectionRecord[] = getManagedDeployments(lockFile).map((deployment) => ({
       ...deployment,
       mode: "managed",
@@ -2775,8 +2829,8 @@ export class SkillFlowApp {
       }
 
       const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceLock.id);
-      const observedByTarget = new Map<DeploymentTargetName, {
-        target: DeploymentTargetName;
+      const observedByTarget = new Map<DeploymentTargetId, {
+        target: DeploymentTargetId;
         rootPath: string;
         targetPath: string;
       }>();
@@ -3168,7 +3222,7 @@ export class SkillFlowApp {
   private buildAddDraft(
     sourceLeafs: LeafRecord[],
     requestedPath: string | undefined,
-    availableTargets: DeploymentTargetName[],
+    availableTargets: DeploymentTargetId[],
     options: SkillFlowAddOptions,
   ): Result<DraftBinding> {
     if (options.draft) {
@@ -3203,7 +3257,7 @@ export class SkillFlowApp {
 
   private resolveImportDraftForPreparedSource(
     sourceLeafs: LeafRecord[],
-    availableTargets: DeploymentTargetName[],
+    availableTargets: DeploymentTargetId[],
     canonicalRepo: string | undefined,
     draft?: ImportDraft,
   ): Result<DraftBinding> {
@@ -3375,9 +3429,9 @@ export class SkillFlowApp {
   }
 
   private resolveRequestedTargets(
-    availableTargets: DeploymentTargetName[],
-    requestedTargets?: DeploymentTargetName[],
-  ): Result<DeploymentTargetName[]> {
+    availableTargets: DeploymentTargetId[],
+    requestedTargets?: DeploymentTargetId[],
+  ): Result<DeploymentTargetId[]> {
     if (!requestedTargets?.length) {
       return ok([...availableTargets]);
     }
@@ -3472,7 +3526,7 @@ export class SkillFlowApp {
     manifest: Manifest,
     lockFile: LockFile,
     currentSourceId: string,
-    enabledTargets: DeploymentTargetName[],
+    enabledTargets: DeploymentTargetId[],
   ): Set<string> {
     const conflictingKeys = new Set<string>();
 
@@ -3519,6 +3573,7 @@ export class SkillFlowApp {
     lockFile: LockFile,
     primarySourceId: string,
   ): Promise<Result<DeploymentPlan>> {
+    await this.refreshAdapters();
     const sourceIds = manifest.sources
       .map((source) => source.id)
       .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
@@ -3557,7 +3612,7 @@ export class SkillFlowApp {
   // before planner/applier mutate the filesystem.
   private async resolveProjectTargetRoots(
     scope: Extract<ProjectScope, { kind: "project" }>,
-    targets: DeploymentTargetName[],
+    targets: DeploymentTargetId[],
   ): Promise<Result<TargetRootOverrides>> {
     const preferences = await this.store.readPreferences();
     const projectPath = await resolveUsableProjectPath(preferences.recentProjects.find(
@@ -3572,8 +3627,17 @@ export class SkillFlowApp {
     }
 
     const overrides: TargetRootOverrides = {};
+    const mergedTargets = getMergedTargetDefinitions(
+      preferences.customTargets,
+      preferences.agentDisplayOrder,
+    );
     for (const target of [...new Set(targets)]) {
-      const resolvedPath = resolveDocumentedProjectSkillPath(target, projectPath);
+      const mergedTarget = mergedTargets.find((candidate) => candidate.id === target);
+      const resolvedPath = mergedTarget?.kind === "builtin"
+        ? resolveDocumentedProjectSkillPath(target as DeploymentTargetName, projectPath)
+        : mergedTarget?.projectPathTemplate
+          ? path.join(projectPath, mergedTarget.projectPathTemplate)
+          : null;
       if (!resolvedPath) {
         return fail({
           code: "PROJECT_SCOPE_PATH_UNAVAILABLE",
@@ -3643,7 +3707,7 @@ export class SkillFlowApp {
     lockFile: LockFile,
     sourceId: string,
     scope: Extract<ProjectScope, { kind: "project" }>,
-    targets: DeploymentTargetName[],
+    targets: DeploymentTargetId[],
   ): Promise<LockFile["deployments"]> {
     const targetRootOverrides = await this.resolveProjectTargetRoots(scope, targets);
     if (!targetRootOverrides.ok) {
@@ -3671,14 +3735,15 @@ export class SkillFlowApp {
 
     const binding = manifest.bindings[sourceId] ?? { targets: {} };
     const scopedDeployments: LockFile["deployments"] = [];
+    const adapters = await this.refreshAdapters();
 
-    for (const [target, rootPath] of Object.entries(targetRootOverrides) as Array<[DeploymentTargetName, string]>) {
+    for (const [target, rootPath] of Object.entries(targetRootOverrides) as Array<[DeploymentTargetId, string]>) {
       const targetBinding = binding.targets[target];
       if (!targetBinding?.enabled) {
         continue;
       }
 
-      const adapter = this.adapters.find((candidate) => candidate.target === target);
+      const adapter = adapters.find((candidate) => candidate.target === target);
       if (!adapter) {
         continue;
       }
@@ -3713,7 +3778,8 @@ export class SkillFlowApp {
     targetRootOverrides: TargetRootOverrides,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const restores = this.adapters.map((adapter) => {
+    const adapters = await this.refreshAdapters();
+    const restores = adapters.map((adapter) => {
       const overrideRootPath = targetRootOverrides[adapter.target]?.trim();
       if (!overrideRootPath) {
         return () => {};
@@ -3748,6 +3814,7 @@ export class SkillFlowApp {
     lockFile: LockFile,
     sourceIds: string[],
   ): Promise<Result<{ actions: DeploymentAction[] }>> {
+    await this.refreshAdapters();
     const planned = await this.planForSources(manifest, lockFile, sourceIds);
     if (!planned.ok) {
       return fail(planned.errors, planned.warnings);
@@ -3781,12 +3848,15 @@ export class SkillFlowApp {
     const nextDeployments = previousDeployments.filter(
       (deployment) => requested ? !requested.has(deployment.sourceId) : false,
     );
-    const adapters = createChannelAdapters();
+    const preferences = await this.store.readPreferences();
+    const adapters = createChannelAdapters(
+      getMergedTargetDefinitions(preferences.customTargets, preferences.agentDisplayOrder),
+    );
     const detectionCache = new Map<
-      DeploymentTargetName,
+      DeploymentTargetId,
       Awaited<ReturnType<(typeof adapters)[number]["detect"]>>
     >();
-    const projectedNameCache = new Map<DeploymentTargetName, Map<string, string>>();
+    const projectedNameCache = new Map<DeploymentTargetId, Map<string, string>>();
 
     for (const source of manifest.sources) {
       if (requested && !requested.has(source.id)) {
@@ -3872,7 +3942,7 @@ export class SkillFlowApp {
   private buildProjectedLinkNameMap(
     manifest: Manifest,
     lockFile: LockFile,
-    target: DeploymentTargetName,
+    target: DeploymentTargetId,
   ): Map<string, string> {
     return resolveProjectedSkillNames(
       manifest.sources.flatMap((source) => {
@@ -3898,7 +3968,7 @@ export class SkillFlowApp {
   private async findManagedDeploymentOnDisk(
     source: Manifest["sources"][number],
     leaf: LeafRecord,
-    target: DeploymentTargetName,
+    target: DeploymentTargetId,
     strategy: "symlink" | "copy",
     rootPath: string,
     projectedLinkNames: Map<string, string>,
@@ -3971,7 +4041,7 @@ export class SkillFlowApp {
   private getDeploymentKey(
     sourceId: string,
     leafId: string,
-    target: DeploymentTargetName,
+    target: DeploymentTargetId,
   ) {
     return `${sourceId}\n${leafId}\n${target}`;
   }

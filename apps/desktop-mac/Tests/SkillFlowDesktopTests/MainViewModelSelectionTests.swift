@@ -91,6 +91,38 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertFalse(model.visibleTargets.map(\.id).contains("cursor"))
     }
 
+    func testCustomAgentsRemainVisibleInGroupCardsWithoutDetection() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let state = DesktopAppState()
+        state.settings.customAgents = [
+            CustomAgentDefinition(
+                id: "my-agent",
+                name: "My Agent",
+                globalPath: "/Users/test/.my-agent/skills",
+                projectPathTemplate: ".my-agent/skills",
+                strategy: "copy",
+                createdAt: "2026-04-08T00:00:00.000Z",
+                updatedAt: "2026-04-08T01:00:00.000Z"
+            )
+        ]
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(
+            [
+                AgentDisplayPreference(targetId: "my-agent", isVisible: true, sortOrder: 0),
+                AgentDisplayPreference(targetId: "claude-code", isVisible: true, sortOrder: 1),
+            ],
+            customAgents: state.settings.customAgents
+        )
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+
+        XCTAssertEqual(model.visibleTargets.prefix(2).map(\.id), ["my-agent", "claude-code"])
+        XCTAssertEqual(model.groupCards.first?.targets.prefix(2).map(\.id), ["my-agent", "claude-code"])
+    }
+
     func testSaveFailureRollsBackOptimisticEdit() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .failureBaseline)

@@ -138,6 +138,7 @@ final class DesktopAppContainerTests: XCTestCase {
 }
 
 private struct StubCommandFacade: DesktopCommanding {
+    func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse { fatalError("unused") }
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
     func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse { fatalError("unused") }
     func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }

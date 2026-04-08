@@ -47,6 +47,10 @@ struct MainView: View {
     @State private var updateButtonRotation: Double = 0
     @State private var searchFocusResetToken = 0
     @State private var showsProjectScopeBar = false
+    @State private var isEditCustomAgentPresented = false
+    @State private var editingCustomAgentId: String?
+    @State private var customAgentDraft = SettingsViewModel.CustomAgentDraft()
+    @State private var customAgentErrors: [String: String] = [:]
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -91,6 +95,44 @@ struct MainView: View {
                     pageContent(layout: layout)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if isEditCustomAgentPresented {
+                    ZStack {
+                        Color.black.opacity(theme == .dark ? 0.35 : 0.18)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                closeCustomAgentEditor()
+                            }
+
+                        EditCustomAgentSheet(
+                            title: L10n.string("settings.edit_custom_agent.title", locale: settingsViewModel.selectedLocale),
+                            draft: $customAgentDraft,
+                            errors: customAgentErrors,
+                            theme: theme,
+                            globalPathExample: AgentDisplayCatalog.mountPath(for: "codex"),
+                            projectPathExample: AgentDisplayCatalog.projectPath(for: "codex") ?? ".agents/skills",
+                            t: { L10n.string($0, locale: settingsViewModel.selectedLocale) },
+                            onCancel: {
+                                closeCustomAgentEditor()
+                            },
+                            onSave: {
+                                let errors = settingsViewModel.upsertCustomAgent(
+                                    customAgentDraft,
+                                    editingId: editingCustomAgentId
+                                )
+                                customAgentErrors = errors
+                                if errors.isEmpty {
+                                    closeCustomAgentEditor()
+                                }
+                            }
+                        )
+                        .frame(maxWidth: 640)
+                        .shadow(color: AppTheme.softShadow(for: theme), radius: 20, y: 10)
+                    }
+                    .transition(.opacity)
+                    .zIndex(50)
+                }
 
                 if let toast = viewModel.toast {
                     toastBanner(toast)
@@ -463,6 +505,12 @@ struct MainView: View {
         toolbarIconButton(.settings) { navigation.showSettings() }
     }
 
+    private func closeCustomAgentEditor() {
+        editingCustomAgentId = nil
+        customAgentErrors = [:]
+        isEditCustomAgentPresented = false
+    }
+
     private var homeCardDisplayMode: GroupCardDisplayMode {
         Self.homeGroupCardDisplayMode(for: settingsViewModel.currentHomeCardDensity)
     }
@@ -485,7 +533,19 @@ struct MainView: View {
             SettingsScreen(
                 viewModel: settingsViewModel,
                 theme: theme,
-                detectedTargetIds: viewModel.detectedTargetIdsForSettings
+                detectedTargetIds: viewModel.detectedTargetIdsForSettings,
+                onAddCustomAgent: {
+                    customAgentDraft = settingsViewModel.customAgentDraft()
+                    customAgentErrors = [:]
+                    editingCustomAgentId = nil
+                    isEditCustomAgentPresented = true
+                },
+                onEditCustomAgent: { targetId in
+                    customAgentDraft = settingsViewModel.customAgentDraft(editingId: targetId)
+                    customAgentErrors = [:]
+                    editingCustomAgentId = targetId
+                    isEditCustomAgentPresented = true
+                }
             )
         case .detail:
             DetailScreen(

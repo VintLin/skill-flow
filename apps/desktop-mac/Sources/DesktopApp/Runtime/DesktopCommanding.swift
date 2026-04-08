@@ -1,6 +1,7 @@
 import Foundation
 
 protocol DesktopCommanding: Sendable {
+    func saveSettings(customTargets: [[String: String]], agentDisplayOrder: [String]) async throws -> BridgeResponse
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse
     func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse
     func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse

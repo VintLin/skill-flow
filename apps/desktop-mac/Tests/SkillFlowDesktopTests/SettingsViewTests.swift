@@ -25,6 +25,7 @@ final class SettingsViewTests: XCTestCase {
     func testAgentDisplayLocalizationKeysResolve() {
         XCTAssertNotEqual(L10n.string("settings.section.agent_display", locale: Locale(identifier: "en")), "settings.section.agent_display")
         XCTAssertNotEqual(L10n.string("settings.agent_display.empty", locale: Locale(identifier: "zh-Hans")), "settings.agent_display.empty")
+        XCTAssertEqual(L10n.string("settings.section.agent_display", locale: Locale(identifier: "zh-Hans")), "代理显示")
     }
 
     func testCheckUpdatesLoadingIndicatorUsesCenteredControlColumnLayout() throws {
@@ -40,6 +41,82 @@ final class SettingsViewTests: XCTestCase {
 
     func testSettingsActionLoadingIndicatorReusesActionButtonChrome() throws {
         XCTAssertEqual(SettingsView.actionControlHeight, 32)
+    }
+
+    func testSettingsUsesSingleAgentsSectionWithInlineCustomAgentAction() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertTrue(source.contains("settings.section.agent_display"))
+        XCTAssertTrue(source.contains("settings.action.add_custom_agent"))
+        XCTAssertTrue(source.contains("EditCustomAgentSheet"))
+        XCTAssertFalse(source.contains("ManageAgentsSheet"))
+        XCTAssertFalse(source.contains("settings.section.custom_agents"))
+    }
+
+    func testAgentDisplayOnlyShowsInlineCustomEditActions() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertTrue(source.contains("settings.action.edit"))
+        XCTAssertTrue(source.contains("settings.action.delete"))
+        XCTAssertTrue(source.contains("settings.custom_agents.project_path_hint"))
+        XCTAssertFalse(source.contains("settings.action.view"))
+    }
+
+    func testSettingsCustomAgentFormOmitsManualIdField() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertFalse(source.contains("TextField(\"ID\""))
+        XCTAssertTrue(source.contains("t(\"settings.custom_agents.name_example\")"))
+        XCTAssertTrue(source.contains("globalPathExample"))
+        XCTAssertTrue(source.contains("projectPathExample"))
+        XCTAssertTrue(source.contains(".frame(height: SettingsView.actionControlHeight)"))
+        XCTAssertTrue(source.contains("RoundedRectangle(cornerRadius: 8)"))
+    }
+
+    func testCustomAgentEditorOverlayDismissesOnScrimTap() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(source.contains("EditCustomAgentSheet"))
+        XCTAssertTrue(source.contains(".onTapGesture"))
+        XCTAssertTrue(source.contains("closeCustomAgentEditor()"))
+    }
+
+    func testSettingsScreenNoLongerOwnsCustomAgentOverlay() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsScreen.swift")
+
+        XCTAssertFalse(source.contains("Color.black.opacity"))
+        XCTAssertFalse(source.contains("EditCustomAgentSheet"))
+    }
+
+    func testAgentDisplayRowShowsCustomActionsInline() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertTrue(source.contains("if !row.isBuiltIn"))
+        XCTAssertTrue(source.contains("settings.action.edit"))
+        XCTAssertTrue(source.contains("settings.action.delete"))
+        XCTAssertFalse(source.contains("settings.action.view"))
+    }
+
+    func testSettingsViewDoesNotUseManageAgentsSheetOrNestedSheets() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertFalse(source.contains("ManageAgentsSheet("))
+        XCTAssertFalse(source.contains("isManageAgentsPresented"))
+        XCTAssertFalse(source.contains(".sheet(item: $activeSheet)"))
+    }
+
+    func testAgentDisplaySectionKeepsDirectAddButtonWithIcon() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertTrue(source.contains("actionIcon(.plus, size: 12)"))
+        XCTAssertTrue(source.contains("settings.action.add_custom_agent"))
+        XCTAssertFalse(source.contains("settings.manage_agents.title"))
+    }
+
+    func testCustomAgentFieldsUseSurfaceFillInsteadOfPageBackground() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertTrue(source.contains(".background(AppTheme.surface(for: theme))"))
     }
 
     private func assertColorsEqual(

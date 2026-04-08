@@ -117,6 +117,18 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
+    func saveSettings(customTargets: [[String: String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(
+                command: .saveSettings,
+                payload: [
+                    "customTargets": AnyCodable(customTargets),
+                    "agentDisplayOrder": AnyCodable(agentDisplayOrder),
+                ]
+            )
+        }
+    }
+
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(command: .togglePin, payload: ["sourceId": AnyCodable(sourceId)])

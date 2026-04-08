@@ -1,9 +1,12 @@
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
+import type { CustomTargetDefinition } from "@skill-flow/domain/types";
 import * as constants from "@skill-flow/integration/utils/constants";
 
 const {
+  getMergedTargetDefinitions,
+  getMergedTargetDefinitionById,
   getExplicitTargetNames,
   getTargetDetectionCandidates,
   getTargetScanRoots,
@@ -152,5 +155,82 @@ describe("target definitions", () => {
     } else {
       process.env.SKILL_FLOW_TARGET_CODEX = previousCodex;
     }
+  });
+
+  test("merges built-in and custom targets into one ordered catalog", () => {
+    const customTargets: CustomTargetDefinition[] = [
+      {
+        id: "my-agent",
+        name: "My Agent",
+        globalPath: "/Users/test/.my-agent/skills",
+        projectPathTemplate: ".my-agent/skills",
+        strategy: "copy",
+        createdAt: "2026-04-08T00:00:00.000Z",
+        updatedAt: "2026-04-08T00:00:00.000Z",
+      },
+      {
+        id: "team-agent",
+        name: "Team Agent",
+        globalPath: "/Users/test/.team-agent/skills",
+        projectPathTemplate: ".team-agent/skills",
+        strategy: "symlink",
+        createdAt: "2026-04-08T00:00:00.000Z",
+        updatedAt: "2026-04-08T00:00:00.000Z",
+      },
+    ];
+
+    const merged = getMergedTargetDefinitions(customTargets, [
+      "codex",
+      "my-agent",
+      "claude-code",
+      "team-agent",
+    ]);
+
+    expect(merged.slice(0, 4).map((target) => target.id)).toEqual([
+      "codex",
+      "my-agent",
+      "claude-code",
+      "team-agent",
+    ]);
+    expect(merged.find((target) => target.id === "codex")).toMatchObject({
+      label: "Codex",
+      kind: "builtin",
+      isMutable: false,
+      globalPath: "~/.codex/skills/",
+      projectPathTemplate: ".agents/skills/",
+    });
+    expect(merged.find((target) => target.id === "my-agent")).toMatchObject({
+      label: "My Agent",
+      kind: "custom",
+      isMutable: true,
+      globalPath: "/Users/test/.my-agent/skills",
+      projectPathTemplate: ".my-agent/skills",
+    });
+  });
+
+  test("looks up merged target definitions by id", () => {
+    const customTarget: CustomTargetDefinition = {
+      id: "my-agent",
+      name: "My Agent",
+      globalPath: "/Users/test/.my-agent/skills",
+      projectPathTemplate: ".my-agent/skills",
+      strategy: "copy",
+      createdAt: "2026-04-08T00:00:00.000Z",
+      updatedAt: "2026-04-08T00:00:00.000Z",
+    };
+
+    expect(getMergedTargetDefinitionById("claude-code", [customTarget])).toMatchObject({
+      id: "claude-code",
+      label: "Claude Code",
+      kind: "builtin",
+      isMutable: false,
+    });
+    expect(getMergedTargetDefinitionById("my-agent", [customTarget])).toMatchObject({
+      id: "my-agent",
+      label: "My Agent",
+      kind: "custom",
+      isMutable: true,
+    });
+    expect(getMergedTargetDefinitionById("missing", [customTarget])).toBeUndefined();
   });
 });

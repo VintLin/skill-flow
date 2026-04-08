@@ -57,6 +57,39 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testDetectedAgentRowsIncludeCustomAgentsButHideUndetectedBuiltIns() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let store = DesktopSettingsStore(userDefaults: defaults)
+        let state = DesktopAppState()
+        var settings = SettingsState()
+        settings.customAgents = [
+            CustomAgentDefinition(
+                id: "my-agent",
+                name: "My Agent",
+                globalPath: "/Users/test/.my-agent/skills",
+                projectPathTemplate: ".my-agent/skills",
+                strategy: "copy",
+                createdAt: "2026-04-08T00:00:00.000Z",
+                updatedAt: "2026-04-08T01:00:00.000Z"
+            )
+        ]
+        settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(
+            [
+                AgentDisplayPreference(targetId: "claude-code", isVisible: true, sortOrder: 0),
+                AgentDisplayPreference(targetId: "cursor", isVisible: true, sortOrder: 1),
+                AgentDisplayPreference(targetId: "my-agent", isVisible: true, sortOrder: 2),
+            ],
+            customAgents: settings.customAgents
+        )
+        store.save(settings)
+        let viewModel = SettingsViewModel(state: state, store: store)
+
+        let rows = viewModel.detectedAgentRows(detectedTargetIds: ["cursor"])
+
+        XCTAssertEqual(rows.map(\.targetId), ["cursor", "my-agent"])
+    }
+
+    @MainActor
     func testWritesPersistImmediately() {
         let defaults = UserDefaults(suiteName: suiteName)!
         let state = DesktopAppState()
@@ -125,6 +158,179 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testMoveAgentsSyncsSharedSettingsOrder() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let saveExpectation = expectation(description: "save settings after move")
+        let commandFacade = RecordingSettingsCommandFacade(saveExpectation: saveExpectation)
+        let viewModel = SettingsViewModel(
+            state: state,
+            store: DesktopSettingsStore(userDefaults: defaults),
+            commandFacade: commandFacade
+        )
+
+        viewModel.moveAgents(from: IndexSet(integer: 1), to: 0, detectedTargetIds: ["claude-code", "codex", "cursor"])
+
+        await fulfillment(of: [saveExpectation], timeout: 1.0)
+        XCTAssertEqual(commandFacade.saveSettingsCalls.last?.agentDisplayOrder.prefix(3).map { $0 }, ["codex", "claude-code", "cursor"])
+    }
+
+    @MainActor
+    func testMoveAgentsAllowsCustomAgentsToReorderWithinUnifiedDetectedList() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let store = DesktopSettingsStore(userDefaults: defaults)
+        let state = DesktopAppState()
+        var settings = SettingsState()
+        settings.customAgents = [
+            CustomAgentDefinition(
+                id: "my-agent",
+                name: "My Agent",
+                globalPath: "/Users/test/.my-agent/skills",
+                projectPathTemplate: ".my-agent/skills",
+                strategy: "copy",
+                createdAt: "2026-04-08T00:00:00.000Z",
+                updatedAt: "2026-04-08T01:00:00.000Z"
+            )
+        ]
+        settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(
+            [
+                AgentDisplayPreference(targetId: "claude-code", isVisible: true, sortOrder: 0),
+                AgentDisplayPreference(targetId: "my-agent", isVisible: true, sortOrder: 1),
+                AgentDisplayPreference(targetId: "cursor", isVisible: true, sortOrder: 2),
+            ],
+            customAgents: settings.customAgents
+        )
+        store.save(settings)
+
+        let viewModel = SettingsViewModel(state: state, store: store)
+
+        viewModel.moveAgents(from: IndexSet(integer: 1), to: 0, detectedTargetIds: ["claude-code", "cursor"])
+
+        XCTAssertEqual(
+            state.settings.agentDisplayPreferences.prefix(3).map(\.targetId),
+            ["my-agent", "claude-code", "cursor"]
+        )
+        XCTAssertEqual(
+            state.settings.agentDisplayPreferences.prefix(3).map(\.sortOrder),
+            [0, 1, 2]
+        )
+    }
+
+    @MainActor
+    func testAddCustomAgentPersistsAndJoinsUnifiedDisplayOrder() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        let result = viewModel.upsertCustomAgent(
+            SettingsViewModel.CustomAgentDraft(
+                name: "My Agent",
+                globalPath: "/Users/test/.my-agent/skills",
+                projectPathTemplate: ".my-agent/skills",
+                strategy: "copy"
+            )
+        )
+
+        XCTAssertTrue(result.isEmpty)
+        XCTAssertEqual(state.settings.customAgents.map(\.id), ["my-agent"])
+        XCTAssertTrue(state.settings.agentDisplayPreferences.contains(where: { $0.targetId == "my-agent" }))
+        XCTAssertEqual(viewModel.detectedAgentRows(detectedTargetIds: ["my-agent"]).first?.title, "My Agent")
+        XCTAssertEqual(viewModel.detectedAgentRows(detectedTargetIds: ["my-agent"]).first?.mountPath, "/Users/test/.my-agent/skills")
+    }
+
+    @MainActor
+    func testEditCustomAgentUpdatesPersistedValues() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        state.settings.customAgents = [
+            CustomAgentDefinition(
+                id: "my-agent",
+                name: "My Agent",
+                globalPath: "/Users/test/.my-agent/skills",
+                projectPathTemplate: ".my-agent/skills",
+                strategy: "copy",
+                createdAt: "2026-04-08T00:00:00.000Z",
+                updatedAt: "2026-04-08T01:00:00.000Z"
+            )
+        ]
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(
+            AgentDisplayCatalog.defaultPreferences() + [AgentDisplayPreference(targetId: "my-agent", isVisible: true, sortOrder: 99)],
+            customAgents: state.settings.customAgents
+        )
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        let result = viewModel.upsertCustomAgent(
+            SettingsViewModel.CustomAgentDraft(
+                name: "Team Agent",
+                globalPath: "/Users/test/.team-agent/skills",
+                projectPathTemplate: ".team-agent/skills",
+                strategy: "symlink"
+            ),
+            editingId: "my-agent"
+        )
+
+        XCTAssertTrue(result.isEmpty)
+        XCTAssertEqual(state.settings.customAgents.first?.name, "Team Agent")
+        XCTAssertEqual(state.settings.customAgents.first?.globalPath, "/Users/test/.team-agent/skills")
+        XCTAssertEqual(viewModel.detectedAgentRows(detectedTargetIds: ["my-agent"]).first?.shortLabel, "TA")
+    }
+
+    @MainActor
+    func testDeleteCustomAgentRemovesItFromSettingsAndDisplayPreferences() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        state.settings.customAgents = [
+            CustomAgentDefinition(
+                id: "my-agent",
+                name: "My Agent",
+                globalPath: "/Users/test/.my-agent/skills",
+                projectPathTemplate: ".my-agent/skills",
+                strategy: "copy",
+                createdAt: "2026-04-08T00:00:00.000Z",
+                updatedAt: "2026-04-08T01:00:00.000Z"
+            )
+        ]
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(
+            AgentDisplayCatalog.defaultPreferences() + [AgentDisplayPreference(targetId: "my-agent", isVisible: true, sortOrder: 99)],
+            customAgents: state.settings.customAgents
+        )
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        viewModel.deleteCustomAgent(id: "my-agent")
+
+        XCTAssertTrue(state.settings.customAgents.isEmpty)
+        XCTAssertFalse(state.settings.agentDisplayPreferences.contains(where: { $0.targetId == "my-agent" }))
+    }
+
+    @MainActor
+    func testRejectsAbsoluteProjectPathAndGeneratesUniqueCustomAgentID() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        let absolutePathErrors = viewModel.upsertCustomAgent(
+            SettingsViewModel.CustomAgentDraft(
+                name: "My Agent",
+                globalPath: "/Users/test/.my-agent/skills",
+                projectPathTemplate: "/Users/test/project/skills",
+                strategy: "copy"
+            )
+        )
+        let generatedIDResult = viewModel.upsertCustomAgent(
+            SettingsViewModel.CustomAgentDraft(
+                name: "Codex",
+                globalPath: "/Users/test/.codex-alt/skills",
+                projectPathTemplate: ".codex-alt/skills",
+                strategy: "copy"
+            )
+        )
+
+        XCTAssertEqual(absolutePathErrors["projectPathTemplate"], "Project path must be relative.")
+        XCTAssertTrue(generatedIDResult.isEmpty)
+        XCTAssertEqual(state.settings.customAgents.map(\.id), ["codex-2"])
+    }
+
+    @MainActor
     func testResetAgentDisplayPreferencesRestoresDefaultOrderAndVisibility() {
         let defaults = UserDefaults(suiteName: suiteName)!
         let state = DesktopAppState()
@@ -138,6 +344,29 @@ final class SettingsViewModelTests: XCTestCase {
         let rows = viewModel.detectedAgentRows(detectedTargetIds: ["claude-code", "codex", "cursor"])
         XCTAssertEqual(rows.map(\.targetId), ["claude-code", "codex", "cursor"])
         XCTAssertTrue(rows.allSatisfy(\.isVisible))
+    }
+
+    @MainActor
+    func testResetAgentDisplayPreferencesSyncsSharedSettingsOrder() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let saveExpectation = expectation(description: "save settings after reset")
+        let commandFacade = RecordingSettingsCommandFacade(saveExpectation: saveExpectation)
+        let viewModel = SettingsViewModel(
+            state: state,
+            store: DesktopSettingsStore(userDefaults: defaults),
+            commandFacade: commandFacade
+        )
+
+        viewModel.moveAgents(from: IndexSet(integer: 1), to: 0, detectedTargetIds: ["claude-code", "codex", "cursor"])
+        await fulfillment(of: [saveExpectation], timeout: 1.0)
+
+        let resetExpectation = expectation(description: "save settings after reset order")
+        commandFacade.saveExpectation = resetExpectation
+        viewModel.resetAgentDisplayPreferences()
+
+        await fulfillment(of: [resetExpectation], timeout: 1.0)
+        XCTAssertEqual(commandFacade.saveSettingsCalls.last?.agentDisplayOrder.prefix(3).map { $0 }, ["claude-code", "codex", "cursor"])
     }
 
     func testAgentDisplayCatalogReturnsMountPaths() {
@@ -319,5 +548,63 @@ private final class CountingUpdateChecker: DesktopUpdateChecking, @unchecked Sen
     func fetchLatestRelease() async throws -> DesktopReleaseInfo {
         callCount += 1
         return try result.get()
+    }
+}
+
+private final class RecordingSettingsCommandFacade: DesktopCommanding, @unchecked Sendable {
+    struct SaveSettingsCall: Equatable {
+        let customTargets: [[String: String]]
+        let agentDisplayOrder: [String]
+    }
+
+    var saveExpectation: XCTestExpectation?
+    private(set) var saveSettingsCalls: [SaveSettingsCall] = []
+
+    init(saveExpectation: XCTestExpectation? = nil) {
+        self.saveExpectation = saveExpectation
+    }
+
+    func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
+        saveSettingsCalls.append(SaveSettingsCall(customTargets: customTargets, agentDisplayOrder: agentDisplayOrder))
+        saveExpectation?.fulfill()
+        return .success(command: .saveSettings, payload: [:])
+    }
+
+    func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func doctor() async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+}
+
+private extension BridgeResponse {
+    static func success(command: BridgeCommand, payload: [String: Any]) -> BridgeResponse {
+        BridgeResponse(
+            protocolVersion: "1.0",
+            requestId: UUID().uuidString,
+            command: command,
+            ok: true,
+            data: AnyCodable(payload),
+            warnings: [],
+            errors: []
+        )
     }
 }

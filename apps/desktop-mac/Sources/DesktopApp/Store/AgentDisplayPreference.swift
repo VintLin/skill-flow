@@ -60,14 +60,18 @@ enum AgentDisplayCatalog {
         "kiro": "KI",
     ]
 
-    static func defaultPreferences() -> [AgentDisplayPreference] {
-        defaultTargetOrder.enumerated().map { index, targetId in
+    static func defaultPreferences(customAgents: [CustomAgentDefinition] = []) -> [AgentDisplayPreference] {
+        orderedTargetIds(customAgents: customAgents).enumerated().map { index, targetId in
             AgentDisplayPreference(targetId: targetId, isVisible: true, sortOrder: index)
         }
     }
 
-    static func normalize(_ rawPreferences: [AgentDisplayPreference]) -> [AgentDisplayPreference] {
-        let knownTargetIds = Set(defaultTargetOrder)
+    static func normalize(
+        _ rawPreferences: [AgentDisplayPreference],
+        customAgents: [CustomAgentDefinition] = []
+    ) -> [AgentDisplayPreference] {
+        let orderedIds = orderedTargetIds(customAgents: customAgents)
+        let knownTargetIds = Set(orderedIds)
         let validPreferences = rawPreferences.filter { knownTargetIds.contains($0.targetId) }
         let rawByTargetId = Dictionary(uniqueKeysWithValues: validPreferences.map { ($0.targetId, $0) })
         let baseOrder = validPreferences
@@ -75,10 +79,10 @@ enum AgentDisplayCatalog {
                 if $0.sortOrder != $1.sortOrder {
                     return $0.sortOrder < $1.sortOrder
                 }
-                return defaultIndex(for: $0.targetId) < defaultIndex(for: $1.targetId)
+                return defaultIndex(for: $0.targetId, customAgents: customAgents) < defaultIndex(for: $1.targetId, customAgents: customAgents)
             }
             .map(\.targetId)
-        let missingTargets = defaultTargetOrder.filter { rawByTargetId[$0] == nil }
+        let missingTargets = orderedIds.filter { rawByTargetId[$0] == nil }
         let orderedTargetIds = baseOrder + missingTargets
 
         return orderedTargetIds.enumerated().map { index, targetId in
@@ -91,15 +95,21 @@ enum AgentDisplayCatalog {
         }
     }
 
-    static func label(for targetId: String) -> String {
-        labelsByTargetId[targetId] ?? targetId
+    static func label(for targetId: String, customAgents: [CustomAgentDefinition] = []) -> String {
+        customAgents.first(where: { $0.id == targetId })?.name ?? labelsByTargetId[targetId] ?? targetId
     }
 
-    static func shortLabel(for targetId: String) -> String {
-        shortLabelsByTargetId[targetId] ?? String(label(for: targetId).prefix(2)).uppercased()
+    static func shortLabel(for targetId: String, customAgents: [CustomAgentDefinition] = []) -> String {
+        if let customAgent = customAgents.first(where: { $0.id == targetId }) {
+            return monogram(for: customAgent.name)
+        }
+        return shortLabelsByTargetId[targetId] ?? String(label(for: targetId, customAgents: customAgents).prefix(2)).uppercased()
     }
 
-    static func mountPath(for targetId: String) -> String {
+    static func mountPath(for targetId: String, customAgents: [CustomAgentDefinition] = []) -> String {
+        if let customAgent = customAgents.first(where: { $0.id == targetId }) {
+            return customAgent.globalPath
+        }
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 
         switch targetId {
@@ -136,12 +146,66 @@ enum AgentDisplayCatalog {
         }
     }
 
-    static func orderedTargetIds(in targetIds: some Sequence<String>) -> [String] {
-        let selected = Set(targetIds)
-        return defaultTargetOrder.filter { selected.contains($0) }
+    static func projectPath(for targetId: String, customAgents: [CustomAgentDefinition] = []) -> String? {
+        if let customAgent = customAgents.first(where: { $0.id == targetId }) {
+            return customAgent.projectPathTemplate.nonEmpty
+        }
+
+        switch targetId {
+        case "claude-code":
+            return ".claude/skills"
+        case "codex", "cursor", "github-copilot", "gemini-cli", "opencode", "cline":
+            return ".agents/skills"
+        case "openclaw":
+            return "skills"
+        case "pi":
+            return ".pi/skills"
+        case "trae":
+            return ".trae/skills"
+        case "windsurf":
+            return ".windsurf/skills"
+        case "roo-code":
+            return ".roo/skills"
+        case "amp":
+            return ".agents/skills"
+        case "kiro":
+            return ".kiro/skills"
+        default:
+            return nil
+        }
     }
 
-    private static func defaultIndex(for targetId: String) -> Int {
-        defaultTargetOrder.firstIndex(of: targetId) ?? defaultTargetOrder.count
+    static func orderedTargetIds(in targetIds: some Sequence<String>, customAgents: [CustomAgentDefinition] = []) -> [String] {
+        let selected = Set(targetIds)
+        return orderedTargetIds(customAgents: customAgents).filter { selected.contains($0) }
+    }
+
+    static func isBuiltIn(targetId: String) -> Bool {
+        defaultTargetOrder.contains(targetId)
+    }
+
+    private static func orderedTargetIds(customAgents: [CustomAgentDefinition]) -> [String] {
+        defaultTargetOrder + customAgents.map(\.id)
+    }
+
+    private static func defaultIndex(for targetId: String, customAgents: [CustomAgentDefinition]) -> Int {
+        orderedTargetIds(customAgents: customAgents).firstIndex(of: targetId) ?? orderedTargetIds(customAgents: customAgents).count
+    }
+
+    private static func monogram(for name: String) -> String {
+        let tokens = name
+            .split(whereSeparator: { $0.isWhitespace || $0 == "-" || $0 == "_" })
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        if tokens.count >= 2 {
+            return String(tokens.prefix(2).compactMap { $0.first }).uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+}
+
+private extension String {
+    var nonEmpty: String? {
+        isEmpty ? nil : self
     }
 }

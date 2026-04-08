@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import type { DeploymentPlan, DeploymentTargetName, DraftBinding } from "@skill-flow/domain/types";
+import type { DeploymentPlan, DeploymentTargetId, DraftBinding } from "@skill-flow/domain/types";
 import type { SkillFlowApp } from "@skill-flow/query/runtime";
 import { filterAddWarnings } from "@skill-flow/integration/utils/cli";
 import {
@@ -319,7 +319,7 @@ export function AddFlowApp({ app, request, onExit }: AddFlowAppProps) {
         setSelectedIds: (enabledTargets) => {
           setDraft({
             ...draft,
-            enabledTargets: enabledTargets as DeploymentTargetName[],
+            enabledTargets: enabledTargets as DeploymentTargetId[],
           });
         },
         ...(session.leafs.length > 1 && !(request.requestedSkills?.length)
@@ -556,7 +556,7 @@ async function prepareAddSession(
       ? { skillNames: request.requestedSkills }
       : {}),
     ...(!request.all && request.requestedAgents?.length
-      ? { agentTargets: request.requestedAgents as DeploymentTargetName[] }
+      ? { agentTargets: request.requestedAgents as DeploymentTargetId[] }
       : {}),
   });
   if (!added.ok) {

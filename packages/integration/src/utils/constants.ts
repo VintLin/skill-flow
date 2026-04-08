@@ -1,8 +1,10 @@
 import os from "node:os";
 import path from "node:path";
 import type {
+  CustomTargetDefinition,
   DeploymentStrategy,
   DeploymentTargetName,
+  MergedTargetDefinition,
 } from "@skill-flow/domain/types";
 
 export const SCHEMA_VERSION = 1 as const;
@@ -235,6 +237,92 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     documentedAgentIds: ["kiro-cli"],
   },
 };
+
+export function getBuiltInTargetDefinitions(): MergedTargetDefinition[] {
+  return TARGET_ORDER.map((target) => {
+    const definition = TARGET_DEFINITIONS[target];
+    const mergedDefinition: MergedTargetDefinition = {
+      id: target,
+      label: definition.label,
+      strategy: definition.strategy,
+      kind: "builtin",
+      isMutable: false,
+      globalPath: definition.documentedGlobalPath,
+    };
+
+    if (definition.documentedProjectPath) {
+      mergedDefinition.projectPathTemplate = definition.documentedProjectPath;
+    }
+
+    if (definition.iconAssetName) {
+      mergedDefinition.iconAssetName = definition.iconAssetName;
+    }
+
+    return mergedDefinition;
+  });
+}
+
+export function getMergedTargetDefinitions(
+  customTargets: CustomTargetDefinition[] = [],
+  agentDisplayOrder?: string[],
+): MergedTargetDefinition[] {
+  const builtIns = getBuiltInTargetDefinitions();
+  const merged = [
+    ...builtIns,
+    ...customTargets.map<MergedTargetDefinition>((target) => {
+      const mergedDefinition: MergedTargetDefinition = {
+        id: target.id,
+        label: target.name,
+        strategy: target.strategy,
+        kind: "custom",
+        isMutable: true,
+        globalPath: target.globalPath,
+      };
+
+      if (target.projectPathTemplate.length > 0) {
+        mergedDefinition.projectPathTemplate = target.projectPathTemplate;
+      }
+
+      return mergedDefinition;
+    }),
+  ];
+
+  const indexById = new Map<string, MergedTargetDefinition>(
+    merged.map((definition) => [definition.id, definition]),
+  );
+
+  if (!agentDisplayOrder || agentDisplayOrder.length === 0) {
+    return merged;
+  }
+
+  const ordered: MergedTargetDefinition[] = [];
+  const seen = new Set<string>();
+
+  for (const targetId of agentDisplayOrder) {
+    const definition = indexById.get(targetId);
+    if (!definition || seen.has(targetId)) {
+      continue;
+    }
+    seen.add(targetId);
+    ordered.push(definition);
+  }
+
+  for (const definition of merged) {
+    if (!seen.has(definition.id)) {
+      seen.add(definition.id);
+      ordered.push(definition);
+    }
+  }
+
+  return ordered;
+}
+
+export function getMergedTargetDefinitionById(
+  targetId: string,
+  customTargets: CustomTargetDefinition[] = [],
+): MergedTargetDefinition | undefined {
+  return getMergedTargetDefinitions(customTargets).find((target) => target.id === targetId);
+}
 
 export const TARGET_LABELS: Record<DeploymentTargetName, string> = Object.fromEntries(
   TARGET_ORDER.map((target) => [target, TARGET_DEFINITIONS[target].label]),

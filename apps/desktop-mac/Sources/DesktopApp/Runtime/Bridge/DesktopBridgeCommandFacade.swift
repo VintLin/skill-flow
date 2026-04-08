@@ -3,6 +3,10 @@ import Foundation
 struct DesktopBridgeCommandFacade<Transport: DesktopBridgeTransporting>: DesktopCommanding {
     let bridgeClient: Transport
 
+    func saveSettings(customTargets: [[String: String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
+        try await bridgeClient.saveSettings(customTargets: customTargets, agentDisplayOrder: agentDisplayOrder)
+    }
+
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
         try await bridgeClient.togglePinnedSource(sourceId: sourceId)
     }

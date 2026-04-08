@@ -21,7 +21,8 @@ struct DesktopSettingsStore {
             menuCardDensityRawValue: userDefaults.string(forKey: SettingsViewModel.menuCardDensityKey) ?? DesktopCardDensity.compact.rawValue,
             selectedProjectScope: loadSelectedProjectScope(),
             recentProjectScopes: loadRecentProjectScopes(),
-            agentDisplayPreferences: AgentDisplayCatalog.normalize(loadAgentDisplayPreferences())
+            agentDisplayPreferences: AgentDisplayCatalog.normalize(loadAgentDisplayPreferences(), customAgents: loadCustomAgents()),
+            customAgents: loadCustomAgents()
         )
     }
 
@@ -38,8 +39,10 @@ struct DesktopSettingsStore {
         userDefaults.set(encodedProjectScope, forKey: SettingsViewModel.selectedProjectScopeKey)
         let encodedRecentProjectScopes = try? encoder.encode(state.recentProjectScopes)
         userDefaults.set(encodedRecentProjectScopes, forKey: SettingsViewModel.recentProjectScopesKey)
-        let encodedPreferences = try? encoder.encode(AgentDisplayCatalog.normalize(state.agentDisplayPreferences))
+        let encodedPreferences = try? encoder.encode(AgentDisplayCatalog.normalize(state.agentDisplayPreferences, customAgents: state.customAgents))
         userDefaults.set(encodedPreferences, forKey: SettingsViewModel.agentDisplayPreferencesKey)
+        let encodedCustomAgents = try? encoder.encode(state.customAgents)
+        userDefaults.set(encodedCustomAgents, forKey: SettingsViewModel.customAgentsKey)
     }
 
     private func loadSelectedProjectScope() -> ProjectScopeSelection {
@@ -63,5 +66,12 @@ struct DesktopSettingsStore {
             return []
         }
         return (try? decoder.decode([AgentDisplayPreference].self, from: data)) ?? []
+    }
+
+    private func loadCustomAgents() -> [CustomAgentDefinition] {
+        guard let data = userDefaults.data(forKey: SettingsViewModel.customAgentsKey) else {
+            return []
+        }
+        return (try? decoder.decode([CustomAgentDefinition].self, from: data)) ?? []
     }
 }

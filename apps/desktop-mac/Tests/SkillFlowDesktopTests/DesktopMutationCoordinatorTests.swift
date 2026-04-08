@@ -32,6 +32,11 @@ final class DesktopMutationCoordinatorTests: XCTestCase {
 private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked Sendable {
     private(set) var recordedMutations: [String] = []
 
+    func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
+        recordedMutations.append("save-settings:\(agentDisplayOrder)")
+        return .success(command: .saveSettings, payload: [:])
+    }
+
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
         recordedMutations.append("toggle-pin:\(sourceId)")
         return .success(

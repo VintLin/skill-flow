@@ -13,7 +13,8 @@ export type BridgeCommandName =
   | "add"
   | "apply"
   | "update"
-  | "uninstall";
+  | "uninstall"
+  | "save-settings";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -60,7 +61,7 @@ export function parseBridgeRequest(input: unknown): BridgeRequest {
 
   if (!isBridgeCommandName(command)) {
     throw new Error(
-      "Bridge request 'command' must be one of: bootstrap, list, inspect, inspect-enrichment, search-import-groups, preview-import-source, import-source, toggle-pin, doctor, add, apply, update, uninstall.",
+      "Bridge request 'command' must be one of: bootstrap, list, inspect, inspect-enrichment, search-import-groups, preview-import-source, import-source, toggle-pin, doctor, add, apply, update, uninstall, save-settings.",
     );
   }
 
@@ -135,6 +136,7 @@ export function isBridgeCommandName(value: unknown): value is BridgeCommandName 
     value === "add" ||
     value === "apply" ||
     value === "update" ||
-    value === "uninstall"
+    value === "uninstall" ||
+    value === "save-settings"
   );
 }

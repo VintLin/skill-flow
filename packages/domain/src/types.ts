@@ -30,7 +30,32 @@ export type DeploymentTargetName =
   | "amp"
   | "kiro";
 
+export type DeploymentTargetId = DeploymentTargetName | (string & {});
+
 export type DeploymentStrategy = "symlink" | "copy";
+
+export type CustomTargetDefinition = {
+  id: string;
+  name: string;
+  globalPath: string;
+  projectPathTemplate: string;
+  strategy: DeploymentStrategy;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TargetKind = "builtin" | "custom";
+
+export type MergedTargetDefinition = {
+  id: string;
+  label: string;
+  strategy: DeploymentStrategy;
+  kind: TargetKind;
+  isMutable: boolean;
+  globalPath: string;
+  projectPathTemplate?: string;
+  iconAssetName?: string;
+};
 
 export type HealthStatus =
   | "HEALTHY"
@@ -62,24 +87,24 @@ export type TargetBinding = {
 
 export type SourceBinding = {
   selectedLeafIds?: string[];
-  targets: Partial<Record<DeploymentTargetName, TargetBinding>>;
+  targets: Partial<Record<DeploymentTargetId, TargetBinding>>;
 };
 
 export type DraftBinding = {
-  enabledTargets: DeploymentTargetName[];
+  enabledTargets: DeploymentTargetId[];
   selectedLeafIds: string[];
 };
 
 export type AddSourceDraftOptions = {
   skillNames?: string[];
-  agentTargets?: DeploymentTargetName[];
+  agentTargets?: DeploymentTargetId[];
   draft?: DraftBinding;
   skipTargetDetection?: boolean;
 };
 
 export type AddSourcePreparation = {
   sourceId: string;
-  availableTargets: DeploymentTargetName[];
+  availableTargets: DeploymentTargetId[];
   draft: DraftBinding;
   leafs: LeafRecord[];
 };
@@ -110,6 +135,8 @@ export type SharedPreferences = {
   selectedProjectScope: ProjectScope;
   recentProjects: RecentProject[];
   projectDrafts: ScopedSourceDrafts;
+  customTargets: CustomTargetDefinition[];
+  agentDisplayOrder: string[];
 };
 
 export type InvalidLeafRecord = {
@@ -137,9 +164,9 @@ export type SourceLockRecord = {
   contentHash?: string;
   versionMode?: "pinned" | "floating";
   originBranch?: string;
-  importedFromTargets?: DeploymentTargetName[];
+  importedFromTargets?: DeploymentTargetId[];
   observedTargets?: Array<{
-    target: DeploymentTargetName;
+    target: DeploymentTargetId;
     rootPath: string;
     targetPath: string;
   }>;
@@ -164,7 +191,7 @@ export type LeafRecord = {
 export type DeploymentRecord = {
   sourceId: string;
   leafId: string;
-  target: DeploymentTargetName;
+  target: DeploymentTargetId;
   targetPath: string;
   targetRootPath?: string;
   strategy: DeploymentStrategy;
@@ -222,7 +249,7 @@ export type SourceUpdateResult = {
 };
 
 export type ChannelDetection = {
-  target: DeploymentTargetName;
+  target: DeploymentTargetId;
   strategy: DeploymentStrategy;
   available: boolean;
   rootPath: string;
@@ -240,7 +267,7 @@ export type DeploymentAction = {
   kind: DeploymentActionKind;
   sourceId: string;
   leafId: string;
-  target: DeploymentTargetName;
+  target: DeploymentTargetId;
   strategy: DeploymentStrategy;
   sourcePath: string;
   targetPath: string;
@@ -264,7 +291,7 @@ export type DoctorIssue = {
   severity: DoctorIssueSeverity;
   sourceId: string;
   sourceLabel?: string;
-  target?: DeploymentTargetName;
+  target?: DeploymentTargetId;
   leafId?: string;
   leafLabel?: string;
   code: string;
@@ -573,13 +600,13 @@ export type ImportPreviewSkill = {
 };
 
 export type ImportPreviewTarget = {
-  id: DeploymentTargetName;
+  id: DeploymentTargetId;
   selectedByDefault: boolean;
 };
 
 export type ImportDraft = {
   selectedSkillIds: string[];
-  enabledTargets: DeploymentTargetName[];
+  enabledTargets: DeploymentTargetId[];
 };
 
 export type ImportPreviewResult =
@@ -589,7 +616,7 @@ export type ImportPreviewResult =
       canonicalRepo: string;
       snapshot?: UnifiedSourceSnapshot;
       selectedSkillIds: string[];
-      enabledTargets: DeploymentTargetName[];
+      enabledTargets: DeploymentTargetId[];
       skills: ImportPreviewSkill[];
       targets: ImportPreviewTarget[];
     }

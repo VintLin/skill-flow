@@ -110,6 +110,7 @@ describe("bridge protocol", () => {
   test("recognizes supported commands and valid json values", () => {
     expect(isBridgeCommandName("bootstrap")).toBe(true);
     expect(isBridgeCommandName("inspect-enrichment")).toBe(true);
+    expect(isBridgeCommandName("save-settings")).toBe(true);
     expect(isBridgeCommandName("not-real")).toBe(false);
 
     expect(isJsonObject({ ok: true })).toBe(true);

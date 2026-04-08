@@ -3,13 +3,13 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type {
   ConfigBootStatus,
   DeploymentAction,
-  DeploymentTargetName,
+  DeploymentTargetId,
   DoctorReport,
   DraftBinding,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
 import type { SkillFlowApp } from "@skill-flow/query/runtime";
-import { TARGET_LABELS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
+import { formatTargetName } from "@skill-flow/integration/utils/format";
 import {
   buildProjectedSkillName,
   formatGroupLabel,
@@ -26,7 +26,7 @@ import { ADD_BADGE_TEXT } from "./add-flow.js";
 
 type ConfigAppProps = {
   app: SkillFlowApp;
-  availableTargets: DeploymentTargetName[];
+  availableTargets: DeploymentTargetId[];
   summaries: WorkflowSummary[];
   initialDrafts: Record<string, DraftBinding>;
   bootStatus: ConfigBootStatus;
@@ -37,7 +37,7 @@ type ConfigBootstrapState =
   | {
       phase: "ready";
       logs: string[];
-      availableTargets: DeploymentTargetName[];
+      availableTargets: DeploymentTargetId[];
       summaries: WorkflowSummary[];
       initialDrafts: Record<string, DraftBinding>;
       audit: DoctorReport;
@@ -134,7 +134,7 @@ type FocusSnapshot = {
   groupIndex: number;
   groupId: string;
   sourceId: string | undefined;
-  agentTarget: DeploymentTargetName | undefined;
+  agentTarget: DeploymentTargetId | undefined;
   skillId: string | undefined;
   action: ActionName;
 };
@@ -505,7 +505,7 @@ export function captureFocusSnapshot({
 }: {
   actionCursor: number;
   agentCursor: number;
-  availableTargets: DeploymentTargetName[];
+  availableTargets: DeploymentTargetId[];
   focus: FocusPane;
   groupId: string;
   selectedGroupIndex: number;
@@ -531,7 +531,7 @@ export function reconcileFocusAfterReload({
   nextGroups,
   snapshot,
 }: {
-  availableTargets: DeploymentTargetName[];
+  availableTargets: DeploymentTargetId[];
   nextGroups: ConfigGroup[];
   snapshot: FocusSnapshot;
 }) {
@@ -1408,7 +1408,7 @@ export function ConfigApp({
           }
           return {
             ...currentDraft,
-            enabledTargets: TARGET_ORDER.filter((target) => enabledTargets.has(target)),
+            enabledTargets: availableTargets.filter((target) => enabledTargets.has(target)),
           };
         }
 
@@ -1425,7 +1425,7 @@ export function ConfigApp({
         }
         return {
           ...currentDraft,
-          enabledTargets: TARGET_ORDER.filter((item) => enabledTargets.has(item)),
+          enabledTargets: availableTargets.filter((item) => enabledTargets.has(item)),
         };
       });
       return;
@@ -1535,7 +1535,7 @@ export function ConfigApp({
             key: target,
             text: `${selectionMarker(
               selectedDraft.enabledTargets.includes(target) ? "full" : "empty",
-            )} ${TARGET_LABELS[target]}`,
+            )} ${formatTargetName(target)}`,
             active: focus === "detail.agents" && targetCursor === index + 1,
             color: "gray" as const,
           })),

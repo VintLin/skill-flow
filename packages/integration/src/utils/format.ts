@@ -1,11 +1,11 @@
 import type {
   DeploymentAction,
-  DeploymentTargetName,
+  DeploymentTargetId,
   DoctorIssue,
   SkillCandidate,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
-import { TARGET_LABELS } from "./constants.js";
+import { TARGET_LABELS, TARGET_ORDER } from "./constants.js";
 import { buildFindCommand } from "./find-command.js";
 import { formatGroupLabel } from "./naming.js";
 
@@ -51,8 +51,10 @@ export function formatActionSummary(actions: DeploymentAction[]): string {
     .join("  ");
 }
 
-export function formatTargetName(target: DeploymentTargetName): string {
-  return TARGET_LABELS[target];
+export function formatTargetName(target: DeploymentTargetId): string {
+  return TARGET_ORDER.includes(target as typeof TARGET_ORDER[number])
+    ? TARGET_LABELS[target as typeof TARGET_ORDER[number]]
+    : target;
 }
 
 export function formatDoctorIssue(issue: DoctorIssue): string {

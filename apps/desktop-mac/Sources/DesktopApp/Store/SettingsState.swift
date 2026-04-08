@@ -5,6 +5,16 @@ enum DesktopCardDensity: String, CaseIterable, Equatable {
     case compact
 }
 
+struct CustomAgentDefinition: Codable, Equatable, Identifiable {
+    var id: String
+    var name: String
+    var globalPath: String
+    var projectPathTemplate: String
+    var strategy: String
+    var createdAt: String
+    var updatedAt: String
+}
+
 struct RecentProjectScopeItem: Codable, Equatable {
     var projectId: String
     var title: String
@@ -25,4 +35,5 @@ struct SettingsState: Equatable {
     var selectedProjectScope: ProjectScopeSelection = .global
     var recentProjectScopes: [RecentProjectScopeItem] = []
     var agentDisplayPreferences: [AgentDisplayPreference] = []
+    var customAgents: [CustomAgentDefinition] = []
 }

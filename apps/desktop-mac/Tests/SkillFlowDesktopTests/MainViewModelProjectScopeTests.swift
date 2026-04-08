@@ -481,6 +481,10 @@ private final class ProjectScopeCommandStub: DesktopCommanding {
     var applyProjectScopePayload: [String: Any] = [:]
     var applyError: BridgeClientError?
 
+    func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
+        BridgeResponse.success(command: .saveSettings, payload: [:])
+    }
+
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
         fatalError("unused")
     }

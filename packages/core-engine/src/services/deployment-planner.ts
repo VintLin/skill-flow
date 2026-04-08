@@ -4,7 +4,7 @@ import type {
   DeploymentAction,
   DeploymentPlan,
   DeploymentRecord,
-  DeploymentTargetName,
+  DeploymentTargetId,
   LeafRecord,
   LockFile,
   Manifest,
@@ -510,7 +510,7 @@ export class DeploymentPlanner {
   private buildProjectedLinkNameMap(
     manifest: Manifest,
     lockFile: LockFile,
-    target: DeploymentTargetName,
+    target: DeploymentTargetId,
   ): Map<string, string> {
     const selectedLeafs = manifest.sources.flatMap((source) => {
       const targetBinding = manifest.bindings[source.id]?.targets[target];

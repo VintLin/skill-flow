@@ -20,9 +20,18 @@ final class SettingsViewModel {
         let title: String
         let shortLabel: String
         let mountPath: String
+        let projectPath: String?
         let isVisible: Bool
+        let isBuiltIn: Bool
 
         var id: String { targetId }
+    }
+
+    struct CustomAgentDraft: Equatable {
+        var name: String = ""
+        var globalPath: String = ""
+        var projectPathTemplate: String = ""
+        var strategy: String = "symlink"
     }
 
     nonisolated static let autoLaunchKey = "desktop.autoLaunch"
@@ -35,9 +44,11 @@ final class SettingsViewModel {
     nonisolated static let selectedProjectScopeKey = "desktop.selectedProjectScope"
     nonisolated static let recentProjectScopesKey = "desktop.recentProjectScopes"
     nonisolated static let agentDisplayPreferencesKey = "desktop.agentDisplayPreferences"
+    nonisolated static let customAgentsKey = "desktop.customAgents"
 
     private let state: DesktopAppState
     private let store: DesktopSettingsStore
+    private let commandFacade: (any DesktopCommanding)?
     private let cacheMaintenance: DesktopCacheMaintenance
     private let updateChecker: any DesktopUpdateChecking
     private let currentVersionProvider: () -> String
@@ -116,6 +127,7 @@ final class SettingsViewModel {
     init(
         state: DesktopAppState,
         store: DesktopSettingsStore = DesktopSettingsStore(),
+        commandFacade: (any DesktopCommanding)? = nil,
         cacheMaintenance: DesktopCacheMaintenance = DesktopCacheMaintenance(),
         updateChecker: any DesktopUpdateChecking = DesktopGitHubUpdateChecker(),
         currentVersionProvider: @escaping () -> String = {
@@ -125,6 +137,7 @@ final class SettingsViewModel {
     ) {
         self.state = state
         self.store = store
+        self.commandFacade = commandFacade
         self.cacheMaintenance = cacheMaintenance
         self.updateChecker = updateChecker
         self.currentVersionProvider = currentVersionProvider
@@ -159,17 +172,34 @@ final class SettingsViewModel {
 
     func detectedAgentRows(detectedTargetIds: [String]) -> [AgentDisplayRow] {
         let detectedSet = Set(detectedTargetIds)
-        return normalizedAgentDisplayPreferences()
-            .filter { detectedSet.contains($0.targetId) }
-            .map { preference in
+        return allAgentRows()
+            .filter { $0.isBuiltIn ? detectedSet.contains($0.targetId) : true }
+    }
+
+    func allAgentRows() -> [AgentDisplayRow] {
+        normalizedAgentDisplayPreferences().map { preference in
                 AgentDisplayRow(
                     targetId: preference.targetId,
-                    title: AgentDisplayCatalog.label(for: preference.targetId),
-                    shortLabel: AgentDisplayCatalog.shortLabel(for: preference.targetId),
-                    mountPath: AgentDisplayCatalog.mountPath(for: preference.targetId),
-                    isVisible: preference.isVisible
+                    title: AgentDisplayCatalog.label(for: preference.targetId, customAgents: state.settings.customAgents),
+                    shortLabel: AgentDisplayCatalog.shortLabel(for: preference.targetId, customAgents: state.settings.customAgents),
+                    mountPath: AgentDisplayCatalog.mountPath(for: preference.targetId, customAgents: state.settings.customAgents),
+                    projectPath: AgentDisplayCatalog.projectPath(for: preference.targetId, customAgents: state.settings.customAgents),
+                    isVisible: preference.isVisible,
+                    isBuiltIn: AgentDisplayCatalog.isBuiltIn(targetId: preference.targetId)
                 )
             }
+    }
+
+    func customAgentDraft(editingId: String? = nil) -> CustomAgentDraft {
+        guard let editingId, let customAgent = state.settings.customAgents.first(where: { $0.id == editingId }) else {
+            return CustomAgentDraft()
+        }
+        return CustomAgentDraft(
+            name: customAgent.name,
+            globalPath: customAgent.globalPath,
+            projectPathTemplate: customAgent.projectPathTemplate,
+            strategy: customAgent.strategy
+        )
     }
 
     func setAgentVisibility(targetId: String, isVisible: Bool) {
@@ -179,13 +209,16 @@ final class SettingsViewModel {
         }
         preferences[index].isVisible = isVisible
         persistAgentDisplayPreferences(preferences)
+        syncSharedSettings()
     }
 
     func moveAgents(from offsets: IndexSet, to destination: Int, detectedTargetIds: [String]) {
-        let detectedOrder = AgentDisplayCatalog.orderedTargetIds(in: detectedTargetIds)
-        let detectedSet = Set(detectedOrder)
+        let detectedSet = Set(detectedTargetIds)
+        let customTargetIds = Set(state.settings.customAgents.map(\.id))
         var preferences = normalizedAgentDisplayPreferences()
-        var reorderedDetected = preferences.filter { detectedSet.contains($0.targetId) }
+        var reorderedDetected = preferences.filter { preference in
+            detectedSet.contains(preference.targetId) || customTargetIds.contains(preference.targetId)
+        }
 
         guard !reorderedDetected.isEmpty else {
             return
@@ -195,7 +228,8 @@ final class SettingsViewModel {
         var reorderedIterator = reorderedDetected.makeIterator()
 
         preferences = preferences.map { preference in
-            guard detectedSet.contains(preference.targetId), let reordered = reorderedIterator.next() else {
+            guard (detectedSet.contains(preference.targetId) || customTargetIds.contains(preference.targetId)),
+                  let reordered = reorderedIterator.next() else {
                 return preference
             }
             return AgentDisplayPreference(
@@ -206,10 +240,75 @@ final class SettingsViewModel {
         }
 
         persistAgentDisplayPreferences(preferences)
+        syncSharedSettings()
     }
 
     func resetAgentDisplayPreferences() {
-        persistAgentDisplayPreferences(AgentDisplayCatalog.defaultPreferences())
+        persistAgentDisplayPreferences(AgentDisplayCatalog.defaultPreferences(customAgents: state.settings.customAgents))
+        syncSharedSettings()
+    }
+
+    var customAgents: [CustomAgentDefinition] {
+        state.settings.customAgents.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    func upsertCustomAgent(
+        _ draft: CustomAgentDraft,
+        editingId: String? = nil
+    ) -> [String: String] {
+        let errors = validateCustomAgent(draft, editingId: editingId)
+        guard errors.isEmpty else {
+            return errors
+        }
+
+        let now = ISO8601DateFormatter().string(from: Date())
+        let normalizedProjectPath = normalizeProjectPath(draft.projectPathTemplate) ?? draft.projectPathTemplate
+        let trimmedName = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedGlobalPath = draft.globalPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedId = editingId ?? makeCustomAgentID(from: trimmedName)
+
+        var customAgents = state.settings.customAgents
+        if let index = customAgents.firstIndex(where: { $0.id == editingId }) {
+            let createdAt = customAgents[index].createdAt
+            customAgents[index] = CustomAgentDefinition(
+                id: resolvedId,
+                name: trimmedName,
+                globalPath: trimmedGlobalPath,
+                projectPathTemplate: normalizedProjectPath,
+                strategy: draft.strategy,
+                createdAt: createdAt,
+                updatedAt: now
+            )
+        } else {
+            customAgents.append(
+                CustomAgentDefinition(
+                    id: resolvedId,
+                    name: trimmedName,
+                    globalPath: trimmedGlobalPath,
+                    projectPathTemplate: normalizedProjectPath,
+                    strategy: draft.strategy,
+                    createdAt: now,
+                    updatedAt: now
+                )
+            )
+        }
+
+        state.settings.customAgents = customAgents
+        var preferences = normalizedAgentDisplayPreferences()
+        if !preferences.contains(where: { $0.targetId == resolvedId }) {
+            preferences.append(AgentDisplayPreference(targetId: resolvedId, isVisible: true, sortOrder: preferences.count))
+        }
+        persistAgentDisplayPreferences(preferences)
+        syncSharedSettings()
+        return [:]
+    }
+
+    func deleteCustomAgent(id: String) {
+        state.settings.customAgents.removeAll { $0.id == id }
+        persistAgentDisplayPreferences(
+            normalizedAgentDisplayPreferences().filter { $0.targetId != id }
+        )
+        syncSharedSettings()
     }
 
     func resetConfiguration() {
@@ -254,11 +353,97 @@ final class SettingsViewModel {
     }
 
     private func normalizedAgentDisplayPreferences() -> [AgentDisplayPreference] {
-        AgentDisplayCatalog.normalize(state.settings.agentDisplayPreferences)
+        AgentDisplayCatalog.normalize(state.settings.agentDisplayPreferences, customAgents: state.settings.customAgents)
     }
 
     private func persistAgentDisplayPreferences(_ preferences: [AgentDisplayPreference]) {
-        state.settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(preferences)
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.normalize(preferences, customAgents: state.settings.customAgents)
         store.save(state.settings)
+    }
+
+    private func syncSharedSettings() {
+        guard let commandFacade else {
+            return
+        }
+
+        let customTargets = state.settings.customAgents.map { agent in
+            [
+                "id": agent.id,
+                "name": agent.name,
+                "globalPath": agent.globalPath,
+                "projectPathTemplate": agent.projectPathTemplate,
+                "strategy": agent.strategy,
+                "createdAt": agent.createdAt,
+                "updatedAt": agent.updatedAt,
+            ]
+        }
+        let order = normalizedAgentDisplayPreferences().map(\.targetId)
+
+        Task {
+            _ = try? await commandFacade.saveSettings(
+                customTargets: customTargets,
+                agentDisplayOrder: order
+            )
+        }
+    }
+
+    private func validateCustomAgent(_ draft: CustomAgentDraft, editingId: String?) -> [String: String] {
+        var errors: [String: String] = [:]
+        let trimmedName = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedGlobalPath = draft.globalPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedProjectPath = normalizeProjectPath(draft.projectPathTemplate)
+
+        if trimmedName.isEmpty {
+            errors["name"] = "Name is required."
+        }
+
+        if trimmedGlobalPath.isEmpty {
+            errors["globalPath"] = "Global path is required."
+        } else if !trimmedGlobalPath.hasPrefix("/") {
+            errors["globalPath"] = "Global path must be absolute."
+        }
+
+        if normalizedProjectPath == nil {
+            errors["projectPathTemplate"] = "Project path must be relative."
+        }
+
+        if state.settings.customAgents.contains(where: {
+            $0.name.compare(trimmedName, options: .caseInsensitive) == .orderedSame && $0.id != editingId
+        }) {
+            errors["name"] = "Name is already in use."
+        }
+
+        return errors
+    }
+
+    private func normalizeProjectPath(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("/") else {
+            return nil
+        }
+        let normalized = trimmed.replacingOccurrences(of: "\\", with: "/")
+            .replacingOccurrences(of: #"^\./+"#, with: "", options: .regularExpression)
+        guard !normalized.isEmpty, !normalized.hasPrefix("../"), normalized != ".", normalized != ".." else {
+            return nil
+        }
+        return normalized
+    }
+
+    private func makeCustomAgentID(from name: String) -> String {
+        let builtInIds = Set(AgentDisplayCatalog.defaultTargetOrder)
+        let slug = name
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        let base = slug.isEmpty ? "custom-agent" : slug
+        var candidate = base
+        var suffix = 2
+
+        while builtInIds.contains(candidate) || state.settings.customAgents.contains(where: { $0.id == candidate }) {
+            candidate = "\(base)-\(suffix)"
+            suffix += 1
+        }
+
+        return candidate
     }
 }

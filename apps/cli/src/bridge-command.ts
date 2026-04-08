@@ -242,6 +242,27 @@ export async function executeBridgeRequest(
           data: sanitizeForJson(result.data),
         });
       }
+      case "save-settings": {
+        const payload = expectObjectPayload(request.payload, "save-settings");
+        const customTargets = expectCustomTargets(payload.customTargets);
+        const agentDisplayOrder = parseOptionalStringArray(
+          payload.agentDisplayOrder,
+          "save-settings.agentDisplayOrder",
+        ) ?? [];
+        const result = await app.saveSettings({ customTargets, agentDisplayOrder });
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
       default:
         return buildResponseWithRequest({
           request,
@@ -393,6 +414,28 @@ function expectOptionalImportDraft(value: JsonValue | undefined): ImportDraft | 
     selectedSkillIds,
     enabledTargets: enabledTargets as ImportDraft["enabledTargets"],
   };
+}
+
+function expectCustomTargets(value: JsonValue | undefined) {
+  if (!Array.isArray(value)) {
+    throw new Error("Field 'customTargets' must be an array.");
+  }
+
+  return value.map((entry, index) => {
+    if (!isJsonObject(entry)) {
+      throw new Error(`Field 'customTargets[${index}]' must be an object.`);
+    }
+
+    return {
+      id: expectString(entry.id, `customTargets[${index}].id`, "save-settings"),
+      name: expectString(entry.name, `customTargets[${index}].name`, "save-settings"),
+      globalPath: expectString(entry.globalPath, `customTargets[${index}].globalPath`, "save-settings"),
+      projectPathTemplate: expectString(entry.projectPathTemplate, `customTargets[${index}].projectPathTemplate`, "save-settings"),
+      strategy: expectString(entry.strategy, `customTargets[${index}].strategy`, "save-settings") as "symlink" | "copy",
+      createdAt: expectString(entry.createdAt, `customTargets[${index}].createdAt`, "save-settings"),
+      updatedAt: expectString(entry.updatedAt, `customTargets[${index}].updatedAt`, "save-settings"),
+    };
+  });
 }
 
 function expectProjectScope(value: JsonValue | undefined): ProjectScope {
