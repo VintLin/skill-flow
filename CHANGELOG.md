@@ -2,6 +2,22 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.3 - 2026-04-08
+
+### Added
+
+- Added built-in `Trae` target support across CLI, shared runtime, desktop labels, and icon assets.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.2` to `1.3.3`.
+- Unified built-in target metadata and custom target handling across bridge, runtime, TUI, storage, and desktop settings flows so agent lists, labels, ordering, and documented paths stay aligned.
+- Expanded CLI, shared-types, storage, query, and desktop coverage around target definitions, custom target persistence, bridge payloads, and settings interactions.
+
+### Fixed
+
+- Fixed desktop editable tag cards so the add affordance remains available even when a group currently has no tags.
+
 ## v1.3.2 - 2026-04-03
 
 ### Added
