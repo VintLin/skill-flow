@@ -23,6 +23,7 @@ export type DeploymentTargetName =
   | "opencode"
   | "openclaw"
   | "pi"
+  | "trae"
   | "windsurf"
   | "roo-code"
   | "cline"

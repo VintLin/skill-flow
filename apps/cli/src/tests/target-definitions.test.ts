@@ -45,6 +45,9 @@ describe("target definitions", () => {
     expect(TARGET_PATH_CANDIDATES.kiro).toContain(
       path.join(os.homedir(), ".kiro", "skills"),
     );
+    expect(TARGET_PATH_CANDIDATES.trae).toContain(
+      path.join(os.homedir(), ".trae", "skills"),
+    );
   });
 
   test("classifies shared global roots as compatibility reads instead of write roots", () => {
@@ -92,6 +95,7 @@ describe("target definitions", () => {
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.codex).toBe(".agents/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.openclaw).toBe("skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.pi).toBe(".pi/skills/");
+    expect(TARGET_DOCUMENTED_PROJECT_PATHS.trae).toBe(".trae/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.windsurf).toBe(".windsurf/skills/");
 
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["claude-code"]).toBe("~/.claude/skills/");
@@ -99,6 +103,7 @@ describe("target definitions", () => {
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["github-copilot"]).toBe("~/.copilot/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["roo-code"]).toBe("~/.roo/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.kiro).toBe("~/.kiro/skills/");
+    expect(TARGET_DOCUMENTED_GLOBAL_PATHS.trae).toBe("~/.trae/skills/");
   });
 
   test("resolves documented project skill paths from project roots", () => {
@@ -108,6 +113,9 @@ describe("target definitions", () => {
     expect(resolveDocumentedProjectSkillPath("claude-code", "/Users/test/src/repo-a")).toBe(
       "/Users/test/src/repo-a/.claude/skills",
     );
+    expect(resolveDocumentedProjectSkillPath("trae", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.trae/skills",
+    );
     expect(resolveDocumentedProjectSkillPath("codex", "   ")).toBeNull();
   });
 
@@ -115,6 +123,7 @@ describe("target definitions", () => {
     expect(TARGET_ICON_ASSET_NAMES["claude-code"]).toBe("claude-code.svg");
     expect(TARGET_ICON_ASSET_NAMES["github-copilot"]).toBe("copilot.svg");
     expect(TARGET_ICON_ASSET_NAMES.openclaw).toBe("clawdbot.svg");
+    expect(TARGET_ICON_ASSET_NAMES.trae).toBe("trae.svg");
     expect(TARGET_ICON_ASSET_NAMES.pi).toBeUndefined();
     expect(TARGET_DEFINITIONS["roo-code"].documentedAgentIds).toEqual(["roo"]);
     expect(TARGET_DEFINITIONS.kiro.documentedAgentIds).toEqual(["kiro-cli"]);

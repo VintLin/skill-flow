@@ -18,6 +18,7 @@ enum AgentDisplayCatalog {
         "opencode",
         "openclaw",
         "pi",
+        "trae",
         "windsurf",
         "roo-code",
         "cline",
@@ -34,6 +35,7 @@ enum AgentDisplayCatalog {
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
         "pi": "Pi",
+        "trae": "Trae",
         "windsurf": "Windsurf",
         "roo-code": "Roo Code",
         "cline": "Cline",
@@ -50,6 +52,7 @@ enum AgentDisplayCatalog {
         "opencode": "OP",
         "openclaw": "OC",
         "pi": "PI",
+        "trae": "TR",
         "windsurf": "WS",
         "roo-code": "RO",
         "cline": "CL",
@@ -116,6 +119,8 @@ enum AgentDisplayCatalog {
             return homeDirectory.appendingPathComponent(".openclaw/skills", isDirectory: true).path
         case "pi":
             return homeDirectory.appendingPathComponent(".pi/agent/skills", isDirectory: true).path
+        case "trae":
+            return homeDirectory.appendingPathComponent(".trae/skills", isDirectory: true).path
         case "windsurf":
             return homeDirectory.appendingPathComponent(".codeium/windsurf/skills", isDirectory: true).path
         case "roo-code":

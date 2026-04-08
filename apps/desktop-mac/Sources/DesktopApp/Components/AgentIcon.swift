@@ -12,6 +12,7 @@ enum AgentIconLibrary {
         "opencode": "opencode.svg",
         "openclaw": "clawdbot.svg",
         "windsurf": "windsurf.svg",
+        "trae": "trae.svg",
         "roo-code": "roo.svg",
         "cline": "cline.svg",
         "amp": "amp.svg",
