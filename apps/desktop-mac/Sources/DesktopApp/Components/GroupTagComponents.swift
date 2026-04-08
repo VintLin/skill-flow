@@ -120,7 +120,7 @@ struct EditableGroupTagSection: View {
         guard onSelect != nil, !isDeleteMode else {
             return false
         }
-        return canAddMore && hoveredEditableTagID != nil
+        return canAddMore && (tagItems.isEmpty || hoveredEditableTagID != nil)
     }
 
     private func editableRow(onCreate: @escaping (String, DesktopAccentColor?) -> GroupTagMutationResult) -> some View {

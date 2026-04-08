@@ -83,6 +83,20 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(tags.contains("cancelHoverCollapse()"))
     }
 
+    func testEditableGroupCardShowsAddButtonWhenNoTagsExist() throws {
+        let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
+
+        XCTAssertTrue(tags.contains("tagItems.isEmpty || hoveredEditableTagID != nil"))
+    }
+
+    func testEditableTagInputAndAddButtonUseCompactPillHeight() throws {
+        let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")
+
+        XCTAssertTrue(tags.contains(".frame(width: inputWidth, height: pillHeight, alignment: .leading)"))
+        XCTAssertTrue(tags.contains(".frame(width: pillHeight, height: pillHeight)"))
+        XCTAssertTrue(tags.contains(".frame(width: isVisible ? pillHeight : 0, height: pillHeight, alignment: .leading)"))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
