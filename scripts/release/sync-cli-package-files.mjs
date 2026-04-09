@@ -6,6 +6,7 @@ const repoRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const cliRoot = path.join(repoRoot, "apps", "cli");
 const statePath = path.join(cliRoot, ".pack-sync-state.json");
 const files = ["README.md", "README.zh.md", "LICENSE"];
+const packageJsonPath = path.join(cliRoot, "package.json");
 
 if (command === "prepare") {
   await prepare();
@@ -34,6 +35,20 @@ async function prepare() {
     await fs.writeFile(targetPath, sourceContent, "utf8");
   }
 
+  const packageJsonContent = await fs.readFile(packageJsonPath, "utf8");
+  state["package.json"] = {
+    existed: true,
+    content: packageJsonContent,
+  };
+  const packageManifest = JSON.parse(packageJsonContent);
+  const dependencies = Object.fromEntries(
+    Object.entries(packageManifest.dependencies ?? {}).filter(
+      ([dependencyName]) => !dependencyName.startsWith("@skill-flow/"),
+    ),
+  );
+  packageManifest.dependencies = dependencies;
+  await fs.writeFile(packageJsonPath, `${JSON.stringify(packageManifest, null, 2)}\n`, "utf8");
+
   await fs.writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
@@ -60,6 +75,11 @@ async function restore() {
     }
 
     await fs.rm(targetPath, { force: true });
+  }
+
+  const packageEntry = state["package.json"];
+  if (packageEntry?.existed) {
+    await fs.writeFile(packageJsonPath, packageEntry.content, "utf8");
   }
 
   await fs.rm(statePath, { force: true });

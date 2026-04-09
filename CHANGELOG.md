@@ -2,6 +2,24 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.4 - 2026-04-09
+
+### Added
+
+- Added a publish-safe CLI packaging flow so the released npm package now carries the internal runtime code it needs instead of depending on unpublished workspace packages.
+- Added release verification coverage for package output and workspace version alignment to make broken npm releases less likely.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.3` to `1.3.4`.
+- Tightened the npm publish path so the packed `skill-flow` manifest only exposes public runtime dependencies.
+- Updated release notes to explain the install repair from the perspective of users upgrading from `v1.3.3`.
+
+### Fixed
+
+- Fixed `npm install -g skill-flow` failing with `E404` when npm attempted to resolve internal `@skill-flow/*` packages from the public registry.
+- Fixed the published CLI tarball so a fresh global install now completes and the installed `skill-flow` binary starts normally.
+
 ## v1.3.3 - 2026-04-08
 
 ### Added
