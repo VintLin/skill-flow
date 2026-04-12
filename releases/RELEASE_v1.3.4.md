@@ -31,3 +31,10 @@
 ## Release Artifacts
 
 - `skill-flow-1.3.4.tgz`
+- `Skill-Flow-arm64.dmg`
+- `Skill-Flow-arm64.zip`
+- `Skill-Flow-x86_64.dmg`
+- `Skill-Flow-x86_64.zip`
+- `Skill-Flow-universal.dmg`
+- `Skill-Flow-universal.zip`
+- `sha256.txt`

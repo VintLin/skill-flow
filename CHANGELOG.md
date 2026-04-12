@@ -2,6 +2,23 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.5 - 2026-04-12
+
+### Added
+
+- Added a staged CLI publish flow so the npm release now comes from a dedicated publish directory with a sanitized manifest.
+- Added a publish guard that blocks direct npm publishing from the source workspace package when internal `@skill-flow/*` dependencies are still present.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.4` to `1.3.5`.
+- Expanded npm release verification so it covers the staged publish manifest in addition to the packed tarball.
+
+### Fixed
+
+- Fixed the npm release path so registry metadata no longer advertises unpublished internal workspace packages for the public `skill-flow` package.
+- Fixed the regression where `skill-flow@1.3.4` still failed on `npm install -g skill-flow` even though the tarball contents had already been corrected.
+
 ## v1.3.4 - 2026-04-09
 
 ### Added

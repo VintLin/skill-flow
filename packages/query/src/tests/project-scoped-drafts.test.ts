@@ -392,7 +392,7 @@ describe.sequential("project scoped drafts", () => {
       },
     });
 
-    vi.spyOn(app.applier, "applyPlan").mockResolvedValue({
+    vi.spyOn(app as never, "withScopedTargetRoots").mockResolvedValue({
       ok: false,
       warnings: [],
       errors: [{

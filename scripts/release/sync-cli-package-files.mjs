@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readCliManifest, sanitizeCliManifest } from "./cli-publish-utils.mjs";
 
 const command = process.argv[2];
 const repoRoot = path.resolve(new URL("../..", import.meta.url).pathname);
@@ -35,19 +36,15 @@ async function prepare() {
     await fs.writeFile(targetPath, sourceContent, "utf8");
   }
 
-  const packageJsonContent = await fs.readFile(packageJsonPath, "utf8");
+  const { packageJsonContent, packageManifest } = await readCliManifest(cliRoot);
   state["package.json"] = {
     existed: true,
     content: packageJsonContent,
   };
-  const packageManifest = JSON.parse(packageJsonContent);
-  const dependencies = Object.fromEntries(
-    Object.entries(packageManifest.dependencies ?? {}).filter(
-      ([dependencyName]) => !dependencyName.startsWith("@skill-flow/"),
-    ),
-  );
-  packageManifest.dependencies = dependencies;
-  await fs.writeFile(packageJsonPath, `${JSON.stringify(packageManifest, null, 2)}\n`, "utf8");
+  const sanitizedManifest = sanitizeCliManifest(packageManifest);
+  sanitizedManifest.scripts = packageManifest.scripts;
+  sanitizedManifest.devDependencies = packageManifest.devDependencies;
+  await fs.writeFile(packageJsonPath, `${JSON.stringify(sanitizedManifest, null, 2)}\n`, "utf8");
 
   await fs.writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }

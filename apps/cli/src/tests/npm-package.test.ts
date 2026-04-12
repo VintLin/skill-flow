@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, test } from "vitest";
+import { createCliPublishStage } from "../../../../scripts/release/cli-publish-utils.mjs";
 
 const cliRoot = path.resolve(import.meta.dirname, "../..");
 const internalPackagePattern = /@skill-flow\//;
@@ -59,5 +60,25 @@ describe.sequential("npm package", () => {
 
     expect(packedCliEntry).not.toMatch(internalImportPattern);
     expect(packedBridgeEntry).not.toMatch(internalImportPattern);
+  });
+
+  test("staged publish manifest strips internal workspace dependencies", async () => {
+    execFileSync("npm", ["run", "build"], {
+      cwd: cliRoot,
+      stdio: "pipe",
+    });
+
+    const stageRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-publish-stage-"));
+    tempPaths.push(stageRoot);
+
+    const { packageManifest } = await createCliPublishStage(stageRoot);
+    const internalDependencies = Object.keys(packageManifest.dependencies ?? {}).filter((dependency) =>
+      internalPackagePattern.test(dependency),
+    );
+
+    expect(internalDependencies).toEqual([]);
+    expect(packageManifest.scripts).toBeUndefined();
+    expect(packageManifest.devDependencies).toBeUndefined();
+    await expect(fs.stat(path.join(stageRoot, "dist", "cli.js"))).resolves.toBeTruthy();
   });
 });

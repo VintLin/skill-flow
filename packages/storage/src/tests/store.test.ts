@@ -2,14 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { createEmptySharedPreferences } from "../preferences-store.js";
 import { StateStore } from "../store.js";
 
-const emptyPreferences = {
-  schemaVersion: 1,
-  selectedProjectScope: { kind: "global" },
-  recentProjects: [],
-  projectDrafts: {},
-};
+const emptyPreferences = createEmptySharedPreferences();
 
 describe("StateStore", () => {
   let stateRoot = "";
@@ -208,16 +204,16 @@ describe("StateStore", () => {
     });
 
     expect(await store.togglePinnedSource("alpha")).toEqual({
-      pinnedSourceIds: ["alpha"],
       ...emptyPreferences,
+      pinnedSourceIds: ["alpha"],
     });
     expect(await store.togglePinnedSource("beta")).toEqual({
-      pinnedSourceIds: ["alpha", "beta"],
       ...emptyPreferences,
+      pinnedSourceIds: ["alpha", "beta"],
     });
     expect(await store.pruneMissingSourceIds()).toEqual({
-      pinnedSourceIds: ["alpha"],
       ...emptyPreferences,
+      pinnedSourceIds: ["alpha"],
     });
   });
 
