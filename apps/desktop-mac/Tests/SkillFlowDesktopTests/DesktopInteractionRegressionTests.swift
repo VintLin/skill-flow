@@ -38,6 +38,9 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         XCTAssertTrue(home.contains("homeProjectScopeBar"))
+        XCTAssertTrue(home.contains("homeProjectScopeRefreshButton"))
+        XCTAssertTrue(home.contains("homeProjectScopeRefreshButtonSize"))
+        XCTAssertTrue(home.contains("projectScopeRefreshButtonRotation"))
         XCTAssertTrue(home.contains(".desktopMotionChip("))
     }
 

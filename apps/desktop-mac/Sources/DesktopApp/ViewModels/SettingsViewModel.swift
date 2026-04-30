@@ -12,6 +12,7 @@ final class SettingsViewModel {
         case checking
         case upToDate
         case updateAvailable
+        case runningNewerBuild
         case failed
     }
 
@@ -328,7 +329,13 @@ final class SettingsViewModel {
             let release = try await updateChecker.fetchLatestRelease()
             latestVersion = release.version
             releaseURL = release.releaseURL
-            updateStatus = Self.isVersion(release.version, newerThan: currentVersion) ? .updateAvailable : .upToDate
+            if Self.isVersion(release.version, newerThan: currentVersion) {
+                updateStatus = .updateAvailable
+            } else if Self.isVersion(currentVersion, newerThan: release.version) {
+                updateStatus = .runningNewerBuild
+            } else {
+                updateStatus = .upToDate
+            }
         } catch {
             latestVersion = nil
             releaseURL = nil
@@ -349,7 +356,31 @@ final class SettingsViewModel {
     }
 
     private static func isVersion(_ lhs: String, newerThan rhs: String) -> Bool {
-        lhs.compare(rhs, options: .numeric) == .orderedDescending
+        let lhsComponents = semanticVersionComponents(lhs)
+        let rhsComponents = semanticVersionComponents(rhs)
+        guard !lhsComponents.isEmpty, !rhsComponents.isEmpty else {
+            return lhs.compare(rhs, options: [.caseInsensitive, .numeric]) == .orderedDescending
+        }
+
+        let count = max(lhsComponents.count, rhsComponents.count)
+        for index in 0..<count {
+            let lhsValue = index < lhsComponents.count ? lhsComponents[index] : 0
+            let rhsValue = index < rhsComponents.count ? rhsComponents[index] : 0
+            if lhsValue != rhsValue {
+                return lhsValue > rhsValue
+            }
+        }
+        return false
+    }
+
+    private static func semanticVersionComponents(_ rawValue: String) -> [Int] {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withoutPrefix = trimmed.hasPrefix("v") || trimmed.hasPrefix("V")
+            ? String(trimmed.dropFirst())
+            : trimmed
+        let prefix = withoutPrefix.split(separator: "-", maxSplits: 1).first.map(String.init) ?? withoutPrefix
+        let components = prefix.split(separator: ".").compactMap { Int($0) }
+        return components.count == prefix.split(separator: ".").count ? components : []
     }
 
     private func normalizedAgentDisplayPreferences() -> [AgentDisplayPreference] {

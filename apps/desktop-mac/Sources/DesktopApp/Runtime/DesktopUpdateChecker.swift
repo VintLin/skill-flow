@@ -10,7 +10,7 @@ protocol DesktopUpdateChecking: Sendable {
 }
 
 struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
-    private let latestReleaseURL = URL(string: "https://api.github.com/repos/VintLin/skill-flow/releases/latest")!
+    private let latestReleaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/latest")!
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -18,18 +18,26 @@ struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
     }
 
     func fetchLatestRelease() async throws -> DesktopReleaseInfo {
-        let (data, response) = try await session.data(from: latestReleaseURL)
+        var request = URLRequest(url: latestReleaseURL)
+        request.httpMethod = "HEAD"
+        let (_, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             throw DesktopUpdateCheckError.invalidResponse
         }
 
-        let payload = try JSONDecoder().decode(GitHubLatestReleasePayload.self, from: data)
-        guard let releaseURL = URL(string: payload.htmlURL) else {
+        guard let releaseURL = httpResponse.url else {
+            throw DesktopUpdateCheckError.invalidReleaseURL
+        }
+
+        let pathComponents = releaseURL.pathComponents
+        guard pathComponents.count >= 4,
+              pathComponents.suffix(2).first == "tag",
+              let tagName = pathComponents.last else {
             throw DesktopUpdateCheckError.invalidReleaseURL
         }
 
         return DesktopReleaseInfo(
-            version: Self.normalizedVersion(payload.tagName),
+            version: Self.normalizedVersion(tagName),
             releaseURL: releaseURL
         )
     }
@@ -43,7 +51,7 @@ struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
     }
 }
 
-enum DesktopUpdateCheckError: LocalizedError {
+enum DesktopUpdateCheckError: LocalizedError, Equatable {
     case invalidResponse
     case invalidReleaseURL
 
@@ -54,15 +62,5 @@ enum DesktopUpdateCheckError: LocalizedError {
         case .invalidReleaseURL:
             return "Latest release URL is invalid."
         }
-    }
-}
-
-private struct GitHubLatestReleasePayload: Decodable {
-    let tagName: String
-    let htmlURL: String
-
-    enum CodingKeys: String, CodingKey {
-        case tagName = "tag_name"
-        case htmlURL = "html_url"
     }
 }

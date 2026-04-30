@@ -45,6 +45,7 @@ struct MainView: View {
     let detailContainer: DetailScreenContainer
 
     @State private var updateButtonRotation: Double = 0
+    @State private var projectScopeRefreshButtonRotation: Double = 0
     @State private var searchFocusResetToken = 0
     @State private var showsProjectScopeBar = false
     @State private var isEditCustomAgentPresented = false
@@ -179,6 +180,17 @@ struct MainView: View {
             } else {
                 withAnimation(.easeInOut(duration: 0.28)) {
                     updateButtonRotation = 0
+                }
+            }
+        }
+        .onChange(of: viewModel.isRefreshing) { _, isRefreshing in
+            if isRefreshing {
+                withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
+                    projectScopeRefreshButtonRotation = 360
+                }
+            } else {
+                withAnimation(.easeInOut(duration: 0.28)) {
+                    projectScopeRefreshButtonRotation = 0
                 }
             }
         }
@@ -880,6 +892,8 @@ struct MainView: View {
             }
             .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
 
+            homeProjectScopeRefreshButton
+
             Self.homeFilterDivider(theme: theme)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -897,6 +911,37 @@ struct MainView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var homeProjectScopeRefreshButton: some View {
+        Button {
+            Task {
+                await homeContainer.refreshProjectScopes()
+            }
+        } label: {
+            actionIcon(.update, size: 12)
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .rotationEffect(.degrees(projectScopeRefreshButtonRotation))
+                .frame(width: Self.homeProjectScopeRefreshButtonSize, height: Self.homeProjectScopeRefreshButtonSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .desktopMotionButton(kind: .icon, theme: theme, accent: accent, isEnabled: !viewModel.isRefreshing)
+        .disabled(viewModel.isRefreshing)
+        .opacity(viewModel.isRefreshing ? 0.62 : 1.0)
+        .background(
+            viewModel.isRefreshing
+                ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.24 : 0.18)
+                : AppTheme.scopePillBackground(isSelected: false, for: theme)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Self.homeProjectPillCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: Self.homeProjectPillCornerRadius)
+                .stroke(
+                    viewModel.isRefreshing ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
+                    lineWidth: 0.5
+                )
         }
     }
 
@@ -1193,6 +1238,7 @@ extension MainView {
     static let headerLeadingWidth: CGFloat = 220
     static let homeProjectPillHeight: CGFloat = 28
     static let homeFilterPillHeight: CGFloat = 28
+    static let homeProjectScopeRefreshButtonSize: CGFloat = homeProjectPillHeight
     static let homeProjectPillCornerRadius: CGFloat = 8
     static let homeFilterPillCornerRadius: CGFloat = 8
     static let homeLeadingFixedButtonsAreCentered = true

@@ -10,6 +10,10 @@ APP_DISPLAY_NAME="Skill Flow"
 EXECUTABLE_NAME="SkillFlowDesktop"
 APP_FILE_NAME="$APP_DISPLAY_NAME.app"
 DEFAULT_MIN_MACOS="15.0"
+NODE_RUNTIME_VERSION="22.22.2"
+NODE_RUNTIME_BASE_URL="https://nodejs.org/dist/v$NODE_RUNTIME_VERSION"
+NODE_RUNTIME_DARWIN_ARM64_SHA256="f8655beb4b86ff6588ed7e02c37f8574b58557bd3e880012814b1a4956fd9d88"
+NODE_RUNTIME_DARWIN_X64_SHA256="b6a384bba1a7ec585e5a91a452b63f676b940584ff57b5c9cf0541c8db60023e"
 
 ARCH="universal"
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
@@ -87,6 +91,9 @@ require_command hdiutil
 require_command plutil
 require_command lipo
 require_command node
+require_command curl
+require_command shasum
+require_command tar
 
 SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
 BUILD_TS="$(date +%Y%m%d%H%M%S)"
@@ -191,6 +198,79 @@ EOF
   done
 }
 
+node_dist_platform_for_arch() {
+  case "$1" in
+    arm64)
+      printf '%s\n' "darwin-arm64"
+      ;;
+    x86_64)
+      printf '%s\n' "darwin-x64"
+      ;;
+    *)
+      echo "Unsupported Node runtime arch: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+node_runtime_sha_for_arch() {
+  case "$1" in
+    arm64)
+      printf '%s\n' "$NODE_RUNTIME_DARWIN_ARM64_SHA256"
+      ;;
+    x86_64)
+      printf '%s\n' "$NODE_RUNTIME_DARWIN_X64_SHA256"
+      ;;
+    *)
+      echo "Unsupported Node runtime arch: $1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+stage_node_runtime() {
+  local target_arch="$1"
+  local node_platform archive_name archive_path expected_sha actual_sha extract_dir node_dist_dir dest_dir
+
+  node_platform="$(node_dist_platform_for_arch "$target_arch")"
+  archive_name="node-v$NODE_RUNTIME_VERSION-$node_platform.tar.xz"
+  archive_path="$WORK_DIR/$archive_name"
+  extract_dir="$WORK_DIR/node-runtime-$target_arch"
+  node_dist_dir="$extract_dir/node-v$NODE_RUNTIME_VERSION-$node_platform"
+  dest_dir="$APP_BUNDLE/Contents/Resources/node/$target_arch"
+  expected_sha="$(node_runtime_sha_for_arch "$target_arch")"
+
+  curl -fL "$NODE_RUNTIME_BASE_URL/$archive_name" -o "$archive_path"
+  actual_sha="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
+  if [[ "$actual_sha" != "$expected_sha" ]]; then
+    echo "Node runtime checksum mismatch for $archive_name" >&2
+    echo "Expected: $expected_sha" >&2
+    echo "Actual:   $actual_sha" >&2
+    exit 1
+  fi
+
+  rm -rf "$extract_dir" "$dest_dir"
+  mkdir -p "$extract_dir" "$dest_dir/bin"
+  tar -xf "$archive_path" -C "$extract_dir"
+  cp "$node_dist_dir/bin/node" "$dest_dir/bin/node"
+  chmod +x "$dest_dir/bin/node"
+
+  if [[ -f "$node_dist_dir/LICENSE" ]]; then
+    cp "$node_dist_dir/LICENSE" "$dest_dir/LICENSE"
+  fi
+
+  "$dest_dir/bin/node" --version >/dev/null
+}
+
+stage_node_runtimes() {
+  if [[ "$ARCH" == "universal" ]]; then
+    stage_node_runtime arm64
+    stage_node_runtime x86_64
+  else
+    stage_node_runtime "$ARCH"
+  fi
+}
+
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
 if [[ "$ARCH" == "universal" ]]; then
@@ -255,6 +335,7 @@ EOF
 
 stage_helper "$HELPER_STAGE"
 cp -R "$HELPER_STAGE" "$APP_BUNDLE/Contents/Resources/helper"
+stage_node_runtimes
 
 mkdir -p "$DMG_STAGE"
 cp -R "$APP_BUNDLE" "$DMG_STAGE/"
@@ -274,3 +355,4 @@ echo "DMG: $DMG_PATH"
 echo "Bundle ID: $BUNDLE_ID"
 echo "Version: $CLI_VERSION ($BUILD_TS)"
 echo "Architectures: $(lipo -archs "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME")"
+echo "Bundled Node.js: v$NODE_RUNTIME_VERSION"

@@ -90,6 +90,10 @@ final class HomeScreenContainer {
         await mainViewModel.selectProjectScope(scope)
     }
 
+    func refreshProjectScopes() async {
+        await mainViewModel.refreshProjectScopes()
+    }
+
     func tagSuggestions(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
         groupTagController.tagSuggestions(
             sourceIds: mainViewModel.sourceIds,

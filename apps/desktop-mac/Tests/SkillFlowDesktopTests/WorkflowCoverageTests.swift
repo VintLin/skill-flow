@@ -613,6 +613,7 @@ final class WorkflowCoverageTests: XCTestCase {
                 "opencode",
                 "openclaw",
                 "pi",
+                "trae",
                 "windsurf",
                 "roo-code",
                 "cline",

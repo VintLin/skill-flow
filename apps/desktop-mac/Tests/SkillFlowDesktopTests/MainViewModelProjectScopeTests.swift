@@ -71,6 +71,49 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertTrue(model.recentProjectScopes.isEmpty)
     }
 
+    func testRefreshProjectScopesShowsSuccessToastWithProjectCount() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        await model.refreshProjectScopes()
+
+        XCTAssertFalse(model.isRefreshing)
+        XCTAssertEqual(model.toast?.style, .success)
+        XCTAssertEqual(model.toast?.message, "Project list refreshed: 1 found.")
+    }
+
+    func testRefreshProjectScopesShowsFailureToast() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        query.listError = NSError(
+            domain: "ProjectScopeQueryStub",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "List failed"]
+        )
+        await model.refreshProjectScopes()
+
+        XCTAssertFalse(model.isRefreshing)
+        XCTAssertEqual(model.toast?.style, .error)
+        XCTAssertEqual(model.toast?.message, "Project refresh failed: List failed")
+    }
+
     func testSelectProjectScopeShowsLocalizedToast() async {
         let query = ProjectScopeQueryStub()
         let command = ProjectScopeCommandStub()
@@ -316,6 +359,7 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
         ]
     ]
     var listSelectedScope: ProjectScopeSelection = .global
+    var listError: Error?
 
     func bootstrap() async throws -> BridgeResponse {
         BridgeResponse.success(command: .bootstrap, payload: [
@@ -353,7 +397,10 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
     }
 
     func list() async throws -> BridgeResponse {
-        BridgeResponse.success(command: .list, payload: [
+        if let listError {
+            throw listError
+        }
+        return BridgeResponse.success(command: .list, payload: [
             "summaries": [
                 summaryPayload(
                     sourceId: "alpha",

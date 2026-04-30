@@ -199,9 +199,13 @@ struct SettingsView: View {
                             if viewModel.updateStatus == .checking {
                                 settingsActionLoadingIndicator()
                             } else {
-                                settingsActionButton(t("settings.action.check_updates")) {
+                                settingsActionButton(updateActionTitle) {
                                     Task {
-                                        await viewModel.checkForUpdates()
+                                        if viewModel.updateStatus == .updateAvailable {
+                                            viewModel.openReleasePage()
+                                        } else {
+                                            await viewModel.checkForUpdates()
+                                        }
                                     }
                                 }
                             }
@@ -287,9 +291,17 @@ struct SettingsView: View {
             return t("settings.row.check_updates.description.up_to_date", viewModel.latestVersion ?? viewModel.currentVersion)
         case .updateAvailable:
             return t("settings.row.check_updates.description.available", viewModel.latestVersion ?? "-")
+        case .runningNewerBuild:
+            return t("settings.row.check_updates.description.newer_local", viewModel.latestVersion ?? "-")
         case .failed:
             return t("settings.row.check_updates.description.failed")
         }
+    }
+
+    private var updateActionTitle: String {
+        viewModel.updateStatus == .updateAvailable
+            ? t("settings.action.open_releases")
+            : t("settings.action.check_updates")
     }
 
     @ViewBuilder

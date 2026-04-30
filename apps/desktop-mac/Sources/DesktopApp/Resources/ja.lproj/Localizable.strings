@@ -129,6 +129,7 @@
 "settings.row.check_updates.description.checking" = "GitHub Releases を確認中...";
 "settings.row.check_updates.description.up_to_date" = "現在のバージョン %@ は最新です。";
 "settings.row.check_updates.description.available" = "GitHub Releases でバージョン %@ を利用できます。";
+"settings.row.check_updates.description.newer_local" = "このビルドは GitHub Releases の最新バージョン（%@）より新しいです。";
 "settings.row.check_updates.description.failed" = "最新リリースを取得できませんでした。";
 "settings.action.check_updates" = "確認";
 "settings.row.open_releases.title" = "Releases を開く";
@@ -198,6 +199,9 @@
 "toast.import.success" = "ソースをインポートしました。";
 "toast.project_scope.switched" = "%@ に切り替えました。";
 "toast.project_scope.initialized" = "%@ のプロジェクト設定を初期化しました。";
+"toast.project_scope.refresh.loading" = "プロジェクト一覧を更新中...";
+"toast.project_scope.refresh.success" = "プロジェクト一覧を更新しました: %@ 件。";
+"toast.project_scope.refresh.failed" = "プロジェクト一覧の更新に失敗しました: %@";
 "toast.pin.failed" = "ピン留め失敗: %@";
 "toast.details.load_failed" = "%@ の詳細を読み込めませんでした。";
 "toast.update.none" = "更新できるグループがありません。";

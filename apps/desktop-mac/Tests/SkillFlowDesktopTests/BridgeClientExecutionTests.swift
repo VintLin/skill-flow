@@ -71,6 +71,56 @@ final class BridgeClientExecutionTests: XCTestCase {
         }
     }
 
+    func testNodeResolutionPrefersDebugOverride() {
+        let resolved = BridgeClient.resolveNodeExecutable(
+            bundleURL: URL(fileURLWithPath: "/Applications/Skill Flow.app"),
+            architecture: "arm64",
+            environment: ["SKILL_FLOW_DESKTOP_NODE_OVERRIDE": "/tmp/custom-node"],
+            isExecutable: { _ in false }
+        )
+
+        XCTAssertEqual(resolved, "/tmp/custom-node")
+    }
+
+    func testNodeResolutionPrefersBundledRuntimeBeforeSystemNode() {
+        let bundleURL = URL(fileURLWithPath: "/Applications/Skill Flow.app")
+        let bundledNode = "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin/node"
+        let resolved = BridgeClient.resolveNodeExecutable(
+            bundleURL: bundleURL,
+            architecture: "arm64",
+            environment: [:],
+            isExecutable: { path in
+                path == bundledNode || path == "/opt/homebrew/bin/node"
+            }
+        )
+
+        XCTAssertEqual(resolved, bundledNode)
+    }
+
+    func testNodeResolutionFallsBackToSystemNodeWhenBundledRuntimeIsUnavailable() {
+        let resolved = BridgeClient.resolveNodeExecutable(
+            bundleURL: URL(fileURLWithPath: "/Applications/Skill Flow.app"),
+            architecture: "arm64",
+            environment: [:],
+            isExecutable: { path in
+                path == "/usr/local/bin/node"
+            }
+        )
+
+        XCTAssertEqual(resolved, "/usr/local/bin/node")
+    }
+
+    func testNodeResolutionFallsBackToEnvWhenNoKnownNodePathExists() {
+        let resolved = BridgeClient.resolveNodeExecutable(
+            bundleURL: URL(fileURLWithPath: "/Applications/Skill Flow.app"),
+            architecture: "arm64",
+            environment: [:],
+            isExecutable: { _ in false }
+        )
+
+        XCTAssertEqual(resolved, "node")
+    }
+
     func testRuntimeMissingCommandErrorsAreMappedToDependencyGuidance() {
         XCTAssertEqual(
             BridgeClient.dependencyError(for: "spawn git ENOENT")?.localizedDescription,

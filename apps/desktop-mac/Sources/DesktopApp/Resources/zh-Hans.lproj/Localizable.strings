@@ -129,6 +129,7 @@
 "settings.row.check_updates.description.checking" = "正在检查 GitHub Releases...";
 "settings.row.check_updates.description.up_to_date" = "当前已经是 %@ 版本。";
 "settings.row.check_updates.description.available" = "GitHub Releases 上已有 %@ 版本可用。";
+"settings.row.check_updates.description.newer_local" = "当前构建比 GitHub Releases 最新版本（%@）更新。";
 "settings.row.check_updates.description.failed" = "暂时无法获取最新 release。";
 "settings.action.check_updates" = "检查";
 "settings.row.open_releases.title" = "打开 Releases";
@@ -198,6 +199,9 @@
 "toast.import.success" = "已导入来源。";
 "toast.project_scope.switched" = "已切换到 %@。";
 "toast.project_scope.initialized" = "已初始化 %@ 的项目配置。";
+"toast.project_scope.refresh.loading" = "正在刷新项目列表...";
+"toast.project_scope.refresh.success" = "已刷新项目列表：找到 %@ 个。";
+"toast.project_scope.refresh.failed" = "刷新项目列表失败：%@";
 "toast.pin.failed" = "置顶失败：%@";
 "toast.details.load_failed" = "加载 %@ 详情失败。";
 "toast.update.none" = "没有可更新的分组。";

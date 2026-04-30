@@ -471,6 +471,42 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testCheckForUpdatesMarksNewerLocalBuildWhenCurrentVersionExceedsLatestRelease() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.5")!
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.5", releaseURL: releaseURL))),
+            currentVersionProvider: { "1.3.6" }
+        )
+
+        await viewModel.checkForUpdates()
+
+        XCTAssertEqual(viewModel.currentVersion, "1.3.6")
+        XCTAssertEqual(viewModel.latestVersion, "1.3.5")
+        XCTAssertEqual(viewModel.updateStatus, .runningNewerBuild)
+        XCTAssertEqual(viewModel.releaseURL, releaseURL)
+    }
+
+    @MainActor
+    func testCheckForUpdatesComparesPatchVersionsNumerically() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.10")!
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.10", releaseURL: releaseURL))),
+            currentVersionProvider: { "1.3.6" }
+        )
+
+        await viewModel.checkForUpdates()
+
+        XCTAssertEqual(viewModel.updateStatus, .updateAvailable)
+        XCTAssertEqual(viewModel.latestVersion, "1.3.10")
+    }
+
+    @MainActor
     func testCheckForUpdatesStoresFailureState() async {
         let defaults = UserDefaults(suiteName: suiteName)!
         let viewModel = SettingsViewModel(

@@ -69,13 +69,12 @@ npx skill-flow --help
 
 ### 桌面端前置依赖
 
-Skill Flow Desktop 目前在目标 Mac 上仍依赖少量外部命令行工具：
+Skill Flow Desktop release 构建会内置用于 desktop helper 的 Node.js runtime，因此双击启动不再依赖 `asdf` 或 `nvm` 写入 shell 的 `node` 路径。
 
-- 启动内置 desktop helper 需要 `node` 20 或更高版本
 - 导入非 GitHub Git source 需要 `git`
 - 导入 skills.sh source 需要 `npx`
 
-如果桌面应用检测到依赖缺失，会直接提示可执行的错误信息，并引导回本节处理。
+开发构建和损坏的 release bundle 仍会 fallback 到系统 `node` 20 或更高版本。如果桌面应用检测到依赖缺失，会直接提示可执行的错误信息，并引导回本节处理。
 
 ### 常见使用流程
 
@@ -232,7 +231,7 @@ export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
 - [文档索引](./docs/README.md)
 - [CLI 参考](./docs/references/REF_00_cli-commands.md)
 - [桌面打包参考](./docs/references/REF_09_desktop-packaging.md)
-- [v1.3.5 发布说明](./releases/RELEASE_v1.3.5.md)
+- [v1.3.6 发布说明](./releases/RELEASE_v1.3.6.md)
 
 ## 许可证
 

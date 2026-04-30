@@ -16,6 +16,7 @@ fi
 INFO_PLIST="$APP_BUNDLE/Contents/Info.plist"
 EXECUTABLE="$APP_BUNDLE/Contents/MacOS/SkillFlowDesktop"
 HELPER_DIR="$APP_BUNDLE/Contents/Resources/helper"
+NODE_RUNTIME_DIR="$APP_BUNDLE/Contents/Resources/node"
 
 [[ -f "$INFO_PLIST" ]] || {
   echo "Missing Info.plist: $INFO_PLIST" >&2
@@ -29,6 +30,11 @@ HELPER_DIR="$APP_BUNDLE/Contents/Resources/helper"
 
 [[ -d "$HELPER_DIR" ]] || {
   echo "Missing helper directory: $HELPER_DIR" >&2
+  exit 1
+}
+
+[[ -d "$NODE_RUNTIME_DIR" ]] || {
+  echo "Missing Node runtime directory: $NODE_RUNTIME_DIR" >&2
   exit 1
 }
 
@@ -53,6 +59,14 @@ if [[ -n "$EXPECTED_ARCHS" ]]; then
       echo "Missing architecture '$arch' in executable: $ACTUAL_ARCHS" >&2
       exit 1
     fi
+
+    NODE_EXECUTABLE="$NODE_RUNTIME_DIR/$arch/bin/node"
+    if [[ ! -x "$NODE_EXECUTABLE" ]]; then
+      echo "Missing bundled Node runtime for '$arch': $NODE_EXECUTABLE" >&2
+      exit 1
+    fi
+
+    "$NODE_EXECUTABLE" --version >/dev/null
   done
 fi
 

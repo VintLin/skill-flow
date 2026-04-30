@@ -2,6 +2,27 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.6 - 2026-04-30
+
+### Added
+
+- Added a bundled Node.js `v22.22.2` runtime to macOS desktop release packages so Finder launch no longer depends on shell-managed `node` paths.
+- Added package validation that checks bundled Node runtimes for every expected app architecture.
+- Added a compact project refresh action beside the macOS home scope switcher so users can rescan recently detected projects without leaving the home screen.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.5` to `1.3.6`.
+- Changed Application Update checks to use the GitHub Releases latest redirect instead of the GitHub API.
+- Application Update now distinguishes local builds that are newer than the latest published GitHub release.
+- Project refresh now uses the same loading, success, and failure toast feedback pattern as skill group updates.
+
+### Fixed
+
+- Fixed the `asdf` / `nvm` desktop launch path where double-click startup could report missing Node.js even though terminal launch worked.
+- Fixed Application Update copy that could report an older GitHub release as the current version when the local app build was ahead.
+- Fixed silent startup update checks that could consume GitHub requests and leave Settings in a failed update state before the user pressed Check.
+
 ## v1.3.5 - 2026-04-12
 
 ### Added

@@ -183,7 +183,7 @@ final class BridgeClient: @unchecked Sendable {
         let helperURL = try resolveHelperURL()
         let request = BridgeRequest(command: command, payload: payload)
         let requestData = try JSONEncoder().encode(request)
-        let nodeExecutable = resolveNodeExecutable()
+        let nodeExecutable = Self.resolveNodeExecutable()
         try validateEnvironment(command: command, payload: payload, nodeExecutable: nodeExecutable)
 
         let process = Process()
@@ -324,13 +324,25 @@ final class BridgeClient: @unchecked Sendable {
         FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    private func resolveNodeExecutable() -> String {
+    static func resolveNodeExecutable(
+        bundleURL: URL = Bundle.main.bundleURL,
+        architecture: String = BridgeClient.currentNodeArchitecture,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String {
         #if DEBUG
-        if let override = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_NODE_OVERRIDE"],
+        if let override = environment["SKILL_FLOW_DESKTOP_NODE_OVERRIDE"],
            !override.isEmpty {
             return override
         }
         #endif
+
+        let bundledNodePath = bundleURL
+            .appendingPathComponent("Contents/Resources/node/\(architecture)/bin/node")
+            .path
+        if isExecutable(bundledNodePath) {
+            return bundledNodePath
+        }
 
         let commonNodePaths = [
             "/opt/homebrew/bin/node",
@@ -338,11 +350,21 @@ final class BridgeClient: @unchecked Sendable {
             "/usr/bin/node",
         ]
 
-        for path in commonNodePaths where FileManager.default.fileExists(atPath: path) {
+        for path in commonNodePaths where isExecutable(path) {
             return path
         }
 
         return "node"
+    }
+
+    private static var currentNodeArchitecture: String {
+        #if arch(arm64)
+        "arm64"
+        #elseif arch(x86_64)
+        "x86_64"
+        #else
+        "unknown"
+        #endif
     }
 
     private func validateEnvironment(

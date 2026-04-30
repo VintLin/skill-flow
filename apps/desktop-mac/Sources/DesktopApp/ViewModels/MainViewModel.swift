@@ -1255,7 +1255,18 @@ final class MainViewModel {
     }
 
     func refreshList() async {
+        await refreshList(showProjectScopeToast: false)
+    }
+
+    func refreshProjectScopes() async {
+        await refreshList(showProjectScopeToast: true)
+    }
+
+    private func refreshList(showProjectScopeToast: Bool) async {
         isRefreshing = true
+        if showProjectScopeToast {
+            showToast(style: .loading, text: localizedText("toast.project_scope.refresh.loading"))
+        }
         defer { isRefreshing = false }
 
         do {
@@ -1268,7 +1279,19 @@ final class MainViewModel {
             }
             latestWarnings = response.warnings
             healthStatus = response.warnings.isEmpty ? .healthy : .warnings
+            if showProjectScopeToast {
+                showToast(
+                    style: .success,
+                    text: localizedText(
+                        "toast.project_scope.refresh.success",
+                        String(recentProjectScopes.count)
+                    )
+                )
+            }
         } catch {
+            if showProjectScopeToast {
+                showToast(style: .error, text: localizedText("toast.project_scope.refresh.failed", error.localizedDescription))
+            }
             loadState = .failed(error.localizedDescription)
         }
     }
