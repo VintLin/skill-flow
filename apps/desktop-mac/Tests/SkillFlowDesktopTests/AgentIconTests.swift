@@ -46,6 +46,7 @@ final class AgentIconTests: XCTestCase {
         XCTAssertEqual(AgentIconLibrary.fileName(for: "claude-code"), "claude-code.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "github-copilot"), "copilot.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "roo-code"), "roo.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "hermes-agent"), "hermesagent.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "kiro"), "kiro-cli.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "trae"), "trae.svg")
         XCTAssertNil(AgentIconLibrary.fileName(for: "pi"))
@@ -55,6 +56,7 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.image(for: "codex"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "claude-code"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "github-copilot"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "hermes-agent"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "trae"))
     }
 

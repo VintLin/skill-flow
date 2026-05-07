@@ -2,6 +2,23 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.7 - 2026-05-07
+
+### Added
+
+- Added built-in Hermes Agent target support for deploying selected skills to `~/.hermes/skills/`.
+- Added Hermes Agent desktop labeling, ordering, and icon support alongside the existing built-in agent targets.
+- Added `.hermes/skills` source discovery so repositories that already organize skills for Hermes are detected consistently.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.6` to `1.3.7`.
+- Updated supported-target documentation to include Hermes Agent in the built-in target list.
+
+### Fixed
+
+- Avoided treating Hermes Agent as a custom-only target now that its writable skills directory is part of the built-in target catalog.
+
 ## v1.3.6 - 2026-04-30
 
 ### Added

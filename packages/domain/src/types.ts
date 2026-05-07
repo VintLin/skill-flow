@@ -22,6 +22,7 @@ export type DeploymentTargetName =
   | "gemini-cli"
   | "opencode"
   | "openclaw"
+  | "hermes-agent"
   | "pi"
   | "trae"
   | "windsurf"

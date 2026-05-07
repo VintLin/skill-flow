@@ -11,6 +11,7 @@ enum AgentIconLibrary {
         "gemini-cli": "gemini.svg",
         "opencode": "opencode.svg",
         "openclaw": "clawdbot.svg",
+        "hermes-agent": "hermesagent.svg",
         "windsurf": "windsurf.svg",
         "trae": "trae.svg",
         "roo-code": "roo.svg",

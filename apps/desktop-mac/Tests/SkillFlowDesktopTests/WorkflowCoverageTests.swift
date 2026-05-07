@@ -612,6 +612,7 @@ final class WorkflowCoverageTests: XCTestCase {
                 "gemini-cli",
                 "opencode",
                 "openclaw",
+                "hermes-agent",
                 "pi",
                 "trae",
                 "windsurf",

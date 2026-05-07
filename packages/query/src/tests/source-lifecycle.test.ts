@@ -46,6 +46,7 @@ describe.sequential("source lifecycle", () => {
       "gemini-cli",
       "opencode",
       "openclaw",
+      "hermes-agent",
       "pi",
       "windsurf",
       "roo-code",

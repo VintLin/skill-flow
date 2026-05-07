@@ -17,6 +17,7 @@ enum AgentDisplayCatalog {
         "gemini-cli",
         "opencode",
         "openclaw",
+        "hermes-agent",
         "pi",
         "trae",
         "windsurf",
@@ -34,6 +35,7 @@ enum AgentDisplayCatalog {
         "gemini-cli": "Gemini CLI",
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
+        "hermes-agent": "Hermes Agent",
         "pi": "Pi",
         "trae": "Trae",
         "windsurf": "Windsurf",
@@ -51,6 +53,7 @@ enum AgentDisplayCatalog {
         "gemini-cli": "GM",
         "opencode": "OP",
         "openclaw": "OC",
+        "hermes-agent": "HA",
         "pi": "PI",
         "trae": "TR",
         "windsurf": "WS",
@@ -127,6 +130,8 @@ enum AgentDisplayCatalog {
             return homeDirectory.appendingPathComponent(".config/opencode/skills", isDirectory: true).path
         case "openclaw":
             return homeDirectory.appendingPathComponent(".openclaw/skills", isDirectory: true).path
+        case "hermes-agent":
+            return homeDirectory.appendingPathComponent(".hermes/skills", isDirectory: true).path
         case "pi":
             return homeDirectory.appendingPathComponent(".pi/agent/skills", isDirectory: true).path
         case "trae":
@@ -158,6 +163,8 @@ enum AgentDisplayCatalog {
             return ".agents/skills"
         case "openclaw":
             return "skills"
+        case "hermes-agent":
+            return ".hermes/skills"
         case "pi":
             return ".pi/skills"
         case "trae":

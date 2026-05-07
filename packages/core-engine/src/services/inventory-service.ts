@@ -39,6 +39,7 @@ export class InventoryService {
     ".continue/skills",
     ".github/skills",
     ".goose/skills",
+    ".hermes/skills",
     ".iflow/skills",
     ".junie/skills",
     ".kilocode/skills",
