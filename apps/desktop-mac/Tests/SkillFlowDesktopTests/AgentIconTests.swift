@@ -67,6 +67,19 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.symbolImage(for: "cursor", foreground: foreground))
     }
 
+    func testHermesSymbolIconRetainsVisiblePixelsAfterRecoloring() {
+        let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
+
+        guard
+            let image = AgentIconLibrary.symbolImage(for: "hermes-agent", foreground: foreground),
+            let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else {
+            return XCTFail("Expected Hermes Agent symbol image to load")
+        }
+
+        XCTAssertTrue(hasVisiblePixels(cgImage), "Hermes Agent symbol image should not be fully transparent after recoloring")
+    }
+
     func testGroupMetadataIconLoaderFindsBundledSvgAssets() {
         XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .skills))
         XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .download))
@@ -77,5 +90,38 @@ final class AgentIconTests: XCTestCase {
     func testDetailInfoIconLoaderFindsBundledSvgAssets() {
         XCTAssertNotNil(DetailInfoIconLibrary.image(for: .version))
         XCTAssertNotNil(DetailInfoIconLibrary.image(for: .wordCount))
+    }
+
+    private func hasVisiblePixels(_ image: CGImage) -> Bool {
+        guard
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+                data: nil,
+                width: image.width,
+                height: image.height,
+                bitsPerComponent: 8,
+                bytesPerRow: image.width * 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else {
+            return false
+        }
+
+        let rect = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.draw(image, in: rect)
+
+        guard let data = context.data else {
+            return false
+        }
+
+        let bytes = data.bindMemory(to: UInt8.self, capacity: image.width * image.height * 4)
+        for index in stride(from: 0, to: image.width * image.height * 4, by: 4) {
+            if bytes[index + 3] > 12 {
+                return true
+            }
+        }
+
+        return false
     }
 }

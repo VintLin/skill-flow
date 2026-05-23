@@ -3,6 +3,11 @@ import Foundation
 
 @MainActor
 enum AgentIconLibrary {
+    private enum SymbolAlphaMode: String {
+        case brightForeground
+        case darkForeground
+    }
+
     private static let iconFileNames: [String: String] = [
         "claude-code": "claude-code.svg",
         "codex": "codex.svg",
@@ -37,7 +42,7 @@ enum AgentIconLibrary {
 
         for directory in resourceDirectories() {
             let url = directory.appendingPathComponent(fileName)
-            if let image = NSImage(contentsOf: url) {
+            if let image = loadImage(from: url, targetId: targetId) {
                 cache.setObject(image, forKey: fileName as NSString)
                 return image
             }
@@ -56,7 +61,8 @@ enum AgentIconLibrary {
         }
 
         let foreground = foreground.usingColorSpace(.deviceRGB) ?? foreground
-        let cacheKey = "\(fileName)#\(colorKey(foreground))#crop:\(cropToVisibleBounds)"
+        let alphaMode = symbolAlphaMode(for: targetId)
+        let cacheKey = "\(fileName)#\(alphaMode.rawValue)#\(colorKey(foreground))#crop:\(cropToVisibleBounds)"
         if let cached = symbolCache.object(forKey: cacheKey as NSString) {
             return cached
         }
@@ -87,7 +93,7 @@ enum AgentIconLibrary {
             let sourceAlpha = CGFloat(bytes[index + 3]) / 255.0
 
             let luminance = (0.2126 * sourceRed) + (0.7152 * sourceGreen) + (0.0722 * sourceBlue)
-            let symbolAlpha = max(0, min(1, ((luminance - 0.35) / 0.65) * sourceAlpha))
+            let symbolAlpha = alpha(for: luminance, sourceAlpha: sourceAlpha, mode: alphaMode)
 
             bytes[index] = red
             bytes[index + 1] = green
@@ -124,6 +130,36 @@ enum AgentIconLibrary {
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )
+    }
+
+    private static func loadImage(from url: URL, targetId: String) -> NSImage? {
+        if targetId == "hermes-agent",
+           url.pathExtension.lowercased() == "svg",
+           let image = loadHermesSVG(from: url) {
+            return image
+        }
+
+        return NSImage(contentsOf: url)
+    }
+
+    private static func loadHermesSVG(from url: URL) -> NSImage? {
+        guard
+            let data = try? Data(contentsOf: url),
+            let svg = String(data: data, encoding: .utf8)
+        else {
+            return nil
+        }
+
+        let normalized = svg
+            .replacingOccurrences(of: "fill=\"currentColor\"", with: "fill=\"#000\"")
+            .replacingOccurrences(of: "width=\"1em\"", with: "width=\"100\"")
+            .replacingOccurrences(of: "height=\"1em\"", with: "height=\"100\"")
+
+        guard let normalizedData = normalized.data(using: .utf8) else {
+            return nil
+        }
+
+        return NSImage(data: normalizedData)
     }
 
     private static func croppedToVisibleBounds(_ image: CGImage) -> CGImage? {
@@ -169,6 +205,31 @@ enum AgentIconLibrary {
         )
 
         return image.cropping(to: cropRect)
+    }
+
+    private static func symbolAlphaMode(for targetId: String) -> SymbolAlphaMode {
+        switch targetId {
+        case "hermes-agent":
+            return .darkForeground
+        default:
+            return .brightForeground
+        }
+    }
+
+    private static func alpha(
+        for luminance: CGFloat,
+        sourceAlpha: CGFloat,
+        mode: SymbolAlphaMode
+    ) -> CGFloat {
+        let normalized: CGFloat
+        switch mode {
+        case .brightForeground:
+            normalized = (luminance - 0.35) / 0.65
+        case .darkForeground:
+            normalized = (0.65 - luminance) / 0.65
+        }
+
+        return max(0, min(1, normalized * sourceAlpha))
     }
 
     private static func colorKey(_ color: NSColor) -> String {

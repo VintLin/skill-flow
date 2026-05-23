@@ -1087,9 +1087,10 @@ struct SharedGroupCard: View {
 
             if let image = AgentIconLibrary.symbolImage(
                 for: targetId,
-                foreground: targetForegroundColor(isOn: isOn)
+                foreground: targetForegroundColor(isOn: isOn),
+                cropToVisibleBounds: targetId == "hermes-agent"
             ) {
-                targetIcon(image: image, isOn: isOn)
+                targetIcon(image: image, targetId: targetId, isOn: isOn)
             } else {
                 Text(fallbackText)
                     .font(.system(size: scale.targetFontSize, weight: .bold, design: .monospaced))
@@ -1102,12 +1103,13 @@ struct SharedGroupCard: View {
     }
 
     @ViewBuilder
-    private func targetIcon(image: NSImage, isOn: Bool) -> some View {
+    private func targetIcon(image: NSImage, targetId: String, isOn: Bool) -> some View {
         Image(nsImage: image)
             .renderingMode(.original)
             .resizable()
             .interpolation(.high)
-            .scaledToFill()
+            .scaledToFit()
+            .padding(targetId == "hermes-agent" ? 9 : 0)
     }
 
     private func targetBackgroundFill(isOn: Bool) -> Color {
