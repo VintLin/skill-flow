@@ -1038,7 +1038,7 @@ export class SkillFlowApp {
       locator: resolvedLocator,
       canonicalRepo: resolvedLocator,
       aliases,
-      title: deriveDisplayName(resolvedLocator),
+      title: parseHostedGitRepo(resolvedLocator)?.repo ?? deriveDisplayName(resolvedLocator),
       installed: manifest.sources.some(
         (source) => source.kind === "local" && path.resolve(source.locator) === resolvedLocator,
       ),

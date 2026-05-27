@@ -319,6 +319,7 @@ describe.sequential("import page flow", () => {
     expect(result.data.groups[0]).toMatchObject({
       locator,
       canonicalRepo: locator,
+      title: "gitlab-mr-review-skill",
     });
   });
 

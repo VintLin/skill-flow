@@ -5230,13 +5230,22 @@ final class MainViewModel {
             return pathSegments.count >= 4 && pathSegments[2].lowercased() == "tree"
 
         case "gitlab.com":
-            if pathSegments.count == 2 {
-                return true
+            let treeMarkerIndex = pathSegments.indices.first { index in
+                pathSegments[index] == "-"
+                    && pathSegments.indices.contains(index + 1)
+                    && pathSegments[index + 1] == "tree"
             }
 
-            return pathSegments.count >= 5
-                && pathSegments[2] == "-"
-                && pathSegments[3].lowercased() == "tree"
+            if let treeMarkerIndex {
+                return treeMarkerIndex >= 2 && pathSegments.count >= treeMarkerIndex + 3
+            }
+
+            let hasUnsupportedPagePath = pathSegments.contains("-")
+                || pathSegments.contains { segment in
+                    ["tree", "blob", "issues", "merge_requests"].contains(segment)
+                }
+
+            return pathSegments.count >= 2 && !hasUnsupportedPagePath
 
         default:
             return false
