@@ -115,6 +115,32 @@ describe.sequential("source lifecycle", () => {
     expect(lockSpy).toHaveBeenCalledTimes(1);
   });
 
+  test("addSource keeps sourceIdOverride aligned with local checkout path and leaf ids", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+    const { manifest, lockFile } = await app.store.readState();
+    const source = manifest.sources.find((item) => item.id === "demo-source");
+    const lockSource = lockFile.sources.find((item) => item.id === "demo-source");
+    const expectedCheckoutPath = app.store.getSourceCheckoutPath("local", "demo-source");
+
+    expect(added.data.manifest.id).toBe("demo-source");
+    expect(source?.id).toBe("demo-source");
+    expect(lockSource?.checkoutPath).toBe(expectedCheckoutPath);
+    expect(path.basename(lockSource?.checkoutPath ?? "")).toBe("demo-source");
+    expect(lockSource?.leafIds).toEqual(["demo-source:skills/review"]);
+    expect(lockFile.leafInventory.map((leaf) => leaf.id)).toEqual(["demo-source:skills/review"]);
+    expect(lockFile.leafInventory.map((leaf) => leaf.sourceId)).toEqual(["demo-source"]);
+  });
+
   test("inspectSource still returns local detail state when reconcileInventory fails", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
@@ -1046,7 +1072,9 @@ description: |
 
     const before = await app.store.readState();
     const beforeBinding = before.manifest.bindings["demo-source"];
-    const renamed = await app.renameSource("demo-source", "Writing Tools");
+    const beforeDeployments = before.lockFile.deployments;
+    const beforeProjections = before.lockFile.projections ?? [];
+    const renamed = await app.renameSource("demo-source", "  Writing Tools  ");
 
     expect(renamed.ok).toBe(true);
     if (!renamed.ok) {
@@ -1065,6 +1093,30 @@ description: |
     expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.checkoutPath).toBe(
       before.lockFile.sources.find((source) => source.id === "demo-source")?.checkoutPath,
     );
+    expect(after.lockFile.deployments).toHaveLength(beforeDeployments.length);
+    expect(after.lockFile.projections ?? []).toHaveLength(beforeProjections.length);
+    expect(after.lockFile.deployments.map((deployment) => ({
+      sourceId: deployment.sourceId,
+      leafId: deployment.leafId,
+      target: deployment.target,
+      targetPath: deployment.targetPath,
+    }))).toEqual(beforeDeployments.map((deployment) => ({
+      sourceId: deployment.sourceId,
+      leafId: deployment.leafId,
+      target: deployment.target,
+      targetPath: deployment.targetPath,
+    })));
+    expect((after.lockFile.projections ?? []).map((projection) => ({
+      sourceId: projection.sourceId,
+      leafId: projection.leafId,
+      target: projection.target,
+      targetPath: projection.targetPath,
+    }))).toEqual(beforeProjections.map((projection) => ({
+      sourceId: projection.sourceId,
+      leafId: projection.leafId,
+      target: projection.target,
+      targetPath: projection.targetPath,
+    })));
   });
 
   test("renameSource rejects missing and empty source labels", async () => {

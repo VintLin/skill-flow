@@ -116,14 +116,6 @@ import {
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
 
-function replaceLeafSourceId(leafId: string, nextSourceId: string): string {
-  const separatorIndex = leafId.indexOf(":");
-  if (separatorIndex === -1) {
-    return `${nextSourceId}:${leafId}`;
-  }
-  return `${nextSourceId}${leafId.slice(separatorIndex)}`;
-}
-
 type SkillFlowAddOptions = AddSourceOptions &
   AddSourceDraftOptions & {
     project?: boolean;
@@ -313,58 +305,6 @@ export class SkillFlowApp {
     }
 
     const { manifest, lockFile } = await this.store.readState();
-    if (
-      options?.sourceIdOverride &&
-      result.data.manifest.id !== options.sourceIdOverride
-    ) {
-      const originalSourceId = result.data.manifest.id;
-      const nextSourceId = options.sourceIdOverride;
-      const existingSource = manifest.sources.find((item) => item.id === nextSourceId);
-      if (existingSource) {
-        await this.rollbackPreparedSourceInternal(originalSourceId);
-        return fail({
-          code: "SOURCE_EXISTS",
-          message: `Skills group id '${nextSourceId}' is already registered.`,
-        });
-      }
-
-      manifest.sources = manifest.sources.map((item) =>
-        item.id === originalSourceId ? { ...item, id: nextSourceId } : item,
-      );
-      const originalBinding = manifest.bindings[originalSourceId];
-      if (originalBinding) {
-        manifest.bindings[nextSourceId] = originalBinding;
-        delete manifest.bindings[originalSourceId];
-      }
-      lockFile.sources = lockFile.sources.map((item) =>
-        item.id === originalSourceId
-          ? {
-            ...item,
-            id: nextSourceId,
-            leafIds: item.leafIds.map((leafId) => replaceLeafSourceId(leafId, nextSourceId)),
-          }
-          : item,
-      );
-      lockFile.leafInventory = lockFile.leafInventory.map((leaf) =>
-        leaf.sourceId === originalSourceId
-          ? {
-            ...leaf,
-            id: replaceLeafSourceId(leaf.id, nextSourceId),
-            sourceId: nextSourceId,
-          }
-          : leaf,
-      );
-      result.data.manifest = {
-        ...result.data.manifest,
-        id: nextSourceId,
-      };
-      result.data.lock = {
-        ...result.data.lock,
-        id: nextSourceId,
-        leafIds: result.data.lock.leafIds.map((leafId) => replaceLeafSourceId(leafId, nextSourceId)),
-      };
-    }
-
     await this.ensureProjectionLedger(manifest, lockFile);
     const source = manifest.sources.find((item) => item.id === result.data.manifest.id);
     if (!source) {

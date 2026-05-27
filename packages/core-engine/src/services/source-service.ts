@@ -97,6 +97,7 @@ export class SourceService {
     const resolved = this.resolveUniqueLocalSource(
       await this.resolveSource(locator, options),
       manifest.sources,
+      Boolean(options.sourceIdOverride),
     );
 
     if (
@@ -947,8 +948,13 @@ export class SourceService {
   private resolveUniqueLocalSource(
     resolved: SourceResolution,
     existingSources: SourceManifestRecord[],
+    preserveSourceId = false,
   ): SourceResolution {
     if (resolved.kind !== "local" || !resolved.localPath) {
+      return resolved;
+    }
+
+    if (preserveSourceId) {
       return resolved;
     }
 
