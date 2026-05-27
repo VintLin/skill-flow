@@ -48,6 +48,20 @@ describe("find and naming utils", () => {
       owner: "example",
       repo: "skills",
     });
+    expect(parseHostedGitRepo("https://gitlab.com/example/skills/-/tree/main/src")).toEqual({
+      host: "gitlab.com",
+      owner: "example",
+      repo: "skills",
+    });
+    expect(
+      parseHostedGitRepo("https://gitlab.com/group/subgroup/project/-/tree/main/path"),
+    ).toEqual({
+      host: "gitlab.com",
+      owner: "group/subgroup",
+      repo: "project",
+    });
+    expect(parseHostedGitRepo("https://gitlab.com/example/skills/tree/main/src")).toBeNull();
+    expect(parseHostedGitRepo("https://gitlab.com/example/skills/-/blob/main/README.md")).toBeNull();
     expect(getHostedGitOwner("git@gitlab.com:example/skills.git")).toBe("example");
   });
 

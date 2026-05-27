@@ -304,6 +304,24 @@ describe.sequential("import page flow", () => {
     });
   });
 
+  test("exact import search treats GitLab tree locators as direct import candidates", async () => {
+    const app = new SkillFlowApp();
+    const locator = "https://gitlab.com/reza-marandi/gitlab-mr-review-skill/-/tree/main";
+    const result = await app.searchImportGroups(locator);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.exact).toBe(true);
+    expect(result.data.groups).toHaveLength(1);
+    expect(result.data.groups[0]).toMatchObject({
+      locator,
+      canonicalRepo: locator,
+    });
+  });
+
   test("previewImportSource supports GitLab HTTPS locators", async () => {
     const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockResolvedValue(
       ok({

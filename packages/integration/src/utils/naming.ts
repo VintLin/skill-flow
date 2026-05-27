@@ -23,14 +23,51 @@ export function parseHostedGitRepo(
       const url = new URL(trimmed);
       const host = url.hostname.toLowerCase();
       const parts = url.pathname.split("/").filter(Boolean);
+
+      if (host === "github.com") {
+        const [owner, rawRepo] = parts;
+        const repo = rawRepo?.replace(/\.git$/i, "");
+        const isRepoRoot = parts.length === 2;
+        const isTreePath = parts.length >= 4 && parts[2] === "tree";
+        if ((!isRepoRoot && !isTreePath) || !owner || !repo) {
+          return null;
+        }
+        return { host, owner, repo };
+      }
+
+      if (host.includes("gitlab")) {
+        const treeMarkerIndex = parts.findIndex(
+          (segment, index) => segment === "-" && parts[index + 1] === "tree",
+        );
+        const projectParts = treeMarkerIndex >= 0 ? parts.slice(0, treeMarkerIndex) : parts;
+        const isRepoRoot = treeMarkerIndex < 0;
+        const isTreePath = treeMarkerIndex >= 2 && parts.length >= treeMarkerIndex + 3;
+        const hasUnsupportedPagePath =
+          parts.includes("-") ||
+          parts.some((segment) => [
+            "tree",
+            "blob",
+            "issues",
+            "merge_requests",
+          ].includes(segment));
+        if ((!isRepoRoot && !isTreePath) || (isRepoRoot && hasUnsupportedPagePath)) {
+          return null;
+        }
+
+        const rawRepo = projectParts.at(-1);
+        const owner = projectParts.slice(0, -1).join("/");
+        const repo = rawRepo?.replace(/\.git$/i, "");
+        if (!owner || !repo) {
+          return null;
+        }
+        return { host, owner, repo };
+      }
+
       const [owner, rawRepo] = parts;
       const repo = rawRepo?.replace(/\.git$/i, "");
       const isRepoRoot = parts.length === 2;
       const isTreePath = parts.length >= 4 && parts[2] === "tree";
-      if (!isRepoRoot && !isTreePath) {
-        return null;
-      }
-      if (!host || !owner || !repo) {
+      if ((!isRepoRoot && !isTreePath) || !host || !owner || !repo) {
         return null;
       }
       return { host, owner, repo };
