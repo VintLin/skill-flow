@@ -297,6 +297,20 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(request?.payload?["displayName"]?.value as? String, "Writing Tools")
     }
 
+    func testRenameSourceUpdatesDetailEnrichmentSnapshotTitleAfterBridgeSuccess() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.enrichmentSourceSnapshotTitle = "Old Enrichment Title"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Enrichment Title")
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+    }
+
     func testRenameSourceFailureKeepsCardsDetailSelectionAndShowsError() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -909,6 +923,7 @@ private struct TestFixture {
         var applyFailures: [String]
         var renameFailures: [String] = []
         var sourceSnapshotTitle: String? = nil
+        var enrichmentSourceSnapshotTitle: String? = nil
     }
 
     struct State: Codable, Equatable {
@@ -1352,6 +1367,23 @@ private struct TestFixture {
       });
     }
 
+    function buildSourceSnapshot(source, title) {
+      return {
+        canonicalRepo: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
+        title,
+        sourceUrl: source.locator,
+        repoUrl: source.locator,
+        repoLabel: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
+        provider: source.metadataProvider || 'clawhub',
+        owner: {
+          slug: 'acme',
+          sourceUrl: 'https://github.com/acme'
+        },
+        repoStars: source.starCount ?? null,
+        skills: []
+      };
+    }
+
     function buildGroupCardEnrichment(state) {
       return Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => {
         const status = source.metadataStatus || 'ready';
@@ -1378,7 +1410,13 @@ private struct TestFixture {
               ...(status === 'failed' ? { retryable: true } : {})
             };
 
-        return [sourceId, { sourceMetadata, groupPath }];
+        return [sourceId, {
+          sourceMetadata,
+          groupPath,
+          ...(source.enrichmentSourceSnapshotTitle ? {
+            sourceSnapshot: buildSourceSnapshot(source, source.enrichmentSourceSnapshotTitle)
+          } : {})
+        }];
       }));
     }
 
@@ -1426,20 +1464,7 @@ private struct TestFixture {
           status: 'active'
         })),
         ...(source.sourceSnapshotTitle ? {
-          sourceSnapshot: {
-            canonicalRepo: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
-            title: source.sourceSnapshotTitle,
-            sourceUrl: source.locator,
-            repoUrl: source.locator,
-            repoLabel: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
-            provider: source.metadataProvider || 'clawhub',
-            owner: {
-              slug: 'acme',
-              sourceUrl: 'https://github.com/acme'
-            },
-            repoStars: source.starCount ?? null,
-            skills: []
-          }
+          sourceSnapshot: buildSourceSnapshot(source, source.sourceSnapshotTitle)
         } : {})
       };
     }
@@ -1535,6 +1560,9 @@ private struct TestFixture {
         })();
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           sourceMetadata,
+          ...(source.enrichmentSourceSnapshotTitle ? {
+            sourceSnapshot: buildSourceSnapshot(source, source.enrichmentSourceSnapshotTitle)
+          } : {})
         }, [], [])));
         return;
       }

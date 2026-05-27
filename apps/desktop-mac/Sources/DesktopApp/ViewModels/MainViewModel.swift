@@ -3369,6 +3369,14 @@ final class MainViewModel {
                 displayName: displayName
             )
         }
+
+        if let payload = detailEnrichmentPayloadBySourceId[sourceId] {
+            detailEnrichmentPayloadBySourceId[sourceId] = payloadWithDisplayName(
+                payload,
+                sourceId: sourceId,
+                displayName: displayName
+            )
+        }
     }
 
     private func payloadWithDisplayName(_ payload: [String: Any], sourceId: String, displayName: String) -> [String: Any] {
