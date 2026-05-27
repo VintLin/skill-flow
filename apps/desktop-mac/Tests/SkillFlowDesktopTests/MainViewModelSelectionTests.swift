@@ -279,6 +279,21 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.groupCards.map(\.id), ["beta"])
     }
 
+    func testRenameSourceUpdatesCardsAndDetailTitleAfterBridgeSuccess() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+        let request = fixture.loggedRequests().last(where: { $0.command == "rename-source" })
+        XCTAssertEqual(request?.payload?["sourceId"]?.value as? String, "alpha")
+        XCTAssertEqual(request?.payload?["displayName"]?.value as? String, "Writing Tools")
+    }
+
     func testGroupCardsHydrateCachedMetadataDuringBootstrap() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -1519,6 +1534,22 @@ private struct TestFixture {
           summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
           inspect: buildInspectPayload(state, sourceId)
         }, [], [])));
+        return;
+      }
+
+      if (request.command === 'rename-source') {
+        const sourceId = request.payload?.sourceId;
+        const displayName = String(request.payload?.displayName || '').trim();
+        if (!state.sources[sourceId]) {
+          process.stdout.write(JSON.stringify(responseFor(request, false, null, [], [{
+            code: 'SOURCE_NOT_FOUND',
+            message: `Skills group id '${sourceId}' is not registered.`
+          }])));
+          return;
+        }
+        state.sources[sourceId].displayName = displayName;
+        writeState(state);
+        process.stdout.write(JSON.stringify(responseFor(request, true, { sourceId, displayName }, [], [])));
         return;
       }
 

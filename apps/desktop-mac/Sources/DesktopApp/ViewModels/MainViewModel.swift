@@ -491,6 +491,24 @@ final class MainViewModel {
         let warningCount: Int
         let errorCount: Int
         let updatedAt: String
+
+        func renamed(displayName: String) -> WorkflowSummary {
+            WorkflowSummary(
+                sourceId: sourceId,
+                sourceKind: sourceKind,
+                sourceDisplayName: displayName,
+                sourceLocator: sourceLocator,
+                sourceCanonicalRepo: sourceCanonicalRepo,
+                leafs: leafs,
+                selectedLeafIds: selectedLeafIds,
+                enabledTargets: enabledTargets,
+                targetLeafIdsByTarget: targetLeafIdsByTarget,
+                health: health,
+                warningCount: warningCount,
+                errorCount: errorCount,
+                updatedAt: updatedAt
+            )
+        }
     }
 
     private struct FileTreeNode: Sendable {
@@ -875,6 +893,25 @@ final class MainViewModel {
         } catch {
             pinnedSourceIds = previousPinnedSourceIds
             showToast(style: .error, text: localizedText("toast.pin.failed", firstErrorLine(from: error)))
+        }
+    }
+
+    func renameSource(sourceId: String, displayName: String) async {
+        let normalizedSourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedSourceId.isEmpty, !normalizedDisplayName.isEmpty else {
+            return
+        }
+
+        do {
+            let result = try await mutationCoordinator.renameSource(
+                sourceId: normalizedSourceId,
+                displayName: normalizedDisplayName
+            )
+            applyRenamedSource(sourceId: result.sourceId, displayName: result.displayName)
+            showToast(style: .success, text: localizedText("toast.rename_source.success", result.displayName))
+        } catch {
+            showToast(style: .error, text: localizedText("toast.rename_source.failed", firstErrorLine(from: error)))
         }
     }
 
@@ -3313,6 +3350,44 @@ final class MainViewModel {
             nextSummaries.append(summary)
         }
         applySummaries(nextSummaries)
+    }
+
+    private func applyRenamedSource(sourceId: String, displayName: String) {
+        guard let existing = summary(for: sourceId) else {
+            return
+        }
+
+        replaceSummary(existing.renamed(displayName: displayName))
+        updateCachedDetailDisplayName(sourceId: sourceId, displayName: displayName)
+    }
+
+    private func updateCachedDetailDisplayName(sourceId: String, displayName: String) {
+        for key in inspectedPayloadBySourceId.keys where key.sourceId == sourceId {
+            inspectedPayloadBySourceId[key] = payloadWithDisplayName(
+                inspectedPayloadBySourceId[key] ?? [:],
+                sourceId: sourceId,
+                displayName: displayName
+            )
+        }
+    }
+
+    private func payloadWithDisplayName(_ payload: [String: Any], sourceId: String, displayName: String) -> [String: Any] {
+        var nextPayload = payload
+
+        var sourcePayload = nextPayload["source"] as? [String: Any] ?? [:]
+        sourcePayload["id"] = sourcePayload["id"] ?? sourceId
+        sourcePayload["displayName"] = displayName
+        nextPayload["source"] = sourcePayload
+
+        if var summaryPayload = nextPayload["summary"] as? [String: Any] {
+            var summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
+            summarySourcePayload["id"] = summarySourcePayload["id"] ?? sourceId
+            summarySourcePayload["displayName"] = displayName
+            summaryPayload["source"] = summarySourcePayload
+            nextPayload["summary"] = summaryPayload
+        }
+
+        return nextPayload
     }
 
     private func scheduleSaveStateReset(for key: ScopedSourceKey) {

@@ -27,6 +27,17 @@ final class DesktopMutationCoordinatorTests: XCTestCase {
             XCTFail("Expected missing selection")
         }
     }
+
+    func testRenameSourceRoutesThroughCommandFacade() async throws {
+        let command = RecordingDesktopCommandFacade()
+        let coordinator = DesktopMutationCoordinator(commandFacade: command)
+
+        let result = try await coordinator.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+
+        XCTAssertEqual(command.recordedMutations, ["rename-source:alpha:Writing Tools"])
+        XCTAssertEqual(result.sourceId, "alpha")
+        XCTAssertEqual(result.displayName, "Writing Tools")
+    }
 }
 
 private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked Sendable {
@@ -42,6 +53,14 @@ private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked
         return .success(
             command: .togglePin,
             payload: ["pinnedSourceIds": [sourceId]]
+        )
+    }
+
+    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
+        recordedMutations.append("rename-source:\(sourceId):\(displayName)")
+        return .success(
+            command: .renameSource,
+            payload: ["sourceId": sourceId, "displayName": displayName]
         )
     }
 

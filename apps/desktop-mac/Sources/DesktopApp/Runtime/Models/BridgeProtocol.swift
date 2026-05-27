@@ -8,6 +8,7 @@ enum BridgeCommand: String, Codable, Sendable {
     case searchImportGroups = "search-import-groups"
     case previewImportSource = "preview-import-source"
     case importSource = "import-source"
+    case renameSource = "rename-source"
     case togglePin = "toggle-pin"
     case doctor
     case add
