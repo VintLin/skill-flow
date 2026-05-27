@@ -841,7 +841,7 @@ export class SourceService {
     locator: string,
     options: AddSourceOptions,
   ): Promise<SourceResolution> {
-    const trimmed = locator.trim();
+    const trimmed = this.stripLocatorQuotes(locator.trim());
     const fileLocatorPath = this.parseFileLocator(trimmed);
     const resolvedPath = path.resolve(fileLocatorPath ?? trimmed);
     if (
@@ -928,6 +928,20 @@ export class SourceService {
       sourceId: options.sourceIdOverride ?? deriveSourceId(locator),
       ...(options.path ? { requestedPath: options.path } : {}),
     };
+  }
+
+  private stripLocatorQuotes(locator: string): string {
+    if (locator.length < 2) {
+      return locator;
+    }
+
+    const first = locator[0];
+    const last = locator[locator.length - 1];
+    if ((first === "'" && last === "'") || (first === "\"" && last === "\"")) {
+      return locator.slice(1, -1).trim();
+    }
+
+    return locator;
   }
 
   private resolveUniqueLocalSource(

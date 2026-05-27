@@ -258,6 +258,34 @@ describe.sequential("import page flow", () => {
     expect(preview.data.targets.length).toBeGreaterThan(0);
   });
 
+  test("previewImportSource supports quoted local paths with spaces", async () => {
+    const parentPath = path.join(sandbox.sandboxRoot, "Path With Spaces");
+    await fs.mkdir(parentPath, { recursive: true });
+    const repoPath = await createRepo(parentPath, {
+      "browse/SKILL.md": skillDoc("browse", "Browse things."),
+    });
+
+    const app = new SkillFlowApp();
+    const singleQuoted = await app.previewImportSource(`'${repoPath}'`);
+    const doubleQuoted = await app.previewImportSource(`"${repoPath}"`);
+
+    expect(singleQuoted.ok).toBe(true);
+    expect(doubleQuoted.ok).toBe(true);
+    expect(singleQuoted.ok ? singleQuoted.data.status : "failed").toBe("ready");
+    expect(doubleQuoted.ok ? doubleQuoted.data.status : "failed").toBe("ready");
+    if (!singleQuoted.ok || !doubleQuoted.ok) {
+      throw new Error("Expected quoted local previews to succeed.");
+    }
+    if (singleQuoted.data.status !== "ready" || doubleQuoted.data.status !== "ready") {
+      throw new Error("Expected quoted local previews to be ready.");
+    }
+
+    expect(singleQuoted.data.locator).toBe(repoPath);
+    expect(doubleQuoted.data.locator).toBe(repoPath);
+    expect(singleQuoted.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
+    expect(doubleQuoted.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
+  });
+
   test("exact import search treats GitLab locators as direct import candidates", async () => {
     const app = new SkillFlowApp();
     const result = await app.searchImportGroups("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
@@ -345,6 +373,43 @@ describe.sequential("import page flow", () => {
       lockFile.leafInventory.find((leaf) => leaf.id === binding?.selectedLeafIds?.[0])?.linkName,
     ).toBe("browse");
     expect(Object.keys(binding?.targets ?? {})).toEqual(["cursor"]);
+  });
+
+  test("importSource uses local preview skill ids without ambiguous selector fallback", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/pdf-analysis/SKILL.md": skillDoc("PDF Analysis", "PDF analysis."),
+      "skills/pdf_analysis/SKILL.md": skillDoc("pdf-analysis", "PDF analysis variant."),
+    });
+
+    const app = new SkillFlowApp();
+    const preview = await app.previewImportSource(repoPath);
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+
+    expect(preview.data.selectedSkillIds).toEqual([
+      "skills/pdf_analysis",
+      "skills/pdf-analysis",
+    ]);
+
+    const imported = await app.importSource(repoPath, {
+      selectedSkillIds: preview.data.selectedSkillIds,
+      enabledTargets: [],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok || imported.data.status !== "ready") {
+      return;
+    }
+
+    const { manifest } = await app.store.readState();
+    const binding = manifest.bindings[imported.data.sourceId];
+    expect(binding?.selectedLeafIds).toEqual([
+      `${imported.data.sourceId}:skills/pdf_analysis`,
+      `${imported.data.sourceId}:skills/pdf-analysis`,
+    ]);
   });
 
   test("importSource accepts prefixed skills.sh skill ids and resolves them against the GitHub checkout", async () => {

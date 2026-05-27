@@ -1247,18 +1247,23 @@ export class SkillFlowApp {
     preview: SourcePreview,
     availableTargets: DeploymentTargetId[],
   ): ImportPreviewResult {
+    const skills = preview.leafs.map((leaf) => {
+      const id = leaf.relativePath === "." ? leaf.name : leaf.relativePath;
+      return {
+        id,
+        title: leaf.title,
+        summary: leaf.description,
+        selectedByDefault: true,
+      };
+    });
+
     return {
       status: "ready",
       locator,
       canonicalRepo: locator,
-      selectedSkillIds: preview.leafs.map((leaf) => leaf.name),
+      selectedSkillIds: skills.map((skill) => skill.id),
       enabledTargets: [],
-      skills: preview.leafs.map((leaf) => ({
-        id: leaf.name,
-        title: leaf.title,
-        summary: leaf.description,
-        selectedByDefault: true,
-      })),
+      skills,
       targets: availableTargets.map((target) => ({
         id: target,
         selectedByDefault: false,
@@ -1267,7 +1272,7 @@ export class SkillFlowApp {
   }
 
   private async resolveDirectImportLocator(locator: string): Promise<string | undefined> {
-    const trimmed = locator.trim();
+    const trimmed = this.stripImportLocatorQuotes(locator.trim());
     if (!trimmed || normalizeImportCanonicalRepo(trimmed)) {
       return undefined;
     }
@@ -1285,6 +1290,20 @@ export class SkillFlowApp {
     }
 
     return undefined;
+  }
+
+  private stripImportLocatorQuotes(locator: string): string {
+    if (locator.length < 2) {
+      return locator;
+    }
+
+    const first = locator[0];
+    const last = locator[locator.length - 1];
+    if ((first === "'" && last === "'") || (first === "\"" && last === "\"")) {
+      return locator.slice(1, -1).trim();
+    }
+
+    return locator;
   }
 
   private refreshImportSourceSnapshotInBackground(canonicalRepo: string): void {

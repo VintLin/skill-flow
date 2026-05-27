@@ -86,6 +86,43 @@ describe.sequential("inventory discovery precedence", () => {
     expect(scanned.leafs[0]?.linkName).toBe("gstack");
   });
 
+  test("uses SKILL.md frontmatter name as the displayed skill title", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "audio-text-compare/SKILL.md": skillDoc(
+        "音频文本校对",
+        "Compare audio text.",
+        "Audio Text Compare",
+      ),
+    });
+    const inventory = new InventoryService();
+
+    const scanned = await inventory.scanSource("demo-source", repoPath, "demo");
+
+    expect(scanned.leafs[0]?.title).toBe("音频文本校对");
+    expect(scanned.leafs[0]?.linkName).toBe("audio-text-compare");
+  });
+
+  test("falls back to folder name before OpenAI display name and markdown heading", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "puma-code-checker/SKILL.md": `---
+name:
+description: |
+  Check Puma codes.
+---
+
+# Puma Code Checker
+`,
+      "puma-code-checker/agents/openai.yaml": `interface:
+  display_name: "铺码码值检查"
+`,
+    });
+    const inventory = new InventoryService();
+
+    const scanned = await inventory.scanSource("demo-source", repoPath, "demo");
+
+    expect(scanned.leafs[0]?.title).toBe("puma-code-checker");
+  });
+
   test("detects gstack-style direct child skills alongside the root skill", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "SKILL.md": skillDoc("gstack", "Root skill."),

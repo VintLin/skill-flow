@@ -74,7 +74,8 @@ export class InventoryService {
         relativePath === "."
           ? rootLinkName
           : (path.basename(leafRoot) || rootLinkName);
-      const parsed = this.parseSkillFile(raw, linkName);
+      const openAiDisplayName = await this.readOpenAiDisplayName(leafRoot);
+      const parsed = this.parseSkillFile(raw, linkName, openAiDisplayName);
 
       if (!parsed.valid) {
         invalidLeafs.push({
@@ -219,7 +220,11 @@ export class InventoryService {
     }
   }
 
-  private parseSkillFile(raw: string, parentDirName: string): ParsedSkillFile {
+  private parseSkillFile(
+    raw: string,
+    parentDirName: string,
+    openAiDisplayName?: string,
+  ): ParsedSkillFile {
     const lines = raw.split(/\r?\n/);
     const frontmatter = this.parseFrontmatter(lines);
     if (!frontmatter) {
@@ -270,7 +275,12 @@ export class InventoryService {
       metadataWarnings.push("description should be at most 1024 characters");
     }
 
-    const title = firstHeading?.trim().slice(2).trim() || rawName || "Untitled skill";
+    const title =
+      rawName ||
+      parentDirName ||
+      openAiDisplayName ||
+      firstHeading?.trim().slice(2).trim() ||
+      "Untitled skill";
 
     return {
       valid: true,
@@ -300,6 +310,23 @@ export class InventoryService {
     }
 
     return [...keptByKey.values()];
+  }
+
+  private async readOpenAiDisplayName(leafRoot: string): Promise<string | undefined> {
+    const configPath = path.join(leafRoot, "agents", "openai.yaml");
+    if (!(await pathExists(configPath))) {
+      return undefined;
+    }
+
+    try {
+      const raw = await fs.readFile(configPath, "utf8");
+      const match = raw.match(/^\s*display_name:\s*(?:"([^"]*)"|'([^']*)'|(.+?))\s*$/m);
+      const value = match?.[1] ?? match?.[2] ?? match?.[3];
+      const trimmed = value?.trim();
+      return trimmed || undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private parseFrontmatter(
