@@ -286,6 +286,72 @@ describe.sequential("import page flow", () => {
     expect(doubleQuoted.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
   });
 
+  test("previewImportSource expands home-relative local paths", async () => {
+    const homeRoot = path.join(sandbox.sandboxRoot, "home");
+    await fs.mkdir(homeRoot, { recursive: true });
+    vi.stubEnv("HOME", homeRoot);
+    const repoPath = await createRepo(homeRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browse things."),
+    });
+    const homeRelativePath = `~/${path.relative(homeRoot, repoPath)}`;
+
+    const app = new SkillFlowApp();
+    const preview = await app.previewImportSource(homeRelativePath);
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+
+    expect(preview.data.locator).toBe(repoPath);
+    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
+  });
+
+  test("ClawHub locators are direct import candidates and previews", async () => {
+    const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockResolvedValue(
+      ok({
+        locator: "clawhub:find-skills-skill",
+        displayName: "find-skills-skill",
+        leafs: [
+          {
+            id: "clawhub-find-skills-skill:find-skills",
+            sourceId: "clawhub-find-skills-skill",
+            relativePath: ".",
+            absolutePath: "/tmp/find-skills",
+            skillFilePath: "/tmp/find-skills/SKILL.md",
+            name: "find-skills",
+            title: "Find Skills",
+            description: "Find skills from ClawHub.",
+            linkName: "find-skills",
+          },
+        ],
+      }),
+    );
+
+    const app = new SkillFlowApp();
+    const search = await app.searchImportGroups("clawhub:find-skills-skill");
+    const preview = await app.previewImportSource("clawhub:find-skills-skill");
+
+    expect(search.ok).toBe(true);
+    if (!search.ok) {
+      return;
+    }
+    expect(search.data.exact).toBe(true);
+    expect(search.data.groups[0]).toMatchObject({
+      locator: "clawhub:find-skills-skill",
+      canonicalRepo: "clawhub:find-skills-skill",
+      title: "find-skills-skill",
+    });
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+    expect(previewSpy).toHaveBeenCalledWith("clawhub:find-skills-skill");
+    expect(preview.data.locator).toBe("clawhub:find-skills-skill");
+    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["find-skills"]);
+  });
+
   test("exact import search treats GitLab locators as direct import candidates", async () => {
     const app = new SkillFlowApp();
     const result = await app.searchImportGroups("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
