@@ -610,6 +610,7 @@ final class MainViewModel {
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [ScopedSourceKey: [String: Any]] = [:]
     private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
+    private var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
     private var preparedDetailContentBySourceId: [String: PreparedDetailContent] = [:]
     @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
     private var listRequestToken: UInt64 = 0
@@ -1338,8 +1339,9 @@ final class MainViewModel {
         do {
             let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
+                let normalizedPayload = payloadWithRenameDisplayNameOverride(payload, sourceId: sourceId)
                 if let key = scopedSourceKey(sourceId: sourceId) {
-                    inspectedPayloadBySourceId[key] = payload
+                    inspectedPayloadBySourceId[key] = normalizedPayload
                 }
                 invalidatePreparedDetailContent(for: sourceId)
                 scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
@@ -2201,14 +2203,15 @@ final class MainViewModel {
                 continue
             }
 
+            let normalizedPayload = payloadWithRenameDisplayNameOverride(payload, sourceId: sourceId)
             var mergedPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
-            if let sourceMetadata = payload["sourceMetadata"] {
+            if let sourceMetadata = normalizedPayload["sourceMetadata"] {
                 mergedPayload["sourceMetadata"] = sourceMetadata
             }
-            if let sourceSnapshot = payload["sourceSnapshot"] {
+            if let sourceSnapshot = normalizedPayload["sourceSnapshot"] {
                 mergedPayload["sourceSnapshot"] = sourceSnapshot
             }
-            if let groupPath = payload["groupPath"] {
+            if let groupPath = normalizedPayload["groupPath"] {
                 mergedPayload["groupPath"] = groupPath
             }
             if !mergedPayload.isEmpty {
@@ -2246,7 +2249,9 @@ final class MainViewModel {
             }
 
             let kind = source["kind"] as? String ?? "unknown"
-            let sourceDisplayName = source["displayName"] as? String ?? sourceId
+            let sourceDisplayName = renamedSourceDisplayNameOverridesBySourceId[sourceId]
+                ?? source["displayName"] as? String
+                ?? sourceId
             let sourceLocator = source["locator"] as? String ?? ""
             let sourceCanonicalRepo = (source["canonicalRepo"] as? String)?.nonEmpty
                 ?? (source["originLocator"] as? String)?.nonEmpty
@@ -2843,7 +2848,8 @@ final class MainViewModel {
                    self.detailEnrichmentTokensBySourceId[sourceId] == token
                 {
                     let normalizedPayload: [String: Any]
-                    if let displayName = self.summary(for: sourceId)?.sourceDisplayName {
+                    if let displayName = self.renamedSourceDisplayNameOverridesBySourceId[sourceId]
+                        ?? self.summary(for: sourceId)?.sourceDisplayName {
                         normalizedPayload = self.payloadWithDisplayName(payload, sourceId: sourceId, displayName: displayName)
                     } else {
                         normalizedPayload = payload
@@ -3318,7 +3324,10 @@ final class MainViewModel {
         }
 
         if let inspectPayload = data["inspect"] as? [String: Any] {
-            inspectedPayloadBySourceId[ScopedSourceKey(scope: scope, sourceId: sourceId)] = inspectPayload
+            inspectedPayloadBySourceId[ScopedSourceKey(scope: scope, sourceId: sourceId)] = payloadWithRenameDisplayNameOverride(
+                inspectPayload,
+                sourceId: sourceId
+            )
             invalidatePreparedDetailContent(for: sourceId)
             scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
             scheduleDetailEnrichmentFetch(sourceId: sourceId)
@@ -3359,7 +3368,9 @@ final class MainViewModel {
     }
 
     private func applyRenamedSource(sourceId: String, displayName: String) {
+        renamedSourceDisplayNameOverridesBySourceId[sourceId] = displayName
         guard let existing = summary(for: sourceId) else {
+            updateCachedDetailDisplayName(sourceId: sourceId, displayName: displayName)
             return
         }
 
@@ -3383,6 +3394,13 @@ final class MainViewModel {
                 displayName: displayName
             )
         }
+    }
+
+    private func payloadWithRenameDisplayNameOverride(_ payload: [String: Any], sourceId: String) -> [String: Any] {
+        guard let displayName = renamedSourceDisplayNameOverridesBySourceId[sourceId] else {
+            return payload
+        }
+        return payloadWithDisplayName(payload, sourceId: sourceId, displayName: displayName)
     }
 
     private func payloadWithDisplayName(_ payload: [String: Any], sourceId: String, displayName: String) -> [String: Any] {
@@ -4823,6 +4841,9 @@ final class MainViewModel {
     private func pruneStateMaps(allowedSourceIds: Set<String>) {
         workingDrafts = pruneSourceMap(workingDrafts, allowedSourceIds: allowedSourceIds)
         saveStateBySourceId = pruneSourceMap(saveStateBySourceId, allowedSourceIds: allowedSourceIds)
+        renamedSourceDisplayNameOverridesBySourceId = renamedSourceDisplayNameOverridesBySourceId.filter {
+            allowedSourceIds.contains($0.key)
+        }
     }
 
     private func currentProjectScope() -> ProjectScopeSelection {

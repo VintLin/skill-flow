@@ -90,6 +90,11 @@ private final class StubBridgeTransport: DesktopBridgeTransporting, @unchecked S
         return .success(command: .importSource)
     }
 
+    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
+        recordedCommands.append("rename-source:\(sourceId):\(displayName)")
+        return .success(command: .renameSource)
+    }
+
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
         recordedCommands.append("uninstall:\(sourceIds)")
         return .success(command: .uninstall)

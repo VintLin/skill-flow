@@ -304,6 +304,12 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
+        try await fixture.waitForLoggedRequest(
+            command: "inspect-enrichment",
+            sourceId: "alpha",
+            model: model,
+            expectedDetailTitle: "Old Enrichment Title"
+        )
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Enrichment Title")
 
         await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
@@ -326,7 +332,56 @@ final class MainViewModelSelectionTests: XCTestCase {
         await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
 
-        try await Task.sleep(nanoseconds: 650_000_000)
+        try await fixture.waitForLoggedRequest(
+            command: "inspect-enrichment",
+            sourceId: "alpha",
+            model: model,
+            expectedDetailTitle: "Writing Tools"
+        )
+
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+    }
+
+    func testRenameSourceKeepsDisplayNameWhenStaleListResponseReturnsOldSummary() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.listDelayMilliseconds = 400
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        let refreshTask = Task { @MainActor in
+            await model.refreshList()
+        }
+        try await fixture.waitForLoggedRequest(command: "list", minimumCount: 1)
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+
+        await refreshTask.value
+
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+        XCTAssertFalse(model.groupCards.contains(where: { $0.id == "alpha" && $0.title == "AlphaHub" }))
+    }
+
+    func testRenameSourceKeepsDetailTitleWhenStaleInspectResponseReturnsOldPayload() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.inspectDelayMilliseconds = 400
+        state.sources["alpha"]?.sourceSnapshotTitle = "Old Snapshot Title"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
+
+        let inspectTask = Task { @MainActor in
+            await model.selectSource("alpha")
+        }
+        try await fixture.waitForLoggedRequest(command: "inspect", sourceId: "alpha", minimumCount: 2)
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+
+        await inspectTask.value
 
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
     }
@@ -949,6 +1004,8 @@ private struct TestFixture {
     struct State: Codable, Equatable {
         var availableTargets: [String]
         var sources: [String: SourceState]
+        var listDelayMilliseconds: Int? = nil
+        var inspectDelayMilliseconds: Int? = nil
         var inspectEnrichmentDelayMilliseconds: Int? = nil
 
         static let baseline = State(
@@ -1172,6 +1229,40 @@ private struct TestFixture {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTFail("Timed out waiting for detail hydration for \(sourceId)")
+    }
+
+    func waitForLoggedRequest(
+        command: String,
+        sourceId: String? = nil,
+        minimumCount: Int = 1,
+        model: MainViewModel? = nil,
+        expectedDetailTitle: String? = nil,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async throws {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
+        while Date() < deadline {
+            let matchingRequests = loggedRequests().filter { request in
+                guard request.command == command else {
+                    return false
+                }
+                if let sourceId {
+                    return request.payload?["sourceId"]?.value as? String == sourceId
+                }
+                return true
+            }
+            let hasExpectedRequestCount = matchingRequests.count >= minimumCount
+            let hasExpectedDetailTitle = expectedDetailTitle.map { expectedTitle in
+                guard let sourceId, let model else {
+                    return false
+                }
+                return model.detailSnapshot(for: sourceId)?.title == expectedTitle
+            } ?? true
+            if hasExpectedRequestCount, hasExpectedDetailTitle {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("Timed out waiting for \(command) request")
     }
 
     func loggedRequests() -> [LoggedRequest] {
@@ -1504,9 +1595,8 @@ private struct TestFixture {
 
     function main() {
       const request = JSON.parse(fs.readFileSync(0, 'utf8'));
-      logRequest(request);
-
       const state = readState();
+      logRequest(request);
 
       if (request.command === 'bootstrap') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
@@ -1532,16 +1622,26 @@ private struct TestFixture {
       }
 
       if (request.command === 'list') {
-        process.stdout.write(JSON.stringify(responseFor(request, true, {
+        const response = JSON.stringify(responseFor(request, true, {
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state)
-        }, [], [])));
+        }, [], []));
+        if (state.listDelayMilliseconds > 0) {
+          setTimeout(() => process.stdout.write(response), state.listDelayMilliseconds);
+        } else {
+          process.stdout.write(response);
+        }
         return;
       }
 
       if (request.command === 'inspect') {
         const sourceId = request.payload && request.payload.sourceId;
-        process.stdout.write(JSON.stringify(responseFor(request, true, buildInspectPayload(state, sourceId), [], [])));
+        const response = JSON.stringify(responseFor(request, true, buildInspectPayload(state, sourceId), [], []));
+        if (state.inspectDelayMilliseconds > 0) {
+          setTimeout(() => process.stdout.write(response), state.inspectDelayMilliseconds);
+        } else {
+          process.stdout.write(response);
+        }
         return;
       }
 

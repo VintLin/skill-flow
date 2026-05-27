@@ -10,9 +10,3 @@ protocol DesktopCommanding: Sendable {
     func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse
     func doctor() async throws -> BridgeResponse
 }
-
-extension DesktopCommanding {
-    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-}
