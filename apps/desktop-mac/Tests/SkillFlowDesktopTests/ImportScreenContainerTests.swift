@@ -46,6 +46,30 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(container.mainViewModel.importSubmittedQuery, "anthropics/skills")
     }
 
+    func testHomeLocatorHandoffImportPageLoadKeepsDirectLocatorSearchState() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        let handled = await container.homeContainer.handleHomeSearchSubmit("anthropics/skills")
+        XCTAssertTrue(handled)
+
+        let searchItem = makeItem(
+            id: "anthropics-skills-search",
+            title: "Anthropic Skills",
+            locator: "anthropics/skills"
+        )
+        container.mainViewModel.importSearchPhase = .loading
+        container.mainViewModel.searchImportGroups = [searchItem]
+
+        await container.mainViewModel.loadImportPageIfNeeded()
+
+        XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
+        XCTAssertEqual(container.importContainer.screenState.searchText, "anthropics/skills")
+        XCTAssertEqual(container.mainViewModel.importSubmittedQuery, "anthropics/skills")
+        XCTAssertEqual(container.mainViewModel.importSearchPhase, .loading)
+        XCTAssertEqual(container.mainViewModel.searchImportGroups, [searchItem])
+    }
+
     func testHomeSearchSubmitKeepsPlainTextOnHome() async {
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)
@@ -58,6 +82,36 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(runtime.state.view.currentRoute, .home)
         XCTAssertEqual(container.importContainer.screenState.searchText, "previous/import")
         XCTAssertEqual(container.mainViewModel.importSubmittedQuery, "previous/import")
+    }
+
+    func testSupportedImportLocatorMatrix() {
+        let cases: [(String, Bool)] = [
+            ("https://github.com/owner/repo", true),
+            ("https://github.com/owner/repo.git", true),
+            ("https://github.com/owner/repo/tree/main", true),
+            ("https://github.com/owner/repo/tree/main/path/to/skills", true),
+            ("https://gitlab.com/owner/repo", true),
+            ("https://gitlab.com/owner/repo.git", true),
+            ("https://gitlab.com/owner/repo/tree/main", true),
+            ("https://github.com/owner/repo/issues", false),
+            ("https://github.com/owner/repo/pull/1", false),
+            ("https://github.com/owner/repo/blob/main/SKILL.md", false),
+            ("https://github.com/owner/repo/actions", false),
+            ("https://github.com/owner/repo/releases", false),
+            ("plain search text", false),
+            ("\"/Users/Vint/skills\"", true),
+            ("clawhub:anthropics/skills", true),
+            ("git@github.com:owner/repo.git", true),
+            ("owner/repo", true),
+        ]
+
+        for (locator, expected) in cases {
+            XCTAssertEqual(
+                MainViewModel.isSupportedImportLocator(locator),
+                expected,
+                "locator: \(locator)"
+            )
+        }
     }
 
     func testDraftsPersistAcrossContainerRecreationThroughDesktopAppState() {

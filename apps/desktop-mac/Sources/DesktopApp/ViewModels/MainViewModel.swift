@@ -1762,15 +1762,16 @@ final class MainViewModel {
 
     private func seedRecommendedImportGroupsIfNeeded() {
         guard recommendedImportGroups.isEmpty else {
-            if importSearchPhase == .idle {
+            if importSubmittedQuery.isEmpty, importSearchPhase == .idle {
                 importSearchPhase = .ready
             }
             return
         }
 
         recommendedImportGroups = makeLocalRecommendedImportGroups(recommendationsProvider())
-        importSubmittedQuery = ""
-        importSearchPhase = .ready
+        if importSubmittedQuery.isEmpty {
+            importSearchPhase = .ready
+        }
     }
 
     private func makeLocalRecommendedImportGroups(_ recommendations: [ImportRecommendationEntry]) -> [ImportGroupItem] {
@@ -5211,10 +5212,24 @@ final class MainViewModel {
             return false
         }
 
-        return components.path
+        let pathSegments = components.path
             .split(separator: "/")
             .filter { !$0.isEmpty }
-            .count >= 2
+            .map(String.init)
+
+        guard pathSegments.count >= 2 else {
+            return false
+        }
+
+        if pathSegments.count == 2 {
+            return true
+        }
+
+        if pathSegments.count >= 4, pathSegments[2].lowercased() == "tree" {
+            return true
+        }
+
+        return false
     }
 
     private static func matches(_ value: String, pattern: String) -> Bool {
