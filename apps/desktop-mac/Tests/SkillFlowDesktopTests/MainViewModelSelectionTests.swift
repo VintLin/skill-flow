@@ -297,6 +297,26 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(request?.payload?["displayName"]?.value as? String, "Writing Tools")
     }
 
+    func testRenameSourceFailureKeepsCardsDetailSelectionAndShowsError() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.sourceSnapshotTitle = "Old Snapshot Title"
+        state.sources["alpha"]?.renameFailures = ["Skills group id 'alpha' is not registered."]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "AlphaHub")
+        XCTAssertFalse(model.groupCards.contains(where: { $0.title == "Writing Tools" }))
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
+        XCTAssertEqual(model.selectedGroupId, "alpha")
+        XCTAssertEqual(model.selectedSourceId, "alpha")
+        XCTAssertEqual(model.toast?.style, .error)
+        XCTAssertFalse(model.toast?.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     func testGroupCardsHydrateCachedMetadataDuringBootstrap() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -887,6 +907,7 @@ private struct TestFixture {
         var enabledTargets: [String]
         var targetLeafIdsByTarget: [String: [String]]
         var applyFailures: [String]
+        var renameFailures: [String] = []
         var sourceSnapshotTitle: String? = nil
     }
 
@@ -1560,6 +1581,14 @@ private struct TestFixture {
       if (request.command === 'rename-source') {
         const sourceId = request.payload?.sourceId;
         const displayName = String(request.payload?.displayName || '').trim();
+        const renameFailures = ((state.sources || {})[sourceId] || {}).renameFailures || [];
+        if (renameFailures.length > 0) {
+          process.stdout.write(JSON.stringify(responseFor(request, false, null, [], renameFailures.map((message) => ({
+            code: 'SOURCE_NOT_FOUND',
+            message
+          })))));
+          return;
+        }
         if (!state.sources[sourceId]) {
           process.stdout.write(JSON.stringify(responseFor(request, false, null, [], [{
             code: 'SOURCE_NOT_FOUND',
