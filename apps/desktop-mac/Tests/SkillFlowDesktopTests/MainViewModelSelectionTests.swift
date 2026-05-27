@@ -300,6 +300,7 @@ final class MainViewModelSelectionTests: XCTestCase {
     func testRenameSourceUpdatesDetailEnrichmentSnapshotTitleAfterBridgeSuccess() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
+        state.inspectEnrichmentDelayMilliseconds = 400
         state.sources["alpha"]?.enrichmentSourceSnapshotTitle = "Old Enrichment Title"
         try fixture.reset(state: state)
 
@@ -321,6 +322,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
         state.inspectEnrichmentDelayMilliseconds = 400
+        state.sources["alpha"]?.inspectEnrichmentTotalInstalls = 987_654
         state.sources["alpha"]?.enrichmentSourceSnapshotTitle = "Old Enrichment Title"
         try fixture.reset(state: state)
 
@@ -336,10 +338,33 @@ final class MainViewModelSelectionTests: XCTestCase {
             command: "inspect-enrichment",
             sourceId: "alpha",
             model: model,
-            expectedDetailTitle: "Writing Tools"
+            expectedDetailTitle: "Writing Tools",
+            expectedDownloadCount: 987_654
         )
 
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.sourceFacts.first, "2026-03-25T12:00:00Z")
+    }
+
+    func testRenameSourceRefreshClearsOverrideAfterServerConfirmsDisplayName() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+
+        await model.refreshList()
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+
+        var nextState = try fixture.readState()
+        nextState.sources["alpha"]?.displayName = "Backend Fresh Name"
+        try fixture.reset(state: nextState)
+
+        await model.refreshList()
+
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Backend Fresh Name")
     }
 
     func testRenameSourceKeepsDisplayNameWhenStaleListResponseReturnsOldSummary() async throws {
@@ -999,6 +1024,7 @@ private struct TestFixture {
         var renameFailures: [String] = []
         var sourceSnapshotTitle: String? = nil
         var enrichmentSourceSnapshotTitle: String? = nil
+        var inspectEnrichmentTotalInstalls: Int? = nil
     }
 
     struct State: Codable, Equatable {
@@ -1196,6 +1222,11 @@ private struct TestFixture {
         try writeSkillDocuments(state: state)
     }
 
+    func readState() throws -> State {
+        let data = try Data(contentsOf: stateURL)
+        return try JSONDecoder().decode(State.self, from: data)
+    }
+
     func makeModel() async throws -> MainViewModel {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
@@ -1237,6 +1268,7 @@ private struct TestFixture {
         minimumCount: Int = 1,
         model: MainViewModel? = nil,
         expectedDetailTitle: String? = nil,
+        expectedDownloadCount: Int? = nil,
         timeoutNanoseconds: UInt64 = 1_000_000_000
     ) async throws {
         let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
@@ -1257,7 +1289,13 @@ private struct TestFixture {
                 }
                 return model.detailSnapshot(for: sourceId)?.title == expectedTitle
             } ?? true
-            if hasExpectedRequestCount, hasExpectedDetailTitle {
+            let hasExpectedDownloadCount = expectedDownloadCount.map { expectedDownloadCount in
+                guard let sourceId, let model else {
+                    return false
+                }
+                return model.detailSnapshot(for: sourceId)?.groupStats.downloadCount == expectedDownloadCount
+            } ?? true
+            if hasExpectedRequestCount, hasExpectedDetailTitle, hasExpectedDownloadCount {
                 return
             }
             try await Task.sleep(nanoseconds: 20_000_000)
@@ -1658,7 +1696,7 @@ private struct TestFixture {
               data: {
                 provider,
                 starCount: source.starCount ?? null,
-                totalInstalls: 5045,
+                totalInstalls: source.inspectEnrichmentTotalInstalls ?? 5045,
                 weeklyInstalls: 4921,
                 downloadCount: 211898,
                 ownerHandle: '@steipete',

@@ -2249,8 +2249,10 @@ final class MainViewModel {
             }
 
             let kind = source["kind"] as? String ?? "unknown"
+            let rawSourceDisplayName = source["displayName"] as? String
+            clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: rawSourceDisplayName)
             let sourceDisplayName = renamedSourceDisplayNameOverridesBySourceId[sourceId]
-                ?? source["displayName"] as? String
+                ?? rawSourceDisplayName
                 ?? sourceId
             let sourceLocator = source["locator"] as? String ?? ""
             let sourceCanonicalRepo = (source["canonicalRepo"] as? String)?.nonEmpty
@@ -2850,7 +2852,7 @@ final class MainViewModel {
                     let normalizedPayload: [String: Any]
                     if let displayName = self.renamedSourceDisplayNameOverridesBySourceId[sourceId]
                         ?? self.summary(for: sourceId)?.sourceDisplayName {
-                        normalizedPayload = self.payloadWithDisplayName(payload, sourceId: sourceId, displayName: displayName)
+                        normalizedPayload = self.enrichmentPayloadWithDisplayName(payload, displayName: displayName)
                     } else {
                         normalizedPayload = payload
                     }
@@ -3388,19 +3390,37 @@ final class MainViewModel {
         }
 
         if let payload = detailEnrichmentPayloadBySourceId[sourceId] {
-            detailEnrichmentPayloadBySourceId[sourceId] = payloadWithDisplayName(
+            detailEnrichmentPayloadBySourceId[sourceId] = enrichmentPayloadWithDisplayName(
                 payload,
-                sourceId: sourceId,
                 displayName: displayName
             )
         }
     }
 
     private func payloadWithRenameDisplayNameOverride(_ payload: [String: Any], sourceId: String) -> [String: Any] {
+        clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, payload: payload)
         guard let displayName = renamedSourceDisplayNameOverridesBySourceId[sourceId] else {
             return payload
         }
         return payloadWithDisplayName(payload, sourceId: sourceId, displayName: displayName)
+    }
+
+    private func clearRenameDisplayNameOverrideIfConfirmed(sourceId: String, payload: [String: Any]) {
+        let sourceDisplayName = (payload["source"] as? [String: Any])?["displayName"] as? String
+        let summarySourceDisplayName = ((payload["summary"] as? [String: Any])?["source"] as? [String: Any])?["displayName"] as? String
+
+        clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: sourceDisplayName)
+        clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: summarySourceDisplayName)
+    }
+
+    private func clearRenameDisplayNameOverrideIfConfirmed(sourceId: String, displayName: String?) {
+        guard let override = renamedSourceDisplayNameOverridesBySourceId[sourceId],
+              let displayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !displayName.isEmpty,
+              displayName == override else {
+            return
+        }
+        renamedSourceDisplayNameOverridesBySourceId.removeValue(forKey: sourceId)
     }
 
     private func payloadWithDisplayName(_ payload: [String: Any], sourceId: String, displayName: String) -> [String: Any] {
@@ -3415,6 +3435,33 @@ final class MainViewModel {
             var summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
             summarySourcePayload["id"] = summarySourcePayload["id"] ?? sourceId
             summarySourcePayload["displayName"] = displayName
+            summaryPayload["source"] = summarySourcePayload
+            nextPayload["summary"] = summaryPayload
+        }
+
+        if var sourceSnapshotPayload = nextPayload["sourceSnapshot"] as? [String: Any] {
+            sourceSnapshotPayload["title"] = displayName
+            nextPayload["sourceSnapshot"] = sourceSnapshotPayload
+        }
+
+        return nextPayload
+    }
+
+    private func enrichmentPayloadWithDisplayName(_ payload: [String: Any], displayName: String) -> [String: Any] {
+        var nextPayload = payload
+
+        if var sourcePayload = nextPayload["source"] as? [String: Any] {
+            if sourcePayload.keys.contains("displayName") {
+                sourcePayload["displayName"] = displayName
+            }
+            nextPayload["source"] = sourcePayload
+        }
+
+        if var summaryPayload = nextPayload["summary"] as? [String: Any],
+           var summarySourcePayload = summaryPayload["source"] as? [String: Any] {
+            if summarySourcePayload.keys.contains("displayName") {
+                summarySourcePayload["displayName"] = displayName
+            }
             summaryPayload["source"] = summarySourcePayload
             nextPayload["summary"] = summaryPayload
         }
