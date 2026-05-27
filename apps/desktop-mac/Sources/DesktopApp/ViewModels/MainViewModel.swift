@@ -5221,15 +5221,26 @@ final class MainViewModel {
             return false
         }
 
-        if pathSegments.count == 2 {
-            return true
-        }
+        switch host {
+        case "github.com":
+            if pathSegments.count == 2 {
+                return true
+            }
 
-        if pathSegments.count >= 4, pathSegments[2].lowercased() == "tree" {
-            return true
-        }
+            return pathSegments.count >= 4 && pathSegments[2].lowercased() == "tree"
 
-        return false
+        case "gitlab.com":
+            if pathSegments.count == 2 {
+                return true
+            }
+
+            return pathSegments.count >= 5
+                && pathSegments[2] == "-"
+                && pathSegments[3].lowercased() == "tree"
+
+        default:
+            return false
+        }
     }
 
     private static func matches(_ value: String, pattern: String) -> Bool {
