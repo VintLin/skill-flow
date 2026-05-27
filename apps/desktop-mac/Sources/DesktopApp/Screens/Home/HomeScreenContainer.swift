@@ -46,7 +46,6 @@ final class HomeScreenContainer {
     }
 
     func visibleGroupCards(locale: Locale) -> [MainViewModel.GroupCardModel] {
-        mainViewModel.reconcileHomeAgentFilter()
         return mainViewModel.filteredHomeGroupCards(locale: locale).filter { card in
             groupTagController.matchesHomeFilter(
                 sourceId: card.id,
@@ -64,8 +63,7 @@ final class HomeScreenContainer {
         from cards: [MainViewModel.GroupCardModel],
         snapshot: GroupTagController.HomeSnapshot
     ) -> [MainViewModel.GroupCardModel] {
-        mainViewModel.reconcileHomeAgentFilter()
-        let selectedTargetId = mainViewModel.selectedHomeAgentFilterId
+        let selectedTargetId = mainViewModel.effectiveSelectedHomeAgentFilterId
         return cards.filter { card in
             snapshot.contains(sourceId: card.id)
                 && (selectedTargetId == nil || card.targets.contains { $0.id == selectedTargetId && $0.isEnabled })

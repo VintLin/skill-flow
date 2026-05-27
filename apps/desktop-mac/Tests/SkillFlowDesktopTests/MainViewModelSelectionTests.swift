@@ -160,6 +160,91 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "en")).map(\.id), ["beta"])
     }
 
+    func testAgentFilterReconcileClearsStaleSelectedId() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        model.setSelectedHomeAgentFilter("missing-agent")
+        XCTAssertEqual(appState.view.selectedHomeAgentFilterId, "missing-agent")
+
+        model.reconcileHomeAgentFilter()
+
+        XCTAssertNil(appState.view.selectedHomeAgentFilterId)
+        XCTAssertNil(model.selectedHomeAgentFilterId)
+    }
+
+    func testHomeContainerProjectionAppliesTagAndAgentFilterWithoutClearingStaleSelection() async throws {
+        let fixture = try TestFixture.install()
+        var fixtureState = TestFixture.State.baseline
+        fixtureState.sources["beta"]?.enabledTargets = ["cursor"]
+        try fixture.reset(state: fixtureState)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let userDefaults = UserDefaults(suiteName: "MainViewModelSelectionTests-\(UUID().uuidString)")!
+        let groupTagController = GroupTagController(
+            state: appState,
+            store: DesktopGroupTagStore(userDefaults: userDefaults),
+            recommendationsProvider: { [] },
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { _ in nil },
+            randomAccent: { .blue }
+        )
+        let settingsViewModel = SettingsViewModel(
+            state: appState,
+            store: DesktopSettingsStore(userDefaults: userDefaults),
+            commandFacade: nil
+        )
+        let importContainer = ImportScreenContainer(
+            state: appState,
+            mainViewModel: model,
+            recommendationsProvider: { [] }
+        )
+        let detailContainer = DetailScreenContainer(
+            state: appState,
+            groupTagController: groupTagController,
+            detailSnapshot: { [weak model] sourceId in
+                model?.detailSnapshot(for: sourceId)
+            }
+        )
+        let container = HomeScreenContainer(
+            state: appState,
+            mainViewModel: model,
+            groupTagController: groupTagController,
+            settingsViewModel: settingsViewModel,
+            importContainer: importContainer,
+            detailContainer: detailContainer
+        )
+        await model.bootstrap()
+
+        appState.groupTags.customTagsBySourceId = [
+            "alpha": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.blue.rawValue)],
+            "beta": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.green.rawValue)]
+        ]
+        appState.groupTags.selectedHomeFilterKey = "custom:shared"
+        model.setSelectedHomeAgentFilter("cursor")
+
+        let snapshot = container.homeTagSnapshot(locale: Locale(identifier: "en"))
+
+        XCTAssertEqual(
+            container.visibleGroupCards(from: model.groupCards, snapshot: snapshot).map(\.id),
+            ["beta"]
+        )
+
+        model.setSelectedHomeAgentFilter("missing-agent")
+
+        XCTAssertEqual(
+            container.visibleGroupCards(from: model.groupCards, snapshot: snapshot).map(\.id),
+            ["alpha", "beta"]
+        )
+        XCTAssertEqual(appState.view.selectedHomeAgentFilterId, "missing-agent")
+    }
+
     func testSaveFailureRollsBackOptimisticEdit() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .failureBaseline)

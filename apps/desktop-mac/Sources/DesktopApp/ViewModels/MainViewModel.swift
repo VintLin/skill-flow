@@ -798,6 +798,14 @@ final class MainViewModel {
         }
     }
 
+    var effectiveSelectedHomeAgentFilterId: String? {
+        guard let selectedHomeAgentFilterId else {
+            return nil
+        }
+        let optionIds = Set(homeAgentFilterOptions.map(\.id))
+        return optionIds.contains(selectedHomeAgentFilterId) ? selectedHomeAgentFilterId : nil
+    }
+
     var detectedTargetIdsForSettings: [String] {
         AgentDisplayCatalog.orderedTargetIds(in: detectedTargets, customAgents: routeState?.settings.customAgents ?? [])
     }
@@ -849,18 +857,17 @@ final class MainViewModel {
     }
 
     func reconcileHomeAgentFilter() {
-        guard let selectedHomeAgentFilterId else {
+        guard selectedHomeAgentFilterId != nil else {
             return
         }
-        let optionIds = Set(homeAgentFilterOptions.map(\.id))
-        if !optionIds.contains(selectedHomeAgentFilterId) {
+        if effectiveSelectedHomeAgentFilterId == nil {
             self.selectedHomeAgentFilterId = nil
         }
     }
 
     func filteredHomeGroupCards(locale: Locale) -> [GroupCardModel] {
         _ = locale
-        guard let selectedHomeAgentFilterId else {
+        guard let selectedHomeAgentFilterId = effectiveSelectedHomeAgentFilterId else {
             return groupCards
         }
         return groupCards.filter { card in
