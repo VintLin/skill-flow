@@ -228,8 +228,6 @@
 "toast.rename.empty" = "请输入分组名称。";
 "toast.rename.success" = "已重命名为 %@。";
 "toast.rename.failed" = "重命名失败：%@";
-"toast.rename_source.success" = "已重命名为 %@。";
-"toast.rename_source.failed" = "重命名失败：%@";
 "toast.save.no_source_id" = "保存失败：缺少来源 id。";
 "toast.save.failed" = "保存失败：%@";
 "toast.pinned_migration.failed" = "置顶分组迁移失败：%@";

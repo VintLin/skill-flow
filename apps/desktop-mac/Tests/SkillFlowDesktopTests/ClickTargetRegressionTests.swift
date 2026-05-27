@@ -43,6 +43,10 @@ final class ClickTargetRegressionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("if let onRename {"))
         XCTAssertFalse(source.contains("isEnabled: onRename != nil"))
+        XCTAssertFalse(source.contains("isEnabled: Bool = true"))
+        XCTAssertFalse(source.contains("guard isEnabled else { return }"))
+        XCTAssertFalse(source.contains(".disabled(!isEnabled)"))
+        XCTAssertFalse(source.contains(".opacity(isEnabled ? 1.0 : 0.45)"))
     }
 
     private func sourceText(at relativePath: String) throws -> String {

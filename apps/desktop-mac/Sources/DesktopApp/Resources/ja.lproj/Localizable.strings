@@ -228,8 +228,6 @@
 "toast.rename.empty" = "グループ名を入力してください。";
 "toast.rename.success" = "%@ に名前を変更しました。";
 "toast.rename.failed" = "名前の変更に失敗しました: %@";
-"toast.rename_source.success" = "%@ に名前を変更しました。";
-"toast.rename_source.failed" = "名前の変更に失敗しました: %@";
 "toast.save.no_source_id" = "保存失敗: source id がありません。";
 "toast.save.failed" = "保存失敗: %@";
 "toast.pinned_migration.failed" = "ピン留めグループの移行に失敗しました: %@";

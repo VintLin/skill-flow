@@ -1254,11 +1254,9 @@ struct SharedGroupCard: View {
         title: String,
         icon: ActionIcon,
         foreground: Color,
-        isEnabled: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button {
-            guard isEnabled else { return }
             action()
         } label: {
             HStack(spacing: 8) {
@@ -1281,8 +1279,6 @@ struct SharedGroupCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1.0 : 0.45)
     }
 
     @ViewBuilder

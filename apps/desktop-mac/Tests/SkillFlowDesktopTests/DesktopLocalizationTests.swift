@@ -53,34 +53,6 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("detail.updated.unavailable", locale: Locale(identifier: "ja")), "更新時刻を取得できません")
     }
 
-    func testRenameSourceToastKeysExistInAllSupportedLocales() {
-        let expectedValuesByLocale = [
-            "en": [
-                "toast.rename_source.success": "Renamed to %@.",
-                "toast.rename_source.failed": "Rename failed: %@",
-            ],
-            "zh-Hans": [
-                "toast.rename_source.success": "已重命名为 %@。",
-                "toast.rename_source.failed": "重命名失败：%@",
-            ],
-            "ja": [
-                "toast.rename_source.success": "%@ に名前を変更しました。",
-                "toast.rename_source.failed": "名前の変更に失敗しました: %@",
-            ],
-        ]
-
-        for (identifier, expectedValues) in expectedValuesByLocale {
-            let locale = Locale(identifier: identifier)
-            for (key, expectedValue) in expectedValues {
-                XCTAssertEqual(
-                    L10n.string(key, locale: locale),
-                    expectedValue,
-                    "Missing localization for \(key) in \(identifier)"
-                )
-            }
-        }
-    }
-
     func testSkillManagementFilterAndRenameKeysExistInAllSupportedLocales() {
         let requiredKeys = [
             "home.sidebar.tags",
@@ -105,6 +77,16 @@ final class DesktopLocalizationTests: XCTestCase {
             for key in requiredKeys {
                 let value = L10n.string(key, locale: locale)
                 XCTAssertNotEqual(value, key, "Missing localization for \(key) in \(locale.identifier)")
+            }
+        }
+
+        let staleKeys = [
+            "toast.rename_source.success",
+            "toast.rename_source.failed",
+        ]
+        for locale in locales {
+            for key in staleKeys {
+                XCTAssertEqual(L10n.string(key, locale: locale), key, "Unexpected stale localization for \(key)")
             }
         }
     }
