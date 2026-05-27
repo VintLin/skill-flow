@@ -157,6 +157,24 @@ export async function executeBridgeRequest(
           })),
         });
       }
+      case "rename-source": {
+        const payload = expectObjectPayload(request.payload, "rename-source");
+        const sourceId = expectString(payload.sourceId, "sourceId", "rename-source");
+        const displayName = expectString(payload.displayName, "displayName", "rename-source");
+        const result = await app.renameSource(sourceId, displayName);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
       case "doctor": {
         const result = await app.doctor();
         if (!result.ok) {

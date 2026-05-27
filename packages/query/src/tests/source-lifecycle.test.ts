@@ -1031,4 +1031,67 @@ description: |
     expect(lastEvent?.details).toHaveProperty("stateTransition.before");
     expect(lastEvent?.details).toHaveProperty("stateTransition.after.projections");
   });
+
+  test("renameSource updates manifest and lock display names without changing ids or bindings", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const before = await app.store.readState();
+    const beforeBinding = before.manifest.bindings["demo-source"];
+    const renamed = await app.renameSource("demo-source", "Writing Tools");
+
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) {
+      return;
+    }
+    expect(renamed.data).toEqual({
+      sourceId: "demo-source",
+      displayName: "Writing Tools",
+    });
+
+    const after = await app.store.readState();
+    expect(after.manifest.sources.find((source) => source.id === "demo-source")?.displayName).toBe("Writing Tools");
+    expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.displayName).toBe("Writing Tools");
+    expect(after.manifest.sources.find((source) => source.id === "demo-source")?.id).toBe("demo-source");
+    expect(after.manifest.bindings["demo-source"]).toEqual(beforeBinding);
+    expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.checkoutPath).toBe(
+      before.lockFile.sources.find((source) => source.id === "demo-source")?.checkoutPath,
+    );
+  });
+
+  test("renameSource rejects missing and empty source labels", async () => {
+    const app = new SkillFlowApp();
+
+    const missing = await app.renameSource("missing-source", "Writing Tools");
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.errors[0]).toEqual({
+        code: "SOURCE_NOT_FOUND",
+        message: "Skills group id 'missing-source' is not registered.",
+      });
+    }
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+
+    const empty = await app.renameSource("demo-source", "   ");
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) {
+      expect(empty.errors[0]).toEqual({
+        code: "DISPLAY_NAME_EMPTY",
+        message: "Skills group display name cannot be empty.",
+      });
+    }
+  });
 });

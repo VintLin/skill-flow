@@ -116,6 +116,14 @@ import {
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
 
+function replaceLeafSourceId(leafId: string, nextSourceId: string): string {
+  const separatorIndex = leafId.indexOf(":");
+  if (separatorIndex === -1) {
+    return `${nextSourceId}:${leafId}`;
+  }
+  return `${nextSourceId}${leafId.slice(separatorIndex)}`;
+}
+
 type SkillFlowAddOptions = AddSourceOptions &
   AddSourceDraftOptions & {
     project?: boolean;
@@ -305,6 +313,58 @@ export class SkillFlowApp {
     }
 
     const { manifest, lockFile } = await this.store.readState();
+    if (
+      options?.sourceIdOverride &&
+      result.data.manifest.id !== options.sourceIdOverride
+    ) {
+      const originalSourceId = result.data.manifest.id;
+      const nextSourceId = options.sourceIdOverride;
+      const existingSource = manifest.sources.find((item) => item.id === nextSourceId);
+      if (existingSource) {
+        await this.rollbackPreparedSourceInternal(originalSourceId);
+        return fail({
+          code: "SOURCE_EXISTS",
+          message: `Skills group id '${nextSourceId}' is already registered.`,
+        });
+      }
+
+      manifest.sources = manifest.sources.map((item) =>
+        item.id === originalSourceId ? { ...item, id: nextSourceId } : item,
+      );
+      const originalBinding = manifest.bindings[originalSourceId];
+      if (originalBinding) {
+        manifest.bindings[nextSourceId] = originalBinding;
+        delete manifest.bindings[originalSourceId];
+      }
+      lockFile.sources = lockFile.sources.map((item) =>
+        item.id === originalSourceId
+          ? {
+            ...item,
+            id: nextSourceId,
+            leafIds: item.leafIds.map((leafId) => replaceLeafSourceId(leafId, nextSourceId)),
+          }
+          : item,
+      );
+      lockFile.leafInventory = lockFile.leafInventory.map((leaf) =>
+        leaf.sourceId === originalSourceId
+          ? {
+            ...leaf,
+            id: replaceLeafSourceId(leaf.id, nextSourceId),
+            sourceId: nextSourceId,
+          }
+          : leaf,
+      );
+      result.data.manifest = {
+        ...result.data.manifest,
+        id: nextSourceId,
+      };
+      result.data.lock = {
+        ...result.data.lock,
+        id: nextSourceId,
+        leafIds: result.data.lock.leafIds.map((leafId) => replaceLeafSourceId(leafId, nextSourceId)),
+      };
+    }
+
     await this.ensureProjectionLedger(manifest, lockFile);
     const source = manifest.sources.find((item) => item.id === result.data.manifest.id);
     if (!source) {
@@ -1838,6 +1898,13 @@ export class SkillFlowApp {
     return this.runSerializedMutation(() => this.togglePinnedSourceImpl(sourceId));
   }
 
+  async renameSource(
+    sourceId: string,
+    displayName: string,
+  ): Promise<Result<{ sourceId: string; displayName: string }>> {
+    return this.runSerializedMutation(() => this.renameSourceImpl(sourceId, displayName));
+  }
+
   private async togglePinnedSourceImpl(
     sourceId: string,
   ): Promise<Result<{ pinnedSourceIds: string[] }>> {
@@ -1851,6 +1918,50 @@ export class SkillFlowApp {
 
     const preferences = await this.store.togglePinnedSource(sourceId);
     return ok({ pinnedSourceIds: preferences.pinnedSourceIds });
+  }
+
+  private async renameSourceImpl(
+    sourceId: string,
+    displayName: string,
+  ): Promise<Result<{ sourceId: string; displayName: string }>> {
+    const nextDisplayName = displayName.trim();
+    if (!nextDisplayName) {
+      return fail({
+        code: "DISPLAY_NAME_EMPTY",
+        message: "Skills group display name cannot be empty.",
+      });
+    }
+
+    const { manifest, lockFile } = await this.store.readState();
+    const manifestSource = manifest.sources.find((source) => source.id === sourceId);
+    const lockSource = lockFile.sources.find((source) => source.id === sourceId);
+
+    if (!manifestSource || !lockSource) {
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Skills group id '${sourceId}' is not registered.`,
+      });
+    }
+
+    const nextManifest: Manifest = {
+      ...manifest,
+      sources: manifest.sources.map((source) =>
+        source.id === sourceId
+          ? { ...source, displayName: nextDisplayName }
+          : source,
+      ),
+    };
+    const nextLockFile: LockFile = {
+      ...lockFile,
+      sources: lockFile.sources.map((source) =>
+        source.id === sourceId
+          ? { ...source, displayName: nextDisplayName }
+          : source,
+      ),
+    };
+
+    await this.store.writeState(nextManifest, nextLockFile);
+    return ok({ sourceId, displayName: nextDisplayName });
   }
 
   async getAvailableTargets(): Promise<DeploymentTargetId[]> {
