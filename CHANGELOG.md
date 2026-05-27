@@ -2,6 +2,19 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.8 - 2026-05-27
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.7` to `1.3.8`.
+- Local import previews now display skill card names from `SKILL.md` frontmatter `name` before falling back to folder names, OpenAI display metadata, or Markdown headings.
+
+### Fixed
+
+- Fixed local import paths wrapped in single or double quotes so paths copied from shells can be pasted into the desktop import page directly.
+- Fixed local import preview selections so nested or similarly named skills resolve by stable relative paths instead of ambiguous display selectors.
+- Fixed Hermes Agent icon rendering in desktop group cards and target controls.
+
 ## v1.3.7 - 2026-05-07
 
 ### Added
