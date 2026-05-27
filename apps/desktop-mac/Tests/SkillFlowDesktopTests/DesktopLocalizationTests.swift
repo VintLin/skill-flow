@@ -53,6 +53,34 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("detail.updated.unavailable", locale: Locale(identifier: "ja")), "更新時刻を取得できません")
     }
 
+    func testRenameSourceToastKeysExistInAllSupportedLocales() {
+        let expectedValuesByLocale = [
+            "en": [
+                "toast.rename_source.success": "Renamed to %@.",
+                "toast.rename_source.failed": "Rename failed: %@",
+            ],
+            "zh-Hans": [
+                "toast.rename_source.success": "已重命名为 %@。",
+                "toast.rename_source.failed": "重命名失败：%@",
+            ],
+            "ja": [
+                "toast.rename_source.success": "%@ に名前を変更しました。",
+                "toast.rename_source.failed": "名前の変更に失敗しました: %@",
+            ],
+        ]
+
+        for (identifier, expectedValues) in expectedValuesByLocale {
+            let locale = Locale(identifier: identifier)
+            for (key, expectedValue) in expectedValues {
+                XCTAssertEqual(
+                    L10n.string(key, locale: locale),
+                    expectedValue,
+                    "Missing localization for \(key) in \(identifier)"
+                )
+            }
+        }
+    }
+
     func testGroupTagInputPlaceholderStaysShortEnoughForCompactTagField() {
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "en")), "Tag")
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "zh-Hans")), "标签")

@@ -3387,6 +3387,11 @@ final class MainViewModel {
             nextPayload["summary"] = summaryPayload
         }
 
+        if var sourceSnapshotPayload = nextPayload["sourceSnapshot"] as? [String: Any] {
+            sourceSnapshotPayload["title"] = displayName
+            nextPayload["sourceSnapshot"] = sourceSnapshotPayload
+        }
+
         return nextPayload
     }
 

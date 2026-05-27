@@ -217,6 +217,8 @@
 "toast.uninstall.no_group_selected" = "Uninstall failed: no group selected.";
 "toast.uninstall.success" = "Removed %@.";
 "toast.uninstall.failed" = "Uninstall failed: %@";
+"toast.rename_source.success" = "Renamed to %@.";
+"toast.rename_source.failed" = "Rename failed: %@";
 "toast.save.no_source_id" = "Save failed: missing source id.";
 "toast.save.failed" = "Save failed: %@";
 "toast.pinned_migration.failed" = "Pinned groups migration failed: %@";

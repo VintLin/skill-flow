@@ -281,9 +281,12 @@ final class MainViewModelSelectionTests: XCTestCase {
 
     func testRenameSourceUpdatesCardsAndDetailTitleAfterBridgeSuccess() async throws {
         let fixture = try TestFixture.install()
-        try fixture.reset(state: .baseline)
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.sourceSnapshotTitle = "Old Snapshot Title"
+        try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
 
         await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
 
@@ -884,6 +887,7 @@ private struct TestFixture {
         var enabledTargets: [String]
         var targetLeafIdsByTarget: [String: [String]]
         var applyFailures: [String]
+        var sourceSnapshotTitle: String? = nil
     }
 
     struct State: Codable, Equatable {
@@ -1399,7 +1403,23 @@ private struct TestFixture {
           leafId: ((source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[target]) || [])[0] || null,
           target,
           status: 'active'
-        }))
+        })),
+        ...(source.sourceSnapshotTitle ? {
+          sourceSnapshot: {
+            canonicalRepo: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
+            title: source.sourceSnapshotTitle,
+            sourceUrl: source.locator,
+            repoUrl: source.locator,
+            repoLabel: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
+            provider: source.metadataProvider || 'clawhub',
+            owner: {
+              slug: 'acme',
+              sourceUrl: 'https://github.com/acme'
+            },
+            repoStars: source.starCount ?? null,
+            skills: []
+          }
+        } : {})
       };
     }
 
