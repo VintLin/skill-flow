@@ -62,6 +62,23 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(home.contains("options.contains { $0.id == rawSelectedId } ? rawSelectedId : nil"))
     }
 
+    func testHomeLeadingFixedButtonWidthMeasuresAllAgentsLabel() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(home.contains("let agentTitle = L10n.string(\"home.sidebar.all_agents\", locale: locale)"))
+        XCTAssertTrue(home.contains("let agentWidth ="))
+        XCTAssertTrue(home.contains("max(projectWidth + homeLeadingProjectIndicatorAllowance, max(filterWidth, agentWidth))"))
+    }
+
+    func testProjectScopeHiddenWarningAndToolbarBadgeDeadCodeIsRemoved() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertFalse(home.contains("showsProjectScopeHiddenWarning"))
+        XCTAssertFalse(home.contains("projectScopeShowsHiddenWarning"))
+        XCTAssertFalse(home.contains("showsAlertBadge"))
+        XCTAssertFalse(home.contains("toolbarAlertBadgeOffset"))
+    }
+
     func testRenameDialogTextFieldHasAccessibleName() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 

@@ -725,15 +725,15 @@ struct SharedGroupCard: View {
                     isActionMenuOpen = false
                     onTogglePinned()
                 }
-                actionMenuButton(
-                    title: t("group_card.action.rename"),
-                    icon: .rename,
-                    foreground: AppTheme.textMuted(for: theme),
-                    isEnabled: onRename != nil
-                ) {
-                    guard let onRename else { return }
-                    isActionMenuOpen = false
-                    onRename()
+                if let onRename {
+                    actionMenuButton(
+                        title: t("group_card.action.rename"),
+                        icon: .rename,
+                        foreground: AppTheme.textMuted(for: theme)
+                    ) {
+                        isActionMenuOpen = false
+                        onRename()
+                    }
                 }
                 actionMenuButton(
                     title: t("group_card.action.update"),

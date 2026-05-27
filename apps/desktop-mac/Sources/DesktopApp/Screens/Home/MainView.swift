@@ -1255,10 +1255,6 @@ struct MainView: View {
         .opacity(isSelected ? 1.0 : 0.58)
     }
 
-    private var showsProjectScopeHiddenWarning: Bool {
-        false
-    }
-
     static func projectScopePillBackground(
         isSelected: Bool,
         accent: DesktopAccentColor,
@@ -1373,7 +1369,6 @@ struct MainView: View {
 
     private func toolbarIconButton(
         _ icon: ActionIcon,
-        showsAlertBadge: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1393,23 +1388,11 @@ struct MainView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
         }
-        .overlay(alignment: .topTrailing) {
-            if showsAlertBadge {
-                actionIcon(.projectWarning, size: 10)
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                    .frame(width: 12, height: 12)
-                    .offset(
-                        x: Self.toolbarAlertBadgeOffset.width,
-                        y: Self.toolbarAlertBadgeOffset.height
-                    )
-            }
-        }
     }
 }
 
 extension MainView {
     static let toolbarButtonSize: CGFloat = 34
-    static let toolbarAlertBadgeOffset = CGSize(width: 4, height: -4)
     static let headerLeadingWidth: CGFloat = 220
     static let homeProjectPillHeight: CGFloat = 28
     static let homeFilterPillHeight: CGFloat = 28
@@ -1446,22 +1429,15 @@ extension MainView {
         false
     }
 
-    static func projectScopeShowsHiddenWarning(for scope: ProjectScopeSelection) -> Bool {
-        switch scope {
-        case .global:
-            return false
-        case .project:
-            return true
-        }
-    }
-
     static func homeLeadingFixedButtonWidth(for locale: Locale) -> CGFloat {
         let projectTitle = L10n.string("project_scope.global", locale: locale)
         let filterTitle = "#\(L10n.string("group_tag.filter.all", locale: locale))"
+        let agentTitle = L10n.string("home.sidebar.all_agents", locale: locale)
         let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         let projectWidth = ceil((projectTitle as NSString).size(withAttributes: [.font: font]).width)
         let filterWidth = ceil((filterTitle as NSString).size(withAttributes: [.font: font]).width)
-        let contentWidth = max(projectWidth + homeLeadingProjectIndicatorAllowance, filterWidth)
+        let agentWidth = ceil((agentTitle as NSString).size(withAttributes: [.font: font]).width)
+        let contentWidth = max(projectWidth + homeLeadingProjectIndicatorAllowance, max(filterWidth, agentWidth))
         return contentWidth + homeLeadingButtonHorizontalPadding
     }
 

@@ -296,11 +296,6 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(MainView.toolbarButtonSize, 34)
     }
 
-    func testHeaderToolbarAlertBadgeAnchorsToTopTrailingEdge() {
-        XCTAssertEqual(MainView.toolbarAlertBadgeOffset.width, 4)
-        XCTAssertEqual(MainView.toolbarAlertBadgeOffset.height, -4)
-    }
-
     func testHeaderLayoutUsesStableLeadingAndSearchWidths() {
         XCTAssertEqual(MainView.headerLeadingWidth, 220)
         XCTAssertEqual(MainView.headerSearchFieldWidth, 384)
@@ -324,11 +319,6 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(MainView.projectScopePillOpacityLabel(isSelected: true, theme: .light), "alpha 18%")
         XCTAssertEqual(MainView.projectScopePillOpacityLabel(isSelected: true, theme: .dark), "alpha 28%")
         XCTAssertNil(MainView.projectScopePillOpacityLabel(isSelected: false, theme: .light))
-    }
-
-    func testHiddenProjectWarningAppearsOnlyForNonGlobalScope() {
-        XCTAssertFalse(MainView.projectScopeShowsHiddenWarning(for: .global))
-        XCTAssertTrue(MainView.projectScopeShowsHiddenWarning(for: .project("repo-a")))
     }
 
     func testMenuBarIconLoadsTemplateSvg() {
