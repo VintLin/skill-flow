@@ -81,6 +81,34 @@ final class DesktopLocalizationTests: XCTestCase {
         }
     }
 
+    func testSkillManagementFilterAndRenameKeysExistInAllSupportedLocales() {
+        let requiredKeys = [
+            "home.sidebar.tags",
+            "home.sidebar.projects",
+            "home.sidebar.agents",
+            "home.sidebar.all_agents",
+            "group_card.action.rename",
+            "rename.dialog.title",
+            "rename.dialog.save",
+            "rename.dialog.cancel",
+            "toast.rename.empty",
+            "toast.rename.success",
+            "toast.rename.failed",
+        ]
+        let locales = [
+            Locale(identifier: "zh-Hans"),
+            Locale(identifier: "en"),
+            Locale(identifier: "ja"),
+        ]
+
+        for locale in locales {
+            for key in requiredKeys {
+                let value = L10n.string(key, locale: locale)
+                XCTAssertNotEqual(value, key, "Missing localization for \(key) in \(locale.identifier)")
+            }
+        }
+    }
+
     func testGroupTagInputPlaceholderStaysShortEnoughForCompactTagField() {
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "en")), "Tag")
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "zh-Hans")), "标签")

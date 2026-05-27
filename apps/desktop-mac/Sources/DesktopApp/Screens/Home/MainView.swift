@@ -52,6 +52,8 @@ struct MainView: View {
     @State private var editingCustomAgentId: String?
     @State private var customAgentDraft = SettingsViewModel.CustomAgentDraft()
     @State private var customAgentErrors: [String: String] = [:]
+    @State private var renameSourceId: String?
+    @State private var renameDraft = ""
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -133,6 +135,36 @@ struct MainView: View {
                     }
                     .transition(.opacity)
                     .zIndex(50)
+                }
+
+                if renameSourceId != nil {
+                    ZStack {
+                        Color.black.opacity(theme == .dark ? 0.35 : 0.18)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                closeRenameDialog()
+                            }
+
+                        RenameSourceDialog(
+                            draft: $renameDraft,
+                            title: t("rename.dialog.title"),
+                            saveTitle: t("rename.dialog.save"),
+                            cancelTitle: t("rename.dialog.cancel"),
+                            theme: theme,
+                            accent: accent,
+                            onCancel: {
+                                closeRenameDialog()
+                            },
+                            onSave: {
+                                saveRenameDialog()
+                            }
+                        )
+                        .frame(maxWidth: 360)
+                        .shadow(color: AppTheme.softShadow(for: theme), radius: 18, y: 8)
+                    }
+                    .transition(.opacity)
+                    .zIndex(60)
                 }
 
                 if let toast = viewModel.toast {
@@ -531,6 +563,27 @@ struct MainView: View {
         isEditCustomAgentPresented = false
     }
 
+    private func beginRenameSource(_ card: MainViewModel.GroupCardModel) {
+        renameSourceId = card.id
+        renameDraft = card.title
+    }
+
+    private func closeRenameDialog() {
+        renameSourceId = nil
+        renameDraft = ""
+    }
+
+    private func saveRenameDialog() {
+        guard let sourceId = renameSourceId else {
+            return
+        }
+        let displayName = renameDraft
+        closeRenameDialog()
+        Task {
+            await viewModel.renameSource(sourceId: sourceId, displayName: displayName)
+        }
+    }
+
     private var homeCardDisplayMode: GroupCardDisplayMode {
         Self.homeGroupCardDisplayMode(for: settingsViewModel.currentHomeCardDensity)
     }
@@ -585,19 +638,32 @@ struct MainView: View {
             snapshot: homeTagSnapshot
         )
 
-        return Group {
-            if visibleCards.isEmpty {
-                gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
-                    .padding(.horizontal, 16)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            } else {
-                ScrollView {
+        return HStack(alignment: .top, spacing: 0) {
+            homeSidebar(homeTagSnapshot: homeTagSnapshot)
+                .frame(width: layout.homeSidebarWidth)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
+                .background(AppTheme.headerBackground(for: theme))
+                .overlay(alignment: .trailing) {
+                    Rectangle()
+                        .fill(AppTheme.cardBorder(for: theme))
+                        .frame(width: 0.5)
+                }
+
+            Group {
+                if visibleCards.isEmpty {
                     gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
                         .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                } else {
+                    ScrollView {
+                        gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+                            .padding(.bottom, 24)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -630,13 +696,9 @@ struct MainView: View {
                     )
                 }
             } else {
-                if showsProjectScopeBar {
-                    homeProjectScopeBar
-                }
-                homeTagFilterBar(snapshot: homeTagSnapshot)
                 HStack {
                     Spacer(minLength: 0)
-                    LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
+                    LazyVGrid(columns: homeGridColumns(for: layout), spacing: 12) {
                         ForEach(groupCards) { card in
                             SharedGroupCard(
                                 card: card,
@@ -648,6 +710,9 @@ struct MainView: View {
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
                                     navigation.showDetail(card.id)
+                                },
+                                onRename: {
+                                    beginRenameSource(card)
                                 },
                                 onUpdate: {
                                     Task { await viewModel.updateSource(card.id) }
@@ -699,7 +764,7 @@ struct MainView: View {
                         }
                         await viewModel.prefetchHomeGroupCardMetadataIfNeeded(groupCards.map(\.id))
                     }
-                    .frame(maxWidth: layout.gridFrameWidth, alignment: .center)
+                    .frame(maxWidth: layout.homeGridFrameWidth, alignment: .center)
                     Spacer(minLength: 0)
                 }
             }
@@ -879,8 +944,45 @@ struct MainView: View {
         .modifier(EmptyStateChrome(theme: theme, enabled: chromed))
     }
 
-    private func gridColumns(for layout: LayoutMetrics) -> [GridItem] {
-        Array(repeating: GridItem(.fixed(304), spacing: 14), count: layout.gridColumnCount)
+    private func homeGridColumns(for layout: LayoutMetrics) -> [GridItem] {
+        Array(repeating: GridItem(.fixed(304), spacing: 14), count: layout.homeGridColumnCount)
+    }
+
+    private func homeSidebar(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            homeSidebarSection(title: t("home.sidebar.tags")) {
+                homeTagFilterBar(snapshot: homeTagSnapshot)
+            }
+
+            homeSidebarSection(title: t("home.sidebar.projects")) {
+                homeProjectScopeBar
+            }
+
+            homeSidebarSection(title: t("home.sidebar.agents")) {
+                homeAgentFilterBar
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 16)
+        .padding(.bottom, 18)
+    }
+
+    private func homeSidebarSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .lineLimit(1)
+                .textCase(.uppercase)
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var homeProjectScopeBar: some View {
@@ -979,6 +1081,38 @@ struct MainView: View {
                             isSelected: selectedKey == item.id
                         ) {
                             homeContainer.setSelectedHomeTagFilterKey(item.id)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var homeAgentFilterBar: some View {
+        let options = homeContainer.homeAgentFilterOptions()
+        let selectedId = homeContainer.selectedHomeAgentFilterId()
+
+        return HStack(spacing: 8) {
+            homeAgentFilterPill(
+                title: t("home.sidebar.all_agents"),
+                count: nil,
+                isSelected: selectedId == nil
+            ) {
+                homeContainer.setSelectedHomeAgentFilter(nil)
+            }
+            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
+
+            Self.homeFilterDivider(theme: theme)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 6) {
+                    ForEach(options) { option in
+                        homeAgentFilterPill(
+                            title: option.label,
+                            count: option.enabledGroupCount,
+                            isSelected: selectedId == option.id
+                        ) {
+                            homeContainer.setSelectedHomeAgentFilter(option.id)
                         }
                     }
                 }
@@ -1088,8 +1222,51 @@ struct MainView: View {
         .opacity(isSelected ? 1.0 : 0.58)
     }
 
+    private func homeAgentFilterPill(
+        title: String,
+        count: Int?,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 12, weight: .regular))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .regular))
+                        .opacity(0.78)
+                }
+            }
+            .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+            .padding(.horizontal, 10)
+            .frame(height: Self.homeFilterPillHeight)
+            .frame(maxWidth: .infinity)
+            .background(
+                AppTheme.brand(for: accent, in: theme).opacity(
+                    isSelected
+                        ? (theme == .dark ? 0.28 : 0.18)
+                        : (theme == .dark ? 0.22 : 0.14)
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Self.homeFilterPillCornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: Self.homeFilterPillCornerRadius)
+                    .stroke(
+                        isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
+                        lineWidth: 0.5
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .opacity(isSelected ? 1.0 : 0.58)
+    }
+
     private var showsProjectScopeHiddenWarning: Bool {
-        !showsProjectScopeBar && Self.projectScopeShowsHiddenWarning(for: viewModel.selectedProjectScope)
+        false
     }
 
     static func projectScopePillBackground(
@@ -1339,6 +1516,88 @@ private struct LayoutMetrics {
         let spacing = CGFloat(max(gridColumnCount - 1, 0)) * 14
         let available = max(304, width - 32 - spacing)
         return min(1260, max(304 * columns + spacing, available))
+    }
+
+    var homeSidebarWidth: CGFloat {
+        width <= 760 ? 184 : 220
+    }
+
+    var homeGridAvailableWidth: CGFloat {
+        max(304, width - homeSidebarWidth - 32)
+    }
+
+    var homeGridColumnCount: Int {
+        let columns = Int((homeGridAvailableWidth + 14) / (304 + 14))
+        return min(4, max(1, columns))
+    }
+
+    var homeGridFrameWidth: CGFloat {
+        let columns = CGFloat(homeGridColumnCount)
+        let spacing = CGFloat(max(homeGridColumnCount - 1, 0)) * 14
+        return 304 * columns + spacing
+    }
+}
+
+private struct RenameSourceDialog: View {
+    @Binding var draft: String
+    let title: String
+    let saveTitle: String
+    let cancelTitle: String
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let onCancel: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .lineLimit(1)
+
+            TextField("", text: $draft)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .padding(.horizontal, 10)
+                .frame(height: 34)
+                .background(AppTheme.headerControlFill(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                }
+                .onSubmit(onSave)
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+
+                Button(cancelTitle, action: onCancel)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Button(saveTitle, action: onSave)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.pageBackground(for: theme))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(AppTheme.brand(for: accent, in: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(16)
+        .background(AppTheme.surface(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
     }
 }
 

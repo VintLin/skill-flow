@@ -1018,6 +1018,7 @@ final class MainViewModel {
         let normalizedSourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedSourceId.isEmpty, !normalizedDisplayName.isEmpty else {
+            showToast(style: .error, text: localizedText("toast.rename.empty"))
             return
         }
 
@@ -1027,9 +1028,9 @@ final class MainViewModel {
                 displayName: normalizedDisplayName
             )
             applyRenamedSource(sourceId: result.sourceId, displayName: result.displayName)
-            showToast(style: .success, text: localizedText("toast.rename_source.success", result.displayName))
+            showToast(style: .success, text: localizedText("toast.rename.success", result.displayName))
         } catch {
-            showToast(style: .error, text: localizedText("toast.rename_source.failed", firstErrorLine(from: error)))
+            showToast(style: .error, text: localizedText("toast.rename.failed", firstErrorLine(from: error)))
         }
     }
 

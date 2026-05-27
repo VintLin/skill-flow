@@ -14,6 +14,10 @@
 "page.detail.title" = "Group Detail";
 "project_scope.global" = "Global";
 "project_scope.project" = "Project";
+"home.sidebar.tags" = "Tags";
+"home.sidebar.projects" = "Projects";
+"home.sidebar.agents" = "Agents";
+"home.sidebar.all_agents" = "All Agents";
 "placeholder.home.search_group_author" = "Search Group / Author";
 "home.empty.title" = "No groups matched";
 "home.empty.subtitle" = "Try a broader search query.";
@@ -171,6 +175,7 @@
 "group_card.action.installed" = "Installed";
 "group_card.action.pin" = "Pin";
 "group_card.action.unpin" = "Unpin";
+"group_card.action.rename" = "Rename";
 "group_card.action.update" = "Update";
 "group_card.action.edit_tags" = "Add Tag";
 "group_card.action.cancel_edit_tags" = "Cancel";
@@ -181,6 +186,9 @@
 "group_tag.action.add" = "Add tag";
 "group_tag.filter.all" = "ALL";
 "group_tag.input.placeholder" = "Tag";
+"rename.dialog.title" = "Rename Group";
+"rename.dialog.save" = "Save";
+"rename.dialog.cancel" = "Cancel";
 "group_tag.toast.duplicate" = "This tag is already selected.";
 "group_tag.toast.limit" = "Tag limit reached.";
 "group_tag.toast.empty" = "Enter a tag first.";
@@ -217,6 +225,9 @@
 "toast.uninstall.no_group_selected" = "Uninstall failed: no group selected.";
 "toast.uninstall.success" = "Removed %@.";
 "toast.uninstall.failed" = "Uninstall failed: %@";
+"toast.rename.empty" = "Enter a group name.";
+"toast.rename.success" = "Renamed to %@.";
+"toast.rename.failed" = "Rename failed: %@";
 "toast.rename_source.success" = "Renamed to %@.";
 "toast.rename_source.failed" = "Rename failed: %@";
 "toast.save.no_source_id" = "Save failed: missing source id.";
