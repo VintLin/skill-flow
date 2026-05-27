@@ -352,6 +352,14 @@ struct MainView: View {
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .textCase(.uppercase)
                     .focused($focusedSearchField, equals: .home)
+                    .onSubmit {
+                        Task {
+                            let handled = await homeContainer.handleHomeSearchSubmit(viewModel.searchQuery)
+                            if handled {
+                                focusedSearchField = nil
+                            }
+                        }
+                    }
             }
         }
         .padding(.horizontal, 12)

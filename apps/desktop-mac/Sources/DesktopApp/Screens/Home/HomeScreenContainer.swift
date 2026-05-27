@@ -110,6 +110,17 @@ final class HomeScreenContainer {
         await mainViewModel.refreshProjectScopes()
     }
 
+    func handleHomeSearchSubmit(_ query: String) async -> Bool {
+        let locator = MainViewModel.normalizedImportLocator(query)
+        guard MainViewModel.isSupportedImportLocator(locator) else {
+            return false
+        }
+
+        state.view.currentRoute = .importPage
+        await importContainer.submitDirectLocator(locator)
+        return true
+    }
+
     func tagSuggestions(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
         groupTagController.tagSuggestions(
             sourceIds: mainViewModel.sourceIds,

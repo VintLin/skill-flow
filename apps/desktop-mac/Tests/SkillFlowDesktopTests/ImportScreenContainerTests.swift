@@ -34,6 +34,32 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(container.screenState.placeholderIndex, 2)
     }
 
+    func testHomeLocatorHandoffRoutesToImportPageAndSubmitsDirectLocator() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        let handled = await container.homeContainer.handleHomeSearchSubmit("  \"anthropics/skills\"  ")
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
+        XCTAssertEqual(container.importContainer.screenState.searchText, "anthropics/skills")
+        XCTAssertEqual(container.mainViewModel.importSubmittedQuery, "anthropics/skills")
+    }
+
+    func testHomeSearchSubmitKeepsPlainTextOnHome() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+        container.importContainer.screenState.searchText = "previous/import"
+        container.mainViewModel.importSubmittedQuery = "previous/import"
+
+        let handled = await container.homeContainer.handleHomeSearchSubmit("anthropics")
+
+        XCTAssertFalse(handled)
+        XCTAssertEqual(runtime.state.view.currentRoute, .home)
+        XCTAssertEqual(container.importContainer.screenState.searchText, "previous/import")
+        XCTAssertEqual(container.mainViewModel.importSubmittedQuery, "previous/import")
+    }
+
     func testDraftsPersistAcrossContainerRecreationThroughDesktopAppState() {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())

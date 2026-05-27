@@ -700,6 +700,53 @@ final class MainViewModel {
         self.pinnedSourceIds = []
     }
 
+    static func isSupportedImportLocator(_ value: String) -> Bool {
+        let candidate = normalizedImportLocator(value)
+        guard !candidate.isEmpty else {
+            return false
+        }
+
+        let lowercasedCandidate = candidate.lowercased()
+        if lowercasedCandidate.hasPrefix("file://"), candidate.count > "file://".count {
+            return true
+        }
+
+        if lowercasedCandidate.hasPrefix("clawhub:"), candidate.count > "clawhub:".count {
+            return true
+        }
+
+        if candidate.hasPrefix("/") || candidate.hasPrefix("~/") {
+            return true
+        }
+
+        if isSupportedGitHTTPSLocator(candidate) {
+            return true
+        }
+
+        if matches(candidate, pattern: #"^git@(github|gitlab)\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$"#) {
+            return true
+        }
+
+        return matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$"#)
+    }
+
+    static func normalizedImportLocator(_ value: String) -> String {
+        var candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard candidate.count >= 2 else {
+            return candidate
+        }
+
+        let first = candidate.first
+        let last = candidate.last
+        if (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+            candidate.removeFirst()
+            candidate.removeLast()
+            candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return candidate
+    }
+
     func bindRouteState(_ state: DesktopAppState) {
         routeState = state
         cachedSelectedProjectScope = state.settings.selectedProjectScope
@@ -5151,6 +5198,29 @@ final class MainViewModel {
         return components.last ?? sourceId
     }
 
+    private static func isSupportedGitHTTPSLocator(_ candidate: String) -> Bool {
+        guard !candidate.containsWhitespace else {
+            return false
+        }
+
+        guard let components = URLComponents(string: candidate),
+              components.scheme?.lowercased() == "https",
+              let host = components.host?.lowercased(),
+              host == "github.com" || host == "gitlab.com"
+        else {
+            return false
+        }
+
+        return components.path
+            .split(separator: "/")
+            .filter { !$0.isEmpty }
+            .count >= 2
+    }
+
+    private static func matches(_ value: String, pattern: String) -> Bool {
+        value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     private func pruneSourceMap<T>(_ sourceMap: [String: T], allowedSourceIds: Set<String>) -> [String: T] {
         Dictionary(uniqueKeysWithValues: sourceMap.filter { allowedSourceIds.contains($0.key) })
     }
@@ -5164,6 +5234,10 @@ final class MainViewModel {
 private extension String {
     var nonEmpty: String? {
         isEmpty ? nil : self
+    }
+
+    var containsWhitespace: Bool {
+        rangeOfCharacter(from: .whitespacesAndNewlines) != nil
     }
 
     var capitalizedSentence: String {
