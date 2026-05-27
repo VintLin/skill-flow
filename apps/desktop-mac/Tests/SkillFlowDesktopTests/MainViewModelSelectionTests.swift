@@ -311,6 +311,26 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
     }
 
+    func testRenameSourceKeepsDetailTitleWhenInFlightEnrichmentReturnsOldSnapshot() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.inspectEnrichmentDelayMilliseconds = 400
+        state.sources["alpha"]?.enrichmentSourceSnapshotTitle = "Old Enrichment Title"
+        try fixture.reset(state: state)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+        await model.selectSource("alpha")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Enrichment Title")
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+
+        try await Task.sleep(nanoseconds: 650_000_000)
+
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+    }
+
     func testRenameSourceFailureKeepsCardsDetailSelectionAndShowsError() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -929,6 +949,7 @@ private struct TestFixture {
     struct State: Codable, Equatable {
         var availableTargets: [String]
         var sources: [String: SourceState]
+        var inspectEnrichmentDelayMilliseconds: Int? = nil
 
         static let baseline = State(
             availableTargets: ["cursor", "claude-code"],
@@ -1558,12 +1579,17 @@ private struct TestFixture {
           }
           return metadata;
         })();
-        process.stdout.write(JSON.stringify(responseFor(request, true, {
+        const response = JSON.stringify(responseFor(request, true, {
           sourceMetadata,
           ...(source.enrichmentSourceSnapshotTitle ? {
             sourceSnapshot: buildSourceSnapshot(source, source.enrichmentSourceSnapshotTitle)
           } : {})
-        }, [], [])));
+        }, [], []));
+        if (state.inspectEnrichmentDelayMilliseconds > 0) {
+          setTimeout(() => process.stdout.write(response), state.inspectEnrichmentDelayMilliseconds);
+        } else {
+          process.stdout.write(response);
+        }
         return;
       }
 

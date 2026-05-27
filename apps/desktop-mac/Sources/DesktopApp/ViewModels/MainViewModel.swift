@@ -2842,7 +2842,13 @@ final class MainViewModel {
                 if let payload = response.data?.value as? [String: Any],
                    self.detailEnrichmentTokensBySourceId[sourceId] == token
                 {
-                    self.detailEnrichmentPayloadBySourceId[sourceId] = payload
+                    let normalizedPayload: [String: Any]
+                    if let displayName = self.summary(for: sourceId)?.sourceDisplayName {
+                        normalizedPayload = self.payloadWithDisplayName(payload, sourceId: sourceId, displayName: displayName)
+                    } else {
+                        normalizedPayload = payload
+                    }
+                    self.detailEnrichmentPayloadBySourceId[sourceId] = normalizedPayload
                 }
                 if self.detailEnrichmentTokensBySourceId[sourceId] == token {
                     self.latestWarnings = response.warnings
