@@ -1079,7 +1079,8 @@ struct MainView: View {
 
     private var homeAgentFilterBar: some View {
         let options = homeContainer.homeAgentFilterOptions()
-        let selectedId = homeContainer.selectedHomeAgentFilterId()
+        let rawSelectedId = homeContainer.selectedHomeAgentFilterId()
+        let selectedId = options.contains { $0.id == rawSelectedId } ? rawSelectedId : nil
 
         return HStack(spacing: 8) {
             homeAgentFilterPill(
@@ -1548,6 +1549,7 @@ private struct RenameSourceDialog: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .accessibilityLabel(title)
                 .padding(.horizontal, 10)
                 .frame(height: 34)
                 .background(AppTheme.headerControlFill(for: theme))

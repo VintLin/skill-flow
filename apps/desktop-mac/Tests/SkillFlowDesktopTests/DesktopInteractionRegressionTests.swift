@@ -44,13 +44,29 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(home.contains(".desktopMotionChip("))
     }
 
-    func testHeaderOmitsObsoleteProjectToggleButtonButKeepsHiddenWarningHook() throws {
+    func testHeaderOmitsObsoleteProjectToggleButtonAndKeepsSidebarProjectScopeEntry() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         XCTAssertFalse(home.contains("projectScopeToggleButton"))
         XCTAssertFalse(home.contains("showsProjectScopeBar"))
-        XCTAssertTrue(home.contains("showsProjectScopeHiddenWarning"))
-        XCTAssertTrue(home.contains("showsAlertBadge"))
+        XCTAssertTrue(home.contains("homeProjectScopeBar"))
+        XCTAssertTrue(home.contains("homeContainer.recentProjectScopes()"))
+        XCTAssertTrue(home.contains("homeContainer.selectProjectScope(.global)"))
+        XCTAssertTrue(home.contains("homeContainer.selectProjectScope(.project(item.projectId))"))
+    }
+
+    func testHomeAgentFilterBarUsesEffectiveSelectionForPillState() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(home.contains("let rawSelectedId = homeContainer.selectedHomeAgentFilterId()"))
+        XCTAssertTrue(home.contains("options.contains { $0.id == rawSelectedId } ? rawSelectedId : nil"))
+    }
+
+    func testRenameDialogTextFieldHasAccessibleName() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(home.contains("TextField(\"\", text: $draft)"))
+        XCTAssertTrue(home.contains(".accessibilityLabel(title)"))
     }
 
     func testHomeScrollingSurfacesUseLazyStacksInsideHorizontalScrollViews() throws {
