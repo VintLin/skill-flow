@@ -44,10 +44,11 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(home.contains(".desktopMotionChip("))
     }
 
-    func testHeaderContainsProjectToggleButtonAndHiddenWarningHook() throws {
+    func testHeaderOmitsObsoleteProjectToggleButtonButKeepsHiddenWarningHook() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
-        XCTAssertTrue(home.contains("projectScopeToggleButton"))
+        XCTAssertFalse(home.contains("projectScopeToggleButton"))
+        XCTAssertFalse(home.contains("showsProjectScopeBar"))
         XCTAssertTrue(home.contains("showsProjectScopeHiddenWarning"))
         XCTAssertTrue(home.contains("showsAlertBadge"))
     }

@@ -47,7 +47,6 @@ struct MainView: View {
     @State private var updateButtonRotation: Double = 0
     @State private var projectScopeRefreshButtonRotation: Double = 0
     @State private var searchFocusResetToken = 0
-    @State private var showsProjectScopeBar = false
     @State private var isEditCustomAgentPresented = false
     @State private var editingCustomAgentId: String?
     @State private var customAgentDraft = SettingsViewModel.CustomAgentDraft()
@@ -259,7 +258,6 @@ struct MainView: View {
                     topBarTitleRow
                     HStack(spacing: 8) {
                         searchField
-                        projectScopeToggleButton
                         importButton
                         homeUpdateButton
                         settingsButton
@@ -274,7 +272,6 @@ struct MainView: View {
                         .frame(width: Self.headerLeadingWidth, alignment: .leading)
                     searchField
                     Spacer(minLength: 0)
-                    projectScopeToggleButton
                     importButton
                     homeUpdateButton
                     settingsButton
@@ -482,14 +479,6 @@ struct MainView: View {
 
     private var importButton: some View {
         toolbarIconButton(.import) { navigation.showImportPage() }
-    }
-
-    private var projectScopeToggleButton: some View {
-        toolbarIconButton(.project, showsAlertBadge: showsProjectScopeHiddenWarning) {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showsProjectScopeBar.toggle()
-            }
-        }
     }
 
     @ViewBuilder
