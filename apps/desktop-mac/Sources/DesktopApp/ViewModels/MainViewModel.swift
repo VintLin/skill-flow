@@ -126,6 +126,12 @@ final class MainViewModel {
         let label: String
     }
 
+    struct HomeAgentFilterOption: Identifiable, Equatable {
+        let id: String
+        let label: String
+        let enabledGroupCount: Int
+    }
+
     struct SourceRow: Identifiable {
         let id: String
         let displayName: String
@@ -719,6 +725,15 @@ final class MainViewModel {
         selectedSourceId
     }
 
+    var selectedHomeAgentFilterId: String? {
+        get {
+            routeState?.view.selectedHomeAgentFilterId
+        }
+        set {
+            routeState?.view.selectedHomeAgentFilterId = newValue
+        }
+    }
+
     var isUpdatingCurrentGroup: Bool {
         guard let selectedSourceId else {
             return false
@@ -758,6 +773,28 @@ final class MainViewModel {
 
         return targetIds.map { target in
             TargetOption(id: target, label: AgentDisplayCatalog.label(for: target, customAgents: routeState?.settings.customAgents ?? []))
+        }
+    }
+
+    var homeAgentFilterOptions: [HomeAgentFilterOption] {
+        let cards = groupCards
+        let enabledGroupCountsByTargetId = Dictionary(
+            grouping: cards.flatMap { card in
+                card.targets.filter(\.isEnabled).map { target in
+                    (target.id, card.id)
+                }
+            },
+            by: { $0.0 }
+        ).mapValues { entries in
+            Set(entries.map(\.1)).count
+        }
+
+        return visibleTargetIds().map { targetId in
+            HomeAgentFilterOption(
+                id: targetId,
+                label: AgentDisplayCatalog.label(for: targetId, customAgents: routeState?.settings.customAgents ?? []),
+                enabledGroupCount: enabledGroupCountsByTargetId[targetId] ?? 0
+            )
         }
     }
 
@@ -805,6 +842,32 @@ final class MainViewModel {
 
     var groupCards: [GroupCardModel] {
         groupCards(matching: searchQuery)
+    }
+
+    func setSelectedHomeAgentFilter(_ targetId: String?) {
+        selectedHomeAgentFilterId = targetId
+    }
+
+    func reconcileHomeAgentFilter() {
+        guard let selectedHomeAgentFilterId else {
+            return
+        }
+        let optionIds = Set(homeAgentFilterOptions.map(\.id))
+        if !optionIds.contains(selectedHomeAgentFilterId) {
+            self.selectedHomeAgentFilterId = nil
+        }
+    }
+
+    func filteredHomeGroupCards(locale: Locale) -> [GroupCardModel] {
+        _ = locale
+        guard let selectedHomeAgentFilterId else {
+            return groupCards
+        }
+        return groupCards.filter { card in
+            card.targets.contains { target in
+                target.id == selectedHomeAgentFilterId && target.isEnabled
+            }
+        }
     }
 
     func groupCards(matching rawQuery: String) -> [GroupCardModel] {

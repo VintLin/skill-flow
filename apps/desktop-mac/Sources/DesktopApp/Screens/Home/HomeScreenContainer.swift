@@ -46,7 +46,8 @@ final class HomeScreenContainer {
     }
 
     func visibleGroupCards(locale: Locale) -> [MainViewModel.GroupCardModel] {
-        mainViewModel.groupCards.filter { card in
+        mainViewModel.reconcileHomeAgentFilter()
+        return mainViewModel.filteredHomeGroupCards(locale: locale).filter { card in
             groupTagController.matchesHomeFilter(
                 sourceId: card.id,
                 sourceIds: mainViewModel.sourceIds,
@@ -63,7 +64,12 @@ final class HomeScreenContainer {
         from cards: [MainViewModel.GroupCardModel],
         snapshot: GroupTagController.HomeSnapshot
     ) -> [MainViewModel.GroupCardModel] {
-        cards.filter { snapshot.contains(sourceId: $0.id) }
+        mainViewModel.reconcileHomeAgentFilter()
+        let selectedTargetId = mainViewModel.selectedHomeAgentFilterId
+        return cards.filter { card in
+            snapshot.contains(sourceId: card.id)
+                && (selectedTargetId == nil || card.targets.contains { $0.id == selectedTargetId && $0.isEnabled })
+        }
     }
 
     func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
@@ -80,6 +86,18 @@ final class HomeScreenContainer {
 
     func setSelectedHomeTagFilterKey(_ key: String?) {
         groupTagController.setSelectedHomeFilterKey(key)
+    }
+
+    func homeAgentFilterOptions() -> [MainViewModel.HomeAgentFilterOption] {
+        mainViewModel.homeAgentFilterOptions
+    }
+
+    func selectedHomeAgentFilterId() -> String? {
+        mainViewModel.selectedHomeAgentFilterId
+    }
+
+    func setSelectedHomeAgentFilter(_ targetId: String?) {
+        mainViewModel.setSelectedHomeAgentFilter(targetId)
     }
 
     func recentProjectScopes() -> [RecentProjectScopeItem] {

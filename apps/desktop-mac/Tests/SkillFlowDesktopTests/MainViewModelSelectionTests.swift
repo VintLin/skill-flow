@@ -123,6 +123,43 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.groupCards.first?.targets.prefix(2).map(\.id), ["my-agent", "claude-code"])
     }
 
+    func testAgentFilterOptionsCountEnabledTargetsAcrossGroupCards() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["beta"]?.enabledTargets = ["cursor"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        XCTAssertEqual(
+            model.homeAgentFilterOptions,
+            [
+                MainViewModel.HomeAgentFilterOption(id: "claude-code", label: "Claude Code", enabledGroupCount: 1),
+                MainViewModel.HomeAgentFilterOption(id: "cursor", label: "Cursor", enabledGroupCount: 1),
+            ]
+        )
+    }
+
+    func testSelectedAgentFilterNarrowsHomeGroupCards() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["beta"]?.enabledTargets = ["cursor"]
+        try fixture.reset(state: state)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "en")).map(\.id), ["alpha", "beta"])
+
+        model.setSelectedHomeAgentFilter("cursor")
+
+        XCTAssertEqual(appState.view.selectedHomeAgentFilterId, "cursor")
+        XCTAssertEqual(model.selectedHomeAgentFilterId, "cursor")
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "en")).map(\.id), ["beta"])
+    }
+
     func testSaveFailureRollsBackOptimisticEdit() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .failureBaseline)
