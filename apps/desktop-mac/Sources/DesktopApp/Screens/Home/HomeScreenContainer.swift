@@ -63,10 +63,9 @@ final class HomeScreenContainer {
         from cards: [MainViewModel.GroupCardModel],
         snapshot: GroupTagController.HomeSnapshot
     ) -> [MainViewModel.GroupCardModel] {
-        let selectedTargetId = mainViewModel.effectiveSelectedHomeAgentFilterId
         return cards.filter { card in
             snapshot.contains(sourceId: card.id)
-                && (selectedTargetId == nil || card.targets.contains { $0.id == selectedTargetId && $0.isEnabled })
+                && mainViewModel.matchesHomeSidebarFilters(card)
         }
     }
 
@@ -96,6 +95,30 @@ final class HomeScreenContainer {
 
     func setSelectedHomeAgentFilter(_ targetId: String?) {
         mainViewModel.setSelectedHomeAgentFilter(targetId)
+    }
+
+    func homeStatusFilterOptions() -> [MainViewModel.HomeSidebarFilterOption] {
+        mainViewModel.homeStatusFilterOptions
+    }
+
+    func selectedHomeStatusFilterId() -> String {
+        mainViewModel.selectedHomeStatusFilterId
+    }
+
+    func setSelectedHomeStatusFilter(_ filterId: String) {
+        mainViewModel.setSelectedHomeStatusFilter(filterId)
+    }
+
+    func homeSourceTypeFilterOptions() -> [MainViewModel.HomeSidebarFilterOption] {
+        mainViewModel.homeSourceTypeFilterOptions
+    }
+
+    func selectedHomeSourceTypeFilterId() -> String {
+        mainViewModel.selectedHomeSourceTypeFilterId
+    }
+
+    func setSelectedHomeSourceTypeFilter(_ filterId: String) {
+        mainViewModel.setSelectedHomeSourceTypeFilter(filterId)
     }
 
     func recentProjectScopes() -> [RecentProjectScopeItem] {

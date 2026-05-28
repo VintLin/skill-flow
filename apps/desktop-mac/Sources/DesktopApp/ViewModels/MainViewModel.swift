@@ -132,6 +132,11 @@ final class MainViewModel {
         let enabledGroupCount: Int
     }
 
+    struct HomeSidebarFilterOption: Identifiable, Equatable {
+        let id: String
+        let count: Int
+    }
+
     struct SourceRow: Identifiable {
         let id: String
         let displayName: String
@@ -783,6 +788,16 @@ final class MainViewModel {
         }
     }
 
+    var selectedHomeStatusFilterId: String {
+        get { routeState?.view.selectedHomeStatusFilterId ?? "all" }
+        set { routeState?.view.selectedHomeStatusFilterId = newValue }
+    }
+
+    var selectedHomeSourceTypeFilterId: String {
+        get { routeState?.view.selectedHomeSourceTypeFilterId ?? "all" }
+        set { routeState?.view.selectedHomeSourceTypeFilterId = newValue }
+    }
+
     var isUpdatingCurrentGroup: Bool {
         guard let selectedSourceId else {
             return false
@@ -847,6 +862,23 @@ final class MainViewModel {
         }
     }
 
+    var homeStatusFilterOptions: [HomeSidebarFilterOption] {
+        let cards = groupCards
+        return [
+            HomeSidebarFilterOption(id: "all", count: cards.count),
+            HomeSidebarFilterOption(id: "pinned", count: cards.filter(\.isPinned).count),
+        ]
+    }
+
+    var homeSourceTypeFilterOptions: [HomeSidebarFilterOption] {
+        let cards = groupCards
+        return [
+            HomeSidebarFilterOption(id: "all", count: cards.count),
+            HomeSidebarFilterOption(id: "local", count: cards.filter(Self.isLocalHomeSource).count),
+            HomeSidebarFilterOption(id: "remote", count: cards.filter(Self.isRemoteHomeSource).count),
+        ]
+    }
+
     var effectiveSelectedHomeAgentFilterId: String? {
         guard let selectedHomeAgentFilterId else {
             return nil
@@ -905,6 +937,14 @@ final class MainViewModel {
         selectedHomeAgentFilterId = targetId
     }
 
+    func setSelectedHomeStatusFilter(_ filterId: String) {
+        selectedHomeStatusFilterId = ["all", "pinned"].contains(filterId) ? filterId : "all"
+    }
+
+    func setSelectedHomeSourceTypeFilter(_ filterId: String) {
+        selectedHomeSourceTypeFilterId = ["all", "local", "remote"].contains(filterId) ? filterId : "all"
+    }
+
     func reconcileHomeAgentFilter() {
         guard selectedHomeAgentFilterId != nil else {
             return
@@ -916,14 +956,59 @@ final class MainViewModel {
 
     func filteredHomeGroupCards(locale: Locale) -> [GroupCardModel] {
         _ = locale
-        guard let selectedHomeAgentFilterId = effectiveSelectedHomeAgentFilterId else {
-            return groupCards
-        }
         return groupCards.filter { card in
-            card.targets.contains { target in
-                target.id == selectedHomeAgentFilterId && target.isEnabled
-            }
+            matchesHomeSidebarFilters(card)
         }
+    }
+
+    func matchesHomeSidebarFilters(_ card: GroupCardModel) -> Bool {
+        if selectedHomeStatusFilterId == "pinned", !card.isPinned {
+            return false
+        }
+        if selectedHomeSourceTypeFilterId == "local", !Self.isLocalHomeSource(card) {
+            return false
+        }
+        if selectedHomeSourceTypeFilterId == "remote", !Self.isRemoteHomeSource(card) {
+            return false
+        }
+        guard let selectedHomeAgentFilterId = effectiveSelectedHomeAgentFilterId else {
+            return true
+        }
+        return card.targets.contains { target in
+            target.id == selectedHomeAgentFilterId && target.isEnabled
+        }
+    }
+
+    static func isLocalHomeSource(_ card: GroupCardModel) -> Bool {
+        homeSourceType(for: card) == "local"
+    }
+
+    static func isRemoteHomeSource(_ card: GroupCardModel) -> Bool {
+        homeSourceType(for: card) == "remote"
+    }
+
+    private static func homeSourceType(for card: GroupCardModel) -> String {
+        let kind = card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let locator = card.sourceLocator.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if ["local", "path", "filesystem"].contains(kind) {
+            return "local"
+        }
+        if ["git", "clawhub"].contains(kind) {
+            return "remote"
+        }
+        if locator.hasPrefix("~/")
+            || locator.hasPrefix("/")
+            || locator.hasPrefix("file://") {
+            return "local"
+        }
+        if locator.hasPrefix("http://")
+            || locator.hasPrefix("https://")
+            || locator.hasPrefix("git@")
+            || locator.contains("github.com")
+            || locator.contains("gitlab.com") {
+            return "remote"
+        }
+        return "remote"
     }
 
     func groupCards(matching rawQuery: String) -> [GroupCardModel] {

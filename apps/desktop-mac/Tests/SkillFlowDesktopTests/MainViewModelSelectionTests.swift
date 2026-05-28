@@ -163,6 +163,66 @@ final class MainViewModelSelectionTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testHomeStatusAndSourceTypeFilterOptionsCountGroupCards() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["beta"]?.kind = "local"
+        state.sources["beta"]?.locator = "~/skills/beta"
+        state.pinnedSourceIds = ["beta"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        XCTAssertEqual(
+            model.homeStatusFilterOptions,
+            [
+                MainViewModel.HomeSidebarFilterOption(id: "all", count: 2),
+                MainViewModel.HomeSidebarFilterOption(id: "pinned", count: 1),
+            ]
+        )
+        XCTAssertEqual(
+            model.homeSourceTypeFilterOptions,
+            [
+                MainViewModel.HomeSidebarFilterOption(id: "all", count: 2),
+                MainViewModel.HomeSidebarFilterOption(id: "local", count: 1),
+                MainViewModel.HomeSidebarFilterOption(id: "remote", count: 1),
+            ]
+        )
+    }
+
+    func testRemoteHomeSourceWithLocalCheckoutPathDoesNotCountAsLocal() {
+        let card = MainViewModel.GroupCardModel(
+            id: "remote",
+            title: "RemoteHub",
+            byline: nil,
+            groupPath: "/Users/example/.skill-flow/cache/remote",
+            sourceKind: "clawhub",
+            sourceLocator: "https://github.com/acme/remote-hub",
+            isPinned: false,
+            health: "HEALTHY",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: MainViewModel.GroupCardStats(
+                skillCount: 1,
+                downloadCount: nil,
+                starCount: nil,
+                githubURL: "https://github.com/acme/remote-hub",
+                localPath: "/Users/example/.skill-flow/cache/remote"
+            ),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+        )
+
+        XCTAssertFalse(MainViewModel.isLocalHomeSource(card))
+        XCTAssertTrue(MainViewModel.isRemoteHomeSource(card))
+    }
+
     func testSelectedAgentFilterNarrowsHomeGroupCards() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -181,6 +241,35 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(appState.view.selectedHomeAgentFilterId, "cursor")
         XCTAssertEqual(model.selectedHomeAgentFilterId, "cursor")
         XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "en")).map(\.id), ["beta"])
+    }
+
+    @MainActor
+    func testSelectedStatusAndSourceTypeFiltersIntersectWithAgentFilter() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.enabledTargets = ["claude-code"]
+        state.sources["beta"]?.kind = "local"
+        state.sources["beta"]?.locator = "~/skills/beta"
+        state.sources["beta"]?.enabledTargets = ["cursor"]
+        state.pinnedSourceIds = ["beta"]
+        try fixture.reset(state: state)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), ["beta", "alpha"])
+
+        model.setSelectedHomeStatusFilter("pinned")
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), ["beta"])
+
+        model.setSelectedHomeSourceTypeFilter("remote")
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), [])
+
+        model.setSelectedHomeSourceTypeFilter("local")
+        model.setSelectedHomeAgentFilter("cursor")
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), ["beta"])
     }
 
     func testAgentFilterReconcileClearsStaleSelectedId() async throws {
