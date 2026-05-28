@@ -6,5 +6,5 @@ struct ViewState {
     var selectedHomeAgentFilterId: String? = nil
     var selectedHomeStatusFilterId: String = "all"
     var selectedHomeSourceTypeFilterId: String = "all"
-    var expandedHomeSidebarSectionIds: Set<String> = ["status", "sourceType"]
+    var expandedHomeSidebarSectionIds: Set<String> = []
 }

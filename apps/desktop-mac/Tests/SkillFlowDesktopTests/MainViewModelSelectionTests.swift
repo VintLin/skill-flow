@@ -66,7 +66,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertEqual(appState.view.selectedHomeStatusFilterId, "all")
         XCTAssertEqual(appState.view.selectedHomeSourceTypeFilterId, "all")
-        XCTAssertEqual(appState.view.expandedHomeSidebarSectionIds.sorted(), ["sourceType", "status"])
+        XCTAssertEqual(appState.view.expandedHomeSidebarSectionIds.sorted(), [])
         XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.sourceKind, "git")
         XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.sourceKind, "local")
         XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.sourceLocator, "~/skills/beta")
