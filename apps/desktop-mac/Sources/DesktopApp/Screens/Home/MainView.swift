@@ -645,7 +645,7 @@ struct MainView: View {
             homeSidebar(homeTagSnapshot: homeTagSnapshot)
                 .frame(width: layout.homeSidebarWidth)
                 .frame(maxHeight: .infinity, alignment: .topLeading)
-                .background(AppTheme.headerBackground(for: theme))
+                .background(AppTheme.surface(for: theme))
                 .overlay(alignment: .trailing) {
                     Rectangle()
                         .fill(AppTheme.cardBorder(for: theme))

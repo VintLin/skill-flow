@@ -226,6 +226,53 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(sectionSource.contains(#""\(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand")): \(title)""#))
     }
 
+    func testHomeSidebarUsesSurfaceBackgroundAndKeepsTrailingDivider() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let sidebarStart = source.range(of: "homeSidebar(homeTagSnapshot: homeTagSnapshot)"),
+            let contentStart = source.range(of: "\n            Group {", range: sidebarStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected home sidebar layout block was not found")
+            return
+        }
+
+        let sidebarBlock = String(source[sidebarStart.lowerBound..<contentStart.lowerBound])
+
+        XCTAssertTrue(sidebarBlock.contains(".background(AppTheme.surface(for: theme))"))
+        XCTAssertTrue(sidebarBlock.contains(".overlay(alignment: .trailing)"))
+        XCTAssertTrue(sidebarBlock.contains(".fill(AppTheme.cardBorder(for: theme))"))
+        XCTAssertFalse(sidebarBlock.contains(".background(AppTheme.headerBackground(for: theme))"))
+    }
+
+    func testHomeSidebarOnlyTagChipOptionsUseHashPrefix() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let statusStart = source.range(of: "private func homeStatusChipItems()"),
+            let sourceTypeStart = source.range(of: "private func homeSourceTypeChipItems()"),
+            let tagStart = source.range(of: "private func homeTagChipItems("),
+            let agentStart = source.range(of: "private func homeAgentChipItems()"),
+            let chipSectionStart = source.range(of: "private func homeSidebarChipSection(")
+        else {
+            XCTFail("Expected home sidebar chip builders were not found")
+            return
+        }
+
+        let statusSource = String(source[statusStart.lowerBound..<sourceTypeStart.lowerBound])
+        let sourceTypeSource = String(source[sourceTypeStart.lowerBound..<tagStart.lowerBound])
+        let tagSource = String(source[tagStart.lowerBound..<agentStart.lowerBound])
+        let agentSource = String(source[agentStart.lowerBound..<chipSectionStart.lowerBound])
+
+        XCTAssertFalse(statusSource.contains("\"#"))
+        XCTAssertFalse(statusSource.contains("#\\("))
+        XCTAssertFalse(sourceTypeSource.contains("\"#"))
+        XCTAssertFalse(sourceTypeSource.contains("#\\("))
+        XCTAssertFalse(agentSource.contains("\"#"))
+        XCTAssertFalse(agentSource.contains("#\\("))
+        XCTAssertTrue(tagSource.contains("item.title"))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
