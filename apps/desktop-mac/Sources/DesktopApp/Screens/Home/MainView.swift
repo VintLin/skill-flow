@@ -25,6 +25,20 @@ struct MainView: View {
         case resultCount(Int)
     }
 
+    private enum HomeSidebarSectionID {
+        static let status = "status"
+        static let sourceType = "sourceType"
+        static let tags = "tags"
+        static let agents = "agents"
+    }
+
+    private struct HomeSidebarChipItem: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let count: Int?
+        let accentValue: String?
+    }
+
     struct NavigationActions {
         let showHome: () -> Void
         let showDetail: (String) -> Void
@@ -938,75 +952,180 @@ struct MainView: View {
     }
 
     private func homeSidebar(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            homeSidebarSection(title: t("home.sidebar.tags")) {
-                homeTagFilterBar(snapshot: homeTagSnapshot)
-            }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.status, title: t("home.sidebar.status"), options: homeStatusChipItems(), selectedId: homeContainer.selectedHomeStatusFilterId()) { optionId in
+                    homeContainer.setSelectedHomeStatusFilter(optionId)
+                }
 
-            homeSidebarSection(title: t("home.sidebar.projects")) {
-                homeProjectScopeBar
-            }
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType, title: t("home.sidebar.source_type"), options: homeSourceTypeChipItems(), selectedId: homeContainer.selectedHomeSourceTypeFilterId()) { optionId in
+                    homeContainer.setSelectedHomeSourceTypeFilter(optionId)
+                }
 
-            homeSidebarSection(title: t("home.sidebar.agents")) {
-                homeAgentFilterBar
-            }
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.tags, title: t("home.sidebar.tags"), options: homeTagChipItems(snapshot: homeTagSnapshot), selectedId: homeTagSnapshot.selectedKey ?? "all") { optionId in
+                    homeContainer.setSelectedHomeTagFilterKey(optionId == "all" ? nil : optionId)
+                }
 
-            Spacer(minLength: 0)
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents, title: t("home.sidebar.agents"), options: homeAgentChipItems(), selectedId: homeContainer.selectedHomeAgentFilterId() ?? "all") { optionId in
+                    homeContainer.setSelectedHomeAgentFilter(optionId == "all" ? nil : optionId)
+                }
+
+                homeSidebarProjectSection
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 16)
+            .padding(.bottom, 18)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 16)
-        .padding(.bottom, 18)
     }
 
-    private func homeSidebarSection<Content: View>(
-        title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .lineLimit(1)
-                .textCase(.uppercase)
+    private func homeStatusChipItems() -> [HomeSidebarChipItem] {
+        homeContainer.homeStatusFilterOptions().map { option in
+            HomeSidebarChipItem(
+                id: option.id,
+                title: option.id == "pinned" ? t("home.sidebar.pinned") : t("home.sidebar.all"),
+                count: option.count,
+                accentValue: nil
+            )
+        }
+    }
 
-            content()
+    private func homeSourceTypeChipItems() -> [HomeSidebarChipItem] {
+        homeContainer.homeSourceTypeFilterOptions().map { option in
+            let title: String
+            switch option.id {
+            case "local":
+                title = t("home.sidebar.local")
+            case "remote":
+                title = t("home.sidebar.remote")
+            default:
+                title = t("home.sidebar.all")
+            }
+            return HomeSidebarChipItem(id: option.id, title: title, count: option.count, accentValue: nil)
+        }
+    }
+
+    private func homeTagChipItems(snapshot: GroupTagController.HomeSnapshot) -> [HomeSidebarChipItem] {
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accentValue: accent.rawValue)
+        return [all] + snapshot.availableTags.map { item in
+            HomeSidebarChipItem(id: item.id, title: item.title, count: snapshot.tagCountsByID[item.id], accentValue: item.accent.rawValue)
+        }
+    }
+
+    private func homeAgentChipItems() -> [HomeSidebarChipItem] {
+        let options = homeContainer.homeAgentFilterOptions()
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accentValue: nil)
+        return [all] + options.map { option in
+            HomeSidebarChipItem(id: option.id, title: option.label, count: option.enabledGroupCount, accentValue: nil)
+        }
+    }
+
+    private func homeSidebarChipSection(
+        sectionId: String,
+        title: String,
+        options: [HomeSidebarChipItem],
+        selectedId: String,
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
+        let expanded = homeContainer.isHomeSidebarSectionExpanded(sectionId)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                homeContainer.toggleHomeSidebarSection(sectionId)
+            } label: {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                        .textCase(.uppercase)
+                    Spacer(minLength: 0)
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand"))
+
+            if expanded {
+                WrappingHStack(horizontalSpacing: 6, verticalSpacing: 6) {
+                    ForEach(options) { option in
+                        homeSidebarChip(option: option, isSelected: selectedId == option.id) {
+                            onSelect(option.id)
+                        }
+                    }
+                }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 6) {
+                        ForEach(options) { option in
+                            homeSidebarChip(option: option, isSelected: selectedId == option.id) {
+                                onSelect(option.id)
+                            }
+                        }
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var homeProjectScopeBar: some View {
+    private func homeSidebarChip(
+        option: HomeSidebarChipItem,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        homeFilterPill(
+            title: option.title,
+            count: option.count,
+            accentValue: option.accentValue.flatMap(DesktopAccentColor.init(rawValue:)) ?? accent,
+            isSelected: isSelected,
+            action: action
+        )
+    }
+
+    private var homeSidebarProjectSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(t("home.sidebar.projects"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+                    .textCase(.uppercase)
+                Spacer(minLength: 0)
+                homeProjectScopeRefreshButton
+            }
+
+            homeProjectScopeList
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var homeProjectScopeList: some View {
         let projects = homeContainer.recentProjectScopes()
 
-        return HStack(spacing: 8) {
-            homeScopePill(
+        return VStack(alignment: .leading, spacing: 6) {
+            homeProjectScopeRow(
                 title: t("project_scope.global"),
                 projectPath: nil,
+                count: viewModel.groupCards.count,
                 isSelected: viewModel.selectedProjectScope == .global
-                ,
-                centersContent: Self.homeLeadingFixedButtonsAreCentered
             ) {
                 Task {
                     await homeContainer.selectProjectScope(.global)
                 }
             }
-            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
 
-            homeProjectScopeRefreshButton
-
-            Self.homeFilterDivider(theme: theme)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
-                    ForEach(projects, id: \.projectId) { item in
-                        homeScopePill(
-                            title: item.title,
-                            projectPath: item.projectPath,
-                            isSelected: viewModel.selectedProjectScope == .project(item.projectId)
-                        ) {
-                            Task {
-                                await homeContainer.selectProjectScope(.project(item.projectId))
-                            }
-                        }
+            ForEach(projects, id: \.projectId) { item in
+                homeProjectScopeRow(
+                    title: item.title,
+                    projectPath: item.projectPath,
+                    count: nil,
+                    isSelected: viewModel.selectedProjectScope == .project(item.projectId)
+                ) {
+                    Task {
+                        await homeContainer.selectProjectScope(.project(item.projectId))
                     }
                 }
             }
@@ -1044,127 +1163,58 @@ struct MainView: View {
         }
     }
 
-    private func homeTagFilterBar(snapshot: GroupTagController.HomeSnapshot) -> some View {
-        let tags = snapshot.availableTags
-        let selectedKey = snapshot.selectedKey
-
-        return HStack(spacing: 8) {
-            homeFilterPill(
-                title: t("group_tag.filter.all"),
-                accentValue: accent,
-                isSelected: selectedKey == nil
-            ) {
-                homeContainer.setSelectedHomeTagFilterKey(nil)
-            }
-            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
-
-            Self.homeFilterDivider(theme: theme)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 6) {
-                    ForEach(tags) { item in
-                        homeFilterPill(
-                            title: item.title,
-                            count: snapshot.tagCountsByID[item.id],
-                            accentValue: item.accent,
-                            isSelected: selectedKey == item.id
-                        ) {
-                            homeContainer.setSelectedHomeTagFilterKey(item.id)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var homeAgentFilterBar: some View {
-        let options = homeContainer.homeAgentFilterOptions()
-        let rawSelectedId = homeContainer.selectedHomeAgentFilterId()
-        let selectedId = options.contains { $0.id == rawSelectedId } ? rawSelectedId : nil
-
-        return HStack(spacing: 8) {
-            homeAgentFilterPill(
-                title: t("home.sidebar.all_agents"),
-                count: nil,
-                isSelected: selectedId == nil
-            ) {
-                homeContainer.setSelectedHomeAgentFilter(nil)
-            }
-            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
-
-            Self.homeFilterDivider(theme: theme)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 6) {
-                    ForEach(options) { option in
-                        homeAgentFilterPill(
-                            title: option.label,
-                            count: option.enabledGroupCount,
-                            isSelected: selectedId == option.id
-                        ) {
-                            homeContainer.setSelectedHomeAgentFilter(option.id)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func homeScopePill(
+    private func homeProjectScopeRow(
         title: String,
         projectPath: String?,
+        count: Int?,
         isSelected: Bool,
-        centersContent: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        return ZStack(alignment: .trailing) {
-            Button(action: action) {
-                HStack(spacing: 6) {
-                    if Self.projectScopeShowsSelectionIndicator(isSelected: isSelected) {
-                        Circle()
-                            .fill(AppTheme.brand(for: accent, in: theme))
-                            .frame(width: 6, height: 6)
-                    }
-
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.textPrimary(for: theme))
                         .lineLimit(1)
-                }
-                    .frame(maxWidth: .infinity, alignment: centersContent ? .center : .leading)
-                    .padding(.leading, centersContent ? 0 : 10)
-                    .padding(.trailing, centersContent ? 0 : (projectPath == nil ? 10 : 30))
-                    .frame(height: Self.homeProjectPillHeight, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .desktopMotionChip(
-                kind: .pill,
-                theme: theme,
-                accent: accent,
-                isEnabled: true,
-                isSelected: isSelected
-            )
+                        .truncationMode(.tail)
 
-            if let projectPath {
-                Button {
-                    openPath(projectPath)
-                } label: {
-                    actionIcon(.externalLink, size: 10)
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .frame(width: 18, height: 18)
+                    if let projectPath {
+                        Text(projectPath)
+                            .font(.system(size: 10, weight: .regular))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
-                .buttonStyle(.plain)
-                .padding(.trailing, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Self.projectScopePillBackground(isSelected: isSelected, accent: accent, theme: theme))
-        .clipShape(RoundedRectangle(cornerRadius: Self.homeProjectPillCornerRadius))
+        .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .pill,
+            theme: theme,
+            accent: accent,
+            isEnabled: true,
+            isSelected: isSelected
+        )
+        .background(AppTheme.scopePillBackground(isSelected: isSelected, for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay {
-            RoundedRectangle(cornerRadius: Self.homeProjectPillCornerRadius)
+            RoundedRectangle(cornerRadius: 7)
                 .stroke(
-                    isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
+                    isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.28) : Color.clear,
                     lineWidth: 0.5
                 )
         }
@@ -1207,49 +1257,6 @@ struct MainView: View {
                             lineWidth: 0.5
                         )
                 }
-        }
-        .buttonStyle(.plain)
-        .opacity(isSelected ? 1.0 : 0.58)
-    }
-
-    private func homeAgentFilterPill(
-        title: String,
-        count: Int?,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 12, weight: .regular))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                if let count {
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .regular))
-                        .opacity(0.78)
-                }
-            }
-            .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-            .padding(.horizontal, 10)
-            .frame(height: Self.homeFilterPillHeight)
-            .frame(maxWidth: .infinity)
-            .background(
-                AppTheme.brand(for: accent, in: theme).opacity(
-                    isSelected
-                        ? (theme == .dark ? 0.28 : 0.18)
-                        : (theme == .dark ? 0.22 : 0.14)
-                )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Self.homeFilterPillCornerRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: Self.homeFilterPillCornerRadius)
-                    .stroke(
-                        isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
-                        lineWidth: 0.5
-                    )
-            }
         }
         .buttonStyle(.plain)
         .opacity(isSelected ? 1.0 : 0.58)
@@ -1441,12 +1448,6 @@ extension MainView {
         return contentWidth + homeLeadingButtonHorizontalPadding
     }
 
-    @ViewBuilder
-    static func homeFilterDivider(theme: DesktopThemeMode) -> some View {
-        Rectangle()
-            .fill(AppTheme.textMuted(for: theme).opacity(0.25))
-            .frame(width: 1, height: 18)
-    }
 }
 
 private struct LayoutMetrics {

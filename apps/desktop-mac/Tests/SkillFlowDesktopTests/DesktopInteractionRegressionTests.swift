@@ -37,7 +37,9 @@ final class DesktopInteractionRegressionTests: XCTestCase {
     func testProjectScopePillsUseSharedChipMotion() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
-        XCTAssertTrue(home.contains("homeProjectScopeBar"))
+        XCTAssertTrue(home.contains("homeSidebarProjectSection"))
+        XCTAssertTrue(home.contains("homeProjectScopeList"))
+        XCTAssertTrue(home.contains("homeProjectScopeRow"))
         XCTAssertTrue(home.contains("homeProjectScopeRefreshButton"))
         XCTAssertTrue(home.contains("homeProjectScopeRefreshButtonSize"))
         XCTAssertTrue(home.contains("projectScopeRefreshButtonRotation"))
@@ -49,17 +51,19 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertFalse(home.contains("projectScopeToggleButton"))
         XCTAssertFalse(home.contains("showsProjectScopeBar"))
-        XCTAssertTrue(home.contains("homeProjectScopeBar"))
+        XCTAssertTrue(home.contains("homeSidebarProjectSection"))
+        XCTAssertTrue(home.contains("homeProjectScopeList"))
         XCTAssertTrue(home.contains("homeContainer.recentProjectScopes()"))
         XCTAssertTrue(home.contains("homeContainer.selectProjectScope(.global)"))
         XCTAssertTrue(home.contains("homeContainer.selectProjectScope(.project(item.projectId))"))
     }
 
-    func testHomeAgentFilterBarUsesEffectiveSelectionForPillState() throws {
+    func testHomeAgentSidebarSectionUsesAllFallbackSelection() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
-        XCTAssertTrue(home.contains("let rawSelectedId = homeContainer.selectedHomeAgentFilterId()"))
-        XCTAssertTrue(home.contains("options.contains { $0.id == rawSelectedId } ? rawSelectedId : nil"))
+        XCTAssertTrue(home.contains("homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents"))
+        XCTAssertTrue(home.contains("selectedId: homeContainer.selectedHomeAgentFilterId() ?? \"all\""))
+        XCTAssertTrue(home.contains("homeContainer.setSelectedHomeAgentFilter(optionId == \"all\" ? nil : optionId)"))
     }
 
     func testHomeLeadingFixedButtonWidthMeasuresAllAgentsLabel() throws {
@@ -143,6 +147,51 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains("proposal.width.flatMap"))
         XCTAssertTrue(source.contains("$0.isFinite"))
         XCTAssertTrue(source.contains("max($0, contentWidth)"))
+    }
+
+    func testHomeSidebarOrdersAgentBeforeProjectsAndAddsStatusAndSourceType() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let statusRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.status"#),
+            let sourceTypeRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType"#),
+            let tagsRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.tags"#),
+            let agentsRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents"#),
+            let projectsRange = source.range(of: "homeProjectScopeList")
+        else {
+            XCTFail("Expected sidebar sections were not found")
+            return
+        }
+
+        XCTAssertLessThan(statusRange.lowerBound, sourceTypeRange.lowerBound)
+        XCTAssertLessThan(sourceTypeRange.lowerBound, tagsRange.lowerBound)
+        XCTAssertLessThan(tagsRange.lowerBound, agentsRange.lowerBound)
+        XCTAssertLessThan(agentsRange.lowerBound, projectsRange.lowerBound)
+    }
+
+    func testHomeSidebarUsesCollapsedHorizontalRowsWithoutScrollIndicators() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let sectionStart = source.range(of: "private func homeSidebarChipSection("),
+            let sectionEnd = source.range(of: "\n    private func homeSidebarChip(", range: sectionStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected homeSidebarChipSection function was not found")
+            return
+        }
+
+        let sectionSource = String(source[sectionStart.lowerBound..<sectionEnd.lowerBound])
+        guard let collapsedStart = sectionSource.range(of: "} else {") else {
+            XCTFail("Expected collapsed sidebar chip branch was not found")
+            return
+        }
+        let collapsedBranch = String(sectionSource[collapsedStart.upperBound...])
+
+        XCTAssertTrue(source.contains("showsIndicators: false"))
+        XCTAssertTrue(collapsedBranch.contains("ScrollView(.horizontal, showsIndicators: false)"))
+        XCTAssertTrue(collapsedBranch.contains("LazyHStack(spacing: 6)"))
+        XCTAssertTrue(source.contains("WrappingHStack(horizontalSpacing: 6, verticalSpacing: 6)"))
+        XCTAssertFalse(source.contains("homeFilterDivider(theme: theme)"))
     }
 
     private func sourceText(at relativePath: String) throws -> String {
