@@ -55,10 +55,17 @@ final class DesktopLocalizationTests: XCTestCase {
 
     func testSkillManagementFilterAndRenameKeysExistInAllSupportedLocales() {
         let requiredKeys = [
+            "home.sidebar.status",
+            "home.sidebar.source_type",
             "home.sidebar.tags",
-            "home.sidebar.projects",
             "home.sidebar.agents",
-            "home.sidebar.all_agents",
+            "home.sidebar.projects",
+            "home.sidebar.all",
+            "home.sidebar.pinned",
+            "home.sidebar.local",
+            "home.sidebar.remote",
+            "home.sidebar.expand",
+            "home.sidebar.collapse",
             "group_card.action.rename",
             "rename.dialog.title",
             "rename.dialog.save",
