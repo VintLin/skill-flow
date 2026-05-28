@@ -213,6 +213,8 @@ struct ImportScreen: View {
             title: card.title,
             byline: card.subtitle,
             groupPath: nil,
+            sourceKind: "import-preview",
+            sourceLocator: card.locator,
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,

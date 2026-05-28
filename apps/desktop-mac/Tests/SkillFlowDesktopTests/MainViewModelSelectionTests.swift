@@ -50,6 +50,29 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
     }
 
+    func testHomeStatusAndSourceFilterDefaultsAreAvailable() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.kind = "git"
+        state.sources["beta"]?.kind = "local"
+        state.sources["beta"]?.locator = "~/skills/beta"
+        state.pinnedSourceIds = ["beta"]
+        try fixture.reset(state: state)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        XCTAssertEqual(appState.view.selectedHomeStatusFilterId, "all")
+        XCTAssertEqual(appState.view.selectedHomeSourceTypeFilterId, "all")
+        XCTAssertEqual(appState.view.expandedHomeSidebarSectionIds.sorted(), ["sourceType", "status"])
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.sourceKind, "git")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.sourceKind, "local")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.sourceLocator, "~/skills/beta")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.isPinned, true)
+    }
+
     func testVisibleTargetsFollowSettingsOrderAndVisibility() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -1152,6 +1175,7 @@ private struct TestFixture {
     struct State: Codable, Equatable {
         var availableTargets: [String]
         var sources: [String: SourceState]
+        var pinnedSourceIds: [String]
         var listDelayMilliseconds: Int? = nil
         var inspectDelayMilliseconds: Int? = nil
         var inspectEnrichmentDelayMilliseconds: Int? = nil
@@ -1200,7 +1224,8 @@ private struct TestFixture {
                     targetLeafIdsByTarget: [:],
                     applyFailures: []
                 )
-            ]
+            ],
+            pinnedSourceIds: []
         )
 
         static let failureBaseline = State(
@@ -1250,7 +1275,8 @@ private struct TestFixture {
                     targetLeafIdsByTarget: [:],
                     applyFailures: []
                 )
-            ]
+            ],
+            pinnedSourceIds: []
         )
     }
 
@@ -1761,6 +1787,7 @@ private struct TestFixture {
       if (request.command === 'bootstrap') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
+          pinnedSourceIds: state.pinnedSourceIds || [],
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
           audit: {
@@ -1783,6 +1810,7 @@ private struct TestFixture {
 
       if (request.command === 'list') {
         const response = JSON.stringify(responseFor(request, true, {
+          pinnedSourceIds: state.pinnedSourceIds || [],
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state)
         }, [], []));

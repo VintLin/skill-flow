@@ -186,6 +186,8 @@ final class MainViewModel {
         let title: String
         let byline: String?
         let groupPath: String?
+        let sourceKind: String
+        let sourceLocator: String
         let isPinned: Bool
         let health: String
         let warningCount: Int
@@ -945,6 +947,8 @@ final class MainViewModel {
                 title: row.displayName,
                 byline: metadata.byline,
                 groupPath: groupPath,
+                sourceKind: row.kind,
+                sourceLocator: row.locator,
                 isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
                 warningCount: row.warningCount,
