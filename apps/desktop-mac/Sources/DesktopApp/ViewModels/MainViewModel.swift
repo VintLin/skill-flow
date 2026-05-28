@@ -3040,9 +3040,14 @@ final class MainViewModel {
         return payload
     }
 
-    private func scheduleDetailEnrichmentFetch(sourceId: String) {
-        detailEnrichmentTasksBySourceId[sourceId]?.cancel()
-        detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+    private func scheduleDetailEnrichmentFetch(sourceId: String, force: Bool = false) {
+        if !force, detailEnrichmentTasksBySourceId[sourceId] != nil {
+            return
+        }
+        if force {
+            detailEnrichmentTasksBySourceId[sourceId]?.cancel()
+            detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+        }
 
         detailEnrichmentTokenSeed &+= 1
         let token = detailEnrichmentTokenSeed
@@ -3540,7 +3545,7 @@ final class MainViewModel {
             )
             invalidatePreparedDetailContent(for: sourceId)
             scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
-            scheduleDetailEnrichmentFetch(sourceId: sourceId)
+            scheduleDetailEnrichmentFetch(sourceId: sourceId, force: true)
         }
     }
 
