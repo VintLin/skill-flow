@@ -1,4 +1,5 @@
 import XCTest
+@testable import SkillFlowDesktop
 
 final class DesktopInteractionRegressionTests: XCTestCase {
     func testToolbarButtonsUseSharedMotionButtonStyle() throws {
@@ -246,11 +247,12 @@ final class DesktopInteractionRegressionTests: XCTestCase {
     }
 
     func testHomeSidebarOnlyTagChipOptionsUseHashPrefix() throws {
+        XCTAssertEqual(HomeSidebarChipTitleFormatter.displayTitle("全部", showsHashPrefix: false), "全部")
+        XCTAssertEqual(HomeSidebarChipTitleFormatter.displayTitle("Dev", showsHashPrefix: true), "#Dev")
+
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         guard
-            let chipItemStart = source.range(of: "private struct HomeSidebarChipItem"),
-            let chipItemEnd = source.range(of: "\n    struct NavigationActions", range: chipItemStart.upperBound..<source.endIndex),
             let statusStart = source.range(of: "private func homeStatusChipItems()"),
             let sourceTypeStart = source.range(of: "private func homeSourceTypeChipItems()"),
             let tagStart = source.range(of: "private func homeTagChipItems("),
@@ -263,14 +265,12 @@ final class DesktopInteractionRegressionTests: XCTestCase {
             return
         }
 
-        let chipItemSource = String(source[chipItemStart.lowerBound..<chipItemEnd.lowerBound])
         let statusSource = String(source[statusStart.lowerBound..<sourceTypeStart.lowerBound])
         let sourceTypeSource = String(source[sourceTypeStart.lowerBound..<tagStart.lowerBound])
         let tagSource = String(source[tagStart.lowerBound..<agentStart.lowerBound])
         let agentSource = String(source[agentStart.lowerBound..<chipSectionStart.lowerBound])
         let pillSource = String(source[pillStart.lowerBound..<pillEnd.lowerBound])
 
-        XCTAssertTrue(chipItemSource.contains("let showsHashPrefix: Bool"))
         XCTAssertTrue(statusSource.contains("showsHashPrefix: false"))
         XCTAssertFalse(statusSource.contains("showsHashPrefix: true"))
         XCTAssertTrue(sourceTypeSource.contains("showsHashPrefix: false"))
@@ -279,7 +279,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertFalse(agentSource.contains("showsHashPrefix: true"))
         XCTAssertTrue(tagSource.contains("showsHashPrefix: true"))
         XCTAssertFalse(pillSource.contains("Text(\"#\\(title)\")"))
-        XCTAssertTrue(pillSource.contains("Text(showsHashPrefix ? \"#\\(title)\" : title)"))
+        XCTAssertTrue(pillSource.contains("HomeSidebarChipTitleFormatter.displayTitle(title, showsHashPrefix: showsHashPrefix)"))
     }
 
     private func sourceText(at relativePath: String) throws -> String {

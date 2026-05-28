@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+enum HomeSidebarChipTitleFormatter {
+    static func displayTitle(_ title: String, showsHashPrefix: Bool) -> String {
+        showsHashPrefix ? "#\(title)" : title
+    }
+}
+
 struct MainView: View {
     struct ImportSearchPrompt: Equatable {
         let leadingText: String
@@ -1259,7 +1265,7 @@ struct MainView: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Text(showsHashPrefix ? "#\(title)" : title)
+                Text(HomeSidebarChipTitleFormatter.displayTitle(title, showsHashPrefix: showsHashPrefix))
                     .font(.system(size: 12, weight: .regular))
 
                 if let count {
