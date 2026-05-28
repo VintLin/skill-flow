@@ -1052,7 +1052,7 @@ struct MainView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand"))
+            .accessibilityLabel("\(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand")): \(title)")
 
             if expanded {
                 WrappingHStack(horizontalSpacing: 6, verticalSpacing: 6) {

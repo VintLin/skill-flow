@@ -209,6 +209,23 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertFalse(source.contains("homeFilterDivider(theme: theme)"))
     }
 
+    func testHomeSidebarSectionToggleAccessibilityLabelDescribesTargetSection() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let sectionStart = source.range(of: "private func homeSidebarChipSection("),
+            let sectionEnd = source.range(of: "\n    private func homeSidebarChip(", range: sectionStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected homeSidebarChipSection function was not found")
+            return
+        }
+
+        let sectionSource = String(source[sectionStart.lowerBound..<sectionEnd.lowerBound])
+
+        XCTAssertFalse(sectionSource.contains(#".accessibilityLabel(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand"))"#))
+        XCTAssertTrue(sectionSource.contains(#""\(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand")): \(title)""#))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
