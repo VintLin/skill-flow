@@ -37,6 +37,7 @@ struct MainView: View {
         let title: String
         let count: Int?
         let accent: DesktopAccentColor?
+        let showsHashPrefix: Bool
     }
 
     struct NavigationActions {
@@ -990,7 +991,8 @@ struct MainView: View {
                 id: option.id,
                 title: option.id == "pinned" ? t("home.sidebar.pinned") : t("home.sidebar.all"),
                 count: option.count,
-                accent: nil
+                accent: nil,
+                showsHashPrefix: false
             )
         }
     }
@@ -1006,22 +1008,22 @@ struct MainView: View {
             default:
                 title = t("home.sidebar.all")
             }
-            return HomeSidebarChipItem(id: option.id, title: title, count: option.count, accent: nil)
+            return HomeSidebarChipItem(id: option.id, title: title, count: option.count, accent: nil, showsHashPrefix: false)
         }
     }
 
     private func homeTagChipItems(snapshot: GroupTagController.HomeSnapshot) -> [HomeSidebarChipItem] {
-        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: accent)
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: accent, showsHashPrefix: true)
         return [all] + snapshot.availableTags.map { item in
-            HomeSidebarChipItem(id: item.id, title: item.title, count: snapshot.tagCountsByID[item.id], accent: item.accent)
+            HomeSidebarChipItem(id: item.id, title: item.title, count: snapshot.tagCountsByID[item.id], accent: item.accent, showsHashPrefix: true)
         }
     }
 
     private func homeAgentChipItems() -> [HomeSidebarChipItem] {
         let options = homeContainer.homeAgentFilterOptions()
-        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: nil)
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: nil, showsHashPrefix: false)
         return [all] + options.map { option in
-            HomeSidebarChipItem(id: option.id, title: option.label, count: option.enabledGroupCount, accent: nil)
+            HomeSidebarChipItem(id: option.id, title: option.label, count: option.enabledGroupCount, accent: nil, showsHashPrefix: false)
         }
     }
 
@@ -1086,6 +1088,7 @@ struct MainView: View {
             title: option.title,
             count: option.count,
             accent: option.accent ?? accent,
+            showsHashPrefix: option.showsHashPrefix,
             isSelected: isSelected,
             action: action
         )
@@ -1250,12 +1253,13 @@ struct MainView: View {
         title: String,
         count: Int? = nil,
         accent: DesktopAccentColor,
+        showsHashPrefix: Bool = false,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Text("#\(title)")
+                Text(showsHashPrefix ? "#\(title)" : title)
                     .font(.system(size: 12, weight: .regular))
 
                 if let count {

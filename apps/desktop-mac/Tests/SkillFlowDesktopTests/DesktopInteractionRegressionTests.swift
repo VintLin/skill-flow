@@ -249,28 +249,37 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         guard
+            let chipItemStart = source.range(of: "private struct HomeSidebarChipItem"),
+            let chipItemEnd = source.range(of: "\n    struct NavigationActions", range: chipItemStart.upperBound..<source.endIndex),
             let statusStart = source.range(of: "private func homeStatusChipItems()"),
             let sourceTypeStart = source.range(of: "private func homeSourceTypeChipItems()"),
             let tagStart = source.range(of: "private func homeTagChipItems("),
             let agentStart = source.range(of: "private func homeAgentChipItems()"),
-            let chipSectionStart = source.range(of: "private func homeSidebarChipSection(")
+            let chipSectionStart = source.range(of: "private func homeSidebarChipSection("),
+            let pillStart = source.range(of: "private func homeFilterPill("),
+            let pillEnd = source.range(of: "\n    private func t(", range: pillStart.upperBound..<source.endIndex)
         else {
             XCTFail("Expected home sidebar chip builders were not found")
             return
         }
 
+        let chipItemSource = String(source[chipItemStart.lowerBound..<chipItemEnd.lowerBound])
         let statusSource = String(source[statusStart.lowerBound..<sourceTypeStart.lowerBound])
         let sourceTypeSource = String(source[sourceTypeStart.lowerBound..<tagStart.lowerBound])
         let tagSource = String(source[tagStart.lowerBound..<agentStart.lowerBound])
         let agentSource = String(source[agentStart.lowerBound..<chipSectionStart.lowerBound])
+        let pillSource = String(source[pillStart.lowerBound..<pillEnd.lowerBound])
 
-        XCTAssertFalse(statusSource.contains("\"#"))
-        XCTAssertFalse(statusSource.contains("#\\("))
-        XCTAssertFalse(sourceTypeSource.contains("\"#"))
-        XCTAssertFalse(sourceTypeSource.contains("#\\("))
-        XCTAssertFalse(agentSource.contains("\"#"))
-        XCTAssertFalse(agentSource.contains("#\\("))
-        XCTAssertTrue(tagSource.contains("item.title"))
+        XCTAssertTrue(chipItemSource.contains("let showsHashPrefix: Bool"))
+        XCTAssertTrue(statusSource.contains("showsHashPrefix: false"))
+        XCTAssertFalse(statusSource.contains("showsHashPrefix: true"))
+        XCTAssertTrue(sourceTypeSource.contains("showsHashPrefix: false"))
+        XCTAssertFalse(sourceTypeSource.contains("showsHashPrefix: true"))
+        XCTAssertTrue(agentSource.contains("showsHashPrefix: false"))
+        XCTAssertFalse(agentSource.contains("showsHashPrefix: true"))
+        XCTAssertTrue(tagSource.contains("showsHashPrefix: true"))
+        XCTAssertFalse(pillSource.contains("Text(\"#\\(title)\")"))
+        XCTAssertTrue(pillSource.contains("Text(showsHashPrefix ? \"#\\(title)\" : title)"))
     }
 
     private func sourceText(at relativePath: String) throws -> String {
