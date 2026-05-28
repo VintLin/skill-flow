@@ -134,6 +134,17 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(tags.contains(".frame(width: isVisible ? pillHeight : 0, height: pillHeight, alignment: .leading)"))
     }
 
+    func testWrappingHStackComponentExistsForExpandedSidebarChips() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Components/WrappingHStack.swift")
+
+        XCTAssertTrue(source.contains("struct WrappingHStack: Layout"))
+        XCTAssertTrue(source.contains("func sizeThatFits("))
+        XCTAssertTrue(source.contains("func placeSubviews("))
+        XCTAssertTrue(source.contains("proposal.width.flatMap"))
+        XCTAssertTrue(source.contains("$0.isFinite"))
+        XCTAssertTrue(source.contains("max($0, contentWidth)"))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
