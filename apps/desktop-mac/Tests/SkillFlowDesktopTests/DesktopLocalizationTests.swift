@@ -60,6 +60,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "home.sidebar.tags",
             "home.sidebar.agents",
             "home.sidebar.projects",
+            "home.sidebar.all_agents",
             "home.sidebar.all",
             "home.sidebar.pinned",
             "home.sidebar.local",
