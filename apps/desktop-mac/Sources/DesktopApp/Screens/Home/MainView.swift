@@ -36,7 +36,7 @@ struct MainView: View {
         let id: String
         let title: String
         let count: Int?
-        let accentValue: String?
+        let accent: DesktopAccentColor?
     }
 
     struct NavigationActions {
@@ -954,6 +954,12 @@ struct MainView: View {
     private func homeSidebar(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
+                let homeAgentOptions = homeAgentChipItems()
+                let rawHomeAgentFilterId = homeContainer.selectedHomeAgentFilterId()
+                let selectedHomeAgentFilterId = rawHomeAgentFilterId.flatMap { raw in
+                    homeAgentOptions.contains { $0.id == raw } ? raw : nil
+                }
+
                 homeSidebarChipSection(sectionId: HomeSidebarSectionID.status, title: t("home.sidebar.status"), options: homeStatusChipItems(), selectedId: homeContainer.selectedHomeStatusFilterId()) { optionId in
                     homeContainer.setSelectedHomeStatusFilter(optionId)
                 }
@@ -966,7 +972,7 @@ struct MainView: View {
                     homeContainer.setSelectedHomeTagFilterKey(optionId == "all" ? nil : optionId)
                 }
 
-                homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents, title: t("home.sidebar.agents"), options: homeAgentChipItems(), selectedId: homeContainer.selectedHomeAgentFilterId() ?? "all") { optionId in
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents, title: t("home.sidebar.agents"), options: homeAgentOptions, selectedId: selectedHomeAgentFilterId ?? "all") { optionId in
                     homeContainer.setSelectedHomeAgentFilter(optionId == "all" ? nil : optionId)
                 }
 
@@ -984,7 +990,7 @@ struct MainView: View {
                 id: option.id,
                 title: option.id == "pinned" ? t("home.sidebar.pinned") : t("home.sidebar.all"),
                 count: option.count,
-                accentValue: nil
+                accent: nil
             )
         }
     }
@@ -1000,22 +1006,22 @@ struct MainView: View {
             default:
                 title = t("home.sidebar.all")
             }
-            return HomeSidebarChipItem(id: option.id, title: title, count: option.count, accentValue: nil)
+            return HomeSidebarChipItem(id: option.id, title: title, count: option.count, accent: nil)
         }
     }
 
     private func homeTagChipItems(snapshot: GroupTagController.HomeSnapshot) -> [HomeSidebarChipItem] {
-        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accentValue: accent.rawValue)
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: accent)
         return [all] + snapshot.availableTags.map { item in
-            HomeSidebarChipItem(id: item.id, title: item.title, count: snapshot.tagCountsByID[item.id], accentValue: item.accent.rawValue)
+            HomeSidebarChipItem(id: item.id, title: item.title, count: snapshot.tagCountsByID[item.id], accent: item.accent)
         }
     }
 
     private func homeAgentChipItems() -> [HomeSidebarChipItem] {
         let options = homeContainer.homeAgentFilterOptions()
-        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accentValue: nil)
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: nil)
         return [all] + options.map { option in
-            HomeSidebarChipItem(id: option.id, title: option.label, count: option.enabledGroupCount, accentValue: nil)
+            HomeSidebarChipItem(id: option.id, title: option.label, count: option.enabledGroupCount, accent: nil)
         }
     }
 
@@ -1079,7 +1085,7 @@ struct MainView: View {
         homeFilterPill(
             title: option.title,
             count: option.count,
-            accentValue: option.accentValue.flatMap(DesktopAccentColor.init(rawValue:)) ?? accent,
+            accent: option.accent ?? accent,
             isSelected: isSelected,
             action: action
         )
@@ -1170,38 +1176,58 @@ struct MainView: View {
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+        HStack(alignment: .center, spacing: 8) {
+            Button(action: action) {
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
-                    if let projectPath {
-                        Text(projectPath)
+                        if let projectPath {
+                            Text(projectPath)
+                                .font(.system(size: 10, weight: .regular))
+                                .foregroundStyle(AppTheme.textMuted(for: theme))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let count {
+                        Text("\(count)")
                             .font(.system(size: 10, weight: .regular))
                             .foregroundStyle(AppTheme.textMuted(for: theme))
                             .lineLimit(1)
-                            .truncationMode(.middle)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                if let count {
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(1)
-                }
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+
+            if let projectPath {
+                Button {
+                    openPath(projectPath)
+                } label: {
+                    Image(systemName: "arrow.up.forward.square")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .desktopMotionButton(kind: .icon, theme: theme, accent: accent, isEnabled: true)
+                .help(projectPath)
+                .accessibilityLabel(projectPath)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .desktopMotionChip(
             kind: .pill,
             theme: theme,
@@ -1223,7 +1249,7 @@ struct MainView: View {
     private func homeFilterPill(
         title: String,
         count: Int? = nil,
-        accentValue: DesktopAccentColor,
+        accent: DesktopAccentColor,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
@@ -1238,12 +1264,12 @@ struct MainView: View {
                         .opacity(0.78)
                 }
             }
-                .foregroundStyle(AppTheme.brand(for: accentValue, in: theme))
+                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                 .padding(.horizontal, 10)
                 .frame(height: Self.homeFilterPillHeight)
                 .frame(maxWidth: .infinity)
                 .background(
-                    AppTheme.brand(for: accentValue, in: theme).opacity(
+                    AppTheme.brand(for: accent, in: theme).opacity(
                         isSelected
                             ? (theme == .dark ? 0.28 : 0.18)
                             : (theme == .dark ? 0.22 : 0.14)
@@ -1253,7 +1279,7 @@ struct MainView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: Self.homeFilterPillCornerRadius)
                         .stroke(
-                            isSelected ? AppTheme.brand(for: accentValue, in: theme).opacity(0.35) : Color.clear,
+                            isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
                             lineWidth: 0.5
                         )
                 }

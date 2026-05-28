@@ -40,6 +40,8 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(home.contains("homeSidebarProjectSection"))
         XCTAssertTrue(home.contains("homeProjectScopeList"))
         XCTAssertTrue(home.contains("homeProjectScopeRow"))
+        XCTAssertTrue(home.contains("Image(systemName: \"arrow.up.forward.square\")"))
+        XCTAssertTrue(home.contains("openPath(projectPath)"))
         XCTAssertTrue(home.contains("homeProjectScopeRefreshButton"))
         XCTAssertTrue(home.contains("homeProjectScopeRefreshButtonSize"))
         XCTAssertTrue(home.contains("projectScopeRefreshButtonRotation"))
@@ -62,8 +64,21 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         XCTAssertTrue(home.contains("homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents"))
-        XCTAssertTrue(home.contains("selectedId: homeContainer.selectedHomeAgentFilterId() ?? \"all\""))
+        XCTAssertTrue(home.contains("let homeAgentOptions = homeAgentChipItems()"))
+        XCTAssertTrue(home.contains("let rawHomeAgentFilterId = homeContainer.selectedHomeAgentFilterId()"))
+        XCTAssertTrue(home.contains("homeAgentOptions.contains { $0.id == raw } ? raw : nil"))
+        XCTAssertTrue(home.contains("options: homeAgentOptions, selectedId: selectedHomeAgentFilterId ?? \"all\""))
+        XCTAssertFalse(home.contains("selectedId: homeContainer.selectedHomeAgentFilterId() ?? \"all\""))
         XCTAssertTrue(home.contains("homeContainer.setSelectedHomeAgentFilter(optionId == \"all\" ? nil : optionId)"))
+    }
+
+    func testHomeSidebarChipItemUsesStrongTypedAccent() throws {
+        let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(home.contains("let accent: DesktopAccentColor?"))
+        XCTAssertTrue(home.contains("accent: option.accent ?? accent"))
+        XCTAssertFalse(home.contains("let accentValue: String?"))
+        XCTAssertFalse(home.contains("DesktopAccentColor.init(rawValue:)"))
     }
 
     func testHomeLeadingFixedButtonWidthMeasuresAllAgentsLabel() throws {
