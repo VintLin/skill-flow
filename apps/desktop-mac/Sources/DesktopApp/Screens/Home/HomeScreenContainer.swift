@@ -121,6 +121,18 @@ final class HomeScreenContainer {
         mainViewModel.setSelectedHomeSourceTypeFilter(filterId)
     }
 
+    func isHomeSidebarSectionExpanded(_ sectionId: String) -> Bool {
+        state.view.expandedHomeSidebarSectionIds.contains(sectionId)
+    }
+
+    func toggleHomeSidebarSection(_ sectionId: String) {
+        if state.view.expandedHomeSidebarSectionIds.contains(sectionId) {
+            state.view.expandedHomeSidebarSectionIds.remove(sectionId)
+        } else {
+            state.view.expandedHomeSidebarSectionIds.insert(sectionId)
+        }
+    }
+
     func recentProjectScopes() -> [RecentProjectScopeItem] {
         mainViewModel.recentProjectScopes
     }

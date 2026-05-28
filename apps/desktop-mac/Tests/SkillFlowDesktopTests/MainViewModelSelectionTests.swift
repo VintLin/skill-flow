@@ -357,6 +357,57 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(appState.view.selectedHomeAgentFilterId, "missing-agent")
     }
 
+    @MainActor
+    func testHomeSidebarSectionExpansionTogglesThroughContainer() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let userDefaults = UserDefaults(suiteName: "HomeSidebarSectionExpansion-\(UUID().uuidString)")!
+        let groupTagController = GroupTagController(
+            state: appState,
+            store: DesktopGroupTagStore(userDefaults: userDefaults),
+            recommendationsProvider: { [] },
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { _ in nil },
+            randomAccent: { .blue }
+        )
+        let settingsViewModel = SettingsViewModel(
+            state: appState,
+            store: DesktopSettingsStore(userDefaults: userDefaults),
+            commandFacade: nil
+        )
+        let importContainer = ImportScreenContainer(
+            state: appState,
+            mainViewModel: model,
+            recommendationsProvider: { [] }
+        )
+        let detailContainer = DetailScreenContainer(
+            state: appState,
+            groupTagController: groupTagController,
+            detailSnapshot: { [weak model] sourceId in model?.detailSnapshot(for: sourceId) }
+        )
+        let container = HomeScreenContainer(
+            state: appState,
+            mainViewModel: model,
+            groupTagController: groupTagController,
+            settingsViewModel: settingsViewModel,
+            importContainer: importContainer,
+            detailContainer: detailContainer
+        )
+
+        XCTAssertTrue(container.isHomeSidebarSectionExpanded("status"))
+        XCTAssertTrue(container.isHomeSidebarSectionExpanded("sourceType"))
+        XCTAssertFalse(container.isHomeSidebarSectionExpanded("tags"))
+
+        container.toggleHomeSidebarSection("tags")
+        XCTAssertTrue(container.isHomeSidebarSectionExpanded("tags"))
+
+        container.toggleHomeSidebarSection("status")
+        XCTAssertFalse(container.isHomeSidebarSectionExpanded("status"))
+    }
+
     func testSaveFailureRollsBackOptimisticEdit() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .failureBaseline)
