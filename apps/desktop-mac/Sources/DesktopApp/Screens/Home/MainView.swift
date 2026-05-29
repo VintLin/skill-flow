@@ -723,7 +723,8 @@ struct MainView: View {
         }
         .padding(.leading, leadingPadding)
         .padding(.trailing, Self.homeMainHeaderSidePadding)
-        .frame(height: Self.homeSidebarHeaderHeight)
+        .padding(.top, Self.homeTitlebarControlTopPadding)
+        .frame(height: Self.homeSidebarHeaderHeight, alignment: .top)
         .background(AppTheme.headerBackground(for: theme))
     }
 
@@ -1101,7 +1102,8 @@ struct MainView: View {
         }
         .padding(.leading, Self.homeSidebarTrafficLightLeadingInset)
         .padding(.trailing, Self.homeSidebarHorizontalPadding)
-        .frame(height: Self.homeSidebarHeaderHeight)
+        .padding(.top, Self.homeTitlebarControlTopPadding)
+        .frame(height: Self.homeSidebarHeaderHeight, alignment: .top)
     }
 
     private var homeSidebarToggleButton: some View {
@@ -1575,6 +1577,7 @@ extension MainView {
     nonisolated static let homeSidebarHeaderHeight: CGFloat = 52
     nonisolated static let homeSidebarHorizontalPadding: CGFloat = 12
     static let homeSidebarChipBleed: CGFloat = 12
+    static let homeTitlebarControlTopPadding: CGFloat = 0
     nonisolated static let homeMainHeaderSidePadding: CGFloat = 16
     nonisolated static let homeMainHeaderHorizontalPadding: CGFloat = homeMainHeaderSidePadding * 2
     nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset

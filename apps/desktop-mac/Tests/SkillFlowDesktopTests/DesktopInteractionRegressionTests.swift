@@ -322,6 +322,38 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(shellSource.contains(".ignoresSafeArea(.container, edges: .top)"))
     }
 
+    func testMainWindowUsesFullSizeContentViewForClickableTitlebarControls() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/App/SkillFlowDesktopApp.swift")
+
+        XCTAssertTrue(source.contains(".background(WindowTitlebarConfigurator())"))
+        XCTAssertTrue(source.contains("window.styleMask.insert(.fullSizeContentView)"))
+        XCTAssertTrue(source.contains("window.titlebarAppearsTransparent = true"))
+        XCTAssertTrue(source.contains("window.isMovableByWindowBackground = false"))
+    }
+
+    func testHomeHeadersAlignControlsWithNativeTrafficLights() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let mainHeaderStart = source.range(of: "private func homeMainHeader(layout: LayoutMetrics, isSidebarVisible: Bool) -> some View"),
+            let mainHeaderEnd = source.range(of: "\n    private func configPage", range: mainHeaderStart.upperBound..<source.endIndex),
+            let sidebarHeaderStart = source.range(of: "private var homeSidebarHeader: some View"),
+            let sidebarHeaderEnd = source.range(of: "\n    private var homeSidebarToggleButton", range: sidebarHeaderStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected home header blocks were not found")
+            return
+        }
+
+        let mainHeaderSource = String(source[mainHeaderStart.lowerBound..<mainHeaderEnd.lowerBound])
+        let sidebarHeaderSource = String(source[sidebarHeaderStart.lowerBound..<sidebarHeaderEnd.lowerBound])
+
+        XCTAssertTrue(source.contains("static let homeTitlebarControlTopPadding: CGFloat = 0"))
+        XCTAssertTrue(mainHeaderSource.contains(".padding(.top, Self.homeTitlebarControlTopPadding)"))
+        XCTAssertTrue(mainHeaderSource.contains(".frame(height: Self.homeSidebarHeaderHeight, alignment: .top)"))
+        XCTAssertTrue(sidebarHeaderSource.contains(".padding(.top, Self.homeTitlebarControlTopPadding)"))
+        XCTAssertTrue(sidebarHeaderSource.contains(".frame(height: Self.homeSidebarHeaderHeight, alignment: .top)"))
+    }
+
     func testHomeSidebarHeaderAndFullCollapseToggleAreAvailable() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 

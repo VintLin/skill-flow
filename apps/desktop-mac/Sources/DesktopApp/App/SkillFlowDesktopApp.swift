@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -10,6 +11,7 @@ struct SkillFlowDesktopApp: App {
         Window(L10n.string("app.name", locale: selectedLocale), id: "main-window") {
             container.homeContainer.makeView()
                 .environment(\.locale, selectedLocale)
+                .background(WindowTitlebarConfigurator())
         }
         .windowStyle(.hiddenTitleBar)
 
@@ -47,6 +49,24 @@ struct SkillFlowDesktopApp: App {
 
     private var menuIcon: String {
         container.mainViewModel.healthStatus.menuIconSystemName
+    }
+}
+
+private struct WindowTitlebarConfigurator: NSViewRepresentable {
+    func makeNSView(context _: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context _: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else {
+                return
+            }
+
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = true
+            window.isMovableByWindowBackground = false
+        }
     }
 }
 
