@@ -391,6 +391,14 @@ struct MainView: View {
     }
 
     private var searchField: some View {
+        searchField(width: Self.headerSearchFieldWidth)
+    }
+
+    private func homeSearchField(width: CGFloat) -> some View {
+        searchField(width: width)
+    }
+
+    private func searchField(width: CGFloat) -> some View {
         HStack(spacing: 8) {
             actionIcon(.search, size: 11)
                 .foregroundStyle(AppTheme.textMuted(for: theme))
@@ -420,7 +428,7 @@ struct MainView: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(width: Self.headerSearchFieldWidth, height: Self.headerSearchFieldHeight, alignment: .leading)
+        .frame(width: width, height: Self.headerSearchFieldHeight, alignment: .leading)
         .background(AppTheme.headerControlFill(for: theme))
         .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -678,21 +686,27 @@ struct MainView: View {
         visibleCards: [MainViewModel.GroupCardModel]
     ) -> some View {
         VStack(spacing: 0) {
-            homeMainHeader
+            homeMainHeader(layout: layout)
             homeContent(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var homeMainHeader: some View {
-        HStack(spacing: 12) {
-            searchField
+    private func homeMainHeader(layout: LayoutMetrics) -> some View {
+        let mainColumnWidth = Self.homeMainColumnWidth(
+            forWindowWidth: layout.width,
+            isSidebarVisible: isHomeSidebarVisible
+        )
+        let searchWidth = Self.homeMainHeaderSearchWidth(forMainColumnWidth: mainColumnWidth)
+
+        return HStack(spacing: Self.homeMainHeaderItemSpacing) {
+            homeSearchField(width: searchWidth)
             Spacer(minLength: 0)
             importButton
             homeUpdateButton
             settingsButton
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Self.homeMainHeaderSidePadding)
         .frame(height: Self.homeSidebarHeaderHeight)
         .background(AppTheme.headerBackground(for: theme))
     }
@@ -867,7 +881,7 @@ struct MainView: View {
         topBarShowsSearch(for: route) && !shouldAutofocusSearchField(for: route)
     }
 
-    static let headerSearchFieldWidth: CGFloat = 384
+    nonisolated static let headerSearchFieldWidth: CGFloat = 384
     static let headerSearchFieldHeight: CGFloat = 34
     static let headerSearchActionButtonSize: CGFloat = headerSearchFieldHeight
     static func importPromptLeadingWidth(for locale: Locale) -> CGFloat {
@@ -1054,7 +1068,8 @@ struct MainView: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, Self.homeSidebarHorizontalPadding)
+        .padding(.leading, Self.homeSidebarTrafficLightLeadingInset)
+        .padding(.trailing, Self.homeSidebarHorizontalPadding)
         .frame(height: Self.homeSidebarHeaderHeight)
     }
 
@@ -1064,7 +1079,8 @@ struct MainView: View {
                 homeSidebarToggleButton
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, Self.homeSidebarHorizontalPadding)
+            .padding(.leading, Self.homeSidebarTrafficLightLeadingInset)
+            .padding(.trailing, Self.homeSidebarHorizontalPadding)
             .frame(height: Self.homeSidebarHeaderHeight)
             Spacer(minLength: 0)
         }
@@ -1085,7 +1101,7 @@ struct MainView: View {
         } label: {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28, height: 28)
+                .frame(width: Self.homeSidebarToggleButtonSize, height: Self.homeSidebarToggleButtonSize)
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .contentShape(Rectangle())
         }
@@ -1539,14 +1555,21 @@ struct MainView: View {
 }
 
 extension MainView {
-    static let toolbarButtonSize: CGFloat = 34
+    nonisolated static let toolbarButtonSize: CGFloat = 34
     static let headerLeadingWidth: CGFloat = 220
     nonisolated static let homeSidebarRegularWidth: CGFloat = 244
     nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
-    static let homeSidebarRailWidth: CGFloat = 72
+    nonisolated static let homeSidebarTrafficLightLeadingInset: CGFloat = 68
+    nonisolated static let homeSidebarToggleButtonSize: CGFloat = 28
+    nonisolated static let homeSidebarRailWidth: CGFloat = homeSidebarTrafficLightLeadingInset + homeSidebarToggleButtonSize + homeSidebarHorizontalPadding
     static let homeSidebarHeaderHeight: CGFloat = 52
-    static let homeSidebarHorizontalPadding: CGFloat = 12
+    nonisolated static let homeSidebarHorizontalPadding: CGFloat = 12
     static let homeSidebarChipBleed: CGFloat = 12
+    nonisolated static let homeMainHeaderSidePadding: CGFloat = 16
+    nonisolated static let homeMainHeaderHorizontalPadding: CGFloat = homeMainHeaderSidePadding * 2
+    nonisolated static let homeMainHeaderItemSpacing: CGFloat = 12
+    nonisolated static let homeMainHeaderControlSpacing: CGFloat = homeMainHeaderItemSpacing * 4
+    nonisolated static let homeMainHeaderMinimumSearchFieldWidth: CGFloat = 160
     static let homeProjectPillHeight: CGFloat = 28
     static let homeFilterPillHeight: CGFloat = 28
     static let homeProjectScopeRefreshButtonSize: CGFloat = homeProjectPillHeight
@@ -1592,6 +1615,21 @@ extension MainView {
         let agentWidth = ceil((agentTitle as NSString).size(withAttributes: [.font: font]).width)
         let contentWidth = max(projectWidth + homeLeadingProjectIndicatorAllowance, max(filterWidth, agentWidth))
         return contentWidth + homeLeadingButtonHorizontalPadding
+    }
+
+    nonisolated static func homeMainColumnWidth(forWindowWidth width: CGFloat, isSidebarVisible: Bool) -> CGFloat {
+        let sidebarWidth = isSidebarVisible
+            ? (width <= 760 ? homeSidebarNarrowWidth : homeSidebarRegularWidth)
+            : homeSidebarRailWidth
+        return max(0, width - sidebarWidth)
+    }
+
+    nonisolated static func homeMainHeaderSearchWidth(forMainColumnWidth mainColumnWidth: CGFloat) -> CGFloat {
+        let fixedControlsWidth = (toolbarButtonSize * 3)
+            + homeMainHeaderHorizontalPadding
+            + homeMainHeaderControlSpacing
+        let availableWidth = mainColumnWidth - fixedControlsWidth
+        return min(headerSearchFieldWidth, max(homeMainHeaderMinimumSearchFieldWidth, availableWidth))
     }
 
 }
