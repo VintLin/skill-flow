@@ -68,6 +68,7 @@ struct MainView: View {
     @State private var updateButtonRotation: Double = 0
     @State private var projectScopeRefreshButtonRotation: Double = 0
     @State private var searchFocusResetToken = 0
+    @State private var isHomeSidebarVisible = true
     @State private var isEditCustomAgentPresented = false
     @State private var editingCustomAgentId: String?
     @State private var customAgentDraft = SettingsViewModel.CustomAgentDraft()
@@ -113,9 +114,15 @@ struct MainView: View {
                 AppTheme.pageBackground(for: theme)
                     .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    topBar(layout: layout)
-                    pageContent(layout: layout)
+                Group {
+                    if isHomePage {
+                        homeShell(layout: layout)
+                    } else {
+                        VStack(spacing: 0) {
+                            topBar(layout: layout)
+                            pageContent(layout: layout)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -641,7 +648,7 @@ struct MainView: View {
         }
     }
 
-    private func configPage(layout: LayoutMetrics) -> some View {
+    private func homeShell(layout: LayoutMetrics) -> some View {
         let homeTagSnapshot = homeContainer.homeTagSnapshot(locale: locale)
         let visibleCards = homeContainer.visibleGroupCards(
             from: viewModel.groupCards,
@@ -649,36 +656,71 @@ struct MainView: View {
         )
 
         return HStack(alignment: .top, spacing: 0) {
-            homeSidebar(homeTagSnapshot: homeTagSnapshot)
-                .frame(width: layout.homeSidebarWidth)
-                .frame(maxHeight: .infinity, alignment: .topLeading)
-                .background(AppTheme.surface(for: theme))
-                .overlay(alignment: .trailing) {
-                    Rectangle()
-                        .fill(AppTheme.cardBorder(for: theme))
-                        .frame(width: 0.5)
-                }
-
-            Group {
-                if visibleCards.isEmpty {
-                    gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
-                        .padding(.horizontal, 16)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                } else {
-                    ScrollView {
-                        gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 16)
-                            .padding(.bottom, 24)
-                    }
-                }
+            if isHomeSidebarVisible {
+                homeSidebarColumn(homeTagSnapshot: homeTagSnapshot)
+                    .frame(width: layout.homeSidebarWidth)
+            } else {
+                homeSidebarRail
+                    .frame(width: Self.homeSidebarRailWidth)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards)
         }
         .contentShape(Rectangle())
         .onTapGesture {
             NotificationCenter.default.post(name: .groupTagEditorDismissRequested, object: nil)
         }
+    }
+
+    private func homeMainColumn(
+        layout: LayoutMetrics,
+        homeTagSnapshot: GroupTagController.HomeSnapshot,
+        visibleCards: [MainViewModel.GroupCardModel]
+    ) -> some View {
+        VStack(spacing: 0) {
+            homeMainHeader
+            homeContent(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var homeMainHeader: some View {
+        HStack(spacing: 12) {
+            searchField
+            Spacer(minLength: 0)
+            importButton
+            homeUpdateButton
+            settingsButton
+        }
+        .padding(.horizontal, 16)
+        .frame(height: Self.homeSidebarHeaderHeight)
+        .background(AppTheme.headerBackground(for: theme))
+    }
+
+    private func configPage(layout: LayoutMetrics) -> some View {
+        homeShell(layout: layout)
+    }
+
+    private func homeContent(
+        layout: LayoutMetrics,
+        homeTagSnapshot: GroupTagController.HomeSnapshot,
+        visibleCards: [MainViewModel.GroupCardModel]
+    ) -> some View {
+        Group {
+            if visibleCards.isEmpty {
+                gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            } else {
+                ScrollView {
+                    gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 24)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func gridSection(
@@ -985,10 +1027,70 @@ struct MainView: View {
 
                 homeSidebarProjectSection
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Self.homeSidebarHorizontalPadding)
             .padding(.top, 16)
             .padding(.bottom, 18)
         }
+    }
+
+    private func homeSidebarColumn(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
+        VStack(spacing: 0) {
+            homeSidebarHeader
+            homeSidebar(homeTagSnapshot: homeTagSnapshot)
+        }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(AppTheme.surface(for: theme))
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(AppTheme.cardBorder(for: theme))
+                .frame(width: 0.5)
+        }
+    }
+
+    private var homeSidebarHeader: some View {
+        HStack(spacing: 8) {
+            homeSidebarToggleButton
+            headerLogoRow
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Self.homeSidebarHorizontalPadding)
+        .frame(height: Self.homeSidebarHeaderHeight)
+    }
+
+    private var homeSidebarRail: some View {
+        VStack(spacing: 0) {
+            HStack {
+                homeSidebarToggleButton
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Self.homeSidebarHorizontalPadding)
+            .frame(height: Self.homeSidebarHeaderHeight)
+            Spacer(minLength: 0)
+        }
+        .frame(maxHeight: .infinity)
+        .background(AppTheme.surface(for: theme))
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(AppTheme.cardBorder(for: theme))
+                .frame(width: 0.5)
+        }
+    }
+
+    private var homeSidebarToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isHomeSidebarVisible.toggle()
+            }
+        } label: {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isHomeSidebarVisible ? "Hide sidebar" : "Show sidebar")
     }
 
     private func homeStatusChipItems() -> [HomeSidebarChipItem] {
@@ -1079,7 +1181,9 @@ struct MainView: View {
                             }
                         }
                     }
+                    .padding(.horizontal, Self.homeSidebarChipBleed)
                 }
+                .padding(.horizontal, -Self.homeSidebarChipBleed)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1437,6 +1541,12 @@ struct MainView: View {
 extension MainView {
     static let toolbarButtonSize: CGFloat = 34
     static let headerLeadingWidth: CGFloat = 220
+    nonisolated static let homeSidebarRegularWidth: CGFloat = 244
+    nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
+    static let homeSidebarRailWidth: CGFloat = 72
+    static let homeSidebarHeaderHeight: CGFloat = 52
+    static let homeSidebarHorizontalPadding: CGFloat = 12
+    static let homeSidebarChipBleed: CGFloat = 12
     static let homeProjectPillHeight: CGFloat = 28
     static let homeFilterPillHeight: CGFloat = 28
     static let homeProjectScopeRefreshButtonSize: CGFloat = homeProjectPillHeight
@@ -1522,7 +1632,7 @@ private struct LayoutMetrics {
     }
 
     var homeSidebarWidth: CGFloat {
-        width <= 760 ? 184 : 220
+        width <= 760 ? MainView.homeSidebarNarrowWidth : MainView.homeSidebarRegularWidth
     }
 
     var homeGridAvailableWidth: CGFloat {

@@ -231,10 +231,10 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         guard
-            let sidebarStart = source.range(of: "homeSidebar(homeTagSnapshot: homeTagSnapshot)"),
-            let contentStart = source.range(of: "\n            Group {", range: sidebarStart.upperBound..<source.endIndex)
+            let sidebarStart = source.range(of: "private func homeSidebarColumn("),
+            let contentStart = source.range(of: "\n    private var homeSidebarHeader", range: sidebarStart.upperBound..<source.endIndex)
         else {
-            XCTFail("Expected home sidebar layout block was not found")
+            XCTFail("Expected home sidebar column block was not found")
             return
         }
 
@@ -280,6 +280,75 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(tagSource.contains("showsHashPrefix: true"))
         XCTAssertFalse(pillSource.contains("Text(\"#\\(title)\")"))
         XCTAssertTrue(pillSource.contains("HomeSidebarChipTitleFormatter.displayTitle(title, showsHashPrefix: showsHashPrefix)"))
+    }
+
+    func testHomeLayoutUsesIntegratedSidebarHeaderShell() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(source.contains("private func homeShell(layout: LayoutMetrics) -> some View"))
+        XCTAssertTrue(source.contains("homeSidebarColumn(homeTagSnapshot: homeTagSnapshot)"))
+        XCTAssertTrue(source.contains("homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards)"))
+        XCTAssertTrue(source.contains("if isHomePage {"))
+        XCTAssertTrue(source.contains("homeShell(layout: layout)"))
+
+        guard
+            let bodyStart = source.range(of: "VStack(spacing: 0) {"),
+            let bodyEnd = source.range(of: "\n                if isEditCustomAgentPresented", range: bodyStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected root body stack was not found")
+            return
+        }
+
+        let bodySource = String(source[bodyStart.lowerBound..<bodyEnd.lowerBound])
+
+        XCTAssertFalse(bodySource.contains("topBar(layout: layout)\n                    pageContent(layout: layout)"))
+    }
+
+    func testHomeSidebarHeaderAndHiddenRailAreAvailable() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(source.contains("@State private var isHomeSidebarVisible = true"))
+        XCTAssertTrue(source.contains("private var homeSidebarHeader: some View"))
+        XCTAssertTrue(source.contains("private var homeSidebarRail: some View"))
+        XCTAssertTrue(source.contains("private var homeSidebarToggleButton: some View"))
+        XCTAssertTrue(source.contains("headerLogoRow"))
+        XCTAssertTrue(source.contains("isHomeSidebarVisible.toggle()"))
+        XCTAssertTrue(source.contains(".accessibilityLabel(isHomeSidebarVisible ? \"Hide sidebar\" : \"Show sidebar\")"))
+        XCTAssertTrue(source.contains(".frame(width: Self.homeSidebarRailWidth)"))
+    }
+
+    func testHomeMainHeaderOmitsTitleAndKeepsActions() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let headerStart = source.range(of: "private var homeMainHeader: some View"),
+            let headerEnd = source.range(of: "\n    private func configPage", range: headerStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected homeMainHeader was not found")
+            return
+        }
+
+        let headerSource = String(source[headerStart.lowerBound..<headerEnd.lowerBound])
+
+        XCTAssertTrue(headerSource.contains("searchField"))
+        XCTAssertTrue(headerSource.contains("importButton"))
+        XCTAssertTrue(headerSource.contains("homeUpdateButton"))
+        XCTAssertTrue(headerSource.contains("settingsButton"))
+        XCTAssertFalse(headerSource.contains("topBarTitleRow"))
+        XCTAssertFalse(headerSource.contains("headerLogoRow"))
+    }
+
+    func testHomeSidebarWidthAndChipBleedAreExplicit() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(source.contains("static let homeSidebarRegularWidth: CGFloat = 244"))
+        XCTAssertTrue(source.contains("static let homeSidebarNarrowWidth: CGFloat = 208"))
+        XCTAssertTrue(source.contains("static let homeSidebarRailWidth: CGFloat = 72"))
+        XCTAssertTrue(source.contains("static let homeSidebarHorizontalPadding: CGFloat = 12"))
+        XCTAssertTrue(source.contains("static let homeSidebarChipBleed: CGFloat = 12"))
+        XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarHorizontalPadding)"))
+        XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarChipBleed)"))
+        XCTAssertTrue(source.contains(".padding(.horizontal, -Self.homeSidebarChipBleed)"))
     }
 
     private func sourceText(at relativePath: String) throws -> String {
