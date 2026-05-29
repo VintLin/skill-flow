@@ -697,10 +697,14 @@ struct MainView: View {
             forWindowWidth: layout.width,
             isSidebarVisible: isHomeSidebarVisible
         )
-        let searchWidth = Self.homeMainHeaderSearchWidth(forMainColumnWidth: mainColumnWidth)
         let leadingPadding = isHomeSidebarVisible
             ? Self.homeMainHeaderSidePadding
             : Self.homeMainHeaderHiddenLeadingPadding
+        let reservedPadding = leadingPadding + Self.homeMainHeaderSidePadding
+        let searchWidth = Self.homeMainHeaderSearchWidth(
+            forMainColumnWidth: mainColumnWidth,
+            reservedHorizontalPadding: reservedPadding
+        )
 
         return HStack(spacing: Self.homeMainHeaderItemSpacing) {
             homeSearchField(width: searchWidth)
@@ -1634,15 +1638,31 @@ extension MainView {
         return max(0, width - sidebarWidth)
     }
 
-    nonisolated static func homeMainHeaderSearchWidth(forMainColumnWidth mainColumnWidth: CGFloat) -> CGFloat {
-        let fixedControlsWidth = (toolbarButtonSize * 3)
-            + homeMainHeaderReservedHorizontalPadding
+    nonisolated static func fixedHomeMainHeaderControlsWidth(reservedHorizontalPadding: CGFloat) -> CGFloat {
+        (toolbarButtonSize * 3)
+            + reservedHorizontalPadding
             + homeMainHeaderControlSpacing
+    }
+
+    nonisolated static func homeMainHeaderSearchWidth(
+        forMainColumnWidth mainColumnWidth: CGFloat,
+        reservedHorizontalPadding: CGFloat
+    ) -> CGFloat {
+        let fixedControlsWidth = fixedHomeMainHeaderControlsWidth(
+            reservedHorizontalPadding: reservedHorizontalPadding
+        )
         let availableWidth = mainColumnWidth - fixedControlsWidth
         if availableWidth >= homeMainHeaderMinimumSearchFieldWidth {
             return min(headerSearchFieldWidth, availableWidth)
         }
         return max(0, availableWidth)
+    }
+
+    nonisolated static func homeMainHeaderSearchWidth(forMainColumnWidth mainColumnWidth: CGFloat) -> CGFloat {
+        homeMainHeaderSearchWidth(
+            forMainColumnWidth: mainColumnWidth,
+            reservedHorizontalPadding: homeMainHeaderReservedHorizontalPadding
+        )
     }
 
 }

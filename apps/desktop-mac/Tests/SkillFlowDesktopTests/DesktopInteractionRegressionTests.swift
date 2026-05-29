@@ -342,26 +342,75 @@ final class DesktopInteractionRegressionTests: XCTestCase {
     func testHomeMainHeaderSearchWidthFitsNarrowIntegratedSidebar() throws {
         let visibleSidebarMainWidth = MainView.homeMainColumnWidth(forWindowWidth: 620, isSidebarVisible: true)
         let hiddenSidebarMainWidth = MainView.homeMainColumnWidth(forWindowWidth: 620, isSidebarVisible: false)
+        let visibleReservedPadding = MainView.homeMainHeaderHorizontalPadding
+        let hiddenReservedPadding = MainView.homeMainHeaderReservedHorizontalPadding
 
         XCTAssertEqual(visibleSidebarMainWidth, 620 - MainView.homeSidebarNarrowWidth)
         XCTAssertEqual(hiddenSidebarMainWidth, 620 - MainView.homeSidebarRailWidth)
+        XCTAssertEqual(visibleReservedPadding, 32)
+        XCTAssertEqual(hiddenReservedPadding, 52)
 
-        let visibleSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(forMainColumnWidth: visibleSidebarMainWidth)
-        let hiddenSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(forMainColumnWidth: hiddenSidebarMainWidth)
-        let fixedHeaderControlsWidth = (MainView.toolbarButtonSize * 3)
-            + MainView.homeMainHeaderReservedHorizontalPadding
-            + MainView.homeMainHeaderControlSpacing
+        let visibleSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(
+            forMainColumnWidth: visibleSidebarMainWidth,
+            reservedHorizontalPadding: visibleReservedPadding
+        )
+        let hiddenSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(
+            forMainColumnWidth: hiddenSidebarMainWidth,
+            reservedHorizontalPadding: hiddenReservedPadding
+        )
+        let visibleFixedHeaderControlsWidth = MainView.fixedHomeMainHeaderControlsWidth(
+            reservedHorizontalPadding: visibleReservedPadding
+        )
+        let hiddenFixedHeaderControlsWidth = MainView.fixedHomeMainHeaderControlsWidth(
+            reservedHorizontalPadding: hiddenReservedPadding
+        )
 
         XCTAssertGreaterThanOrEqual(visibleSidebarSearchWidth, MainView.homeMainHeaderMinimumSearchFieldWidth)
-        XCTAssertLessThanOrEqual(visibleSidebarSearchWidth + fixedHeaderControlsWidth, visibleSidebarMainWidth)
-        XCTAssertLessThanOrEqual(hiddenSidebarSearchWidth + fixedHeaderControlsWidth, hiddenSidebarMainWidth)
+        XCTAssertLessThanOrEqual(visibleSidebarSearchWidth + visibleFixedHeaderControlsWidth, visibleSidebarMainWidth)
+        XCTAssertLessThanOrEqual(hiddenSidebarSearchWidth + hiddenFixedHeaderControlsWidth, hiddenSidebarMainWidth)
         XCTAssertLessThanOrEqual(visibleSidebarSearchWidth, MainView.headerSearchFieldWidth)
-        XCTAssertEqual(MainView.homeMainHeaderSearchWidth(forMainColumnWidth: 860 - MainView.homeSidebarRegularWidth), MainView.headerSearchFieldWidth)
+        XCTAssertEqual(
+            MainView.homeMainHeaderSearchWidth(
+                forMainColumnWidth: 860 - MainView.homeSidebarRegularWidth,
+                reservedHorizontalPadding: visibleReservedPadding
+            ),
+            MainView.headerSearchFieldWidth
+        )
 
-        let compressedMainWidth = fixedHeaderControlsWidth + MainView.homeMainHeaderMinimumSearchFieldWidth - 1
-        let compressedSearchWidth = MainView.homeMainHeaderSearchWidth(forMainColumnWidth: compressedMainWidth)
+        let legacyVisibleSearchWidth = MainView.homeMainHeaderSearchWidth(
+            forMainColumnWidth: visibleSidebarMainWidth,
+            reservedHorizontalPadding: hiddenReservedPadding
+        )
+        XCTAssertEqual(visibleSidebarSearchWidth - legacyVisibleSearchWidth, hiddenReservedPadding - visibleReservedPadding)
+    }
 
-        XCTAssertLessThanOrEqual(compressedSearchWidth + fixedHeaderControlsWidth, compressedMainWidth)
+    func testHomeMainHeaderSearchWidthGuaranteeBoundaryIsAtFixedControlsWidth() throws {
+        let reservedPadding = MainView.homeMainHeaderReservedHorizontalPadding
+        let fixedControlsWidth = MainView.fixedHomeMainHeaderControlsWidth(
+            reservedHorizontalPadding: reservedPadding
+        )
+
+        let belowFixedControlsWidth = MainView.homeMainHeaderSearchWidth(
+            forMainColumnWidth: fixedControlsWidth - 1,
+            reservedHorizontalPadding: reservedPadding
+        )
+        let atFixedControlsWidth = MainView.homeMainHeaderSearchWidth(
+            forMainColumnWidth: fixedControlsWidth,
+            reservedHorizontalPadding: reservedPadding
+        )
+        let belowMinimumSearchBudget = MainView.homeMainHeaderSearchWidth(
+            forMainColumnWidth: fixedControlsWidth + MainView.homeMainHeaderMinimumSearchFieldWidth - 1,
+            reservedHorizontalPadding: reservedPadding
+        )
+
+        XCTAssertEqual(belowFixedControlsWidth, 0)
+        XCTAssertEqual(atFixedControlsWidth, 0)
+        XCTAssertEqual(belowMinimumSearchBudget, MainView.homeMainHeaderMinimumSearchFieldWidth - 1)
+        XCTAssertLessThanOrEqual(atFixedControlsWidth + fixedControlsWidth, fixedControlsWidth)
+        XCTAssertLessThanOrEqual(
+            belowMinimumSearchBudget + fixedControlsWidth,
+            fixedControlsWidth + MainView.homeMainHeaderMinimumSearchFieldWidth - 1
+        )
     }
 
     func testHomeSidebarTopRowsReserveTrafficLightInset() throws {
