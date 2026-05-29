@@ -287,7 +287,9 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("private func homeShell(layout: LayoutMetrics) -> some View"))
         XCTAssertTrue(source.contains("homeSidebarColumn(homeTagSnapshot: homeTagSnapshot)"))
-        XCTAssertTrue(source.contains("homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards)"))
+        XCTAssertTrue(source.contains("if isHomeSidebarVisible {"))
+        XCTAssertTrue(source.contains("homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards, isSidebarVisible: isHomeSidebarVisible)"))
+        XCTAssertFalse(source.contains("homeSidebarRail"))
         XCTAssertTrue(source.contains("if isHomePage {"))
         XCTAssertTrue(source.contains("homeShell(layout: layout)"))
 
@@ -304,24 +306,24 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertFalse(bodySource.contains("topBar(layout: layout)\n                    pageContent(layout: layout)"))
     }
 
-    func testHomeSidebarHeaderAndHiddenRailAreAvailable() throws {
+    func testHomeSidebarHeaderAndFullCollapseToggleAreAvailable() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         XCTAssertTrue(source.contains("@State private var isHomeSidebarVisible = true"))
         XCTAssertTrue(source.contains("private var homeSidebarHeader: some View"))
-        XCTAssertTrue(source.contains("private var homeSidebarRail: some View"))
         XCTAssertTrue(source.contains("private var homeSidebarToggleButton: some View"))
         XCTAssertTrue(source.contains("headerLogoRow"))
         XCTAssertTrue(source.contains("isHomeSidebarVisible.toggle()"))
         XCTAssertTrue(source.contains(".accessibilityLabel(isHomeSidebarVisible ? \"Hide sidebar\" : \"Show sidebar\")"))
-        XCTAssertTrue(source.contains(".frame(width: Self.homeSidebarRailWidth)"))
+        XCTAssertFalse(source.contains("private var homeSidebarRail: some View"))
+        XCTAssertFalse(source.contains("homeSidebarRailWidth"))
     }
 
-    func testHomeMainHeaderOmitsTitleAndKeepsActions() throws {
+    func testHomeMainHeaderOmitsTitleKeepsActionsAndShowsCollapsedToggle() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         guard
-            let headerStart = source.range(of: "private func homeMainHeader(layout: LayoutMetrics) -> some View"),
+            let headerStart = source.range(of: "private func homeMainHeader(layout: LayoutMetrics, isSidebarVisible: Bool) -> some View"),
             let headerEnd = source.range(of: "\n    private func configPage", range: headerStart.upperBound..<source.endIndex)
         else {
             XCTFail("Expected homeMainHeader was not found")
@@ -330,77 +332,111 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         let headerSource = String(source[headerStart.lowerBound..<headerEnd.lowerBound])
 
+        XCTAssertTrue(headerSource.contains("if !isSidebarVisible {"))
+        XCTAssertTrue(headerSource.contains("homeSidebarToggleButton"))
         XCTAssertTrue(headerSource.contains("homeSearchField(width: searchWidth)"))
         XCTAssertTrue(headerSource.contains("importButton"))
         XCTAssertTrue(headerSource.contains("homeUpdateButton"))
         XCTAssertTrue(headerSource.contains("settingsButton"))
-        XCTAssertTrue(headerSource.contains("homeMainHeaderSearchWidth"))
+        XCTAssertTrue(headerSource.contains("includesSidebarToggle: !isSidebarVisible"))
         XCTAssertFalse(headerSource.contains("topBarTitleRow"))
         XCTAssertFalse(headerSource.contains("headerLogoRow"))
     }
 
+    func testExpandedHomeSidebarHeaderPlacesToggleAfterTitle() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let headerStart = source.range(of: "private var homeSidebarHeader: some View"),
+            let headerEnd = source.range(of: "\n    private var homeSidebarToggleButton", range: headerStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected homeSidebarHeader block was not found")
+            return
+        }
+
+        let headerSource = String(source[headerStart.lowerBound..<headerEnd.lowerBound])
+
+        guard
+            let logoRange = headerSource.range(of: "headerLogoRow"),
+            let toggleRange = headerSource.range(of: "homeSidebarToggleButton")
+        else {
+            XCTFail("Expected header logo and sidebar toggle were not found")
+            return
+        }
+
+        XCTAssertLessThan(logoRange.lowerBound, toggleRange.lowerBound)
+        XCTAssertTrue(headerSource.contains("Spacer(minLength: 0)"))
+        XCTAssertTrue(headerSource.contains(".padding(.leading, Self.homeSidebarTrafficLightLeadingInset)"))
+        XCTAssertTrue(headerSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
+    }
+
     func testHomeMainHeaderSearchWidthFitsNarrowIntegratedSidebar() throws {
         let visibleSidebarMainWidth = MainView.homeMainColumnWidth(forWindowWidth: 620, isSidebarVisible: true)
-        let hiddenSidebarMainWidth = MainView.homeMainColumnWidth(forWindowWidth: 620, isSidebarVisible: false)
+        let collapsedSidebarMainWidth = MainView.homeMainColumnWidth(forWindowWidth: 620, isSidebarVisible: false)
         let visibleReservedPadding = MainView.homeMainHeaderHorizontalPadding
-        let hiddenReservedPadding = MainView.homeMainHeaderReservedHorizontalPadding
+        let collapsedReservedPadding = MainView.homeCollapsedHeaderLeadingPadding + MainView.homeMainHeaderSidePadding
 
         XCTAssertEqual(visibleSidebarMainWidth, 620 - MainView.homeSidebarNarrowWidth)
-        XCTAssertEqual(hiddenSidebarMainWidth, 620 - MainView.homeSidebarRailWidth)
+        XCTAssertEqual(collapsedSidebarMainWidth, 620)
         XCTAssertEqual(visibleReservedPadding, 32)
-        XCTAssertEqual(hiddenReservedPadding, 52)
+        XCTAssertEqual(collapsedReservedPadding, 84)
 
         let visibleSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(
             forMainColumnWidth: visibleSidebarMainWidth,
-            reservedHorizontalPadding: visibleReservedPadding
+            reservedHorizontalPadding: visibleReservedPadding,
+            includesSidebarToggle: false
         )
-        let hiddenSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(
-            forMainColumnWidth: hiddenSidebarMainWidth,
-            reservedHorizontalPadding: hiddenReservedPadding
+        let collapsedSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(
+            forMainColumnWidth: collapsedSidebarMainWidth,
+            reservedHorizontalPadding: collapsedReservedPadding,
+            includesSidebarToggle: true
         )
         let visibleFixedHeaderControlsWidth = MainView.fixedHomeMainHeaderControlsWidth(
-            reservedHorizontalPadding: visibleReservedPadding
+            reservedHorizontalPadding: visibleReservedPadding,
+            includesSidebarToggle: false
         )
-        let hiddenFixedHeaderControlsWidth = MainView.fixedHomeMainHeaderControlsWidth(
-            reservedHorizontalPadding: hiddenReservedPadding
+        let collapsedFixedHeaderControlsWidth = MainView.fixedHomeMainHeaderControlsWidth(
+            reservedHorizontalPadding: collapsedReservedPadding,
+            includesSidebarToggle: true
         )
 
         XCTAssertGreaterThanOrEqual(visibleSidebarSearchWidth, MainView.homeMainHeaderMinimumSearchFieldWidth)
+        XCTAssertGreaterThanOrEqual(collapsedSidebarSearchWidth, MainView.homeMainHeaderMinimumSearchFieldWidth)
         XCTAssertLessThanOrEqual(visibleSidebarSearchWidth + visibleFixedHeaderControlsWidth, visibleSidebarMainWidth)
-        XCTAssertLessThanOrEqual(hiddenSidebarSearchWidth + hiddenFixedHeaderControlsWidth, hiddenSidebarMainWidth)
+        XCTAssertLessThanOrEqual(collapsedSidebarSearchWidth + collapsedFixedHeaderControlsWidth, collapsedSidebarMainWidth)
         XCTAssertLessThanOrEqual(visibleSidebarSearchWidth, MainView.headerSearchFieldWidth)
+        XCTAssertLessThanOrEqual(collapsedSidebarSearchWidth, MainView.headerSearchFieldWidth)
         XCTAssertEqual(
             MainView.homeMainHeaderSearchWidth(
                 forMainColumnWidth: 860 - MainView.homeSidebarRegularWidth,
-                reservedHorizontalPadding: visibleReservedPadding
+                reservedHorizontalPadding: visibleReservedPadding,
+                includesSidebarToggle: false
             ),
             MainView.headerSearchFieldWidth
         )
-
-        let legacyVisibleSearchWidth = MainView.homeMainHeaderSearchWidth(
-            forMainColumnWidth: visibleSidebarMainWidth,
-            reservedHorizontalPadding: hiddenReservedPadding
-        )
-        XCTAssertEqual(visibleSidebarSearchWidth - legacyVisibleSearchWidth, hiddenReservedPadding - visibleReservedPadding)
     }
 
     func testHomeMainHeaderSearchWidthGuaranteeBoundaryIsAtFixedControlsWidth() throws {
-        let reservedPadding = MainView.homeMainHeaderReservedHorizontalPadding
+        let reservedPadding = MainView.homeCollapsedHeaderLeadingPadding + MainView.homeMainHeaderSidePadding
         let fixedControlsWidth = MainView.fixedHomeMainHeaderControlsWidth(
-            reservedHorizontalPadding: reservedPadding
+            reservedHorizontalPadding: reservedPadding,
+            includesSidebarToggle: true
         )
 
         let belowFixedControlsWidth = MainView.homeMainHeaderSearchWidth(
             forMainColumnWidth: fixedControlsWidth - 1,
-            reservedHorizontalPadding: reservedPadding
+            reservedHorizontalPadding: reservedPadding,
+            includesSidebarToggle: true
         )
         let atFixedControlsWidth = MainView.homeMainHeaderSearchWidth(
             forMainColumnWidth: fixedControlsWidth,
-            reservedHorizontalPadding: reservedPadding
+            reservedHorizontalPadding: reservedPadding,
+            includesSidebarToggle: true
         )
         let belowMinimumSearchBudget = MainView.homeMainHeaderSearchWidth(
             forMainColumnWidth: fixedControlsWidth + MainView.homeMainHeaderMinimumSearchFieldWidth - 1,
-            reservedHorizontalPadding: reservedPadding
+            reservedHorizontalPadding: reservedPadding,
+            includesSidebarToggle: true
         )
 
         XCTAssertEqual(belowFixedControlsWidth, 0)
@@ -413,29 +449,30 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         )
     }
 
-    func testHomeSidebarTopRowsReserveTrafficLightInset() throws {
+    func testHomeSidebarTopRowsReserveTrafficLightInsetWithoutHiddenRail() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         XCTAssertEqual(MainView.homeSidebarTrafficLightLeadingInset, 68)
-        XCTAssertEqual(MainView.homeSidebarRailWidth, 72)
+        XCTAssertEqual(MainView.homeCollapsedHeaderLeadingPadding, MainView.homeSidebarTrafficLightLeadingInset)
+        XCTAssertFalse(source.contains("homeSidebarRailWidth"))
 
         guard
-            let headerStart = source.range(of: "private var homeSidebarHeader: some View"),
-            let railStart = source.range(of: "private var homeSidebarRail: some View", range: headerStart.upperBound..<source.endIndex),
-            let railEnd = source.range(of: "\n    private var homeSidebarToggleButton", range: railStart.upperBound..<source.endIndex)
+            let sidebarHeaderStart = source.range(of: "private var homeSidebarHeader: some View"),
+            let sidebarHeaderEnd = source.range(of: "\n    private var homeSidebarToggleButton", range: sidebarHeaderStart.upperBound..<source.endIndex),
+            let mainHeaderStart = source.range(of: "private func homeMainHeader(layout: LayoutMetrics, isSidebarVisible: Bool) -> some View"),
+            let mainHeaderEnd = source.range(of: "\n    private func configPage", range: mainHeaderStart.upperBound..<source.endIndex)
         else {
-            XCTFail("Expected home sidebar header and rail blocks were not found")
+            XCTFail("Expected home sidebar and main header blocks were not found")
             return
         }
 
-        let headerSource = String(source[headerStart.lowerBound..<railStart.lowerBound])
-        let railSource = String(source[railStart.lowerBound..<railEnd.lowerBound])
+        let sidebarHeaderSource = String(source[sidebarHeaderStart.lowerBound..<sidebarHeaderEnd.lowerBound])
+        let mainHeaderSource = String(source[mainHeaderStart.lowerBound..<mainHeaderEnd.lowerBound])
 
-        XCTAssertTrue(headerSource.contains(".padding(.leading, Self.homeSidebarTrafficLightLeadingInset)"))
-        XCTAssertTrue(headerSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
-        XCTAssertTrue(railSource.contains(".frame(width: Self.homeSidebarRailWidth"))
-        XCTAssertTrue(railSource.contains(".overlay(alignment: .topLeading)"))
-        XCTAssertTrue(railSource.contains(".offset(x: Self.homeSidebarHiddenToggleOffsetX, y: Self.homeSidebarHiddenToggleOffsetY)"))
+        XCTAssertTrue(sidebarHeaderSource.contains(".padding(.leading, Self.homeSidebarTrafficLightLeadingInset)"))
+        XCTAssertTrue(sidebarHeaderSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
+        XCTAssertTrue(mainHeaderSource.contains("Self.homeCollapsedHeaderLeadingPadding"))
+        XCTAssertTrue(mainHeaderSource.contains("if !isSidebarVisible {"))
     }
 
     func testHomeSidebarWidthAndChipBleedAreExplicit() throws {
@@ -443,9 +480,14 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("static let homeSidebarRegularWidth: CGFloat = 244"))
         XCTAssertTrue(source.contains("static let homeSidebarNarrowWidth: CGFloat = 208"))
-        XCTAssertTrue(source.contains("static let homeSidebarRailWidth: CGFloat = 72"))
+        XCTAssertTrue(source.contains("static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset"))
+        XCTAssertFalse(source.contains("homeSidebarRailWidth"))
         XCTAssertTrue(source.contains("static let homeSidebarHorizontalPadding: CGFloat = 12"))
         XCTAssertTrue(source.contains("static let homeSidebarChipBleed: CGFloat = 12"))
+        XCTAssertTrue(source.contains("static let homeGridHorizontalPadding: CGFloat = 32"))
+        XCTAssertTrue(source.contains("func homeGridAvailableWidth("))
+        XCTAssertTrue(source.contains("homeGridColumnCount(forWindowWidth:"))
+        XCTAssertTrue(source.contains("homeGridFrameWidth(forWindowWidth:"))
         XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarHorizontalPadding)"))
         XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarChipBleed)"))
         XCTAssertTrue(source.contains(".padding(.horizontal, -Self.homeSidebarChipBleed)"))

@@ -667,12 +667,9 @@ struct MainView: View {
             if isHomeSidebarVisible {
                 homeSidebarColumn(homeTagSnapshot: homeTagSnapshot)
                     .frame(width: layout.homeSidebarWidth)
-            } else {
-                homeSidebarRail
-                    .frame(width: Self.homeSidebarRailWidth)
             }
 
-            homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards)
+            homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards, isSidebarVisible: isHomeSidebarVisible)
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -683,30 +680,40 @@ struct MainView: View {
     private func homeMainColumn(
         layout: LayoutMetrics,
         homeTagSnapshot: GroupTagController.HomeSnapshot,
-        visibleCards: [MainViewModel.GroupCardModel]
+        visibleCards: [MainViewModel.GroupCardModel],
+        isSidebarVisible: Bool
     ) -> some View {
         VStack(spacing: 0) {
-            homeMainHeader(layout: layout)
-            homeContent(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards)
+            homeMainHeader(layout: layout, isSidebarVisible: isSidebarVisible)
+            homeContent(
+                layout: layout,
+                homeTagSnapshot: homeTagSnapshot,
+                visibleCards: visibleCards,
+                isSidebarVisible: isSidebarVisible
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func homeMainHeader(layout: LayoutMetrics) -> some View {
+    private func homeMainHeader(layout: LayoutMetrics, isSidebarVisible: Bool) -> some View {
         let mainColumnWidth = Self.homeMainColumnWidth(
             forWindowWidth: layout.width,
-            isSidebarVisible: isHomeSidebarVisible
+            isSidebarVisible: isSidebarVisible
         )
-        let leadingPadding = isHomeSidebarVisible
+        let leadingPadding = isSidebarVisible
             ? Self.homeMainHeaderSidePadding
-            : Self.homeMainHeaderHiddenLeadingPadding
+            : Self.homeCollapsedHeaderLeadingPadding
         let reservedPadding = leadingPadding + Self.homeMainHeaderSidePadding
         let searchWidth = Self.homeMainHeaderSearchWidth(
             forMainColumnWidth: mainColumnWidth,
-            reservedHorizontalPadding: reservedPadding
+            reservedHorizontalPadding: reservedPadding,
+            includesSidebarToggle: !isSidebarVisible
         )
 
         return HStack(spacing: Self.homeMainHeaderItemSpacing) {
+            if !isSidebarVisible {
+                homeSidebarToggleButton
+            }
             homeSearchField(width: searchWidth)
             Spacer(minLength: 0)
             importButton
@@ -726,16 +733,27 @@ struct MainView: View {
     private func homeContent(
         layout: LayoutMetrics,
         homeTagSnapshot: GroupTagController.HomeSnapshot,
-        visibleCards: [MainViewModel.GroupCardModel]
+        visibleCards: [MainViewModel.GroupCardModel],
+        isSidebarVisible: Bool
     ) -> some View {
         Group {
             if visibleCards.isEmpty {
-                gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
+                gridSection(
+                    layout: layout,
+                    homeTagSnapshot: homeTagSnapshot,
+                    groupCards: visibleCards,
+                    isSidebarVisible: isSidebarVisible
+                )
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 ScrollView {
-                    gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
+                    gridSection(
+                        layout: layout,
+                        homeTagSnapshot: homeTagSnapshot,
+                        groupCards: visibleCards,
+                        isSidebarVisible: isSidebarVisible
+                    )
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
                         .padding(.bottom, 24)
@@ -748,7 +766,8 @@ struct MainView: View {
     private func gridSection(
         layout: LayoutMetrics,
         homeTagSnapshot: GroupTagController.HomeSnapshot,
-        groupCards: [MainViewModel.GroupCardModel]
+        groupCards: [MainViewModel.GroupCardModel],
+        isSidebarVisible: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if groupCards.isEmpty {
@@ -772,7 +791,7 @@ struct MainView: View {
             } else {
                 HStack {
                     Spacer(minLength: 0)
-                    LazyVGrid(columns: homeGridColumns(for: layout), spacing: 12) {
+                    LazyVGrid(columns: homeGridColumns(for: layout, isSidebarVisible: isSidebarVisible), spacing: 12) {
                         ForEach(groupCards) { card in
                             SharedGroupCard(
                                 card: card,
@@ -838,7 +857,7 @@ struct MainView: View {
                         }
                         await viewModel.prefetchHomeGroupCardMetadataIfNeeded(groupCards.map(\.id))
                     }
-                    .frame(maxWidth: layout.homeGridFrameWidth, alignment: .center)
+                    .frame(maxWidth: Self.homeGridFrameWidth(forWindowWidth: layout.width, isSidebarVisible: isSidebarVisible), alignment: .center)
                     Spacer(minLength: 0)
                 }
             }
@@ -1018,8 +1037,11 @@ struct MainView: View {
         .modifier(EmptyStateChrome(theme: theme, enabled: chromed))
     }
 
-    private func homeGridColumns(for layout: LayoutMetrics) -> [GridItem] {
-        Array(repeating: GridItem(.fixed(304), spacing: 14), count: layout.homeGridColumnCount)
+    private func homeGridColumns(for layout: LayoutMetrics, isSidebarVisible: Bool) -> [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(304), spacing: 14),
+            count: Self.homeGridColumnCount(forWindowWidth: layout.width, isSidebarVisible: isSidebarVisible)
+        )
     }
 
     private func homeSidebar(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
@@ -1071,32 +1093,14 @@ struct MainView: View {
 
     private var homeSidebarHeader: some View {
         HStack(spacing: 8) {
-            homeSidebarToggleButton
             headerLogoRow
                 .lineLimit(1)
             Spacer(minLength: 0)
+            homeSidebarToggleButton
         }
         .padding(.leading, Self.homeSidebarTrafficLightLeadingInset)
         .padding(.trailing, Self.homeSidebarHorizontalPadding)
         .frame(height: Self.homeSidebarHeaderHeight)
-    }
-
-    private var homeSidebarRail: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-        }
-        .frame(width: Self.homeSidebarRailWidth)
-        .frame(maxHeight: .infinity)
-        .background(AppTheme.surface(for: theme))
-        .overlay(alignment: .topLeading) {
-            homeSidebarToggleButton
-                .offset(x: Self.homeSidebarHiddenToggleOffsetX, y: Self.homeSidebarHiddenToggleOffsetY)
-        }
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(AppTheme.cardBorder(for: theme))
-                .frame(width: 0.5)
-        }
     }
 
     private var homeSidebarToggleButton: some View {
@@ -1567,23 +1571,15 @@ extension MainView {
     nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
     nonisolated static let homeSidebarTrafficLightLeadingInset: CGFloat = 68
     nonisolated static let homeSidebarToggleButtonSize: CGFloat = 28
-    nonisolated static let homeSidebarRailWidth: CGFloat = 72
     nonisolated static let homeSidebarHeaderHeight: CGFloat = 52
     nonisolated static let homeSidebarHorizontalPadding: CGFloat = 12
-    nonisolated static let homeSidebarHiddenToggleOffsetX: CGFloat = homeSidebarTrafficLightLeadingInset
-    nonisolated static let homeSidebarHiddenToggleOffsetY: CGFloat = (homeSidebarHeaderHeight - homeSidebarToggleButtonSize) / 2
     static let homeSidebarChipBleed: CGFloat = 12
     nonisolated static let homeMainHeaderSidePadding: CGFloat = 16
     nonisolated static let homeMainHeaderHorizontalPadding: CGFloat = homeMainHeaderSidePadding * 2
-    nonisolated static let homeMainHeaderHiddenLeadingPadding: CGFloat = homeSidebarHiddenToggleOffsetX
-        + homeSidebarToggleButtonSize
-        + homeSidebarHorizontalPadding
-        - homeSidebarRailWidth
-    nonisolated static let homeMainHeaderReservedHorizontalPadding: CGFloat = homeMainHeaderHiddenLeadingPadding
-        + homeMainHeaderSidePadding
+    nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset
     nonisolated static let homeMainHeaderItemSpacing: CGFloat = 12
-    nonisolated static let homeMainHeaderControlSpacing: CGFloat = homeMainHeaderItemSpacing * 4
     nonisolated static let homeMainHeaderMinimumSearchFieldWidth: CGFloat = 160
+    nonisolated static let homeGridHorizontalPadding: CGFloat = 32
     static let homeProjectPillHeight: CGFloat = 28
     static let homeFilterPillHeight: CGFloat = 28
     static let homeProjectScopeRefreshButtonSize: CGFloat = homeProjectPillHeight
@@ -1634,22 +1630,30 @@ extension MainView {
     nonisolated static func homeMainColumnWidth(forWindowWidth width: CGFloat, isSidebarVisible: Bool) -> CGFloat {
         let sidebarWidth = isSidebarVisible
             ? (width <= 760 ? homeSidebarNarrowWidth : homeSidebarRegularWidth)
-            : homeSidebarRailWidth
+            : 0
         return max(0, width - sidebarWidth)
     }
 
-    nonisolated static func fixedHomeMainHeaderControlsWidth(reservedHorizontalPadding: CGFloat) -> CGFloat {
-        (toolbarButtonSize * 3)
+    nonisolated static func fixedHomeMainHeaderControlsWidth(
+        reservedHorizontalPadding: CGFloat,
+        includesSidebarToggle: Bool
+    ) -> CGFloat {
+        let toggleWidth = includesSidebarToggle ? homeSidebarToggleButtonSize : 0
+        let spacingCount: CGFloat = includesSidebarToggle ? 5 : 4
+        return (toolbarButtonSize * 3)
+            + toggleWidth
             + reservedHorizontalPadding
-            + homeMainHeaderControlSpacing
+            + (homeMainHeaderItemSpacing * spacingCount)
     }
 
     nonisolated static func homeMainHeaderSearchWidth(
         forMainColumnWidth mainColumnWidth: CGFloat,
-        reservedHorizontalPadding: CGFloat
+        reservedHorizontalPadding: CGFloat,
+        includesSidebarToggle: Bool
     ) -> CGFloat {
         let fixedControlsWidth = fixedHomeMainHeaderControlsWidth(
-            reservedHorizontalPadding: reservedHorizontalPadding
+            reservedHorizontalPadding: reservedHorizontalPadding,
+            includesSidebarToggle: includesSidebarToggle
         )
         let availableWidth = mainColumnWidth - fixedControlsWidth
         if availableWidth >= homeMainHeaderMinimumSearchFieldWidth {
@@ -1661,8 +1665,44 @@ extension MainView {
     nonisolated static func homeMainHeaderSearchWidth(forMainColumnWidth mainColumnWidth: CGFloat) -> CGFloat {
         homeMainHeaderSearchWidth(
             forMainColumnWidth: mainColumnWidth,
-            reservedHorizontalPadding: homeMainHeaderReservedHorizontalPadding
+            reservedHorizontalPadding: homeMainHeaderHorizontalPadding,
+            includesSidebarToggle: false
         )
+    }
+
+    nonisolated static func homeGridAvailableWidth(
+        forWindowWidth width: CGFloat,
+        isSidebarVisible: Bool
+    ) -> CGFloat {
+        let sidebarWidth = isSidebarVisible
+            ? (width <= 760 ? homeSidebarNarrowWidth : homeSidebarRegularWidth)
+            : 0
+        return max(304, width - sidebarWidth - homeGridHorizontalPadding)
+    }
+
+    nonisolated static func homeGridColumnCount(
+        forWindowWidth width: CGFloat,
+        isSidebarVisible: Bool
+    ) -> Int {
+        let availableWidth = homeGridAvailableWidth(
+            forWindowWidth: width,
+            isSidebarVisible: isSidebarVisible
+        )
+        let columns = Int((availableWidth + 14) / (304 + 14))
+        return min(4, max(1, columns))
+    }
+
+    nonisolated static func homeGridFrameWidth(
+        forWindowWidth width: CGFloat,
+        isSidebarVisible: Bool
+    ) -> CGFloat {
+        let columnCount = homeGridColumnCount(
+            forWindowWidth: width,
+            isSidebarVisible: isSidebarVisible
+        )
+        let columns = CGFloat(columnCount)
+        let spacing = CGFloat(max(columnCount - 1, 0)) * 14
+        return 304 * columns + spacing
     }
 
 }
@@ -1706,20 +1746,6 @@ private struct LayoutMetrics {
         width <= 760 ? MainView.homeSidebarNarrowWidth : MainView.homeSidebarRegularWidth
     }
 
-    var homeGridAvailableWidth: CGFloat {
-        max(304, width - homeSidebarWidth - 32)
-    }
-
-    var homeGridColumnCount: Int {
-        let columns = Int((homeGridAvailableWidth + 14) / (304 + 14))
-        return min(4, max(1, columns))
-    }
-
-    var homeGridFrameWidth: CGFloat {
-        let columns = CGFloat(homeGridColumnCount)
-        let spacing = CGFloat(max(homeGridColumnCount - 1, 0)) * 14
-        return 304 * columns + spacing
-    }
 }
 
 private struct RenameSourceDialog: View {
