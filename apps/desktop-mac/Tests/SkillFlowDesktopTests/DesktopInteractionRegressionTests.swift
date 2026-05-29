@@ -449,6 +449,21 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         )
     }
 
+    func testHomeGridWidthFollowsSidebarVisibility() throws {
+        let expandedRegularWidth = MainView.homeGridAvailableWidth(forWindowWidth: 1200, isSidebarVisible: true)
+        let collapsedRegularWidth = MainView.homeGridAvailableWidth(forWindowWidth: 1200, isSidebarVisible: false)
+
+        XCTAssertEqual(expandedRegularWidth, 1200 - MainView.homeSidebarRegularWidth - MainView.homeGridHorizontalPadding)
+        XCTAssertEqual(collapsedRegularWidth, 1200 - MainView.homeGridHorizontalPadding)
+        XCTAssertGreaterThan(collapsedRegularWidth, expandedRegularWidth)
+
+        XCTAssertEqual(MainView.homeGridColumnCount(forWindowWidth: 900, isSidebarVisible: true), 2)
+        XCTAssertEqual(MainView.homeGridColumnCount(forWindowWidth: 900, isSidebarVisible: false), 2)
+        XCTAssertEqual(MainView.homeGridColumnCount(forWindowWidth: 1180, isSidebarVisible: true), 2)
+        XCTAssertEqual(MainView.homeGridColumnCount(forWindowWidth: 1180, isSidebarVisible: false), 3)
+        XCTAssertEqual(MainView.homeGridColumnCount(forWindowWidth: 1800, isSidebarVisible: false), 4)
+    }
+
     func testHomeSidebarTopRowsReserveTrafficLightInsetWithoutHiddenRail() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
@@ -485,9 +500,9 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains("static let homeSidebarHorizontalPadding: CGFloat = 12"))
         XCTAssertTrue(source.contains("static let homeSidebarChipBleed: CGFloat = 12"))
         XCTAssertTrue(source.contains("static let homeGridHorizontalPadding: CGFloat = 32"))
-        XCTAssertTrue(source.contains("func homeGridAvailableWidth("))
-        XCTAssertTrue(source.contains("homeGridColumnCount(forWindowWidth:"))
-        XCTAssertTrue(source.contains("homeGridFrameWidth(forWindowWidth:"))
+        XCTAssertTrue(source.contains("nonisolated static func homeGridAvailableWidth(\n        forWindowWidth width: CGFloat,\n        isSidebarVisible: Bool"))
+        XCTAssertTrue(source.contains("nonisolated static func homeGridColumnCount(\n        forWindowWidth width: CGFloat,\n        isSidebarVisible: Bool"))
+        XCTAssertTrue(source.contains("nonisolated static func homeGridFrameWidth(\n        forWindowWidth width: CGFloat,\n        isSidebarVisible: Bool"))
         XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarHorizontalPadding)"))
         XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarChipBleed)"))
         XCTAssertTrue(source.contains(".padding(.horizontal, -Self.homeSidebarChipBleed)"))
