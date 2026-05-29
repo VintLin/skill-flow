@@ -306,6 +306,22 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertFalse(bodySource.contains("topBar(layout: layout)\n                    pageContent(layout: layout)"))
     }
 
+    func testHomeShellExtendsIntoHiddenTitlebarSafeArea() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let shellStart = source.range(of: "private func homeShell(layout: LayoutMetrics) -> some View"),
+            let shellEnd = source.range(of: "\n    private func homeMainColumn", range: shellStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected homeShell block was not found")
+            return
+        }
+
+        let shellSource = String(source[shellStart.lowerBound..<shellEnd.lowerBound])
+
+        XCTAssertTrue(shellSource.contains(".ignoresSafeArea(.container, edges: .top)"))
+    }
+
     func testHomeSidebarHeaderAndFullCollapseToggleAreAvailable() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 

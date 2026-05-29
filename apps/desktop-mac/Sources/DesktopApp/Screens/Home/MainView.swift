@@ -671,6 +671,7 @@ struct MainView: View {
 
             homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards, isSidebarVisible: isHomeSidebarVisible)
         }
+        .ignoresSafeArea(.container, edges: .top)
         .contentShape(Rectangle())
         .onTapGesture {
             NotificationCenter.default.post(name: .groupTagEditorDismissRequested, object: nil)
