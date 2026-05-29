@@ -698,6 +698,9 @@ struct MainView: View {
             isSidebarVisible: isHomeSidebarVisible
         )
         let searchWidth = Self.homeMainHeaderSearchWidth(forMainColumnWidth: mainColumnWidth)
+        let leadingPadding = isHomeSidebarVisible
+            ? Self.homeMainHeaderSidePadding
+            : Self.homeMainHeaderHiddenLeadingPadding
 
         return HStack(spacing: Self.homeMainHeaderItemSpacing) {
             homeSearchField(width: searchWidth)
@@ -706,7 +709,8 @@ struct MainView: View {
             homeUpdateButton
             settingsButton
         }
-        .padding(.horizontal, Self.homeMainHeaderSidePadding)
+        .padding(.leading, leadingPadding)
+        .padding(.trailing, Self.homeMainHeaderSidePadding)
         .frame(height: Self.homeSidebarHeaderHeight)
         .background(AppTheme.headerBackground(for: theme))
     }
@@ -1075,17 +1079,15 @@ struct MainView: View {
 
     private var homeSidebarRail: some View {
         VStack(spacing: 0) {
-            HStack {
-                homeSidebarToggleButton
-                Spacer(minLength: 0)
-            }
-            .padding(.leading, Self.homeSidebarTrafficLightLeadingInset)
-            .padding(.trailing, Self.homeSidebarHorizontalPadding)
-            .frame(height: Self.homeSidebarHeaderHeight)
             Spacer(minLength: 0)
         }
+        .frame(width: Self.homeSidebarRailWidth)
         .frame(maxHeight: .infinity)
         .background(AppTheme.surface(for: theme))
+        .overlay(alignment: .topLeading) {
+            homeSidebarToggleButton
+                .offset(x: Self.homeSidebarHiddenToggleOffsetX, y: Self.homeSidebarHiddenToggleOffsetY)
+        }
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(AppTheme.cardBorder(for: theme))
@@ -1561,12 +1563,20 @@ extension MainView {
     nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
     nonisolated static let homeSidebarTrafficLightLeadingInset: CGFloat = 68
     nonisolated static let homeSidebarToggleButtonSize: CGFloat = 28
-    nonisolated static let homeSidebarRailWidth: CGFloat = homeSidebarTrafficLightLeadingInset + homeSidebarToggleButtonSize + homeSidebarHorizontalPadding
-    static let homeSidebarHeaderHeight: CGFloat = 52
+    nonisolated static let homeSidebarRailWidth: CGFloat = 72
+    nonisolated static let homeSidebarHeaderHeight: CGFloat = 52
     nonisolated static let homeSidebarHorizontalPadding: CGFloat = 12
+    nonisolated static let homeSidebarHiddenToggleOffsetX: CGFloat = homeSidebarTrafficLightLeadingInset
+    nonisolated static let homeSidebarHiddenToggleOffsetY: CGFloat = (homeSidebarHeaderHeight - homeSidebarToggleButtonSize) / 2
     static let homeSidebarChipBleed: CGFloat = 12
     nonisolated static let homeMainHeaderSidePadding: CGFloat = 16
     nonisolated static let homeMainHeaderHorizontalPadding: CGFloat = homeMainHeaderSidePadding * 2
+    nonisolated static let homeMainHeaderHiddenLeadingPadding: CGFloat = homeSidebarHiddenToggleOffsetX
+        + homeSidebarToggleButtonSize
+        + homeSidebarHorizontalPadding
+        - homeSidebarRailWidth
+    nonisolated static let homeMainHeaderReservedHorizontalPadding: CGFloat = homeMainHeaderHiddenLeadingPadding
+        + homeMainHeaderSidePadding
     nonisolated static let homeMainHeaderItemSpacing: CGFloat = 12
     nonisolated static let homeMainHeaderControlSpacing: CGFloat = homeMainHeaderItemSpacing * 4
     nonisolated static let homeMainHeaderMinimumSearchFieldWidth: CGFloat = 160
@@ -1626,10 +1636,13 @@ extension MainView {
 
     nonisolated static func homeMainHeaderSearchWidth(forMainColumnWidth mainColumnWidth: CGFloat) -> CGFloat {
         let fixedControlsWidth = (toolbarButtonSize * 3)
-            + homeMainHeaderHorizontalPadding
+            + homeMainHeaderReservedHorizontalPadding
             + homeMainHeaderControlSpacing
         let availableWidth = mainColumnWidth - fixedControlsWidth
-        return min(headerSearchFieldWidth, max(homeMainHeaderMinimumSearchFieldWidth, availableWidth))
+        if availableWidth >= homeMainHeaderMinimumSearchFieldWidth {
+            return min(headerSearchFieldWidth, availableWidth)
+        }
+        return max(0, availableWidth)
     }
 
 }

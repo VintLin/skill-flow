@@ -349,7 +349,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let visibleSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(forMainColumnWidth: visibleSidebarMainWidth)
         let hiddenSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(forMainColumnWidth: hiddenSidebarMainWidth)
         let fixedHeaderControlsWidth = (MainView.toolbarButtonSize * 3)
-            + MainView.homeMainHeaderHorizontalPadding
+            + MainView.homeMainHeaderReservedHorizontalPadding
             + MainView.homeMainHeaderControlSpacing
 
         XCTAssertGreaterThanOrEqual(visibleSidebarSearchWidth, MainView.homeMainHeaderMinimumSearchFieldWidth)
@@ -357,16 +357,18 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertLessThanOrEqual(hiddenSidebarSearchWidth + fixedHeaderControlsWidth, hiddenSidebarMainWidth)
         XCTAssertLessThanOrEqual(visibleSidebarSearchWidth, MainView.headerSearchFieldWidth)
         XCTAssertEqual(MainView.homeMainHeaderSearchWidth(forMainColumnWidth: 860 - MainView.homeSidebarRegularWidth), MainView.headerSearchFieldWidth)
+
+        let compressedMainWidth = fixedHeaderControlsWidth + MainView.homeMainHeaderMinimumSearchFieldWidth - 1
+        let compressedSearchWidth = MainView.homeMainHeaderSearchWidth(forMainColumnWidth: compressedMainWidth)
+
+        XCTAssertLessThanOrEqual(compressedSearchWidth + fixedHeaderControlsWidth, compressedMainWidth)
     }
 
     func testHomeSidebarTopRowsReserveTrafficLightInset() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         XCTAssertEqual(MainView.homeSidebarTrafficLightLeadingInset, 68)
-        XCTAssertGreaterThanOrEqual(
-            MainView.homeSidebarRailWidth,
-            MainView.homeSidebarTrafficLightLeadingInset + MainView.homeSidebarToggleButtonSize + MainView.homeSidebarHorizontalPadding
-        )
+        XCTAssertEqual(MainView.homeSidebarRailWidth, 72)
 
         guard
             let headerStart = source.range(of: "private var homeSidebarHeader: some View"),
@@ -382,8 +384,9 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertTrue(headerSource.contains(".padding(.leading, Self.homeSidebarTrafficLightLeadingInset)"))
         XCTAssertTrue(headerSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
-        XCTAssertTrue(railSource.contains(".padding(.leading, Self.homeSidebarTrafficLightLeadingInset)"))
-        XCTAssertTrue(railSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
+        XCTAssertTrue(railSource.contains(".frame(width: Self.homeSidebarRailWidth"))
+        XCTAssertTrue(railSource.contains(".overlay(alignment: .topLeading)"))
+        XCTAssertTrue(railSource.contains(".offset(x: Self.homeSidebarHiddenToggleOffsetX, y: Self.homeSidebarHiddenToggleOffsetY)"))
     }
 
     func testHomeSidebarWidthAndChipBleedAreExplicit() throws {
@@ -391,7 +394,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("static let homeSidebarRegularWidth: CGFloat = 244"))
         XCTAssertTrue(source.contains("static let homeSidebarNarrowWidth: CGFloat = 208"))
-        XCTAssertTrue(source.contains("static let homeSidebarRailWidth: CGFloat = homeSidebarTrafficLightLeadingInset + homeSidebarToggleButtonSize + homeSidebarHorizontalPadding"))
+        XCTAssertTrue(source.contains("static let homeSidebarRailWidth: CGFloat = 72"))
         XCTAssertTrue(source.contains("static let homeSidebarHorizontalPadding: CGFloat = 12"))
         XCTAssertTrue(source.contains("static let homeSidebarChipBleed: CGFloat = 12"))
         XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarHorizontalPadding)"))
