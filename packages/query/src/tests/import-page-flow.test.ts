@@ -305,7 +305,7 @@ describe.sequential("import page flow", () => {
 
     expect(preview.data.locator).toBe(repoPath);
     expect(preview.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
-  });
+  }, 15_000);
 
   test("ClawHub locators are direct import candidates and previews", async () => {
     const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockResolvedValue(

@@ -2,6 +2,29 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.9 - 2026-05-30
+
+### Added
+
+- Added Skill group renaming in the macOS desktop app, with bridge/runtime support and cache handling so custom names persist across refreshed source data.
+- Added home-page import handoff for supported source links, including GitHub and GitLab locator forms, so pasted import links can open the import preview directly.
+- Added the macOS home sidebar for filtering Skill groups by status, source type, tags, agent applicability, and project scope.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.8` to `1.3.9`.
+- Redesigned the macOS home sidebar with a white/surface background, collapsed-by-default filter rows, wrapping expanded chips, full sidebar collapse, and integrated header controls.
+- Renamed the Chinese status filter label from `常用` to `置顶` while keeping the pinned concept aligned with existing English and Japanese copy.
+- Expanded the macOS home grid when the sidebar is fully collapsed so wider windows can show more cards.
+
+### Fixed
+
+- Fixed sidebar chip prefixes so only tag chips use `#`; source, status, agent, and project options now use plain labels.
+- Fixed macOS hidden-titlebar controls so app header buttons remain clickable, traffic-light buttons stay aligned after resize/full-screen transitions, and the app logo/title keep spacing from system buttons.
+- Fixed GitLab subgroup locator parsing and archive fallback behavior across backend and import-preview handoff paths.
+- Fixed duplicate detail enrichment fetches and stale source-rename responses that could overwrite newer desktop state.
+- Improved macOS dev packaging by reusing a valid installed or cached bundled Node runtime before downloading again.
+
 ## v1.3.8 - 2026-05-27
 
 ### Changed
