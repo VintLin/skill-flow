@@ -105,6 +105,10 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "ja")), "タグ")
     }
 
+    func testChinesePinnedStatusUsesPinnedWording() {
+        XCTAssertEqual(L10n.string("home.sidebar.pinned", locale: Locale(identifier: "zh-Hans")), "置顶")
+    }
+
     @MainActor
     func testDetailScreenLocalizesGroupFileTreeDocumentTitlePerLocale() {
         let fileTreeDocument = MainViewModel.DocumentDescriptor(

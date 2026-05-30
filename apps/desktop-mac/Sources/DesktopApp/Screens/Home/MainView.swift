@@ -672,10 +672,6 @@ struct MainView: View {
             homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards, isSidebarVisible: isHomeSidebarVisible)
         }
         .ignoresSafeArea(.container, edges: .top)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            NotificationCenter.default.post(name: .groupTagEditorDismissRequested, object: nil)
-        }
     }
 
     private func homeMainColumn(
@@ -763,6 +759,15 @@ struct MainView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(groupTagEditorDismissTapArea)
+    }
+
+    private var groupTagEditorDismissTapArea: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture {
+                NotificationCenter.default.post(name: .groupTagEditorDismissRequested, object: nil)
+            }
     }
 
     private func gridSection(
@@ -1100,7 +1105,7 @@ struct MainView: View {
             Spacer(minLength: 0)
             homeSidebarToggleButton
         }
-        .padding(.leading, Self.homeSidebarTrafficLightLeadingInset)
+        .padding(.leading, Self.homeSidebarBrandLeadingInset)
         .padding(.trailing, Self.homeSidebarHorizontalPadding)
         .padding(.top, Self.homeTitlebarControlTopPadding)
         .frame(height: Self.homeSidebarHeaderHeight, alignment: .top)
@@ -1573,11 +1578,12 @@ extension MainView {
     nonisolated static let homeSidebarRegularWidth: CGFloat = 244
     nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
     nonisolated static let homeSidebarTrafficLightLeadingInset: CGFloat = 68
+    nonisolated static let homeSidebarBrandLeadingInset: CGFloat = 84
     nonisolated static let homeSidebarToggleButtonSize: CGFloat = 28
     nonisolated static let homeSidebarHeaderHeight: CGFloat = 52
     nonisolated static let homeSidebarHorizontalPadding: CGFloat = 12
     static let homeSidebarChipBleed: CGFloat = 12
-    static let homeTitlebarControlTopPadding: CGFloat = 0
+    static let homeTitlebarControlTopPadding: CGFloat = 8
     nonisolated static let homeMainHeaderSidePadding: CGFloat = 16
     nonisolated static let homeMainHeaderHorizontalPadding: CGFloat = homeMainHeaderSidePadding * 2
     nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset

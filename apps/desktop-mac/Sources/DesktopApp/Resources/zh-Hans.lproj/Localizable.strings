@@ -20,7 +20,7 @@
 "home.sidebar.agents" = "代理";
 "home.sidebar.projects" = "项目";
 "home.sidebar.all" = "全部";
-"home.sidebar.pinned" = "常用";
+"home.sidebar.pinned" = "置顶";
 "home.sidebar.local" = "本地";
 "home.sidebar.remote" = "线上";
 "home.sidebar.expand" = "展开分组";

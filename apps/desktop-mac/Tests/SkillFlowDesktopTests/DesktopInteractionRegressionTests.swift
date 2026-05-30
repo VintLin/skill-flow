@@ -322,13 +322,66 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(shellSource.contains(".ignoresSafeArea(.container, edges: .top)"))
     }
 
+    func testHomeShellDoesNotPlaceGlobalTapGestureOverHeaderControls() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let shellStart = source.range(of: "private func homeShell(layout: LayoutMetrics) -> some View"),
+            let shellEnd = source.range(of: "\n    private func homeMainColumn", range: shellStart.upperBound..<source.endIndex),
+            let contentStart = source.range(of: "private func homeContent("),
+            let contentEnd = source.range(of: "\n    private func gridSection", range: contentStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected home shell/content blocks were not found")
+            return
+        }
+
+        let shellSource = String(source[shellStart.lowerBound..<shellEnd.lowerBound])
+        let contentSource = String(source[contentStart.lowerBound..<contentEnd.lowerBound])
+
+        XCTAssertFalse(shellSource.contains(".contentShape(Rectangle())"))
+        XCTAssertFalse(shellSource.contains(".onTapGesture"))
+        XCTAssertTrue(contentSource.contains(".background(groupTagEditorDismissTapArea)"))
+        XCTAssertTrue(source.contains("private var groupTagEditorDismissTapArea: some View"))
+    }
+
     func testMainWindowUsesFullSizeContentViewForClickableTitlebarControls() throws {
         let source = try sourceText(at: "Sources/DesktopApp/App/SkillFlowDesktopApp.swift")
 
         XCTAssertTrue(source.contains(".background(WindowTitlebarConfigurator())"))
         XCTAssertTrue(source.contains("window.styleMask.insert(.fullSizeContentView)"))
         XCTAssertTrue(source.contains("window.titlebarAppearsTransparent = true"))
+        XCTAssertTrue(source.contains("window.titleVisibility = .hidden"))
+        XCTAssertTrue(source.contains("window.titlebarSeparatorStyle = .none"))
         XCTAssertTrue(source.contains("window.isMovableByWindowBackground = false"))
+    }
+
+    func testMainWindowAlignsTrafficLightsWithHomeHeaderControls() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/App/SkillFlowDesktopApp.swift")
+
+        XCTAssertTrue(source.contains("private static let titlebarTrafficLightVerticalOffset: CGFloat = -8"))
+        XCTAssertTrue(source.contains("private static var originalTrafficLightOrigins: [NSWindow.ButtonType: NSPoint] = [:]"))
+        XCTAssertTrue(source.contains("alignTrafficLightButtons(in: window)"))
+        XCTAssertTrue(source.contains("let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]"))
+        XCTAssertTrue(source.contains("guard let button = window.standardWindowButton(buttonType) else"))
+        XCTAssertTrue(source.contains("Self.originalTrafficLightOrigins[buttonType] = button.frame.origin"))
+        XCTAssertTrue(source.contains("let alignedOrigin = NSPoint("))
+        XCTAssertTrue(source.contains("x: originalOrigin.x,"))
+        XCTAssertTrue(source.contains("y: originalOrigin.y + Self.titlebarTrafficLightVerticalOffset"))
+        XCTAssertTrue(source.contains("button.setFrameOrigin(alignedOrigin)"))
+    }
+
+    func testMainWindowRealignsTrafficLightsAfterWindowLayoutChanges() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/App/SkillFlowDesktopApp.swift")
+
+        XCTAssertTrue(source.contains("func makeCoordinator() -> Coordinator"))
+        XCTAssertTrue(source.contains("context.coordinator.configure(window: window)"))
+        XCTAssertTrue(source.contains("final class Coordinator"))
+        XCTAssertTrue(source.contains("NSWindow.didResizeNotification"))
+        XCTAssertTrue(source.contains("NSWindow.didEndLiveResizeNotification"))
+        XCTAssertTrue(source.contains("NSWindow.didExitFullScreenNotification"))
+        XCTAssertTrue(source.contains("NSWindow.didBecomeKeyNotification"))
+        XCTAssertTrue(source.contains("scheduleTitlebarRealignment(for: window)"))
+        XCTAssertTrue(source.contains("DispatchQueue.main.asyncAfter(deadline: .now() + 0.05)"))
     }
 
     func testHomeHeadersAlignControlsWithNativeTrafficLights() throws {
@@ -347,7 +400,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let mainHeaderSource = String(source[mainHeaderStart.lowerBound..<mainHeaderEnd.lowerBound])
         let sidebarHeaderSource = String(source[sidebarHeaderStart.lowerBound..<sidebarHeaderEnd.lowerBound])
 
-        XCTAssertTrue(source.contains("static let homeTitlebarControlTopPadding: CGFloat = 0"))
+        XCTAssertTrue(source.contains("static let homeTitlebarControlTopPadding: CGFloat = 8"))
         XCTAssertTrue(mainHeaderSource.contains(".padding(.top, Self.homeTitlebarControlTopPadding)"))
         XCTAssertTrue(mainHeaderSource.contains(".frame(height: Self.homeSidebarHeaderHeight, alignment: .top)"))
         XCTAssertTrue(sidebarHeaderSource.contains(".padding(.top, Self.homeTitlebarControlTopPadding)"))
@@ -414,7 +467,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertLessThan(logoRange.lowerBound, toggleRange.lowerBound)
         XCTAssertTrue(headerSource.contains("Spacer(minLength: 0)"))
-        XCTAssertTrue(headerSource.contains(".padding(.leading, Self.homeSidebarTrafficLightLeadingInset)"))
+        XCTAssertTrue(headerSource.contains(".padding(.leading, Self.homeSidebarBrandLeadingInset)"))
         XCTAssertTrue(headerSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
     }
 
@@ -516,6 +569,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         XCTAssertEqual(MainView.homeSidebarTrafficLightLeadingInset, 68)
+        XCTAssertEqual(MainView.homeSidebarBrandLeadingInset, 84)
         XCTAssertEqual(MainView.homeCollapsedHeaderLeadingPadding, MainView.homeSidebarTrafficLightLeadingInset)
         XCTAssertFalse(source.contains("homeSidebarRailWidth"))
 
@@ -532,7 +586,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let sidebarHeaderSource = String(source[sidebarHeaderStart.lowerBound..<sidebarHeaderEnd.lowerBound])
         let mainHeaderSource = String(source[mainHeaderStart.lowerBound..<mainHeaderEnd.lowerBound])
 
-        XCTAssertTrue(sidebarHeaderSource.contains(".padding(.leading, Self.homeSidebarTrafficLightLeadingInset)"))
+        XCTAssertTrue(sidebarHeaderSource.contains(".padding(.leading, Self.homeSidebarBrandLeadingInset)"))
         XCTAssertTrue(sidebarHeaderSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
         XCTAssertTrue(mainHeaderSource.contains("Self.homeCollapsedHeaderLeadingPadding"))
         XCTAssertTrue(mainHeaderSource.contains("if !isSidebarVisible {"))

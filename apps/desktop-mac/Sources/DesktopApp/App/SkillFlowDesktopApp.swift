@@ -53,19 +53,115 @@ struct SkillFlowDesktopApp: App {
 }
 
 private struct WindowTitlebarConfigurator: NSViewRepresentable {
+    private static let titlebarTrafficLightVerticalOffset: CGFloat = -8
+    private static var originalTrafficLightOrigins: [NSWindow.ButtonType: NSPoint] = [:]
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context _: Context) -> NSView {
         NSView(frame: .zero)
     }
 
-    func updateNSView(_ nsView: NSView, context _: Context) {
+    func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             guard let window = nsView.window else {
                 return
             }
 
-            window.styleMask.insert(.fullSizeContentView)
-            window.titlebarAppearsTransparent = true
-            window.isMovableByWindowBackground = false
+            context.coordinator.configure(window: window)
+        }
+    }
+
+    private static func configureTitlebar(for window: NSWindow) {
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.titlebarSeparatorStyle = .none
+        window.isMovableByWindowBackground = false
+        Self.alignTrafficLightButtons(in: window)
+    }
+
+    private static func alignTrafficLightButtons(in window: NSWindow) {
+        let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+
+        for buttonType in buttonTypes {
+            guard let button = window.standardWindowButton(buttonType) else {
+                continue
+            }
+
+            if Self.originalTrafficLightOrigins[buttonType] == nil {
+                Self.originalTrafficLightOrigins[buttonType] = button.frame.origin
+            }
+
+            guard let originalOrigin = Self.originalTrafficLightOrigins[buttonType] else {
+                continue
+            }
+
+            let alignedOrigin = NSPoint(
+                x: originalOrigin.x,
+                y: originalOrigin.y + Self.titlebarTrafficLightVerticalOffset
+            )
+            button.setFrameOrigin(alignedOrigin)
+        }
+    }
+
+    final class Coordinator {
+        private weak var configuredWindow: NSWindow?
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        @MainActor
+        func configure(window: NSWindow) {
+            WindowTitlebarConfigurator.configureTitlebar(for: window)
+
+            guard configuredWindow !== window else {
+                return
+            }
+
+            NotificationCenter.default.removeObserver(self)
+            configuredWindow = window
+            observeWindowLayoutChanges(for: window)
+        }
+
+        private func observeWindowLayoutChanges(for window: NSWindow) {
+            let notifications: [Notification.Name] = [
+                NSWindow.didResizeNotification,
+                NSWindow.didEndLiveResizeNotification,
+                NSWindow.didExitFullScreenNotification,
+                NSWindow.didBecomeKeyNotification
+            ]
+
+            notifications.forEach { notificationName in
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(windowLayoutDidChange(_:)),
+                    name: notificationName,
+                    object: window,
+                )
+            }
+        }
+
+        @MainActor
+        @objc private func windowLayoutDidChange(_ notification: Notification) {
+            guard let window = notification.object as? NSWindow else {
+                return
+            }
+            scheduleTitlebarRealignment(for: window)
+        }
+
+        @MainActor
+        private func scheduleTitlebarRealignment(for window: NSWindow) {
+            WindowTitlebarConfigurator.configureTitlebar(for: window)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak window] in
+                guard let window else {
+                    return
+                }
+                WindowTitlebarConfigurator.configureTitlebar(for: window)
+            }
         }
     }
 }
