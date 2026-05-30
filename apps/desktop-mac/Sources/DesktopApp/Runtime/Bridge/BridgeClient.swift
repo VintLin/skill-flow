@@ -117,6 +117,18 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
+    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(
+                command: .renameSource,
+                payload: [
+                    "sourceId": AnyCodable(sourceId),
+                    "displayName": AnyCodable(displayName),
+                ]
+            )
+        }
+    }
+
     func saveSettings(customTargets: [[String: String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(

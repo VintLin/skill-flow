@@ -53,10 +53,60 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("detail.updated.unavailable", locale: Locale(identifier: "ja")), "更新時刻を取得できません")
     }
 
+    func testSkillManagementFilterAndRenameKeysExistInAllSupportedLocales() {
+        let requiredKeys = [
+            "home.sidebar.status",
+            "home.sidebar.source_type",
+            "home.sidebar.tags",
+            "home.sidebar.agents",
+            "home.sidebar.projects",
+            "home.sidebar.all_agents",
+            "home.sidebar.all",
+            "home.sidebar.pinned",
+            "home.sidebar.local",
+            "home.sidebar.remote",
+            "home.sidebar.expand",
+            "home.sidebar.collapse",
+            "group_card.action.rename",
+            "rename.dialog.title",
+            "rename.dialog.save",
+            "rename.dialog.cancel",
+            "toast.rename.empty",
+            "toast.rename.success",
+            "toast.rename.failed",
+        ]
+        let locales = [
+            Locale(identifier: "zh-Hans"),
+            Locale(identifier: "en"),
+            Locale(identifier: "ja"),
+        ]
+
+        for locale in locales {
+            for key in requiredKeys {
+                let value = L10n.string(key, locale: locale)
+                XCTAssertNotEqual(value, key, "Missing localization for \(key) in \(locale.identifier)")
+            }
+        }
+
+        let staleKeys = [
+            "toast.rename_source.success",
+            "toast.rename_source.failed",
+        ]
+        for locale in locales {
+            for key in staleKeys {
+                XCTAssertEqual(L10n.string(key, locale: locale), key, "Unexpected stale localization for \(key)")
+            }
+        }
+    }
+
     func testGroupTagInputPlaceholderStaysShortEnoughForCompactTagField() {
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "en")), "Tag")
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "zh-Hans")), "标签")
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "ja")), "タグ")
+    }
+
+    func testChinesePinnedStatusUsesPinnedWording() {
+        XCTAssertEqual(L10n.string("home.sidebar.pinned", locale: Locale(identifier: "zh-Hans")), "置顶")
     }
 
     @MainActor

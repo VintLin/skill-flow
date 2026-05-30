@@ -35,6 +35,24 @@ final class DesktopMutationCoordinator {
         return .submitted(sourceId: normalizedSourceId, response: response)
     }
 
+    func renameSource(sourceId: String, displayName: String) async throws -> (sourceId: String, displayName: String) {
+        let response = try await commandFacade.renameSource(sourceId: sourceId, displayName: displayName)
+        guard response.ok else {
+            throw BridgeClientError.commandFailed(commandFailedMessage(from: response), response: response)
+        }
+        return (sourceId: sourceId, displayName: displayName)
+    }
+
+    private func commandFailedMessage(from response: BridgeResponse) -> String {
+        if !response.errors.isEmpty {
+            return response.errors.map(\.message).joined(separator: "\n")
+        }
+
+        let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey) ?? DesktopLanguage.system.rawValue
+        let locale = DesktopLanguage(storageValue: rawValue).locale
+        return L10n.string("bridge.error.command_failed_default", locale: locale)
+    }
+
     private func pinnedSourceIds(from value: Any?) -> [String] {
         guard
             let data = value as? [String: Any],

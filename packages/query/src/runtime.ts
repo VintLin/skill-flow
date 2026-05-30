@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createChannelAdapters, type ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
 import type {
@@ -1029,8 +1030,9 @@ export class SkillFlowApp {
     const aliases = [
       locator.trim(),
       resolvedLocator,
-      `file://${resolvedLocator}`,
-    ].filter((value, index, values) => value && values.indexOf(value) === index);
+      path.isAbsolute(resolvedLocator) ? `file://${resolvedLocator}` : undefined,
+    ].filter((value): value is string => Boolean(value))
+      .filter((value, index, values) => values.indexOf(value) === index);
 
     return {
       id: resolvedLocator,
@@ -1038,14 +1040,27 @@ export class SkillFlowApp {
       locator: resolvedLocator,
       canonicalRepo: resolvedLocator,
       aliases,
-      title: deriveDisplayName(resolvedLocator),
-      installed: manifest.sources.some(
-        (source) => source.kind === "local" && path.resolve(source.locator) === resolvedLocator,
-      ),
+      title: parseHostedGitRepo(resolvedLocator)?.repo ?? deriveDisplayName(resolvedLocator),
+      installed: this.isDirectImportLocatorInstalled(manifest, resolvedLocator),
       summary: `Import from ${resolvedLocator}`,
       enrichState: { status: "idle" },
       previewState: { status: "idle" },
     };
+  }
+
+  private isDirectImportLocatorInstalled(manifest: Manifest, locator: string): boolean {
+    if (locator.startsWith("clawhub:")) {
+      const sourceId = deriveSourceId(locator);
+      return manifest.sources.some((source) => source.id === sourceId);
+    }
+
+    if (path.isAbsolute(locator)) {
+      return manifest.sources.some(
+        (source) => source.kind === "local" && path.resolve(source.locator) === locator,
+      );
+    }
+
+    return manifest.sources.some((source) => source.locator === locator);
   }
 
   private async resolveRecommendedImportRepos(): Promise<string[]> {
@@ -1277,14 +1292,21 @@ export class SkillFlowApp {
       return undefined;
     }
 
+    if (/^clawhub:[^@\s]+(?:@.+)?$/i.test(trimmed)) {
+      return trimmed;
+    }
+
     const hostedRepo = parseHostedGitRepo(trimmed);
     if (hostedRepo?.host.includes("gitlab")) {
       return trimmed;
     }
 
-    const resolvedPath = path.resolve(trimmed.startsWith("file://")
+    const localLocator = trimmed.startsWith("~/")
+      ? path.join(process.env.HOME ?? os.homedir(), trimmed.slice(2))
+      : trimmed;
+    const resolvedPath = path.resolve(localLocator.startsWith("file://")
       ? decodeURIComponent(new URL(trimmed).pathname)
-      : trimmed);
+      : localLocator);
     if (await pathExists(resolvedPath)) {
       return resolvedPath;
     }
@@ -1838,6 +1860,13 @@ export class SkillFlowApp {
     return this.runSerializedMutation(() => this.togglePinnedSourceImpl(sourceId));
   }
 
+  async renameSource(
+    sourceId: string,
+    displayName: string,
+  ): Promise<Result<{ sourceId: string; displayName: string }>> {
+    return this.runSerializedMutation(() => this.renameSourceImpl(sourceId, displayName));
+  }
+
   private async togglePinnedSourceImpl(
     sourceId: string,
   ): Promise<Result<{ pinnedSourceIds: string[] }>> {
@@ -1851,6 +1880,50 @@ export class SkillFlowApp {
 
     const preferences = await this.store.togglePinnedSource(sourceId);
     return ok({ pinnedSourceIds: preferences.pinnedSourceIds });
+  }
+
+  private async renameSourceImpl(
+    sourceId: string,
+    displayName: string,
+  ): Promise<Result<{ sourceId: string; displayName: string }>> {
+    const nextDisplayName = displayName.trim();
+    if (!nextDisplayName) {
+      return fail({
+        code: "DISPLAY_NAME_EMPTY",
+        message: "Skills group display name cannot be empty.",
+      });
+    }
+
+    const { manifest, lockFile } = await this.store.readState();
+    const manifestSource = manifest.sources.find((source) => source.id === sourceId);
+    const lockSource = lockFile.sources.find((source) => source.id === sourceId);
+
+    if (!manifestSource || !lockSource) {
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Skills group id '${sourceId}' is not registered.`,
+      });
+    }
+
+    const nextManifest: Manifest = {
+      ...manifest,
+      sources: manifest.sources.map((source) =>
+        source.id === sourceId
+          ? { ...source, displayName: nextDisplayName }
+          : source,
+      ),
+    };
+    const nextLockFile: LockFile = {
+      ...lockFile,
+      sources: lockFile.sources.map((source) =>
+        source.id === sourceId
+          ? { ...source, displayName: nextDisplayName }
+          : source,
+      ),
+    };
+
+    await this.store.writeState(nextManifest, nextLockFile);
+    return ok({ sourceId, displayName: nextDisplayName });
   }
 
   async getAvailableTargets(): Promise<DeploymentTargetId[]> {

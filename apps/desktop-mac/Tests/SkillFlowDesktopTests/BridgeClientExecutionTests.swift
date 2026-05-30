@@ -164,6 +164,20 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(scope["kind"] as? String, "project")
         XCTAssertEqual(scope["projectId"] as? String, "repo-a")
     }
+
+    func testRenameSourceEncodesPayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(payload["sourceId"] as? String, "alpha")
+        XCTAssertEqual(payload["displayName"] as? String, "Writing Tools")
+        XCTAssertEqual(try fixture.lastCommand(), "rename-source")
+    }
 }
 
 private final class SlowBridgeFixture {
@@ -258,6 +272,13 @@ private final class RecordingBridgeFixture {
         let object = try JSONSerialization.jsonObject(with: data)
         let root = try XCTUnwrap(object as? [String: Any])
         return try XCTUnwrap(root["payload"] as? [String: Any])
+    }
+
+    func lastCommand() throws -> String {
+        let data = try Data(contentsOf: payloadURL)
+        let object = try JSONSerialization.jsonObject(with: data)
+        let root = try XCTUnwrap(object as? [String: Any])
+        return try XCTUnwrap(root["command"] as? String)
     }
 
     func tearDown() throws {

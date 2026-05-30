@@ -348,6 +348,7 @@ struct SharedGroupCard: View {
     let skillsCollapsed: Bool
     let isUpdating: Bool
     let onOpen: (() -> Void)?
+    let onRename: (() -> Void)?
     let onUpdate: () -> Void
     let onTogglePinned: () -> Void
     let onDelete: () -> Void
@@ -387,6 +388,7 @@ struct SharedGroupCard: View {
         skillsCollapsed: Bool,
         isUpdating: Bool,
         onOpen: (() -> Void)?,
+        onRename: (() -> Void)? = nil,
         onUpdate: @escaping () -> Void,
         onTogglePinned: @escaping () -> Void,
         onDelete: @escaping () -> Void,
@@ -416,6 +418,7 @@ struct SharedGroupCard: View {
         self.skillsCollapsed = skillsCollapsed
         self.isUpdating = isUpdating
         self.onOpen = onOpen
+        self.onRename = onRename
         self.onUpdate = onUpdate
         self.onTogglePinned = onTogglePinned
         self.onDelete = onDelete
@@ -721,6 +724,16 @@ struct SharedGroupCard: View {
                 ) {
                     isActionMenuOpen = false
                     onTogglePinned()
+                }
+                if let onRename {
+                    actionMenuButton(
+                        title: t("group_card.action.rename"),
+                        icon: .rename,
+                        foreground: AppTheme.textMuted(for: theme)
+                    ) {
+                        isActionMenuOpen = false
+                        onRename()
+                    }
                 }
                 actionMenuButton(
                     title: t("group_card.action.update"),
@@ -1243,7 +1256,9 @@ struct SharedGroupCard: View {
         foreground: Color,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        Button {
+            action()
+        } label: {
             HStack(spacing: 8) {
                 actionIcon(icon, size: 12)
                     .foregroundStyle(foreground)

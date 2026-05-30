@@ -158,4 +158,49 @@ describe("bridge protocol", () => {
       errors: [],
     });
   });
+
+  test("builds and parses rename-source bridge messages", () => {
+    expect(
+      parseBridgeRequest({
+        protocolVersion: PROTOCOL_VERSION,
+        requestId: "req-rename",
+        command: "rename-source",
+        payload: {
+          sourceId: "demo-source",
+          displayName: "Writing Tools",
+        },
+      }),
+    ).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: "req-rename",
+      command: "rename-source",
+      payload: {
+        sourceId: "demo-source",
+        displayName: "Writing Tools",
+      },
+    });
+
+    expect(isBridgeCommandName("rename-source")).toBe(true);
+
+    expect(
+      buildBridgeResponse({
+        command: "rename-source",
+        ok: true,
+        data: {
+          sourceId: "demo-source",
+          displayName: "Writing Tools",
+        },
+      }),
+    ).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      command: "rename-source",
+      ok: true,
+      data: {
+        sourceId: "demo-source",
+        displayName: "Writing Tools",
+      },
+      warnings: [],
+      errors: [],
+    });
+  });
 });

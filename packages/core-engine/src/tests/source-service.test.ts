@@ -94,6 +94,35 @@ describe.sequential("source service", () => {
     expect(second.data.manifest.id).toBe("right-skills");
   });
 
+  test("local sources expand home-relative paths", async () => {
+    const previousHome = process.env.HOME;
+    const homeRoot = path.join(sandbox.sandboxRoot, "home-source-service");
+    await fs.mkdir(homeRoot, { recursive: true });
+    const repoPath = await createRepo(homeRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    process.env.HOME = homeRoot;
+
+    try {
+      const sourceService = createSourceService();
+      const added = await sourceService.addSource(`~/${path.relative(homeRoot, repoPath)}`);
+
+      expect(added.ok).toBe(true);
+      if (!added.ok) {
+        return;
+      }
+
+      expect(added.data.manifest.kind).toBe("local");
+      expect(added.data.manifest.locator).toBe(repoPath);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
   test("local source update fails without mutating checkout when origin path is missing", async () => {
     const repoPath = path.join(sandbox.sandboxRoot, "local-skills");
     await writeRepoFiles(repoPath, {

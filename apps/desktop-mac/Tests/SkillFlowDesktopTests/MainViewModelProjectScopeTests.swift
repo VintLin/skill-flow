@@ -544,6 +544,10 @@ private final class ProjectScopeCommandStub: DesktopCommanding {
         fatalError("unused")
     }
 
+    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
         fatalError("unused")
     }

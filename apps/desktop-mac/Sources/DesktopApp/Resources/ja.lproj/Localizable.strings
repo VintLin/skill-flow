@@ -14,6 +14,18 @@
 "page.detail.title" = "グループ詳細";
 "project_scope.global" = "グローバル";
 "project_scope.project" = "プロジェクト";
+"home.sidebar.status" = "状態";
+"home.sidebar.source_type" = "ソース種別";
+"home.sidebar.tags" = "タグ";
+"home.sidebar.agents" = "エージェント";
+"home.sidebar.projects" = "プロジェクト";
+"home.sidebar.all" = "すべて";
+"home.sidebar.pinned" = "固定";
+"home.sidebar.local" = "ローカル";
+"home.sidebar.remote" = "オンライン";
+"home.sidebar.expand" = "セクションを展開";
+"home.sidebar.collapse" = "セクションを折りたたむ";
+"home.sidebar.all_agents" = "すべて";
 "placeholder.home.search_group_author" = "グループ / 作者を検索";
 "home.empty.title" = "一致するグループがありません";
 "home.empty.subtitle" = "もっと広い検索語を試してください。";
@@ -171,6 +183,7 @@
 "group_card.action.installed" = "インストール済み";
 "group_card.action.pin" = "ピン留め";
 "group_card.action.unpin" = "ピン留め解除";
+"group_card.action.rename" = "名前を変更";
 "group_card.action.update" = "更新";
 "group_card.action.edit_tags" = "タグを追加";
 "group_card.action.cancel_edit_tags" = "キャンセル";
@@ -181,6 +194,9 @@
 "group_tag.action.add" = "タグを追加";
 "group_tag.filter.all" = "ALL";
 "group_tag.input.placeholder" = "タグ";
+"rename.dialog.title" = "グループ名を変更";
+"rename.dialog.save" = "保存";
+"rename.dialog.cancel" = "キャンセル";
 "group_tag.toast.duplicate" = "このタグは既に選択されています。";
 "group_tag.toast.limit" = "タグ数が上限に達しました。";
 "group_tag.toast.empty" = "先にタグを入力してください。";
@@ -217,6 +233,9 @@
 "toast.uninstall.no_group_selected" = "アンインストール失敗: グループが選択されていません。";
 "toast.uninstall.success" = "%@ を削除しました。";
 "toast.uninstall.failed" = "アンインストール失敗: %@";
+"toast.rename.empty" = "グループ名を入力してください。";
+"toast.rename.success" = "%@ に名前を変更しました。";
+"toast.rename.failed" = "名前の変更に失敗しました: %@";
 "toast.save.no_source_id" = "保存失敗: source id がありません。";
 "toast.save.failed" = "保存失敗: %@";
 "toast.pinned_migration.failed" = "ピン留めグループの移行に失敗しました: %@";

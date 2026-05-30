@@ -16,6 +16,7 @@ enum ActionIcon: String {
     case plus
     case project
     case projectWarning = "project-warning"
+    case rename
     case search
     case searchSubmitEnter = "search-submit-enter"
     case settings
@@ -26,7 +27,11 @@ enum ActionIcon: String {
 
     func image(size: CGFloat? = nil, isTemplate: Bool = true) -> NSImage? {
         if self == .searchSubmitEnter,
-           let fallback = Self.searchSubmitFallbackImage(size: size, isTemplate: isTemplate) {
+           let fallback = Self.systemSymbolImage("arrow.turn.down.left", size: size, isTemplate: isTemplate) {
+            return fallback
+        }
+        if self == .rename,
+           let fallback = Self.systemSymbolImage("pencil", size: size, isTemplate: isTemplate) {
             return fallback
         }
 
@@ -132,8 +137,7 @@ enum ActionIcon: String {
         )
     }
 
-    private static func searchSubmitFallbackImage(size: CGFloat?, isTemplate: Bool) -> NSImage? {
-        let symbolName = "arrow.turn.down.left"
+    private static func systemSymbolImage(_ symbolName: String, size: CGFloat?, isTemplate: Bool) -> NSImage? {
         let configuration = NSImage.SymbolConfiguration(
             pointSize: size ?? 14,
             weight: .regular

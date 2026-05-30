@@ -36,6 +36,19 @@ final class ClickTargetRegressionTests: XCTestCase {
         XCTAssertFalse(source.contains("Button(action: onOpen) {\n                        headerPrimaryContent\n                    }"))
     }
 
+    func testGroupCardActionMenuOnlyRendersRenameWhenHandlerExists() throws {
+        let source = try sourceText(
+            at: "Sources/DesktopApp/Components/GroupCardComponents.swift"
+        )
+
+        XCTAssertTrue(source.contains("if let onRename {"))
+        XCTAssertFalse(source.contains("isEnabled: onRename != nil"))
+        XCTAssertFalse(source.contains("isEnabled: Bool = true"))
+        XCTAssertFalse(source.contains("guard isEnabled else { return }"))
+        XCTAssertFalse(source.contains(".disabled(!isEnabled)"))
+        XCTAssertFalse(source.contains(".opacity(isEnabled ? 1.0 : 0.45)"))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

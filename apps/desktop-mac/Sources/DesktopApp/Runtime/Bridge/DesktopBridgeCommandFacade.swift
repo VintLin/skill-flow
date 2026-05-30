@@ -19,6 +19,10 @@ struct DesktopBridgeCommandFacade<Transport: DesktopBridgeTransporting>: Desktop
         try await bridgeClient.importSource(locator: locator, selectedSkillIds: selectedSkillIds, enabledTargets: enabledTargets)
     }
 
+    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
+        try await bridgeClient.renameSource(sourceId: sourceId, displayName: displayName)
+    }
+
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
         try await bridgeClient.uninstall(sourceIds: sourceIds)
     }

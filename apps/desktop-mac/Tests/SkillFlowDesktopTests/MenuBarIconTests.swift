@@ -125,6 +125,8 @@ final class MenuBarIconTests: XCTestCase {
             title: "Loading",
             byline: "by @owner",
             groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "acme-example",
             isPinned: false,
             health: "DISCOVER",
             warningCount: 0,
@@ -149,6 +151,8 @@ final class MenuBarIconTests: XCTestCase {
             title: "Compact Home",
             byline: "by @owner",
             groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "acme-example",
             isPinned: false,
             health: "READY",
             warningCount: 0,
@@ -174,6 +178,8 @@ final class MenuBarIconTests: XCTestCase {
             title: "Local Group",
             byline: "by @owner",
             groupPath: "/tmp/local",
+            sourceKind: "local",
+            sourceLocator: "~/skills/example",
             isPinned: false,
             health: "LOCAL",
             warningCount: 0,
@@ -198,6 +204,8 @@ final class MenuBarIconTests: XCTestCase {
             title: "Menu Group",
             byline: "by @owner",
             groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "acme-example",
             isPinned: false,
             health: "READY",
             warningCount: 0,
@@ -224,6 +232,8 @@ final class MenuBarIconTests: XCTestCase {
             title: "Menu Group",
             byline: "by @owner",
             groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "acme-example",
             isPinned: false,
             health: "READY",
             warningCount: 0,
@@ -296,11 +306,6 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(MainView.toolbarButtonSize, 34)
     }
 
-    func testHeaderToolbarAlertBadgeAnchorsToTopTrailingEdge() {
-        XCTAssertEqual(MainView.toolbarAlertBadgeOffset.width, 4)
-        XCTAssertEqual(MainView.toolbarAlertBadgeOffset.height, -4)
-    }
-
     func testHeaderLayoutUsesStableLeadingAndSearchWidths() {
         XCTAssertEqual(MainView.headerLeadingWidth, 220)
         XCTAssertEqual(MainView.headerSearchFieldWidth, 384)
@@ -324,11 +329,6 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(MainView.projectScopePillOpacityLabel(isSelected: true, theme: .light), "alpha 18%")
         XCTAssertEqual(MainView.projectScopePillOpacityLabel(isSelected: true, theme: .dark), "alpha 28%")
         XCTAssertNil(MainView.projectScopePillOpacityLabel(isSelected: false, theme: .light))
-    }
-
-    func testHiddenProjectWarningAppearsOnlyForNonGlobalScope() {
-        XCTAssertFalse(MainView.projectScopeShowsHiddenWarning(for: .global))
-        XCTAssertTrue(MainView.projectScopeShowsHiddenWarning(for: .project("repo-a")))
     }
 
     func testMenuBarIconLoadsTemplateSvg() {

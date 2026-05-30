@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+enum HomeSidebarChipTitleFormatter {
+    static func displayTitle(_ title: String, showsHashPrefix: Bool) -> String {
+        showsHashPrefix ? "#\(title)" : title
+    }
+}
+
 struct MainView: View {
     struct ImportSearchPrompt: Equatable {
         let leadingText: String
@@ -25,6 +31,21 @@ struct MainView: View {
         case resultCount(Int)
     }
 
+    private enum HomeSidebarSectionID {
+        static let status = "status"
+        static let sourceType = "sourceType"
+        static let tags = "tags"
+        static let agents = "agents"
+    }
+
+    private struct HomeSidebarChipItem: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let count: Int?
+        let accent: DesktopAccentColor?
+        let showsHashPrefix: Bool
+    }
+
     struct NavigationActions {
         let showHome: () -> Void
         let showDetail: (String) -> Void
@@ -47,11 +68,13 @@ struct MainView: View {
     @State private var updateButtonRotation: Double = 0
     @State private var projectScopeRefreshButtonRotation: Double = 0
     @State private var searchFocusResetToken = 0
-    @State private var showsProjectScopeBar = false
+    @State private var isHomeSidebarVisible = true
     @State private var isEditCustomAgentPresented = false
     @State private var editingCustomAgentId: String?
     @State private var customAgentDraft = SettingsViewModel.CustomAgentDraft()
     @State private var customAgentErrors: [String: String] = [:]
+    @State private var renameSourceId: String?
+    @State private var renameDraft = ""
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -91,9 +114,15 @@ struct MainView: View {
                 AppTheme.pageBackground(for: theme)
                     .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    topBar(layout: layout)
-                    pageContent(layout: layout)
+                Group {
+                    if isHomePage {
+                        homeShell(layout: layout)
+                    } else {
+                        VStack(spacing: 0) {
+                            topBar(layout: layout)
+                            pageContent(layout: layout)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -133,6 +162,36 @@ struct MainView: View {
                     }
                     .transition(.opacity)
                     .zIndex(50)
+                }
+
+                if renameSourceId != nil {
+                    ZStack {
+                        Color.black.opacity(theme == .dark ? 0.35 : 0.18)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                closeRenameDialog()
+                            }
+
+                        RenameSourceDialog(
+                            draft: $renameDraft,
+                            title: t("rename.dialog.title"),
+                            saveTitle: t("rename.dialog.save"),
+                            cancelTitle: t("rename.dialog.cancel"),
+                            theme: theme,
+                            accent: accent,
+                            onCancel: {
+                                closeRenameDialog()
+                            },
+                            onSave: {
+                                saveRenameDialog()
+                            }
+                        )
+                        .frame(maxWidth: 360)
+                        .shadow(color: AppTheme.softShadow(for: theme), radius: 18, y: 8)
+                    }
+                    .transition(.opacity)
+                    .zIndex(60)
                 }
 
                 if let toast = viewModel.toast {
@@ -227,7 +286,6 @@ struct MainView: View {
                     topBarTitleRow
                     HStack(spacing: 8) {
                         searchField
-                        projectScopeToggleButton
                         importButton
                         homeUpdateButton
                         settingsButton
@@ -242,7 +300,6 @@ struct MainView: View {
                         .frame(width: Self.headerLeadingWidth, alignment: .leading)
                     searchField
                     Spacer(minLength: 0)
-                    projectScopeToggleButton
                     importButton
                     homeUpdateButton
                     settingsButton
@@ -334,6 +391,14 @@ struct MainView: View {
     }
 
     private var searchField: some View {
+        searchField(width: Self.headerSearchFieldWidth)
+    }
+
+    private func homeSearchField(width: CGFloat) -> some View {
+        searchField(width: width)
+    }
+
+    private func searchField(width: CGFloat) -> some View {
         HStack(spacing: 8) {
             actionIcon(.search, size: 11)
                 .foregroundStyle(AppTheme.textMuted(for: theme))
@@ -352,10 +417,18 @@ struct MainView: View {
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                     .textCase(.uppercase)
                     .focused($focusedSearchField, equals: .home)
+                    .onSubmit {
+                        Task {
+                            let handled = await homeContainer.handleHomeSearchSubmit(viewModel.searchQuery)
+                            if handled {
+                                focusedSearchField = nil
+                            }
+                        }
+                    }
             }
         }
         .padding(.horizontal, 12)
-        .frame(width: Self.headerSearchFieldWidth, height: Self.headerSearchFieldHeight, alignment: .leading)
+        .frame(width: width, height: Self.headerSearchFieldHeight, alignment: .leading)
         .background(AppTheme.headerControlFill(for: theme))
         .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -444,14 +517,6 @@ struct MainView: View {
         toolbarIconButton(.import) { navigation.showImportPage() }
     }
 
-    private var projectScopeToggleButton: some View {
-        toolbarIconButton(.project, showsAlertBadge: showsProjectScopeHiddenWarning) {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showsProjectScopeBar.toggle()
-            }
-        }
-    }
-
     @ViewBuilder
     private var importSearchActionButton: some View {
         switch importSearchActionState {
@@ -523,6 +588,27 @@ struct MainView: View {
         isEditCustomAgentPresented = false
     }
 
+    private func beginRenameSource(_ card: MainViewModel.GroupCardModel) {
+        renameSourceId = card.id
+        renameDraft = card.title
+    }
+
+    private func closeRenameDialog() {
+        renameSourceId = nil
+        renameDraft = ""
+    }
+
+    private func saveRenameDialog() {
+        guard let sourceId = renameSourceId else {
+            return
+        }
+        let displayName = renameDraft
+        closeRenameDialog()
+        Task {
+            await viewModel.renameSource(sourceId: sourceId, displayName: displayName)
+        }
+    }
+
     private var homeCardDisplayMode: GroupCardDisplayMode {
         Self.homeGroupCardDisplayMode(for: settingsViewModel.currentHomeCardDensity)
     }
@@ -570,37 +656,125 @@ struct MainView: View {
         }
     }
 
-    private func configPage(layout: LayoutMetrics) -> some View {
+    private func homeShell(layout: LayoutMetrics) -> some View {
         let homeTagSnapshot = homeContainer.homeTagSnapshot(locale: locale)
         let visibleCards = homeContainer.visibleGroupCards(
             from: viewModel.groupCards,
             snapshot: homeTagSnapshot
         )
 
-        return Group {
+        return HStack(alignment: .top, spacing: 0) {
+            if isHomeSidebarVisible {
+                homeSidebarColumn(homeTagSnapshot: homeTagSnapshot)
+                    .frame(width: layout.homeSidebarWidth)
+            }
+
+            homeMainColumn(layout: layout, homeTagSnapshot: homeTagSnapshot, visibleCards: visibleCards, isSidebarVisible: isHomeSidebarVisible)
+        }
+        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    private func homeMainColumn(
+        layout: LayoutMetrics,
+        homeTagSnapshot: GroupTagController.HomeSnapshot,
+        visibleCards: [MainViewModel.GroupCardModel],
+        isSidebarVisible: Bool
+    ) -> some View {
+        VStack(spacing: 0) {
+            homeMainHeader(layout: layout, isSidebarVisible: isSidebarVisible)
+            homeContent(
+                layout: layout,
+                homeTagSnapshot: homeTagSnapshot,
+                visibleCards: visibleCards,
+                isSidebarVisible: isSidebarVisible
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func homeMainHeader(layout: LayoutMetrics, isSidebarVisible: Bool) -> some View {
+        let mainColumnWidth = Self.homeMainColumnWidth(
+            forWindowWidth: layout.width,
+            isSidebarVisible: isSidebarVisible
+        )
+        let leadingPadding = isSidebarVisible
+            ? Self.homeMainHeaderSidePadding
+            : Self.homeCollapsedHeaderLeadingPadding
+        let reservedPadding = leadingPadding + Self.homeMainHeaderSidePadding
+        let searchWidth = Self.homeMainHeaderSearchWidth(
+            forMainColumnWidth: mainColumnWidth,
+            reservedHorizontalPadding: reservedPadding,
+            includesSidebarToggle: !isSidebarVisible
+        )
+
+        return HStack(spacing: Self.homeMainHeaderItemSpacing) {
+            if !isSidebarVisible {
+                homeSidebarToggleButton
+            }
+            homeSearchField(width: searchWidth)
+            Spacer(minLength: 0)
+            importButton
+            homeUpdateButton
+            settingsButton
+        }
+        .padding(.leading, leadingPadding)
+        .padding(.trailing, Self.homeMainHeaderSidePadding)
+        .padding(.top, Self.homeTitlebarControlTopPadding)
+        .frame(height: Self.homeSidebarHeaderHeight, alignment: .top)
+        .background(AppTheme.headerBackground(for: theme))
+    }
+
+    private func configPage(layout: LayoutMetrics) -> some View {
+        homeShell(layout: layout)
+    }
+
+    private func homeContent(
+        layout: LayoutMetrics,
+        homeTagSnapshot: GroupTagController.HomeSnapshot,
+        visibleCards: [MainViewModel.GroupCardModel],
+        isSidebarVisible: Bool
+    ) -> some View {
+        Group {
             if visibleCards.isEmpty {
-                gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
+                gridSection(
+                    layout: layout,
+                    homeTagSnapshot: homeTagSnapshot,
+                    groupCards: visibleCards,
+                    isSidebarVisible: isSidebarVisible
+                )
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 ScrollView {
-                    gridSection(layout: layout, homeTagSnapshot: homeTagSnapshot, groupCards: visibleCards)
+                    gridSection(
+                        layout: layout,
+                        homeTagSnapshot: homeTagSnapshot,
+                        groupCards: visibleCards,
+                        isSidebarVisible: isSidebarVisible
+                    )
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
                         .padding(.bottom, 24)
                 }
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            NotificationCenter.default.post(name: .groupTagEditorDismissRequested, object: nil)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(groupTagEditorDismissTapArea)
+    }
+
+    private var groupTagEditorDismissTapArea: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture {
+                NotificationCenter.default.post(name: .groupTagEditorDismissRequested, object: nil)
+            }
     }
 
     private func gridSection(
         layout: LayoutMetrics,
         homeTagSnapshot: GroupTagController.HomeSnapshot,
-        groupCards: [MainViewModel.GroupCardModel]
+        groupCards: [MainViewModel.GroupCardModel],
+        isSidebarVisible: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if groupCards.isEmpty {
@@ -622,13 +796,9 @@ struct MainView: View {
                     )
                 }
             } else {
-                if showsProjectScopeBar {
-                    homeProjectScopeBar
-                }
-                homeTagFilterBar(snapshot: homeTagSnapshot)
                 HStack {
                     Spacer(minLength: 0)
-                    LazyVGrid(columns: gridColumns(for: layout), spacing: 12) {
+                    LazyVGrid(columns: homeGridColumns(for: layout, isSidebarVisible: isSidebarVisible), spacing: 12) {
                         ForEach(groupCards) { card in
                             SharedGroupCard(
                                 card: card,
@@ -640,6 +810,9 @@ struct MainView: View {
                                 isUpdating: viewModel.isUpdatingSource(card.id),
                                 onOpen: {
                                     navigation.showDetail(card.id)
+                                },
+                                onRename: {
+                                    beginRenameSource(card)
                                 },
                                 onUpdate: {
                                     Task { await viewModel.updateSource(card.id) }
@@ -691,7 +864,7 @@ struct MainView: View {
                         }
                         await viewModel.prefetchHomeGroupCardMetadataIfNeeded(groupCards.map(\.id))
                     }
-                    .frame(maxWidth: layout.gridFrameWidth, alignment: .center)
+                    .frame(maxWidth: Self.homeGridFrameWidth(forWindowWidth: layout.width, isSidebarVisible: isSidebarVisible), alignment: .center)
                     Spacer(minLength: 0)
                 }
             }
@@ -742,7 +915,7 @@ struct MainView: View {
         topBarShowsSearch(for: route) && !shouldAutofocusSearchField(for: route)
     }
 
-    static let headerSearchFieldWidth: CGFloat = 384
+    nonisolated static let headerSearchFieldWidth: CGFloat = 384
     static let headerSearchFieldHeight: CGFloat = 34
     static let headerSearchActionButtonSize: CGFloat = headerSearchFieldHeight
     static func importPromptLeadingWidth(for locale: Locale) -> CGFloat {
@@ -871,43 +1044,241 @@ struct MainView: View {
         .modifier(EmptyStateChrome(theme: theme, enabled: chromed))
     }
 
-    private func gridColumns(for layout: LayoutMetrics) -> [GridItem] {
-        Array(repeating: GridItem(.fixed(304), spacing: 14), count: layout.gridColumnCount)
+    private func homeGridColumns(for layout: LayoutMetrics, isSidebarVisible: Bool) -> [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(304), spacing: 14),
+            count: Self.homeGridColumnCount(forWindowWidth: layout.width, isSidebarVisible: isSidebarVisible)
+        )
     }
 
-    private var homeProjectScopeBar: some View {
+    private func homeSidebar(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                let homeAgentOptions = homeAgentChipItems()
+                let rawHomeAgentFilterId = homeContainer.selectedHomeAgentFilterId()
+                let selectedHomeAgentFilterId = rawHomeAgentFilterId.flatMap { raw in
+                    homeAgentOptions.contains { $0.id == raw } ? raw : nil
+                }
+
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.status, title: t("home.sidebar.status"), options: homeStatusChipItems(), selectedId: homeContainer.selectedHomeStatusFilterId()) { optionId in
+                    homeContainer.setSelectedHomeStatusFilter(optionId)
+                }
+
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType, title: t("home.sidebar.source_type"), options: homeSourceTypeChipItems(), selectedId: homeContainer.selectedHomeSourceTypeFilterId()) { optionId in
+                    homeContainer.setSelectedHomeSourceTypeFilter(optionId)
+                }
+
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.tags, title: t("home.sidebar.tags"), options: homeTagChipItems(snapshot: homeTagSnapshot), selectedId: homeTagSnapshot.selectedKey ?? "all") { optionId in
+                    homeContainer.setSelectedHomeTagFilterKey(optionId == "all" ? nil : optionId)
+                }
+
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents, title: t("home.sidebar.agents"), options: homeAgentOptions, selectedId: selectedHomeAgentFilterId ?? "all") { optionId in
+                    homeContainer.setSelectedHomeAgentFilter(optionId == "all" ? nil : optionId)
+                }
+
+                homeSidebarProjectSection
+            }
+            .padding(.horizontal, Self.homeSidebarHorizontalPadding)
+            .padding(.top, 16)
+            .padding(.bottom, 18)
+        }
+    }
+
+    private func homeSidebarColumn(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
+        VStack(spacing: 0) {
+            homeSidebarHeader
+            homeSidebar(homeTagSnapshot: homeTagSnapshot)
+        }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(AppTheme.surface(for: theme))
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(AppTheme.cardBorder(for: theme))
+                .frame(width: 0.5)
+        }
+    }
+
+    private var homeSidebarHeader: some View {
+        HStack(spacing: 8) {
+            headerLogoRow
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            homeSidebarToggleButton
+        }
+        .padding(.leading, Self.homeSidebarBrandLeadingInset)
+        .padding(.trailing, Self.homeSidebarHorizontalPadding)
+        .padding(.top, Self.homeTitlebarControlTopPadding)
+        .frame(height: Self.homeSidebarHeaderHeight, alignment: .top)
+    }
+
+    private var homeSidebarToggleButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isHomeSidebarVisible.toggle()
+            }
+        } label: {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: Self.homeSidebarToggleButtonSize, height: Self.homeSidebarToggleButtonSize)
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isHomeSidebarVisible ? "Hide sidebar" : "Show sidebar")
+    }
+
+    private func homeStatusChipItems() -> [HomeSidebarChipItem] {
+        homeContainer.homeStatusFilterOptions().map { option in
+            HomeSidebarChipItem(
+                id: option.id,
+                title: option.id == "pinned" ? t("home.sidebar.pinned") : t("home.sidebar.all"),
+                count: option.count,
+                accent: nil,
+                showsHashPrefix: false
+            )
+        }
+    }
+
+    private func homeSourceTypeChipItems() -> [HomeSidebarChipItem] {
+        homeContainer.homeSourceTypeFilterOptions().map { option in
+            let title: String
+            switch option.id {
+            case "local":
+                title = t("home.sidebar.local")
+            case "remote":
+                title = t("home.sidebar.remote")
+            default:
+                title = t("home.sidebar.all")
+            }
+            return HomeSidebarChipItem(id: option.id, title: title, count: option.count, accent: nil, showsHashPrefix: false)
+        }
+    }
+
+    private func homeTagChipItems(snapshot: GroupTagController.HomeSnapshot) -> [HomeSidebarChipItem] {
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: accent, showsHashPrefix: true)
+        return [all] + snapshot.availableTags.map { item in
+            HomeSidebarChipItem(id: item.id, title: item.title, count: snapshot.tagCountsByID[item.id], accent: item.accent, showsHashPrefix: true)
+        }
+    }
+
+    private func homeAgentChipItems() -> [HomeSidebarChipItem] {
+        let options = homeContainer.homeAgentFilterOptions()
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: nil, showsHashPrefix: false)
+        return [all] + options.map { option in
+            HomeSidebarChipItem(id: option.id, title: option.label, count: option.enabledGroupCount, accent: nil, showsHashPrefix: false)
+        }
+    }
+
+    private func homeSidebarChipSection(
+        sectionId: String,
+        title: String,
+        options: [HomeSidebarChipItem],
+        selectedId: String,
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
+        let expanded = homeContainer.isHomeSidebarSectionExpanded(sectionId)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                homeContainer.toggleHomeSidebarSection(sectionId)
+            } label: {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                        .textCase(.uppercase)
+                    Spacer(minLength: 0)
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand")): \(title)")
+
+            if expanded {
+                WrappingHStack(horizontalSpacing: 6, verticalSpacing: 6) {
+                    ForEach(options) { option in
+                        homeSidebarChip(option: option, isSelected: selectedId == option.id) {
+                            onSelect(option.id)
+                        }
+                    }
+                }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 6) {
+                        ForEach(options) { option in
+                            homeSidebarChip(option: option, isSelected: selectedId == option.id) {
+                                onSelect(option.id)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, Self.homeSidebarChipBleed)
+                }
+                .padding(.horizontal, -Self.homeSidebarChipBleed)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func homeSidebarChip(
+        option: HomeSidebarChipItem,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        homeFilterPill(
+            title: option.title,
+            count: option.count,
+            accent: option.accent ?? accent,
+            showsHashPrefix: option.showsHashPrefix,
+            isSelected: isSelected,
+            action: action
+        )
+    }
+
+    private var homeSidebarProjectSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(t("home.sidebar.projects"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+                    .textCase(.uppercase)
+                Spacer(minLength: 0)
+                homeProjectScopeRefreshButton
+            }
+
+            homeProjectScopeList
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var homeProjectScopeList: some View {
         let projects = homeContainer.recentProjectScopes()
 
-        return HStack(spacing: 8) {
-            homeScopePill(
+        return VStack(alignment: .leading, spacing: 6) {
+            homeProjectScopeRow(
                 title: t("project_scope.global"),
                 projectPath: nil,
+                count: viewModel.groupCards.count,
                 isSelected: viewModel.selectedProjectScope == .global
-                ,
-                centersContent: Self.homeLeadingFixedButtonsAreCentered
             ) {
                 Task {
                     await homeContainer.selectProjectScope(.global)
                 }
             }
-            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
 
-            homeProjectScopeRefreshButton
-
-            Self.homeFilterDivider(theme: theme)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
-                    ForEach(projects, id: \.projectId) { item in
-                        homeScopePill(
-                            title: item.title,
-                            projectPath: item.projectPath,
-                            isSelected: viewModel.selectedProjectScope == .project(item.projectId)
-                        ) {
-                            Task {
-                                await homeContainer.selectProjectScope(.project(item.projectId))
-                            }
-                        }
+            ForEach(projects, id: \.projectId) { item in
+                homeProjectScopeRow(
+                    title: item.title,
+                    projectPath: item.projectPath,
+                    count: nil,
+                    isSelected: viewModel.selectedProjectScope == .project(item.projectId)
+                ) {
+                    Task {
+                        await homeContainer.selectProjectScope(.project(item.projectId))
                     }
                 }
             }
@@ -945,94 +1316,78 @@ struct MainView: View {
         }
     }
 
-    private func homeTagFilterBar(snapshot: GroupTagController.HomeSnapshot) -> some View {
-        let tags = snapshot.availableTags
-        let selectedKey = snapshot.selectedKey
-
-        return HStack(spacing: 8) {
-            homeFilterPill(
-                title: t("group_tag.filter.all"),
-                accentValue: accent,
-                isSelected: selectedKey == nil
-            ) {
-                homeContainer.setSelectedHomeTagFilterKey(nil)
-            }
-            .frame(width: Self.homeLeadingFixedButtonWidth(for: locale))
-
-            Self.homeFilterDivider(theme: theme)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 6) {
-                    ForEach(tags) { item in
-                        homeFilterPill(
-                            title: item.title,
-                            count: snapshot.tagCountsByID[item.id],
-                            accentValue: item.accent,
-                            isSelected: selectedKey == item.id
-                        ) {
-                            homeContainer.setSelectedHomeTagFilterKey(item.id)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func homeScopePill(
+    private func homeProjectScopeRow(
         title: String,
         projectPath: String?,
+        count: Int?,
         isSelected: Bool,
-        centersContent: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        return ZStack(alignment: .trailing) {
+        HStack(alignment: .center, spacing: 8) {
             Button(action: action) {
-                HStack(spacing: 6) {
-                    if Self.projectScopeShowsSelectionIndicator(isSelected: isSelected) {
-                        Circle()
-                            .fill(AppTheme.brand(for: accent, in: theme))
-                            .frame(width: 6, height: 6)
-                    }
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .lineLimit(1)
+                        if let projectPath {
+                            Text(projectPath)
+                                .font(.system(size: 10, weight: .regular))
+                                .foregroundStyle(AppTheme.textMuted(for: theme))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let count {
+                        Text("\(count)")
+                            .font(.system(size: 10, weight: .regular))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .lineLimit(1)
+                    }
                 }
-                    .frame(maxWidth: .infinity, alignment: centersContent ? .center : .leading)
-                    .padding(.leading, centersContent ? 0 : 10)
-                    .padding(.trailing, centersContent ? 0 : (projectPath == nil ? 10 : 30))
-                    .frame(height: Self.homeProjectPillHeight, alignment: .leading)
-                    .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .desktopMotionChip(
-                kind: .pill,
-                theme: theme,
-                accent: accent,
-                isEnabled: true,
-                isSelected: isSelected
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if let projectPath {
                 Button {
                     openPath(projectPath)
                 } label: {
-                    actionIcon(.externalLink, size: 10)
+                    Image(systemName: "arrow.up.forward.square")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 6)
+                .desktopMotionButton(kind: .icon, theme: theme, accent: accent, isEnabled: true)
+                .help(projectPath)
+                .accessibilityLabel(projectPath)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Self.projectScopePillBackground(isSelected: isSelected, accent: accent, theme: theme))
-        .clipShape(RoundedRectangle(cornerRadius: Self.homeProjectPillCornerRadius))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .desktopMotionChip(
+            kind: .pill,
+            theme: theme,
+            accent: accent,
+            isEnabled: true,
+            isSelected: isSelected
+        )
+        .background(AppTheme.scopePillBackground(isSelected: isSelected, for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay {
-            RoundedRectangle(cornerRadius: Self.homeProjectPillCornerRadius)
+            RoundedRectangle(cornerRadius: 7)
                 .stroke(
-                    isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
+                    isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.28) : Color.clear,
                     lineWidth: 0.5
                 )
         }
@@ -1041,13 +1396,14 @@ struct MainView: View {
     private func homeFilterPill(
         title: String,
         count: Int? = nil,
-        accentValue: DesktopAccentColor,
+        accent: DesktopAccentColor,
+        showsHashPrefix: Bool = false,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Text("#\(title)")
+                Text(HomeSidebarChipTitleFormatter.displayTitle(title, showsHashPrefix: showsHashPrefix))
                     .font(.system(size: 12, weight: .regular))
 
                 if let count {
@@ -1056,12 +1412,12 @@ struct MainView: View {
                         .opacity(0.78)
                 }
             }
-                .foregroundStyle(AppTheme.brand(for: accentValue, in: theme))
+                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                 .padding(.horizontal, 10)
                 .frame(height: Self.homeFilterPillHeight)
                 .frame(maxWidth: .infinity)
                 .background(
-                    AppTheme.brand(for: accentValue, in: theme).opacity(
+                    AppTheme.brand(for: accent, in: theme).opacity(
                         isSelected
                             ? (theme == .dark ? 0.28 : 0.18)
                             : (theme == .dark ? 0.22 : 0.14)
@@ -1071,17 +1427,13 @@ struct MainView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: Self.homeFilterPillCornerRadius)
                         .stroke(
-                            isSelected ? AppTheme.brand(for: accentValue, in: theme).opacity(0.35) : Color.clear,
+                            isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.35) : Color.clear,
                             lineWidth: 0.5
                         )
                 }
         }
         .buttonStyle(.plain)
         .opacity(isSelected ? 1.0 : 0.58)
-    }
-
-    private var showsProjectScopeHiddenWarning: Bool {
-        !showsProjectScopeBar && Self.projectScopeShowsHiddenWarning(for: viewModel.selectedProjectScope)
     }
 
     static func projectScopePillBackground(
@@ -1198,7 +1550,6 @@ struct MainView: View {
 
     private func toolbarIconButton(
         _ icon: ActionIcon,
-        showsAlertBadge: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1218,24 +1569,27 @@ struct MainView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
         }
-        .overlay(alignment: .topTrailing) {
-            if showsAlertBadge {
-                actionIcon(.projectWarning, size: 10)
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                    .frame(width: 12, height: 12)
-                    .offset(
-                        x: Self.toolbarAlertBadgeOffset.width,
-                        y: Self.toolbarAlertBadgeOffset.height
-                    )
-            }
-        }
     }
 }
 
 extension MainView {
-    static let toolbarButtonSize: CGFloat = 34
-    static let toolbarAlertBadgeOffset = CGSize(width: 4, height: -4)
+    nonisolated static let toolbarButtonSize: CGFloat = 34
     static let headerLeadingWidth: CGFloat = 220
+    nonisolated static let homeSidebarRegularWidth: CGFloat = 244
+    nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
+    nonisolated static let homeSidebarTrafficLightLeadingInset: CGFloat = 68
+    nonisolated static let homeSidebarBrandLeadingInset: CGFloat = 84
+    nonisolated static let homeSidebarToggleButtonSize: CGFloat = 28
+    nonisolated static let homeSidebarHeaderHeight: CGFloat = 52
+    nonisolated static let homeSidebarHorizontalPadding: CGFloat = 12
+    static let homeSidebarChipBleed: CGFloat = 12
+    static let homeTitlebarControlTopPadding: CGFloat = 8
+    nonisolated static let homeMainHeaderSidePadding: CGFloat = 16
+    nonisolated static let homeMainHeaderHorizontalPadding: CGFloat = homeMainHeaderSidePadding * 2
+    nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset
+    nonisolated static let homeMainHeaderItemSpacing: CGFloat = 12
+    nonisolated static let homeMainHeaderMinimumSearchFieldWidth: CGFloat = 160
+    nonisolated static let homeGridHorizontalPadding: CGFloat = 32
     static let homeProjectPillHeight: CGFloat = 28
     static let homeFilterPillHeight: CGFloat = 28
     static let homeProjectScopeRefreshButtonSize: CGFloat = homeProjectPillHeight
@@ -1271,31 +1625,96 @@ extension MainView {
         false
     }
 
-    static func projectScopeShowsHiddenWarning(for scope: ProjectScopeSelection) -> Bool {
-        switch scope {
-        case .global:
-            return false
-        case .project:
-            return true
-        }
-    }
-
     static func homeLeadingFixedButtonWidth(for locale: Locale) -> CGFloat {
         let projectTitle = L10n.string("project_scope.global", locale: locale)
         let filterTitle = "#\(L10n.string("group_tag.filter.all", locale: locale))"
+        let agentTitle = L10n.string("home.sidebar.all_agents", locale: locale)
         let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         let projectWidth = ceil((projectTitle as NSString).size(withAttributes: [.font: font]).width)
         let filterWidth = ceil((filterTitle as NSString).size(withAttributes: [.font: font]).width)
-        let contentWidth = max(projectWidth + homeLeadingProjectIndicatorAllowance, filterWidth)
+        let agentWidth = ceil((agentTitle as NSString).size(withAttributes: [.font: font]).width)
+        let contentWidth = max(projectWidth + homeLeadingProjectIndicatorAllowance, max(filterWidth, agentWidth))
         return contentWidth + homeLeadingButtonHorizontalPadding
     }
 
-    @ViewBuilder
-    static func homeFilterDivider(theme: DesktopThemeMode) -> some View {
-        Rectangle()
-            .fill(AppTheme.textMuted(for: theme).opacity(0.25))
-            .frame(width: 1, height: 18)
+    nonisolated static func homeMainColumnWidth(forWindowWidth width: CGFloat, isSidebarVisible: Bool) -> CGFloat {
+        let sidebarWidth = isSidebarVisible
+            ? (width <= 760 ? homeSidebarNarrowWidth : homeSidebarRegularWidth)
+            : 0
+        return max(0, width - sidebarWidth)
     }
+
+    nonisolated static func fixedHomeMainHeaderControlsWidth(
+        reservedHorizontalPadding: CGFloat,
+        includesSidebarToggle: Bool
+    ) -> CGFloat {
+        let toggleWidth = includesSidebarToggle ? homeSidebarToggleButtonSize : 0
+        let spacingCount: CGFloat = includesSidebarToggle ? 5 : 4
+        return (toolbarButtonSize * 3)
+            + toggleWidth
+            + reservedHorizontalPadding
+            + (homeMainHeaderItemSpacing * spacingCount)
+    }
+
+    nonisolated static func homeMainHeaderSearchWidth(
+        forMainColumnWidth mainColumnWidth: CGFloat,
+        reservedHorizontalPadding: CGFloat,
+        includesSidebarToggle: Bool
+    ) -> CGFloat {
+        let fixedControlsWidth = fixedHomeMainHeaderControlsWidth(
+            reservedHorizontalPadding: reservedHorizontalPadding,
+            includesSidebarToggle: includesSidebarToggle
+        )
+        let availableWidth = mainColumnWidth - fixedControlsWidth
+        if availableWidth >= homeMainHeaderMinimumSearchFieldWidth {
+            return min(headerSearchFieldWidth, availableWidth)
+        }
+        return max(0, availableWidth)
+    }
+
+    nonisolated static func homeMainHeaderSearchWidth(forMainColumnWidth mainColumnWidth: CGFloat) -> CGFloat {
+        homeMainHeaderSearchWidth(
+            forMainColumnWidth: mainColumnWidth,
+            reservedHorizontalPadding: homeMainHeaderHorizontalPadding,
+            includesSidebarToggle: false
+        )
+    }
+
+    nonisolated static func homeGridAvailableWidth(
+        forWindowWidth width: CGFloat,
+        isSidebarVisible: Bool
+    ) -> CGFloat {
+        let sidebarWidth = isSidebarVisible
+            ? (width <= 760 ? homeSidebarNarrowWidth : homeSidebarRegularWidth)
+            : 0
+        return max(304, width - sidebarWidth - homeGridHorizontalPadding)
+    }
+
+    nonisolated static func homeGridColumnCount(
+        forWindowWidth width: CGFloat,
+        isSidebarVisible: Bool
+    ) -> Int {
+        let availableWidth = homeGridAvailableWidth(
+            forWindowWidth: width,
+            isSidebarVisible: isSidebarVisible
+        )
+        let columns = Int((availableWidth + 14) / (304 + 14))
+        return min(4, max(1, columns))
+    }
+
+    nonisolated static func homeGridFrameWidth(
+        forWindowWidth width: CGFloat,
+        isSidebarVisible: Bool
+    ) -> CGFloat {
+        let columnCount = homeGridColumnCount(
+            forWindowWidth: width,
+            isSidebarVisible: isSidebarVisible
+        )
+        let columns = CGFloat(columnCount)
+        let spacing = CGFloat(max(columnCount - 1, 0)) * 14
+        return 304 * columns + spacing
+    }
+
 }
 
 private struct LayoutMetrics {
@@ -1331,6 +1750,75 @@ private struct LayoutMetrics {
         let spacing = CGFloat(max(gridColumnCount - 1, 0)) * 14
         let available = max(304, width - 32 - spacing)
         return min(1260, max(304 * columns + spacing, available))
+    }
+
+    var homeSidebarWidth: CGFloat {
+        width <= 760 ? MainView.homeSidebarNarrowWidth : MainView.homeSidebarRegularWidth
+    }
+
+}
+
+private struct RenameSourceDialog: View {
+    @Binding var draft: String
+    let title: String
+    let saveTitle: String
+    let cancelTitle: String
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let onCancel: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .lineLimit(1)
+
+            TextField("", text: $draft)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .accessibilityLabel(title)
+                .padding(.horizontal, 10)
+                .frame(height: 34)
+                .background(AppTheme.headerControlFill(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                }
+                .onSubmit(onSave)
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+
+                Button(cancelTitle, action: onCancel)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Button(saveTitle, action: onSave)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.pageBackground(for: theme))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(AppTheme.brand(for: accent, in: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(16)
+        .background(AppTheme.surface(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
     }
 }
 

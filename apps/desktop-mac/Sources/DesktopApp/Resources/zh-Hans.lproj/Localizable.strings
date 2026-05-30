@@ -14,6 +14,18 @@
 "page.detail.title" = "分组详情";
 "project_scope.global" = "全局";
 "project_scope.project" = "项目";
+"home.sidebar.status" = "状态";
+"home.sidebar.source_type" = "来源类型";
+"home.sidebar.tags" = "标签";
+"home.sidebar.agents" = "代理";
+"home.sidebar.projects" = "项目";
+"home.sidebar.all" = "全部";
+"home.sidebar.pinned" = "置顶";
+"home.sidebar.local" = "本地";
+"home.sidebar.remote" = "线上";
+"home.sidebar.expand" = "展开分组";
+"home.sidebar.collapse" = "收起分组";
+"home.sidebar.all_agents" = "全部代理";
 "placeholder.home.search_group_author" = "搜索分组 / 作者";
 "home.empty.title" = "没有匹配的分组";
 "home.empty.subtitle" = "试试更宽泛的搜索词。";
@@ -171,6 +183,7 @@
 "group_card.action.installed" = "已安装";
 "group_card.action.pin" = "置顶";
 "group_card.action.unpin" = "取消置顶";
+"group_card.action.rename" = "重命名";
 "group_card.action.update" = "更新";
 "group_card.action.edit_tags" = "添加标签";
 "group_card.action.cancel_edit_tags" = "取消";
@@ -181,6 +194,9 @@
 "group_tag.action.add" = "添加标签";
 "group_tag.filter.all" = "ALL";
 "group_tag.input.placeholder" = "标签";
+"rename.dialog.title" = "重命名分组";
+"rename.dialog.save" = "保存";
+"rename.dialog.cancel" = "取消";
 "group_tag.toast.duplicate" = "该标签已存在。";
 "group_tag.toast.limit" = "标签数量已达上限。";
 "group_tag.toast.empty" = "请先输入标签。";
@@ -217,6 +233,9 @@
 "toast.uninstall.no_group_selected" = "卸载失败：未选择分组。";
 "toast.uninstall.success" = "已移除 %@。";
 "toast.uninstall.failed" = "卸载失败：%@";
+"toast.rename.empty" = "请输入分组名称。";
+"toast.rename.success" = "已重命名为 %@。";
+"toast.rename.failed" = "重命名失败：%@";
 "toast.save.no_source_id" = "保存失败：缺少来源 id。";
 "toast.save.failed" = "保存失败：%@";
 "toast.pinned_migration.failed" = "置顶分组迁移失败：%@";

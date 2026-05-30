@@ -126,6 +126,17 @@ final class MainViewModel {
         let label: String
     }
 
+    struct HomeAgentFilterOption: Identifiable, Equatable {
+        let id: String
+        let label: String
+        let enabledGroupCount: Int
+    }
+
+    struct HomeSidebarFilterOption: Identifiable, Equatable {
+        let id: String
+        let count: Int
+    }
+
     struct SourceRow: Identifiable {
         let id: String
         let displayName: String
@@ -180,6 +191,8 @@ final class MainViewModel {
         let title: String
         let byline: String?
         let groupPath: String?
+        let sourceKind: String
+        let sourceLocator: String
         let isPinned: Bool
         let health: String
         let warningCount: Int
@@ -491,6 +504,24 @@ final class MainViewModel {
         let warningCount: Int
         let errorCount: Int
         let updatedAt: String
+
+        func renamed(displayName: String) -> WorkflowSummary {
+            WorkflowSummary(
+                sourceId: sourceId,
+                sourceKind: sourceKind,
+                sourceDisplayName: displayName,
+                sourceLocator: sourceLocator,
+                sourceCanonicalRepo: sourceCanonicalRepo,
+                leafs: leafs,
+                selectedLeafIds: selectedLeafIds,
+                enabledTargets: enabledTargets,
+                targetLeafIdsByTarget: targetLeafIdsByTarget,
+                health: health,
+                warningCount: warningCount,
+                errorCount: errorCount,
+                updatedAt: updatedAt
+            )
+        }
     }
 
     private struct FileTreeNode: Sendable {
@@ -592,6 +623,7 @@ final class MainViewModel {
     private var detectedTargets: Set<String> = []
     private var inspectedPayloadBySourceId: [ScopedSourceKey: [String: Any]] = [:]
     private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
+    private var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
     private var preparedDetailContentBySourceId: [String: PreparedDetailContent] = [:]
     @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
     private var listRequestToken: UInt64 = 0
@@ -675,6 +707,53 @@ final class MainViewModel {
         self.pinnedSourceIds = []
     }
 
+    static func isSupportedImportLocator(_ value: String) -> Bool {
+        let candidate = normalizedImportLocator(value)
+        guard !candidate.isEmpty else {
+            return false
+        }
+
+        let lowercasedCandidate = candidate.lowercased()
+        if lowercasedCandidate.hasPrefix("file://"), candidate.count > "file://".count {
+            return true
+        }
+
+        if lowercasedCandidate.hasPrefix("clawhub:"), candidate.count > "clawhub:".count {
+            return true
+        }
+
+        if candidate.hasPrefix("/") || candidate.hasPrefix("~/") {
+            return true
+        }
+
+        if isSupportedGitHTTPSLocator(candidate) {
+            return true
+        }
+
+        if matches(candidate, pattern: #"^git@(github|gitlab)\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$"#) {
+            return true
+        }
+
+        return matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$"#)
+    }
+
+    static func normalizedImportLocator(_ value: String) -> String {
+        var candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard candidate.count >= 2 else {
+            return candidate
+        }
+
+        let first = candidate.first
+        let last = candidate.last
+        if (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+            candidate.removeFirst()
+            candidate.removeLast()
+            candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return candidate
+    }
+
     func bindRouteState(_ state: DesktopAppState) {
         routeState = state
         cachedSelectedProjectScope = state.settings.selectedProjectScope
@@ -698,6 +777,25 @@ final class MainViewModel {
 
     var selectedGroupId: String? {
         selectedSourceId
+    }
+
+    var selectedHomeAgentFilterId: String? {
+        get {
+            routeState?.view.selectedHomeAgentFilterId
+        }
+        set {
+            routeState?.view.selectedHomeAgentFilterId = newValue
+        }
+    }
+
+    var selectedHomeStatusFilterId: String {
+        get { routeState?.view.selectedHomeStatusFilterId ?? "all" }
+        set { routeState?.view.selectedHomeStatusFilterId = newValue }
+    }
+
+    var selectedHomeSourceTypeFilterId: String {
+        get { routeState?.view.selectedHomeSourceTypeFilterId ?? "all" }
+        set { routeState?.view.selectedHomeSourceTypeFilterId = newValue }
     }
 
     var isUpdatingCurrentGroup: Bool {
@@ -740,6 +838,53 @@ final class MainViewModel {
         return targetIds.map { target in
             TargetOption(id: target, label: AgentDisplayCatalog.label(for: target, customAgents: routeState?.settings.customAgents ?? []))
         }
+    }
+
+    var homeAgentFilterOptions: [HomeAgentFilterOption] {
+        let cards = groupCards
+        let enabledGroupCountsByTargetId = Dictionary(
+            grouping: cards.flatMap { card in
+                card.targets.filter(\.isEnabled).map { target in
+                    (target.id, card.id)
+                }
+            },
+            by: { $0.0 }
+        ).mapValues { entries in
+            Set(entries.map(\.1)).count
+        }
+
+        return visibleTargetIds().map { targetId in
+            HomeAgentFilterOption(
+                id: targetId,
+                label: AgentDisplayCatalog.label(for: targetId, customAgents: routeState?.settings.customAgents ?? []),
+                enabledGroupCount: enabledGroupCountsByTargetId[targetId] ?? 0
+            )
+        }
+    }
+
+    var homeStatusFilterOptions: [HomeSidebarFilterOption] {
+        let cards = groupCards
+        return [
+            HomeSidebarFilterOption(id: "all", count: cards.count),
+            HomeSidebarFilterOption(id: "pinned", count: cards.filter(\.isPinned).count),
+        ]
+    }
+
+    var homeSourceTypeFilterOptions: [HomeSidebarFilterOption] {
+        let cards = groupCards
+        return [
+            HomeSidebarFilterOption(id: "all", count: cards.count),
+            HomeSidebarFilterOption(id: "local", count: cards.filter(Self.isLocalHomeSource).count),
+            HomeSidebarFilterOption(id: "remote", count: cards.filter(Self.isRemoteHomeSource).count),
+        ]
+    }
+
+    var effectiveSelectedHomeAgentFilterId: String? {
+        guard let selectedHomeAgentFilterId else {
+            return nil
+        }
+        let optionIds = Set(homeAgentFilterOptions.map(\.id))
+        return optionIds.contains(selectedHomeAgentFilterId) ? selectedHomeAgentFilterId : nil
     }
 
     var detectedTargetIdsForSettings: [String] {
@@ -788,6 +933,84 @@ final class MainViewModel {
         groupCards(matching: searchQuery)
     }
 
+    func setSelectedHomeAgentFilter(_ targetId: String?) {
+        selectedHomeAgentFilterId = targetId
+    }
+
+    func setSelectedHomeStatusFilter(_ filterId: String) {
+        selectedHomeStatusFilterId = ["all", "pinned"].contains(filterId) ? filterId : "all"
+    }
+
+    func setSelectedHomeSourceTypeFilter(_ filterId: String) {
+        selectedHomeSourceTypeFilterId = ["all", "local", "remote"].contains(filterId) ? filterId : "all"
+    }
+
+    func reconcileHomeAgentFilter() {
+        guard selectedHomeAgentFilterId != nil else {
+            return
+        }
+        if effectiveSelectedHomeAgentFilterId == nil {
+            self.selectedHomeAgentFilterId = nil
+        }
+    }
+
+    func filteredHomeGroupCards(locale: Locale) -> [GroupCardModel] {
+        _ = locale
+        return groupCards.filter { card in
+            matchesHomeSidebarFilters(card)
+        }
+    }
+
+    func matchesHomeSidebarFilters(_ card: GroupCardModel) -> Bool {
+        if selectedHomeStatusFilterId == "pinned", !card.isPinned {
+            return false
+        }
+        if selectedHomeSourceTypeFilterId == "local", !Self.isLocalHomeSource(card) {
+            return false
+        }
+        if selectedHomeSourceTypeFilterId == "remote", !Self.isRemoteHomeSource(card) {
+            return false
+        }
+        guard let selectedHomeAgentFilterId = effectiveSelectedHomeAgentFilterId else {
+            return true
+        }
+        return card.targets.contains { target in
+            target.id == selectedHomeAgentFilterId && target.isEnabled
+        }
+    }
+
+    static func isLocalHomeSource(_ card: GroupCardModel) -> Bool {
+        homeSourceType(for: card) == "local"
+    }
+
+    static func isRemoteHomeSource(_ card: GroupCardModel) -> Bool {
+        homeSourceType(for: card) == "remote"
+    }
+
+    private static func homeSourceType(for card: GroupCardModel) -> String {
+        let kind = card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let locator = card.sourceLocator.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if ["local", "path", "filesystem"].contains(kind) {
+            return "local"
+        }
+        if ["git", "clawhub"].contains(kind) {
+            return "remote"
+        }
+        if locator.hasPrefix("~/")
+            || locator.hasPrefix("/")
+            || locator.hasPrefix("file://") {
+            return "local"
+        }
+        if locator.hasPrefix("http://")
+            || locator.hasPrefix("https://")
+            || locator.hasPrefix("git@")
+            || locator.contains("github.com")
+            || locator.contains("gitlab.com") {
+            return "remote"
+        }
+        return "remote"
+    }
+
     func groupCards(matching rawQuery: String) -> [GroupCardModel] {
         sourceRows(matching: rawQuery).compactMap { row in
             guard let summary = summary(for: row.id), let draft = draft(for: row.id) else {
@@ -809,6 +1032,8 @@ final class MainViewModel {
                 title: row.displayName,
                 byline: metadata.byline,
                 groupPath: groupPath,
+                sourceKind: row.kind,
+                sourceLocator: row.locator,
                 isPinned: pinnedSourceIds.contains(row.id),
                 health: row.status,
                 warningCount: row.warningCount,
@@ -875,6 +1100,26 @@ final class MainViewModel {
         } catch {
             pinnedSourceIds = previousPinnedSourceIds
             showToast(style: .error, text: localizedText("toast.pin.failed", firstErrorLine(from: error)))
+        }
+    }
+
+    func renameSource(sourceId: String, displayName: String) async {
+        let normalizedSourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedSourceId.isEmpty, !normalizedDisplayName.isEmpty else {
+            showToast(style: .error, text: localizedText("toast.rename.empty"))
+            return
+        }
+
+        do {
+            let result = try await mutationCoordinator.renameSource(
+                sourceId: normalizedSourceId,
+                displayName: normalizedDisplayName
+            )
+            applyRenamedSource(sourceId: result.sourceId, displayName: result.displayName)
+            showToast(style: .success, text: localizedText("toast.rename.success", result.displayName))
+        } catch {
+            showToast(style: .error, text: localizedText("toast.rename.failed", firstErrorLine(from: error)))
         }
     }
 
@@ -1301,8 +1546,9 @@ final class MainViewModel {
         do {
             let response = try await fetchInspectResponse(sourceId: sourceId)
             if let payload = response.data?.value as? [String: Any] {
+                let normalizedPayload = payloadWithRenameDisplayNameOverride(payload, sourceId: sourceId)
                 if let key = scopedSourceKey(sourceId: sourceId) {
-                    inspectedPayloadBySourceId[key] = payload
+                    inspectedPayloadBySourceId[key] = normalizedPayload
                 }
                 invalidatePreparedDetailContent(for: sourceId)
                 scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
@@ -1606,15 +1852,16 @@ final class MainViewModel {
 
     private func seedRecommendedImportGroupsIfNeeded() {
         guard recommendedImportGroups.isEmpty else {
-            if importSearchPhase == .idle {
+            if importSubmittedQuery.isEmpty, importSearchPhase == .idle {
                 importSearchPhase = .ready
             }
             return
         }
 
         recommendedImportGroups = makeLocalRecommendedImportGroups(recommendationsProvider())
-        importSubmittedQuery = ""
-        importSearchPhase = .ready
+        if importSubmittedQuery.isEmpty {
+            importSearchPhase = .ready
+        }
     }
 
     private func makeLocalRecommendedImportGroups(_ recommendations: [ImportRecommendationEntry]) -> [ImportGroupItem] {
@@ -2164,14 +2411,15 @@ final class MainViewModel {
                 continue
             }
 
+            let normalizedPayload = payloadWithRenameDisplayNameOverride(payload, sourceId: sourceId)
             var mergedPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
-            if let sourceMetadata = payload["sourceMetadata"] {
+            if let sourceMetadata = normalizedPayload["sourceMetadata"] {
                 mergedPayload["sourceMetadata"] = sourceMetadata
             }
-            if let sourceSnapshot = payload["sourceSnapshot"] {
+            if let sourceSnapshot = normalizedPayload["sourceSnapshot"] {
                 mergedPayload["sourceSnapshot"] = sourceSnapshot
             }
-            if let groupPath = payload["groupPath"] {
+            if let groupPath = normalizedPayload["groupPath"] {
                 mergedPayload["groupPath"] = groupPath
             }
             if !mergedPayload.isEmpty {
@@ -2209,7 +2457,11 @@ final class MainViewModel {
             }
 
             let kind = source["kind"] as? String ?? "unknown"
-            let sourceDisplayName = source["displayName"] as? String ?? sourceId
+            let rawSourceDisplayName = source["displayName"] as? String
+            clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: rawSourceDisplayName)
+            let sourceDisplayName = renamedSourceDisplayNameOverridesBySourceId[sourceId]
+                ?? rawSourceDisplayName
+                ?? sourceId
             let sourceLocator = source["locator"] as? String ?? ""
             let sourceCanonicalRepo = (source["canonicalRepo"] as? String)?.nonEmpty
                 ?? (source["originLocator"] as? String)?.nonEmpty
@@ -2788,9 +3040,14 @@ final class MainViewModel {
         return payload
     }
 
-    private func scheduleDetailEnrichmentFetch(sourceId: String) {
-        detailEnrichmentTasksBySourceId[sourceId]?.cancel()
-        detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+    private func scheduleDetailEnrichmentFetch(sourceId: String, force: Bool = false) {
+        if !force, detailEnrichmentTasksBySourceId[sourceId] != nil {
+            return
+        }
+        if force {
+            detailEnrichmentTasksBySourceId[sourceId]?.cancel()
+            detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+        }
 
         detailEnrichmentTokenSeed &+= 1
         let token = detailEnrichmentTokenSeed
@@ -2805,7 +3062,14 @@ final class MainViewModel {
                 if let payload = response.data?.value as? [String: Any],
                    self.detailEnrichmentTokensBySourceId[sourceId] == token
                 {
-                    self.detailEnrichmentPayloadBySourceId[sourceId] = payload
+                    let normalizedPayload: [String: Any]
+                    if let displayName = self.renamedSourceDisplayNameOverridesBySourceId[sourceId]
+                        ?? self.summary(for: sourceId)?.sourceDisplayName {
+                        normalizedPayload = self.enrichmentPayloadWithDisplayName(payload, displayName: displayName)
+                    } else {
+                        normalizedPayload = payload
+                    }
+                    self.detailEnrichmentPayloadBySourceId[sourceId] = normalizedPayload
                 }
                 if self.detailEnrichmentTokensBySourceId[sourceId] == token {
                     self.latestWarnings = response.warnings
@@ -3275,10 +3539,13 @@ final class MainViewModel {
         }
 
         if let inspectPayload = data["inspect"] as? [String: Any] {
-            inspectedPayloadBySourceId[ScopedSourceKey(scope: scope, sourceId: sourceId)] = inspectPayload
+            inspectedPayloadBySourceId[ScopedSourceKey(scope: scope, sourceId: sourceId)] = payloadWithRenameDisplayNameOverride(
+                inspectPayload,
+                sourceId: sourceId
+            )
             invalidatePreparedDetailContent(for: sourceId)
             scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
-            scheduleDetailEnrichmentFetch(sourceId: sourceId)
+            scheduleDetailEnrichmentFetch(sourceId: sourceId, force: true)
         }
     }
 
@@ -3313,6 +3580,111 @@ final class MainViewModel {
             nextSummaries.append(summary)
         }
         applySummaries(nextSummaries)
+    }
+
+    private func applyRenamedSource(sourceId: String, displayName: String) {
+        renamedSourceDisplayNameOverridesBySourceId[sourceId] = displayName
+        guard let existing = summary(for: sourceId) else {
+            updateCachedDetailDisplayName(sourceId: sourceId, displayName: displayName)
+            return
+        }
+
+        replaceSummary(existing.renamed(displayName: displayName))
+        updateCachedDetailDisplayName(sourceId: sourceId, displayName: displayName)
+    }
+
+    private func updateCachedDetailDisplayName(sourceId: String, displayName: String) {
+        for key in inspectedPayloadBySourceId.keys where key.sourceId == sourceId {
+            inspectedPayloadBySourceId[key] = payloadWithDisplayName(
+                inspectedPayloadBySourceId[key] ?? [:],
+                sourceId: sourceId,
+                displayName: displayName
+            )
+        }
+
+        if let payload = detailEnrichmentPayloadBySourceId[sourceId] {
+            detailEnrichmentPayloadBySourceId[sourceId] = enrichmentPayloadWithDisplayName(
+                payload,
+                displayName: displayName
+            )
+        }
+    }
+
+    private func payloadWithRenameDisplayNameOverride(_ payload: [String: Any], sourceId: String) -> [String: Any] {
+        clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, payload: payload)
+        guard let displayName = renamedSourceDisplayNameOverridesBySourceId[sourceId] else {
+            return payload
+        }
+        return payloadWithDisplayName(payload, sourceId: sourceId, displayName: displayName)
+    }
+
+    private func clearRenameDisplayNameOverrideIfConfirmed(sourceId: String, payload: [String: Any]) {
+        let sourceDisplayName = (payload["source"] as? [String: Any])?["displayName"] as? String
+        let summarySourceDisplayName = ((payload["summary"] as? [String: Any])?["source"] as? [String: Any])?["displayName"] as? String
+
+        clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: sourceDisplayName)
+        clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: summarySourceDisplayName)
+    }
+
+    private func clearRenameDisplayNameOverrideIfConfirmed(sourceId: String, displayName: String?) {
+        guard let override = renamedSourceDisplayNameOverridesBySourceId[sourceId],
+              let displayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !displayName.isEmpty,
+              displayName == override else {
+            return
+        }
+        renamedSourceDisplayNameOverridesBySourceId.removeValue(forKey: sourceId)
+    }
+
+    private func payloadWithDisplayName(_ payload: [String: Any], sourceId: String, displayName: String) -> [String: Any] {
+        var nextPayload = payload
+
+        var sourcePayload = nextPayload["source"] as? [String: Any] ?? [:]
+        sourcePayload["id"] = sourcePayload["id"] ?? sourceId
+        sourcePayload["displayName"] = displayName
+        nextPayload["source"] = sourcePayload
+
+        if var summaryPayload = nextPayload["summary"] as? [String: Any] {
+            var summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
+            summarySourcePayload["id"] = summarySourcePayload["id"] ?? sourceId
+            summarySourcePayload["displayName"] = displayName
+            summaryPayload["source"] = summarySourcePayload
+            nextPayload["summary"] = summaryPayload
+        }
+
+        if var sourceSnapshotPayload = nextPayload["sourceSnapshot"] as? [String: Any] {
+            sourceSnapshotPayload["title"] = displayName
+            nextPayload["sourceSnapshot"] = sourceSnapshotPayload
+        }
+
+        return nextPayload
+    }
+
+    private func enrichmentPayloadWithDisplayName(_ payload: [String: Any], displayName: String) -> [String: Any] {
+        var nextPayload = payload
+
+        if var sourcePayload = nextPayload["source"] as? [String: Any] {
+            if sourcePayload.keys.contains("displayName") {
+                sourcePayload["displayName"] = displayName
+            }
+            nextPayload["source"] = sourcePayload
+        }
+
+        if var summaryPayload = nextPayload["summary"] as? [String: Any],
+           var summarySourcePayload = summaryPayload["source"] as? [String: Any] {
+            if summarySourcePayload.keys.contains("displayName") {
+                summarySourcePayload["displayName"] = displayName
+            }
+            summaryPayload["source"] = summarySourcePayload
+            nextPayload["summary"] = summaryPayload
+        }
+
+        if var sourceSnapshotPayload = nextPayload["sourceSnapshot"] as? [String: Any] {
+            sourceSnapshotPayload["title"] = displayName
+            nextPayload["sourceSnapshot"] = sourceSnapshotPayload
+        }
+
+        return nextPayload
     }
 
     private func scheduleSaveStateReset(for key: ScopedSourceKey) {
@@ -4729,6 +5101,9 @@ final class MainViewModel {
     private func pruneStateMaps(allowedSourceIds: Set<String>) {
         workingDrafts = pruneSourceMap(workingDrafts, allowedSourceIds: allowedSourceIds)
         saveStateBySourceId = pruneSourceMap(saveStateBySourceId, allowedSourceIds: allowedSourceIds)
+        renamedSourceDisplayNameOverridesBySourceId = renamedSourceDisplayNameOverridesBySourceId.filter {
+            allowedSourceIds.contains($0.key)
+        }
     }
 
     private func currentProjectScope() -> ProjectScopeSelection {
@@ -4919,6 +5294,63 @@ final class MainViewModel {
         return components.last ?? sourceId
     }
 
+    private static func isSupportedGitHTTPSLocator(_ candidate: String) -> Bool {
+        guard !candidate.containsWhitespace else {
+            return false
+        }
+
+        guard let components = URLComponents(string: candidate),
+              components.scheme?.lowercased() == "https",
+              let host = components.host?.lowercased(),
+              host == "github.com" || host == "gitlab.com"
+        else {
+            return false
+        }
+
+        let pathSegments = components.path
+            .split(separator: "/")
+            .filter { !$0.isEmpty }
+            .map(String.init)
+
+        guard pathSegments.count >= 2 else {
+            return false
+        }
+
+        switch host {
+        case "github.com":
+            if pathSegments.count == 2 {
+                return true
+            }
+
+            return pathSegments.count >= 4 && pathSegments[2].lowercased() == "tree"
+
+        case "gitlab.com":
+            let treeMarkerIndex = pathSegments.indices.first { index in
+                pathSegments[index] == "-"
+                    && pathSegments.indices.contains(index + 1)
+                    && pathSegments[index + 1] == "tree"
+            }
+
+            if let treeMarkerIndex {
+                return treeMarkerIndex >= 2 && pathSegments.count >= treeMarkerIndex + 3
+            }
+
+            let hasUnsupportedPagePath = pathSegments.contains("-")
+                || pathSegments.contains { segment in
+                    ["tree", "blob", "issues", "merge_requests"].contains(segment)
+                }
+
+            return pathSegments.count >= 2 && !hasUnsupportedPagePath
+
+        default:
+            return false
+        }
+    }
+
+    private static func matches(_ value: String, pattern: String) -> Bool {
+        value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     private func pruneSourceMap<T>(_ sourceMap: [String: T], allowedSourceIds: Set<String>) -> [String: T] {
         Dictionary(uniqueKeysWithValues: sourceMap.filter { allowedSourceIds.contains($0.key) })
     }
@@ -4932,6 +5364,10 @@ final class MainViewModel {
 private extension String {
     var nonEmpty: String? {
         isEmpty ? nil : self
+    }
+
+    var containsWhitespace: Bool {
+        rangeOfCharacter(from: .whitespacesAndNewlines) != nil
     }
 
     var capitalizedSentence: String {

@@ -46,7 +46,7 @@ final class HomeScreenContainer {
     }
 
     func visibleGroupCards(locale: Locale) -> [MainViewModel.GroupCardModel] {
-        mainViewModel.groupCards.filter { card in
+        return mainViewModel.filteredHomeGroupCards(locale: locale).filter { card in
             groupTagController.matchesHomeFilter(
                 sourceId: card.id,
                 sourceIds: mainViewModel.sourceIds,
@@ -63,7 +63,10 @@ final class HomeScreenContainer {
         from cards: [MainViewModel.GroupCardModel],
         snapshot: GroupTagController.HomeSnapshot
     ) -> [MainViewModel.GroupCardModel] {
-        cards.filter { snapshot.contains(sourceId: $0.id) }
+        return cards.filter { card in
+            snapshot.contains(sourceId: card.id)
+                && mainViewModel.matchesHomeSidebarFilters(card)
+        }
     }
 
     func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
@@ -82,6 +85,54 @@ final class HomeScreenContainer {
         groupTagController.setSelectedHomeFilterKey(key)
     }
 
+    func homeAgentFilterOptions() -> [MainViewModel.HomeAgentFilterOption] {
+        mainViewModel.homeAgentFilterOptions
+    }
+
+    func selectedHomeAgentFilterId() -> String? {
+        mainViewModel.selectedHomeAgentFilterId
+    }
+
+    func setSelectedHomeAgentFilter(_ targetId: String?) {
+        mainViewModel.setSelectedHomeAgentFilter(targetId)
+    }
+
+    func homeStatusFilterOptions() -> [MainViewModel.HomeSidebarFilterOption] {
+        mainViewModel.homeStatusFilterOptions
+    }
+
+    func selectedHomeStatusFilterId() -> String {
+        mainViewModel.selectedHomeStatusFilterId
+    }
+
+    func setSelectedHomeStatusFilter(_ filterId: String) {
+        mainViewModel.setSelectedHomeStatusFilter(filterId)
+    }
+
+    func homeSourceTypeFilterOptions() -> [MainViewModel.HomeSidebarFilterOption] {
+        mainViewModel.homeSourceTypeFilterOptions
+    }
+
+    func selectedHomeSourceTypeFilterId() -> String {
+        mainViewModel.selectedHomeSourceTypeFilterId
+    }
+
+    func setSelectedHomeSourceTypeFilter(_ filterId: String) {
+        mainViewModel.setSelectedHomeSourceTypeFilter(filterId)
+    }
+
+    func isHomeSidebarSectionExpanded(_ sectionId: String) -> Bool {
+        state.view.expandedHomeSidebarSectionIds.contains(sectionId)
+    }
+
+    func toggleHomeSidebarSection(_ sectionId: String) {
+        if state.view.expandedHomeSidebarSectionIds.contains(sectionId) {
+            state.view.expandedHomeSidebarSectionIds.remove(sectionId)
+        } else {
+            state.view.expandedHomeSidebarSectionIds.insert(sectionId)
+        }
+    }
+
     func recentProjectScopes() -> [RecentProjectScopeItem] {
         mainViewModel.recentProjectScopes
     }
@@ -92,6 +143,17 @@ final class HomeScreenContainer {
 
     func refreshProjectScopes() async {
         await mainViewModel.refreshProjectScopes()
+    }
+
+    func handleHomeSearchSubmit(_ query: String) async -> Bool {
+        let locator = MainViewModel.normalizedImportLocator(query)
+        guard MainViewModel.isSupportedImportLocator(locator) else {
+            return false
+        }
+
+        state.view.currentRoute = .importPage
+        await importContainer.submitDirectLocator(locator)
+        return true
     }
 
     func tagSuggestions(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {

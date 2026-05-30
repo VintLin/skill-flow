@@ -50,6 +50,29 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
     }
 
+    func testHomeStatusAndSourceFilterDefaultsAreAvailable() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.kind = "git"
+        state.sources["beta"]?.kind = "local"
+        state.sources["beta"]?.locator = "~/skills/beta"
+        state.pinnedSourceIds = ["beta"]
+        try fixture.reset(state: state)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        XCTAssertEqual(appState.view.selectedHomeStatusFilterId, "all")
+        XCTAssertEqual(appState.view.selectedHomeSourceTypeFilterId, "all")
+        XCTAssertEqual(appState.view.expandedHomeSidebarSectionIds.sorted(), [])
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.sourceKind, "git")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.sourceKind, "local")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.sourceLocator, "~/skills/beta")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.isPinned, true)
+    }
+
     func testVisibleTargetsFollowSettingsOrderAndVisibility() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -121,6 +144,268 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertEqual(model.visibleTargets.prefix(2).map(\.id), ["my-agent", "claude-code"])
         XCTAssertEqual(model.groupCards.first?.targets.prefix(2).map(\.id), ["my-agent", "claude-code"])
+    }
+
+    func testAgentFilterOptionsCountEnabledTargetsAcrossGroupCards() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["beta"]?.enabledTargets = ["cursor"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        XCTAssertEqual(
+            model.homeAgentFilterOptions,
+            [
+                MainViewModel.HomeAgentFilterOption(id: "claude-code", label: "Claude Code", enabledGroupCount: 1),
+                MainViewModel.HomeAgentFilterOption(id: "cursor", label: "Cursor", enabledGroupCount: 1),
+            ]
+        )
+    }
+
+    @MainActor
+    func testHomeStatusAndSourceTypeFilterOptionsCountGroupCards() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["beta"]?.kind = "local"
+        state.sources["beta"]?.locator = "~/skills/beta"
+        state.pinnedSourceIds = ["beta"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        XCTAssertEqual(
+            model.homeStatusFilterOptions,
+            [
+                MainViewModel.HomeSidebarFilterOption(id: "all", count: 2),
+                MainViewModel.HomeSidebarFilterOption(id: "pinned", count: 1),
+            ]
+        )
+        XCTAssertEqual(
+            model.homeSourceTypeFilterOptions,
+            [
+                MainViewModel.HomeSidebarFilterOption(id: "all", count: 2),
+                MainViewModel.HomeSidebarFilterOption(id: "local", count: 1),
+                MainViewModel.HomeSidebarFilterOption(id: "remote", count: 1),
+            ]
+        )
+    }
+
+    func testRemoteHomeSourceWithLocalCheckoutPathDoesNotCountAsLocal() {
+        let card = MainViewModel.GroupCardModel(
+            id: "remote",
+            title: "RemoteHub",
+            byline: nil,
+            groupPath: "/Users/example/.skill-flow/cache/remote",
+            sourceKind: "clawhub",
+            sourceLocator: "https://github.com/acme/remote-hub",
+            isPinned: false,
+            health: "HEALTHY",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: MainViewModel.GroupCardStats(
+                skillCount: 1,
+                downloadCount: nil,
+                starCount: nil,
+                githubURL: "https://github.com/acme/remote-hub",
+                localPath: "/Users/example/.skill-flow/cache/remote"
+            ),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+        )
+
+        XCTAssertFalse(MainViewModel.isLocalHomeSource(card))
+        XCTAssertTrue(MainViewModel.isRemoteHomeSource(card))
+    }
+
+    func testSelectedAgentFilterNarrowsHomeGroupCards() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["beta"]?.enabledTargets = ["cursor"]
+        try fixture.reset(state: state)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "en")).map(\.id), ["alpha", "beta"])
+
+        model.setSelectedHomeAgentFilter("cursor")
+
+        XCTAssertEqual(appState.view.selectedHomeAgentFilterId, "cursor")
+        XCTAssertEqual(model.selectedHomeAgentFilterId, "cursor")
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "en")).map(\.id), ["beta"])
+    }
+
+    @MainActor
+    func testSelectedStatusAndSourceTypeFiltersIntersectWithAgentFilter() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.enabledTargets = ["claude-code"]
+        state.sources["beta"]?.kind = "local"
+        state.sources["beta"]?.locator = "~/skills/beta"
+        state.sources["beta"]?.enabledTargets = ["cursor"]
+        state.pinnedSourceIds = ["beta"]
+        try fixture.reset(state: state)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), ["beta", "alpha"])
+
+        model.setSelectedHomeStatusFilter("pinned")
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), ["beta"])
+
+        model.setSelectedHomeSourceTypeFilter("remote")
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), [])
+
+        model.setSelectedHomeSourceTypeFilter("local")
+        model.setSelectedHomeAgentFilter("cursor")
+        XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), ["beta"])
+    }
+
+    func testAgentFilterReconcileClearsStaleSelectedId() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        model.setSelectedHomeAgentFilter("missing-agent")
+        XCTAssertEqual(appState.view.selectedHomeAgentFilterId, "missing-agent")
+
+        model.reconcileHomeAgentFilter()
+
+        XCTAssertNil(appState.view.selectedHomeAgentFilterId)
+        XCTAssertNil(model.selectedHomeAgentFilterId)
+    }
+
+    func testHomeContainerProjectionAppliesTagAndAgentFilterWithoutClearingStaleSelection() async throws {
+        let fixture = try TestFixture.install()
+        var fixtureState = TestFixture.State.baseline
+        fixtureState.sources["beta"]?.enabledTargets = ["cursor"]
+        try fixture.reset(state: fixtureState)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let userDefaults = UserDefaults(suiteName: "MainViewModelSelectionTests-\(UUID().uuidString)")!
+        let groupTagController = GroupTagController(
+            state: appState,
+            store: DesktopGroupTagStore(userDefaults: userDefaults),
+            recommendationsProvider: { [] },
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { _ in nil },
+            randomAccent: { .blue }
+        )
+        let settingsViewModel = SettingsViewModel(
+            state: appState,
+            store: DesktopSettingsStore(userDefaults: userDefaults),
+            commandFacade: nil
+        )
+        let importContainer = ImportScreenContainer(
+            state: appState,
+            mainViewModel: model,
+            recommendationsProvider: { [] }
+        )
+        let detailContainer = DetailScreenContainer(
+            state: appState,
+            groupTagController: groupTagController,
+            detailSnapshot: { [weak model] sourceId in
+                model?.detailSnapshot(for: sourceId)
+            }
+        )
+        let container = HomeScreenContainer(
+            state: appState,
+            mainViewModel: model,
+            groupTagController: groupTagController,
+            settingsViewModel: settingsViewModel,
+            importContainer: importContainer,
+            detailContainer: detailContainer
+        )
+        await model.bootstrap()
+
+        appState.groupTags.customTagsBySourceId = [
+            "alpha": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.blue.rawValue)],
+            "beta": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.green.rawValue)]
+        ]
+        appState.groupTags.selectedHomeFilterKey = "custom:shared"
+        model.setSelectedHomeAgentFilter("cursor")
+
+        let snapshot = container.homeTagSnapshot(locale: Locale(identifier: "en"))
+
+        XCTAssertEqual(
+            container.visibleGroupCards(from: model.groupCards, snapshot: snapshot).map(\.id),
+            ["beta"]
+        )
+
+        model.setSelectedHomeAgentFilter("missing-agent")
+
+        XCTAssertEqual(
+            container.visibleGroupCards(from: model.groupCards, snapshot: snapshot).map(\.id),
+            ["alpha", "beta"]
+        )
+        XCTAssertEqual(appState.view.selectedHomeAgentFilterId, "missing-agent")
+    }
+
+    @MainActor
+    func testHomeSidebarSectionExpansionTogglesThroughContainer() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let userDefaults = UserDefaults(suiteName: "HomeSidebarSectionExpansion-\(UUID().uuidString)")!
+        let groupTagController = GroupTagController(
+            state: appState,
+            store: DesktopGroupTagStore(userDefaults: userDefaults),
+            recommendationsProvider: { [] },
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { _ in nil },
+            randomAccent: { .blue }
+        )
+        let settingsViewModel = SettingsViewModel(
+            state: appState,
+            store: DesktopSettingsStore(userDefaults: userDefaults),
+            commandFacade: nil
+        )
+        let importContainer = ImportScreenContainer(
+            state: appState,
+            mainViewModel: model,
+            recommendationsProvider: { [] }
+        )
+        let detailContainer = DetailScreenContainer(
+            state: appState,
+            groupTagController: groupTagController,
+            detailSnapshot: { [weak model] sourceId in model?.detailSnapshot(for: sourceId) }
+        )
+        let container = HomeScreenContainer(
+            state: appState,
+            mainViewModel: model,
+            groupTagController: groupTagController,
+            settingsViewModel: settingsViewModel,
+            importContainer: importContainer,
+            detailContainer: detailContainer
+        )
+
+        XCTAssertTrue(container.isHomeSidebarSectionExpanded("status"))
+        XCTAssertTrue(container.isHomeSidebarSectionExpanded("sourceType"))
+        XCTAssertFalse(container.isHomeSidebarSectionExpanded("tags"))
+
+        container.toggleHomeSidebarSection("tags")
+        XCTAssertTrue(container.isHomeSidebarSectionExpanded("tags"))
+
+        container.toggleHomeSidebarSection("status")
+        XCTAssertFalse(container.isHomeSidebarSectionExpanded("status"))
     }
 
     func testSaveFailureRollsBackOptimisticEdit() async throws {
@@ -277,6 +562,158 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(cards.map(\.id), ["alpha"])
         XCTAssertEqual(model.searchQuery, "beta")
         XCTAssertEqual(model.groupCards.map(\.id), ["beta"])
+    }
+
+    func testRenameSourceUpdatesCardsAndDetailTitleAfterBridgeSuccess() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.sourceSnapshotTitle = "Old Snapshot Title"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+        let request = fixture.loggedRequests().last(where: { $0.command == "rename-source" })
+        XCTAssertEqual(request?.payload?["sourceId"]?.value as? String, "alpha")
+        XCTAssertEqual(request?.payload?["displayName"]?.value as? String, "Writing Tools")
+    }
+
+    func testRenameSourceUpdatesDetailEnrichmentSnapshotTitleAfterBridgeSuccess() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.inspectEnrichmentDelayMilliseconds = 400
+        state.sources["alpha"]?.enrichmentSourceSnapshotTitle = "Old Enrichment Title"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        try await fixture.waitForLoggedRequest(
+            command: "inspect-enrichment",
+            sourceId: "alpha",
+            model: model,
+            expectedDetailTitle: "Old Enrichment Title"
+        )
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Enrichment Title")
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+    }
+
+    func testRenameSourceKeepsDetailTitleWhenInFlightEnrichmentReturnsOldSnapshot() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.inspectEnrichmentDelayMilliseconds = 400
+        state.sources["alpha"]?.inspectEnrichmentTotalInstalls = 987_654
+        state.sources["alpha"]?.enrichmentSourceSnapshotTitle = "Old Enrichment Title"
+        try fixture.reset(state: state)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+        await model.selectSource("alpha")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Enrichment Title")
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+
+        try await fixture.waitForLoggedRequest(
+            command: "inspect-enrichment",
+            sourceId: "alpha",
+            model: model,
+            expectedDetailTitle: "Writing Tools",
+            expectedDownloadCount: 987_654
+        )
+
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.sourceFacts.first, "2026-03-25T12:00:00Z")
+    }
+
+    func testRenameSourceRefreshClearsOverrideAfterServerConfirmsDisplayName() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let model = try await fixture.makeModel()
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+
+        await model.refreshList()
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+
+        var nextState = try fixture.readState()
+        nextState.sources["alpha"]?.displayName = "Backend Fresh Name"
+        try fixture.reset(state: nextState)
+
+        await model.refreshList()
+
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Backend Fresh Name")
+    }
+
+    func testRenameSourceKeepsDisplayNameWhenStaleListResponseReturnsOldSummary() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.listDelayMilliseconds = 400
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        let refreshTask = Task { @MainActor in
+            await model.refreshList()
+        }
+        try await fixture.waitForLoggedRequest(command: "list", minimumCount: 1)
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+
+        await refreshTask.value
+
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "Writing Tools")
+        XCTAssertFalse(model.groupCards.contains(where: { $0.id == "alpha" && $0.title == "AlphaHub" }))
+    }
+
+    func testRenameSourceKeepsDetailTitleWhenStaleInspectResponseReturnsOldPayload() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.inspectDelayMilliseconds = 400
+        state.sources["alpha"]?.sourceSnapshotTitle = "Old Snapshot Title"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
+
+        let inspectTask = Task { @MainActor in
+            await model.selectSource("alpha")
+        }
+        try await fixture.waitForLoggedRequest(command: "inspect", sourceId: "alpha", minimumCount: 2)
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+
+        await inspectTask.value
+
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+    }
+
+    func testRenameSourceFailureKeepsCardsDetailSelectionAndShowsError() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.sourceSnapshotTitle = "Old Snapshot Title"
+        state.sources["alpha"]?.renameFailures = ["Skills group id 'alpha' is not registered."]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+
+        XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "AlphaHub")
+        XCTAssertFalse(model.groupCards.contains(where: { $0.title == "Writing Tools" }))
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
+        XCTAssertEqual(model.selectedGroupId, "alpha")
+        XCTAssertEqual(model.selectedSourceId, "alpha")
+        XCTAssertEqual(model.toast?.style, .error)
+        XCTAssertFalse(model.toast?.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
     func testGroupCardsHydrateCachedMetadataDuringBootstrap() async throws {
@@ -869,11 +1306,19 @@ private struct TestFixture {
         var enabledTargets: [String]
         var targetLeafIdsByTarget: [String: [String]]
         var applyFailures: [String]
+        var renameFailures: [String] = []
+        var sourceSnapshotTitle: String? = nil
+        var enrichmentSourceSnapshotTitle: String? = nil
+        var inspectEnrichmentTotalInstalls: Int? = nil
     }
 
     struct State: Codable, Equatable {
         var availableTargets: [String]
         var sources: [String: SourceState]
+        var pinnedSourceIds: [String]
+        var listDelayMilliseconds: Int? = nil
+        var inspectDelayMilliseconds: Int? = nil
+        var inspectEnrichmentDelayMilliseconds: Int? = nil
 
         static let baseline = State(
             availableTargets: ["cursor", "claude-code"],
@@ -919,7 +1364,8 @@ private struct TestFixture {
                     targetLeafIdsByTarget: [:],
                     applyFailures: []
                 )
-            ]
+            ],
+            pinnedSourceIds: []
         )
 
         static let failureBaseline = State(
@@ -969,7 +1415,8 @@ private struct TestFixture {
                     targetLeafIdsByTarget: [:],
                     applyFailures: []
                 )
-            ]
+            ],
+            pinnedSourceIds: []
         )
     }
 
@@ -1063,6 +1510,11 @@ private struct TestFixture {
         try writeSkillDocuments(state: state)
     }
 
+    func readState() throws -> State {
+        let data = try Data(contentsOf: stateURL)
+        return try JSONDecoder().decode(State.self, from: data)
+    }
+
     func makeModel() async throws -> MainViewModel {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
@@ -1096,6 +1548,47 @@ private struct TestFixture {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTFail("Timed out waiting for detail hydration for \(sourceId)")
+    }
+
+    func waitForLoggedRequest(
+        command: String,
+        sourceId: String? = nil,
+        minimumCount: Int = 1,
+        model: MainViewModel? = nil,
+        expectedDetailTitle: String? = nil,
+        expectedDownloadCount: Int? = nil,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async throws {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
+        while Date() < deadline {
+            let matchingRequests = loggedRequests().filter { request in
+                guard request.command == command else {
+                    return false
+                }
+                if let sourceId {
+                    return request.payload?["sourceId"]?.value as? String == sourceId
+                }
+                return true
+            }
+            let hasExpectedRequestCount = matchingRequests.count >= minimumCount
+            let hasExpectedDetailTitle = expectedDetailTitle.map { expectedTitle in
+                guard let sourceId, let model else {
+                    return false
+                }
+                return model.detailSnapshot(for: sourceId)?.title == expectedTitle
+            } ?? true
+            let hasExpectedDownloadCount = expectedDownloadCount.map { expectedDownloadCount in
+                guard let sourceId, let model else {
+                    return false
+                }
+                return model.detailSnapshot(for: sourceId)?.groupStats.downloadCount == expectedDownloadCount
+            } ?? true
+            if hasExpectedRequestCount, hasExpectedDetailTitle, hasExpectedDownloadCount {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("Timed out waiting for \(command) request")
     }
 
     func loggedRequests() -> [LoggedRequest] {
@@ -1312,6 +1805,23 @@ private struct TestFixture {
       });
     }
 
+    function buildSourceSnapshot(source, title) {
+      return {
+        canonicalRepo: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
+        title,
+        sourceUrl: source.locator,
+        repoUrl: source.locator,
+        repoLabel: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
+        provider: source.metadataProvider || 'clawhub',
+        owner: {
+          slug: 'acme',
+          sourceUrl: 'https://github.com/acme'
+        },
+        repoStars: source.starCount ?? null,
+        skills: []
+      };
+    }
+
     function buildGroupCardEnrichment(state) {
       return Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => {
         const status = source.metadataStatus || 'ready';
@@ -1338,7 +1848,13 @@ private struct TestFixture {
               ...(status === 'failed' ? { retryable: true } : {})
             };
 
-        return [sourceId, { sourceMetadata, groupPath }];
+        return [sourceId, {
+          sourceMetadata,
+          groupPath,
+          ...(source.enrichmentSourceSnapshotTitle ? {
+            sourceSnapshot: buildSourceSnapshot(source, source.enrichmentSourceSnapshotTitle)
+          } : {})
+        }];
       }));
     }
 
@@ -1384,7 +1900,10 @@ private struct TestFixture {
           leafId: ((source.targetLeafIdsByTarget && source.targetLeafIdsByTarget[target]) || [])[0] || null,
           target,
           status: 'active'
-        }))
+        })),
+        ...(source.sourceSnapshotTitle ? {
+          sourceSnapshot: buildSourceSnapshot(source, source.sourceSnapshotTitle)
+        } : {})
       };
     }
 
@@ -1402,13 +1921,13 @@ private struct TestFixture {
 
     function main() {
       const request = JSON.parse(fs.readFileSync(0, 'utf8'));
-      logRequest(request);
-
       const state = readState();
+      logRequest(request);
 
       if (request.command === 'bootstrap') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           availableTargets: state.availableTargets || [],
+          pinnedSourceIds: state.pinnedSourceIds || [],
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
           audit: {
@@ -1430,16 +1949,27 @@ private struct TestFixture {
       }
 
       if (request.command === 'list') {
-        process.stdout.write(JSON.stringify(responseFor(request, true, {
+        const response = JSON.stringify(responseFor(request, true, {
+          pinnedSourceIds: state.pinnedSourceIds || [],
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state)
-        }, [], [])));
+        }, [], []));
+        if (state.listDelayMilliseconds > 0) {
+          setTimeout(() => process.stdout.write(response), state.listDelayMilliseconds);
+        } else {
+          process.stdout.write(response);
+        }
         return;
       }
 
       if (request.command === 'inspect') {
         const sourceId = request.payload && request.payload.sourceId;
-        process.stdout.write(JSON.stringify(responseFor(request, true, buildInspectPayload(state, sourceId), [], [])));
+        const response = JSON.stringify(responseFor(request, true, buildInspectPayload(state, sourceId), [], []));
+        if (state.inspectDelayMilliseconds > 0) {
+          setTimeout(() => process.stdout.write(response), state.inspectDelayMilliseconds);
+        } else {
+          process.stdout.write(response);
+        }
         return;
       }
 
@@ -1456,7 +1986,7 @@ private struct TestFixture {
               data: {
                 provider,
                 starCount: source.starCount ?? null,
-                totalInstalls: 5045,
+                totalInstalls: source.inspectEnrichmentTotalInstalls ?? 5045,
                 weeklyInstalls: 4921,
                 downloadCount: 211898,
                 ownerHandle: '@steipete',
@@ -1477,9 +2007,17 @@ private struct TestFixture {
           }
           return metadata;
         })();
-        process.stdout.write(JSON.stringify(responseFor(request, true, {
+        const response = JSON.stringify(responseFor(request, true, {
           sourceMetadata,
-        }, [], [])));
+          ...(source.enrichmentSourceSnapshotTitle ? {
+            sourceSnapshot: buildSourceSnapshot(source, source.enrichmentSourceSnapshotTitle)
+          } : {})
+        }, [], []));
+        if (state.inspectEnrichmentDelayMilliseconds > 0) {
+          setTimeout(() => process.stdout.write(response), state.inspectEnrichmentDelayMilliseconds);
+        } else {
+          process.stdout.write(response);
+        }
         return;
       }
 
@@ -1519,6 +2057,30 @@ private struct TestFixture {
           summary: buildSummaries(state).find((item) => item.source.id === sourceId) || null,
           inspect: buildInspectPayload(state, sourceId)
         }, [], [])));
+        return;
+      }
+
+      if (request.command === 'rename-source') {
+        const sourceId = request.payload?.sourceId;
+        const displayName = String(request.payload?.displayName || '').trim();
+        const renameFailures = ((state.sources || {})[sourceId] || {}).renameFailures || [];
+        if (renameFailures.length > 0) {
+          process.stdout.write(JSON.stringify(responseFor(request, false, null, [], renameFailures.map((message) => ({
+            code: 'SOURCE_NOT_FOUND',
+            message
+          })))));
+          return;
+        }
+        if (!state.sources[sourceId]) {
+          process.stdout.write(JSON.stringify(responseFor(request, false, null, [], [{
+            code: 'SOURCE_NOT_FOUND',
+            message: `Skills group id '${sourceId}' is not registered.`
+          }])));
+          return;
+        }
+        state.sources[sourceId].displayName = displayName;
+        writeState(state);
+        process.stdout.write(JSON.stringify(responseFor(request, true, { sourceId, displayName }, [], [])));
         return;
       }
 

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type {
@@ -97,6 +98,7 @@ export class SourceService {
     const resolved = this.resolveUniqueLocalSource(
       await this.resolveSource(locator, options),
       manifest.sources,
+      Boolean(options.sourceIdOverride),
     );
 
     if (
@@ -829,7 +831,7 @@ export class SourceService {
       return `https://github.com/${trimmed}.git`;
     }
 
-    const resolvedPath = path.resolve(trimmed);
+    const resolvedPath = path.resolve(this.expandHomePath(trimmed));
     if (await pathExists(resolvedPath)) {
       return resolvedPath;
     }
@@ -843,7 +845,7 @@ export class SourceService {
   ): Promise<SourceResolution> {
     const trimmed = this.stripLocatorQuotes(locator.trim());
     const fileLocatorPath = this.parseFileLocator(trimmed);
-    const resolvedPath = path.resolve(fileLocatorPath ?? trimmed);
+    const resolvedPath = path.resolve(this.expandHomePath(fileLocatorPath ?? trimmed));
     if (
       await pathExists(resolvedPath) &&
       (!fileLocatorPath || !(await this.isGitRepositoryPath(resolvedPath)))
@@ -947,8 +949,13 @@ export class SourceService {
   private resolveUniqueLocalSource(
     resolved: SourceResolution,
     existingSources: SourceManifestRecord[],
+    preserveSourceId = false,
   ): SourceResolution {
     if (resolved.kind !== "local" || !resolved.localPath) {
+      return resolved;
+    }
+
+    if (preserveSourceId) {
       return resolved;
     }
 
@@ -1084,6 +1091,16 @@ export class SourceService {
     } catch {
       return null;
     }
+  }
+
+  private expandHomePath(locator: string): string {
+    if (locator === "~") {
+      return process.env.HOME ?? os.homedir();
+    }
+    if (locator.startsWith("~/")) {
+      return path.join(process.env.HOME ?? os.homedir(), locator.slice(2));
+    }
+    return locator;
   }
 
   private async isGitRepositoryPath(candidatePath: string): Promise<boolean> {

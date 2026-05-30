@@ -619,6 +619,10 @@ private final class RecordingSettingsCommandFacade: DesktopCommanding, @unchecke
         fatalError("unused")
     }
 
+    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
         fatalError("unused")
     }
