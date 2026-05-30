@@ -104,6 +104,7 @@ DMG_PATH="$OUTPUT_ARCH_DIR/Skill-Flow-$ARCH$DEV_SUFFIX.dmg"
 HELPER_STAGE="$OUTPUT_ARCH_DIR/helper-stage"
 DMG_STAGE="$OUTPUT_ARCH_DIR/dmg-stage"
 WORK_DIR="$OUTPUT_ARCH_DIR/work"
+NODE_RUNTIME_CACHE_DIR="$OUTPUT_DIR/node-runtime-cache"
 BUNDLE_ID_SUFFIX="$ARCH"
 if [[ "$BUILD_MODE" == "dev" ]]; then
   BUNDLE_ID="com.skillflow.desktop.dev.$BUNDLE_ID_SUFFIX"
@@ -112,7 +113,7 @@ else
 fi
 
 rm -rf "$APP_BUNDLE" "$DMG_PATH" "$HELPER_STAGE" "$DMG_STAGE" "$WORK_DIR"
-mkdir -p "$OUTPUT_ARCH_DIR" "$WORK_DIR"
+mkdir -p "$OUTPUT_ARCH_DIR" "$WORK_DIR" "$NODE_RUNTIME_CACHE_DIR"
 
 cd "$ROOT_DIR"
 if [[ "$SKIP_JS_BUILD" -eq 0 ]]; then
@@ -230,17 +231,37 @@ node_runtime_sha_for_arch() {
 
 stage_node_runtime() {
   local target_arch="$1"
-  local node_platform archive_name archive_path expected_sha actual_sha extract_dir node_dist_dir dest_dir
+  local node_platform archive_name archive_path expected_sha actual_sha extract_dir node_dist_dir dest_dir installed_runtime_dir installed_node_version
 
   node_platform="$(node_dist_platform_for_arch "$target_arch")"
   archive_name="node-v$NODE_RUNTIME_VERSION-$node_platform.tar.xz"
-  archive_path="$WORK_DIR/$archive_name"
+  archive_path="$NODE_RUNTIME_CACHE_DIR/$archive_name"
   extract_dir="$WORK_DIR/node-runtime-$target_arch"
   node_dist_dir="$extract_dir/node-v$NODE_RUNTIME_VERSION-$node_platform"
   dest_dir="$APP_BUNDLE/Contents/Resources/node/$target_arch"
   expected_sha="$(node_runtime_sha_for_arch "$target_arch")"
+  installed_runtime_dir="/Applications/$APP_FILE_NAME/Contents/Resources/node/$target_arch"
 
-  curl -fL "$NODE_RUNTIME_BASE_URL/$archive_name" -o "$archive_path"
+  if [[ "$BUILD_MODE" == "dev" && -x "$installed_runtime_dir/bin/node" ]]; then
+    installed_node_version="$("$installed_runtime_dir/bin/node" --version)"
+    if [[ "$installed_node_version" == "v$NODE_RUNTIME_VERSION" ]]; then
+      rm -rf "$dest_dir"
+      mkdir -p "$(dirname "$dest_dir")"
+      cp -R "$installed_runtime_dir" "$dest_dir"
+      return
+    fi
+  fi
+
+  if [[ -f "$archive_path" ]]; then
+    actual_sha="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
+  else
+    actual_sha=""
+  fi
+
+  if [[ "$actual_sha" != "$expected_sha" ]]; then
+    curl -fL -C - "$NODE_RUNTIME_BASE_URL/$archive_name" -o "$archive_path"
+  fi
+
   actual_sha="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
   if [[ "$actual_sha" != "$expected_sha" ]]; then
     echo "Node runtime checksum mismatch for $archive_name" >&2
