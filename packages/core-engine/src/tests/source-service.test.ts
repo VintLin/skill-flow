@@ -72,6 +72,11 @@ describe.sequential("source service", () => {
     const updated = await sourceService.updateSources();
 
     expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated[0]?.changed).toBe(true);
+    expect(updated.data.updated[0]?.diffs.map((diff) => diff.kind)).toContain("changed");
     const after = await stateStore.readState();
     expect(after.manifest.sources[0]).toMatchObject({
       displayName: "Custom Alpha",
