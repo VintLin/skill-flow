@@ -243,6 +243,25 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
   });
 
+  test("rejects rename-source payload with non-string displayName", async () => {
+    const app = {
+      renameSource: vi.fn(),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "rename-source",
+      payload: {
+        sourceId: "demo-source",
+        displayName: 123,
+      },
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+    expect(app.renameSource).not.toHaveBeenCalled();
+  });
+
   test("accepts blank rename-source displayName as reset request", async () => {
     const app = {
       renameSource: vi.fn(async (sourceId: string, displayName: string) => ok({
