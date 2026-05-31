@@ -121,6 +121,60 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(resolved, "node")
     }
 
+    func testBundledNodeBinResolutionRequiresBundledNode() {
+        let bundleURL = URL(fileURLWithPath: "/Applications/Skill Flow.app")
+        let bundledNode = "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin/node"
+
+        let resolved = BridgeClient.resolveBundledNodeBinDirectory(
+            bundleURL: bundleURL,
+            architecture: "arm64",
+            isExecutable: { path in
+                path == bundledNode
+            }
+        )
+
+        XCTAssertEqual(resolved, "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin")
+    }
+
+    func testBridgeEnvironmentPrependsBundledNodeBinAndExportsBundledNpx() {
+        let bundledBin = "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin"
+        let bundledNpx = "\(bundledBin)/npx"
+
+        let environment = BridgeClient.bridgeEnvironment(
+            baseEnvironment: [
+                "PATH": "/usr/bin",
+                "HOME": "/Users/example",
+            ],
+            bundledNodeBinDirectory: bundledBin,
+            isExecutable: { path in
+                path == bundledNpx
+            }
+        )
+
+        XCTAssertEqual(environment["SKILL_FLOW_CALLER"], "desktop-bridge")
+        XCTAssertEqual(environment["SKILL_FLOW_BUNDLED_NPX"], bundledNpx)
+        XCTAssertEqual(environment["PATH"], "\(bundledBin):/usr/bin")
+        XCTAssertEqual(environment["HOME"], "/Users/example")
+    }
+
+    func testBridgeEnvironmentSkipsBundledNpxWhenItIsMissing() {
+        let bundledBin = "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin"
+
+        let environment = BridgeClient.bridgeEnvironment(
+            baseEnvironment: [
+                "PATH": "/usr/bin",
+                "HOME": "/Users/example",
+            ],
+            bundledNodeBinDirectory: bundledBin,
+            isExecutable: { _ in false }
+        )
+
+        XCTAssertEqual(environment["SKILL_FLOW_CALLER"], "desktop-bridge")
+        XCTAssertNil(environment["SKILL_FLOW_BUNDLED_NPX"])
+        XCTAssertEqual(environment["PATH"], "\(bundledBin):/usr/bin")
+        XCTAssertEqual(environment["HOME"], "/Users/example")
+    }
+
     func testRuntimeMissingCommandErrorsAreMappedToDependencyGuidance() {
         XCTAssertEqual(
             BridgeClient.dependencyError(for: "spawn git ENOENT")?.localizedDescription,

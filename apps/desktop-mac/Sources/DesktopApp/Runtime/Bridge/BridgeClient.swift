@@ -196,6 +196,7 @@ final class BridgeClient: @unchecked Sendable {
         let request = BridgeRequest(command: command, payload: payload)
         let requestData = try JSONEncoder().encode(request)
         let nodeExecutable = Self.resolveNodeExecutable()
+        let bundledNodeBinDirectory = Self.resolveBundledNodeBinDirectory()
         try validateEnvironment(command: command, payload: payload, nodeExecutable: nodeExecutable)
 
         let process = Process()
@@ -206,9 +207,7 @@ final class BridgeClient: @unchecked Sendable {
             process.executableURL = URL(fileURLWithPath: nodeExecutable)
             process.arguments = [helperURL.path, "bridge", "--json"]
         }
-        process.environment = ProcessInfo.processInfo.environment.merging([
-            "SKILL_FLOW_CALLER": "desktop-bridge"
-        ]) { _, new in new }
+        process.environment = Self.bridgeEnvironment(bundledNodeBinDirectory: bundledNodeBinDirectory)
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()
@@ -367,6 +366,49 @@ final class BridgeClient: @unchecked Sendable {
         }
 
         return "node"
+    }
+
+    static func resolveBundledNodeBinDirectory(
+        bundleURL: URL = Bundle.main.bundleURL,
+        architecture: String = BridgeClient.currentNodeArchitecture,
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> String? {
+        let bundledNodeBinDirectory = bundleURL
+            .appendingPathComponent("Contents/Resources/node/\(architecture)/bin")
+            .path
+        let bundledNodePath = "\(bundledNodeBinDirectory)/node"
+
+        guard isExecutable(bundledNodePath) else {
+            return nil
+        }
+
+        return bundledNodeBinDirectory
+    }
+
+    static func bridgeEnvironment(
+        baseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+        bundledNodeBinDirectory: String? = BridgeClient.resolveBundledNodeBinDirectory(),
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> [String: String] {
+        var environment = baseEnvironment
+        environment["SKILL_FLOW_CALLER"] = "desktop-bridge"
+
+        guard let bundledNodeBinDirectory else {
+            return environment
+        }
+
+        if let path = environment["PATH"], !path.isEmpty {
+            environment["PATH"] = "\(bundledNodeBinDirectory):\(path)"
+        } else {
+            environment["PATH"] = bundledNodeBinDirectory
+        }
+
+        let bundledNpx = "\(bundledNodeBinDirectory)/npx"
+        if isExecutable(bundledNpx) {
+            environment["SKILL_FLOW_BUNDLED_NPX"] = bundledNpx
+        }
+
+        return environment
     }
 
     private static var currentNodeArchitecture: String {
