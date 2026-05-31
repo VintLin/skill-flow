@@ -73,6 +73,12 @@ fi
 
 if [[ -n "$EXPECTED_ARCHS" ]]; then
   ACTUAL_ARCHS="$(lipo -archs "$EXECUTABLE")"
+
+  EXECUTABLE_FILE_TYPE="$(file "$EXECUTABLE")"
+  if [[ "$EXECUTABLE_FILE_TYPE" != *"Mach-O"* ]]; then
+    echo "Unexpected executable file type: $EXECUTABLE_FILE_TYPE" >&2
+    exit 1
+  fi
   IFS=',' read -r -a REQUIRED_ARCHS <<< "$EXPECTED_ARCHS"
   HAS_ARM64_ARCH=false
   for arch in "${REQUIRED_ARCHS[@]}"; do

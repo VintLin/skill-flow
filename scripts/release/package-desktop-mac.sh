@@ -322,6 +322,9 @@ fi
 
 chmod +x "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME"
 
+strip -x "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME"
+chmod +x "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME"
+
 if [[ -f "$DESKTOP_DIR/Sources/DesktopApp/Resources/AppIcon.icns" ]]; then
   cp "$DESKTOP_DIR/Sources/DesktopApp/Resources/AppIcon.icns" \
     "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
