@@ -114,7 +114,7 @@ Packaging writes per architecture:
 - `publish-github-release.sh` uploads all three architecture variants plus one merged `sha256.txt` to the GitHub release tagged with the current CLI version.
 - Debug helper override is for development only.
 - Mutation work is serialized to avoid apply/update/uninstall races.
-- Release packages bundle Node.js `v22.22.2` under `Contents/Resources/node/<arch>/bin/node`, so Finder launch does not depend on shell `PATH`.
-- The universal package carries both `arm64` and `x86_64` Node runtimes, so it is expected to be noticeably larger than single-arch packages.
-- Bundled Node security updates are handled by updating the pinned runtime version and rebuilding the desktop release.
-- skills.sh imports still require a host `npx`; the bundled runtime only covers the desktop bridge helper.
+- Release packages bundle Node.js `v22.22.2` plus npm/npx under `Contents/Resources/node/<arch>/`, so Finder launch does not depend on shell `PATH`.
+- The universal package carries both `arm64` and `x86_64` Node/npm/npx toolchains, so it is expected to be noticeably larger than single-arch packages.
+- Bundled Node/npm/npx security updates are handled by updating the pinned runtime version and rebuilding the desktop release.
+- Apple Silicon-capable packages set `LSRequiresNativeExecution=true`.

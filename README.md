@@ -69,12 +69,11 @@ npx skill-flow --help
 
 ### Desktop prerequisites
 
-Skill Flow Desktop release builds include a bundled Node.js runtime for the desktop helper, so double-click launch does not depend on shell-managed `node` paths from tools like `asdf` or `nvm`.
+Skill Flow Desktop release builds include a bundled native Node.js/npm/npx toolchain for the desktop helper and skills.sh imports, so double-click launch does not depend on shell-managed Node paths from tools like `asdf` or `nvm`.
 
 - `git` is required for non-GitHub Git sources
-- `npx` is required for skills.sh imports
 
-Development builds and damaged release bundles can still fall back to a system `node` 20 or newer. If the desktop app detects a missing dependency, it will surface an actionable error and point back to this section.
+Development builds and damaged release bundles can still fall back to system Node.js 20 or newer with npm/npx. If the desktop app detects a missing dependency, it will surface an actionable error and point back to this section.
 
 ### Typical flow
 

@@ -69,12 +69,11 @@ npx skill-flow --help
 
 ### 桌面端前置依赖
 
-Skill Flow Desktop release 构建会内置用于 desktop helper 的 Node.js runtime，因此双击启动不再依赖 `asdf` 或 `nvm` 写入 shell 的 `node` 路径。
+Skill Flow Desktop release 构建会内置用于 desktop helper 和 skills.sh 导入的原生 Node.js/npm/npx 工具链，因此双击启动不再依赖 `asdf` 或 `nvm` 写入 shell 的 Node 路径。
 
 - 导入非 GitHub Git source 需要 `git`
-- 导入 skills.sh source 需要 `npx`
 
-开发构建和损坏的 release bundle 仍会 fallback 到系统 `node` 20 或更高版本。如果桌面应用检测到依赖缺失，会直接提示可执行的错误信息，并引导回本节处理。
+开发构建和损坏的 release bundle 仍会 fallback 到系统 Node.js 20 或更高版本及 npm/npx。如果桌面应用检测到依赖缺失，会直接提示可执行的错误信息，并引导回本节处理。
 
 ### 常见使用流程
 
