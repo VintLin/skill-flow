@@ -68,11 +68,14 @@ final class DesktopLocalizationTests: XCTestCase {
             "home.sidebar.expand",
             "home.sidebar.collapse",
             "group_card.action.rename",
+            "group_card.original_name",
             "rename.dialog.title",
             "rename.dialog.save",
             "rename.dialog.cancel",
+            "rename.dialog.reset_hint",
             "toast.rename.empty",
             "toast.rename.success",
+            "toast.rename.reset_success",
             "toast.rename.failed",
         ]
         let locales = [
@@ -253,4 +256,20 @@ final class DesktopLocalizationTests: XCTestCase {
             }
         }
     }
+
+    func testRenameOriginalNameStringsResolvePerLocale() {
+        XCTAssertEqual(
+            L10n.string("group_card.original_name", locale: Locale(identifier: "zh-Hans"), arguments: ["anthropic-skills"]),
+            "原名 anthropic-skills"
+        )
+        XCTAssertEqual(
+            L10n.string("rename.dialog.reset_hint", locale: Locale(identifier: "zh-Hans"), arguments: ["anthropic-skills"]),
+            "留空将恢复原名：anthropic-skills"
+        )
+        XCTAssertEqual(
+            L10n.string("toast.rename.reset_success", locale: Locale(identifier: "zh-Hans"), arguments: ["anthropic-skills"]),
+            "已恢复原名 anthropic-skills"
+        )
+    }
+
 }

@@ -184,6 +184,7 @@
 "group_card.action.pin" = "置顶";
 "group_card.action.unpin" = "取消置顶";
 "group_card.action.rename" = "重命名";
+"group_card.original_name" = "原名 %@";
 "group_card.action.update" = "更新";
 "group_card.action.edit_tags" = "添加标签";
 "group_card.action.cancel_edit_tags" = "取消";
@@ -197,6 +198,7 @@
 "rename.dialog.title" = "重命名分组";
 "rename.dialog.save" = "保存";
 "rename.dialog.cancel" = "取消";
+"rename.dialog.reset_hint" = "留空将恢复原名：%@";
 "group_tag.toast.duplicate" = "该标签已存在。";
 "group_tag.toast.limit" = "标签数量已达上限。";
 "group_tag.toast.empty" = "请先输入标签。";
@@ -235,6 +237,7 @@
 "toast.uninstall.failed" = "卸载失败：%@";
 "toast.rename.empty" = "请输入分组名称。";
 "toast.rename.success" = "已重命名为 %@。";
+"toast.rename.reset_success" = "已恢复原名 %@";
 "toast.rename.failed" = "重命名失败：%@";
 "toast.save.no_source_id" = "保存失败：缺少来源 id。";
 "toast.save.failed" = "保存失败：%@";

@@ -184,6 +184,7 @@
 "group_card.action.pin" = "ピン留め";
 "group_card.action.unpin" = "ピン留め解除";
 "group_card.action.rename" = "名前を変更";
+"group_card.original_name" = "元の名前 %@";
 "group_card.action.update" = "更新";
 "group_card.action.edit_tags" = "タグを追加";
 "group_card.action.cancel_edit_tags" = "キャンセル";
@@ -197,6 +198,7 @@
 "rename.dialog.title" = "グループ名を変更";
 "rename.dialog.save" = "保存";
 "rename.dialog.cancel" = "キャンセル";
+"rename.dialog.reset_hint" = "空のまま保存すると元の名前に戻します：%@";
 "group_tag.toast.duplicate" = "このタグは既に選択されています。";
 "group_tag.toast.limit" = "タグ数が上限に達しました。";
 "group_tag.toast.empty" = "先にタグを入力してください。";
@@ -235,6 +237,7 @@
 "toast.uninstall.failed" = "アンインストール失敗: %@";
 "toast.rename.empty" = "グループ名を入力してください。";
 "toast.rename.success" = "%@ に名前を変更しました。";
+"toast.rename.reset_success" = "元の名前 %@ に戻しました。";
 "toast.rename.failed" = "名前の変更に失敗しました: %@";
 "toast.save.no_source_id" = "保存失敗: source id がありません。";
 "toast.save.failed" = "保存失敗: %@";
