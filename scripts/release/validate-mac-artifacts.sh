@@ -54,20 +54,47 @@ fi
 if [[ -n "$EXPECTED_ARCHS" ]]; then
   ACTUAL_ARCHS="$(lipo -archs "$EXECUTABLE")"
   IFS=',' read -r -a REQUIRED_ARCHS <<< "$EXPECTED_ARCHS"
+  HAS_ARM64_ARCH=false
   for arch in "${REQUIRED_ARCHS[@]}"; do
+    if [[ "$arch" == "arm64" ]]; then
+      HAS_ARM64_ARCH=true
+    fi
+
     if [[ " $ACTUAL_ARCHS " != *" $arch "* ]]; then
       echo "Missing architecture '$arch' in executable: $ACTUAL_ARCHS" >&2
       exit 1
     fi
 
-    NODE_EXECUTABLE="$NODE_RUNTIME_DIR/$arch/bin/node"
-    if [[ ! -x "$NODE_EXECUTABLE" ]]; then
-      echo "Missing bundled Node runtime for '$arch': $NODE_EXECUTABLE" >&2
+    NODE_BIN_DIR="$NODE_RUNTIME_DIR/$arch/bin"
+    NODE_EXECUTABLE="$NODE_BIN_DIR/node"
+    NPM_EXECUTABLE="$NODE_BIN_DIR/npm"
+    NPX_EXECUTABLE="$NODE_BIN_DIR/npx"
+
+    for tool_path in "$NODE_EXECUTABLE" "$NPM_EXECUTABLE" "$NPX_EXECUTABLE"; do
+      if [[ ! -x "$tool_path" ]]; then
+        echo "Missing bundled runtime executable for '$arch': $tool_path" >&2
+        exit 1
+      fi
+    done
+
+    NODE_ARCHS="$(lipo -archs "$NODE_EXECUTABLE")"
+    if [[ " $NODE_ARCHS " != *" $arch "* ]]; then
+      echo "Missing architecture '$arch' in bundled Node runtime: $NODE_ARCHS" >&2
       exit 1
     fi
 
     "$NODE_EXECUTABLE" --version >/dev/null
+    PATH="$NODE_BIN_DIR:$PATH" "$NPM_EXECUTABLE" --version >/dev/null
+    PATH="$NODE_BIN_DIR:$PATH" "$NPX_EXECUTABLE" --version >/dev/null
   done
+
+  if [[ "$HAS_ARM64_ARCH" == "true" ]]; then
+    LS_REQUIRES_NATIVE_EXECUTION="$(/usr/libexec/PlistBuddy -c 'Print :LSRequiresNativeExecution' "$INFO_PLIST" 2>/dev/null || true)"
+    if [[ "$LS_REQUIRES_NATIVE_EXECUTION" != "true" ]]; then
+      echo "Expected LSRequiresNativeExecution=true for Apple Silicon-capable bundle" >&2
+      exit 1
+    fi
+  fi
 fi
 
 echo "Artifact validation passed: $APP_BUNDLE"
