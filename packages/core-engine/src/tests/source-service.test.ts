@@ -30,6 +30,59 @@ describe.sequential("source service", () => {
     ).resolves.toBe("git@github.com:JimLiu/baoyu-skills.git");
   });
 
+  test("addSource stores originalDisplayName from resolved display name", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "SKILL.md": skillDoc("alpha", "Alpha skill."),
+    });
+    const sourceService = createSourceService();
+
+    const added = await sourceService.addSource(repoPath);
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+    expect(added.data.manifest.originalDisplayName).toBe(added.data.manifest.displayName);
+    expect(added.data.lock.displayName).toBe(added.data.manifest.displayName);
+    expect(added.data.lock.originalDisplayName).toBe(added.data.manifest.displayName);
+  });
+
+  test("updateSources preserves imported originalDisplayName", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "SKILL.md": skillDoc("alpha", "Alpha skill."),
+    });
+    const sourceService = createSourceService();
+    const stateStore = new StateStore();
+    const added = await sourceService.addSource(repoPath);
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const { manifest, lockFile } = await stateStore.readState();
+    manifest.sources[0]!.displayName = "Custom Alpha";
+    manifest.sources[0]!.originalDisplayName = "Imported Alpha";
+    lockFile.sources[0]!.displayName = "Custom Alpha";
+    lockFile.sources[0]!.originalDisplayName = "Imported Alpha";
+    await stateStore.writeState(manifest, lockFile);
+    await writeRepoFiles(repoPath, {
+      "SKILL.md": skillDoc("alpha", "Alpha skill, updated."),
+    });
+
+    const updated = await sourceService.updateSources();
+
+    expect(updated.ok).toBe(true);
+    const after = await stateStore.readState();
+    expect(after.manifest.sources[0]).toMatchObject({
+      displayName: "Custom Alpha",
+      originalDisplayName: "Imported Alpha",
+    });
+    expect(after.lockFile.sources[0]).toMatchObject({
+      displayName: "Custom Alpha",
+      originalDisplayName: "Imported Alpha",
+    });
+  });
+
   test("local source updates re-copy from origin and report changed diffs", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),

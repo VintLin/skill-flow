@@ -687,6 +687,7 @@ export class SourceService {
   ): SourceLockRecord {
     return {
       ...nextLock,
+      originalDisplayName: currentLock.originalDisplayName ?? currentLock.displayName,
       ...(currentLock.originBranch ? { originBranch: currentLock.originBranch } : {}),
       ...(currentLock.importMode ? { importMode: currentLock.importMode } : {}),
       ...(currentLock.observedTargets ? { observedTargets: currentLock.observedTargets } : {}),
@@ -772,6 +773,7 @@ export class SourceService {
           locator,
           kind,
           displayName,
+          originalDisplayName: displayName,
           addedAt: new Date().toISOString(),
           ...(requestedPath ? { requestedPath } : {}),
           ...(addOptions.selectionMode ? { selectionMode: addOptions.selectionMode } : {}),
@@ -785,6 +787,7 @@ export class SourceService {
           locator,
           kind,
           displayName,
+          originalDisplayName: displayName,
           checkoutPath,
           updatedAt: new Date().toISOString(),
           leafIds: scanned.leafs.map((leaf) => leaf.id),
