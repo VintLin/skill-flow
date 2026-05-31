@@ -235,6 +235,7 @@
 "toast.uninstall.failed" = "Uninstall failed: %@";
 "toast.rename.empty" = "Enter a group name.";
 "toast.rename.success" = "Renamed to %@.";
+"toast.rename.reset_success" = "Restored original name %@.";
 "toast.rename.failed" = "Rename failed: %@";
 "toast.save.no_source_id" = "Save failed: missing source id.";
 "toast.save.failed" = "Save failed: %@";

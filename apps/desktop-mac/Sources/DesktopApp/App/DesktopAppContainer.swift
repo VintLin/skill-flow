@@ -98,6 +98,13 @@ final class DesktopAppContainer {
                     sourceId: sourceId,
                     expectedCurrentEnabled: expectedCurrentEnabled
                 )
+            },
+            onRenameGroup: { [weak mainViewModel] sourceId, title, originalDisplayName in
+                mainViewModel?.pendingDetailRename = MainViewModel.PendingDetailRename(
+                    sourceId: sourceId,
+                    title: title,
+                    originalDisplayName: originalDisplayName
+                )
             }
         )
         self.homeContainer = HomeScreenContainer(

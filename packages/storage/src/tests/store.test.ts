@@ -127,6 +127,56 @@ describe("StateStore", () => {
     });
   });
 
+  test("readState migrates legacy metadata titles back to locator-derived default names", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+
+    await fs.writeFile(store.manifestPath, `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "dontbesilent2025-dbskill",
+          locator: "dontbesilent2025/dbskill",
+          kind: "git",
+          displayName: "商业分析",
+          originalDisplayName: "商业分析",
+          addedAt: "2026-05-31T00:00:00.000Z",
+        },
+      ],
+      bindings: {},
+    }, null, 2)}\n`, "utf8");
+    await fs.writeFile(store.lockPath, `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "dontbesilent2025-dbskill",
+          locator: "dontbesilent2025/dbskill",
+          kind: "git",
+          displayName: "商业分析",
+          originalDisplayName: "商业分析",
+          checkoutPath: "/tmp/dbskill",
+          updatedAt: "2026-05-31T00:00:00.000Z",
+          leafIds: [],
+          invalidLeafs: [],
+        },
+      ],
+      leafInventory: [],
+      projections: [],
+      deployments: [],
+    }, null, 2)}\n`, "utf8");
+
+    const state = await store.readState();
+
+    expect(state.manifest.sources[0]).toMatchObject({
+      displayName: "dbskill",
+      originalDisplayName: "dbskill",
+    });
+    expect(state.lockFile.sources[0]).toMatchObject({
+      displayName: "dbskill",
+      originalDisplayName: "dbskill",
+    });
+  });
+
   test("writeState persists originalDisplayName on manifest and lock sources", async () => {
     const store = new StateStore(stateRoot);
     await store.init();

@@ -376,6 +376,93 @@ final class MenuBarIconTests: XCTestCase {
         assertColor(AppTheme.documentBlock(for: .dark), equalsGrayscale: 34)
     }
 
+
+    func testOriginalNameHelpTextReturnsNilWhenNamesMatch() {
+        let card = MainViewModel.GroupCardModel(
+            id: "test",
+            title: "anthropic-skills",
+            originalDisplayName: "anthropic-skills",
+            byline: nil,
+            groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "https://github.com/anthropics/skills.git",
+            isPinned: false,
+            health: "valid",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: .init(phase: .idle, detail: nil)
+        )
+        let zhLocale = Locale(identifier: "zh-Hans")
+        XCTAssertNil(SharedGroupCard.originalNameHelpText(card: card, locale: zhLocale))
+    }
+
+    func testOriginalNameHelpTextReturnsPlainOriginalNameWhenNamesDiffer() {
+        let card = MainViewModel.GroupCardModel(
+            id: "test",
+            title: "Research Tools",
+            originalDisplayName: "anthropic-skills",
+            byline: nil,
+            groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "https://github.com/anthropics/skills.git",
+            isPinned: false,
+            health: "valid",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: .init(phase: .idle, detail: nil)
+        )
+        let zhLocale = Locale(identifier: "zh-Hans")
+        let result = SharedGroupCard.originalNameHelpText(card: card, locale: zhLocale)
+        XCTAssertEqual(result, "anthropic-skills")
+    }
+
+    func testOriginalNameIndicatorShowsOnlyForCustomDisplayName() {
+        XCTAssertTrue(SharedGroupCard.showsOriginalNameIndicator(title: "Research Tools", originalDisplayName: "anthropic-skills"))
+        XCTAssertFalse(SharedGroupCard.showsOriginalNameIndicator(title: "anthropic-skills", originalDisplayName: "anthropic-skills"))
+        XCTAssertFalse(SharedGroupCard.showsOriginalNameIndicator(title: "Research Tools", originalDisplayName: nil))
+        XCTAssertFalse(SharedGroupCard.showsOriginalNameIndicator(title: "Research Tools", originalDisplayName: "   "))
+    }
+
+    func testOriginalNameHelpTextReturnsNilWhenNilOriginalDisplayName() {
+        let card = MainViewModel.GroupCardModel(
+            id: "test",
+            title: "Research Tools",
+            originalDisplayName: nil,
+            byline: nil,
+            groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "https://github.com/anthropics/skills.git",
+            isPinned: false,
+            health: "valid",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: .init(phase: .idle, detail: nil)
+        )
+        let zhLocale = Locale(identifier: "zh-Hans")
+        XCTAssertNil(SharedGroupCard.originalNameHelpText(card: card, locale: zhLocale))
+    }
+
     private func assertColor(_ color: Color, equalsGrayscale expected: CGFloat, alpha expectedAlpha: CGFloat = 1, file: StaticString = #filePath, line: UInt = #line) {
         let resolved = NSColor(color).usingColorSpace(.deviceRGB)
         XCTAssertNotNil(resolved, file: file, line: line)

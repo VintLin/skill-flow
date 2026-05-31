@@ -453,6 +453,10 @@ struct SharedGroupCard: View {
         isSaving || isUpdating
     }
 
+    private var originalNameHelpText: String? {
+        Self.originalNameHelpText(card: card, locale: locale)
+    }
+
     private var busyContentOpacity: Double {
         isBusy ? 0.34 : 1.0
     }
@@ -596,11 +600,16 @@ struct SharedGroupCard: View {
 
     private var headerPrimaryContent: some View {
         VStack(alignment: .leading, spacing: max(2, scale.headerSpacing)) {
-            Text(card.title)
-                .font(.system(size: scale.titleSize, weight: .regular))
-                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(alignment: .center, spacing: 6) {
+                Text(card.title)
+                    .font(.system(size: scale.titleSize, weight: .regular))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if Self.showsOriginalNameIndicator(title: card.title, originalDisplayName: card.originalDisplayName) {
+                    OriginalNameInfoIcon(text: originalNameHelpText ?? "", theme: theme)
+                }
+            }
             if displayMode.showsSubtitle {
                 if let byline = card.byline {
                     Text(byline)
@@ -1340,6 +1349,50 @@ struct SharedGroupCard: View {
     }
 }
 
+struct OriginalNameInfoIcon: View {
+    let text: String
+    let theme: DesktopThemeMode
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Image(systemName: "info.circle")
+            .font(.system(size: 12))
+            .foregroundStyle(AppTheme.textMuted(for: theme))
+            .frame(width: 18, height: 18)
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) {
+                if isHovered && !text.isEmpty {
+                    Text(text)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: 240, alignment: .leading)
+                        .background(AppTheme.surface(for: theme))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                        }
+                        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+                        .offset(y: -28)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.08)) {
+                    isHovered = hovering
+                }
+            }
+            .accessibilityLabel(text)
+            .zIndex(isHovered ? 20 : 0)
+    }
+}
+
 extension SharedGroupCard {
     static func resolvedSummaryKind(
         hasEditableTags: Bool,
@@ -1414,6 +1467,27 @@ extension SharedGroupCard {
         default:
             return .blue
         }
+    }
+
+
+    static func showsOriginalNameIndicator(title: String, originalDisplayName: String?) -> Bool {
+        guard let originalDisplayName else {
+            return false
+        }
+        let normalizedOriginal = originalDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !normalizedOriginal.isEmpty && normalizedTitle != normalizedOriginal
+    }
+
+    static func originalNameHelpText(card: MainViewModel.GroupCardModel, locale: Locale) -> String? {
+        guard showsOriginalNameIndicator(title: card.title, originalDisplayName: card.originalDisplayName) else {
+            return nil
+        }
+        guard let original = card.originalDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !original.isEmpty else {
+            return nil
+        }
+        return original
     }
 
     static func contentSectionOrder(

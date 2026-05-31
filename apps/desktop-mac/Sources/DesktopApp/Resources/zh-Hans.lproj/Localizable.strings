@@ -235,6 +235,7 @@
 "toast.uninstall.failed" = "卸载失败：%@";
 "toast.rename.empty" = "请输入分组名称。";
 "toast.rename.success" = "已重命名为 %@。";
+"toast.rename.reset_success" = "已恢复原名 %@";
 "toast.rename.failed" = "重命名失败：%@";
 "toast.save.no_source_id" = "保存失败：缺少来源 id。";
 "toast.save.failed" = "保存失败：%@";

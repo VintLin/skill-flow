@@ -75,6 +75,7 @@ struct MainView: View {
     @State private var customAgentErrors: [String: String] = [:]
     @State private var renameSourceId: String?
     @State private var renameDraft = ""
+    @State private var renameOriginalDisplayName = ""
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -178,6 +179,7 @@ struct MainView: View {
                             title: t("rename.dialog.title"),
                             saveTitle: t("rename.dialog.save"),
                             cancelTitle: t("rename.dialog.cancel"),
+                            placeholder: renameOriginalDisplayName,
                             theme: theme,
                             accent: accent,
                             onCancel: {
@@ -203,6 +205,16 @@ struct MainView: View {
                             viewModel.dismissToast()
                         }
                 }
+            }
+        }
+        .onChange(of: viewModel.pendingDetailRename) {
+            if let request = viewModel.pendingDetailRename {
+                beginRenameSource(
+                    sourceId: request.sourceId,
+                    title: request.title,
+                    originalDisplayName: request.originalDisplayName
+                )
+                viewModel.pendingDetailRename = nil
             }
         }
         .tint(AppTheme.brand(for: accent))
@@ -387,6 +399,7 @@ struct MainView: View {
             Text(t("app.name"))
                 .font(.system(size: topBarTitleSize, weight: .semibold))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -591,6 +604,13 @@ struct MainView: View {
     private func beginRenameSource(_ card: MainViewModel.GroupCardModel) {
         renameSourceId = card.id
         renameDraft = card.title
+        renameOriginalDisplayName = card.originalDisplayName ?? card.title
+    }
+
+    private func beginRenameSource(sourceId: String, title: String, originalDisplayName: String) {
+        renameSourceId = sourceId
+        renameDraft = title
+        renameOriginalDisplayName = originalDisplayName
     }
 
     private func closeRenameDialog() {
@@ -711,6 +731,9 @@ struct MainView: View {
             if !isSidebarVisible {
                 homeSidebarToggleButton
             }
+            headerLogoRow
+                .lineLimit(1)
+                .frame(width: Self.homeMainHeaderBrandWidth, alignment: .leading)
             homeSearchField(width: searchWidth)
             Spacer(minLength: 0)
             importButton
@@ -1099,14 +1122,12 @@ struct MainView: View {
     }
 
     private var homeSidebarHeader: some View {
-        HStack(spacing: 8) {
-            headerLogoRow
-                .lineLimit(1)
+        HStack(spacing: 0) {
             Spacer(minLength: 0)
             homeSidebarToggleButton
         }
-        .padding(.leading, Self.homeSidebarBrandLeadingInset)
-        .padding(.trailing, Self.homeSidebarHorizontalPadding)
+        .frame(height: Self.homeSidebarToggleButtonSize, alignment: .top)
+        .padding(.horizontal, Self.homeSidebarHorizontalPadding)
         .padding(.top, Self.homeTitlebarControlTopPadding)
         .frame(height: Self.homeSidebarHeaderHeight, alignment: .top)
     }
@@ -1192,6 +1213,7 @@ struct MainView: View {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(width: Self.homeSidebarToggleButtonSize, alignment: .center)
                 }
                 .contentShape(Rectangle())
             }
@@ -1578,15 +1600,16 @@ extension MainView {
     nonisolated static let homeSidebarRegularWidth: CGFloat = 244
     nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
     nonisolated static let homeSidebarTrafficLightLeadingInset: CGFloat = 68
-    nonisolated static let homeSidebarBrandLeadingInset: CGFloat = 84
     nonisolated static let homeSidebarToggleButtonSize: CGFloat = 28
     nonisolated static let homeSidebarHeaderHeight: CGFloat = 52
     nonisolated static let homeSidebarHorizontalPadding: CGFloat = 12
     static let homeSidebarChipBleed: CGFloat = 12
     static let homeTitlebarControlTopPadding: CGFloat = 8
+    nonisolated static let homeMainHeaderBrandWidth: CGFloat = 132
     nonisolated static let homeMainHeaderSidePadding: CGFloat = 16
     nonisolated static let homeMainHeaderHorizontalPadding: CGFloat = homeMainHeaderSidePadding * 2
-    nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset
+    nonisolated static let homeCollapsedHeaderButtonGap: CGFloat = 12
+    nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset + homeCollapsedHeaderButtonGap
     nonisolated static let homeMainHeaderItemSpacing: CGFloat = 12
     nonisolated static let homeMainHeaderMinimumSearchFieldWidth: CGFloat = 160
     nonisolated static let homeGridHorizontalPadding: CGFloat = 32
@@ -1649,9 +1672,10 @@ extension MainView {
         includesSidebarToggle: Bool
     ) -> CGFloat {
         let toggleWidth = includesSidebarToggle ? homeSidebarToggleButtonSize : 0
-        let spacingCount: CGFloat = includesSidebarToggle ? 5 : 4
+        let spacingCount: CGFloat = includesSidebarToggle ? 6 : 5
         return (toolbarButtonSize * 3)
             + toggleWidth
+            + homeMainHeaderBrandWidth
             + reservedHorizontalPadding
             + (homeMainHeaderItemSpacing * spacingCount)
     }
@@ -1763,6 +1787,7 @@ private struct RenameSourceDialog: View {
     let title: String
     let saveTitle: String
     let cancelTitle: String
+    let placeholder: String
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let onCancel: () -> Void
@@ -1775,7 +1800,7 @@ private struct RenameSourceDialog: View {
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
                 .lineLimit(1)
 
-            TextField("", text: $draft)
+            TextField(placeholder, text: $draft)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))

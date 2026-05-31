@@ -73,6 +73,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "rename.dialog.cancel",
             "toast.rename.empty",
             "toast.rename.success",
+            "toast.rename.reset_success",
             "toast.rename.failed",
         ]
         let locales = [
@@ -253,4 +254,12 @@ final class DesktopLocalizationTests: XCTestCase {
             }
         }
     }
+
+    func testRenameOriginalNameStringsResolvePerLocale() {
+        XCTAssertEqual(
+            L10n.string("toast.rename.reset_success", locale: Locale(identifier: "zh-Hans"), arguments: ["anthropic-skills"]),
+            "已恢复原名 anthropic-skills"
+        )
+    }
+
 }

@@ -387,7 +387,23 @@ struct DetailScreen: View {
         _ = fallbackOriginLabel
 
         return VStack(alignment: .leading, spacing: 8) {
-            detailHeaderTitleRow(title: detail?.title ?? fallbackTitle, author: detail?.author ?? "@unknown")
+            HStack(alignment: .top, spacing: 12) {
+                detailHeaderTitleRow(
+                    title: detail?.title ?? fallbackTitle,
+                    author: detail?.author ?? "@unknown",
+                    originalDisplayName: detail?.originalDisplayName
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 0)
+
+                detailHeaderActionButtons(
+                    sourceId: container.sourceId,
+                    title: detail?.title ?? fallbackTitle,
+                    originalDisplayName: detail?.originalDisplayName ?? fallbackTitle,
+                    isUpdating: isUpdating
+                )
+            }
 
             detailHeaderMetadataRow(stats: detail?.groupStats ?? emptyStats)
         }
@@ -399,47 +415,120 @@ struct DetailScreen: View {
                 .fill(AppTheme.detailHeaderBottomBorder(for: theme))
                 .frame(height: 1)
         }
-        .overlay(alignment: .trailing) {
-            Button {
-                Task { await container.updateCurrentGroup() }
-            } label: {
-                actionIcon(.update, size: 14)
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    .rotationEffect(.degrees(updateButtonRotation))
-                    .frame(width: 32, height: 32)
-            }
-            .buttonStyle(.plain)
-            .background(
-                isUpdating
-                    ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.24 : 0.18)
-                    : AppTheme.toolbarButtonBackground(for: theme)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(
-                        isUpdating ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : AppTheme.cardBorder(for: theme),
-                        lineWidth: 0.5
-                    )
-            }
-            .animation(.easeInOut(duration: 0.24), value: isUpdating)
-            .padding(.trailing, 14)
-        }
     }
 
-    private func detailHeaderTitleRow(title: String, author: String) -> some View {
+    private func detailHeaderActionButtons(
+        sourceId: String?,
+        title: String,
+        originalDisplayName: String,
+        isUpdating: Bool
+    ) -> some View {
+        HStack(spacing: 8) {
+            if container.onRenameGroup != nil, let sourceId {
+                detailHeaderIconButton(systemName: "pencil", help: t("group_card.action.rename")) {
+                    container.onRenameGroup?(sourceId, title, originalDisplayName)
+                }
+            }
+
+            detailHeaderIconButton(actionIcon: .update,
+                help: t("group_card.action.update"),
+                isUpdating: isUpdating
+            ) {
+                Task { await container.updateCurrentGroup() }
+            }
+        }
+        .frame(height: 32, alignment: .topTrailing)
+    }
+
+    private func detailHeaderIconButton(
+        systemName: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .background(AppTheme.toolbarButtonBackground(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+        .help(help)
+    }
+
+    private func detailHeaderIconButton(
+        actionIcon icon: ActionIcon,
+        help: String,
+        isUpdating: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            actionIcon(icon, size: 14)
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .rotationEffect(.degrees(updateButtonRotation))
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .background(
+            isUpdating
+                ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.24 : 0.18)
+                : AppTheme.toolbarButtonBackground(for: theme)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(
+                    isUpdating ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : AppTheme.cardBorder(for: theme),
+                    lineWidth: 0.5
+                )
+        }
+        .animation(.easeInOut(duration: 0.24), value: isUpdating)
+        .help(help)
+    }
+
+    private func detailHeaderTitleRow(
+        title: String,
+        author: String,
+        originalDisplayName: String? = nil
+    ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title)
-                .font(.system(size: detailHeaderTitleSize, weight: .regular))
-                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(alignment: .center, spacing: 6) {
+                Text(title)
+                    .font(.system(size: detailHeaderTitleSize, weight: .regular))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let originalNameHelpText = DetailScreen.originalNameHelpText(
+                    title: title,
+                    originalDisplayName: originalDisplayName,
+                    locale: locale
+                ) {
+                    OriginalNameInfoIcon(text: originalNameHelpText, theme: theme)
+                }
+            }
 
             Text(t("detail.meta.by", author))
                 .font(.system(size: detailHeaderMetaSize, weight: .regular))
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .lineLimit(1)
         }
+    }
+
+    static func originalNameHelpText(title: String, originalDisplayName: String?, locale: Locale) -> String? {
+        guard let original = originalDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !original.isEmpty else {
+            return nil
+        }
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedTitle != original else {
+            return nil
+        }
+        return original
     }
 
     private func detailHeaderMetadataRow(stats: MainViewModel.GroupCardStats) -> some View {

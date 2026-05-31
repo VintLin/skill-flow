@@ -243,6 +243,25 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
   });
 
+  test("rejects rename-source payload with non-string displayName", async () => {
+    const app = {
+      renameSource: vi.fn(),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "rename-source",
+      payload: {
+        sourceId: "demo-source",
+        displayName: 123,
+      },
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+    expect(app.renameSource).not.toHaveBeenCalled();
+  });
+
   test("accepts blank rename-source displayName as reset request", async () => {
     const app = {
       renameSource: vi.fn(async (sourceId: string, displayName: string) => ok({
@@ -263,6 +282,37 @@ describe.sequential("bridge command dispatcher", () => {
     });
 
     expect(app.renameSource).toHaveBeenCalledWith("demo-source", "   ");
+    expect(response).toMatchObject({
+      ok: true,
+      data: {
+        sourceId: "demo-source",
+        displayName: "demo-source",
+        originalDisplayName: "demo-source",
+        isResetToOriginal: true,
+      },
+    });
+  });
+
+  test("accepts empty rename-source displayName as reset request", async () => {
+    const app = {
+      renameSource: vi.fn(async (sourceId: string, displayName: string) => ok({
+        sourceId,
+        displayName: "demo-source",
+        originalDisplayName: "demo-source",
+        isResetToOriginal: displayName === "",
+      })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "rename-source",
+      payload: {
+        sourceId: "demo-source",
+        displayName: "",
+      },
+    });
+
+    expect(app.renameSource).toHaveBeenCalledWith("demo-source", "");
     expect(response).toMatchObject({
       ok: true,
       data: {

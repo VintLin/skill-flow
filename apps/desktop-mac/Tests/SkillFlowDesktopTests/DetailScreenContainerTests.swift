@@ -671,6 +671,7 @@ private extension DetailViewModel.Snapshot {
         sourceId: String = "alpha",
         revision: String? = nil,
         title: String = "AlphaHub",
+        originalDisplayName: String? = nil,
         updatedRelative: String = "Updated 1 day ago",
         fileTree: [MainViewModel.FileTreeItem] = [],
         groupDocuments: [MainViewModel.DocumentDescriptor] = [],
@@ -683,9 +684,11 @@ private extension DetailViewModel.Snapshot {
             )
         ]
     ) -> Self {
+        let resolvedOriginalDisplayName = originalDisplayName ?? title
         let resolvedRevision = revision ?? MainViewModel.detailRevision(
             sourceId: sourceId,
             title: title,
+            originalDisplayName: resolvedOriginalDisplayName,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
@@ -724,6 +727,7 @@ private extension DetailViewModel.Snapshot {
             sourceId: sourceId,
             revision: resolvedRevision,
             title: title,
+            originalDisplayName: resolvedOriginalDisplayName,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
@@ -761,10 +765,78 @@ private extension DetailViewModel.Snapshot {
     }
 }
 
+
+    @MainActor func testOnRenameGroupCallbackIsCalledWithSourceIdTitleAndOriginalDisplayName() {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+
+        let detail = DetailViewModel.Snapshot(
+            sourceId: "alpha",
+            revision: "alpha:rev-1",
+            title: "Research Tools",
+            originalDisplayName: "anthropic-skills",
+            subtitle: "clawhub",
+            author: "Anthropic",
+            originLabel: "ClawHub",
+            starCount: 5000,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: 100000,
+                starCount: 5000,
+                githubURL: "https://github.com/anthropics/skills",
+                localPath: "/groups/skills"
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: "https://github.com/anthropics/skills",
+            locator: "anthropics/skills",
+            groupPath: "/groups/skills",
+            updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 2,
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: [],
+            targets: [],
+            skills: []
+        )
+
+        var receivedSourceId: String?
+        var receivedTitle: String?
+        var receivedOriginalDisplayName: String?
+
+        let container = DetailScreenContainer(state: state) { sourceId in
+            XCTAssertEqual(sourceId, "alpha")
+            return detail
+        }
+
+        container.onRenameGroup = { sourceId, title, originalDisplayName in
+            receivedSourceId = sourceId
+            receivedTitle = title
+            receivedOriginalDisplayName = originalDisplayName
+        }
+
+        container.onRenameGroup?("alpha", "Research Tools", "anthropic-skills")
+
+        XCTAssertEqual(receivedSourceId, "alpha")
+        XCTAssertEqual(receivedTitle, "Research Tools")
+        XCTAssertEqual(receivedOriginalDisplayName, "anthropic-skills")
+    }
+
 private extension MainViewModel.DetailViewData {
     static func fixture(
         sourceId: String = "alpha",
         revision: String? = nil,
+        originalDisplayName: String = "AlphaHub",
         groupDocuments: [MainViewModel.DocumentTab] = [],
         skills: [MainViewModel.DetailSkill] = []
     ) -> Self {
@@ -772,6 +844,7 @@ private extension MainViewModel.DetailViewData {
         let resolvedRevision = revision ?? MainViewModel.detailRevision(
             sourceId: sourceId,
             title: "AlphaHub",
+            originalDisplayName: originalDisplayName,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
@@ -817,6 +890,7 @@ private extension MainViewModel.DetailViewData {
             sourceId: sourceId,
             revision: resolvedRevision,
             title: "AlphaHub",
+            originalDisplayName: originalDisplayName,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
