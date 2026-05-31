@@ -74,6 +74,7 @@ export type SourceManifestRecord = {
   locator: string;
   kind: SourceKind;
   displayName: string;
+  originalDisplayName: string;
   addedAt: string;
   requestedPath?: string;
   selectionMode?: "all" | "partial";
@@ -155,6 +156,7 @@ export type SourceLockRecord = {
   locator: string;
   kind: SourceKind;
   displayName: string;
+  originalDisplayName: string;
   checkoutPath: string;
   updatedAt: string;
   leafIds: string[];

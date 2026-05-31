@@ -79,6 +79,101 @@ describe("StateStore", () => {
     expect(lock.leafInventory[0]?.metadataWarnings).toEqual([]);
   });
 
+  test("readState backfills missing originalDisplayName from displayName", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+
+    await fs.writeFile(store.manifestPath, `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "alpha",
+          locator: "https://github.com/acme/alpha.git",
+          kind: "git",
+          displayName: "Custom Alpha",
+          addedAt: "2026-05-31T00:00:00.000Z",
+        },
+      ],
+      bindings: {},
+    }, null, 2)}\n`, "utf8");
+    await fs.writeFile(store.lockPath, `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "alpha",
+          locator: "https://github.com/acme/alpha.git",
+          kind: "git",
+          displayName: "Custom Alpha",
+          checkoutPath: "/tmp/alpha",
+          updatedAt: "2026-05-31T00:00:00.000Z",
+          leafIds: [],
+          invalidLeafs: [],
+        },
+      ],
+      leafInventory: [],
+      projections: [],
+      deployments: [],
+    }, null, 2)}\n`, "utf8");
+
+    const state = await store.readState();
+
+    expect(state.manifest.sources[0]).toMatchObject({
+      displayName: "Custom Alpha",
+      originalDisplayName: "Custom Alpha",
+    });
+    expect(state.lockFile.sources[0]).toMatchObject({
+      displayName: "Custom Alpha",
+      originalDisplayName: "Custom Alpha",
+    });
+  });
+
+  test("writeState persists originalDisplayName on manifest and lock sources", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+
+    await store.writeState(
+      {
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "alpha",
+            locator: "https://github.com/acme/alpha.git",
+            kind: "git",
+            displayName: "Custom Alpha",
+            originalDisplayName: "alpha",
+            addedAt: "2026-05-31T00:00:00.000Z",
+          },
+        ],
+        bindings: {},
+      },
+      {
+        schemaVersion: 1,
+        sources: [
+          {
+            id: "alpha",
+            locator: "https://github.com/acme/alpha.git",
+            kind: "git",
+            displayName: "Custom Alpha",
+            originalDisplayName: "alpha",
+            checkoutPath: "/tmp/alpha",
+            updatedAt: "2026-05-31T00:00:00.000Z",
+            leafIds: [],
+            invalidLeafs: [],
+          },
+        ],
+        leafInventory: [],
+        projections: [],
+        deployments: [],
+      },
+    );
+
+    const manifest = JSON.parse(await fs.readFile(store.manifestPath, "utf8"));
+    const lock = JSON.parse(await fs.readFile(store.lockPath, "utf8"));
+
+    expect(manifest.sources[0].originalDisplayName).toBe("alpha");
+    expect(lock.sources[0].originalDisplayName).toBe("alpha");
+  });
+
   test("preserves managed projections when deployments are empty", async () => {
     const store = new StateStore(stateRoot);
 
@@ -122,6 +217,7 @@ describe("StateStore", () => {
           locator: "/tmp/alpha",
           kind: "local",
           displayName: "alpha",
+          originalDisplayName: "alpha",
           checkoutPath: "/tmp/alpha",
           updatedAt: "2026-03-30T00:00:00.000Z",
           leafIds: ["alpha:browse"],
@@ -197,6 +293,7 @@ describe("StateStore", () => {
           locator: "/tmp/alpha",
           kind: "local",
           displayName: "alpha",
+          originalDisplayName: "alpha",
           addedAt: "2026-03-28T00:00:00.000Z",
         },
       ],

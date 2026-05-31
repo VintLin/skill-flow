@@ -107,14 +107,14 @@ export class StateStore {
   async readManifest(): Promise<Manifest> {
     return this.withIoLock(async () => {
       await this.init();
-      return this.readManifestRaw();
+      return this.normalizeManifest(await this.readManifestRaw());
     });
   }
 
   async writeManifest(manifest: Manifest): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      await writeJsonFile(this.manifestPath, manifest);
+      await writeJsonFile(this.manifestPath, this.normalizeManifest(manifest));
     });
   }
 
@@ -128,7 +128,7 @@ export class StateStore {
   async readState(): Promise<{ manifest: Manifest; lockFile: LockFile }> {
     return this.withIoLock(async () => {
       await this.init();
-      const manifest = await this.readManifestRaw();
+      const manifest = this.normalizeManifest(await this.readManifestRaw());
       const lockFile = this.normalizeLockFile(await this.readLockRaw());
       return { manifest, lockFile };
     });
@@ -144,7 +144,7 @@ export class StateStore {
   async writeState(manifest: Manifest, lockFile: LockFile): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      await writeJsonFile(this.manifestPath, manifest);
+      await writeJsonFile(this.manifestPath, this.normalizeManifest(manifest));
       await writeJsonFile(this.lockPath, this.serializeLockFile(lockFile));
     });
   }
@@ -390,6 +390,16 @@ export class StateStore {
     );
   }
 
+  private normalizeManifest(manifest: Manifest): Manifest {
+    return {
+      ...manifest,
+      sources: manifest.sources.map((source) => ({
+        ...source,
+        originalDisplayName: source.originalDisplayName ?? source.displayName,
+      })),
+    };
+  }
+
   private normalizeLockFile(lockFile: LockFile): LockFile {
     const projections = normalizeProjectionRecords(lockFile);
     const deployments = projections
@@ -400,6 +410,10 @@ export class StateStore {
       ...lockFile,
       projections,
       deployments,
+      sources: lockFile.sources.map((source) => ({
+        ...source,
+        originalDisplayName: source.originalDisplayName ?? source.displayName,
+      })),
       leafInventory: lockFile.leafInventory.map((leaf) => ({
         ...leaf,
         linkName:
