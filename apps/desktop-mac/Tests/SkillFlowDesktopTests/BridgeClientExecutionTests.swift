@@ -136,6 +136,17 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(resolved, "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin")
     }
 
+    func testBundledNodeBinResolutionSkipsWhenDebugNodeOverrideIsSet() {
+        let resolved = BridgeClient.resolveBundledNodeBinDirectory(
+            bundleURL: URL(fileURLWithPath: "/Applications/Skill Flow.app"),
+            architecture: "arm64",
+            environment: ["SKILL_FLOW_DESKTOP_NODE_OVERRIDE": "/tmp/custom-node"],
+            isExecutable: { _ in true }
+        )
+
+        XCTAssertNil(resolved)
+    }
+
     func testBridgeEnvironmentPrependsBundledNodeBinAndExportsBundledNpx() {
         let bundledBin = "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin"
         let bundledNpx = "\(bundledBin)/npx"

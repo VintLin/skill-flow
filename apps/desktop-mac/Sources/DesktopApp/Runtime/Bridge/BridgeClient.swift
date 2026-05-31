@@ -371,8 +371,16 @@ final class BridgeClient: @unchecked Sendable {
     static func resolveBundledNodeBinDirectory(
         bundleURL: URL = Bundle.main.bundleURL,
         architecture: String = BridgeClient.currentNodeArchitecture,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
         isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) -> String? {
+        #if DEBUG
+        if let override = environment["SKILL_FLOW_DESKTOP_NODE_OVERRIDE"],
+           !override.isEmpty {
+            return nil
+        }
+        #endif
+
         let bundledNodeBinDirectory = bundleURL
             .appendingPathComponent("Contents/Resources/node/\(architecture)/bin")
             .path
