@@ -387,7 +387,31 @@ struct DetailScreen: View {
         _ = fallbackOriginLabel
 
         return VStack(alignment: .leading, spacing: 8) {
-            detailHeaderTitleRow(title: detail?.title ?? fallbackTitle, author: detail?.author ?? "@unknown")
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                detailHeaderTitleRow(
+                    title: detail?.title ?? fallbackTitle,
+                    author: detail?.author ?? "@unknown",
+                    hasCustomDisplayName: detail?.hasCustomDisplayName ?? false,
+                    originalDisplayName: detail?.originalDisplayName
+                )
+                Spacer(minLength: 0)
+                if container.onRenameGroup != nil, let sourceId = container.sourceId {
+                    Button {
+                        container.onRenameGroup?(
+                            sourceId,
+                            detail?.title ?? fallbackTitle,
+                            detail?.originalDisplayName ?? fallbackTitle
+                        )
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .frame(width: 18, height: 18)
+                    }
+                    .buttonStyle(.plain)
+                    .help(t("group_card.action.rename"))
+                }
+            }
 
             detailHeaderMetadataRow(stats: detail?.groupStats ?? emptyStats)
         }
@@ -427,13 +451,27 @@ struct DetailScreen: View {
         }
     }
 
-    private func detailHeaderTitleRow(title: String, author: String) -> some View {
+    private func detailHeaderTitleRow(
+        title: String,
+        author: String,
+        hasCustomDisplayName: Bool = false,
+        originalDisplayName: String? = nil
+    ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title)
-                .font(.system(size: detailHeaderTitleSize, weight: .regular))
-                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(alignment: .center, spacing: 6) {
+                Text(title)
+                    .font(.system(size: detailHeaderTitleSize, weight: .regular))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if hasCustomDisplayName, let original = originalDisplayName {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(width: 18, height: 18)
+                        .help(L10n.string("group_card.original_name", locale: locale, arguments: [original]))
+                }
+            }
 
             Text(t("detail.meta.by", author))
                 .font(.system(size: detailHeaderMetaSize, weight: .regular))

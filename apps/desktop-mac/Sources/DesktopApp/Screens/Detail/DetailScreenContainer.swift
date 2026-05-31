@@ -38,6 +38,7 @@ final class DetailScreenContainer {
     private let setTargetEnabledAction: (String, Bool, Bool, String) async -> Void
     private var cachedDetailSourceId: String?
     private var cachedDetailRevision: String?
+    var onRenameGroup: ((String, String, String) -> Void)?
     private var cachedDetailViewModel: DetailViewModel?
     private var cachedDocumentsByRenderCacheKey: [String: MainViewModel.DocumentTab] = [:]
     private var documentTasksByRenderCacheKey: [String: Task<MainViewModel.DocumentTab?, Never>] = [:]
@@ -69,7 +70,8 @@ final class DetailScreenContainer {
         toggleAllSkills: @escaping (String) async -> Void = { _ in },
         setSkillEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in },
         toggleAllTargets: @escaping (String) async -> Void = { _ in },
-        setTargetEnabled: @escaping (String, Bool, Bool, String) async -> Void = { _, _, _, _ in }
+        setTargetEnabled: @escaping (String, Bool, Bool, String) async -> Void = { _, _, _, _ in },
+        onRenameGroup: ((String, String, String) -> Void)? = nil
     ) {
         self.state = state
         self.groupTagController = groupTagController
@@ -86,6 +88,7 @@ final class DetailScreenContainer {
         self.setSkillEnabledAction = setSkillEnabled
         self.toggleAllTargetsAction = toggleAllTargets
         self.setTargetEnabledAction = setTargetEnabled
+        self.onRenameGroup = onRenameGroup
     }
 
     convenience init(
@@ -102,7 +105,8 @@ final class DetailScreenContainer {
         toggleAllSkills: @escaping (String) async -> Void = { _ in },
         setSkillEnabled: @escaping (String, Bool, String) async -> Void = { _, _, _ in },
         toggleAllTargets: @escaping (String) async -> Void = { _ in },
-        setTargetEnabled: @escaping (String, Bool, Bool, String) async -> Void = { _, _, _, _ in }
+        setTargetEnabled: @escaping (String, Bool, Bool, String) async -> Void = { _, _, _, _ in },
+        onRenameGroup: ((String, String, String) -> Void)? = nil
     ) {
         self.init(
             state: state,

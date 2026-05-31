@@ -776,6 +776,13 @@ final class MainViewModel {
 
     private var allSummaries: [WorkflowSummary] = []
 
+
+    struct PendingDetailRename: Equatable {
+        let sourceId: String
+        let title: String
+        let originalDisplayName: String
+    }
+
     var loadState: LoadState = .idle
     var selectedSection: Section = .overview
 
@@ -800,6 +807,7 @@ final class MainViewModel {
     var updatingSourceIds: Set<String> = []
     private var saveStateBySourceId: [ScopedSourceKey: SaveState] = [:]
     var toast: ToastState?
+    var pendingDetailRename: PendingDetailRename?
 
     var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?

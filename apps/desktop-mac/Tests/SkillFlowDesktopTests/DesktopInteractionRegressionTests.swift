@@ -102,7 +102,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
     func testRenameDialogTextFieldHasAccessibleName() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
-        XCTAssertTrue(home.contains("TextField(\"\", text: $draft)"))
+        XCTAssertTrue(home.contains("TextField(placeholder, text: $draft)"))
         XCTAssertTrue(home.contains(".accessibilityLabel(title)"))
     }
 

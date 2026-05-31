@@ -75,6 +75,7 @@ struct MainView: View {
     @State private var customAgentErrors: [String: String] = [:]
     @State private var renameSourceId: String?
     @State private var renameDraft = ""
+    @State private var renameOriginalDisplayName = ""
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -178,6 +179,8 @@ struct MainView: View {
                             title: t("rename.dialog.title"),
                             saveTitle: t("rename.dialog.save"),
                             cancelTitle: t("rename.dialog.cancel"),
+                            placeholder: renameOriginalDisplayName,
+                            hint: t("rename.dialog.reset_hint", renameOriginalDisplayName),
                             theme: theme,
                             accent: accent,
                             onCancel: {
@@ -203,6 +206,16 @@ struct MainView: View {
                             viewModel.dismissToast()
                         }
                 }
+            }
+        }
+        .onChange(of: viewModel.pendingDetailRename) {
+            if let request = viewModel.pendingDetailRename {
+                beginRenameSource(
+                    sourceId: request.sourceId,
+                    title: request.title,
+                    originalDisplayName: request.originalDisplayName
+                )
+                viewModel.pendingDetailRename = nil
             }
         }
         .tint(AppTheme.brand(for: accent))
@@ -591,6 +604,13 @@ struct MainView: View {
     private func beginRenameSource(_ card: MainViewModel.GroupCardModel) {
         renameSourceId = card.id
         renameDraft = card.title
+        renameOriginalDisplayName = card.originalDisplayName ?? card.title
+    }
+
+    private func beginRenameSource(sourceId: String, title: String, originalDisplayName: String) {
+        renameSourceId = sourceId
+        renameDraft = title
+        renameOriginalDisplayName = originalDisplayName
     }
 
     private func closeRenameDialog() {
@@ -1763,6 +1783,8 @@ private struct RenameSourceDialog: View {
     let title: String
     let saveTitle: String
     let cancelTitle: String
+    let placeholder: String
+    let hint: String
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let onCancel: () -> Void
@@ -1775,7 +1797,7 @@ private struct RenameSourceDialog: View {
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
                 .lineLimit(1)
 
-            TextField("", text: $draft)
+            TextField(placeholder, text: $draft)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
@@ -1789,6 +1811,12 @@ private struct RenameSourceDialog: View {
                         .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                 }
                 .onSubmit(onSave)
+
+            Text(hint)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
