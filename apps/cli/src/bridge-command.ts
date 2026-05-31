@@ -160,7 +160,7 @@ export async function executeBridgeRequest(
       case "rename-source": {
         const payload = expectObjectPayload(request.payload, "rename-source");
         const sourceId = expectString(payload.sourceId, "sourceId", "rename-source");
-        const displayName = expectString(payload.displayName, "displayName", "rename-source");
+        const displayName = expectPossiblyEmptyString(payload.displayName, "displayName", "rename-source");
         const result = await app.renameSource(sourceId, displayName);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
@@ -362,6 +362,13 @@ function expectOptionalObject(value: JsonValue | undefined, field: string): Json
 function expectString(value: JsonValue | undefined, field: string, command: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`Bridge command '${command}' requires a non-empty string field '${field}'.`);
+  }
+  return value;
+}
+
+function expectPossiblyEmptyString(value: JsonValue | undefined, field: string, command: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`Bridge command '${command}' requires string field '${field}'.`);
   }
   return value;
 }
