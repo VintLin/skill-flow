@@ -186,6 +186,22 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(environment["HOME"], "/Users/example")
     }
 
+    func testBridgeEnvironmentRemovesInheritedBundledNpxWhenBundledNpxIsMissing() {
+        let bundledBin = "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin"
+
+        let environment = BridgeClient.bridgeEnvironment(
+            baseEnvironment: [
+                "PATH": "/usr/bin",
+                "SKILL_FLOW_BUNDLED_NPX": "/old/path/npx",
+            ],
+            bundledNodeBinDirectory: bundledBin,
+            isExecutable: { _ in false }
+        )
+
+        XCTAssertNil(environment["SKILL_FLOW_BUNDLED_NPX"])
+        XCTAssertEqual(environment["PATH"], "\(bundledBin):/usr/bin")
+    }
+
     func testRuntimeMissingCommandErrorsAreMappedToDependencyGuidance() {
         XCTAssertEqual(
             BridgeClient.dependencyError(for: "spawn git ENOENT")?.localizedDescription,

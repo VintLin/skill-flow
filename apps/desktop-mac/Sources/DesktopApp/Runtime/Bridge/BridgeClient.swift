@@ -404,6 +404,7 @@ final class BridgeClient: @unchecked Sendable {
         isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) -> [String: String] {
         var environment = baseEnvironment
+        environment.removeValue(forKey: "SKILL_FLOW_BUNDLED_NPX")
         environment["SKILL_FLOW_CALLER"] = "desktop-bridge"
 
         guard let bundledNodeBinDirectory else {
