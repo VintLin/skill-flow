@@ -197,7 +197,12 @@ final class BridgeClient: @unchecked Sendable {
         let requestData = try JSONEncoder().encode(request)
         let nodeExecutable = Self.resolveNodeExecutable()
         let bundledNodeBinDirectory = Self.resolveBundledNodeBinDirectory()
-        try validateEnvironment(command: command, payload: payload, nodeExecutable: nodeExecutable)
+        try validateEnvironment(
+            command: command,
+            payload: payload,
+            nodeExecutable: nodeExecutable,
+            bundledNodeBinDirectory: bundledNodeBinDirectory
+        )
 
         let process = Process()
         if nodeExecutable == "node" {
@@ -432,7 +437,8 @@ final class BridgeClient: @unchecked Sendable {
     private func validateEnvironment(
         command: BridgeCommand,
         payload: [String: AnyCodable]?,
-        nodeExecutable: String
+        nodeExecutable: String,
+        bundledNodeBinDirectory: String?
     ) throws {
         guard isNodeAvailable(nodeExecutable) else {
             throw BridgeClientError.missingDependency(.node)
@@ -442,7 +448,7 @@ final class BridgeClient: @unchecked Sendable {
             return
         }
 
-        if locator.hasPrefix("clawhub:"), !isCommandAvailable("npx") {
+        if locator.hasPrefix("clawhub:"), bundledNpxPath(in: bundledNodeBinDirectory) == nil, !isCommandAvailable("npx") {
             throw BridgeClientError.missingDependency(.npx)
         }
 
@@ -482,6 +488,19 @@ final class BridgeClient: @unchecked Sendable {
             return isCommandAvailable("node")
         }
         return FileManager.default.isExecutableFile(atPath: nodeExecutable)
+    }
+
+    private func bundledNpxPath(in bundledNodeBinDirectory: String?) -> String? {
+        guard let bundledNodeBinDirectory else {
+            return nil
+        }
+
+        let bundledNpx = "\(bundledNodeBinDirectory)/npx"
+        guard FileManager.default.isExecutableFile(atPath: bundledNpx) else {
+            return nil
+        }
+
+        return bundledNpx
     }
 
     private func isCommandAvailable(_ command: String) -> Bool {

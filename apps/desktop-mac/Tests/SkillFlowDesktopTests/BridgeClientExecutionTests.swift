@@ -197,6 +197,14 @@ final class BridgeClientExecutionTests: XCTestCase {
         )
     }
 
+    func testClawHubPreflightAcceptsBundledNpxBeforeSystemNpx() throws {
+        let source = try sourceText()
+
+        XCTAssertTrue(source.contains("bundledNpxPath(in: bundledNodeBinDirectory)"))
+        XCTAssertTrue(source.contains("if locator.hasPrefix(\"clawhub:\"), bundledNpxPath(in: bundledNodeBinDirectory) == nil, !isCommandAvailable(\"npx\")"))
+        XCTAssertTrue(source.contains("bundledNodeBinDirectory: String?"))
+    }
+
     func testApplyEncodesProjectScopePayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
@@ -242,6 +250,16 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(payload["sourceId"] as? String, "alpha")
         XCTAssertEqual(payload["displayName"] as? String, "Writing Tools")
         XCTAssertEqual(try fixture.lastCommand(), "rename-source")
+    }
+
+    private func sourceText() throws -> String {
+        let desktopRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = desktopRoot
+            .appendingPathComponent("Sources/DesktopApp/Runtime/Bridge/BridgeClient.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
 
