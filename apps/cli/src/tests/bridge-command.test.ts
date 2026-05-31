@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
+import { ok } from "@skill-flow/integration/utils/result";
 import { executeBridgeRequest } from "../bridge-command.js";
 import { PROTOCOL_VERSION } from "@skill-flow/shared-types/protocol";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
@@ -184,15 +185,14 @@ describe.sequential("bridge command dispatcher", () => {
   });
 
   test("accepts valid rename-source payload", async () => {
-    const repoPath = await createRepo(sandbox.sandboxRoot, {
-      "skills/review/SKILL.md": skillDoc("review", "Review code."),
-    });
-    const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
+    const app = {
+      renameSource: vi.fn(async (sourceId: string, displayName: string) => ok({
+        sourceId,
+        displayName,
+        originalDisplayName: "demo-source",
+        isResetToOriginal: false,
+      })),
+    } as unknown as SkillFlowApp;
 
     const response = await executeBridgeRequest(app, {
       protocolVersion: PROTOCOL_VERSION,
@@ -203,10 +203,13 @@ describe.sequential("bridge command dispatcher", () => {
       },
     });
 
+    expect(app.renameSource).toHaveBeenCalledWith("demo-source", "Writing Tools");
     expect(response.ok).toBe(true);
     expect(response.data).toEqual({
       sourceId: "demo-source",
       displayName: "Writing Tools",
+      originalDisplayName: "demo-source",
+      isResetToOriginal: false,
     });
   });
 
@@ -240,16 +243,15 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
   });
 
-  test("forwards blank rename-source displayName to runtime validation", async () => {
-    const repoPath = await createRepo(sandbox.sandboxRoot, {
-      "skills/review/SKILL.md": skillDoc("review", "Review code."),
-    });
-    const app = new SkillFlowApp();
-    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
+  test("accepts blank rename-source displayName as reset request", async () => {
+    const app = {
+      renameSource: vi.fn(async (sourceId: string, displayName: string) => ok({
+        sourceId,
+        displayName: "demo-source",
+        originalDisplayName: "demo-source",
+        isResetToOriginal: displayName.trim() === "",
+      })),
+    } as unknown as SkillFlowApp;
 
     const response = await executeBridgeRequest(app, {
       protocolVersion: PROTOCOL_VERSION,
@@ -260,8 +262,16 @@ describe.sequential("bridge command dispatcher", () => {
       },
     });
 
-    expect(response.ok).toBe(false);
-    expect(response.errors[0]?.code).toBe("DISPLAY_NAME_EMPTY");
+    expect(app.renameSource).toHaveBeenCalledWith("demo-source", "   ");
+    expect(response).toMatchObject({
+      ok: true,
+      data: {
+        sourceId: "demo-source",
+        displayName: "demo-source",
+        originalDisplayName: "demo-source",
+        isResetToOriginal: true,
+      },
+    });
   });
 
   test("accepts valid apply payload with empty skill selection", async () => {

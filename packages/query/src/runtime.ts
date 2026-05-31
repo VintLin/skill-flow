@@ -123,6 +123,12 @@ type SkillFlowAddOptions = AddSourceOptions &
   };
 
 type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: boolean };
+type RenameSourceResult = {
+  sourceId: string;
+  displayName: string;
+  originalDisplayName: string;
+  isResetToOriginal: boolean;
+};
 type TargetRootOverrides = Partial<Record<DeploymentTargetId, string>>;
 type ApplyDraftResult = {
   actions: DeploymentAction[];
@@ -1863,7 +1869,7 @@ export class SkillFlowApp {
   async renameSource(
     sourceId: string,
     displayName: string,
-  ): Promise<Result<{ sourceId: string; displayName: string }>> {
+  ): Promise<Result<RenameSourceResult>> {
     return this.runSerializedMutation(() => this.renameSourceImpl(sourceId, displayName));
   }
 
@@ -1885,15 +1891,8 @@ export class SkillFlowApp {
   private async renameSourceImpl(
     sourceId: string,
     displayName: string,
-  ): Promise<Result<{ sourceId: string; displayName: string }>> {
-    const nextDisplayName = displayName.trim();
-    if (!nextDisplayName) {
-      return fail({
-        code: "DISPLAY_NAME_EMPTY",
-        message: "Skills group display name cannot be empty.",
-      });
-    }
-
+  ): Promise<Result<RenameSourceResult>> {
+    const trimmedDisplayName = displayName.trim();
     const { manifest, lockFile } = await this.store.readState();
     const manifestSource = manifest.sources.find((source) => source.id === sourceId);
     const lockSource = lockFile.sources.find((source) => source.id === sourceId);
@@ -1905,11 +1904,15 @@ export class SkillFlowApp {
       });
     }
 
+    const originalDisplayName =
+      manifestSource.originalDisplayName ?? lockSource.originalDisplayName ?? manifestSource.displayName;
+    const isResetToOriginal = trimmedDisplayName === "";
+    const nextDisplayName = isResetToOriginal ? originalDisplayName : trimmedDisplayName;
     const nextManifest: Manifest = {
       ...manifest,
       sources: manifest.sources.map((source) =>
         source.id === sourceId
-          ? { ...source, displayName: nextDisplayName }
+          ? { ...source, displayName: nextDisplayName, originalDisplayName }
           : source,
       ),
     };
@@ -1917,13 +1920,18 @@ export class SkillFlowApp {
       ...lockFile,
       sources: lockFile.sources.map((source) =>
         source.id === sourceId
-          ? { ...source, displayName: nextDisplayName }
+          ? { ...source, displayName: nextDisplayName, originalDisplayName }
           : source,
       ),
     };
 
     await this.store.writeState(nextManifest, nextLockFile);
-    return ok({ sourceId, displayName: nextDisplayName });
+    return ok({
+      sourceId,
+      displayName: nextDisplayName,
+      originalDisplayName,
+      isResetToOriginal,
+    });
   }
 
   async getAvailableTargets(): Promise<DeploymentTargetId[]> {

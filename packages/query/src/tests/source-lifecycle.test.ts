@@ -1080,9 +1080,12 @@ description: |
     if (!renamed.ok) {
       return;
     }
+    const originalDisplayName = added.data.manifest.originalDisplayName;
     expect(renamed.data).toEqual({
       sourceId: "demo-source",
       displayName: "Writing Tools",
+      originalDisplayName,
+      isResetToOriginal: false,
     });
 
     const after = await app.store.readState();
@@ -1119,7 +1122,7 @@ description: |
     })));
   });
 
-  test("renameSource rejects missing and empty source labels", async () => {
+  test("renameSource rejects missing source labels and resets blank labels to original", async () => {
     const app = new SkillFlowApp();
 
     const missing = await app.renameSource("missing-source", "Writing Tools");
@@ -1136,14 +1139,26 @@ description: |
     });
     const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
     expect(added.ok).toBe(true);
-
-    const empty = await app.renameSource("demo-source", "   ");
-    expect(empty.ok).toBe(false);
-    if (!empty.ok) {
-      expect(empty.errors[0]).toEqual({
-        code: "DISPLAY_NAME_EMPTY",
-        message: "Skills group display name cannot be empty.",
-      });
+    if (!added.ok) {
+      return;
     }
+    const originalDisplayName = added.data.manifest.originalDisplayName;
+
+    const renamed = await app.renameSource("demo-source", "Writing Tools");
+    expect(renamed.ok).toBe(true);
+
+    const reset = await app.renameSource("demo-source", "   ");
+    expect(reset).toMatchObject({
+      ok: true,
+      data: {
+        sourceId: "demo-source",
+        displayName: originalDisplayName,
+        originalDisplayName,
+        isResetToOriginal: true,
+      },
+    });
+    const after = await app.store.readState();
+    expect(after.manifest.sources.find((source) => source.id === "demo-source")?.displayName).toBe(originalDisplayName);
+    expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.displayName).toBe(originalDisplayName);
   });
 });
