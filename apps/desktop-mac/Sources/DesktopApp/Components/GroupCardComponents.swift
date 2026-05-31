@@ -596,11 +596,20 @@ struct SharedGroupCard: View {
 
     private var headerPrimaryContent: some View {
         VStack(alignment: .leading, spacing: max(2, scale.headerSpacing)) {
-            Text(card.title)
-                .font(.system(size: scale.titleSize, weight: .regular))
-                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(alignment: .center, spacing: 6) {
+                Text(card.title)
+                    .font(.system(size: scale.titleSize, weight: .regular))
+                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if card.hasCustomDisplayName {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(width: 18, height: 18)
+                        .help(Self.originalNameHelpText(card: card, locale: locale) ?? "")
+                }
+            }
             if displayMode.showsSubtitle {
                 if let byline = card.byline {
                     Text(byline)
@@ -1414,6 +1423,14 @@ extension SharedGroupCard {
         default:
             return .blue
         }
+    }
+
+
+    static func originalNameHelpText(card: MainViewModel.GroupCardModel, locale: Locale) -> String? {
+        guard card.hasCustomDisplayName, let original = card.originalDisplayName else {
+            return nil
+        }
+        return L10n.string("group_card.original_name", locale: locale, arguments: [original])
     }
 
     static func contentSectionOrder(
