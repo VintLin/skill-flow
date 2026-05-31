@@ -111,6 +111,11 @@ if [[ "$BUILD_MODE" == "dev" ]]; then
 else
   BUNDLE_ID="com.skillflow.desktop.$BUNDLE_ID_SUFFIX"
 fi
+NATIVE_EXECUTION_PLIST=""
+if [[ "$ARCH" != "x86_64" ]]; then
+  NATIVE_EXECUTION_PLIST="  <key>LSRequiresNativeExecution</key>
+  <true/>"
+fi
 
 rm -rf "$APP_BUNDLE" "$DMG_PATH" "$HELPER_STAGE" "$DMG_STAGE" "$WORK_DIR"
 mkdir -p "$OUTPUT_ARCH_DIR" "$WORK_DIR" "$NODE_RUNTIME_CACHE_DIR"
@@ -242,12 +247,15 @@ stage_node_runtime() {
   expected_sha="$(node_runtime_sha_for_arch "$target_arch")"
   installed_runtime_dir="/Applications/$APP_FILE_NAME/Contents/Resources/node/$target_arch"
 
-  if [[ "$BUILD_MODE" == "dev" && -x "$installed_runtime_dir/bin/node" ]]; then
+  if [[ "$BUILD_MODE" == "dev" && -x "$installed_runtime_dir/bin/node" && -x "$installed_runtime_dir/bin/npm" && -x "$installed_runtime_dir/bin/npx" ]]; then
     installed_node_version="$("$installed_runtime_dir/bin/node" --version)"
     if [[ "$installed_node_version" == "v$NODE_RUNTIME_VERSION" ]]; then
       rm -rf "$dest_dir"
       mkdir -p "$(dirname "$dest_dir")"
       cp -R "$installed_runtime_dir" "$dest_dir"
+      "$dest_dir/bin/node" --version >/dev/null
+      PATH="$dest_dir/bin:$PATH" "$dest_dir/bin/npm" --version >/dev/null
+      PATH="$dest_dir/bin:$PATH" "$dest_dir/bin/npx" --version >/dev/null
       return
     fi
   fi
@@ -271,16 +279,21 @@ stage_node_runtime() {
   fi
 
   rm -rf "$extract_dir" "$dest_dir"
-  mkdir -p "$extract_dir" "$dest_dir/bin"
+  mkdir -p "$extract_dir" "$dest_dir/bin" "$dest_dir/lib/node_modules"
   tar -xf "$archive_path" -C "$extract_dir"
   cp "$node_dist_dir/bin/node" "$dest_dir/bin/node"
-  chmod +x "$dest_dir/bin/node"
+  cp -R -P "$node_dist_dir/bin/npm" "$dest_dir/bin/npm"
+  cp -R -P "$node_dist_dir/bin/npx" "$dest_dir/bin/npx"
+  cp -R "$node_dist_dir/lib/node_modules/npm" "$dest_dir/lib/node_modules/npm"
+  chmod +x "$dest_dir/bin/node" "$dest_dir/bin/npm" "$dest_dir/bin/npx"
 
   if [[ -f "$node_dist_dir/LICENSE" ]]; then
     cp "$node_dist_dir/LICENSE" "$dest_dir/LICENSE"
   fi
 
   "$dest_dir/bin/node" --version >/dev/null
+  PATH="$dest_dir/bin:$PATH" "$dest_dir/bin/npm" --version >/dev/null
+  PATH="$dest_dir/bin:$PATH" "$dest_dir/bin/npx" --version >/dev/null
 }
 
 stage_node_runtimes() {
@@ -348,6 +361,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
   <string>$BUILD_TS</string>
   <key>LSMinimumSystemVersion</key>
   <string>$DEFAULT_MIN_MACOS</string>
+$NATIVE_EXECUTION_PLIST
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>
@@ -377,3 +391,4 @@ echo "Bundle ID: $BUNDLE_ID"
 echo "Version: $CLI_VERSION ($BUILD_TS)"
 echo "Architectures: $(lipo -archs "$APP_BUNDLE/Contents/MacOS/$EXECUTABLE_NAME")"
 echo "Bundled Node.js: v$NODE_RUNTIME_VERSION"
+echo "Bundled npm/npx: yes"
