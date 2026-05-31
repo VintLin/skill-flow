@@ -717,6 +717,7 @@ describe.sequential("source lifecycle", () => {
 
   test("find normalizes spaces, hyphens, and underscores in query matching", async () => {
     vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
+    vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([]);
 
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "agent-browser/SKILL.md": skillDoc("agent-browser", "Agent browser flow."),

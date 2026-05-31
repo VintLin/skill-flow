@@ -2,6 +2,28 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.10 - 2026-05-31
+
+### Added
+
+- Added persisted original Skill group names so renamed groups can still expose the import-time name in the macOS desktop UI.
+- Added home-card and detail-header original-name indicators that appear only after a Skill group has been renamed.
+- Added Skill group renaming from the macOS detail page, using the same bridge/runtime rename path as the home page.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.9` to `1.3.10`.
+- Changed blank Skill group rename submissions to restore the original import-time name.
+- Changed desktop Skill group titles to prefer the app-level source display name over `SKILL.md` metadata titles, so metadata edits do not rename groups inside Skill Flow.
+- Moved the Skill Flow brand out of the sidebar and into the home header search row to avoid truncation near macOS window controls.
+
+### Fixed
+
+- Fixed legacy imported sources whose original group name could be backfilled from a `SKILL.md` metadata title instead of the import name.
+- Fixed original-name hover behavior so the tooltip shows immediately and contains only the original name.
+- Fixed the rename dialog so it no longer shows extra reset-hint text.
+- Fixed macOS release packaging so the desktop bridge helper is bundled without unnecessary CLI dependencies, npm documentation, or an extra executable copy.
+
 ## v1.3.9 - 2026-05-30
 
 ### Added
