@@ -8,6 +8,7 @@ final class DetailViewModelTests: XCTestCase {
         let snapshot = DetailViewModel.Snapshot(
             sourceId: "alpha",
             title: "AlphaHub",
+            originalDisplayName: "AlphaHub Original",
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
@@ -107,6 +108,8 @@ final class DetailViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.sourceId, snapshot.sourceId)
         XCTAssertEqual(viewModel.title, snapshot.title)
+        XCTAssertEqual(viewModel.originalDisplayName, snapshot.originalDisplayName)
+        XCTAssertTrue(viewModel.hasCustomDisplayName)
         XCTAssertEqual(viewModel.subtitle, snapshot.subtitle)
         XCTAssertEqual(viewModel.author, snapshot.author)
         XCTAssertEqual(viewModel.originLabel, snapshot.originLabel)
@@ -144,6 +147,87 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.skills.first?.title, snapshot.skills.first?.title)
         XCTAssertEqual(viewModel.skills.first?.documents.first?.title, snapshot.skills.first?.documents.first?.title)
         XCTAssertEqual(viewModel.skills.first?.documents.first?.externalURL, snapshot.skills.first?.documents.first?.externalURL)
+    }
+
+    func testSnapshotRevisionIncludesOriginalDisplayName() {
+        let current = DetailViewModel.Snapshot(
+            sourceId: "alpha",
+            title: "Writing Tools",
+            originalDisplayName: "AlphaHub",
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: nil,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: nil,
+                starCount: nil,
+                githubURL: nil,
+                localPath: nil
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: nil,
+            locator: "clawhub/alpha",
+            groupPath: nil,
+            updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 2,
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: [],
+            targets: [],
+            skills: []
+        )
+        let changedOriginal = DetailViewModel.Snapshot(
+            sourceId: "alpha",
+            title: "Writing Tools",
+            originalDisplayName: "AlphaHub Next",
+            subtitle: "clawhub",
+            author: "Acme",
+            originLabel: "ClawHub",
+            starCount: nil,
+            groupStats: MainViewModel.GroupCardStats(
+                skillCount: 2,
+                downloadCount: nil,
+                starCount: nil,
+                githubURL: nil,
+                localPath: nil
+            ),
+            sourceDetailLines: [],
+            sourceRepositoryURL: nil,
+            locator: "clawhub/alpha",
+            groupPath: nil,
+            updatedAt: "2026-03-25T12:00:00Z",
+            updatedRelative: "Updated 1 day ago",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 2,
+            enabledTargetCount: 1,
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            skillSelection: .partial,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude Code"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: [],
+            groupDocuments: [],
+            targets: [],
+            skills: []
+        )
+
+        XCTAssertNotEqual(current.revision, changedOriginal.revision)
     }
 
     func testSnapshotStoresOnlyDescriptorDrivenGroupDocuments() {

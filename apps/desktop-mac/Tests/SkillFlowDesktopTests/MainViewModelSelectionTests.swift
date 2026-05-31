@@ -595,8 +595,8 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(card.title, "Writing Tools")
         XCTAssertEqual(card.originalDisplayName, "AlphaHub")
         XCTAssertTrue(card.hasCustomDisplayName)
-        XCTAssertEqual(model.detailViewData(for: "alpha")?.originalDisplayName, "AlphaHub")
-        XCTAssertTrue(model.detailViewData(for: "alpha")?.hasCustomDisplayName == true)
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.originalDisplayName, "AlphaHub")
+        XCTAssertTrue(model.detailSnapshot(for: "alpha")?.hasCustomDisplayName == true)
     }
 
     func testRenameSourceResetUpdatesCardsAndCachedDetailOriginalDisplayName() async throws {
@@ -619,6 +619,30 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "AlphaHub")
         XCTAssertEqual(model.detailViewData(for: "alpha")?.originalDisplayName, "AlphaHub")
         XCTAssertFalse(model.detailViewData(for: "alpha")?.hasCustomDisplayName == true)
+    }
+
+    func testBlankRenameSourceRequestResetsToOriginalDisplayName() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.displayName = "Writing Tools"
+        state.sources["alpha"]?.originalDisplayName = "AlphaHub"
+        state.sources["alpha"]?.sourceSnapshotTitle = "Writing Tools"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        await model.renameSource(sourceId: "alpha", displayName: "   ")
+
+        let request = fixture.loggedRequests().last(where: { $0.command == "rename-source" })
+        XCTAssertEqual(request?.payload?["sourceId"]?.value as? String, "alpha")
+        XCTAssertEqual(request?.payload?["displayName"]?.value as? String, "")
+        let card = try XCTUnwrap(model.groupCards.first(where: { $0.id == "alpha" }))
+        XCTAssertEqual(card.title, "AlphaHub")
+        XCTAssertEqual(card.originalDisplayName, "AlphaHub")
+        XCTAssertFalse(card.hasCustomDisplayName)
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "AlphaHub")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.originalDisplayName, "AlphaHub")
+        XCTAssertFalse(model.detailSnapshot(for: "alpha")?.hasCustomDisplayName == true)
     }
 
     func testRenameSourceUpdatesDetailEnrichmentSnapshotTitleAfterBridgeSuccess() async throws {
@@ -2120,13 +2144,15 @@ private struct TestFixture {
           }])));
           return;
         }
-        state.sources[sourceId].displayName = displayName;
+        const originalDisplayName = state.sources[sourceId].originalDisplayName || state.sources[sourceId].displayName;
+        const resolvedDisplayName = displayName.length === 0 ? originalDisplayName : displayName;
+        state.sources[sourceId].displayName = resolvedDisplayName;
         writeState(state);
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           sourceId,
-          displayName,
-          originalDisplayName: state.sources[sourceId].originalDisplayName || displayName,
-          isResetToOriginal: displayName.trim() === String(state.sources[sourceId].originalDisplayName || displayName).trim()
+          displayName: resolvedDisplayName,
+          originalDisplayName,
+          isResetToOriginal: resolvedDisplayName.trim() === String(originalDisplayName).trim()
         }, [], [])));
         return;
       }

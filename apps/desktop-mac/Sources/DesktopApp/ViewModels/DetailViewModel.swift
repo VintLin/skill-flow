@@ -15,6 +15,7 @@ final class DetailViewModel {
         let sourceId: String
         let revision: String
         let title: String
+        let originalDisplayName: String
         let subtitle: String
         let author: String
         let originLabel: String
@@ -42,10 +43,82 @@ final class DetailViewModel {
         let groupDocuments: [DocumentDescriptor]
         let targets: [DetailTarget]
         let skills: [DetailSkill]
+
+        init(
+            sourceId: String,
+            revision: String,
+            title: String,
+            originalDisplayName: String? = nil,
+            subtitle: String,
+            author: String,
+            originLabel: String,
+            starCount: Int?,
+            groupStats: MainViewModel.GroupCardStats,
+            sourceDetailLines: [String],
+            sourceRepositoryURL: String?,
+            locator: String,
+            groupPath: String?,
+            updatedAt: String,
+            updatedRelative: String,
+            health: String,
+            warningCount: Int,
+            errorCount: Int,
+            enabledSkillCount: Int,
+            totalSkillCount: Int,
+            enabledTargetCount: Int,
+            saveState: SaveState,
+            skillSelection: SelectionState,
+            targetSelection: SelectionState,
+            enabledTargetLabels: [String],
+            sourceFacts: [String],
+            deploymentFacts: [String],
+            fileTree: [FileTreeItem],
+            groupDocuments: [DocumentDescriptor],
+            targets: [DetailTarget],
+            skills: [DetailSkill]
+        ) {
+            self.sourceId = sourceId
+            self.revision = revision
+            self.title = title
+            self.originalDisplayName = originalDisplayName ?? title
+            self.subtitle = subtitle
+            self.author = author
+            self.originLabel = originLabel
+            self.starCount = starCount
+            self.groupStats = groupStats
+            self.sourceDetailLines = sourceDetailLines
+            self.sourceRepositoryURL = sourceRepositoryURL
+            self.locator = locator
+            self.groupPath = groupPath
+            self.updatedAt = updatedAt
+            self.updatedRelative = updatedRelative
+            self.health = health
+            self.warningCount = warningCount
+            self.errorCount = errorCount
+            self.enabledSkillCount = enabledSkillCount
+            self.totalSkillCount = totalSkillCount
+            self.enabledTargetCount = enabledTargetCount
+            self.saveState = saveState
+            self.skillSelection = skillSelection
+            self.targetSelection = targetSelection
+            self.enabledTargetLabels = enabledTargetLabels
+            self.sourceFacts = sourceFacts
+            self.deploymentFacts = deploymentFacts
+            self.fileTree = fileTree
+            self.groupDocuments = groupDocuments
+            self.targets = targets
+            self.skills = skills
+        }
+
+        var hasCustomDisplayName: Bool {
+            title.trimmingCharacters(in: .whitespacesAndNewlines)
+                != originalDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     let sourceId: String
     let title: String
+    let originalDisplayName: String
     let subtitle: String
     let author: String
     let originLabel: String
@@ -74,9 +147,15 @@ final class DetailViewModel {
     let targets: [MainViewModel.DetailTarget]
     let skills: [MainViewModel.DetailSkill]
 
+    var hasCustomDisplayName: Bool {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+            != originalDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     init(snapshot: Snapshot) {
         sourceId = snapshot.sourceId
         title = snapshot.title
+        originalDisplayName = snapshot.originalDisplayName
         subtitle = snapshot.subtitle
         author = snapshot.author
         originLabel = snapshot.originLabel
@@ -111,6 +190,7 @@ extension DetailViewModel.Snapshot {
     init(
         sourceId: String,
         title: String,
+        originalDisplayName: String? = nil,
         subtitle: String,
         author: String,
         originLabel: String,
@@ -139,11 +219,13 @@ extension DetailViewModel.Snapshot {
         targets: [MainViewModel.DetailTarget],
         skills: [MainViewModel.DetailSkill]
     ) {
+        let resolvedOriginalDisplayName = originalDisplayName ?? title
         self.init(
             sourceId: sourceId,
             revision: Self.buildRevision(
                 sourceId: sourceId,
                 title: title,
+                originalDisplayName: resolvedOriginalDisplayName,
                 subtitle: subtitle,
                 author: author,
                 originLabel: originLabel,
@@ -173,6 +255,7 @@ extension DetailViewModel.Snapshot {
                 skills: skills
             ),
             title: title,
+            originalDisplayName: resolvedOriginalDisplayName,
             subtitle: subtitle,
             author: author,
             originLabel: originLabel,
@@ -208,6 +291,7 @@ extension DetailViewModel.Snapshot {
             sourceId: detail.sourceId,
             revision: detail.revision,
             title: detail.title,
+            originalDisplayName: detail.originalDisplayName,
             subtitle: detail.subtitle,
             author: detail.author,
             originLabel: detail.originLabel,
@@ -241,6 +325,7 @@ extension DetailViewModel.Snapshot {
     private static func buildRevision(
         sourceId: String,
         title: String,
+        originalDisplayName: String,
         subtitle: String,
         author: String,
         originLabel: String,
@@ -272,6 +357,7 @@ extension DetailViewModel.Snapshot {
         MainViewModel.detailRevision(
             sourceId: sourceId,
             title: title,
+            originalDisplayName: originalDisplayName,
             subtitle: subtitle,
             author: author,
             originLabel: originLabel,

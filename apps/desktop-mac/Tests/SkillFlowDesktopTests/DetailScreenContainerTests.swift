@@ -671,6 +671,7 @@ private extension DetailViewModel.Snapshot {
         sourceId: String = "alpha",
         revision: String? = nil,
         title: String = "AlphaHub",
+        originalDisplayName: String? = nil,
         updatedRelative: String = "Updated 1 day ago",
         fileTree: [MainViewModel.FileTreeItem] = [],
         groupDocuments: [MainViewModel.DocumentDescriptor] = [],
@@ -683,9 +684,11 @@ private extension DetailViewModel.Snapshot {
             )
         ]
     ) -> Self {
+        let resolvedOriginalDisplayName = originalDisplayName ?? title
         let resolvedRevision = revision ?? MainViewModel.detailRevision(
             sourceId: sourceId,
             title: title,
+            originalDisplayName: resolvedOriginalDisplayName,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
@@ -724,6 +727,7 @@ private extension DetailViewModel.Snapshot {
             sourceId: sourceId,
             revision: resolvedRevision,
             title: title,
+            originalDisplayName: resolvedOriginalDisplayName,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
@@ -765,6 +769,7 @@ private extension MainViewModel.DetailViewData {
     static func fixture(
         sourceId: String = "alpha",
         revision: String? = nil,
+        originalDisplayName: String = "AlphaHub",
         groupDocuments: [MainViewModel.DocumentTab] = [],
         skills: [MainViewModel.DetailSkill] = []
     ) -> Self {
@@ -772,6 +777,7 @@ private extension MainViewModel.DetailViewData {
         let resolvedRevision = revision ?? MainViewModel.detailRevision(
             sourceId: sourceId,
             title: "AlphaHub",
+            originalDisplayName: originalDisplayName,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",
@@ -817,6 +823,7 @@ private extension MainViewModel.DetailViewData {
             sourceId: sourceId,
             revision: resolvedRevision,
             title: "AlphaHub",
+            originalDisplayName: originalDisplayName,
             subtitle: "clawhub",
             author: "Acme",
             originLabel: "ClawHub",

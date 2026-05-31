@@ -1232,8 +1232,8 @@ final class MainViewModel {
 
     func renameSource(sourceId: String, displayName: String) async {
         let normalizedSourceId = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedSourceId.isEmpty, !normalizedDisplayName.isEmpty else {
+        let requestedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedSourceId.isEmpty else {
             showToast(style: .error, text: localizedText("toast.rename.empty"))
             return
         }
@@ -1241,7 +1241,7 @@ final class MainViewModel {
         do {
             let result = try await mutationCoordinator.renameSource(
                 sourceId: normalizedSourceId,
-                displayName: normalizedDisplayName
+                displayName: requestedDisplayName
             )
             applyRenamedSource(
                 sourceId: result.sourceId,
