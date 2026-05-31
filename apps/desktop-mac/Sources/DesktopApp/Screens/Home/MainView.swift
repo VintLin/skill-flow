@@ -180,7 +180,6 @@ struct MainView: View {
                             saveTitle: t("rename.dialog.save"),
                             cancelTitle: t("rename.dialog.cancel"),
                             placeholder: renameOriginalDisplayName,
-                            hint: t("rename.dialog.reset_hint", renameOriginalDisplayName),
                             theme: theme,
                             accent: accent,
                             onCancel: {
@@ -400,6 +399,7 @@ struct MainView: View {
             Text(t("app.name"))
                 .font(.system(size: topBarTitleSize, weight: .semibold))
                 .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -731,6 +731,9 @@ struct MainView: View {
             if !isSidebarVisible {
                 homeSidebarToggleButton
             }
+            headerLogoRow
+                .lineLimit(1)
+                .frame(width: Self.homeMainHeaderBrandWidth, alignment: .leading)
             homeSearchField(width: searchWidth)
             Spacer(minLength: 0)
             importButton
@@ -1119,14 +1122,12 @@ struct MainView: View {
     }
 
     private var homeSidebarHeader: some View {
-        HStack(spacing: 8) {
-            headerLogoRow
-                .lineLimit(1)
+        HStack(spacing: 0) {
             Spacer(minLength: 0)
             homeSidebarToggleButton
         }
-        .padding(.leading, Self.homeSidebarBrandLeadingInset)
-        .padding(.trailing, Self.homeSidebarHorizontalPadding)
+        .frame(height: Self.homeSidebarToggleButtonSize, alignment: .top)
+        .padding(.horizontal, Self.homeSidebarHorizontalPadding)
         .padding(.top, Self.homeTitlebarControlTopPadding)
         .frame(height: Self.homeSidebarHeaderHeight, alignment: .top)
     }
@@ -1212,6 +1213,7 @@ struct MainView: View {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(width: Self.homeSidebarToggleButtonSize, alignment: .center)
                 }
                 .contentShape(Rectangle())
             }
@@ -1598,15 +1600,16 @@ extension MainView {
     nonisolated static let homeSidebarRegularWidth: CGFloat = 244
     nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
     nonisolated static let homeSidebarTrafficLightLeadingInset: CGFloat = 68
-    nonisolated static let homeSidebarBrandLeadingInset: CGFloat = 84
     nonisolated static let homeSidebarToggleButtonSize: CGFloat = 28
     nonisolated static let homeSidebarHeaderHeight: CGFloat = 52
     nonisolated static let homeSidebarHorizontalPadding: CGFloat = 12
     static let homeSidebarChipBleed: CGFloat = 12
     static let homeTitlebarControlTopPadding: CGFloat = 8
+    nonisolated static let homeMainHeaderBrandWidth: CGFloat = 132
     nonisolated static let homeMainHeaderSidePadding: CGFloat = 16
     nonisolated static let homeMainHeaderHorizontalPadding: CGFloat = homeMainHeaderSidePadding * 2
-    nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset
+    nonisolated static let homeCollapsedHeaderButtonGap: CGFloat = 12
+    nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset + homeCollapsedHeaderButtonGap
     nonisolated static let homeMainHeaderItemSpacing: CGFloat = 12
     nonisolated static let homeMainHeaderMinimumSearchFieldWidth: CGFloat = 160
     nonisolated static let homeGridHorizontalPadding: CGFloat = 32
@@ -1669,9 +1672,10 @@ extension MainView {
         includesSidebarToggle: Bool
     ) -> CGFloat {
         let toggleWidth = includesSidebarToggle ? homeSidebarToggleButtonSize : 0
-        let spacingCount: CGFloat = includesSidebarToggle ? 5 : 4
+        let spacingCount: CGFloat = includesSidebarToggle ? 6 : 5
         return (toolbarButtonSize * 3)
             + toggleWidth
+            + homeMainHeaderBrandWidth
             + reservedHorizontalPadding
             + (homeMainHeaderItemSpacing * spacingCount)
     }
@@ -1784,7 +1788,6 @@ private struct RenameSourceDialog: View {
     let saveTitle: String
     let cancelTitle: String
     let placeholder: String
-    let hint: String
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let onCancel: () -> Void
@@ -1811,12 +1814,6 @@ private struct RenameSourceDialog: View {
                         .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                 }
                 .onSubmit(onSave)
-
-            Text(hint)
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
                 Spacer(minLength: 0)

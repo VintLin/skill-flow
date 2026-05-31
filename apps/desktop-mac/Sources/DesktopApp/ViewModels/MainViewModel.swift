@@ -2797,12 +2797,12 @@ final class MainViewModel {
         snapshotTitle: String?,
         locator: String
     ) -> String {
-        if let snapshotTitle = snapshotTitle?.nonEmpty {
-            return snapshotTitle
-        }
-
         if let displayName = sanitizedDetailTitle(displayName) {
             return displayName
+        }
+
+        if let snapshotTitle = snapshotTitle?.nonEmpty {
+            return snapshotTitle
         }
 
         return detailTitleFallback(from: locator, sourceId: sourceId)

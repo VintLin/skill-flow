@@ -23,6 +23,7 @@ import {
 } from "./preferences-store.js";
 import { createEmptySourceMetadataCache, normalizeSourceMetadataCache } from "./source-metadata-cache.js";
 import { SCHEMA_VERSION, getStateRoot } from "@skill-flow/integration/utils/constants";
+import { deriveDisplayName } from "@skill-flow/integration/utils/source-id";
 import {
   ensureDir,
   pathExists,
@@ -128,9 +129,9 @@ export class StateStore {
   async readState(): Promise<{ manifest: Manifest; lockFile: LockFile }> {
     return this.withIoLock(async () => {
       await this.init();
-      const manifest = this.normalizeManifest(await this.readManifestRaw());
-      const lockFile = this.normalizeLockFile(await this.readLockRaw());
-      return { manifest, lockFile };
+      const manifest = await this.readManifestRaw();
+      const lockFile = await this.readLockRaw();
+      return this.normalizeState(manifest, lockFile);
     });
   }
 
@@ -397,6 +398,51 @@ export class StateStore {
         ...source,
         originalDisplayName: source.originalDisplayName ?? source.displayName,
       })),
+    };
+  }
+
+  private normalizeState(manifest: Manifest, lockFile: LockFile): { manifest: Manifest; lockFile: LockFile } {
+    const normalizedManifest = this.normalizeManifest(manifest);
+    const normalizedLockFile = this.normalizeLockFile(lockFile);
+
+    const migratedNamesBySourceId = new Map<string, string>();
+    for (const source of normalizedManifest.sources) {
+      const derivedDisplayName = deriveDisplayName(source.locator).trim();
+      const originalMatchesDisplayName = source.originalDisplayName === source.displayName;
+
+      if (
+        originalMatchesDisplayName
+        && derivedDisplayName.length > 0
+        && derivedDisplayName !== source.displayName
+        && /[^\x00-\x7F]/.test(source.displayName)
+      ) {
+        migratedNamesBySourceId.set(source.id, derivedDisplayName);
+      }
+    }
+
+    if (migratedNamesBySourceId.size === 0) {
+      return { manifest: normalizedManifest, lockFile: normalizedLockFile };
+    }
+
+    return {
+      manifest: {
+        ...normalizedManifest,
+        sources: normalizedManifest.sources.map((source) => {
+          const migratedDisplayName = migratedNamesBySourceId.get(source.id);
+          return migratedDisplayName
+            ? { ...source, displayName: migratedDisplayName, originalDisplayName: migratedDisplayName }
+            : source;
+        }),
+      },
+      lockFile: {
+        ...normalizedLockFile,
+        sources: normalizedLockFile.sources.map((source) => {
+          const migratedDisplayName = migratedNamesBySourceId.get(source.id);
+          return migratedDisplayName
+            ? { ...source, displayName: migratedDisplayName, originalDisplayName: migratedDisplayName }
+            : source;
+        }),
+      },
     };
   }
 

@@ -403,7 +403,7 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertNil(SharedGroupCard.originalNameHelpText(card: card, locale: zhLocale))
     }
 
-    func testOriginalNameHelpTextReturnsLocalizedStringWhenNamesDiffer() {
+    func testOriginalNameHelpTextReturnsPlainOriginalNameWhenNamesDiffer() {
         let card = MainViewModel.GroupCardModel(
             id: "test",
             title: "Research Tools",
@@ -427,8 +427,14 @@ final class MenuBarIconTests: XCTestCase {
         )
         let zhLocale = Locale(identifier: "zh-Hans")
         let result = SharedGroupCard.originalNameHelpText(card: card, locale: zhLocale)
-        XCTAssertNotNil(result)
-        XCTAssertTrue(result?.contains("anthropic-skills") ?? false)
+        XCTAssertEqual(result, "anthropic-skills")
+    }
+
+    func testOriginalNameIndicatorShowsOnlyForCustomDisplayName() {
+        XCTAssertTrue(SharedGroupCard.showsOriginalNameIndicator(title: "Research Tools", originalDisplayName: "anthropic-skills"))
+        XCTAssertFalse(SharedGroupCard.showsOriginalNameIndicator(title: "anthropic-skills", originalDisplayName: "anthropic-skills"))
+        XCTAssertFalse(SharedGroupCard.showsOriginalNameIndicator(title: "Research Tools", originalDisplayName: nil))
+        XCTAssertFalse(SharedGroupCard.showsOriginalNameIndicator(title: "Research Tools", originalDisplayName: "   "))
     }
 
     func testOriginalNameHelpTextReturnsNilWhenNilOriginalDisplayName() {

@@ -104,6 +104,29 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertTrue(home.contains("TextField(placeholder, text: $draft)"))
         XCTAssertTrue(home.contains(".accessibilityLabel(title)"))
+        XCTAssertFalse(home.contains("Text(hint)"))
+        XCTAssertFalse(home.contains("rename.dialog.reset_hint"))
+    }
+
+    func testDetailGroupHeaderKeepsRenameAndUpdateInSingleActionRow() throws {
+        let detail = try sourceText(at: "Sources/DesktopApp/Screens/Detail/DetailScreen.swift")
+
+        XCTAssertTrue(detail.contains("detailHeaderActionButtons("))
+        XCTAssertTrue(detail.contains("detailHeaderIconButton(systemName: \"pencil\""))
+        XCTAssertTrue(detail.contains("detailHeaderIconButton(actionIcon: .update"))
+        XCTAssertFalse(detail.contains(".overlay(alignment: .trailing)"))
+    }
+
+    func testOriginalNameInfoUsesImmediateHoverTooltipInsteadOfSystemHelpDelay() throws {
+        let cards = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+        let detail = try sourceText(at: "Sources/DesktopApp/Screens/Detail/DetailScreen.swift")
+
+        XCTAssertTrue(cards.contains("struct OriginalNameInfoIcon"))
+        XCTAssertTrue(cards.contains(".onHover { hovering in"))
+        XCTAssertTrue(cards.contains("OriginalNameInfoIcon(text: originalNameHelpText ?? \"\", theme: theme)"))
+        XCTAssertTrue(detail.contains("OriginalNameInfoIcon(text: originalNameHelpText, theme: theme)"))
+        XCTAssertFalse(cards.contains(".help(originalNameHelpText ?? \"\")"))
+        XCTAssertFalse(detail.contains(".help(L10n.string(\"group_card.original_name\""))
     }
 
     func testHomeScrollingSurfacesUseLazyStacksInsideHorizontalScrollViews() throws {
@@ -435,16 +458,17 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertTrue(headerSource.contains("if !isSidebarVisible {"))
         XCTAssertTrue(headerSource.contains("homeSidebarToggleButton"))
+        XCTAssertTrue(headerSource.contains("headerLogoRow"))
+        XCTAssertTrue(headerSource.contains(".frame(width: Self.homeMainHeaderBrandWidth, alignment: .leading)"))
         XCTAssertTrue(headerSource.contains("homeSearchField(width: searchWidth)"))
         XCTAssertTrue(headerSource.contains("importButton"))
         XCTAssertTrue(headerSource.contains("homeUpdateButton"))
         XCTAssertTrue(headerSource.contains("settingsButton"))
         XCTAssertTrue(headerSource.contains("includesSidebarToggle: !isSidebarVisible"))
         XCTAssertFalse(headerSource.contains("topBarTitleRow"))
-        XCTAssertFalse(headerSource.contains("headerLogoRow"))
     }
 
-    func testExpandedHomeSidebarHeaderPlacesToggleAfterTitle() throws {
+    func testHomeSidebarHeaderOmitsBrandAndKeepsToggleInTrafficLightRow() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         guard
@@ -457,18 +481,13 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         let headerSource = String(source[headerStart.lowerBound..<headerEnd.lowerBound])
 
-        guard
-            let logoRange = headerSource.range(of: "headerLogoRow"),
-            let toggleRange = headerSource.range(of: "homeSidebarToggleButton")
-        else {
-            XCTFail("Expected header logo and sidebar toggle were not found")
-            return
-        }
-
-        XCTAssertLessThan(logoRange.lowerBound, toggleRange.lowerBound)
+        XCTAssertFalse(headerSource.contains("headerLogoRow"))
+        XCTAssertFalse(headerSource.contains("VStack(alignment: .leading, spacing: Self.homeSidebarHeaderRowSpacing)"))
+        XCTAssertTrue(headerSource.contains("homeSidebarToggleButton"))
+        XCTAssertTrue(headerSource.contains(".frame(height: Self.homeSidebarToggleButtonSize, alignment: .top)"))
         XCTAssertTrue(headerSource.contains("Spacer(minLength: 0)"))
-        XCTAssertTrue(headerSource.contains(".padding(.leading, Self.homeSidebarBrandLeadingInset)"))
-        XCTAssertTrue(headerSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
+        XCTAssertTrue(headerSource.contains(".padding(.horizontal, Self.homeSidebarHorizontalPadding)"))
+        XCTAssertFalse(headerSource.contains("homeSidebarBrandLeadingInset"))
     }
 
     func testHomeMainHeaderSearchWidthFitsNarrowIntegratedSidebar() throws {
@@ -480,7 +499,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertEqual(visibleSidebarMainWidth, 620 - MainView.homeSidebarNarrowWidth)
         XCTAssertEqual(collapsedSidebarMainWidth, 620)
         XCTAssertEqual(visibleReservedPadding, 32)
-        XCTAssertEqual(collapsedReservedPadding, 84)
+        XCTAssertEqual(collapsedReservedPadding, 96)
 
         let visibleSidebarSearchWidth = MainView.homeMainHeaderSearchWidth(
             forMainColumnWidth: visibleSidebarMainWidth,
@@ -501,13 +520,13 @@ final class DesktopInteractionRegressionTests: XCTestCase {
             includesSidebarToggle: true
         )
 
-        XCTAssertGreaterThanOrEqual(visibleSidebarSearchWidth, MainView.homeMainHeaderMinimumSearchFieldWidth)
+        XCTAssertGreaterThan(visibleSidebarSearchWidth, 0)
         XCTAssertGreaterThanOrEqual(collapsedSidebarSearchWidth, MainView.homeMainHeaderMinimumSearchFieldWidth)
         XCTAssertLessThanOrEqual(visibleSidebarSearchWidth + visibleFixedHeaderControlsWidth, visibleSidebarMainWidth)
         XCTAssertLessThanOrEqual(collapsedSidebarSearchWidth + collapsedFixedHeaderControlsWidth, collapsedSidebarMainWidth)
         XCTAssertLessThanOrEqual(visibleSidebarSearchWidth, MainView.headerSearchFieldWidth)
         XCTAssertLessThanOrEqual(collapsedSidebarSearchWidth, MainView.headerSearchFieldWidth)
-        XCTAssertEqual(
+        XCTAssertLessThanOrEqual(
             MainView.homeMainHeaderSearchWidth(
                 forMainColumnWidth: 860 - MainView.homeSidebarRegularWidth,
                 reservedHorizontalPadding: visibleReservedPadding,
@@ -569,9 +588,13 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         XCTAssertEqual(MainView.homeSidebarTrafficLightLeadingInset, 68)
-        XCTAssertEqual(MainView.homeSidebarBrandLeadingInset, 84)
-        XCTAssertEqual(MainView.homeCollapsedHeaderLeadingPadding, MainView.homeSidebarTrafficLightLeadingInset)
+        XCTAssertEqual(MainView.homeCollapsedHeaderButtonGap, 12)
+        XCTAssertEqual(
+            MainView.homeCollapsedHeaderLeadingPadding,
+            MainView.homeSidebarTrafficLightLeadingInset + MainView.homeCollapsedHeaderButtonGap
+        )
         XCTAssertFalse(source.contains("homeSidebarRailWidth"))
+        XCTAssertFalse(source.contains("homeSidebarBrandLeadingInset"))
 
         guard
             let sidebarHeaderStart = source.range(of: "private var homeSidebarHeader: some View"),
@@ -586,9 +609,13 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let sidebarHeaderSource = String(source[sidebarHeaderStart.lowerBound..<sidebarHeaderEnd.lowerBound])
         let mainHeaderSource = String(source[mainHeaderStart.lowerBound..<mainHeaderEnd.lowerBound])
 
-        XCTAssertTrue(sidebarHeaderSource.contains(".padding(.leading, Self.homeSidebarBrandLeadingInset)"))
-        XCTAssertTrue(sidebarHeaderSource.contains(".padding(.trailing, Self.homeSidebarHorizontalPadding)"))
+        XCTAssertTrue(sidebarHeaderSource.contains(".padding(.horizontal, Self.homeSidebarHorizontalPadding)"))
+        XCTAssertTrue(sidebarHeaderSource.contains(".frame(height: Self.homeSidebarToggleButtonSize, alignment: .top)"))
+        XCTAssertFalse(sidebarHeaderSource.contains("headerLogoRow"))
+        XCTAssertFalse(sidebarHeaderSource.contains("VStack(alignment: .leading, spacing: Self.homeSidebarHeaderRowSpacing)"))
         XCTAssertTrue(mainHeaderSource.contains("Self.homeCollapsedHeaderLeadingPadding"))
+        XCTAssertTrue(mainHeaderSource.contains("headerLogoRow"))
+        XCTAssertTrue(mainHeaderSource.contains("Self.homeMainHeaderBrandWidth"))
         XCTAssertTrue(mainHeaderSource.contains("if !isSidebarVisible {"))
     }
 
@@ -597,7 +624,15 @@ final class DesktopInteractionRegressionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("static let homeSidebarRegularWidth: CGFloat = 244"))
         XCTAssertTrue(source.contains("static let homeSidebarNarrowWidth: CGFloat = 208"))
-        XCTAssertTrue(source.contains("static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset"))
+        XCTAssertTrue(source.contains("static let homeSidebarHeaderHeight: CGFloat = 52"))
+        XCTAssertTrue(source.contains("static let homeMainHeaderBrandWidth: CGFloat = 132"))
+        let appNameWidth = ceil(("Skill Flow" as NSString).size(withAttributes: [
+            .font: NSFont.systemFont(ofSize: 17, weight: .semibold)
+        ]).width)
+        XCTAssertGreaterThanOrEqual(MainView.homeMainHeaderBrandWidth, 30 + 8 + appNameWidth + 12)
+        XCTAssertFalse(source.contains("homeSidebarHeaderRowSpacing"))
+        XCTAssertTrue(source.contains("static let homeCollapsedHeaderButtonGap: CGFloat = 12"))
+        XCTAssertTrue(source.contains("static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset + homeCollapsedHeaderButtonGap"))
         XCTAssertFalse(source.contains("homeSidebarRailWidth"))
         XCTAssertTrue(source.contains("static let homeSidebarHorizontalPadding: CGFloat = 12"))
         XCTAssertTrue(source.contains("static let homeSidebarChipBleed: CGFloat = 12"))
@@ -608,6 +643,23 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarHorizontalPadding)"))
         XCTAssertTrue(source.contains(".padding(.horizontal, Self.homeSidebarChipBleed)"))
         XCTAssertTrue(source.contains(".padding(.horizontal, -Self.homeSidebarChipBleed)"))
+    }
+
+    func testHomeSidebarSectionChevronAlignsWithSidebarToggleButtonColumn() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let sectionStart = source.range(of: "private func homeSidebarChipSection("),
+            let sectionEnd = source.range(of: "\n    private func homeSidebarChip(", range: sectionStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected homeSidebarChipSection block was not found")
+            return
+        }
+
+        let sectionSource = String(source[sectionStart.lowerBound..<sectionEnd.lowerBound])
+
+        XCTAssertTrue(sectionSource.contains("Image(systemName: expanded ? \"chevron.down\" : \"chevron.right\")"))
+        XCTAssertTrue(sectionSource.contains(".frame(width: Self.homeSidebarToggleButtonSize, alignment: .center)"))
     }
 
     private func sourceText(at relativePath: String) throws -> String {

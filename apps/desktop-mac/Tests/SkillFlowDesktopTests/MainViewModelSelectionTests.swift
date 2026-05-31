@@ -397,15 +397,15 @@ final class MainViewModelSelectionTests: XCTestCase {
             detailContainer: detailContainer
         )
 
-        XCTAssertTrue(container.isHomeSidebarSectionExpanded("status"))
-        XCTAssertTrue(container.isHomeSidebarSectionExpanded("sourceType"))
+        XCTAssertFalse(container.isHomeSidebarSectionExpanded("status"))
+        XCTAssertFalse(container.isHomeSidebarSectionExpanded("sourceType"))
         XCTAssertFalse(container.isHomeSidebarSectionExpanded("tags"))
 
         container.toggleHomeSidebarSection("tags")
         XCTAssertTrue(container.isHomeSidebarSectionExpanded("tags"))
 
         container.toggleHomeSidebarSection("status")
-        XCTAssertFalse(container.isHomeSidebarSectionExpanded("status"))
+        XCTAssertTrue(container.isHomeSidebarSectionExpanded("status"))
     }
 
     func testSaveFailureRollsBackOptimisticEdit() async throws {
@@ -571,7 +571,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
-        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "AlphaHub")
 
         await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
 
@@ -657,9 +657,10 @@ final class MainViewModelSelectionTests: XCTestCase {
             command: "inspect-enrichment",
             sourceId: "alpha",
             model: model,
-            expectedDetailTitle: "Old Enrichment Title"
+            expectedDetailTitle: "AlphaHub",
+            expectedDownloadCount: 5045
         )
-        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Enrichment Title")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "AlphaHub")
 
         await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
 
@@ -677,7 +678,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         let model = MainViewModel(bridgeClient: BridgeClient())
         await model.bootstrap()
         await model.selectSource("alpha")
-        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Enrichment Title")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "AlphaHub")
 
         await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
@@ -744,7 +745,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
-        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "AlphaHub")
 
         let inspectTask = Task { @MainActor in
             await model.selectSource("alpha")
@@ -772,7 +773,7 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertEqual(model.groupCards.first(where: { $0.id == "alpha" })?.title, "AlphaHub")
         XCTAssertFalse(model.groupCards.contains(where: { $0.title == "Writing Tools" }))
-        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Old Snapshot Title")
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "AlphaHub")
         XCTAssertEqual(model.selectedGroupId, "alpha")
         XCTAssertEqual(model.selectedSourceId, "alpha")
         XCTAssertEqual(model.toast?.style, .error)

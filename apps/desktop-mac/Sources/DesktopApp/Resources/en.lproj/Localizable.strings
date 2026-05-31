@@ -184,7 +184,6 @@
 "group_card.action.pin" = "Pin";
 "group_card.action.unpin" = "Unpin";
 "group_card.action.rename" = "Rename";
-"group_card.original_name" = "Original %@";
 "group_card.action.update" = "Update";
 "group_card.action.edit_tags" = "Add Tag";
 "group_card.action.cancel_edit_tags" = "Cancel";
@@ -198,7 +197,6 @@
 "rename.dialog.title" = "Rename Group";
 "rename.dialog.save" = "Save";
 "rename.dialog.cancel" = "Cancel";
-"rename.dialog.reset_hint" = "Leave empty to restore original name: %@";
 "group_tag.toast.duplicate" = "This tag is already selected.";
 "group_tag.toast.limit" = "Tag limit reached.";
 "group_tag.toast.empty" = "Enter a tag first.";

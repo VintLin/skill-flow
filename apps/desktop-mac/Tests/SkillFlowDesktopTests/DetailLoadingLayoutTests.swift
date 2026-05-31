@@ -4,11 +4,21 @@ import XCTest
 
 final class DetailLoadingLayoutTests: XCTestCase {
     @MainActor
-    func testPreferredDetailGroupTitleUsesSnapshotTitleAndRejectsDirtyDisplayName() {
+    func testPreferredDetailGroupTitleUsesDisplayNameBeforeSnapshotTitle() {
         XCTAssertEqual(
             MainViewModel.preferredDetailGroupTitle(
                 sourceId: "alpha",
-                displayName: "zsh-compatible: use find i...",
+                displayName: "dbskill",
+                snapshotTitle: "商业分析",
+                locator: "https://github.com/anthropics/skills"
+            ),
+            "dbskill"
+        )
+
+        XCTAssertEqual(
+            MainViewModel.preferredDetailGroupTitle(
+                sourceId: "alpha",
+                displayName: nil,
                 snapshotTitle: "Anthropic Skills",
                 locator: "https://github.com/anthropics/skills"
             ),
