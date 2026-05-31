@@ -4,6 +4,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { promisify } from "node:util";
 
+const BUNDLED_NPX_ENV = "SKILL_FLOW_BUNDLED_NPX";
 const execFileAsync = promisify(execFile);
 
 type ClawHubOrigin = {
@@ -60,7 +61,7 @@ export async function clawhub(
   options: { cwd?: string } = {},
 ): Promise<string> {
   const { stdout } = await execFileAsync(
-    "npx",
+    resolveNpxCommand(),
     ["-y", "clawhub@latest", ...args],
     {
       cwd: options.cwd,
@@ -70,6 +71,11 @@ export async function clawhub(
   );
 
   return stdout.trim();
+}
+
+function resolveNpxCommand(env: NodeJS.ProcessEnv = process.env): string {
+  const bundledNpx = env[BUNDLED_NPX_ENV]?.trim();
+  return bundledNpx && bundledNpx.length > 0 ? bundledNpx : "npx";
 }
 
 export async function installClawHubSkill(

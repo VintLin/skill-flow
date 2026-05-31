@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   installClawHubSkill,
   searchClawHubSkills,
 } from "../utils/clawhub.js";
 
 const execFileMock = vi.hoisted(() => vi.fn());
+const originalBundledNpx = process.env.SKILL_FLOW_BUNDLED_NPX;
 vi.mock("node:child_process", () => ({
   execFile: Object.assign(execFileMock, {
     [Symbol.for("nodejs.util.promisify.custom")](
@@ -33,6 +34,14 @@ vi.mock("node:child_process", () => ({
 describe("clawhub utils", () => {
   beforeEach(() => {
     execFileMock.mockReset();
+  });
+
+  afterEach(() => {
+    if (originalBundledNpx === undefined) {
+      delete process.env.SKILL_FLOW_BUNDLED_NPX;
+    } else {
+      process.env.SKILL_FLOW_BUNDLED_NPX = originalBundledNpx;
+    }
   });
 
   test("parses the actual clawhub search output shape", async () => {
@@ -69,6 +78,32 @@ describe("clawhub utils", () => {
       { slug: "summarize-file", title: "Summarize File", score: 3.551 },
       { slug: "summarize-1-0-0", title: "Summarize 1.0.0", score: 3.54 },
     ]);
+  });
+
+  test("uses bundled npx override when provided", async () => {
+    const bundledNpx =
+      "/Applications/Skill Flow.app/Contents/Resources/node/arm64/bin/npx";
+    process.env.SKILL_FLOW_BUNDLED_NPX = bundledNpx;
+    execFileMock.mockImplementation(
+      (
+        _command: string,
+        _args: string[],
+        _options: { cwd?: string; encoding?: string; env?: NodeJS.ProcessEnv },
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => {
+        callback(null, "summarize  Summarize  (4.030)", "");
+      },
+    );
+
+    await expect(searchClawHubSkills("summarize", 1)).resolves.toEqual([
+      { slug: "summarize", title: "Summarize", score: 4.03 },
+    ]);
+    expect(execFileMock).toHaveBeenCalledWith(
+      bundledNpx,
+      ["-y", "clawhub@latest", "search", "summarize", "--limit", "1"],
+      expect.objectContaining({ encoding: "utf8", env: process.env }),
+      expect.any(Function),
+    );
   });
 
   test("surfaces suspicious install failures as an explicit security block", async () => {
