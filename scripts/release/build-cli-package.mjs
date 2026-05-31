@@ -23,6 +23,19 @@ await build({
   external: ["commander", "ink", "react", "react/jsx-runtime"],
 });
 
+await build({
+  entryPoints: {
+    "desktop-bridge": path.join(cliRoot, "src", "desktop-bridge.ts"),
+  },
+  outdir: distRoot,
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  target: "node20",
+  sourcemap: false,
+  minify: true,
+});
+
 execFileSync(
   "npx",
   ["tsc", "-p", "tsconfig.json", "--emitDeclarationOnly"],

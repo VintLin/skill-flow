@@ -9,6 +9,8 @@ const cliRoot = path.resolve(import.meta.dirname, "../..");
 const internalPackagePattern = /@skill-flow\//;
 const internalImportPattern =
   /(?:from\s+["']@skill-flow\/|import\s*\(\s*["']@skill-flow\/|require\(\s*["']@skill-flow\/)/;
+const desktopOnlyExternalImportPattern =
+  /(?:from\s+["'](?:commander|ink|react|react\/jsx-runtime)["']|import\s*\(\s*["'](?:commander|ink|react|react\/jsx-runtime)["']|require\(\s*["'](?:commander|ink|react|react\/jsx-runtime)["'])/;
 
 describe.sequential("npm package", () => {
   const tempPaths: string[] = [];
@@ -57,9 +59,15 @@ describe.sequential("npm package", () => {
       path.join(packedPackageRoot, "dist", "bridge-command.js"),
       "utf8",
     );
+    const packedDesktopBridgeEntry = await fs.readFile(
+      path.join(packedPackageRoot, "dist", "desktop-bridge.js"),
+      "utf8",
+    );
 
     expect(packedCliEntry).not.toMatch(internalImportPattern);
     expect(packedBridgeEntry).not.toMatch(internalImportPattern);
+    expect(packedDesktopBridgeEntry).not.toMatch(internalImportPattern);
+    expect(packedDesktopBridgeEntry).not.toMatch(desktopOnlyExternalImportPattern);
   });
 
   test("staged publish manifest strips internal workspace dependencies", async () => {
@@ -80,5 +88,6 @@ describe.sequential("npm package", () => {
     expect(packageManifest.scripts).toBeUndefined();
     expect(packageManifest.devDependencies).toBeUndefined();
     await expect(fs.stat(path.join(stageRoot, "dist", "cli.js"))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(stageRoot, "dist", "desktop-bridge.js"))).resolves.toBeTruthy();
   });
 });
