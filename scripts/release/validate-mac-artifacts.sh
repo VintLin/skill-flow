@@ -33,6 +33,26 @@ NODE_RUNTIME_DIR="$APP_BUNDLE/Contents/Resources/node"
   exit 1
 }
 
+DESKTOP_BRIDGE="$HELPER_DIR/dist/desktop-bridge.js"
+LEGACY_CLI_HELPER="$HELPER_DIR/dist/cli.js"
+
+[[ -f "$DESKTOP_BRIDGE" ]] || {
+  echo "Missing desktop bridge helper: $DESKTOP_BRIDGE" >&2
+  exit 1
+}
+
+if [[ -f "$LEGACY_CLI_HELPER" ]]; then
+  echo "Legacy CLI helper should not be packaged: $LEGACY_CLI_HELPER" >&2
+  exit 1
+fi
+
+for forbidden_dependency in commander ink react; do
+  if [[ -e "$HELPER_DIR/node_modules/$forbidden_dependency" ]]; then
+    echo "CLI dependency should not be packaged in helper: $forbidden_dependency" >&2
+    exit 1
+  fi
+done
+
 [[ -d "$NODE_RUNTIME_DIR" ]] || {
   echo "Missing Node runtime directory: $NODE_RUNTIME_DIR" >&2
   exit 1
@@ -86,6 +106,22 @@ if [[ -n "$EXPECTED_ARCHS" ]]; then
     "$NODE_EXECUTABLE" --version >/dev/null
     PATH="$NODE_BIN_DIR:$PATH" "$NPM_EXECUTABLE" --version >/dev/null
     PATH="$NODE_BIN_DIR:$PATH" "$NPX_EXECUTABLE" --version >/dev/null
+
+    set +e
+    BRIDGE_INVALID_OUTPUT="$(printf '{' | "$NODE_EXECUTABLE" "$DESKTOP_BRIDGE" bridge --json 2>/dev/null)"
+    BRIDGE_INVALID_STATUS="$?"
+    set -e
+    if [[ "$BRIDGE_INVALID_STATUS" -ne 1 ]]; then
+      echo "Desktop bridge invalid JSON probe returned unexpected status: $BRIDGE_INVALID_STATUS" >&2
+      exit 1
+    fi
+    printf '%s' "$BRIDGE_INVALID_OUTPUT" | "$NODE_EXECUTABLE" -e '
+const fs = require("node:fs");
+const response = JSON.parse(fs.readFileSync(0, "utf8"));
+if (response.ok !== false || !Array.isArray(response.errors)) {
+  process.exit(1);
+}
+'
   done
 
   if [[ "$HAS_ARM64_ARCH" == "true" ]]; then

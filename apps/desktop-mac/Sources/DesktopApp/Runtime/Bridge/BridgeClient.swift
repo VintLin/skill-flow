@@ -308,6 +308,16 @@ final class BridgeClient: @unchecked Sendable {
         #endif
 
         if let bundledHelperURL = existingURL(at: Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Resources/helper/dist/desktop-bridge.js")) {
+            return bundledHelperURL
+        }
+
+        if let resourcePath = Bundle.main.path(forResource: "desktop-bridge", ofType: "js", inDirectory: "helper/dist"),
+           let bundledHelperURL = existingURL(at: URL(fileURLWithPath: resourcePath)) {
+            return bundledHelperURL
+        }
+
+        if let bundledHelperURL = existingURL(at: Bundle.main.bundleURL
             .appendingPathComponent("Contents/Resources/helper/dist/cli.js")) {
             return bundledHelperURL
         }

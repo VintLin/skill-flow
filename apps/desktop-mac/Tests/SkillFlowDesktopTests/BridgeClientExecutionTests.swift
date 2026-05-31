@@ -221,6 +221,19 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertTrue(source.contains("bundledNodeBinDirectory: String?"))
     }
 
+    func testHelperResolutionPrefersDesktopBridgeBeforeLegacyCLI() throws {
+        let source = try sourceText()
+        let desktopBridgePath = "Contents/Resources/helper/dist/desktop-bridge.js"
+        let desktopBridgeResource = "path(forResource: \"desktop-bridge\", ofType: \"js\", inDirectory: \"helper/dist\")"
+        let legacyCLIPath = "Contents/Resources/helper/dist/cli.js"
+
+        let desktopBridgePathRange = try XCTUnwrap(source.range(of: desktopBridgePath))
+        let legacyCLIPathRange = try XCTUnwrap(source.range(of: legacyCLIPath))
+
+        XCTAssertTrue(source.contains(desktopBridgeResource))
+        XCTAssertLessThan(desktopBridgePathRange.lowerBound, legacyCLIPathRange.lowerBound)
+    }
+
     func testApplyEncodesProjectScopePayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture

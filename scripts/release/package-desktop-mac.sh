@@ -170,38 +170,21 @@ copy_resource_bundles() {
 
 stage_helper() {
   local helper_stage="$1"
-  local cli_version commander_version ink_version react_version
+  local cli_version
 
   cli_version="$(node -p "require('$ROOT_DIR/apps/cli/package.json').version")"
-  commander_version="$(node -p "require('$ROOT_DIR/apps/cli/package.json').dependencies.commander")"
-  ink_version="$(node -p "require('$ROOT_DIR/apps/cli/package.json').dependencies.ink")"
-  react_version="$(node -p "require('$ROOT_DIR/apps/cli/package.json').dependencies.react")"
 
-  mkdir -p "$helper_stage/dist" "$helper_stage/node_modules/@skill-flow"
-  cp "$CLI_DIST_DIR/cli.js" "$helper_stage/dist/cli.js"
-  cp "$CLI_DIST_DIR/bridge-command.js" "$helper_stage/dist/bridge-command.js"
+  mkdir -p "$helper_stage/dist"
+  cp "$CLI_DIST_DIR/desktop-bridge.js" "$helper_stage/dist/desktop-bridge.js"
 
   cat > "$helper_stage/package.json" <<EOF
 {
   "name": "skill-flow-helper",
   "version": "$cli_version",
   "private": true,
-  "type": "module",
-  "dependencies": {
-    "commander": "$commander_version",
-    "ink": "$ink_version",
-    "react": "$react_version"
-  }
+  "type": "module"
 }
 EOF
-
-  npm install --omit=dev --prefix "$helper_stage" >/dev/null
-
-  for pkg in core-engine domain integration query shared-types storage tui; do
-    mkdir -p "$helper_stage/node_modules/@skill-flow/$pkg"
-    cp "$ROOT_DIR/packages/$pkg/package.json" "$helper_stage/node_modules/@skill-flow/$pkg/package.json"
-    cp -R "$ROOT_DIR/packages/$pkg/dist" "$helper_stage/node_modules/@skill-flow/$pkg/dist"
-  done
 }
 
 node_dist_platform_for_arch() {
