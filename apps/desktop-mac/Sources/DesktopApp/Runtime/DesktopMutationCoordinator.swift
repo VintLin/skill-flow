@@ -10,6 +10,13 @@ struct PinnedMutationResult {
     let pinnedSourceIds: [String]
 }
 
+struct RenameSourceMutationResult: Equatable {
+    let sourceId: String
+    let displayName: String
+    let originalDisplayName: String
+    let isResetToOriginal: Bool
+}
+
 @MainActor
 final class DesktopMutationCoordinator {
     private let commandFacade: any DesktopCommanding
@@ -35,12 +42,26 @@ final class DesktopMutationCoordinator {
         return .submitted(sourceId: normalizedSourceId, response: response)
     }
 
-    func renameSource(sourceId: String, displayName: String) async throws -> (sourceId: String, displayName: String) {
+    func renameSource(sourceId: String, displayName: String) async throws -> RenameSourceMutationResult {
         let response = try await commandFacade.renameSource(sourceId: sourceId, displayName: displayName)
         guard response.ok else {
             throw BridgeClientError.commandFailed(commandFailedMessage(from: response), response: response)
         }
-        return (sourceId: sourceId, displayName: displayName)
+        let payload = Self.successPayload(response)
+        let resolvedDisplayName = payload["displayName"] as? String
+            ?? displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedOriginal = payload["originalDisplayName"] as? String
+            ?? resolvedDisplayName
+        return RenameSourceMutationResult(
+            sourceId: payload["sourceId"] as? String ?? sourceId,
+            displayName: resolvedDisplayName,
+            originalDisplayName: resolvedOriginal,
+            isResetToOriginal: payload["isResetToOriginal"] as? Bool ?? false
+        )
+    }
+
+    private static func successPayload(_ response: BridgeResponse) -> [String: Any] {
+        response.data?.value as? [String: Any] ?? [:]
     }
 
     private func commandFailedMessage(from response: BridgeResponse) -> String {

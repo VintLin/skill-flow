@@ -30,18 +30,27 @@ final class DesktopMutationCoordinatorTests: XCTestCase {
 
     func testRenameSourceRoutesThroughCommandFacade() async throws {
         let command = RecordingDesktopCommandFacade()
+        command.renameResponsePayload = [
+            "sourceId": "alpha",
+            "displayName": "AlphaHub",
+            "originalDisplayName": "AlphaHub",
+            "isResetToOriginal": true
+        ]
         let coordinator = DesktopMutationCoordinator(commandFacade: command)
 
         let result = try await coordinator.renameSource(sourceId: "alpha", displayName: "Writing Tools")
 
         XCTAssertEqual(command.recordedMutations, ["rename-source:alpha:Writing Tools"])
         XCTAssertEqual(result.sourceId, "alpha")
-        XCTAssertEqual(result.displayName, "Writing Tools")
+        XCTAssertEqual(result.displayName, "AlphaHub")
+        XCTAssertEqual(result.originalDisplayName, "AlphaHub")
+        XCTAssertTrue(result.isResetToOriginal)
     }
 }
 
 private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked Sendable {
     private(set) var recordedMutations: [String] = []
+    var renameResponsePayload: [String: Any]?
 
     func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
         recordedMutations.append("save-settings:\(agentDisplayOrder)")
@@ -60,7 +69,7 @@ private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked
         recordedMutations.append("rename-source:\(sourceId):\(displayName)")
         return .success(
             command: .renameSource,
-            payload: ["sourceId": sourceId, "displayName": displayName]
+            payload: renameResponsePayload ?? ["sourceId": sourceId, "displayName": displayName]
         )
     }
 

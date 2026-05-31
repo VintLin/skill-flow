@@ -189,6 +189,7 @@ final class MainViewModel {
     struct GroupCardModel: Identifiable {
         let id: String
         let title: String
+        let originalDisplayName: String?
         let byline: String?
         let groupPath: String?
         let sourceKind: String
@@ -205,6 +206,56 @@ final class MainViewModel {
         let skills: [GroupCardSkill]
         let targets: [GroupCardTarget]
         let saveState: SaveState
+
+        init(
+            id: String,
+            title: String,
+            originalDisplayName: String? = nil,
+            byline: String?,
+            groupPath: String?,
+            sourceKind: String,
+            sourceLocator: String,
+            isPinned: Bool,
+            health: String,
+            warningCount: Int,
+            errorCount: Int,
+            skillSelection: SelectionState,
+            targetSelection: SelectionState,
+            stats: GroupCardStats,
+            skillsLoading: Bool,
+            targetsLoading: Bool,
+            skills: [GroupCardSkill],
+            targets: [GroupCardTarget],
+            saveState: SaveState
+        ) {
+            self.id = id
+            self.title = title
+            self.originalDisplayName = originalDisplayName
+            self.byline = byline
+            self.groupPath = groupPath
+            self.sourceKind = sourceKind
+            self.sourceLocator = sourceLocator
+            self.isPinned = isPinned
+            self.health = health
+            self.warningCount = warningCount
+            self.errorCount = errorCount
+            self.skillSelection = skillSelection
+            self.targetSelection = targetSelection
+            self.stats = stats
+            self.skillsLoading = skillsLoading
+            self.targetsLoading = targetsLoading
+            self.skills = skills
+            self.targets = targets
+            self.saveState = saveState
+        }
+
+        var hasCustomDisplayName: Bool {
+            Self.normalizedDisplayName(title) != Self.normalizedDisplayName(originalDisplayName ?? title)
+        }
+
+        private static func normalizedDisplayName(_ value: String) -> String {
+            value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     struct DetailSkill: Identifiable, Equatable, Sendable {
@@ -381,6 +432,7 @@ final class MainViewModel {
         let sourceId: String
         let revision: String
         let title: String
+        let originalDisplayName: String
         let subtitle: String
         let author: String
         let originLabel: String
@@ -408,6 +460,77 @@ final class MainViewModel {
         let groupDocuments: [DocumentTab]
         let targets: [DetailTarget]
         let skills: [DetailSkill]
+
+        init(
+            sourceId: String,
+            revision: String,
+            title: String,
+            originalDisplayName: String? = nil,
+            subtitle: String,
+            author: String,
+            originLabel: String,
+            starCount: Int?,
+            groupStats: GroupCardStats,
+            sourceDetailLines: [String],
+            sourceRepositoryURL: String?,
+            locator: String,
+            groupPath: String?,
+            updatedAt: String,
+            updatedRelative: String,
+            health: String,
+            warningCount: Int,
+            errorCount: Int,
+            enabledSkillCount: Int,
+            totalSkillCount: Int,
+            enabledTargetCount: Int,
+            saveState: SaveState,
+            skillSelection: SelectionState,
+            targetSelection: SelectionState,
+            enabledTargetLabels: [String],
+            sourceFacts: [String],
+            deploymentFacts: [String],
+            fileTree: [FileTreeItem],
+            groupDocuments: [DocumentTab],
+            targets: [DetailTarget],
+            skills: [DetailSkill]
+        ) {
+            self.sourceId = sourceId
+            self.revision = revision
+            self.title = title
+            self.originalDisplayName = originalDisplayName ?? title
+            self.subtitle = subtitle
+            self.author = author
+            self.originLabel = originLabel
+            self.starCount = starCount
+            self.groupStats = groupStats
+            self.sourceDetailLines = sourceDetailLines
+            self.sourceRepositoryURL = sourceRepositoryURL
+            self.locator = locator
+            self.groupPath = groupPath
+            self.updatedAt = updatedAt
+            self.updatedRelative = updatedRelative
+            self.health = health
+            self.warningCount = warningCount
+            self.errorCount = errorCount
+            self.enabledSkillCount = enabledSkillCount
+            self.totalSkillCount = totalSkillCount
+            self.enabledTargetCount = enabledTargetCount
+            self.saveState = saveState
+            self.skillSelection = skillSelection
+            self.targetSelection = targetSelection
+            self.enabledTargetLabels = enabledTargetLabels
+            self.sourceFacts = sourceFacts
+            self.deploymentFacts = deploymentFacts
+            self.fileTree = fileTree
+            self.groupDocuments = groupDocuments
+            self.targets = targets
+            self.skills = skills
+        }
+
+        var hasCustomDisplayName: Bool {
+            title.trimmingCharacters(in: .whitespacesAndNewlines)
+                != originalDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     enum ImportLoadPhase: Equatable {
@@ -494,6 +617,7 @@ final class MainViewModel {
         let sourceId: String
         let sourceKind: String
         let sourceDisplayName: String
+        let sourceOriginalDisplayName: String
         let sourceLocator: String
         let sourceCanonicalRepo: String?
         let leafs: [LeafSummary]
@@ -505,11 +629,12 @@ final class MainViewModel {
         let errorCount: Int
         let updatedAt: String
 
-        func renamed(displayName: String) -> WorkflowSummary {
+        func renamed(displayName: String, originalDisplayName: String) -> WorkflowSummary {
             WorkflowSummary(
                 sourceId: sourceId,
                 sourceKind: sourceKind,
                 sourceDisplayName: displayName,
+                sourceOriginalDisplayName: originalDisplayName,
                 sourceLocator: sourceLocator,
                 sourceCanonicalRepo: sourceCanonicalRepo,
                 leafs: leafs,
@@ -624,6 +749,7 @@ final class MainViewModel {
     private var inspectedPayloadBySourceId: [ScopedSourceKey: [String: Any]] = [:]
     private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
     private var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
+    private var renamedSourceOriginalDisplayNameOverridesBySourceId: [String: String] = [:]
     private var preparedDetailContentBySourceId: [String: PreparedDetailContent] = [:]
     @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
     private var listRequestToken: UInt64 = 0
@@ -1012,7 +1138,7 @@ final class MainViewModel {
     }
 
     func groupCards(matching rawQuery: String) -> [GroupCardModel] {
-        sourceRows(matching: rawQuery).compactMap { row in
+        sourceRows(matching: rawQuery).compactMap { row -> GroupCardModel? in
             guard let summary = summary(for: row.id), let draft = draft(for: row.id) else {
                 return nil
             }
@@ -1030,6 +1156,7 @@ final class MainViewModel {
             return GroupCardModel(
                 id: row.id,
                 title: row.displayName,
+                originalDisplayName: summary.sourceOriginalDisplayName,
                 byline: metadata.byline,
                 groupPath: groupPath,
                 sourceKind: row.kind,
@@ -1116,8 +1243,13 @@ final class MainViewModel {
                 sourceId: normalizedSourceId,
                 displayName: normalizedDisplayName
             )
-            applyRenamedSource(sourceId: result.sourceId, displayName: result.displayName)
-            showToast(style: .success, text: localizedText("toast.rename.success", result.displayName))
+            applyRenamedSource(
+                sourceId: result.sourceId,
+                displayName: result.displayName,
+                originalDisplayName: result.originalDisplayName
+            )
+            let toastKey = result.isResetToOriginal ? "toast.rename.reset_success" : "toast.rename.success"
+            showToast(style: .success, text: localizedText(toastKey, result.displayName))
         } catch {
             showToast(style: .error, text: localizedText("toast.rename.failed", firstErrorLine(from: error)))
         }
@@ -2458,10 +2590,15 @@ final class MainViewModel {
 
             let kind = source["kind"] as? String ?? "unknown"
             let rawSourceDisplayName = source["displayName"] as? String
+            let rawSourceOriginalDisplayName = source["originalDisplayName"] as? String
             clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: rawSourceDisplayName)
+            clearRenameOriginalDisplayNameOverrideIfConfirmed(sourceId: sourceId, originalDisplayName: rawSourceOriginalDisplayName)
             let sourceDisplayName = renamedSourceDisplayNameOverridesBySourceId[sourceId]
                 ?? rawSourceDisplayName
                 ?? sourceId
+            let sourceOriginalDisplayName = renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId]
+                ?? rawSourceOriginalDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+                ?? sourceDisplayName
             let sourceLocator = source["locator"] as? String ?? ""
             let sourceCanonicalRepo = (source["canonicalRepo"] as? String)?.nonEmpty
                 ?? (source["originLocator"] as? String)?.nonEmpty
@@ -2505,6 +2642,7 @@ final class MainViewModel {
                 sourceId: sourceId,
                 sourceKind: kind,
                 sourceDisplayName: sourceDisplayName,
+                sourceOriginalDisplayName: sourceOriginalDisplayName,
                 sourceLocator: sourceLocator,
                 sourceCanonicalRepo: sourceCanonicalRepo,
                 leafs: leafs,
@@ -2865,6 +3003,9 @@ final class MainViewModel {
 
         let fileTree = preparedDetailContent?.fileTree ?? []
         let groupDocumentDescriptors = preparedDetailContent?.groupDocuments ?? []
+        let originalDisplayName = (sourcePayload["originalDisplayName"] as? String)?.nonEmpty
+            ?? (summarySourcePayload["originalDisplayName"] as? String)?.nonEmpty
+            ?? summary.sourceOriginalDisplayName
         let title = Self.preferredDetailGroupTitle(
             sourceId: summary.sourceId,
             displayName: (sourcePayload["displayName"] as? String)?.nonEmpty
@@ -2880,6 +3021,7 @@ final class MainViewModel {
         let revision = Self.detailRevision(
             sourceId: summary.sourceId,
             title: title,
+            originalDisplayName: originalDisplayName,
             subtitle: subtitle,
             author: author,
             originLabel: originLabel,
@@ -2913,6 +3055,7 @@ final class MainViewModel {
             sourceId: summary.sourceId,
             revision: revision,
             title: title,
+            originalDisplayName: originalDisplayName,
             subtitle: subtitle,
             author: author,
             originLabel: originLabel,
@@ -3063,9 +3206,16 @@ final class MainViewModel {
                    self.detailEnrichmentTokensBySourceId[sourceId] == token
                 {
                     let normalizedPayload: [String: Any]
-                    if let displayName = self.renamedSourceDisplayNameOverridesBySourceId[sourceId]
-                        ?? self.summary(for: sourceId)?.sourceDisplayName {
-                        normalizedPayload = self.enrichmentPayloadWithDisplayName(payload, displayName: displayName)
+                    if let summary = self.summary(for: sourceId) {
+                        let displayName = self.renamedSourceDisplayNameOverridesBySourceId[sourceId]
+                            ?? summary.sourceDisplayName
+                        let originalDisplayName = self.renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId]
+                            ?? summary.sourceOriginalDisplayName
+                        normalizedPayload = self.enrichmentPayloadWithDisplayName(
+                            payload,
+                            displayName: displayName,
+                            originalDisplayName: originalDisplayName
+                        )
                     } else {
                         normalizedPayload = payload
                     }
@@ -3582,30 +3732,41 @@ final class MainViewModel {
         applySummaries(nextSummaries)
     }
 
-    private func applyRenamedSource(sourceId: String, displayName: String) {
+    private func applyRenamedSource(sourceId: String, displayName: String, originalDisplayName: String) {
         renamedSourceDisplayNameOverridesBySourceId[sourceId] = displayName
+        renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId] = originalDisplayName
         guard let existing = summary(for: sourceId) else {
-            updateCachedDetailDisplayName(sourceId: sourceId, displayName: displayName)
+            updateCachedDetailDisplayName(
+                sourceId: sourceId,
+                displayName: displayName,
+                originalDisplayName: originalDisplayName
+            )
             return
         }
 
-        replaceSummary(existing.renamed(displayName: displayName))
-        updateCachedDetailDisplayName(sourceId: sourceId, displayName: displayName)
+        replaceSummary(existing.renamed(displayName: displayName, originalDisplayName: originalDisplayName))
+        updateCachedDetailDisplayName(
+            sourceId: sourceId,
+            displayName: displayName,
+            originalDisplayName: originalDisplayName
+        )
     }
 
-    private func updateCachedDetailDisplayName(sourceId: String, displayName: String) {
+    private func updateCachedDetailDisplayName(sourceId: String, displayName: String, originalDisplayName: String) {
         for key in inspectedPayloadBySourceId.keys where key.sourceId == sourceId {
             inspectedPayloadBySourceId[key] = payloadWithDisplayName(
                 inspectedPayloadBySourceId[key] ?? [:],
                 sourceId: sourceId,
-                displayName: displayName
+                displayName: displayName,
+                originalDisplayName: originalDisplayName
             )
         }
 
         if let payload = detailEnrichmentPayloadBySourceId[sourceId] {
             detailEnrichmentPayloadBySourceId[sourceId] = enrichmentPayloadWithDisplayName(
                 payload,
-                displayName: displayName
+                displayName: displayName,
+                originalDisplayName: originalDisplayName
             )
         }
     }
@@ -3615,7 +3776,13 @@ final class MainViewModel {
         guard let displayName = renamedSourceDisplayNameOverridesBySourceId[sourceId] else {
             return payload
         }
-        return payloadWithDisplayName(payload, sourceId: sourceId, displayName: displayName)
+        let originalDisplayName = renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId] ?? displayName
+        return payloadWithDisplayName(
+            payload,
+            sourceId: sourceId,
+            displayName: displayName,
+            originalDisplayName: originalDisplayName
+        )
     }
 
     private func clearRenameDisplayNameOverrideIfConfirmed(sourceId: String, payload: [String: Any]) {
@@ -3624,6 +3791,11 @@ final class MainViewModel {
 
         clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: sourceDisplayName)
         clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: summarySourceDisplayName)
+
+        let sourceOriginalDisplayName = (payload["source"] as? [String: Any])?["originalDisplayName"] as? String
+        let summarySourceOriginalDisplayName = ((payload["summary"] as? [String: Any])?["source"] as? [String: Any])?["originalDisplayName"] as? String
+        clearRenameOriginalDisplayNameOverrideIfConfirmed(sourceId: sourceId, originalDisplayName: sourceOriginalDisplayName)
+        clearRenameOriginalDisplayNameOverrideIfConfirmed(sourceId: sourceId, originalDisplayName: summarySourceOriginalDisplayName)
     }
 
     private func clearRenameDisplayNameOverrideIfConfirmed(sourceId: String, displayName: String?) {
@@ -3636,18 +3808,35 @@ final class MainViewModel {
         renamedSourceDisplayNameOverridesBySourceId.removeValue(forKey: sourceId)
     }
 
-    private func payloadWithDisplayName(_ payload: [String: Any], sourceId: String, displayName: String) -> [String: Any] {
+    private func clearRenameOriginalDisplayNameOverrideIfConfirmed(sourceId: String, originalDisplayName: String?) {
+        guard let override = renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId],
+              let originalDisplayName = originalDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !originalDisplayName.isEmpty,
+              originalDisplayName == override else {
+            return
+        }
+        renamedSourceOriginalDisplayNameOverridesBySourceId.removeValue(forKey: sourceId)
+    }
+
+    private func payloadWithDisplayName(
+        _ payload: [String: Any],
+        sourceId: String,
+        displayName: String,
+        originalDisplayName: String
+    ) -> [String: Any] {
         var nextPayload = payload
 
         var sourcePayload = nextPayload["source"] as? [String: Any] ?? [:]
         sourcePayload["id"] = sourcePayload["id"] ?? sourceId
         sourcePayload["displayName"] = displayName
+        sourcePayload["originalDisplayName"] = originalDisplayName
         nextPayload["source"] = sourcePayload
 
         if var summaryPayload = nextPayload["summary"] as? [String: Any] {
             var summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
             summarySourcePayload["id"] = summarySourcePayload["id"] ?? sourceId
             summarySourcePayload["displayName"] = displayName
+            summarySourcePayload["originalDisplayName"] = originalDisplayName
             summaryPayload["source"] = summarySourcePayload
             nextPayload["summary"] = summaryPayload
         }
@@ -3660,12 +3849,19 @@ final class MainViewModel {
         return nextPayload
     }
 
-    private func enrichmentPayloadWithDisplayName(_ payload: [String: Any], displayName: String) -> [String: Any] {
+    private func enrichmentPayloadWithDisplayName(
+        _ payload: [String: Any],
+        displayName: String,
+        originalDisplayName: String
+    ) -> [String: Any] {
         var nextPayload = payload
 
         if var sourcePayload = nextPayload["source"] as? [String: Any] {
             if sourcePayload.keys.contains("displayName") {
                 sourcePayload["displayName"] = displayName
+            }
+            if sourcePayload.keys.contains("originalDisplayName") {
+                sourcePayload["originalDisplayName"] = originalDisplayName
             }
             nextPayload["source"] = sourcePayload
         }
@@ -3674,6 +3870,9 @@ final class MainViewModel {
            var summarySourcePayload = summaryPayload["source"] as? [String: Any] {
             if summarySourcePayload.keys.contains("displayName") {
                 summarySourcePayload["displayName"] = displayName
+            }
+            if summarySourcePayload.keys.contains("originalDisplayName") {
+                summarySourcePayload["originalDisplayName"] = originalDisplayName
             }
             summaryPayload["source"] = summarySourcePayload
             nextPayload["summary"] = summaryPayload
@@ -4798,6 +4997,7 @@ final class MainViewModel {
     nonisolated static func detailRevision(
         sourceId: String,
         title: String,
+        originalDisplayName: String = "",
         subtitle: String,
         author: String,
         originLabel: String,
@@ -4880,6 +5080,7 @@ final class MainViewModel {
         var components: [String] = []
         components.append(sourceId)
         components.append(title)
+        components.append(originalDisplayName)
         components.append(subtitle)
         components.append(author)
         components.append(originLabel)
@@ -5102,6 +5303,9 @@ final class MainViewModel {
         workingDrafts = pruneSourceMap(workingDrafts, allowedSourceIds: allowedSourceIds)
         saveStateBySourceId = pruneSourceMap(saveStateBySourceId, allowedSourceIds: allowedSourceIds)
         renamedSourceDisplayNameOverridesBySourceId = renamedSourceDisplayNameOverridesBySourceId.filter {
+            allowedSourceIds.contains($0.key)
+        }
+        renamedSourceOriginalDisplayNameOverridesBySourceId = renamedSourceOriginalDisplayNameOverridesBySourceId.filter {
             allowedSourceIds.contains($0.key)
         }
     }

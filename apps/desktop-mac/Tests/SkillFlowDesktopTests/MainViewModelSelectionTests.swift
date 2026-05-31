@@ -582,6 +582,45 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(request?.payload?["displayName"]?.value as? String, "Writing Tools")
     }
 
+    func testGroupCardsExposeOriginalDisplayNameAndCustomDisplayName() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.displayName = "Writing Tools"
+        state.sources["alpha"]?.originalDisplayName = "AlphaHub"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        let card = try XCTUnwrap(model.groupCards.first(where: { $0.id == "alpha" }))
+
+        XCTAssertEqual(card.title, "Writing Tools")
+        XCTAssertEqual(card.originalDisplayName, "AlphaHub")
+        XCTAssertTrue(card.hasCustomDisplayName)
+        XCTAssertEqual(model.detailViewData(for: "alpha")?.originalDisplayName, "AlphaHub")
+        XCTAssertTrue(model.detailViewData(for: "alpha")?.hasCustomDisplayName == true)
+    }
+
+    func testRenameSourceResetUpdatesCardsAndCachedDetailOriginalDisplayName() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.displayName = "Writing Tools"
+        state.sources["alpha"]?.originalDisplayName = "AlphaHub"
+        state.sources["alpha"]?.sourceSnapshotTitle = "Writing Tools"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
+
+        await model.renameSource(sourceId: "alpha", displayName: "AlphaHub")
+
+        let card = try XCTUnwrap(model.groupCards.first(where: { $0.id == "alpha" }))
+        XCTAssertEqual(card.title, "AlphaHub")
+        XCTAssertEqual(card.originalDisplayName, "AlphaHub")
+        XCTAssertFalse(card.hasCustomDisplayName)
+        XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "AlphaHub")
+        XCTAssertEqual(model.detailViewData(for: "alpha")?.originalDisplayName, "AlphaHub")
+        XCTAssertFalse(model.detailViewData(for: "alpha")?.hasCustomDisplayName == true)
+    }
+
     func testRenameSourceUpdatesDetailEnrichmentSnapshotTitleAfterBridgeSuccess() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -1294,6 +1333,7 @@ private struct TestFixture {
     struct SourceState: Codable, Equatable {
         var kind: String
         var displayName: String
+        var originalDisplayName: String? = nil
         var locator: String
         var starCount: Int?
         var metadataStatus: String?
@@ -1780,6 +1820,7 @@ private struct TestFixture {
             id: sourceId,
             kind: source.kind,
             displayName: source.displayName,
+            originalDisplayName: source.originalDisplayName || source.displayName,
             locator: source.locator
           },
           lock: {
@@ -1875,6 +1916,7 @@ private struct TestFixture {
           id: sourceId,
           kind: source.kind,
           displayName: source.displayName,
+          originalDisplayName: source.originalDisplayName || source.displayName,
           locator: source.locator,
           addedAt: '2026-03-25T12:00:00Z',
           selectionMode: 'partial'
@@ -2080,7 +2122,12 @@ private struct TestFixture {
         }
         state.sources[sourceId].displayName = displayName;
         writeState(state);
-        process.stdout.write(JSON.stringify(responseFor(request, true, { sourceId, displayName }, [], [])));
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          sourceId,
+          displayName,
+          originalDisplayName: state.sources[sourceId].originalDisplayName || displayName,
+          isResetToOriginal: displayName.trim() === String(state.sources[sourceId].originalDisplayName || displayName).trim()
+        }, [], [])));
         return;
       }
 
