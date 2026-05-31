@@ -107,6 +107,12 @@ if [[ -n "$EXPECTED_ARCHS" ]]; then
     PATH="$NODE_BIN_DIR:$PATH" "$NPM_EXECUTABLE" --version >/dev/null
     PATH="$NODE_BIN_DIR:$PATH" "$NPX_EXECUTABLE" --version >/dev/null
 
+    NPM_ROOT="$NODE_RUNTIME_DIR/$arch/lib/node_modules/npm"
+    if [[ -d "$NPM_ROOT/docs" || -d "$NPM_ROOT/man" ]]; then
+      echo "Bundled npm should not include docs/man directories: $NPM_ROOT" >&2
+      exit 1
+    fi
+
     set +e
     BRIDGE_INVALID_OUTPUT="$(printf '{' | "$NODE_EXECUTABLE" "$DESKTOP_BRIDGE" bridge --json 2>/dev/null)"
     BRIDGE_INVALID_STATUS="$?"

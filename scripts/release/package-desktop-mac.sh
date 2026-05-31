@@ -217,6 +217,23 @@ node_runtime_sha_for_arch() {
   esac
 }
 
+prune_bundled_npm() {
+  local runtime_dir="$1"
+  local npm_root="$runtime_dir/lib/node_modules/npm"
+
+  if [[ ! -d "$npm_root" ]]; then
+    echo "Unable to prune npm; missing directory: $npm_root" >&2
+    exit 1
+  fi
+
+  rm -rf "$npm_root/docs" "$npm_root/man"
+  find "$npm_root" \
+    \( -name '*.md' -o -name '*.markdown' -o -name '*.map' \) \
+    -type f \
+    ! -iname 'license*' \
+    -delete
+}
+
 stage_node_runtime() {
   local target_arch="$1"
   local node_platform archive_name archive_path expected_sha actual_sha extract_dir node_dist_dir dest_dir installed_runtime_dir installed_node_version
@@ -236,6 +253,7 @@ stage_node_runtime() {
       rm -rf "$dest_dir"
       mkdir -p "$(dirname "$dest_dir")"
       cp -R "$installed_runtime_dir" "$dest_dir"
+      prune_bundled_npm "$dest_dir"
       "$dest_dir/bin/node" --version >/dev/null
       PATH="$dest_dir/bin:$PATH" "$dest_dir/bin/npm" --version >/dev/null
       PATH="$dest_dir/bin:$PATH" "$dest_dir/bin/npx" --version >/dev/null
@@ -274,6 +292,7 @@ stage_node_runtime() {
     cp "$node_dist_dir/LICENSE" "$dest_dir/LICENSE"
   fi
 
+  prune_bundled_npm "$dest_dir"
   "$dest_dir/bin/node" --version >/dev/null
   PATH="$dest_dir/bin:$PATH" "$dest_dir/bin/npm" --version >/dev/null
   PATH="$dest_dir/bin:$PATH" "$dest_dir/bin/npx" --version >/dev/null
