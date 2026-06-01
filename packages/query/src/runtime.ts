@@ -747,19 +747,32 @@ export class SkillFlowApp {
             ],
             exact: true,
           });
-        } catch {
+        } catch (error) {
           const exactCandidate = this.buildImmediateImportGroupCandidate(importCache, exactRepo, {
             installed: installedRepos.has(exactRepo),
           });
 
           if (
             exactCandidate.enrichState.status === "ready" ||
-            exactCandidate.enrichState.status === "loading" ||
             exactCandidate.enrichState.status === "failed" &&
               exactCandidate.enrichState.reasonCode !== "provider_data_unavailable"
           ) {
             return ok({ groups: [exactCandidate], exact: true });
           }
+
+          return ok({
+            groups: [
+              {
+                ...exactCandidate,
+                enrichState: {
+                  status: "failed",
+                  reasonCode: this.inferImportReasonCode(error),
+                  retryable: this.importFailureRetryable(error),
+                },
+              },
+            ],
+            exact: true,
+          });
         }
       }
 
@@ -821,6 +834,11 @@ export class SkillFlowApp {
         })),
       });
     } catch (error) {
+      const githubPreview = await this.previewGitHubImportSource(canonicalRepo);
+      if (githubPreview) {
+        return githubPreview;
+      }
+
       return ok({
         status: "failed",
         reasonCode: this.inferImportReasonCode(error),
@@ -1263,10 +1281,36 @@ export class SkillFlowApp {
     );
   }
 
+  private async previewGitHubImportSource(
+    canonicalRepo: string,
+  ): Promise<Result<ImportPreviewResult> | null> {
+    const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo);
+    if (!normalizedRepo) {
+      return null;
+    }
+
+    const locator = `https://github.com/${normalizedRepo}.git`;
+    const preview = await this.sourceService.previewSource(locator);
+    if (!preview.ok) {
+      return ok({
+        status: "failed",
+        reasonCode: this.inferImportReasonCode(preview.errors[0]),
+        retryable: this.importFailureRetryable(preview.errors[0]),
+      }, preview.warnings);
+    }
+
+    const availableTargets = await this.getAvailableTargets();
+    return ok(
+      this.buildDirectImportPreviewResult(locator, preview.data, availableTargets, normalizedRepo),
+      preview.warnings,
+    );
+  }
+
   private buildDirectImportPreviewResult(
     locator: string,
     preview: SourcePreview,
     availableTargets: DeploymentTargetId[],
+    canonicalRepo = locator,
   ): ImportPreviewResult {
     const skills = preview.leafs.map((leaf) => {
       const id = leaf.relativePath === "." ? leaf.name : leaf.relativePath;
@@ -1281,7 +1325,7 @@ export class SkillFlowApp {
     return {
       status: "ready",
       locator,
-      canonicalRepo: locator,
+      canonicalRepo,
       selectedSkillIds: skills.map((skill) => skill.id),
       enabledTargets: [],
       skills,

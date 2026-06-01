@@ -211,6 +211,16 @@
 "common.source_metadata.unavailable" = "現在のソースには読み取れるメタデータがありません。";
 "toast.import.failed" = "インポート失敗: %@";
 "toast.import.invalid_response" = "インポート失敗: 無効なレスポンスです。";
+"toast.import.failed.provider_not_supported" = "インポートに失敗しました: このソース種別はサポートされていません。";
+"toast.import.failed.provider_data_unavailable" = "インポートに失敗しました: ソース詳細を取得できません。";
+"toast.import.failed.provider_rate_limited" = "インポートに失敗しました: ソースデータが一時的にレート制限されています。後でもう一度試してください。";
+"toast.import.failed.provider_response_invalid" = "インポートに失敗しました: ソース応答が無効です。";
+"toast.import.failed.provider_request_failed" = "インポートに失敗しました: このソースを読み取れません。後でもう一度試してください。";
+"toast.import.failed.no_valid_leafs" = "インポートに失敗しました: 認識できる Skill ファイルが見つかりません。";
+"toast.import.failed.source_path_not_found" = "インポートに失敗しました: 選択したパスに有効な Skill がありません。";
+"toast.import.failed.add_agent_not_available" = "インポートに失敗しました: Agent のインストールを利用できません。";
+"toast.import.failed.invalid_response" = "インポート失敗: 無効なレスポンスです。";
+"toast.import.failed.generic" = "インポートに失敗しました。後でもう一度試してください。";
 "toast.import.exists" = "この Group はすでにローカルに存在します。";
 "toast.import.success" = "ソースをインポートしました。";
 "toast.project_scope.switched" = "%@ に切り替えました。";
@@ -255,6 +265,9 @@
 "import.reason.provider_not_supported" = "現在のソースはサポートされていません。";
 "import.reason.provider_rate_limited" = "ソースデータは一時的にレート制限されています。";
 "import.reason.provider_response_invalid" = "ソース応答が無効でした。";
+"import.reason.no_valid_leafs" = "認識できる Skill ファイルが見つかりません。";
+"import.reason.source_path_not_found" = "選択したパスに有効な Skill がありません。";
+"import.reason.add_agent_not_available" = "Agent のインストールを利用できません。";
 "import.reason.request_failed" = "ソース要求に失敗しました。";
 "source.metadata.provider" = "プロバイダー: %@";
 "source.metadata.repository" = "リポジトリ: %@";

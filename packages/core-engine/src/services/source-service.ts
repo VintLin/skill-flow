@@ -1174,10 +1174,19 @@ export class SourceService {
         await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
       } catch (error) {
         const fallbackLocator = this.resolveGitCloneFallbackLocator(source.gitLocator!);
-        if (!fallbackLocator) {
-          throw error;
+        if (fallbackLocator) {
+          try {
+            await git(["clone", "--depth", "1", fallbackLocator, checkoutPath]);
+            return;
+          } catch {
+            await removePath(checkoutPath);
+            await this.fetchGitArchive(fallbackLocator, checkoutPath);
+            return;
+          }
         }
-        await git(["clone", "--depth", "1", fallbackLocator, checkoutPath]);
+
+        await removePath(checkoutPath);
+        await this.fetchGitArchive(source.gitLocator!, checkoutPath);
       }
       return;
     }

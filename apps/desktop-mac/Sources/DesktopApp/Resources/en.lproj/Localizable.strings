@@ -211,6 +211,16 @@
 "common.source_metadata.unavailable" = "Current source has no readable metadata.";
 "toast.import.failed" = "Import failed: %@";
 "toast.import.invalid_response" = "Import failed: invalid response.";
+"toast.import.failed.provider_not_supported" = "Import failed: this source type is not supported.";
+"toast.import.failed.provider_data_unavailable" = "Import failed: source details are unavailable.";
+"toast.import.failed.provider_rate_limited" = "Import failed: source data is rate-limited. Try again later.";
+"toast.import.failed.provider_response_invalid" = "Import failed: source response was invalid.";
+"toast.import.failed.provider_request_failed" = "Import failed: unable to read this source. Try again later.";
+"toast.import.failed.no_valid_leafs" = "Import failed: no recognizable Skill files were found.";
+"toast.import.failed.source_path_not_found" = "Import failed: the selected path does not contain a valid Skill.";
+"toast.import.failed.add_agent_not_available" = "Import failed: agent installation is not available.";
+"toast.import.failed.invalid_response" = "Import failed: invalid response.";
+"toast.import.failed.generic" = "Import failed. Try again later.";
 "toast.import.exists" = "This group is already available locally.";
 "toast.import.success" = "Imported source.";
 "toast.project_scope.switched" = "Switched to %@.";
@@ -255,6 +265,9 @@
 "import.reason.provider_not_supported" = "Current source is not supported.";
 "import.reason.provider_rate_limited" = "Source data is temporarily rate-limited.";
 "import.reason.provider_response_invalid" = "Source response was invalid.";
+"import.reason.no_valid_leafs" = "No recognizable Skill files were found.";
+"import.reason.source_path_not_found" = "The selected path does not contain a valid Skill.";
+"import.reason.add_agent_not_available" = "Agent installation is not available.";
 "import.reason.request_failed" = "Source request failed.";
 "source.metadata.provider" = "Provider: %@";
 "source.metadata.repository" = "Repository: %@";

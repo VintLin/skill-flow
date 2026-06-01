@@ -1915,7 +1915,7 @@ final class MainViewModel {
 
             if status != "ready" {
                 let reasonCode = payload["reasonCode"] as? String ?? "unknown"
-                showToast(style: .error, text: localizedText("toast.import.failed", reasonCode))
+                showToast(style: .error, text: importFailureToastText(reasonCode: reasonCode))
                 return
             }
 
@@ -2365,8 +2365,39 @@ final class MainViewModel {
             return localizedText("import.reason.provider_rate_limited")
         case "provider_response_invalid":
             return localizedText("import.reason.provider_response_invalid")
+        case "NO_VALID_LEAFS":
+            return localizedText("import.reason.no_valid_leafs")
+        case "SOURCE_PATH_NOT_FOUND":
+            return localizedText("import.reason.source_path_not_found")
+        case "ADD_AGENT_NOT_AVAILABLE":
+            return localizedText("import.reason.add_agent_not_available")
         default:
             return localizedText("import.reason.request_failed")
+        }
+    }
+
+    private func importFailureToastText(reasonCode: String?) -> PresentationText {
+        switch reasonCode {
+        case "provider_not_supported":
+            return localizedText("toast.import.failed.provider_not_supported")
+        case "provider_data_unavailable":
+            return localizedText("toast.import.failed.provider_data_unavailable")
+        case "provider_rate_limited":
+            return localizedText("toast.import.failed.provider_rate_limited")
+        case "provider_response_invalid":
+            return localizedText("toast.import.failed.provider_response_invalid")
+        case "provider_request_failed":
+            return localizedText("toast.import.failed.provider_request_failed")
+        case "NO_VALID_LEAFS":
+            return localizedText("toast.import.failed.no_valid_leafs")
+        case "SOURCE_PATH_NOT_FOUND":
+            return localizedText("toast.import.failed.source_path_not_found")
+        case "ADD_AGENT_NOT_AVAILABLE":
+            return localizedText("toast.import.failed.add_agent_not_available")
+        case "IMPORT_PREPARE_FAILED", "IMPORT_PREVIEW_INVALID", "IMPORT_APPLY_FAILED":
+            return localizedText("toast.import.failed.invalid_response")
+        default:
+            return localizedText("toast.import.failed.generic")
         }
     }
 

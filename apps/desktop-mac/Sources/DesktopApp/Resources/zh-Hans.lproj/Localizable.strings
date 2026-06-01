@@ -211,6 +211,16 @@
 "common.source_metadata.unavailable" = "当前来源没有可读取的元数据。";
 "toast.import.failed" = "导入失败：%@";
 "toast.import.invalid_response" = "导入失败：响应无效。";
+"toast.import.failed.provider_not_supported" = "导入失败：暂不支持该来源类型。";
+"toast.import.failed.provider_data_unavailable" = "导入失败：来源详情不可用。";
+"toast.import.failed.provider_rate_limited" = "导入失败：来源数据受到限流，请稍后再试。";
+"toast.import.failed.provider_response_invalid" = "导入失败：来源响应无效。";
+"toast.import.failed.provider_request_failed" = "导入失败：暂时无法读取该来源，请稍后再试。";
+"toast.import.failed.no_valid_leafs" = "导入失败：未找到可识别的 Skill 文件。";
+"toast.import.failed.source_path_not_found" = "导入失败：所选路径不包含有效 Skill。";
+"toast.import.failed.add_agent_not_available" = "导入失败：当前无法安装 Agent。";
+"toast.import.failed.invalid_response" = "导入失败：响应无效。";
+"toast.import.failed.generic" = "导入失败，请稍后再试。";
 "toast.import.exists" = "该 Group 已存在于本地。";
 "toast.import.success" = "已导入来源。";
 "toast.project_scope.switched" = "已切换到 %@。";
@@ -255,6 +265,9 @@
 "import.reason.provider_not_supported" = "当前来源暂不支持。";
 "import.reason.provider_rate_limited" = "来源数据暂时受到限流。";
 "import.reason.provider_response_invalid" = "来源响应格式无效。";
+"import.reason.no_valid_leafs" = "未找到可识别的 Skill 文件。";
+"import.reason.source_path_not_found" = "所选路径不包含有效 Skill。";
+"import.reason.add_agent_not_available" = "当前无法安装 Agent。";
 "import.reason.request_failed" = "来源请求失败。";
 "source.metadata.provider" = "提供方：%@";
 "source.metadata.repository" = "仓库：%@";

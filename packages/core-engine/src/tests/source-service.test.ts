@@ -375,6 +375,39 @@ describe.sequential("source service", () => {
     );
   });
 
+  test("github sources fall back to zip download when git clone fails", async () => {
+    const sourceService = createSourceService();
+    const repoRoot = path.join(sandbox.sandboxRoot, "github-clone-fallback");
+    const archivePath = path.join(sandbox.sandboxRoot, "github-clone-fallback.zip");
+    await writeRepoFiles(repoRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow from clone fallback zip."),
+    });
+    await createZipArchive(repoRoot, archivePath);
+
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    vi.spyOn(gitUtils, "git").mockRejectedValue(new Error("RPC failed; curl 18"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(await fs.readFile(archivePath), {
+          status: 200,
+          headers: { "content-type": "application/zip" },
+        })) as typeof fetch,
+    );
+
+    const added = await sourceService.addSource("https://github.com/example/skills.git");
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const checkoutPath = added.data.lock.checkoutPath;
+    expect(await fs.readFile(path.join(checkoutPath, "browse", "SKILL.md"), "utf8")).toContain(
+      "Browser flow from clone fallback zip.",
+    );
+  });
+
   test("gitlab sources fall back to zip download when git is unavailable", async () => {
     const sourceService = createSourceService();
     const repoRoot = path.join(sandbox.sandboxRoot, "gitlab-zip");

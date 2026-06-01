@@ -518,7 +518,7 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertFalse(model.sourceIds.contains("anthropics-skills"))
         XCTAssertEqual(model.currentRoute, .home)
         XCTAssertEqual(model.toast?.style, .error)
-        XCTAssertEqual(model.toast?.message, "Import failed: provider_request_failed")
+        XCTAssertEqual(model.toast?.message, "Import failed: unable to read this source. Try again later.")
         XCTAssertTrue(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
     }
 

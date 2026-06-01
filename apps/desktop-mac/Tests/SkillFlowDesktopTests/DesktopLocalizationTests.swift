@@ -106,6 +106,37 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("group_tag.input.placeholder", locale: Locale(identifier: "ja")), "タグ")
     }
 
+    func testImportFailureReasonKeysExistInAllSupportedLocales() {
+        let requiredKeys = [
+            "toast.import.failed.provider_not_supported",
+            "toast.import.failed.provider_data_unavailable",
+            "toast.import.failed.provider_rate_limited",
+            "toast.import.failed.provider_response_invalid",
+            "toast.import.failed.provider_request_failed",
+            "toast.import.failed.no_valid_leafs",
+            "toast.import.failed.source_path_not_found",
+            "toast.import.failed.add_agent_not_available",
+            "toast.import.failed.invalid_response",
+            "toast.import.failed.generic",
+            "import.reason.no_valid_leafs",
+            "import.reason.source_path_not_found",
+            "import.reason.add_agent_not_available",
+        ]
+        let locales = [
+            Locale(identifier: "zh-Hans"),
+            Locale(identifier: "en"),
+            Locale(identifier: "ja"),
+        ]
+
+        for locale in locales {
+            for key in requiredKeys {
+                let value = L10n.string(key, locale: locale)
+                XCTAssertNotEqual(value, key, "Missing localization for \(key) in \(locale.identifier)")
+                XCTAssertFalse(value.contains("provider_request_failed"), "User-facing import message leaked a reason code")
+            }
+        }
+    }
+
     func testChinesePinnedStatusUsesPinnedWording() {
         XCTAssertEqual(L10n.string("home.sidebar.pinned", locale: Locale(identifier: "zh-Hans")), "置顶")
     }

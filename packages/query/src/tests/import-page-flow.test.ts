@@ -155,6 +155,74 @@ describe.sequential("import page flow", () => {
     });
   });
 
+  test("exact import search marks sources missing from skills directory as failed", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url === "https://skills.sh/open-gsd/gsd-core") {
+        return responseWithStatus(404);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }));
+
+    const app = new SkillFlowApp();
+    const result = await app.searchImportGroups("open-gsd/gsd-core");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toMatchObject({
+      exact: true,
+      groups: [
+        {
+          canonicalRepo: "open-gsd/gsd-core",
+          enrichState: {
+            status: "failed",
+            reasonCode: "provider_data_unavailable",
+            retryable: true,
+          },
+          previewState: { status: "idle" },
+        },
+      ],
+    });
+  });
+
+  test("previewImportSource falls back to GitHub when skills directory has no source page", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/direct/SKILL.md": skillDoc("direct", "Direct GitHub skill."),
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url === "https://skills.sh/open-gsd/gsd-core") {
+        return responseWithStatus(404);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }));
+
+    const previewSource = SourceService.prototype.previewSource;
+    vi.spyOn(SourceService.prototype, "previewSource").mockImplementation(async function (_locator) {
+      return previewSource.call(this, repoPath);
+    });
+
+    const app = new SkillFlowApp();
+    const preview = await app.previewImportSource("open-gsd/gsd-core");
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) {
+      return;
+    }
+    expect(preview.data.status).toBe("ready");
+    if (preview.data.status !== "ready") {
+      return;
+    }
+
+    expect(preview.data.canonicalRepo).toBe("open-gsd/gsd-core");
+    expect(preview.data.locator).toBe("https://github.com/open-gsd/gsd-core.git");
+    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["skills/direct"]);
+  });
+
   test("previewImportSource is read-only and defaults to all skills with no agents", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
       const url = String(input);
@@ -701,6 +769,17 @@ function responseWithHtml(html: string): ResponseLike {
     ok: true,
     status: 200,
     text: async () => html,
+    json: async () => {
+      throw new Error("Not JSON");
+    },
+  };
+}
+
+function responseWithStatus(status: number): ResponseLike {
+  return {
+    ok: false,
+    status,
+    text: async () => "",
     json: async () => {
       throw new Error("Not JSON");
     },
