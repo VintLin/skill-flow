@@ -511,11 +511,15 @@ describe.sequential("config integration", () => {
     const app = new SkillFlowApp();
     const localSkillPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "local-writer");
     await writeRepoFiles(localSkillPath, {
-      "SKILL.md": skillDoc("local-writer", "Writes local drafts."),
+      "SKILL.md": skillDoc("local-writer", "Writes local drafts.").replace(/\n/g, "\r\n"),
     });
 
     await app.store.init();
     const { manifest, lockFile } = await app.store.readState();
+    const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
+      manifest,
+      lockFile,
+    );
     const scanned = await app.workspaceBootstrapService.scanUnmanagedLocalSkills(
       manifest,
       lockFile,
@@ -528,6 +532,8 @@ describe.sequential("config integration", () => {
       description: "Writes local drafts.",
       importedFromTargets: ["codex"],
     });
+    expect(detected[0]?.contentHash).toEqual(expect.any(String));
+    expect(scanned[0]?.contentHash).toBe(detected[0]?.contentHash);
     expect(scanned[0]?.contentHash).toEqual(expect.any(String));
   });
 
@@ -535,24 +541,28 @@ describe.sequential("config integration", () => {
     const app = new SkillFlowApp();
     const agentsRoot = path.join(sandbox.sandboxRoot, "home", ".agents");
     const oldHome = process.env.HOME;
-    process.env.HOME = path.join(sandbox.sandboxRoot, "home");
-    await writeRepoFiles(path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "resume-bullet-writer"), {
-      "SKILL.md": skillDoc("resume-bullet-writer", "Write resume bullets."),
-    });
-    await writeRepoFiles(agentsRoot, {
-      ".skill-lock.json": JSON.stringify({
-        skills: {
-          "resume-bullet-writer": {
-            source: "paramchoudhary/resumeskills",
-            sourceType: "github",
-            skillPath: "skills/resume-bullet-writer",
-            branch: "main",
-          },
-        },
-      }),
-    });
 
     try {
+      process.env.HOME = path.join(sandbox.sandboxRoot, "home");
+      await writeRepoFiles(
+        path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "resume-bullet-writer"),
+        {
+          "SKILL.md": skillDoc("resume-bullet-writer", "Write resume bullets."),
+        },
+      );
+      await writeRepoFiles(agentsRoot, {
+        ".skill-lock.json": JSON.stringify({
+          skills: {
+            "resume-bullet-writer": {
+              source: "paramchoudhary/resumeskills",
+              sourceType: "github",
+              skillPath: "skills/resume-bullet-writer",
+              branch: "main",
+            },
+          },
+        }),
+      });
+
       await app.store.init();
       const { manifest, lockFile } = await app.store.readState();
       const scanned = await app.workspaceBootstrapService.scanUnmanagedLocalSkills(

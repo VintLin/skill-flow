@@ -26,6 +26,7 @@ export type DetectedExternalSkill = {
   path: string;
   displayName: string;
   sourceId: string;
+  contentHash: string;
   importedFromTargets: DeploymentTargetName[];
   observedTargets: Array<{
     target: DeploymentTargetName;
@@ -40,7 +41,6 @@ export type DetectedExternalSkill = {
 export type LocalSkillScanResult = DetectedExternalSkill & {
   title: string;
   description: string;
-  contentHash: string;
 };
 
 type AgentsLockFile = {
@@ -179,6 +179,7 @@ export class WorkspaceBootstrapService {
         path: item.path,
         displayName: item.displayName,
         sourceId,
+        contentHash: item.hash,
         importedFromTargets: TARGET_ORDER.filter((target) => item.targets.has(target)),
         observedTargets: [...item.observedTargets],
         ...(item.origin?.originLocator ? { originLocator: item.origin.originLocator } : {}),
@@ -201,12 +202,14 @@ export class WorkspaceBootstrapService {
     const enriched: LocalSkillScanResult[] = [];
 
     for (const item of detected) {
-      const metadata = await this.readSkillMetadata(path.join(item.path, "SKILL.md"), item.displayName);
+      const metadata = await this.readSkillMetadata(
+        path.join(item.path, "SKILL.md"),
+        item.displayName,
+      );
       enriched.push({
         ...item,
         title: metadata.title,
         description: metadata.description,
-        contentHash: await hashDirectory(item.path),
       });
     }
 
@@ -248,7 +251,10 @@ export class WorkspaceBootstrapService {
     skillFilePath: string,
     fallbackName: string,
   ): Promise<{ title: string; description: string }> {
-    const content = await fs.readFile(skillFilePath, "utf8").catch(() => "");
+    const content = (await fs.readFile(skillFilePath, "utf8").catch(() => "")).replace(
+      /\r\n?/g,
+      "\n",
+    );
     const frontmatter = content.match(/^---\n([\s\S]*?)\n---/);
     const body = frontmatter?.[1] ?? "";
     const nameMatch = body.match(/^name:\s*(.+)$/m);
