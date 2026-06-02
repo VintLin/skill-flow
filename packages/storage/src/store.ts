@@ -582,10 +582,9 @@ function normalizeVirtualGroupsState(input: unknown): VirtualGroupsState {
     }
 
     const record = group as Partial<VirtualGroupRecord>;
-    const normalizedId = typeof record.id === "string" && record.id.trim() ? record.id : id;
-    groups[normalizedId] = {
-      id: normalizedId,
-      displayName: typeof record.displayName === "string" ? record.displayName : normalizedId,
+    groups[id] = {
+      id,
+      displayName: typeof record.displayName === "string" ? record.displayName : id,
       includedSkills: Array.isArray(record.includedSkills)
         ? record.includedSkills
             .filter((skill): skill is VirtualGroupSkillRef =>
@@ -619,7 +618,11 @@ function normalizeRestoreSnapshots(
 ): VirtualGroupRecord["restoreSnapshots"] {
   const snapshots: VirtualGroupRecord["restoreSnapshots"] = {};
 
-  for (const [sourceId, snapshot] of Object.entries(input ?? {})) {
+  if (!isObjectRecord(input)) {
+    return snapshots;
+  }
+
+  for (const [sourceId, snapshot] of Object.entries(input)) {
     snapshots[sourceId] = {
       selectedLeafIds: Array.isArray(snapshot?.selectedLeafIds)
         ? snapshot.selectedLeafIds.filter((value): value is string => typeof value === "string")

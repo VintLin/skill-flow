@@ -483,6 +483,95 @@ describe("StateStore", () => {
     });
   });
 
+  test("virtual group state uses map keys as canonical group ids", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    await fs.writeFile(
+      store.virtualGroupsPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          groups: {
+            oldKey: {
+              id: "newKey",
+              displayName: "Old Key",
+            },
+            newKey: {
+              id: "newKey",
+              displayName: "New Key",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    await expect(store.readVirtualGroups()).resolves.toMatchObject({
+      groups: {
+        oldKey: {
+          id: "oldKey",
+          displayName: "Old Key",
+        },
+        newKey: {
+          id: "newKey",
+          displayName: "New Key",
+        },
+      },
+    });
+  });
+
+  test("virtual group state ignores non-object restore snapshots", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    await fs.writeFile(
+      store.virtualGroupsPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          groups: {
+            arraySnapshots: {
+              restoreSnapshots: [
+                { selectedLeafIds: ["array:skill"], enabledTargets: ["codex"] },
+              ],
+            },
+            stringSnapshots: {
+              restoreSnapshots: "abc",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    await expect(store.readVirtualGroups()).resolves.toEqual({
+      schemaVersion: 1,
+      groups: {
+        arraySnapshots: {
+          id: "arraySnapshots",
+          displayName: "arraySnapshots",
+          includedSkills: [],
+          hiddenSourceIds: [],
+          restoreSnapshots: {},
+          createdAt: "1970-01-01T00:00:00.000Z",
+          updatedAt: "1970-01-01T00:00:00.000Z",
+        },
+        stringSnapshots: {
+          id: "stringSnapshots",
+          displayName: "stringSnapshots",
+          includedSkills: [],
+          hiddenSourceIds: [],
+          restoreSnapshots: {},
+          createdAt: "1970-01-01T00:00:00.000Z",
+          updatedAt: "1970-01-01T00:00:00.000Z",
+        },
+      },
+    });
+  });
+
   test("writes and prunes source metadata and import cache entries", async () => {
     const store = new StateStore(stateRoot);
 
