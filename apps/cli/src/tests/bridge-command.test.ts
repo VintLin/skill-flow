@@ -491,6 +491,43 @@ describe.sequential("bridge command dispatcher", () => {
     expect(app.scanLocalImportGroups).toHaveBeenCalledWith("/tmp/local-skill");
   });
 
+  test("rejects invalid scan-local-import-groups path payload", async () => {
+    const app = {
+      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ groups: [], path })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "scan-local-import-groups",
+      payload: { path: 123 },
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+    expect(app.scanLocalImportGroups).not.toHaveBeenCalled();
+  });
+
+  test("accepts scan-local-import-groups without path payload", async () => {
+    const app = {
+      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ groups: [], path })),
+    } as unknown as SkillFlowApp;
+
+    const responseWithoutPayload = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "scan-local-import-groups",
+    });
+    const responseWithEmptyPayload = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "scan-local-import-groups",
+      payload: {},
+    });
+
+    expect(responseWithoutPayload.ok).toBe(true);
+    expect(responseWithEmptyPayload.ok).toBe(true);
+    expect(app.scanLocalImportGroups).toHaveBeenNthCalledWith(1, undefined);
+    expect(app.scanLocalImportGroups).toHaveBeenNthCalledWith(2, undefined);
+  });
+
   test("accepts valid preview-import-source payload", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({
       ok: true,
