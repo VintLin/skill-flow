@@ -421,6 +421,68 @@ describe("StateStore", () => {
     });
   });
 
+  test("virtual group state normalizes malformed persisted metadata", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    await fs.writeFile(
+      store.virtualGroupsPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          groups: {
+            "writing-stack": {
+              displayName: 42,
+              includedSkills: [
+                { sourceId: "alpha", leafId: "alpha:skills/review" },
+                { sourceId: "beta" },
+                null,
+              ],
+              hiddenSourceIds: ["alpha", "alpha", "beta", 42],
+              restoreSnapshots: {
+                alpha: {
+                  selectedLeafIds: ["alpha:skills/review", 42],
+                  enabledTargets: ["codex", 42],
+                },
+                beta: null,
+              },
+              createdAt: 42,
+            },
+            ignored: null,
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    await expect(store.readVirtualGroups()).resolves.toEqual({
+      schemaVersion: 1,
+      groups: {
+        "writing-stack": {
+          id: "writing-stack",
+          displayName: "writing-stack",
+          includedSkills: [
+            { sourceId: "alpha", leafId: "alpha:skills/review" },
+          ],
+          hiddenSourceIds: ["alpha", "beta"],
+          restoreSnapshots: {
+            alpha: {
+              selectedLeafIds: ["alpha:skills/review"],
+              enabledTargets: ["codex"],
+            },
+            beta: {
+              selectedLeafIds: [],
+              enabledTargets: [],
+            },
+          },
+          createdAt: "1970-01-01T00:00:00.000Z",
+          updatedAt: "1970-01-01T00:00:00.000Z",
+        },
+      },
+    });
+  });
+
   test("writes and prunes source metadata and import cache entries", async () => {
     const store = new StateStore(stateRoot);
 

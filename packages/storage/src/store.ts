@@ -401,7 +401,7 @@ export class StateStore {
     }
 
     return normalizeVirtualGroupsState(
-      await readJsonFile<VirtualGroupsState>(this.virtualGroupsPath),
+      await readJsonFile<unknown>(this.virtualGroupsPath, createEmptyVirtualGroupsState()),
     );
   }
 
@@ -572,10 +572,11 @@ function createEmptyVirtualGroupsState(): VirtualGroupsState {
   };
 }
 
-function normalizeVirtualGroupsState(input: Partial<VirtualGroupsState> | undefined): VirtualGroupsState {
+function normalizeVirtualGroupsState(input: unknown): VirtualGroupsState {
   const groups: Record<string, VirtualGroupRecord> = {};
+  const rawGroups = isObjectRecord(input) && isObjectRecord(input.groups) ? input.groups : {};
 
-  for (const [id, group] of Object.entries(input?.groups ?? {})) {
+  for (const [id, group] of Object.entries(rawGroups)) {
     if (!group || typeof group !== "object") {
       continue;
     }
@@ -607,6 +608,10 @@ function normalizeVirtualGroupsState(input: Partial<VirtualGroupsState> | undefi
     schemaVersion: 1,
     groups,
   };
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeRestoreSnapshots(
