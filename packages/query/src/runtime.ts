@@ -2321,7 +2321,7 @@ export class SkillFlowApp {
       removedImportedTargets,
     );
     const detachedWarnings = await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
     await this.store.writeState(prepared.manifest, lockFile);
 
     const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
@@ -2438,7 +2438,7 @@ export class SkillFlowApp {
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     await this.ensureProjectionLedger(manifest, lockFile);
-    const warnings: Warning[] = await this.cleanupOrphanTargetSymlinks(lockFile);
+    const warnings: Warning[] = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
 
     const requestedIds = sourceIds?.length
       ? sourceIds
@@ -2620,7 +2620,7 @@ export class SkillFlowApp {
     }
 
     const detachedWarnings = await this.cleanupDetachedTargetSymlinksForSources(lockFile, sourceIds);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
     warnings.push(...detachedWarnings.map((warning) => warning.message));
     warnings.push(...orphanWarnings.map((warning) => warning.message));
 
@@ -2772,7 +2772,7 @@ export class SkillFlowApp {
   private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
     const { manifest, lockFile } = await this.store.readState();
     await this.ensureProjectionLedger(manifest, lockFile);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
     const removedSourceIds: string[] = [];
     const warnings: Warning[] = [];
 
@@ -2839,7 +2839,10 @@ export class SkillFlowApp {
     return ok({ removedSourceIds }, [...orphanWarnings, ...warnings]);
   }
 
-  private async cleanupOrphanTargetSymlinks(lockFile: LockFile): Promise<Warning[]> {
+  private async cleanupOrphanTargetSymlinks(
+    manifest: Manifest,
+    lockFile: LockFile,
+  ): Promise<Warning[]> {
     const warnings: Warning[] = [];
     const managedStateRoot = await fs.realpath(this.store.rootPath).catch(() =>
       path.resolve(this.store.rootPath),
@@ -2878,7 +2881,7 @@ export class SkillFlowApp {
           (projection) => path.resolve(projection.targetPath) === resolvedTargetPath,
         );
         const hasResolvableProjection = matchingProjections.some((projection) =>
-          this.isProjectionStillResolvable(lockFile, projection),
+          this.isProjectionStillResolvable(manifest, lockFile, projection),
         );
         if (hasResolvableProjection) {
           continue;
@@ -2963,13 +2966,19 @@ export class SkillFlowApp {
     return warnings;
   }
 
-  private isProjectionStillResolvable(lockFile: LockFile, projection: ProjectionRecord): boolean {
-    if (!lockFile.sources.some((source) => source.id === projection.sourceId)) {
+  private isProjectionStillResolvable(
+    manifest: Manifest,
+    lockFile: LockFile,
+    projection: ProjectionRecord,
+  ): boolean {
+    const source = manifest.sources.find((item) => item.id === projection.sourceId);
+    if (!source) {
       return false;
     }
 
     if (projection.mode === "managed") {
-      return lockFile.leafInventory.some((leaf) => leaf.id === projection.leafId);
+      const binding = manifest.bindings[source.id] ?? { targets: {} };
+      return Boolean(this.findLeafForSourceBinding(source, binding, lockFile, projection.leafId));
     }
 
     return true;
@@ -3565,6 +3574,19 @@ export class SkillFlowApp {
       .filter((leaf): leaf is LeafRecord => Boolean(leaf));
   }
 
+  private findLeafForSourceBinding(
+    source: Manifest["sources"][number],
+    binding: SourceBinding,
+    lockFile: LockFile,
+    leafId: string,
+  ): LeafRecord | undefined {
+    if (source.kind !== "virtual") {
+      return lockFile.leafInventory.find((leaf) => leaf.sourceId === source.id && leaf.id === leafId);
+    }
+
+    return this.getSourceLeafsForBinding(source, binding, lockFile).find((leaf) => leaf.id === leafId);
+  }
+
   private selectLeafIdsForRequestedPath(
     leafs: LeafRecord[],
     requestedPath?: string,
@@ -3840,7 +3862,7 @@ export class SkillFlowApp {
     }
 
     await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]);
-    await this.cleanupOrphanTargetSymlinks(lockFile);
+    await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
     await this.store.writeState(manifest, lockFile);
 
     return this.sourceService.removeSource([sourceId]);
@@ -4114,9 +4136,7 @@ export class SkillFlowApp {
 
       const projectedLinkNames = this.buildProjectedLinkNameMap(manifest, lockFile, target);
       for (const leafId of targetBinding.leafIds) {
-        const leaf = lockFile.leafInventory.find(
-          (candidate) => candidate.sourceId === sourceId && candidate.id === leafId,
-        );
+        const leaf = this.findLeafForSourceBinding(source, binding, lockFile, leafId);
         if (!leaf) {
           continue;
         }
@@ -4241,9 +4261,7 @@ export class SkillFlowApp {
         }
 
         for (const leafId of targetBinding.leafIds) {
-          const leaf = lockFile.leafInventory.find(
-            (candidate) => candidate.sourceId === source.id && candidate.id === leafId,
-          );
+          const leaf = this.findLeafForSourceBinding(source, binding, lockFile, leafId);
           if (!leaf) {
             continue;
           }

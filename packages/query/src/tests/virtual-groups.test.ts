@@ -1,4 +1,8 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
+import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
 import { SkillFlowApp } from "../runtime.js";
 import {
   createRepo,
@@ -220,11 +224,176 @@ describe.sequential("virtual groups", () => {
     if (!preview.ok) {
       return;
     }
-    const plannedLeafIds = preview.data.plan.actions
-      .filter((action) => action.target === "codex")
+    const plannedActions = preview.data.plan.actions.filter((action) => action.target === "codex");
+    expect(plannedActions).toHaveLength(2);
+    expect(plannedActions.map((action) => action.sourceId)).toEqual([
+      "writing-stack",
+      "writing-stack",
+    ]);
+    expect(plannedActions.every((action) => action.sourcePath.length > 0)).toBe(true);
+    for (const action of plannedActions) {
+      expect(action.sourcePath).toContain(action.leafId.split(":")[1]);
+    }
+    const plannedLeafIds = plannedActions
       .map((action) => action.leafId)
       .sort();
     expect(plannedLeafIds).toEqual([...leafIds].sort());
+  });
+
+  test("finds virtual group project scoped deployments during inspect", async () => {
+    const writingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/drafting/SKILL.md": skillDoc("drafting", "Draft writing."),
+    });
+    const editingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/revision/SKILL.md": skillDoc("revision", "Revise writing."),
+    });
+    const projectRepo = await createRepo(sandbox.sandboxRoot, {
+      "README.md": "project repo\n",
+    });
+    const resolvedProjectRepo = await fs.realpath(projectRepo);
+    const app = new SkillFlowApp();
+    await app.store.writePreferences({
+      ...(await app.store.readPreferences()),
+      recentProjects: [{
+        projectId: "repo-a",
+        title: "Repo A",
+        lastActivityAt: "2026-03-30T00:00:00.000Z",
+        projectPath: resolvedProjectRepo,
+        tools: ["codex"],
+      }],
+    });
+    const writing = await app.addSource(writingRepo, {
+      sourceIdOverride: "writing-source",
+      project: false,
+    });
+    const editing = await app.addSource(editingRepo, {
+      sourceIdOverride: "editing-source",
+      project: false,
+    });
+    expect(writing.ok).toBe(true);
+    expect(editing.ok).toBe(true);
+    if (!writing.ok || !editing.ok) {
+      return;
+    }
+    const leafIds = [
+      "writing-source:skills/drafting",
+      "editing-source:skills/revision",
+    ];
+    const created = await app.createVirtualGroup({
+      displayName: "Writing Stack",
+      skills: [
+        { sourceId: "writing-source", leafId: leafIds[0]! },
+        { sourceId: "editing-source", leafId: leafIds[1]! },
+      ],
+      enabledTargets: [],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const applied = await app.applyDraft(
+      "writing-stack",
+      { selectedLeafIds: leafIds, enabledTargets: ["codex"] },
+      { kind: "project", projectId: "repo-a" },
+    );
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+    const projectTargetRoot = resolveDocumentedProjectSkillPath("codex", resolvedProjectRepo);
+    expect(projectTargetRoot).toBeTruthy();
+    if (!projectTargetRoot) {
+      return;
+    }
+    expect(await pathExists(path.join(projectTargetRoot, "drafting"))).toBe(true);
+    expect(await pathExists(path.join(projectTargetRoot, "revision"))).toBe(true);
+
+    const inspected = await app.inspectSource(
+      "writing-stack",
+      { kind: "project", projectId: "repo-a" },
+    );
+
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+    expect(inspected.data.deployments.map((deployment) => deployment.leafId).sort()).toEqual(
+      [...leafIds].sort(),
+    );
+    expect(inspected.data.deployments.map((deployment) => deployment.sourceId)).toEqual([
+      "writing-stack",
+      "writing-stack",
+    ]);
+    expect(
+      inspected.data.deployments.every(
+        (deployment) => path.resolve(deployment.targetPath).startsWith(path.resolve(resolvedProjectRepo)),
+      ),
+    ).toBe(true);
+  });
+
+  test("repairState keeps virtual group managed deployments", async () => {
+    const writingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/drafting/SKILL.md": skillDoc("drafting", "Draft writing."),
+    });
+    const editingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/revision/SKILL.md": skillDoc("revision", "Revise writing."),
+    });
+    const app = new SkillFlowApp();
+    const writing = await app.addSource(writingRepo, {
+      sourceIdOverride: "writing-source",
+      project: false,
+    });
+    const editing = await app.addSource(editingRepo, {
+      sourceIdOverride: "editing-source",
+      project: false,
+    });
+    expect(writing.ok).toBe(true);
+    expect(editing.ok).toBe(true);
+    if (!writing.ok || !editing.ok) {
+      return;
+    }
+    const leafIds = [
+      "writing-source:skills/drafting",
+      "editing-source:skills/revision",
+    ];
+    const created = await app.createVirtualGroup({
+      displayName: "Writing Stack",
+      skills: [
+        { sourceId: "writing-source", leafId: leafIds[0]! },
+        { sourceId: "editing-source", leafId: leafIds[1]! },
+      ],
+      enabledTargets: [],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+    const applied = await app.applyDraft("writing-stack", {
+      selectedLeafIds: leafIds,
+      enabledTargets: ["codex"],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+    const beforeRepair = await app.store.readLock();
+    expect(getManagedDeployments(beforeRepair).filter((deployment) => deployment.sourceId === "writing-stack")).toHaveLength(2);
+
+    const repaired = await app.repairState(["writing-stack"]);
+
+    expect(repaired.ok).toBe(true);
+    if (!repaired.ok) {
+      return;
+    }
+    expect(repaired.data.removedDeploymentCount).toBe(0);
+    const afterRepair = await app.store.readLock();
+    expect(
+      getManagedDeployments(afterRepair)
+        .filter((deployment) => deployment.sourceId === "writing-stack")
+        .map((deployment) => deployment.leafId)
+        .sort(),
+    ).toEqual([...leafIds].sort());
   });
 
   test("rejects empty virtual group name", async () => {
