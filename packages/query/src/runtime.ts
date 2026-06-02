@@ -38,6 +38,9 @@ import type {
   TargetBinding,
   UnifiedSourceSnapshot,
   UnifiedSourceTrust,
+  VirtualGroupRecord,
+  VirtualGroupSkillRef,
+  VirtualGroupsState,
   Warning,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
@@ -128,6 +131,16 @@ type RenameSourceResult = {
   displayName: string;
   originalDisplayName: string;
   isResetToOriginal: boolean;
+};
+export type CreateVirtualGroupOptions = {
+  displayName: string;
+  skills: VirtualGroupSkillRef[];
+  enabledTargets?: DeploymentTargetId[];
+};
+export type CreateVirtualGroupResult = {
+  group: VirtualGroupRecord;
+  source: Manifest["sources"][number];
+  binding: SourceBinding;
 };
 type TargetRootOverrides = Partial<Record<DeploymentTargetId, string>>;
 type ApplyDraftResult = {
@@ -386,6 +399,85 @@ export class SkillFlowApp {
 
   async rollbackPreparedSource(sourceId: string): Promise<Result<{ removed: string[] }>> {
     return this.runSerializedMutation(() => this.rollbackPreparedSourceInternal(sourceId));
+  }
+
+  async createVirtualGroup(
+    options: CreateVirtualGroupOptions,
+  ): Promise<Result<CreateVirtualGroupResult>> {
+    return this.runSerializedMutation(() => this.createVirtualGroupImpl(options));
+  }
+
+  private async createVirtualGroupImpl(
+    options: CreateVirtualGroupOptions,
+  ): Promise<Result<CreateVirtualGroupResult>> {
+    const displayName = options.displayName.trim();
+    if (!displayName) {
+      return fail({
+        code: "VIRTUAL_GROUP_NAME_EMPTY",
+        message: "Virtual group name cannot be empty.",
+      });
+    }
+    if (options.skills.length === 0) {
+      return fail({
+        code: "VIRTUAL_GROUP_SKILLS_EMPTY",
+        message: "Virtual group must include at least one skill.",
+      });
+    }
+
+    const { manifest, lockFile } = await this.store.readState();
+    const virtualGroups = await this.store.readVirtualGroups();
+    const includedSkills = this.validateVirtualSkillRefs(options.skills, manifest, lockFile);
+    if (!includedSkills.ok) {
+      return fail(includedSkills.errors, includedSkills.warnings);
+    }
+    if (includedSkills.data.length === 0) {
+      return fail({
+        code: "VIRTUAL_GROUP_SKILLS_EMPTY",
+        message: "Virtual group must include at least one skill.",
+      });
+    }
+
+    const id = this.uniqueVirtualSourceId(displayName, manifest, virtualGroups);
+    const now = new Date().toISOString();
+    const selectedLeafIds = includedSkills.data.map((skill) => skill.leafId);
+    const enabledTargets = [...new Set(options.enabledTargets ?? [])];
+    const source: Manifest["sources"][number] = {
+      id,
+      locator: `virtual:${id}`,
+      kind: "virtual",
+      displayName,
+      originalDisplayName: displayName,
+      addedAt: now,
+      selectionMode: "all",
+    };
+    const binding = this.bindingFromDraft({
+      selectedLeafIds,
+      enabledTargets,
+    });
+    const group: VirtualGroupRecord = {
+      id,
+      displayName,
+      includedSkills: includedSkills.data,
+      hiddenSourceIds: [],
+      restoreSnapshots: {},
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    manifest.sources.push(source);
+    manifest.bindings[id] = binding;
+    const nextVirtualGroups: VirtualGroupsState = {
+      schemaVersion: 1,
+      groups: {
+        ...virtualGroups.groups,
+        [id]: group,
+      },
+    };
+
+    await this.store.writeState(manifest, lockFile);
+    await this.store.writeVirtualGroups(nextVirtualGroups);
+
+    return ok({ group, source, binding });
   }
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
@@ -2572,6 +2664,63 @@ export class SkillFlowApp {
       selectedLeafIds: [...draft.selectedLeafIds],
       targets,
     };
+  }
+
+  private uniqueVirtualSourceId(
+    displayName: string,
+    manifest: Manifest,
+    virtualGroups: VirtualGroupsState,
+  ): string {
+    const baseId = deriveSourceId(displayName) || "virtual-group";
+    const usedIds = new Set([
+      ...manifest.sources.map((source) => source.id),
+      ...Object.keys(virtualGroups.groups),
+    ]);
+    let candidate = baseId;
+    let suffix = 2;
+    while (usedIds.has(candidate)) {
+      candidate = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
+  }
+
+  private validateVirtualSkillRefs(
+    skills: VirtualGroupSkillRef[],
+    manifest: Manifest,
+    lockFile: LockFile,
+  ): Result<VirtualGroupSkillRef[]> {
+    const includedSkills: VirtualGroupSkillRef[] = [];
+    const seen = new Set<string>();
+
+    for (const skill of skills) {
+      const sourceId = skill.sourceId.trim();
+      const leafId = skill.leafId.trim();
+      const source = manifest.sources.find((item) => item.id === sourceId);
+      if (!source) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+
+      const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
+      if (!leaf || leaf.sourceId !== sourceId) {
+        return fail({
+          code: "LEAF_NOT_FOUND",
+          message: `Skill leaf '${leafId}' is not registered in skills group '${sourceId}'.`,
+        });
+      }
+
+      const key = `${sourceId}\0${leafId}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      includedSkills.push({ sourceId, leafId });
+    }
+
+    return ok(includedSkills);
   }
 
   private resolveDraftForScope(
