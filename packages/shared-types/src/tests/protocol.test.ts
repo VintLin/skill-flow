@@ -203,4 +203,15 @@ describe("bridge protocol", () => {
       errors: [],
     });
   });
+
+  test("accepts scan-local-import-groups bridge command", () => {
+    const request = parseBridgeRequest({
+      protocolVersion: PROTOCOL_VERSION,
+      command: "scan-local-import-groups",
+      payload: { path: "/tmp/local-skill" },
+    });
+
+    expect(request.command).toBe("scan-local-import-groups");
+    expect(request.payload).toEqual({ path: "/tmp/local-skill" });
+  });
 });

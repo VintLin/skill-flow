@@ -570,9 +570,42 @@ export type ImportAsyncState =
       retryable: boolean;
     };
 
+export type LocalImportValidationStatus =
+  | "matched"
+  | "changed"
+  | "missing"
+  | "ambiguous"
+  | "origin-unavailable"
+  | "local-only";
+
+export type LocalImportChoiceId = "origin" | "local";
+
+export type LocalImportChoice = {
+  id: LocalImportChoiceId;
+  label: string;
+  locator: string;
+  selectedSkillIds: string[];
+};
+
+export type LocalImportDetectedSkill = {
+  id: string;
+  title: string;
+  localPath: string;
+  discoveredTargets: DeploymentTargetId[];
+  validationStatus: LocalImportValidationStatus;
+  originSkillId?: string;
+};
+
+export type LocalImportCandidateInfo = {
+  validationStatus: LocalImportValidationStatus;
+  selectedChoiceId: LocalImportChoiceId;
+  choices: LocalImportChoice[];
+  detectedSkills: LocalImportDetectedSkill[];
+};
+
 export type ImportGroupCandidate = {
   id: string;
-  provider: "skills";
+  provider: "skills" | "local";
   locator: string;
   canonicalRepo: string;
   aliases: string[];
@@ -593,6 +626,7 @@ export type ImportGroupCandidate = {
   snapshot?: UnifiedSourceSnapshot;
   enrichState: ImportAsyncState;
   previewState: ImportAsyncState;
+  localImport?: LocalImportCandidateInfo;
 };
 
 export type ImportPreviewSkill = {
