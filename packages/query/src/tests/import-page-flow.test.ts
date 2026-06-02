@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { ok } from "@skill-flow/integration/utils/result";
+import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import { SourceService } from "@skill-flow/core-engine/services/source-service";
 import { SkillFlowApp } from "../runtime.js";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
@@ -324,6 +325,190 @@ describe.sequential("import page flow", () => {
     expect(preview.data.skills.map((skill) => skill.id)).toEqual(["browse", "review"]);
     expect(preview.data.targets.every((target) => target.selectedByDefault === false)).toBe(true);
     expect(preview.data.targets.length).toBeGreaterThan(0);
+  });
+
+  test("scanLocalImportGroups builds local fallback cards for local-only skills", async () => {
+    const localPath = await createLocalSkill(
+      process.env.SKILL_FLOW_TARGET_CODEX!,
+      "local-review",
+      "local-review",
+      "Review local work.",
+    );
+
+    const app = new SkillFlowApp();
+    const result = await app.scanLocalImportGroups();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.groups).toHaveLength(1);
+    expect(result.data.groups[0]).toMatchObject({
+      provider: "local",
+      locator: localPath,
+      canonicalRepo: `local:${deriveSourceId(localPath)}`,
+      localImport: {
+        validationStatus: "local-only",
+        selectedChoiceId: "local",
+      },
+    });
+  });
+
+  test("scanLocalImportGroups groups local skills that match the same origin", async () => {
+    const homeRoot = path.join(sandbox.sandboxRoot, "home");
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeRoot;
+    try {
+      await writeAgentsLock(homeRoot, {
+        "resume-bullet-writer": {
+          source: "paramchoudhary/resumeskills",
+          skillPath: "skills/resume-bullet-writer",
+        },
+        "resume-tailor": {
+          source: "paramchoudhary/resumeskills",
+          skillPath: "skills/resume-tailor",
+        },
+      });
+      await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CODEX!,
+        "resume-bullet-writer",
+        "resume-bullet-writer",
+        "Write better bullets.",
+      );
+      await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CURSOR!,
+        "resume-tailor",
+        "resume-tailor",
+        "Tailor resumes.",
+      );
+      const originRepo = await createRepo(sandbox.sandboxRoot, {
+        "skills/resume-bullet-writer/SKILL.md": skillDoc(
+          "resume-bullet-writer",
+          "Write better bullets.",
+        ),
+        "skills/resume-tailor/SKILL.md": skillDoc("resume-tailor", "Tailor resumes."),
+      });
+      stubGitHubPreview(originRepo);
+
+      const app = new SkillFlowApp();
+      const result = await app.scanLocalImportGroups();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) {
+        return;
+      }
+
+      expect(result.data.groups).toHaveLength(1);
+      expect(result.data.groups[0]).toMatchObject({
+        provider: "skills",
+        canonicalRepo: "paramchoudhary/resumeskills",
+        localImport: {
+          validationStatus: "matched",
+          selectedChoiceId: "origin",
+        },
+      });
+      expect(result.data.groups[0].matchedSkillNames?.sort()).toEqual([
+        "resume-bullet-writer",
+        "resume-tailor",
+      ]);
+    } finally {
+      restoreHome(originalHome);
+    }
+  });
+
+  test("scanLocalImportGroups marks origin skills as unavailable when preview fails", async () => {
+    const homeRoot = path.join(sandbox.sandboxRoot, "home");
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeRoot;
+    try {
+      await writeAgentsLock(homeRoot, {
+        "missing-origin": {
+          source: "skill-flow-test/missing-origin-repo",
+          skillPath: "skills/missing-origin",
+        },
+      });
+      await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CODEX!,
+        "missing-origin",
+        "missing-origin",
+        "Missing origin.",
+      );
+
+      const app = new SkillFlowApp();
+      const result = await app.scanLocalImportGroups();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) {
+        return;
+      }
+
+      expect(result.data.groups).toHaveLength(1);
+      expect(result.data.groups[0]).toMatchObject({
+        provider: "skills",
+        canonicalRepo: "skill-flow-test/missing-origin-repo",
+        localImport: {
+          validationStatus: "origin-unavailable",
+          selectedChoiceId: "local",
+        },
+      });
+    } finally {
+      restoreHome(originalHome);
+    }
+  }, 20_000);
+
+  test("scanLocalImportGroups marks local skills as changed when origin summary differs", async () => {
+    const result = await scanOneOriginValidationCase(sandbox.sandboxRoot, {
+      targetRoot: process.env.SKILL_FLOW_TARGET_CODEX!,
+      localName: "resume-quantifier",
+      localDescription: "Quantify resume impact locally.",
+      lockSkillPath: "skills/resume-quantifier",
+      originFiles: {
+        "skills/resume-quantifier/SKILL.md": skillDoc(
+          "resume-quantifier",
+          "Quantify resume impact from origin.",
+        ),
+      },
+    });
+
+    expect(result.group.localImport).toMatchObject({
+      validationStatus: "changed",
+      selectedChoiceId: "local",
+    });
+  });
+
+  test("scanLocalImportGroups marks local skills as missing when origin has no match", async () => {
+    const result = await scanOneOriginValidationCase(sandbox.sandboxRoot, {
+      targetRoot: process.env.SKILL_FLOW_TARGET_CODEX!,
+      localName: "resume-formatter",
+      localDescription: "Format resumes.",
+      lockSkillPath: "skills/resume-formatter",
+      originFiles: {
+        "skills/different/SKILL.md": skillDoc("different", "Different skill."),
+      },
+    });
+
+    expect(result.group.localImport).toMatchObject({
+      validationStatus: "missing",
+      selectedChoiceId: "local",
+    });
+  });
+
+  test("scanLocalImportGroups marks local skills as ambiguous when multiple origin skills match", async () => {
+    const result = await scanOneOriginValidationCase(sandbox.sandboxRoot, {
+      targetRoot: process.env.SKILL_FLOW_TARGET_CODEX!,
+      localName: "review",
+      localDescription: "Review things.",
+      originFiles: {
+        "skills/review/SKILL.md": skillDoc("review-primary", "Review things."),
+        "skills/.experimental/review/SKILL.md": skillDoc("review-secondary", "Review things."),
+      },
+    });
+
+    expect(result.group.localImport).toMatchObject({
+      validationStatus: "ambiguous",
+      selectedChoiceId: "local",
+    });
   });
 
   test("previewImportSource supports quoted local paths with spaces", async () => {
@@ -784,6 +969,101 @@ function responseWithStatus(status: number): ResponseLike {
       throw new Error("Not JSON");
     },
   };
+}
+
+async function createLocalSkill(
+  targetRoot: string,
+  skillName: string,
+  title: string,
+  description: string,
+): Promise<string> {
+  const skillPath = path.join(targetRoot, skillName);
+  await fs.mkdir(skillPath, { recursive: true });
+  await fs.writeFile(path.join(skillPath, "SKILL.md"), skillDoc(title, description), "utf8");
+  return await fs.realpath(skillPath);
+}
+
+async function writeAgentsLock(
+  homeRoot: string,
+  skills: Record<string, { source: string; skillPath?: string }>,
+) {
+  const lockPath = path.join(homeRoot, ".agents", ".skill-lock.json");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+  await fs.writeFile(
+    lockPath,
+    JSON.stringify({
+      skills: Object.fromEntries(
+        Object.entries(skills).map(([name, record]) => [
+          name,
+          {
+            sourceType: "github",
+            source: record.source,
+            ...(record.skillPath ? { skillPath: record.skillPath } : {}),
+          },
+        ]),
+      ),
+    }),
+    "utf8",
+  );
+}
+
+function stubGitHubPreview(repoPath: string) {
+  const previewSource = SourceService.prototype.previewSource;
+  vi.spyOn(SourceService.prototype, "previewSource").mockImplementation(async function (_locator) {
+    return previewSource.call(this, repoPath);
+  });
+}
+
+async function scanOneOriginValidationCase(
+  sandboxRoot: string,
+  options: {
+    targetRoot: string;
+    localName: string;
+    localDescription: string;
+    lockSkillPath?: string;
+    originFiles: Record<string, string>;
+  },
+): Promise<{ group: Awaited<ReturnType<SkillFlowApp["scanLocalImportGroups"]>> extends infer ResultType
+  ? ResultType extends { ok: true; data: { groups: Array<infer Group> } } ? Group : never
+  : never }> {
+  const homeRoot = path.join(sandboxRoot, `home-${options.localName}`);
+  const originalHome = process.env.HOME;
+  process.env.HOME = homeRoot;
+  try {
+    await writeAgentsLock(homeRoot, {
+      [options.localName]: {
+        source: "paramchoudhary/resumeskills",
+        ...(options.lockSkillPath ? { skillPath: options.lockSkillPath } : {}),
+      },
+    });
+    await createLocalSkill(
+      options.targetRoot,
+      options.localName,
+      options.localName,
+      options.localDescription,
+    );
+    const originRepo = await createRepo(sandboxRoot, options.originFiles);
+    stubGitHubPreview(originRepo);
+
+    const app = new SkillFlowApp();
+    const result = await app.scanLocalImportGroups();
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("Expected local import scan to succeed.");
+    }
+    expect(result.data.groups).toHaveLength(1);
+    return { group: result.data.groups[0] };
+  } finally {
+    restoreHome(originalHome);
+  }
+}
+
+function restoreHome(originalHome: string | undefined) {
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+    return;
+  }
+  process.env.HOME = originalHome;
 }
 
 type ResponseLike = {

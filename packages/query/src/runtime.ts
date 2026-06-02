@@ -14,6 +14,8 @@ import type {
   ImportDraft,
   ImportDataCache,
   ImportGroupCandidate,
+  LocalImportDetectedSkill,
+  LocalImportValidationStatus,
   ImportRecommendationFeed,
   ImportRecommendationFeedId,
   ImportSearchHit,
@@ -70,8 +72,10 @@ import {
   resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
 import {
+  getTargetScanRoots,
   getMergedTargetDefinitions,
   resolveDocumentedProjectSkillPath,
+  TARGET_ORDER,
 } from "@skill-flow/integration/utils/constants";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import { searchClawHubSkills } from "@skill-flow/integration/utils/clawhub";
@@ -113,6 +117,7 @@ import type {
 import {
   WorkspaceBootstrapService,
   type BootstrapEvent,
+  type LocalSkillScanResult,
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
@@ -150,6 +155,8 @@ type GroupCardEnrichmentSnapshot = {
   sourceSnapshot?: UnifiedSourceSnapshot;
   groupPath?: string;
 };
+type ReadyImportPreviewResult = Extract<ImportPreviewResult, { status: "ready" }>;
+type ImportPreviewSkillCandidate = ReadyImportPreviewResult["skills"][number];
 type AuditMutationName =
   | "add-source"
   | "bootstrap"
@@ -491,6 +498,10 @@ export class SkillFlowApp {
     return this.listRecommendedImportGroupsImpl();
   }
 
+  async scanLocalImportGroups(localPath?: string): Promise<Result<{ groups: ImportGroupCandidate[] }>> {
+    return this.scanLocalImportGroupsImpl(localPath);
+  }
+
   async searchImportGroups(
     query: string,
   ): Promise<Result<{ groups: ImportGroupCandidate[]; exact: boolean }>> {
@@ -694,6 +705,319 @@ export class SkillFlowApp {
       );
 
     return ok({ groups });
+  }
+
+  private async scanLocalImportGroupsImpl(localPath?: string): Promise<Result<{ groups: ImportGroupCandidate[] }>> {
+    try {
+      const { manifest, lockFile } = await this.store.readState();
+      const scanned = localPath
+        ? await this.scanSingleLocalImportSkill(localPath)
+        : await this.workspaceBootstrapService.scanUnmanagedLocalSkills(manifest, lockFile);
+      const installedRepos = this.installedCanonicalRepos(manifest);
+      const groupsByKey = new Map<string, LocalSkillScanResult[]>();
+
+      for (const skill of scanned) {
+        const canonicalRepo = skill.originLocator
+          ? normalizeImportCanonicalRepo(skill.originLocator)
+          : undefined;
+        const key = canonicalRepo ? `origin:${canonicalRepo}` : `local:${skill.sourceId}`;
+        const current = groupsByKey.get(key) ?? [];
+        current.push(skill);
+        groupsByKey.set(key, current);
+      }
+
+      const groups = await this.mapConcurrent(
+        [...groupsByKey.entries()],
+        SkillFlowApp.importGroupResolveConcurrency,
+        async ([key, skills]) => {
+          if (key.startsWith("origin:")) {
+            return this.buildOriginLocalImportGroup(
+              key.slice("origin:".length),
+              skills,
+              installedRepos,
+            );
+          }
+          return this.buildLocalOnlyImportGroup(skills[0]!);
+        },
+      );
+
+      return ok({ groups: groups.sort((left, right) => left.title.localeCompare(right.title)) });
+    } catch (error) {
+      return fail({
+        code: "LOCAL_IMPORT_SCAN_FAILED",
+        message: `Unable to scan local import groups: ${String(error)}`,
+      });
+    }
+  }
+
+  private async scanSingleLocalImportSkill(localPath: string): Promise<LocalSkillScanResult[]> {
+    const resolvedPath = await this.resolveLocalImportSkillPath(localPath);
+    if (!resolvedPath) {
+      throw new Error(`Local skill path must be a directory containing SKILL.md: ${localPath}`);
+    }
+
+    const metadata = await this.readLocalImportSkillMetadata(path.join(resolvedPath, "SKILL.md"));
+    const displayName = path.basename(resolvedPath);
+    const observedTargets = await this.detectLocalImportObservedTargets(resolvedPath);
+    return [{
+      path: resolvedPath,
+      displayName,
+      sourceId: deriveSourceId(resolvedPath),
+      contentHash: await hashDirectory(resolvedPath),
+      importedFromTargets: observedTargets.map((target) => target.target),
+      observedTargets,
+      title: metadata.title || displayName,
+      description: metadata.description,
+    }];
+  }
+
+  private async resolveLocalImportSkillPath(localPath: string): Promise<string | undefined> {
+    const trimmed = this.stripImportLocatorQuotes(localPath.trim());
+    if (!trimmed) {
+      return undefined;
+    }
+    const expanded = trimmed.startsWith("~/")
+      ? path.join(process.env.HOME ?? os.homedir(), trimmed.slice(2))
+      : trimmed;
+    const resolvedPath = path.resolve(expanded.startsWith("file://")
+      ? decodeURIComponent(new URL(trimmed).pathname)
+      : expanded);
+    const stats = await fs.stat(resolvedPath).catch(() => undefined);
+    if (!stats?.isDirectory()) {
+      return undefined;
+    }
+    if (!(await pathExists(path.join(resolvedPath, "SKILL.md")))) {
+      return undefined;
+    }
+    return await fs.realpath(resolvedPath).catch(() => resolvedPath);
+  }
+
+  private async detectLocalImportObservedTargets(skillPath: string): Promise<LocalSkillScanResult["observedTargets"]> {
+    const observedTargets: LocalSkillScanResult["observedTargets"] = [];
+    for (const target of TARGET_ORDER) {
+      for (const rootPath of getTargetScanRoots(target).map((root) => path.resolve(root))) {
+        const relative = path.relative(rootPath, skillPath);
+        if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+          observedTargets.push({
+            target,
+            rootPath,
+            targetPath: skillPath,
+          });
+        }
+      }
+    }
+    return observedTargets;
+  }
+
+  private async readLocalImportSkillMetadata(
+    skillFilePath: string,
+  ): Promise<{ title: string; description: string }> {
+    const content = (await fs.readFile(skillFilePath, "utf8")).replace(/\r\n?/g, "\n");
+    const frontmatter = content.match(/^---\n([\s\S]*?)\n---/);
+    const body = frontmatter?.[1] ?? "";
+    const nameMatch = body.match(/^name:\s*(.+)$/m);
+    const descriptionBlock = body.match(/^description:\s*\|\s*\n((?:\s+.+\n?)*)/m);
+    const descriptionLine = body.match(/^description:\s*(.+)$/m);
+    const title = nameMatch?.[1]?.trim() ?? "";
+    const description = descriptionBlock?.[1]
+      ? descriptionBlock[1].split("\n").map((line) => line.trim()).filter(Boolean).join(" ")
+      : descriptionLine?.[1]?.trim() ?? "";
+    return { title, description };
+  }
+
+  private async buildOriginLocalImportGroup(
+    canonicalRepo: string,
+    localSkills: LocalSkillScanResult[],
+    installedRepos: Set<string>,
+  ): Promise<ImportGroupCandidate> {
+    const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
+    const originLocator = `https://github.com/${normalizedRepo}.git`;
+    const preview = await this.previewGitHubImportSource(normalizedRepo);
+    const readyPreview = preview?.ok && preview.data.status === "ready" ? preview.data : undefined;
+    const detectedSkills = readyPreview
+      ? localSkills.map((skill) => this.buildValidatedLocalImportSkill(skill, readyPreview.skills))
+      : localSkills.map((skill) => this.buildUnavailableLocalImportSkill(skill));
+    const validationStatus = this.aggregateLocalImportValidationStatus(detectedSkills);
+    const selectedChoiceId = validationStatus === "matched" ? "origin" : "local";
+    const matchedSkills = detectedSkills.map((skill) => ({
+      skillId: skill.originSkillId ?? skill.id,
+      title: skill.title,
+    }));
+
+    return {
+      id: normalizedRepo,
+      provider: "skills",
+      locator: normalizedRepo,
+      canonicalRepo: normalizedRepo,
+      aliases: buildImportGroupCandidate({
+        canonicalRepo: normalizedRepo,
+        installed: installedRepos.has(normalizedRepo),
+      }).aliases,
+      title: normalizedRepo.split("/")[1] ?? normalizedRepo,
+      installed: installedRepos.has(normalizedRepo),
+      matchedSkillNames: localSkills.map((skill) => skill.title),
+      matchedSkills,
+      enrichState: { status: readyPreview ? "ready" : "idle" },
+      previewState: readyPreview
+        ? { status: "ready" }
+        : { status: "failed", reasonCode: "provider_data_unavailable", retryable: true },
+      localImport: {
+        validationStatus,
+        selectedChoiceId,
+        choices: [
+          {
+            id: "origin",
+            label: "Origin",
+            locator: originLocator,
+            selectedSkillIds: localSkills.map((skill) => skill.originRequestedPath ?? skill.displayName),
+          },
+          this.buildLocalImportChoice(localSkills),
+        ],
+        detectedSkills,
+      },
+    };
+  }
+
+  private buildLocalOnlyImportGroup(skill: LocalSkillScanResult): ImportGroupCandidate {
+    const canonicalRepo = `local:${skill.sourceId}`;
+    return {
+      id: canonicalRepo,
+      provider: "local",
+      locator: skill.path,
+      canonicalRepo,
+      aliases: [skill.path, `file://${skill.path}`],
+      title: skill.title || skill.displayName,
+      installed: false,
+      ...(skill.description ? { summary: skill.description } : {}),
+      matchedSkillNames: [skill.title || skill.displayName],
+      matchedSkills: [{ skillId: skill.displayName, title: skill.title || skill.displayName }],
+      enrichState: { status: "idle" },
+      previewState: { status: "idle" },
+      localImport: {
+        validationStatus: "local-only",
+        selectedChoiceId: "local",
+        choices: [this.buildLocalImportChoice([skill])],
+        detectedSkills: [{
+          id: skill.displayName,
+          title: skill.title || skill.displayName,
+          localPath: skill.path,
+          discoveredTargets: skill.importedFromTargets,
+          validationStatus: "local-only",
+        }],
+      },
+    };
+  }
+
+  private buildLocalImportChoice(localSkills: LocalSkillScanResult[]) {
+    return {
+      id: "local" as const,
+      label: "Local",
+      locator: localSkills[0]?.path ?? "",
+      selectedSkillIds: localSkills.map((skill) => skill.displayName),
+    };
+  }
+
+  private buildUnavailableLocalImportSkill(skill: LocalSkillScanResult): LocalImportDetectedSkill {
+    return {
+      id: skill.displayName,
+      title: skill.title || skill.displayName,
+      localPath: skill.path,
+      discoveredTargets: skill.importedFromTargets,
+      validationStatus: "origin-unavailable",
+    };
+  }
+
+  private buildValidatedLocalImportSkill(
+    skill: LocalSkillScanResult,
+    originSkills: ImportPreviewSkillCandidate[],
+  ): LocalImportDetectedSkill {
+    const matches = this.matchLocalImportOriginSkills(skill, originSkills);
+    if (matches.length === 0) {
+      return {
+        id: skill.displayName,
+        title: skill.title || skill.displayName,
+        localPath: skill.path,
+        discoveredTargets: skill.importedFromTargets,
+        validationStatus: "missing",
+      };
+    }
+    if (matches.length > 1) {
+      return {
+        id: skill.displayName,
+        title: skill.title || skill.displayName,
+        localPath: skill.path,
+        discoveredTargets: skill.importedFromTargets,
+        validationStatus: "ambiguous",
+      };
+    }
+
+    const match = matches[0]!;
+    const validationStatus = this.localImportSkillChanged(skill, match) ? "changed" : "matched";
+    return {
+      id: skill.displayName,
+      title: skill.title || skill.displayName,
+      localPath: skill.path,
+      discoveredTargets: skill.importedFromTargets,
+      validationStatus,
+      originSkillId: match.id,
+    };
+  }
+
+  private matchLocalImportOriginSkills(
+    skill: LocalSkillScanResult,
+    originSkills: ImportPreviewSkillCandidate[],
+  ): ImportPreviewSkillCandidate[] {
+    const originRequestedPath = skill.originRequestedPath?.trim();
+    if (originRequestedPath) {
+      const matches = originSkills.filter((originSkill) => originSkill.id === originRequestedPath);
+      if (matches.length > 0) {
+        return matches;
+      }
+    }
+
+    const localDirectoryName = path.basename(skill.path);
+    const leafMatches = originSkills.filter((originSkill) => {
+      const id = originSkill.id;
+      return id === localDirectoryName || id.endsWith(`/${localDirectoryName}`);
+    });
+    if (leafMatches.length > 0) {
+      return leafMatches;
+    }
+
+    const normalizedLocalTitle = skill.title.trim().toLowerCase();
+    if (normalizedLocalTitle) {
+      const titleMatches = originSkills.filter(
+        (originSkill) => originSkill.title.trim().toLowerCase() === normalizedLocalTitle,
+      );
+      if (titleMatches.length > 0) {
+        return titleMatches;
+      }
+    }
+
+    return originSkills.filter((originSkill) => originSkill.id === skill.displayName);
+  }
+
+  private localImportSkillChanged(
+    skill: LocalSkillScanResult,
+    originSkill: ImportPreviewSkillCandidate,
+  ): boolean {
+    const localDescription = skill.description.trim();
+    const originSummary = originSkill.summary.trim();
+    return Boolean(localDescription && originSummary && localDescription !== originSummary);
+  }
+
+  private aggregateLocalImportValidationStatus(
+    detectedSkills: LocalImportDetectedSkill[],
+  ): LocalImportValidationStatus {
+    if (detectedSkills.every((skill) => skill.validationStatus === "matched")) {
+      return "matched";
+    }
+    for (const status of ["origin-unavailable", "ambiguous", "changed", "missing"] as const) {
+      if (detectedSkills.some((skill) => skill.validationStatus === status)) {
+        return status;
+      }
+    }
+    return "local-only";
   }
 
   private async searchImportGroupsImpl(
