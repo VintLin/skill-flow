@@ -221,7 +221,7 @@ describe("bridge protocol", () => {
           skills: [
             {
               sourceId: "writing-source",
-              skillName: "drafting",
+              leafId: "writing-source:skills/drafting",
               skillPath: "skills/drafting",
             },
           ],
@@ -237,7 +237,7 @@ describe("bridge protocol", () => {
         skills: [
           {
             sourceId: "writing-source",
-            skillName: "drafting",
+            leafId: "writing-source:skills/drafting",
             skillPath: "skills/drafting",
           },
         ],

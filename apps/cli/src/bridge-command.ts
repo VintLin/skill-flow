@@ -23,7 +23,7 @@ type BridgeResult<T> = {
 
 type VirtualSkillRef = {
   sourceId: string;
-  skillName: string;
+  leafId: string;
   skillPath?: string;
 };
 
@@ -256,8 +256,12 @@ export async function executeBridgeRequest(
       }
       case "restore-merged-groups": {
         const payload = expectObjectPayload(request.payload, "restore-merged-groups");
-        const groupId = expectString(payload.groupId, "groupId", "restore-merged-groups");
-        const result = await (app as SkillFlowApp & VirtualGroupBridgeApp).restoreMergedGroups(groupId);
+        const virtualGroupId = expectString(
+          payload.virtualGroupId,
+          "virtualGroupId",
+          "restore-merged-groups",
+        );
+        const result = await (app as SkillFlowApp & VirtualGroupBridgeApp).restoreMergedGroups(virtualGroupId);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
         }
@@ -505,6 +509,9 @@ function parseVirtualSkillRefs(value: JsonValue | undefined, command: string): V
   if (!Array.isArray(value)) {
     throw new Error(`Bridge command '${command}' requires array field 'skills'.`);
   }
+  if (value.length === 0) {
+    throw new Error(`Bridge command '${command}' requires non-empty array field 'skills'.`);
+  }
 
   return value.map((entry, index) => {
     if (!isJsonObject(entry)) {
@@ -514,7 +521,7 @@ function parseVirtualSkillRefs(value: JsonValue | undefined, command: string): V
     const skillPath = expectOptionalString(entry.skillPath, `skills[${index}].skillPath`, command);
     return {
       sourceId: expectString(entry.sourceId, `skills[${index}].sourceId`, command),
-      skillName: expectString(entry.skillName, `skills[${index}].skillName`, command),
+      leafId: expectString(entry.leafId, `skills[${index}].leafId`, command),
       ...(skillPath !== undefined ? { skillPath } : {}),
     };
   });

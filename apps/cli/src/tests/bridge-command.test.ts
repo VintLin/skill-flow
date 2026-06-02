@@ -328,7 +328,7 @@ describe.sequential("bridge command dispatcher", () => {
     const app = {
       createVirtualGroup: vi.fn(async (draft: {
         displayName: string;
-        skills: Array<{ sourceId: string; skillName: string; skillPath?: string }>;
+        skills: Array<{ sourceId: string; leafId: string; skillPath?: string }>;
         enabledTargets: string[];
       }) => ok({
         group: {
@@ -346,7 +346,7 @@ describe.sequential("bridge command dispatcher", () => {
         skills: [
           {
             sourceId: "writing-source",
-            skillName: "drafting",
+            leafId: "writing-source:skills/drafting",
             skillPath: "skills/drafting",
           },
         ],
@@ -359,7 +359,7 @@ describe.sequential("bridge command dispatcher", () => {
       skills: [
         {
           sourceId: "writing-source",
-          skillName: "drafting",
+          leafId: "writing-source:skills/drafting",
           skillPath: "skills/drafting",
         },
       ],
@@ -416,8 +416,8 @@ describe.sequential("bridge command dispatcher", () => {
 
   test("dispatches virtual group restore-merged-groups bridge command", async () => {
     const app = {
-      restoreMergedGroups: vi.fn(async (groupId: string) => ok({
-        restoredGroupId: groupId,
+      restoreMergedGroups: vi.fn(async (virtualGroupId: string) => ok({
+        restoredGroupId: virtualGroupId,
       })),
     } as unknown as SkillFlowApp;
 
@@ -425,7 +425,7 @@ describe.sequential("bridge command dispatcher", () => {
       protocolVersion: PROTOCOL_VERSION,
       command: "restore-merged-groups",
       payload: {
-        groupId: "writing-stack",
+        virtualGroupId: "writing-stack",
       },
     });
 
@@ -442,12 +442,20 @@ describe.sequential("bridge command dispatcher", () => {
       skills: "drafting",
     },
     {
-      label: "missing skillName",
+      label: "missing leafId",
       skills: [{ sourceId: "writing-source" }],
     },
     {
+      label: "non-string leafId",
+      skills: [{ sourceId: "writing-source", leafId: 123 }],
+    },
+    {
       label: "non-string sourceId",
-      skills: [{ sourceId: 123, skillName: "drafting" }],
+      skills: [{ sourceId: 123, leafId: "writing-source:skills/drafting" }],
+    },
+    {
+      label: "empty skills",
+      skills: [],
     },
   ])("rejects virtual group payload with $label", async ({ skills }) => {
     const app = {
