@@ -119,10 +119,9 @@ final class ImportScreenContainer {
     }
 
     func selectedLocalChoice(for card: ImportViewModel.Card) -> MainViewModel.LocalImportChoice? {
-        guard let selectedChoiceId = screenState.localChoiceByItemId[card.id] else {
-            return nil
-        }
+        let selectedChoiceId = screenState.localChoiceByItemId[card.id] ?? card.selectedLocalChoiceId
         return card.localChoices.first { $0.id == selectedChoiceId }
+            ?? card.localChoices.first
     }
 
     func setLocalChoice(_ choiceId: String, for card: ImportViewModel.Card) {

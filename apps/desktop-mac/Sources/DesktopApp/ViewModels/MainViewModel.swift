@@ -1870,6 +1870,15 @@ final class MainViewModel {
     }
 
     func loadLocalImportGroups(path: String?) async {
+        if path == nil {
+            switch localImportScanPhase {
+            case .loading, .ready:
+                return
+            case .idle, .failed:
+                break
+            }
+        }
+
         localImportScanPhase = .loading
         do {
             let response = try await queryFacade.scanLocalImportGroups(path: path)

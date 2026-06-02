@@ -208,6 +208,60 @@ final class ImportScreenContainerTests: XCTestCase {
         ])
     }
 
+    func testBackendSelectedLocalChoiceIsUsedBeforeManualSelection() async {
+        let state = DesktopAppState()
+        let commands = RecordingImportCommandFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let card = ImportViewModel.Card(
+            id: "local-skills",
+            title: "Local Skills",
+            locator: "file:///Users/Vint/skills",
+            canonicalRepo: "local-skills",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @local",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [
+                .init(id: "browse", title: "Browse", summary: "", selectedByDefault: true),
+                .init(id: "review", title: "Review", summary: "", selectedByDefault: true),
+            ],
+            targets: [],
+            selectedLocalChoiceId: "choice-b",
+            localChoices: [
+                MainViewModel.LocalImportChoice(
+                    id: "choice-a",
+                    label: "All",
+                    locator: "file:///Users/Vint/skills",
+                    selectedSkillIds: ["browse", "review"]
+                ),
+                MainViewModel.LocalImportChoice(
+                    id: "choice-b",
+                    label: "Browse only",
+                    locator: "file:///Users/Vint/skills/browse",
+                    selectedSkillIds: ["browse"]
+                ),
+            ]
+        )
+
+        await container.importGroup(card)
+
+        XCTAssertEqual(container.selectedLocalChoice(for: card)?.id, "choice-b")
+        XCTAssertEqual(commands.importCalls, [
+            .init(
+                locator: "file:///Users/Vint/skills/browse",
+                selectedSkillIds: ["browse"],
+                enabledTargets: []
+            )
+        ])
+    }
+
     func testSnapshotProjectsImportBusinessState() {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
@@ -311,6 +365,23 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(sections.map { $0.categoryId }, ["general", "development"])
         XCTAssertEqual(sections[0].cards.map { $0.canonicalRepo }, ["anthropics/skills"])
         XCTAssertEqual(sections[1].cards.map { $0.canonicalRepo }, ["obra/superpowers"])
+    }
+
+    func testLoadImportPageIfNeededScansLocalImportGroupsOnlyOnce() async {
+        let query = RecordingLocalImportQueryFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+
+        await model.loadImportPageIfNeeded()
+        await model.loadImportPageIfNeeded()
+
+        XCTAssertEqual(query.scanPaths, [nil])
+
+        await model.loadLocalImportGroups(path: "/Users/Vint/skills")
+
+        XCTAssertEqual(query.scanPaths, [nil, "/Users/Vint/skills"])
     }
 
     func testHandleImportActionShowsToastWhenRecommendationAlreadyExistsLocally() async {
@@ -736,6 +807,56 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
     }
 
     func doctor() async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+}
+
+@MainActor
+private final class RecordingLocalImportQueryFacade: DesktopQuerying {
+    private(set) var scanPaths: [String?] = []
+
+    func bootstrap() async throws -> BridgeResponse {
+        BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .bootstrap,
+            ok: true,
+            data: AnyCodable([String: Any]()),
+            warnings: [],
+            errors: []
+        )
+    }
+
+    func list() async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func searchImportGroups(query: String?) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func scanLocalImportGroups(path: String?) async throws -> BridgeResponse {
+        scanPaths.append(path)
+        return BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .scanLocalImportGroups,
+            ok: true,
+            data: AnyCodable(["groups": []]),
+            warnings: [],
+            errors: []
+        )
+    }
+
+    func previewImportSource(locator: String) async throws -> BridgeResponse {
         fatalError("unused")
     }
 }

@@ -71,6 +71,7 @@ struct ImportViewModel: Equatable {
         let recommendationDescription: String?
         let provider: String
         let localValidationStatus: String?
+        let selectedLocalChoiceId: String?
         let localChoices: [MainViewModel.LocalImportChoice]
 
         init(
@@ -91,6 +92,7 @@ struct ImportViewModel: Equatable {
             recommendationDescription: String? = nil,
             provider: String = "skills",
             localValidationStatus: String? = nil,
+            selectedLocalChoiceId: String? = nil,
             localChoices: [MainViewModel.LocalImportChoice] = []
         ) {
             self.id = id
@@ -110,6 +112,7 @@ struct ImportViewModel: Equatable {
             self.recommendationDescription = recommendationDescription
             self.provider = provider
             self.localValidationStatus = localValidationStatus
+            self.selectedLocalChoiceId = selectedLocalChoiceId
             self.localChoices = localChoices
         }
     }
@@ -167,6 +170,7 @@ struct ImportViewModel: Equatable {
             recommendationDescription: nil,
             provider: item.provider,
             localValidationStatus: item.localImport?.validationStatus,
+            selectedLocalChoiceId: item.localImport?.selectedChoiceId,
             localChoices: item.localImport?.choices ?? []
         )
     }
@@ -176,8 +180,12 @@ struct ImportViewModel: Equatable {
         recommendations: [ImportRecommendationEntry],
         locale: Locale
     ) -> [RecommendedCategorySection] {
-        let cardsByCanonicalRepo = Dictionary(uniqueKeysWithValues: cards.map { (normalizedRecommendationKey($0.canonicalRepo), $0) })
-        let cardsByLocator = Dictionary(uniqueKeysWithValues: cards.map { (normalizedRecommendationKey($0.locator), $0) })
+        let localCards = cards.filter { $0.provider == "local" || $0.localValidationStatus != nil }
+        let remoteCards = cards.filter { card in
+            !localCards.contains(where: { $0.id == card.id })
+        }
+        let cardsByCanonicalRepo = cardsByRecommendationKey(remoteCards, key: \.canonicalRepo)
+        let cardsByLocator = cardsByRecommendationKey(remoteCards, key: \.locator)
         var sectionsByCategoryId: [String: [(entry: ImportRecommendationEntry, card: Card)]] = [:]
 
         for entry in recommendations.sorted(by: recommendationSort) {
@@ -205,13 +213,13 @@ struct ImportViewModel: Equatable {
                 recommendationDescription: localized(entry.descriptionKey, locale: locale),
                 provider: baseCard.provider,
                 localValidationStatus: baseCard.localValidationStatus,
+                selectedLocalChoiceId: baseCard.selectedLocalChoiceId,
                 localChoices: baseCard.localChoices
             )
 
             sectionsByCategoryId[entry.categoryId, default: []].append((entry: entry, card: decoratedCard))
         }
 
-        let localCards = cards.filter { $0.provider == "local" || $0.localValidationStatus != nil }
         let remoteSections = sectionsByCategoryId
             .map { categoryId, entries in
                 return RecommendedCategorySection(
@@ -244,6 +252,18 @@ struct ImportViewModel: Equatable {
                 cards: localCards
             )
         ] + remoteSections
+    }
+
+    private static func cardsByRecommendationKey(_ cards: [Card], key: KeyPath<Card, String>) -> [String: Card] {
+        var result: [String: Card] = [:]
+        for card in cards {
+            let normalizedKey = normalizedRecommendationKey(card[keyPath: key])
+            guard result[normalizedKey] == nil else {
+                continue
+            }
+            result[normalizedKey] = card
+        }
+        return result
     }
 
     private static func recommendationBadgeItems(

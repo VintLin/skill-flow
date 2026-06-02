@@ -202,6 +202,54 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertEqual(sections[0].cards[0].localChoices.map(\.id), ["local-choice"])
     }
 
+    func testRecommendedContentToleratesDuplicateLocalAndRemoteRecommendationKeys() {
+        let viewModel = ImportViewModel(
+            items: [
+                makeItem(
+                    id: "anthropics-skills",
+                    title: "Anthropic Skills",
+                    locator: "anthropics/skills",
+                    canonicalRepo: "anthropics/skills"
+                ),
+                makeItem(
+                    id: "local-anthropics-skills",
+                    title: "Local Anthropic Skills",
+                    locator: "anthropics/skills",
+                    canonicalRepo: "anthropics/skills",
+                    provider: "local",
+                    localImport: MainViewModel.LocalImportInfo(
+                        validationStatus: "valid",
+                        selectedChoiceId: nil,
+                        choices: [],
+                        detectedSkills: []
+                    )
+                ),
+            ],
+            locale: locale,
+            fallbackTargetIds: [],
+            submittedQuery: "",
+            recommendations: [
+                .init(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: [],
+                    descriptionKey: "import.recommendation.description.anthropics_skills",
+                    sortOrder: 10
+                )
+            ]
+        )
+
+        guard case .recommended(let sections) = viewModel.content else {
+            return XCTFail("expected recommended content")
+        }
+
+        XCTAssertEqual(sections.map(\.categoryId), ["local", "general"])
+        XCTAssertEqual(sections[0].cards.map(\.id), ["local-anthropics-skills"])
+        XCTAssertEqual(sections[1].cards.map(\.id), ["anthropics-skills"])
+    }
+
     func testRecommendedContentPreservesInstalledStateForLocalRecommendations() {
         let viewModel = ImportViewModel(
             items: [
