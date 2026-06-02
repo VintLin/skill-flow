@@ -324,6 +324,151 @@ describe.sequential("bridge command dispatcher", () => {
     });
   });
 
+  test("dispatches virtual group create-virtual-group bridge command", async () => {
+    const app = {
+      createVirtualGroup: vi.fn(async (draft: {
+        displayName: string;
+        skills: Array<{ sourceId: string; skillName: string; skillPath?: string }>;
+        enabledTargets: string[];
+      }) => ok({
+        group: {
+          id: "writing-stack",
+          displayName: draft.displayName,
+        },
+      })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "create-virtual-group",
+      payload: {
+        displayName: "Writing Stack",
+        skills: [
+          {
+            sourceId: "writing-source",
+            skillName: "drafting",
+            skillPath: "skills/drafting",
+          },
+        ],
+        enabledTargets: ["codex"],
+      },
+    });
+
+    expect(app.createVirtualGroup).toHaveBeenCalledWith({
+      displayName: "Writing Stack",
+      skills: [
+        {
+          sourceId: "writing-source",
+          skillName: "drafting",
+          skillPath: "skills/drafting",
+        },
+      ],
+      enabledTargets: ["codex"],
+    });
+    expect(response.ok).toBe(true);
+    expect(response.data).toEqual({
+      group: {
+        id: "writing-stack",
+        displayName: "Writing Stack",
+      },
+    });
+  });
+
+  test("dispatches virtual group merge-groups bridge command", async () => {
+    const app = {
+      mergeGroups: vi.fn(async (draft: {
+        displayName: string;
+        sourceIds: string[];
+        enabledTargets: string[];
+      }) => ok({
+        group: {
+          id: "writing-stack",
+          displayName: draft.displayName,
+          sourceIds: draft.sourceIds,
+        },
+      })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "merge-groups",
+      payload: {
+        displayName: "Writing Stack",
+        sourceIds: ["drafting-source", "editing-source"],
+        enabledTargets: ["codex"],
+      },
+    });
+
+    expect(app.mergeGroups).toHaveBeenCalledWith({
+      displayName: "Writing Stack",
+      sourceIds: ["drafting-source", "editing-source"],
+      enabledTargets: ["codex"],
+    });
+    expect(response.ok).toBe(true);
+    expect(response.data).toEqual({
+      group: {
+        id: "writing-stack",
+        displayName: "Writing Stack",
+        sourceIds: ["drafting-source", "editing-source"],
+      },
+    });
+  });
+
+  test("dispatches virtual group restore-merged-groups bridge command", async () => {
+    const app = {
+      restoreMergedGroups: vi.fn(async (groupId: string) => ok({
+        restoredGroupId: groupId,
+      })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "restore-merged-groups",
+      payload: {
+        groupId: "writing-stack",
+      },
+    });
+
+    expect(app.restoreMergedGroups).toHaveBeenCalledWith("writing-stack");
+    expect(response.ok).toBe(true);
+    expect(response.data).toEqual({
+      restoredGroupId: "writing-stack",
+    });
+  });
+
+  test.each([
+    {
+      label: "non-array skills",
+      skills: "drafting",
+    },
+    {
+      label: "missing skillName",
+      skills: [{ sourceId: "writing-source" }],
+    },
+    {
+      label: "non-string sourceId",
+      skills: [{ sourceId: 123, skillName: "drafting" }],
+    },
+  ])("rejects virtual group payload with $label", async ({ skills }) => {
+    const app = {
+      createVirtualGroup: vi.fn(),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "create-virtual-group",
+      payload: {
+        displayName: "Writing Stack",
+        skills,
+        enabledTargets: ["codex"],
+      },
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+    expect(app.createVirtualGroup).not.toHaveBeenCalled();
+  });
+
   test("accepts valid apply payload with empty skill selection", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),

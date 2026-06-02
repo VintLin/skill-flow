@@ -203,4 +203,46 @@ describe("bridge protocol", () => {
       errors: [],
     });
   });
+
+  test("recognizes virtual group bridge commands", () => {
+    expect(isBridgeCommandName("create-virtual-group")).toBe(true);
+    expect(isBridgeCommandName("merge-groups")).toBe(true);
+    expect(isBridgeCommandName("restore-merged-groups")).toBe(true);
+  });
+
+  test("parses virtual group create-virtual-group bridge request", () => {
+    expect(
+      parseBridgeRequest({
+        protocolVersion: PROTOCOL_VERSION,
+        requestId: "req-virtual",
+        command: "create-virtual-group",
+        payload: {
+          displayName: "Writing Stack",
+          skills: [
+            {
+              sourceId: "writing-source",
+              skillName: "drafting",
+              skillPath: "skills/drafting",
+            },
+          ],
+          enabledTargets: ["codex"],
+        },
+      }),
+    ).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: "req-virtual",
+      command: "create-virtual-group",
+      payload: {
+        displayName: "Writing Stack",
+        skills: [
+          {
+            sourceId: "writing-source",
+            skillName: "drafting",
+            skillPath: "skills/drafting",
+          },
+        ],
+        enabledTargets: ["codex"],
+      },
+    });
+  });
 });

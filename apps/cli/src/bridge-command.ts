@@ -14,6 +14,33 @@ type BridgeFailure = {
   message: string;
 };
 
+type BridgeResult<T> = {
+  ok: boolean;
+  data: T;
+  warnings: Array<{ code: string; message: string }>;
+  errors: Array<{ code: string; message: string }>;
+};
+
+type VirtualSkillRef = {
+  sourceId: string;
+  skillName: string;
+  skillPath?: string;
+};
+
+type VirtualGroupBridgeApp = {
+  createVirtualGroup(args: {
+    displayName: string;
+    skills: VirtualSkillRef[];
+    enabledTargets: string[];
+  }): Promise<BridgeResult<unknown>>;
+  mergeGroups(args: {
+    displayName: string;
+    sourceIds: string[];
+    enabledTargets: string[];
+  }): Promise<BridgeResult<unknown>>;
+  restoreMergedGroups(groupId: string): Promise<BridgeResult<unknown>>;
+};
+
 export async function executeBridgeRequest(
   app: SkillFlowApp,
   request: BridgeRequest,
@@ -162,6 +189,75 @@ export async function executeBridgeRequest(
         const sourceId = expectString(payload.sourceId, "sourceId", "rename-source");
         const displayName = expectPossiblyEmptyString(payload.displayName, "displayName", "rename-source");
         const result = await app.renameSource(sourceId, displayName);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
+      case "create-virtual-group": {
+        const payload = expectObjectPayload(request.payload, "create-virtual-group");
+        const displayName = expectString(payload.displayName, "displayName", "create-virtual-group");
+        const skills = parseVirtualSkillRefs(payload.skills, "create-virtual-group");
+        const enabledTargets = parseOptionalStringArray(
+          payload.enabledTargets,
+          "create-virtual-group.enabledTargets",
+        ) ?? [];
+        const result = await (app as SkillFlowApp & VirtualGroupBridgeApp).createVirtualGroup({
+          displayName,
+          skills,
+          enabledTargets,
+        });
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
+      case "merge-groups": {
+        const payload = expectObjectPayload(request.payload, "merge-groups");
+        const displayName = expectString(payload.displayName, "displayName", "merge-groups");
+        const sourceIds = parseRequiredStringArray(payload.sourceIds, "merge-groups.sourceIds");
+        const enabledTargets = parseOptionalStringArray(
+          payload.enabledTargets,
+          "merge-groups.enabledTargets",
+        ) ?? [];
+        const result = await (app as SkillFlowApp & VirtualGroupBridgeApp).mergeGroups({
+          displayName,
+          sourceIds,
+          enabledTargets,
+        });
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
+      case "restore-merged-groups": {
+        const payload = expectObjectPayload(request.payload, "restore-merged-groups");
+        const groupId = expectString(payload.groupId, "groupId", "restore-merged-groups");
+        const result = await (app as SkillFlowApp & VirtualGroupBridgeApp).restoreMergedGroups(groupId);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
         }
@@ -403,6 +499,25 @@ function parseOptionalStringArray(value: JsonValue | undefined, field: string): 
     throw new Error(`Field '${field}' must be a string array.`);
   }
   return value as string[];
+}
+
+function parseVirtualSkillRefs(value: JsonValue | undefined, command: string): VirtualSkillRef[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Bridge command '${command}' requires array field 'skills'.`);
+  }
+
+  return value.map((entry, index) => {
+    if (!isJsonObject(entry)) {
+      throw new Error(`Field 'skills[${index}]' must be a JSON object.`);
+    }
+
+    const skillPath = expectOptionalString(entry.skillPath, `skills[${index}].skillPath`, command);
+    return {
+      sourceId: expectString(entry.sourceId, `skills[${index}].sourceId`, command),
+      skillName: expectString(entry.skillName, `skills[${index}].skillName`, command),
+      ...(skillPath !== undefined ? { skillPath } : {}),
+    };
+  });
 }
 
 function expectDraftBinding(value: JsonValue | undefined): DraftBinding {

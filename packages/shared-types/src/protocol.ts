@@ -10,6 +10,9 @@ export type BridgeCommandName =
   | "import-source"
   | "toggle-pin"
   | "rename-source"
+  | "create-virtual-group"
+  | "merge-groups"
+  | "restore-merged-groups"
   | "doctor"
   | "add"
   | "apply"
@@ -62,7 +65,7 @@ export function parseBridgeRequest(input: unknown): BridgeRequest {
 
   if (!isBridgeCommandName(command)) {
     throw new Error(
-      "Bridge request 'command' must be one of: bootstrap, list, inspect, inspect-enrichment, search-import-groups, preview-import-source, import-source, toggle-pin, rename-source, doctor, add, apply, update, uninstall, save-settings.",
+      "Bridge request 'command' must be one of: bootstrap, list, inspect, inspect-enrichment, search-import-groups, preview-import-source, import-source, toggle-pin, rename-source, create-virtual-group, merge-groups, restore-merged-groups, doctor, add, apply, update, uninstall, save-settings.",
     );
   }
 
@@ -134,6 +137,9 @@ export function isBridgeCommandName(value: unknown): value is BridgeCommandName 
     value === "import-source" ||
     value === "toggle-pin" ||
     value === "rename-source" ||
+    value === "create-virtual-group" ||
+    value === "merge-groups" ||
+    value === "restore-merged-groups" ||
     value === "doctor" ||
     value === "add" ||
     value === "apply" ||
