@@ -726,20 +726,21 @@ export class SkillFlowApp {
         groupsByKey.set(key, current);
       }
 
-      const groups = await this.mapConcurrent(
+      const groupBatches = await this.mapConcurrent(
         [...groupsByKey.entries()],
         SkillFlowApp.importGroupResolveConcurrency,
         async ([key, skills]) => {
           if (key.startsWith("origin:")) {
-            return this.buildOriginLocalImportGroup(
+            return this.buildOriginLocalImportGroups(
               key.slice("origin:".length),
               skills,
               installedRepos,
             );
           }
-          return this.buildLocalOnlyImportGroup(skills[0]!);
+          return [this.buildLocalImportFallbackGroup(skills[0]!)];
         },
       );
+      const groups = groupBatches.flat();
 
       return ok({ groups: groups.sort((left, right) => left.title.localeCompare(right.title)) });
     } catch (error) {
@@ -825,11 +826,11 @@ export class SkillFlowApp {
     return { title, description };
   }
 
-  private async buildOriginLocalImportGroup(
+  private async buildOriginLocalImportGroups(
     canonicalRepo: string,
     localSkills: LocalSkillScanResult[],
     installedRepos: Set<string>,
-  ): Promise<ImportGroupCandidate> {
+  ): Promise<ImportGroupCandidate[]> {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
     const originLocator = `https://github.com/${normalizedRepo}.git`;
     const preview = await this.previewGitHubImportSource(normalizedRepo);
@@ -839,12 +840,18 @@ export class SkillFlowApp {
       : localSkills.map((skill) => this.buildUnavailableLocalImportSkill(skill));
     const validationStatus = this.aggregateLocalImportValidationStatus(detectedSkills);
     const selectedChoiceId = validationStatus === "matched" ? "origin" : "local";
+    if (validationStatus !== "matched" && localSkills.length > 1) {
+      return localSkills.map((skill, index) =>
+        this.buildLocalImportFallbackGroup(skill, detectedSkills[index]),
+      );
+    }
+
     const matchedSkills = detectedSkills.map((skill) => ({
       skillId: skill.originSkillId ?? skill.id,
       title: skill.title,
     }));
 
-    return {
+    return [{
       id: normalizedRepo,
       provider: "skills",
       locator: normalizedRepo,
@@ -869,17 +876,27 @@ export class SkillFlowApp {
             id: "origin",
             label: "Origin",
             locator: originLocator,
-            selectedSkillIds: localSkills.map((skill) => skill.originRequestedPath ?? skill.displayName),
+            selectedSkillIds: detectedSkills.map((skill) => skill.originSkillId ?? skill.id),
           },
           this.buildLocalImportChoice(localSkills),
         ],
         detectedSkills,
       },
-    };
+    }];
   }
 
-  private buildLocalOnlyImportGroup(skill: LocalSkillScanResult): ImportGroupCandidate {
+  private buildLocalImportFallbackGroup(
+    skill: LocalSkillScanResult,
+    detectedSkill?: LocalImportDetectedSkill,
+  ): ImportGroupCandidate {
     const canonicalRepo = `local:${skill.sourceId}`;
+    const fallbackDetectedSkill = detectedSkill ?? {
+      id: skill.displayName,
+      title: skill.title || skill.displayName,
+      localPath: skill.path,
+      discoveredTargets: skill.importedFromTargets,
+      validationStatus: "local-only" as const,
+    };
     return {
       id: canonicalRepo,
       provider: "local",
@@ -894,16 +911,10 @@ export class SkillFlowApp {
       enrichState: { status: "idle" },
       previewState: { status: "idle" },
       localImport: {
-        validationStatus: "local-only",
+        validationStatus: fallbackDetectedSkill.validationStatus,
         selectedChoiceId: "local",
         choices: [this.buildLocalImportChoice([skill])],
-        detectedSkills: [{
-          id: skill.displayName,
-          title: skill.title || skill.displayName,
-          localPath: skill.path,
-          discoveredTargets: skill.importedFromTargets,
-          validationStatus: "local-only",
-        }],
+        detectedSkills: [fallbackDetectedSkill],
       },
     };
   }
