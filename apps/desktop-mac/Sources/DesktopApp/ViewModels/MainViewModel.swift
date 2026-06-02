@@ -552,6 +552,29 @@ final class MainViewModel {
         let selectedByDefault: Bool
     }
 
+    struct LocalImportChoice: Identifiable, Equatable {
+        let id: String
+        let label: String
+        let locator: String
+        let selectedSkillIds: [String]
+    }
+
+    struct LocalImportDetectedSkill: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let localPath: String
+        let discoveredTargets: [String]
+        let validationStatus: String
+        let originSkillId: String?
+    }
+
+    struct LocalImportInfo: Equatable {
+        let validationStatus: String
+        let selectedChoiceId: String?
+        let choices: [LocalImportChoice]
+        let detectedSkills: [LocalImportDetectedSkill]
+    }
+
     struct ImportGroupItem: Identifiable, Equatable {
         let id: String
         let title: String
@@ -565,6 +588,8 @@ final class MainViewModel {
         let skillCount: Int?
         let matchedSkillNames: [String]
         let matchedSkills: [ImportMatchedSkill]
+        let provider: String
+        let localImport: LocalImportInfo?
         let snapshot: SourceSnapshotData?
         let enrichPhase: ImportLoadPhase
         let previewPhase: ImportLoadPhase
@@ -792,6 +817,8 @@ final class MainViewModel {
     var importSubmittedQuery: String = ""
     var importSearchPhase: ImportLoadPhase = .idle
     var recommendedImportGroups: [ImportGroupItem] = []
+    var localImportGroups: [ImportGroupItem] = []
+    var localImportScanPhase: ImportLoadPhase = .idle
     var searchImportGroups: [ImportGroupItem] = []
     var importingImportGroupId: String?
     @ObservationIgnored private weak var routeState: DesktopAppState?
@@ -1826,7 +1853,7 @@ final class MainViewModel {
     }
 
     var importDisplayGroups: [ImportGroupItem] {
-        importSubmittedQuery.isEmpty ? recommendedImportGroups : searchImportGroups
+        importSubmittedQuery.isEmpty ? recommendedImportGroups + localImportGroups : searchImportGroups
     }
 
     func isImportingImportGroup(_ groupId: String) -> Bool {
@@ -1835,10 +1862,39 @@ final class MainViewModel {
 
     func loadImportPageIfNeeded() async {
         seedRecommendedImportGroupsIfNeeded()
+        await loadLocalImportGroups(path: nil)
     }
 
     func loadRecommendedImportGroups() async {
         seedRecommendedImportGroupsIfNeeded()
+    }
+
+    func loadLocalImportGroups(path: String?) async {
+        localImportScanPhase = .loading
+        do {
+            let response = try await queryFacade.scanLocalImportGroups(path: path)
+            let payload = response.data?.value as? [String: Any] ?? [:]
+            let groups = parseImportGroupsPayload(payload: payload)
+
+            if path == nil {
+                localImportGroups = groups
+            } else {
+                var merged = localImportGroups
+                for group in groups {
+                    if let index = merged.firstIndex(where: { $0.id == group.id }) {
+                        merged[index] = group
+                    } else {
+                        merged.append(group)
+                    }
+                }
+                localImportGroups = merged
+            }
+
+            localImportScanPhase = .ready
+        } catch {
+            localImportScanPhase = .failed(.plain(error.localizedDescription))
+            showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
+        }
     }
 
     func submitImportSearch(_ query: String) async {
@@ -1901,7 +1957,7 @@ final class MainViewModel {
         }
 
         do {
-            let response = try await bridgeClient.importSource(
+            let response = try await commandFacade.importSource(
                 locator: locator,
                 selectedSkillIds: finalSelectedSkillIds,
                 enabledTargets: finalEnabledTargets
@@ -1953,6 +2009,8 @@ final class MainViewModel {
             let matchedSkillNames = uniqueSorted(group["matchedSkillNames"] as? [String] ?? [])
             let matchedSkills = parseMatchedSkills(group["matchedSkills"] as? [[String: Any]])
             let snapshot = parseSourceSnapshot(group["snapshot"] as? [String: Any])
+            let provider = group["provider"] as? String ?? "skills"
+            let localImport = parseLocalImport(group["localImport"] as? [String: Any])
             let summary = (group["summary"] as? String)?.nonEmpty
                 ?? snapshot?.description.nonEmpty
                 ?? ""
@@ -1981,11 +2039,64 @@ final class MainViewModel {
                 skillCount: group["skillCount"] as? Int ?? snapshot?.skillCount,
                 matchedSkillNames: matchedSkillNames,
                 matchedSkills: matchedSkills,
+                provider: provider,
+                localImport: localImport,
                 snapshot: snapshot,
                 enrichPhase: parseImportLoadPhase(group["enrichState"] as? [String: Any]),
                 previewPhase: previewPhase,
                 skills: skills,
                 targets: []
+            )
+        }
+    }
+
+    private func parseLocalImport(_ payload: [String: Any]?) -> LocalImportInfo? {
+        guard let payload,
+              let validationStatus = (payload["validationStatus"] as? String)?.nonEmpty else {
+            return nil
+        }
+
+        return LocalImportInfo(
+            validationStatus: validationStatus,
+            selectedChoiceId: (payload["selectedChoiceId"] as? String)?.nonEmpty,
+            choices: parseLocalImportChoices(payload["choices"] as? [[String: Any]]),
+            detectedSkills: parseLocalImportDetectedSkills(payload["detectedSkills"] as? [[String: Any]])
+        )
+    }
+
+    private func parseLocalImportChoices(_ payload: [[String: Any]]?) -> [LocalImportChoice] {
+        (payload ?? []).compactMap { choice in
+            guard let id = (choice["id"] as? String)?.nonEmpty,
+                  let label = (choice["label"] as? String)?.nonEmpty,
+                  let locator = (choice["locator"] as? String)?.nonEmpty else {
+                return nil
+            }
+
+            return LocalImportChoice(
+                id: id,
+                label: label,
+                locator: locator,
+                selectedSkillIds: choice["selectedSkillIds"] as? [String] ?? []
+            )
+        }
+    }
+
+    private func parseLocalImportDetectedSkills(_ payload: [[String: Any]]?) -> [LocalImportDetectedSkill] {
+        (payload ?? []).compactMap { skill in
+            guard let id = (skill["id"] as? String)?.nonEmpty,
+                  let title = (skill["title"] as? String)?.nonEmpty,
+                  let localPath = (skill["localPath"] as? String)?.nonEmpty,
+                  let validationStatus = (skill["validationStatus"] as? String)?.nonEmpty else {
+                return nil
+            }
+
+            return LocalImportDetectedSkill(
+                id: id,
+                title: title,
+                localPath: localPath,
+                discoveredTargets: skill["discoveredTargets"] as? [String] ?? [],
+                validationStatus: validationStatus,
+                originSkillId: (skill["originSkillId"] as? String)?.nonEmpty
             )
         }
     }
@@ -2037,6 +2148,8 @@ final class MainViewModel {
                     skillCount: nil,
                     matchedSkillNames: [],
                     matchedSkills: [],
+                    provider: "skills",
+                    localImport: nil,
                     snapshot: nil,
                     enrichPhase: .idle,
                     previewPhase: .idle,
@@ -2306,6 +2419,8 @@ final class MainViewModel {
                 skillCount: item.skillCount,
                 matchedSkillNames: item.matchedSkillNames,
                 matchedSkills: item.matchedSkills,
+                provider: item.provider,
+                localImport: item.localImport,
                 snapshot: snapshot ?? item.snapshot,
                 enrichPhase: snapshot != nil ? .ready : item.enrichPhase,
                 previewPhase: .ready,
@@ -2330,6 +2445,8 @@ final class MainViewModel {
                 skillCount: item.skillCount,
                 matchedSkillNames: item.matchedSkillNames,
                 matchedSkills: item.matchedSkills,
+                provider: item.provider,
+                localImport: item.localImport,
                 snapshot: item.snapshot,
                 enrichPhase: item.enrichPhase,
                 previewPhase: phase,
@@ -2343,12 +2460,18 @@ final class MainViewModel {
         if let group = recommendedImportGroups.first(where: { $0.id == groupId }) {
             return group
         }
+        if let group = localImportGroups.first(where: { $0.id == groupId }) {
+            return group
+        }
         return searchImportGroups.first(where: { $0.id == groupId })
     }
 
     private func mutateImportGroup(_ groupId: String, transform: (ImportGroupItem) -> ImportGroupItem) {
         if let index = recommendedImportGroups.firstIndex(where: { $0.id == groupId }) {
             recommendedImportGroups[index] = transform(recommendedImportGroups[index])
+        }
+        if let index = localImportGroups.firstIndex(where: { $0.id == groupId }) {
+            localImportGroups[index] = transform(localImportGroups[index])
         }
         if let index = searchImportGroups.firstIndex(where: { $0.id == groupId }) {
             searchImportGroups[index] = transform(searchImportGroups[index])
@@ -2754,6 +2877,8 @@ final class MainViewModel {
                 skillCount: item.skillCount,
                 matchedSkillNames: item.matchedSkillNames,
                 matchedSkills: item.matchedSkills,
+                provider: item.provider,
+                localImport: item.localImport,
                 snapshot: item.snapshot,
                 enrichPhase: item.enrichPhase,
                 previewPhase: item.previewPhase,
@@ -2763,6 +2888,7 @@ final class MainViewModel {
         }
 
         recommendedImportGroups = recommendedImportGroups.map(update)
+        localImportGroups = localImportGroups.map(update)
         searchImportGroups = searchImportGroups.map(update)
     }
 

@@ -6,6 +6,7 @@ import Observation
 final class ImportScreenState {
     var searchText: String = ""
     var placeholderIndex: Int = 0
+    var localChoiceByItemId: [String: String] = [:]
 }
 
 @MainActor
@@ -82,10 +83,16 @@ final class ImportScreenContainer {
 
     func importGroup(_ card: ImportViewModel.Card) async {
         let draft = draft(for: card)
+        let choice = selectedLocalChoice(for: card)
+        let locator = choice?.locator ?? card.locator
+        let selectedSkillIds = choice?.selectedSkillIds.isEmpty == false
+            ? choice?.selectedSkillIds ?? draft.selectedSkillIds
+            : draft.selectedSkillIds
+
         await mainViewModel.importImportGroup(
             groupId: card.id,
-            locator: card.locator,
-            selectedSkillIds: draft.selectedSkillIds,
+            locator: locator,
+            selectedSkillIds: selectedSkillIds,
             enabledTargets: draft.enabledTargetIds
         )
     }
@@ -109,6 +116,17 @@ final class ImportScreenContainer {
                 selectedSkillIds: card.skills.map(\.id),
                 enabledTargetIds: []
             )
+    }
+
+    func selectedLocalChoice(for card: ImportViewModel.Card) -> MainViewModel.LocalImportChoice? {
+        guard let selectedChoiceId = screenState.localChoiceByItemId[card.id] else {
+            return nil
+        }
+        return card.localChoices.first { $0.id == selectedChoiceId }
+    }
+
+    func setLocalChoice(_ choiceId: String, for card: ImportViewModel.Card) {
+        screenState.localChoiceByItemId[card.id] = choiceId
     }
 
     func setSkill(_ skillId: String, enabled: Bool, for card: ImportViewModel.Card) {

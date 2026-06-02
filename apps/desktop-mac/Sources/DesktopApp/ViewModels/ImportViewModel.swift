@@ -69,6 +69,9 @@ struct ImportViewModel: Equatable {
         let targets: [Target]
         let recommendationBadgeItems: [RecommendationBadgeItem]
         let recommendationDescription: String?
+        let provider: String
+        let localValidationStatus: String?
+        let localChoices: [MainViewModel.LocalImportChoice]
 
         init(
             id: String,
@@ -85,7 +88,10 @@ struct ImportViewModel: Equatable {
             skills: [Skill],
             targets: [Target],
             recommendationBadgeItems: [RecommendationBadgeItem] = [],
-            recommendationDescription: String? = nil
+            recommendationDescription: String? = nil,
+            provider: String = "skills",
+            localValidationStatus: String? = nil,
+            localChoices: [MainViewModel.LocalImportChoice] = []
         ) {
             self.id = id
             self.title = title
@@ -102,6 +108,9 @@ struct ImportViewModel: Equatable {
             self.targets = targets
             self.recommendationBadgeItems = recommendationBadgeItems
             self.recommendationDescription = recommendationDescription
+            self.provider = provider
+            self.localValidationStatus = localValidationStatus
+            self.localChoices = localChoices
         }
     }
 
@@ -155,7 +164,10 @@ struct ImportViewModel: Equatable {
                 )
             },
             recommendationBadgeItems: [],
-            recommendationDescription: nil
+            recommendationDescription: nil,
+            provider: item.provider,
+            localValidationStatus: item.localImport?.validationStatus,
+            localChoices: item.localImport?.choices ?? []
         )
     }
 
@@ -190,13 +202,17 @@ struct ImportViewModel: Equatable {
                 skills: baseCard.skills,
                 targets: baseCard.targets,
                 recommendationBadgeItems: recommendationBadgeItems(for: entry, locale: locale),
-                recommendationDescription: localized(entry.descriptionKey, locale: locale)
+                recommendationDescription: localized(entry.descriptionKey, locale: locale),
+                provider: baseCard.provider,
+                localValidationStatus: baseCard.localValidationStatus,
+                localChoices: baseCard.localChoices
             )
 
             sectionsByCategoryId[entry.categoryId, default: []].append((entry: entry, card: decoratedCard))
         }
 
-        return sectionsByCategoryId
+        let localCards = cards.filter { $0.provider == "local" || $0.localValidationStatus != nil }
+        let remoteSections = sectionsByCategoryId
             .map { categoryId, entries in
                 return RecommendedCategorySection(
                     id: categoryId,
@@ -215,6 +231,19 @@ struct ImportViewModel: Equatable {
                 }
                 return lhs.categoryId < rhs.categoryId
             }
+
+        guard !localCards.isEmpty else {
+            return remoteSections
+        }
+
+        return [
+            RecommendedCategorySection(
+                id: "local",
+                categoryId: "local",
+                title: localized("import.local.detected.title", locale: locale),
+                cards: localCards
+            )
+        ] + remoteSections
     }
 
     private static func recommendationBadgeItems(

@@ -144,6 +144,64 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertEqual(sections[0].cards.map(\.id), ["anthropics-skills"])
     }
 
+    func testRecommendedContentPlacesLocalImportSectionBeforeRemoteRecommendations() {
+        let viewModel = ImportViewModel(
+            items: [
+                makeItem(
+                    id: "local-skill",
+                    title: "Local Skill",
+                    locator: "file:///Users/Vint/skills",
+                    canonicalRepo: "local-skill",
+                    provider: "local",
+                    localImport: MainViewModel.LocalImportInfo(
+                        validationStatus: "valid",
+                        selectedChoiceId: "local-choice",
+                        choices: [
+                            MainViewModel.LocalImportChoice(
+                                id: "local-choice",
+                                label: "Local choice",
+                                locator: "file:///Users/Vint/skills",
+                                selectedSkillIds: ["browse"]
+                            )
+                        ],
+                        detectedSkills: []
+                    )
+                ),
+                makeItem(
+                    id: "anthropics-skills",
+                    title: "Anthropic Skills",
+                    locator: "anthropics/skills",
+                    canonicalRepo: "anthropics/skills"
+                ),
+            ],
+            locale: locale,
+            fallbackTargetIds: [],
+            submittedQuery: "",
+            recommendations: [
+                .init(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: [],
+                    descriptionKey: "import.recommendation.description.anthropics_skills",
+                    sortOrder: 10
+                )
+            ]
+        )
+
+        guard case .recommended(let sections) = viewModel.content else {
+            return XCTFail("expected recommended content")
+        }
+
+        XCTAssertEqual(sections.map(\.categoryId), ["local", "general"])
+        XCTAssertEqual(sections[0].title, "import.local.detected.title")
+        XCTAssertEqual(sections[0].cards.map(\.id), ["local-skill"])
+        XCTAssertEqual(sections[0].cards[0].provider, "local")
+        XCTAssertEqual(sections[0].cards[0].localValidationStatus, "valid")
+        XCTAssertEqual(sections[0].cards[0].localChoices.map(\.id), ["local-choice"])
+    }
+
     func testRecommendedContentPreservesInstalledStateForLocalRecommendations() {
         let viewModel = ImportViewModel(
             items: [
@@ -404,6 +462,8 @@ final class ImportViewModelTests: XCTestCase {
         snapshot: MainViewModel.SourceSnapshotData? = nil,
         enrichPhase: MainViewModel.ImportLoadPhase = .ready,
         previewPhase: MainViewModel.ImportLoadPhase = .ready,
+        provider: String = "skills",
+        localImport: MainViewModel.LocalImportInfo? = nil,
         skills: [MainViewModel.ImportGroupSkill] = [],
         targets: [MainViewModel.ImportGroupTarget] = []
     ) -> MainViewModel.ImportGroupItem {
@@ -420,6 +480,8 @@ final class ImportViewModelTests: XCTestCase {
             skillCount: skillCount,
             matchedSkillNames: matchedSkillNames,
             matchedSkills: matchedSkills,
+            provider: provider,
+            localImport: localImport,
             snapshot: snapshot,
             enrichPhase: enrichPhase,
             previewPhase: previewPhase,

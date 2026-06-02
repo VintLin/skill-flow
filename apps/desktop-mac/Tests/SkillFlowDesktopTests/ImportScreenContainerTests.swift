@@ -149,6 +149,65 @@ final class ImportScreenContainerTests: XCTestCase {
         )
     }
 
+    func testSelectedLocalChoiceOverridesImportLocatorAndSelectedSkills() async {
+        let state = DesktopAppState()
+        let commands = RecordingImportCommandFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let card = ImportViewModel.Card(
+            id: "local-skills",
+            title: "Local Skills",
+            locator: "file:///Users/Vint/skills",
+            canonicalRepo: "local-skills",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @local",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [
+                .init(id: "browse", title: "Browse", summary: "", selectedByDefault: true),
+                .init(id: "review", title: "Review", summary: "", selectedByDefault: true),
+            ],
+            targets: [
+                .init(id: "claude-code", selectedByDefault: false)
+            ],
+            localChoices: [
+                MainViewModel.LocalImportChoice(
+                    id: "choice-a",
+                    label: "All",
+                    locator: "file:///Users/Vint/skills",
+                    selectedSkillIds: ["browse", "review"]
+                ),
+                MainViewModel.LocalImportChoice(
+                    id: "choice-b",
+                    label: "Browse only",
+                    locator: "file:///Users/Vint/skills/browse",
+                    selectedSkillIds: ["browse"]
+                ),
+            ]
+        )
+
+        container.setSkill("review", enabled: false, for: card)
+        container.setTarget("claude-code", enabled: true, for: card)
+        container.setLocalChoice("choice-b", for: card)
+
+        await container.importGroup(card)
+
+        XCTAssertEqual(container.selectedLocalChoice(for: card)?.id, "choice-b")
+        XCTAssertEqual(commands.importCalls, [
+            .init(
+                locator: "file:///Users/Vint/skills/browse",
+                selectedSkillIds: ["browse"],
+                enabledTargets: ["claude-code"]
+            )
+        ])
+    }
+
     func testSnapshotProjectsImportBusinessState() {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
@@ -338,6 +397,8 @@ final class ImportScreenContainerTests: XCTestCase {
                     skillCount: nil,
                     matchedSkillNames: [],
                     matchedSkills: [],
+                    provider: "skills",
+                    localImport: nil,
                     snapshot: nil,
                     enrichPhase: .idle,
                     previewPhase: .loading,
@@ -599,6 +660,8 @@ final class ImportScreenContainerTests: XCTestCase {
             skillCount: nil,
             matchedSkillNames: [],
             matchedSkills: [],
+            provider: "skills",
+            localImport: nil,
             snapshot: nil,
             enrichPhase: .idle,
             previewPhase: .idle,
@@ -617,5 +680,62 @@ final class ImportScreenContainerTests: XCTestCase {
                 )
             ]
         )
+    }
+}
+
+private struct RecordedImportCall: Equatable {
+    let locator: String
+    let selectedSkillIds: [String]
+    let enabledTargets: [String]
+}
+
+private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked Sendable {
+    private(set) var importCalls: [RecordedImportCall] = []
+
+    func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        importCalls.append(
+            RecordedImportCall(
+                locator: locator,
+                selectedSkillIds: selectedSkillIds,
+                enabledTargets: enabledTargets
+            )
+        )
+        return BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .importSource,
+            ok: true,
+            data: AnyCodable(["status": "ready", "sourceId": "local-skills"]),
+            warnings: [],
+            errors: []
+        )
+    }
+
+    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func doctor() async throws -> BridgeResponse {
+        fatalError("unused")
     }
 }
