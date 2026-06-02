@@ -157,6 +157,76 @@ describe.sequential("virtual groups", () => {
     expect(manifest.bindings["writing-stack"]?.targets.codex?.leafIds).toEqual(leafIds);
   });
 
+  test("treats virtual group as a source-like group in summaries inspect and preview planning", async () => {
+    const writingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/drafting/SKILL.md": skillDoc("drafting", "Draft writing."),
+    });
+    const editingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/revision/SKILL.md": skillDoc("revision", "Revise writing."),
+    });
+    const app = new SkillFlowApp();
+    const writing = await app.addSource(writingRepo, {
+      sourceIdOverride: "writing-source",
+      project: false,
+    });
+    const editing = await app.addSource(editingRepo, {
+      sourceIdOverride: "editing-source",
+      project: false,
+    });
+    expect(writing.ok).toBe(true);
+    expect(editing.ok).toBe(true);
+    if (!writing.ok || !editing.ok) {
+      return;
+    }
+    const leafIds = [
+      "writing-source:skills/drafting",
+      "editing-source:skills/revision",
+    ];
+
+    const created = await app.createVirtualGroup({
+      displayName: "Writing Stack",
+      skills: [
+        { sourceId: "writing-source", leafId: leafIds[0]! },
+        { sourceId: "editing-source", leafId: leafIds[1]! },
+      ],
+      enabledTargets: [],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    const summary = listed.data.summaries.find((item) => item.source.id === "writing-stack");
+    expect(summary?.leafs.map((leaf) => leaf.id)).toEqual(leafIds);
+    expect(summary?.health).not.toBe("BLOCKED");
+
+    const inspected = await app.inspectSource("writing-stack");
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+    expect(inspected.data.leafs.map((leaf) => leaf.id)).toEqual(leafIds);
+
+    const preview = await app.previewDraft("writing-stack", {
+      selectedLeafIds: leafIds,
+      enabledTargets: ["codex"],
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) {
+      return;
+    }
+    const plannedLeafIds = preview.data.plan.actions
+      .filter((action) => action.target === "codex")
+      .map((action) => action.leafId)
+      .sort();
+    expect(plannedLeafIds).toEqual([...leafIds].sort());
+  });
+
   test("rejects empty virtual group name", async () => {
     const app = new SkillFlowApp();
 

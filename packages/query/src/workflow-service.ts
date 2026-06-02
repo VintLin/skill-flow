@@ -1,6 +1,7 @@
 import type {
   DoctorReport,
   HealthStatus,
+  LeafRecord,
   LockFile,
   Manifest,
   SourceBinding,
@@ -15,8 +16,8 @@ export class WorkflowService {
   ): WorkflowSummary[] {
     return manifest.sources.map((source) => {
       const lock = lockFile.sources.find((item) => item.id === source.id);
-      const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
       const bindings = manifest.bindings[source.id] ?? ({ targets: {} } satisfies SourceBinding);
+      const leafs = this.resolveSourceLeafs(source, bindings, lockFile);
       const activeTargetCount = Object.values(bindings.targets).filter(
         (binding) => binding?.enabled,
       ).length;
@@ -41,6 +42,7 @@ export class WorkflowService {
           activeTargetCount,
           lock,
           issueCounts,
+          source.kind === "virtual",
         ),
         issueCounts,
         ...(issueCounts.error > 0
@@ -52,14 +54,35 @@ export class WorkflowService {
     });
   }
 
+  private resolveSourceLeafs(
+    source: Manifest["sources"][number],
+    binding: SourceBinding,
+    lockFile: LockFile,
+  ): LeafRecord[] {
+    if (source.kind !== "virtual") {
+      return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
+    }
+
+    const selectedLeafIds = [
+      ...new Set([
+        ...(binding.selectedLeafIds ?? []),
+        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
+      ]),
+    ];
+    return selectedLeafIds
+      .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+      .filter((leaf): leaf is LeafRecord => Boolean(leaf));
+  }
+
   private resolveHealth(
     invalidLeafCount: number,
     warningCount: number,
     activeTargetCount: number,
     lock?: LockFile["sources"][number],
     issueCounts: { warning: number; error: number } = { warning: 0, error: 0 },
+    isVirtualSource = false,
   ): HealthStatus {
-    if (!lock) {
+    if (!lock && !isVirtualSource) {
       return "BLOCKED";
     }
     if (issueCounts.error > 0) {

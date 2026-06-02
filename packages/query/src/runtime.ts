@@ -703,7 +703,7 @@ export class SkillFlowApp {
     }
 
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
-    const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
+    const leafs = this.getSourceLeafsForBinding(source, binding, lockFile);
     const deployments = getManagedDeployments(lockFile).filter(
       (deployment) => deployment.sourceId === sourceId,
     );
@@ -3544,6 +3544,25 @@ export class SkillFlowApp {
         ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
       ].filter((leafId) => existingLeafIds.has(leafId)),
     );
+  }
+
+  private getSourceLeafsForBinding(
+    source: Manifest["sources"][number],
+    binding: SourceBinding,
+    lockFile: LockFile,
+  ): LeafRecord[] {
+    if (source.kind !== "virtual") {
+      return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
+    }
+
+    return [
+      ...new Set([
+        ...(binding.selectedLeafIds ?? []),
+        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
+      ]),
+    ]
+      .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+      .filter((leaf): leaf is LeafRecord => Boolean(leaf));
   }
 
   private selectLeafIdsForRequestedPath(
