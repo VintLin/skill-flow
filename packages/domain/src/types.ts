@@ -12,7 +12,7 @@ export type Result<T> =
   | { ok: true; data: T; warnings: Warning[]; errors: [] }
   | { ok: false; data?: T; warnings: Warning[]; errors: Failure[] };
 
-export type SourceKind = "local" | "git" | "clawhub";
+export type SourceKind = "local" | "git" | "clawhub" | "virtual";
 
 export type DeploymentTargetName =
   | "claude-code"
@@ -139,6 +139,31 @@ export type SharedPreferences = {
   projectDrafts: ScopedSourceDrafts;
   customTargets: CustomTargetDefinition[];
   agentDisplayOrder: string[];
+};
+
+export type VirtualGroupSkillRef = {
+  sourceId: string;
+  leafId: string;
+};
+
+export type VirtualGroupRestoreSnapshot = {
+  selectedLeafIds: string[];
+  enabledTargets: DeploymentTargetId[];
+};
+
+export type VirtualGroupRecord = {
+  id: string;
+  displayName: string;
+  includedSkills: VirtualGroupSkillRef[];
+  hiddenSourceIds: string[];
+  restoreSnapshots: Record<string, VirtualGroupRestoreSnapshot>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type VirtualGroupsState = {
+  schemaVersion: 1;
+  groups: Record<string, VirtualGroupRecord>;
 };
 
 export type InvalidLeafRecord = {

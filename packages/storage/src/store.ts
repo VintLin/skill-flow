@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import type {
+  DeploymentTargetId,
   ImportDataCache,
   ImportRecommendationFeed,
   LockFile,
@@ -11,6 +12,9 @@ import type {
   SourceMetadataCacheEntry,
   SourceKind,
   UnifiedSourceSnapshotCacheEntry,
+  VirtualGroupRecord,
+  VirtualGroupSkillRef,
+  VirtualGroupsState,
 } from "@skill-flow/domain/types";
 import { normalizeProjectionRecords } from "@skill-flow/domain/projection-compat";
 import {
@@ -80,6 +84,10 @@ export class StateStore {
 
   get preferencesPath(): string {
     return path.join(this.stateRoot, "preferences.json");
+  }
+
+  get virtualGroupsPath(): string {
+    return path.join(this.stateRoot, "virtual-groups.json");
   }
 
   get auditLogPath(): string {
@@ -164,6 +172,20 @@ export class StateStore {
         this.preferencesPath,
         normalizeSharedPreferences(preferences),
       );
+    });
+  }
+
+  async readVirtualGroups(): Promise<VirtualGroupsState> {
+    return this.withIoLock(async () => {
+      await this.init();
+      return this.readVirtualGroupsRaw();
+    });
+  }
+
+  async writeVirtualGroups(virtualGroups: VirtualGroupsState): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      await writeJsonFile(this.virtualGroupsPath, normalizeVirtualGroupsState(virtualGroups));
     });
   }
 
@@ -373,6 +395,16 @@ export class StateStore {
     );
   }
 
+  private async readVirtualGroupsRaw(): Promise<VirtualGroupsState> {
+    if (!(await pathExists(this.virtualGroupsPath))) {
+      return createEmptyVirtualGroupsState();
+    }
+
+    return normalizeVirtualGroupsState(
+      await readJsonFile<VirtualGroupsState>(this.virtualGroupsPath),
+    );
+  }
+
   private async readSourceMetadataCacheRaw(): Promise<SourceMetadataCache> {
     return normalizeSourceMetadataCache(
       await readJsonFile<unknown>(
@@ -531,4 +563,67 @@ function hasSameEntries(left: string[], right: string[]): boolean {
     left.length === right.length &&
     left.every((entry, index) => entry === right[index])
   );
+}
+
+function createEmptyVirtualGroupsState(): VirtualGroupsState {
+  return {
+    schemaVersion: 1,
+    groups: {},
+  };
+}
+
+function normalizeVirtualGroupsState(input: Partial<VirtualGroupsState> | undefined): VirtualGroupsState {
+  const groups: Record<string, VirtualGroupRecord> = {};
+
+  for (const [id, group] of Object.entries(input?.groups ?? {})) {
+    if (!group || typeof group !== "object") {
+      continue;
+    }
+
+    const record = group as Partial<VirtualGroupRecord>;
+    const normalizedId = typeof record.id === "string" && record.id.trim() ? record.id : id;
+    groups[normalizedId] = {
+      id: normalizedId,
+      displayName: typeof record.displayName === "string" ? record.displayName : normalizedId,
+      includedSkills: Array.isArray(record.includedSkills)
+        ? record.includedSkills
+            .filter((skill): skill is VirtualGroupSkillRef =>
+              Boolean(skill) &&
+              typeof skill.sourceId === "string" &&
+              typeof skill.leafId === "string",
+            )
+            .map((skill) => ({ sourceId: skill.sourceId, leafId: skill.leafId }))
+        : [],
+      hiddenSourceIds: Array.isArray(record.hiddenSourceIds)
+        ? [...new Set(record.hiddenSourceIds.filter((value): value is string => typeof value === "string"))]
+        : [],
+      restoreSnapshots: normalizeRestoreSnapshots(record.restoreSnapshots),
+      createdAt: typeof record.createdAt === "string" ? record.createdAt : new Date(0).toISOString(),
+      updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date(0).toISOString(),
+    };
+  }
+
+  return {
+    schemaVersion: 1,
+    groups,
+  };
+}
+
+function normalizeRestoreSnapshots(
+  input: VirtualGroupRecord["restoreSnapshots"] | undefined,
+): VirtualGroupRecord["restoreSnapshots"] {
+  const snapshots: VirtualGroupRecord["restoreSnapshots"] = {};
+
+  for (const [sourceId, snapshot] of Object.entries(input ?? {})) {
+    snapshots[sourceId] = {
+      selectedLeafIds: Array.isArray(snapshot?.selectedLeafIds)
+        ? snapshot.selectedLeafIds.filter((value): value is string => typeof value === "string")
+        : [],
+      enabledTargets: Array.isArray(snapshot?.enabledTargets)
+        ? snapshot.enabledTargets.filter((value): value is DeploymentTargetId => typeof value === "string")
+        : [],
+    };
+  }
+
+  return snapshots;
 }

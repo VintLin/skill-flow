@@ -364,6 +364,63 @@ describe("StateStore", () => {
     });
   });
 
+  test("virtual group state defaults to an empty file shape", async () => {
+    const store = new StateStore(stateRoot);
+
+    const virtualGroups = await store.readVirtualGroups();
+
+    expect(virtualGroups).toEqual({
+      schemaVersion: 1,
+      groups: {},
+    });
+  });
+
+  test("virtual group state round trips merge metadata", async () => {
+    const store = new StateStore(stateRoot);
+
+    await store.writeVirtualGroups({
+      schemaVersion: 1,
+      groups: {
+        "writing-stack": {
+          id: "writing-stack",
+          displayName: "Writing Stack",
+          includedSkills: [
+            { sourceId: "alpha", leafId: "alpha:skills/review" },
+            { sourceId: "beta", leafId: "beta:skills/plan" },
+          ],
+          hiddenSourceIds: ["alpha", "beta"],
+          restoreSnapshots: {
+            alpha: { selectedLeafIds: ["alpha:skills/review"], enabledTargets: ["codex"] },
+            beta: { selectedLeafIds: ["beta:skills/plan"], enabledTargets: ["cursor"] },
+          },
+          createdAt: "2026-06-02T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+        },
+      },
+    });
+
+    await expect(store.readVirtualGroups()).resolves.toEqual({
+      schemaVersion: 1,
+      groups: {
+        "writing-stack": {
+          id: "writing-stack",
+          displayName: "Writing Stack",
+          includedSkills: [
+            { sourceId: "alpha", leafId: "alpha:skills/review" },
+            { sourceId: "beta", leafId: "beta:skills/plan" },
+          ],
+          hiddenSourceIds: ["alpha", "beta"],
+          restoreSnapshots: {
+            alpha: { selectedLeafIds: ["alpha:skills/review"], enabledTargets: ["codex"] },
+            beta: { selectedLeafIds: ["beta:skills/plan"], enabledTargets: ["cursor"] },
+          },
+          createdAt: "2026-06-02T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+        },
+      },
+    });
+  });
+
   test("writes and prunes source metadata and import cache entries", async () => {
     const store = new StateStore(stateRoot);
 
