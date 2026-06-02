@@ -506,4 +506,71 @@ describe.sequential("config integration", () => {
       [addedA.data.manifest.id, addedB.data.manifest.id].sort(),
     );
   });
+
+  test("local import scan reads unmanaged local skill metadata", async () => {
+    const app = new SkillFlowApp();
+    const localSkillPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "local-writer");
+    await writeRepoFiles(localSkillPath, {
+      "SKILL.md": skillDoc("local-writer", "Writes local drafts."),
+    });
+
+    await app.store.init();
+    const { manifest, lockFile } = await app.store.readState();
+    const scanned = await app.workspaceBootstrapService.scanUnmanagedLocalSkills(
+      manifest,
+      lockFile,
+    );
+
+    expect(scanned).toHaveLength(1);
+    expect(scanned[0]).toMatchObject({
+      displayName: "local-writer",
+      title: "local-writer",
+      description: "Writes local drafts.",
+      importedFromTargets: ["codex"],
+    });
+    expect(scanned[0]?.contentHash).toEqual(expect.any(String));
+  });
+
+  test("local import scan preserves agents lock origin metadata", async () => {
+    const app = new SkillFlowApp();
+    const agentsRoot = path.join(sandbox.sandboxRoot, "home", ".agents");
+    const oldHome = process.env.HOME;
+    process.env.HOME = path.join(sandbox.sandboxRoot, "home");
+    await writeRepoFiles(path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "resume-bullet-writer"), {
+      "SKILL.md": skillDoc("resume-bullet-writer", "Write resume bullets."),
+    });
+    await writeRepoFiles(agentsRoot, {
+      ".skill-lock.json": JSON.stringify({
+        skills: {
+          "resume-bullet-writer": {
+            source: "paramchoudhary/resumeskills",
+            sourceType: "github",
+            skillPath: "skills/resume-bullet-writer",
+            branch: "main",
+          },
+        },
+      }),
+    });
+
+    try {
+      await app.store.init();
+      const { manifest, lockFile } = await app.store.readState();
+      const scanned = await app.workspaceBootstrapService.scanUnmanagedLocalSkills(
+        manifest,
+        lockFile,
+      );
+
+      expect(scanned[0]).toMatchObject({
+        originLocator: "https://github.com/paramchoudhary/resumeskills.git",
+        originRequestedPath: "skills/resume-bullet-writer",
+        originBranch: "main",
+      });
+    } finally {
+      if (oldHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = oldHome;
+      }
+    }
+  });
 });

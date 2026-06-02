@@ -37,6 +37,12 @@ export type DetectedExternalSkill = {
   originBranch?: string;
 };
 
+export type LocalSkillScanResult = DetectedExternalSkill & {
+  title: string;
+  description: string;
+  contentHash: string;
+};
+
 type AgentsLockFile = {
   skills?: Record<
     string,
@@ -186,6 +192,27 @@ export class WorkspaceBootstrapService {
     return results.sort((left, right) => left.displayName.localeCompare(right.displayName));
   }
 
+  async scanUnmanagedLocalSkills(
+    manifest: Manifest,
+    lockFile: LockFile,
+    onEvent?: (event: BootstrapEvent) => void,
+  ): Promise<LocalSkillScanResult[]> {
+    const detected = await this.detectUnmanagedExternalSkills(manifest, lockFile, onEvent);
+    const enriched: LocalSkillScanResult[] = [];
+
+    for (const item of detected) {
+      const metadata = await this.readSkillMetadata(path.join(item.path, "SKILL.md"), item.displayName);
+      enriched.push({
+        ...item,
+        title: metadata.title,
+        description: metadata.description,
+        contentHash: await hashDirectory(item.path),
+      });
+    }
+
+    return enriched;
+  }
+
   private isUnderSkillFlowStore(candidatePath: string) {
     const relative = path.relative(this.store.rootPath, candidatePath);
     return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
@@ -215,6 +242,24 @@ export class WorkspaceBootstrapService {
       index += 1;
     }
     return `${baseId}-${index}`;
+  }
+
+  private async readSkillMetadata(
+    skillFilePath: string,
+    fallbackName: string,
+  ): Promise<{ title: string; description: string }> {
+    const content = await fs.readFile(skillFilePath, "utf8").catch(() => "");
+    const frontmatter = content.match(/^---\n([\s\S]*?)\n---/);
+    const body = frontmatter?.[1] ?? "";
+    const nameMatch = body.match(/^name:\s*(.+)$/m);
+    const descriptionBlock = body.match(/^description:\s*\|\s*\n((?:\s+.+\n?)*)/m);
+    const descriptionLine = body.match(/^description:\s*(.+)$/m);
+    const title = nameMatch?.[1]?.trim() || fallbackName;
+    const description = descriptionBlock?.[1]
+      ? descriptionBlock[1].split("\n").map((line) => line.trim()).filter(Boolean).join(" ")
+      : descriptionLine?.[1]?.trim() ?? "";
+
+    return { title, description };
   }
 
   private async readAgentsOrigins(): Promise<Map<string, AgentsOrigin>> {
