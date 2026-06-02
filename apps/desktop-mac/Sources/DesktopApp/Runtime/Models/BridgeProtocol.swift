@@ -6,6 +6,7 @@ enum BridgeCommand: String, Codable, Sendable {
     case inspect
     case inspectEnrichment = "inspect-enrichment"
     case searchImportGroups = "search-import-groups"
+    case scanLocalImportGroups = "scan-local-import-groups"
     case previewImportSource = "preview-import-source"
     case importSource = "import-source"
     case renameSource = "rename-source"

@@ -11,11 +11,13 @@ final class DesktopRuntimeFacadeTests: XCTestCase {
         _ = try await facade.bootstrap()
         _ = try await facade.inspect(sourceId: "alpha", scope: .project("repo-a"))
         _ = try await facade.inspectEnrichment(sourceId: "alpha")
+        _ = try await facade.scanLocalImportGroups(path: "/tmp/local-skill")
 
         XCTAssertEqual(bridge.recordedCommands, [
             "bootstrap",
             "inspect:alpha:project(repo-a)",
             "inspect-enrichment:alpha",
+            "scan-local-import-groups:/tmp/local-skill",
         ])
     }
 
@@ -63,6 +65,11 @@ private final class StubBridgeTransport: DesktopBridgeTransporting, @unchecked S
     func searchImportGroups(query: String?) async throws -> BridgeResponse {
         recordedCommands.append("search-import-groups:\(query ?? "nil")")
         return .success(command: .searchImportGroups)
+    }
+
+    func scanLocalImportGroups(path: String?) async throws -> BridgeResponse {
+        recordedCommands.append("scan-local-import-groups:\(path ?? "nil")")
+        return .success(command: .scanLocalImportGroups)
     }
 
     func previewImportSource(locator: String) async throws -> BridgeResponse {

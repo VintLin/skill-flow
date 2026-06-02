@@ -105,6 +105,23 @@ export async function executeBridgeRequest(
           })),
         });
       }
+      case "scan-local-import-groups": {
+        const payload = expectOptionalObject(request.payload, "scan-local-import-groups");
+        const localPath = payload ? expectOptionalString(payload.path, "path", "scan-local-import-groups") : undefined;
+        const result = await app.scanLocalImportGroups(localPath);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
       case "preview-import-source": {
         const payload = expectObjectPayload(request.payload, "preview-import-source");
         const locator = expectString(payload.locator, "locator", "preview-import-source");

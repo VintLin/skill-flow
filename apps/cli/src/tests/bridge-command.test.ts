@@ -476,6 +476,21 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.data).toHaveProperty("exact", false);
   });
 
+  test("accepts valid scan-local-import-groups payload", async () => {
+    const app = {
+      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ groups: [], path })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "scan-local-import-groups",
+      payload: { path: "/tmp/local-skill" },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(app.scanLocalImportGroups).toHaveBeenCalledWith("/tmp/local-skill");
+  });
+
   test("accepts valid preview-import-source payload", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({
       ok: true,

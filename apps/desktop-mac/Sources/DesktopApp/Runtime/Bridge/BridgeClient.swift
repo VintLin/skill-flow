@@ -98,6 +98,16 @@ final class BridgeClient: @unchecked Sendable {
         return try await send(command: .searchImportGroups, payload: payload)
     }
 
+    func scanLocalImportGroups(path: String?) async throws -> BridgeResponse {
+        let payload: [String: AnyCodable]
+        if let path {
+            payload = ["path": AnyCodable(path)]
+        } else {
+            payload = [:]
+        }
+        return try await send(command: .scanLocalImportGroups, payload: payload)
+    }
+
     func previewImportSource(locator: String) async throws -> BridgeResponse {
         try await send(command: .previewImportSource, payload: ["locator": AnyCodable(locator)])
     }
