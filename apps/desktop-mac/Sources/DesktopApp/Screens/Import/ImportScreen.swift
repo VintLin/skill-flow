@@ -147,47 +147,82 @@ struct ImportScreen: View {
         importingGroupId: String?,
         displayMode: GroupCardDisplayMode
     ) -> some View {
-        SharedGroupCard(
-            card: importCardModel(for: card),
-            theme: theme,
-            accent: accent,
-            displayMode: displayMode,
-            clickPolicy: .importSearch,
-            skillsCollapsed: false,
-            isUpdating: importingGroupId == card.id,
-            onOpen: nil,
-            onUpdate: {},
-            onTogglePinned: {},
-            onDelete: {},
-            onToggleSkill: { skillId, enabled in
-                container.setSkill(skillId, enabled: enabled, for: card)
-            },
-            onToggleAllSkills: {
-                container.toggleAllSkills(for: card)
-            },
-            onToggleTarget: { targetId, enabled, _ in
-                container.setTarget(targetId, enabled: enabled, for: card)
-            },
-            onToggleAllTargets: {
-                container.toggleAllTargets(for: card)
-            },
-            actionButtonTitle: Self.importActionTitle(for: card, localized: { key in t(key) }),
-            actionButtonIcon: ActionIcon.import,
-            isActionButtonDisabled: Self.importActionIsDisabled(for: card),
-            onActionButton: {
-                Task {
-                    await container.handleImportAction(for: card)
+        VStack(alignment: .leading, spacing: 8) {
+            SharedGroupCard(
+                card: importCardModel(for: card),
+                theme: theme,
+                accent: accent,
+                displayMode: displayMode,
+                clickPolicy: .importSearch,
+                skillsCollapsed: false,
+                isUpdating: importingGroupId == card.id,
+                onOpen: nil,
+                onUpdate: {},
+                onTogglePinned: {},
+                onDelete: {},
+                onToggleSkill: { skillId, enabled in
+                    container.setSkill(skillId, enabled: enabled, for: card)
+                },
+                onToggleAllSkills: {
+                    container.toggleAllSkills(for: card)
+                },
+                onToggleTarget: { targetId, enabled, _ in
+                    container.setTarget(targetId, enabled: enabled, for: card)
+                },
+                onToggleAllTargets: {
+                    container.toggleAllTargets(for: card)
+                },
+                actionButtonTitle: Self.importActionTitle(for: card, localized: { key in t(key) }),
+                actionButtonIcon: ActionIcon.import,
+                isActionButtonDisabled: Self.importActionIsDisabled(for: card),
+                onActionButton: {
+                    Task {
+                        await container.handleImportAction(for: card)
+                    }
+                },
+                groupTagItems: [],
+                groupTagSuggestions: [],
+                canCreateGroupTag: false,
+                canDeleteGroupTags: false,
+                onCreateGroupTag: nil,
+                onDeleteGroupTag: nil,
+                onSelectGroupTag: nil,
+                recommendationBadgeItems: card.recommendationBadgeItems,
+                recommendationDescription: card.recommendationDescription
+            )
+
+            if card.localValidationStatus != nil, !card.localChoices.isEmpty {
+                localChoiceControl(for: card)
+            }
+        }
+    }
+
+    private func localChoiceControl(for card: ImportViewModel.Card) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(t(Self.localValidationStatusTextKey(for: card.localValidationStatus)))
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Picker("", selection: localChoiceSelection(for: card)) {
+                ForEach(card.localChoices) { choice in
+                    Text(choice.label).tag(choice.id)
                 }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private func localChoiceSelection(for card: ImportViewModel.Card) -> Binding<String> {
+        Binding(
+            get: {
+                container.selectedLocalChoice(for: card)?.id ?? card.localChoices.first?.id ?? "local"
             },
-            groupTagItems: [],
-            groupTagSuggestions: [],
-            canCreateGroupTag: false,
-            canDeleteGroupTags: false,
-            onCreateGroupTag: nil,
-            onDeleteGroupTag: nil,
-            onSelectGroupTag: nil,
-            recommendationBadgeItems: card.recommendationBadgeItems,
-            recommendationDescription: card.recommendationDescription
+            set: { choiceId in
+                container.setLocalChoice(choiceId, for: card)
+            }
         )
     }
 
@@ -278,6 +313,23 @@ struct ImportScreen: View {
             return nil
         }
         return localized("group_card.action.installed")
+    }
+
+    static func localValidationStatusTextKey(for status: String?) -> String {
+        switch status {
+        case "matched":
+            return "import.local.status.matched"
+        case "changed":
+            return "import.local.status.changed"
+        case "missing":
+            return "import.local.status.missing"
+        case "ambiguous":
+            return "import.local.status.ambiguous"
+        case "origin-unavailable":
+            return "import.local.status.origin_unavailable"
+        default:
+            return "import.local.status.local_only"
+        }
     }
 
     private func emptyState(title: String, subtitle: String, chromed: Bool = true) -> some View {

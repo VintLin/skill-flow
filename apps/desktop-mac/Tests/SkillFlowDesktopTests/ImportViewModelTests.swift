@@ -195,7 +195,7 @@ final class ImportViewModelTests: XCTestCase {
         }
 
         XCTAssertEqual(sections.map(\.categoryId), ["local", "general"])
-        XCTAssertEqual(sections[0].title, "import.local.detected.title")
+        XCTAssertEqual(sections[0].title, "Local detected")
         XCTAssertEqual(sections[0].cards.map(\.id), ["local-skill"])
         XCTAssertEqual(sections[0].cards[0].provider, "local")
         XCTAssertEqual(sections[0].cards[0].localValidationStatus, "valid")

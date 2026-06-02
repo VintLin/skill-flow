@@ -71,6 +71,11 @@ final class ImportScreenContainer {
         await mainViewModel.submitImportSearch(locator)
     }
 
+    func importLocalDirectory(_ path: String) async {
+        screenState.searchText = path
+        await mainViewModel.loadLocalImportGroups(path: path)
+    }
+
     func previewGroupsIfNeeded(_ groupIds: [String]) async {
         await withTaskGroup(of: Void.self) { group in
             for groupId in groupIds {

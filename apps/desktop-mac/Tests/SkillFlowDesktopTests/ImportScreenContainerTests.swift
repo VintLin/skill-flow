@@ -384,6 +384,50 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(query.scanPaths, [nil, "/Users/Vint/skills"])
     }
 
+    func testImportLocalDirectoryUpdatesSearchTextAndProjectsLocalGroupsInSnapshot() async {
+        let state = DesktopAppState()
+        state.view.currentRoute = .importPage
+        let query = RecordingLocalImportQueryFacade()
+        query.localGroups = [
+            [
+                "id": "local-skills",
+                "title": "Local Skills",
+                "locator": "file:///Users/Vint/skills",
+                "canonicalRepo": "local-skills",
+                "provider": "local",
+                "localImport": [
+                    "validationStatus": "matched",
+                    "choices": [
+                        [
+                            "id": "local",
+                            "label": "Local",
+                            "locator": "file:///Users/Vint/skills",
+                            "selectedSkillIds": ["browse"],
+                        ],
+                    ],
+                ],
+            ],
+        ]
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+
+        await container.importLocalDirectory("/Users/Vint/skills")
+
+        XCTAssertEqual(container.screenState.searchText, "/Users/Vint/skills")
+        XCTAssertEqual(query.scanPaths, ["/Users/Vint/skills"])
+
+        let snapshot = container.snapshot(locale: Locale(identifier: "en"))
+        guard case .recommended(let sections) = snapshot?.content else {
+            return XCTFail("expected recommended content")
+        }
+
+        XCTAssertEqual(sections.first?.categoryId, "local")
+        XCTAssertEqual(sections.first?.cards.map(\.id), ["local-skills"])
+    }
+
     func testHandleImportActionShowsToastWhenRecommendationAlreadyExistsLocally() async {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
@@ -814,6 +858,7 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
 @MainActor
 private final class RecordingLocalImportQueryFacade: DesktopQuerying {
     private(set) var scanPaths: [String?] = []
+    var localGroups: [[String: Any]] = []
 
     func bootstrap() async throws -> BridgeResponse {
         BridgeResponse(
@@ -850,7 +895,7 @@ private final class RecordingLocalImportQueryFacade: DesktopQuerying {
             requestId: nil,
             command: .scanLocalImportGroups,
             ok: true,
-            data: AnyCodable(["groups": []]),
+            data: AnyCodable(["groups": localGroups]),
             warnings: [],
             errors: []
         )

@@ -329,6 +329,7 @@ struct MainView: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.92)))
                     }
                     Spacer(minLength: 0)
+                    importLocalButton
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 52)
@@ -528,6 +529,52 @@ struct MainView: View {
 
     private var importButton: some View {
         toolbarIconButton(.import) { navigation.showImportPage() }
+    }
+
+    private var importLocalButton: some View {
+        Button {
+            presentImportLocalDirectoryPanel()
+        } label: {
+            HStack(spacing: 7) {
+                actionIcon(.import, size: 13)
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                Text(t("import.local.button"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: Self.headerSearchFieldHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(t("import.local.button.help"))
+        .desktopMotionButton(kind: .subtle, theme: theme, accent: accent, isEnabled: true)
+        .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    private func presentImportLocalDirectoryPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.prompt = t("import.local.panel.prompt")
+
+        guard panel.runModal() == .OK, let path = panel.url?.path else {
+            return
+        }
+
+        Task {
+            focusedSearchField = nil
+            await importContainer.importLocalDirectory(path)
+        }
     }
 
     @ViewBuilder
