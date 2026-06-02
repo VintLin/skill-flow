@@ -684,7 +684,8 @@ export class SkillFlowApp {
     }>
   > {
     const { manifest, lockFile } = await this.store.readState();
-    this.normalizeBindings(manifest, lockFile);
+    const virtualGroups = await this.store.readVirtualGroups();
+    this.normalizeBindings(manifest, lockFile, virtualGroups);
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
       return fail({
@@ -712,13 +713,13 @@ export class SkillFlowApp {
     }
 
     const initialDrafts: Record<string, DraftBinding> = {
-      [sourceId]: this.draftFromBinding(sourceId, binding, lockFile),
+      [sourceId]: this.draftFromSourceBinding(source, binding, lockFile, virtualGroups),
     };
     const preferences = await this.store.readPreferences();
     const scopedDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
 
     const scopedManifest = this.cloneManifest(manifest);
-    this.normalizeBindings(scopedManifest, lockFile);
+    this.normalizeBindings(scopedManifest, lockFile, virtualGroups);
     const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
     const scopedSource = prepared.manifest.sources.find((item) => item.id === sourceId) ?? source;
     const scopedSummary =
@@ -3448,12 +3449,16 @@ export class SkillFlowApp {
     }
   }
 
-  private normalizeBindings(manifest: Manifest, lockFile: LockFile): boolean {
+  private normalizeBindings(
+    manifest: Manifest,
+    lockFile: LockFile,
+    virtualGroups?: VirtualGroupsState,
+  ): boolean {
     let changed = false;
 
     for (const source of manifest.sources) {
       const currentBinding = manifest.bindings[source.id] ?? { targets: {} };
-      const normalizedDraft = this.draftFromBinding(source.id, currentBinding, lockFile);
+      const normalizedDraft = this.draftFromSourceBinding(source, currentBinding, lockFile, virtualGroups);
       const normalizedBinding = this.bindingFromDraft(normalizedDraft);
 
       if (JSON.stringify(currentBinding) === JSON.stringify(normalizedBinding)) {
@@ -3467,6 +3472,23 @@ export class SkillFlowApp {
     return changed;
   }
 
+  private draftFromSourceBinding(
+    source: Manifest["sources"][number],
+    binding: SourceBinding,
+    lockFile: LockFile,
+    virtualGroups?: VirtualGroupsState,
+  ): DraftBinding {
+    const leafIds = source.kind === "virtual"
+      ? this.getVirtualSourceAllowedLeafIds(source.id, binding, lockFile, virtualGroups)
+      : new Set(
+          lockFile.leafInventory
+            .filter((leaf) => leaf.sourceId === source.id)
+            .map((leaf) => leaf.id),
+        );
+
+    return this.draftFromBindingAllowedLeafIds(binding, leafIds);
+  }
+
   private draftFromBinding(
     sourceId: string,
     binding: SourceBinding,
@@ -3477,6 +3499,13 @@ export class SkillFlowApp {
         .filter((leaf) => leaf.sourceId === sourceId)
         .map((leaf) => leaf.id),
     );
+    return this.draftFromBindingAllowedLeafIds(binding, leafIds);
+  }
+
+  private draftFromBindingAllowedLeafIds(
+    binding: SourceBinding,
+    leafIds: Set<string>,
+  ): DraftBinding {
     const enabledTargets = Object.entries(binding.targets)
       .filter(([, targetBinding]) => targetBinding?.enabled)
       .map(([target]) => target) as DeploymentTargetName[];
@@ -3492,6 +3521,29 @@ export class SkillFlowApp {
       enabledTargets,
       selectedLeafIds,
     };
+  }
+
+  private getVirtualSourceAllowedLeafIds(
+    sourceId: string,
+    binding: SourceBinding,
+    lockFile: LockFile,
+    virtualGroups?: VirtualGroupsState,
+  ): Set<string> {
+    const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
+    const includedLeafIds = virtualGroups?.groups[sourceId]?.includedSkills
+      .map((skill) => skill.leafId)
+      .filter((leafId) => existingLeafIds.has(leafId));
+
+    if (includedLeafIds) {
+      return new Set(includedLeafIds);
+    }
+
+    return new Set(
+      [
+        ...(binding.selectedLeafIds ?? []),
+        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
+      ].filter((leafId) => existingLeafIds.has(leafId)),
+    );
   }
 
   private selectLeafIdsForRequestedPath(

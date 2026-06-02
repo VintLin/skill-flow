@@ -111,6 +111,52 @@ describe.sequential("virtual groups", () => {
     });
   });
 
+  test("keeps virtual group selected leafs after inspect normalizes bindings", async () => {
+    const writingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/drafting/SKILL.md": skillDoc("drafting", "Draft writing."),
+    });
+    const editingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/revision/SKILL.md": skillDoc("revision", "Revise writing."),
+    });
+    const app = new SkillFlowApp();
+    const writing = await app.addSource(writingRepo, { sourceIdOverride: "writing-source" });
+    const editing = await app.addSource(editingRepo, { sourceIdOverride: "editing-source" });
+    expect(writing.ok).toBe(true);
+    expect(editing.ok).toBe(true);
+    if (!writing.ok || !editing.ok) {
+      return;
+    }
+    const leafIds = [
+      "writing-source:skills/drafting",
+      "editing-source:skills/revision",
+    ];
+
+    const created = await app.createVirtualGroup({
+      displayName: "Writing Stack",
+      skills: [
+        { sourceId: "writing-source", leafId: leafIds[0]! },
+        { sourceId: "editing-source", leafId: leafIds[1]! },
+      ],
+      enabledTargets: ["codex"],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const inspected = await app.inspectSource("writing-stack");
+
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+    expect(inspected.data.binding.selectedLeafIds).toEqual(leafIds);
+
+    const { manifest } = await app.store.readState();
+    expect(manifest.bindings["writing-stack"]?.selectedLeafIds).toEqual(leafIds);
+    expect(manifest.bindings["writing-stack"]?.targets.codex?.leafIds).toEqual(leafIds);
+  });
+
   test("rejects empty virtual group name", async () => {
     const app = new SkillFlowApp();
 
