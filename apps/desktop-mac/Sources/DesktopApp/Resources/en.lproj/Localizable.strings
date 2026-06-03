@@ -23,6 +23,7 @@
 "home.sidebar.pinned" = "Pinned";
 "home.sidebar.local" = "Local";
 "home.sidebar.remote" = "Online";
+"home.sidebar.virtual" = "Virtual";
 "home.sidebar.expand" = "Expand section";
 "home.sidebar.collapse" = "Collapse section";
 "home.sidebar.all_agents" = "All Agents";

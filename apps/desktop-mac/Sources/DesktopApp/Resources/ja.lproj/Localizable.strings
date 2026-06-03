@@ -23,6 +23,7 @@
 "home.sidebar.pinned" = "固定";
 "home.sidebar.local" = "ローカル";
 "home.sidebar.remote" = "オンライン";
+"home.sidebar.virtual" = "仮想";
 "home.sidebar.expand" = "セクションを展開";
 "home.sidebar.collapse" = "セクションを折りたたむ";
 "home.sidebar.all_agents" = "すべて";

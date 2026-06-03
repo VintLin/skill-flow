@@ -1085,8 +1085,9 @@ struct SharedGroupCard: View {
                     .font(.system(size: max(9, scale.chipFontSize - 2), weight: .regular))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
                     .lineLimit(1)
+                    .truncationMode(.tail)
                     .padding(.horizontal, 4)
-                    .frame(height: max(12, scale.chipHeight - 14))
+                    .frame(maxWidth: 96, minHeight: max(12, scale.chipHeight - 14))
                     .background(AppTheme.documentBlock(for: theme).opacity(0.55))
                     .clipShape(RoundedRectangle(cornerRadius: max(4, scale.cornerRadius - 5)))
             }

@@ -1341,6 +1341,8 @@ struct MainView: View {
                 title = t("home.sidebar.local")
             case "remote":
                 title = t("home.sidebar.remote")
+            case "virtual":
+                title = t("home.sidebar.virtual")
             default:
                 title = t("home.sidebar.all")
             }

@@ -65,6 +65,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "home.sidebar.pinned",
             "home.sidebar.local",
             "home.sidebar.remote",
+            "home.sidebar.virtual",
             "home.sidebar.expand",
             "home.sidebar.collapse",
             "group_card.action.rename",

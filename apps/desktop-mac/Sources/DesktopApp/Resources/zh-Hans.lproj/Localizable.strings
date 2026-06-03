@@ -23,6 +23,7 @@
 "home.sidebar.pinned" = "置顶";
 "home.sidebar.local" = "本地";
 "home.sidebar.remote" = "线上";
+"home.sidebar.virtual" = "虚拟";
 "home.sidebar.expand" = "展开分组";
 "home.sidebar.collapse" = "收起分组";
 "home.sidebar.all_agents" = "全部代理";

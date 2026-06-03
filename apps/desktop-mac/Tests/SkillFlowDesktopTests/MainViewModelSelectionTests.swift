@@ -187,6 +187,7 @@ final class MainViewModelSelectionTests: XCTestCase {
                 MainViewModel.HomeSidebarFilterOption(id: "all", count: 2),
                 MainViewModel.HomeSidebarFilterOption(id: "local", count: 1),
                 MainViewModel.HomeSidebarFilterOption(id: "remote", count: 1),
+                MainViewModel.HomeSidebarFilterOption(id: "virtual", count: 0),
             ]
         )
     }
