@@ -177,6 +177,7 @@ final class MainViewModel {
         let label: String
         let description: String
         let isEnabled: Bool
+        let sourceTitle: String?
         let highlightQuery: String?
 
         init(
@@ -184,12 +185,14 @@ final class MainViewModel {
             label: String,
             description: String,
             isEnabled: Bool,
+            sourceTitle: String? = nil,
             highlightQuery: String? = nil
         ) {
             self.id = id
             self.label = label
             self.description = description
             self.isEnabled = isEnabled
+            self.sourceTitle = sourceTitle
             self.highlightQuery = highlightQuery
         }
     }
@@ -625,9 +628,11 @@ final class MainViewModel {
 
     private struct LeafSummary: Sendable {
         let id: String
+        let sourceId: String?
         let linkName: String
         let name: String
         let description: String
+        let sourceTitle: String?
         let metadataWarnings: [String]
     }
 
@@ -1033,6 +1038,7 @@ final class MainViewModel {
             HomeSidebarFilterOption(id: "all", count: cards.count),
             HomeSidebarFilterOption(id: "local", count: cards.filter(Self.isLocalHomeSource).count),
             HomeSidebarFilterOption(id: "remote", count: cards.filter(Self.isRemoteHomeSource).count),
+            HomeSidebarFilterOption(id: "virtual", count: cards.filter(Self.isVirtualHomeSource).count),
         ]
     }
 
@@ -1153,7 +1159,7 @@ final class MainViewModel {
     }
 
     func setSelectedHomeSourceTypeFilter(_ filterId: String) {
-        selectedHomeSourceTypeFilterId = ["all", "local", "remote"].contains(filterId) ? filterId : "all"
+        selectedHomeSourceTypeFilterId = ["all", "local", "remote", "virtual"].contains(filterId) ? filterId : "all"
     }
 
     func reconcileHomeAgentFilter() {
@@ -1182,6 +1188,9 @@ final class MainViewModel {
         if selectedHomeSourceTypeFilterId == "remote", !Self.isRemoteHomeSource(card) {
             return false
         }
+        if selectedHomeSourceTypeFilterId == "virtual", !Self.isVirtualHomeSource(card) {
+            return false
+        }
         guard let selectedHomeAgentFilterId = effectiveSelectedHomeAgentFilterId else {
             return true
         }
@@ -1198,9 +1207,16 @@ final class MainViewModel {
         homeSourceType(for: card) == "remote"
     }
 
+    static func isVirtualHomeSource(_ card: GroupCardModel) -> Bool {
+        homeSourceType(for: card) == "virtual"
+    }
+
     private static func homeSourceType(for card: GroupCardModel) -> String {
         let kind = card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let locator = card.sourceLocator.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if kind == "virtual" {
+            return "virtual"
+        }
         if ["local", "path", "filesystem"].contains(kind) {
             return "local"
         }
@@ -1237,6 +1253,7 @@ final class MainViewModel {
             let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
             let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
             let groupPath = cachedGroupPath ?? preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
+            let sourceTitlesById = Dictionary(uniqueKeysWithValues: allSummaries.map { ($0.sourceId, $0.sourceDisplayName) })
 
             return GroupCardModel(
                 id: row.id,
@@ -1260,7 +1277,11 @@ final class MainViewModel {
                         id: leaf.id,
                         label: leaf.name,
                         description: leaf.description,
-                        isEnabled: enabledLeafIds.contains(leaf.id)
+                        isEnabled: enabledLeafIds.contains(leaf.id),
+                        sourceTitle: leaf.sourceTitle
+                            ?? leaf.sourceId.flatMap { sourceId in
+                                sourceId == summary.sourceId ? nil : sourceTitlesById[sourceId]
+                            }
                     )
                 },
                 targets: visibleTargetIds().map { targetId in
@@ -2799,9 +2820,16 @@ final class MainViewModel {
                 }
                 return LeafSummary(
                     id: leafId,
+                    sourceId: (leaf["sourceId"] as? String)?.nonEmpty,
                     linkName: leaf["linkName"] as? String ?? leafId,
                     name: leaf["name"] as? String ?? leafId,
                     description: leaf["description"] as? String ?? "",
+                    sourceTitle: [
+                        (leaf["sourceTitle"] as? String)?.nonEmpty,
+                        (leaf["sourceLabel"] as? String)?.nonEmpty,
+                        (leaf["sourceName"] as? String)?.nonEmpty,
+                        (leaf["sourceDisplayName"] as? String)?.nonEmpty,
+                    ].compactMap { $0 }.first,
                     metadataWarnings: leaf["metadataWarnings"] as? [String] ?? []
                 )
             }

@@ -4,6 +4,11 @@ import XCTest
 
 @MainActor
 final class MainViewModelVirtualGroupTests: XCTestCase {
+    func testVirtualHomeSourcePredicateMatchesVirtualCards() {
+        XCTAssertTrue(MainViewModel.isVirtualHomeSource(groupCard(sourceKind: " virtual ")))
+        XCTAssertFalse(MainViewModel.isVirtualHomeSource(groupCard(sourceKind: "git")))
+    }
+
     func testCreateVirtualGroupDraftValidatesNameAndSelection() async {
         let model = MainViewModel(
             bridgeClient: BridgeClient(),
@@ -122,6 +127,35 @@ final class MainViewModelVirtualGroupTests: XCTestCase {
             ]
         )
         XCTAssertEqual(query.listCallCount, 1)
+    }
+
+    private func groupCard(sourceKind: String) -> MainViewModel.GroupCardModel {
+        MainViewModel.GroupCardModel(
+            id: "alpha",
+            title: "Alpha",
+            byline: nil,
+            groupPath: nil,
+            sourceKind: sourceKind,
+            sourceLocator: "https://example.com/alpha",
+            isPinned: false,
+            health: "HEALTHY",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: MainViewModel.GroupCardStats(
+                skillCount: nil,
+                downloadCount: nil,
+                starCount: nil,
+                githubURL: nil,
+                localPath: nil
+            ),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+        )
     }
 }
 
