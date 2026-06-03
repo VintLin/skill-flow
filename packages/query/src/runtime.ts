@@ -604,6 +604,11 @@ export class SkillFlowApp {
     for (const sourceId of sourceIds) {
       manifest.bindings[sourceId] = { selectedLeafIds: [], targets: {} };
     }
+    const applied = await this.planAndApplySources(manifest, lockFile, [id, ...sourceIds]);
+    if (!applied.ok) {
+      return fail(applied.errors, applied.warnings);
+    }
+    await this.ensureProjectionLedger(manifest, lockFile);
     const nextVirtualGroups: VirtualGroupsState = {
       schemaVersion: 1,
       groups: {
@@ -650,6 +655,15 @@ export class SkillFlowApp {
       restoredSourceIds.push(sourceId);
     }
 
+    manifest.bindings[virtualGroupId] = this.bindingFromDraft(EMPTY_DRAFT);
+    const applied = await this.planAndApplySources(manifest, lockFile, [
+      virtualGroupId,
+      ...restoredSourceIds,
+    ]);
+    if (!applied.ok) {
+      return fail(applied.errors, applied.warnings);
+    }
+    await this.ensureProjectionLedger(manifest, lockFile);
     manifest.sources = manifest.sources.filter((source) => source.id !== virtualGroupId);
     delete manifest.bindings[virtualGroupId];
     const remainingGroups = { ...virtualGroups.groups };

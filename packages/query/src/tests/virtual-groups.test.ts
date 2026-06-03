@@ -451,6 +451,20 @@ describe.sequential("virtual groups", () => {
     const { manifest } = await app.store.readState();
     expect(manifest.bindings.alpha).toEqual({ selectedLeafIds: [], targets: {} });
     expect(manifest.bindings.beta).toEqual({ selectedLeafIds: [], targets: {} });
+    const deployments = getManagedDeployments((await app.store.readState()).lockFile);
+    expect(deployments.map((deployment) => deployment.sourceId)).toEqual([
+      "writing-stack",
+      "writing-stack",
+    ]);
+    expect(deployments.map((deployment) => deployment.leafId).sort()).toEqual([
+      alphaLeafId,
+      betaLeafId,
+    ]);
+    expect(deployments.every((deployment) => deployment.target === "codex")).toBe(true);
+    for (const deployment of deployments) {
+      await expect(pathExists(deployment.targetPath)).resolves.toBe(true);
+    }
+    await expect(pathExists(path.join(sandbox.targetsRoot, "cursor", "beta"))).resolves.toBe(false);
 
     const virtualGroups = await app.store.readVirtualGroups();
     expect(virtualGroups.groups["writing-stack"]?.hiddenSourceIds).toEqual(["alpha", "beta"]);
@@ -551,6 +565,16 @@ describe.sequential("virtual groups", () => {
         },
       },
     });
+    const deployments = getManagedDeployments((await app.store.readState()).lockFile);
+    expect(deployments.map((deployment) => deployment.sourceId).sort()).toEqual(["alpha", "beta"]);
+    expect(deployments.map((deployment) => deployment.leafId).sort()).toEqual([
+      alphaLeafId,
+      betaLeafId,
+    ]);
+    for (const deployment of deployments) {
+      await expect(pathExists(deployment.targetPath)).resolves.toBe(true);
+    }
+    expect(deployments.some((deployment) => deployment.sourceId === "writing-stack")).toBe(false);
     const virtualGroups = await app.store.readVirtualGroups();
     expect(virtualGroups.groups["writing-stack"]).toBeUndefined();
   });
