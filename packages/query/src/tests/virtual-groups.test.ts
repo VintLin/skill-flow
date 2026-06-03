@@ -396,6 +396,203 @@ describe.sequential("virtual groups", () => {
     ).toEqual([...leafIds].sort());
   });
 
+  test("merge groups hides source groups, clears bindings, and stores restore snapshots", async () => {
+    const alphaRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/alpha/SKILL.md": skillDoc("alpha", "Alpha writing."),
+    });
+    const betaRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/beta/SKILL.md": skillDoc("beta", "Beta writing."),
+    });
+    const app = new SkillFlowApp();
+    const alpha = await app.addSource(alphaRepo, {
+      sourceIdOverride: "alpha",
+      project: false,
+    });
+    const beta = await app.addSource(betaRepo, {
+      sourceIdOverride: "beta",
+      project: false,
+    });
+    expect(alpha.ok).toBe(true);
+    expect(beta.ok).toBe(true);
+    if (!alpha.ok || !beta.ok) {
+      return;
+    }
+    const alphaLeafId = "alpha:skills/alpha";
+    const betaLeafId = "beta:skills/beta";
+    const appliedAlpha = await app.applyDraft("alpha", {
+      selectedLeafIds: [alphaLeafId],
+      enabledTargets: ["codex"],
+    });
+    const appliedBeta = await app.applyDraft("beta", {
+      selectedLeafIds: [betaLeafId],
+      enabledTargets: ["cursor"],
+    });
+    expect(appliedAlpha.ok).toBe(true);
+    expect(appliedBeta.ok).toBe(true);
+    if (!appliedAlpha.ok || !appliedBeta.ok) {
+      return;
+    }
+
+    const result = await app.mergeGroups({
+      displayName: "Writing Stack",
+      sourceIds: ["alpha", "beta"],
+      enabledTargets: ["codex"],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.group.id).toBe("writing-stack");
+    expect(result.data.group.includedSkills).toEqual([
+      { sourceId: "alpha", leafId: alphaLeafId },
+      { sourceId: "beta", leafId: betaLeafId },
+    ]);
+    const { manifest } = await app.store.readState();
+    expect(manifest.bindings.alpha).toEqual({ selectedLeafIds: [], targets: {} });
+    expect(manifest.bindings.beta).toEqual({ selectedLeafIds: [], targets: {} });
+
+    const virtualGroups = await app.store.readVirtualGroups();
+    expect(virtualGroups.groups["writing-stack"]?.hiddenSourceIds).toEqual(["alpha", "beta"]);
+    expect(virtualGroups.groups["writing-stack"]?.restoreSnapshots).toEqual({
+      alpha: {
+        selectedLeafIds: [alphaLeafId],
+        enabledTargets: ["codex"],
+      },
+      beta: {
+        selectedLeafIds: [betaLeafId],
+        enabledTargets: ["cursor"],
+      },
+    });
+
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    expect(listed.data.summaries.map((summary) => summary.source.id)).toEqual(["writing-stack"]);
+  });
+
+  test("restore merged groups re-shows source groups and deletes the virtual group", async () => {
+    const alphaRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/alpha/SKILL.md": skillDoc("alpha", "Alpha writing."),
+    });
+    const betaRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/beta/SKILL.md": skillDoc("beta", "Beta writing."),
+    });
+    const app = new SkillFlowApp();
+    const alpha = await app.addSource(alphaRepo, {
+      sourceIdOverride: "alpha",
+      project: false,
+    });
+    const beta = await app.addSource(betaRepo, {
+      sourceIdOverride: "beta",
+      project: false,
+    });
+    expect(alpha.ok).toBe(true);
+    expect(beta.ok).toBe(true);
+    if (!alpha.ok || !beta.ok) {
+      return;
+    }
+    const alphaLeafId = "alpha:skills/alpha";
+    const betaLeafId = "beta:skills/beta";
+    const appliedAlpha = await app.applyDraft("alpha", {
+      selectedLeafIds: [alphaLeafId],
+      enabledTargets: ["codex"],
+    });
+    const appliedBeta = await app.applyDraft("beta", {
+      selectedLeafIds: [betaLeafId],
+      enabledTargets: ["cursor"],
+    });
+    expect(appliedAlpha.ok).toBe(true);
+    expect(appliedBeta.ok).toBe(true);
+    if (!appliedAlpha.ok || !appliedBeta.ok) {
+      return;
+    }
+    const merged = await app.mergeGroups({
+      displayName: "Writing Stack",
+      sourceIds: ["alpha", "beta"],
+      enabledTargets: ["codex"],
+    });
+    expect(merged.ok).toBe(true);
+    if (!merged.ok) {
+      return;
+    }
+
+    const restored = await app.restoreMergedGroups("writing-stack");
+
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) {
+      return;
+    }
+    expect(restored.data).toEqual({
+      virtualGroupId: "writing-stack",
+      restoredSourceIds: ["alpha", "beta"],
+      skippedSourceIds: [],
+    });
+    const { manifest } = await app.store.readState();
+    expect(manifest.sources.some((source) => source.id === "writing-stack")).toBe(false);
+    expect(manifest.bindings["writing-stack"]).toBeUndefined();
+    expect(manifest.bindings.alpha).toEqual({
+      selectedLeafIds: [alphaLeafId],
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: [alphaLeafId],
+        },
+      },
+    });
+    expect(manifest.bindings.beta).toEqual({
+      selectedLeafIds: [betaLeafId],
+      targets: {
+        cursor: {
+          enabled: true,
+          leafIds: [betaLeafId],
+        },
+      },
+    });
+    const virtualGroups = await app.store.readVirtualGroups();
+    expect(virtualGroups.groups["writing-stack"]).toBeUndefined();
+  });
+
+  test("virtual group creation blocks duplicate projected skill names", async () => {
+    const alphaRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review alpha."),
+    });
+    const betaRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review beta."),
+    });
+    const app = new SkillFlowApp();
+    const alpha = await app.addSource(alphaRepo, {
+      sourceIdOverride: "alpha",
+      project: false,
+    });
+    const beta = await app.addSource(betaRepo, {
+      sourceIdOverride: "beta",
+      project: false,
+    });
+    expect(alpha.ok).toBe(true);
+    expect(beta.ok).toBe(true);
+    if (!alpha.ok || !beta.ok) {
+      return;
+    }
+
+    const result = await app.createVirtualGroup({
+      displayName: "Review Stack",
+      skills: [
+        { sourceId: "alpha", leafId: "alpha:skills/review" },
+        { sourceId: "beta", leafId: "beta:skills/review" },
+      ],
+      enabledTargets: ["codex"],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]?.code).toBe("VIRTUAL_GROUP_SKILL_NAME_CONFLICT");
+    expect(result.errors[0]?.message).toContain("review");
+    expect(result.errors[0]?.message).toContain("alpha");
+    expect(result.errors[0]?.message).toContain("beta");
+  });
+
   test("rejects empty virtual group name", async () => {
     const app = new SkillFlowApp();
 
