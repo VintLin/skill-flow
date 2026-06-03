@@ -342,3 +342,17 @@
 "settings.custom_agents.project_path_label" = "项目路径";
 "settings.edit_custom_agent.title" = "编辑自定义代理";
 "settings.custom_agents.project_path_hint" = "相对于项目根目录，例如 .my-agent/skills";
+"group_editor.title" = "分组编辑器";
+"group_editor.tab.create" = "创建";
+"group_editor.tab.merge" = "合并";
+"group_editor.tab.restore" = "恢复";
+"group_editor.section.targets" = "目标";
+"group_editor.action.save" = "保存";
+"group_editor.action.restore" = "恢复";
+"group_editor.validation.name_required" = "请输入名称。";
+"group_editor.validation.skills_required" = "请至少选择一个技能。";
+"group_editor.validation.groups_required" = "请至少选择两个分组。";
+"group_editor.impact.create_virtual_group" = "创建一个虚拟分组。";
+"group_editor.impact.hide_groups" = "隐藏选中的分组。";
+"group_editor.impact.clear_bindings" = "清除现有绑定。";
+"group_editor.impact.save_restore_snapshot" = "保存恢复快照。";

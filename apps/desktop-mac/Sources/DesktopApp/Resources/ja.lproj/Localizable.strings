@@ -342,3 +342,17 @@
 "settings.custom_agents.project_path_label" = "Project パス";
 "settings.edit_custom_agent.title" = "カスタム Agent を編集";
 "settings.custom_agents.project_path_hint" = "プロジェクトルートからの相対パスです。例: .my-agent/skills";
+"group_editor.title" = "グループエディタ";
+"group_editor.tab.create" = "作成";
+"group_editor.tab.merge" = "結合";
+"group_editor.tab.restore" = "復元";
+"group_editor.section.targets" = "ターゲット";
+"group_editor.action.save" = "保存";
+"group_editor.action.restore" = "復元";
+"group_editor.validation.name_required" = "名前を入力してください。";
+"group_editor.validation.skills_required" = "スキルを1つ以上選択してください。";
+"group_editor.validation.groups_required" = "グループを2つ以上選択してください。";
+"group_editor.impact.create_virtual_group" = "仮想グループを作成します。";
+"group_editor.impact.hide_groups" = "選択したグループを非表示にします。";
+"group_editor.impact.clear_bindings" = "既存のバインドを消去します。";
+"group_editor.impact.save_restore_snapshot" = "復元スナップショットを保存します。";

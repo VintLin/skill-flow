@@ -7,6 +7,25 @@ enum HomeSidebarChipTitleFormatter {
     }
 }
 
+private enum GroupEditorTab: String, CaseIterable, Identifiable {
+    case create
+    case merge
+    case restore
+
+    var id: String { rawValue }
+
+    var localizationKey: String {
+        switch self {
+        case .create:
+            return "group_editor.tab.create"
+        case .merge:
+            return "group_editor.tab.merge"
+        case .restore:
+            return "group_editor.tab.restore"
+        }
+    }
+}
+
 struct MainView: View {
     struct ImportSearchPrompt: Equatable {
         let leadingText: String
@@ -76,6 +95,13 @@ struct MainView: View {
     @State private var renameSourceId: String?
     @State private var renameDraft = ""
     @State private var renameOriginalDisplayName = ""
+    @State private var isGroupEditorPresented = false
+    @State private var groupEditorTab: GroupEditorTab = .create
+    @State private var groupEditorName = ""
+    @State private var groupEditorSelectedSkills = Set<VirtualGroupSkillRef>()
+    @State private var groupEditorSelectedSourceIds = Set<String>()
+    @State private var groupEditorSelectedTargetIds = Set<String>()
+    @State private var groupEditorValidationKey: String?
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -163,6 +189,48 @@ struct MainView: View {
                     }
                     .transition(.opacity)
                     .zIndex(50)
+                }
+
+                if isGroupEditorPresented {
+                    ZStack {
+                        Color.black.opacity(theme == .dark ? 0.35 : 0.18)
+                            .ignoresSafeArea()
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                closeGroupEditor()
+                            }
+
+                        GroupEditorSheet(
+                            selectedTab: $groupEditorTab,
+                            name: $groupEditorName,
+                            selectedSkills: $groupEditorSelectedSkills,
+                            selectedSourceIds: $groupEditorSelectedSourceIds,
+                            selectedTargetIds: $groupEditorSelectedTargetIds,
+                            validationKey: $groupEditorValidationKey,
+                            skillOptions: groupEditorSkillOptions,
+                            sourceOptions: groupEditorMergeSourceOptions,
+                            restoreOptions: groupEditorRestoreSourceOptions,
+                            targetOptions: viewModel.visibleTargets,
+                            title: t("group_editor.title"),
+                            theme: theme,
+                            accent: accent,
+                            t: { L10n.string($0, locale: settingsViewModel.selectedLocale) },
+                            onCancel: {
+                                closeGroupEditor()
+                            },
+                            onSave: {
+                                saveGroupEditor()
+                            },
+                            onRestore: { sourceId in
+                                closeGroupEditor()
+                                Task { await viewModel.restoreMergedGroups(virtualGroupId: sourceId) }
+                            }
+                        )
+                        .frame(maxWidth: 640)
+                        .shadow(color: AppTheme.softShadow(for: theme), radius: 20, y: 10)
+                    }
+                    .transition(.opacity)
+                    .zIndex(55)
                 }
 
                 if renameSourceId != nil {
@@ -299,6 +367,7 @@ struct MainView: View {
                     HStack(spacing: 8) {
                         searchField
                         importButton
+                        groupEditorButton
                         homeUpdateButton
                         settingsButton
                     }
@@ -313,6 +382,7 @@ struct MainView: View {
                     searchField
                     Spacer(minLength: 0)
                     importButton
+                    groupEditorButton
                     homeUpdateButton
                     settingsButton
                 }
@@ -530,6 +600,12 @@ struct MainView: View {
         toolbarIconButton(.import) { navigation.showImportPage() }
     }
 
+    private var groupEditorButton: some View {
+        toolbarIconButton(.groupEditor) {
+            openGroupEditor()
+        }
+    }
+
     @ViewBuilder
     private var importSearchActionButton: some View {
         switch importSearchActionState {
@@ -593,6 +669,102 @@ struct MainView: View {
 
     private var settingsButton: some View {
         toolbarIconButton(.settings) { navigation.showSettings() }
+    }
+
+    private var groupEditorMergeSourceOptions: [MainViewModel.VirtualGroupSourceOption] {
+        viewModel.virtualGroupSourceOptions.filter { !$0.isVirtual }
+    }
+
+    private var groupEditorRestoreSourceOptions: [MainViewModel.VirtualGroupSourceOption] {
+        viewModel.virtualGroupSourceOptions.filter(\.isVirtual)
+    }
+
+    private var groupEditorSkillOptions: [MainViewModel.VirtualGroupSkillOption] {
+        groupEditorMergeSourceOptions.flatMap { option in
+            viewModel.virtualGroupSkillOptions(for: option.id)
+        }
+    }
+
+    private var orderedGroupEditorSelectedSkills: [VirtualGroupSkillRef] {
+        groupEditorSkillOptions
+            .map { VirtualGroupSkillRef(sourceId: $0.sourceId, leafId: $0.leafId) }
+            .filter { groupEditorSelectedSkills.contains($0) }
+    }
+
+    private var orderedGroupEditorSelectedSourceIds: [String] {
+        groupEditorMergeSourceOptions
+            .map(\.id)
+            .filter { groupEditorSelectedSourceIds.contains($0) }
+    }
+
+    private var orderedGroupEditorSelectedTargetIds: [String] {
+        viewModel.visibleTargets
+            .map(\.id)
+            .filter { groupEditorSelectedTargetIds.contains($0) }
+    }
+
+    private func openGroupEditor() {
+        groupEditorTab = .create
+        groupEditorName = ""
+        groupEditorSelectedSkills = []
+        groupEditorSelectedSourceIds = []
+        groupEditorSelectedTargetIds = Set(viewModel.visibleTargets.map(\.id))
+        groupEditorValidationKey = nil
+        isGroupEditorPresented = true
+    }
+
+    private func closeGroupEditor() {
+        isGroupEditorPresented = false
+        groupEditorValidationKey = nil
+    }
+
+    private func saveGroupEditor() {
+        switch groupEditorTab {
+        case .create:
+            let skills = orderedGroupEditorSelectedSkills
+            switch viewModel.validateVirtualGroupCreate(displayName: groupEditorName, selectedSkills: skills) {
+            case .valid:
+                let displayName = groupEditorName
+                let targetIds = orderedGroupEditorSelectedTargetIds
+                closeGroupEditor()
+                Task {
+                    await viewModel.createVirtualGroup(
+                        displayName: displayName,
+                        skills: skills,
+                        enabledTargets: targetIds
+                    )
+                }
+            case .nameRequired:
+                groupEditorValidationKey = "group_editor.validation.name_required"
+            case .skillsRequired:
+                groupEditorValidationKey = "group_editor.validation.skills_required"
+            case .groupsRequired:
+                groupEditorValidationKey = "group_editor.validation.groups_required"
+            }
+        case .merge:
+            let sourceIds = orderedGroupEditorSelectedSourceIds
+            switch viewModel.validateVirtualGroupMerge(displayName: groupEditorName, sourceIds: sourceIds) {
+            case .valid:
+                let displayName = groupEditorName
+                let targetIds = orderedGroupEditorSelectedTargetIds
+                closeGroupEditor()
+                Task {
+                    await viewModel.mergeGroups(
+                        displayName: displayName,
+                        sourceIds: sourceIds,
+                        enabledTargets: targetIds
+                    )
+                }
+            case .nameRequired:
+                groupEditorValidationKey = "group_editor.validation.name_required"
+            case .skillsRequired:
+                groupEditorValidationKey = "group_editor.validation.skills_required"
+            case .groupsRequired:
+                groupEditorValidationKey = "group_editor.validation.groups_required"
+            }
+        case .restore:
+            break
+        }
     }
 
     private func closeCustomAgentEditor() {
@@ -727,7 +899,7 @@ struct MainView: View {
             includesSidebarToggle: !isSidebarVisible
         )
 
-        return HStack(spacing: Self.homeMainHeaderItemSpacing) {
+        return HStack(spacing: Self.homeMainHeaderItemSpacing(includesSidebarToggle: !isSidebarVisible)) {
             if !isSidebarVisible {
                 homeSidebarToggleButton
             }
@@ -737,6 +909,7 @@ struct MainView: View {
             homeSearchField(width: searchWidth)
             Spacer(minLength: 0)
             importButton
+            groupEditorButton
             homeUpdateButton
             settingsButton
         }
@@ -1611,6 +1784,7 @@ extension MainView {
     nonisolated static let homeCollapsedHeaderButtonGap: CGFloat = 12
     nonisolated static let homeCollapsedHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset + homeCollapsedHeaderButtonGap
     nonisolated static let homeMainHeaderItemSpacing: CGFloat = 12
+    nonisolated static let homeMainHeaderCollapsedItemSpacing: CGFloat = 8
     nonisolated static let homeMainHeaderMinimumSearchFieldWidth: CGFloat = 160
     nonisolated static let homeGridHorizontalPadding: CGFloat = 32
     static let homeProjectPillHeight: CGFloat = 28
@@ -1672,12 +1846,17 @@ extension MainView {
         includesSidebarToggle: Bool
     ) -> CGFloat {
         let toggleWidth = includesSidebarToggle ? homeSidebarToggleButtonSize : 0
-        let spacingCount: CGFloat = includesSidebarToggle ? 6 : 5
-        return (toolbarButtonSize * 3)
+        let spacingCount: CGFloat = includesSidebarToggle ? 7 : 6
+        let itemSpacing = homeMainHeaderItemSpacing(includesSidebarToggle: includesSidebarToggle)
+        return (toolbarButtonSize * 4)
             + toggleWidth
             + homeMainHeaderBrandWidth
             + reservedHorizontalPadding
-            + (homeMainHeaderItemSpacing * spacingCount)
+            + (itemSpacing * spacingCount)
+    }
+
+    nonisolated static func homeMainHeaderItemSpacing(includesSidebarToggle: Bool) -> CGFloat {
+        includesSidebarToggle ? homeMainHeaderCollapsedItemSpacing : homeMainHeaderItemSpacing
     }
 
     nonisolated static func homeMainHeaderSearchWidth(
@@ -1780,6 +1959,315 @@ private struct LayoutMetrics {
         width <= 760 ? MainView.homeSidebarNarrowWidth : MainView.homeSidebarRegularWidth
     }
 
+}
+
+private struct GroupEditorSheet: View {
+    @Binding var selectedTab: GroupEditorTab
+    @Binding var name: String
+    @Binding var selectedSkills: Set<VirtualGroupSkillRef>
+    @Binding var selectedSourceIds: Set<String>
+    @Binding var selectedTargetIds: Set<String>
+    @Binding var validationKey: String?
+
+    let skillOptions: [MainViewModel.VirtualGroupSkillOption]
+    let sourceOptions: [MainViewModel.VirtualGroupSourceOption]
+    let restoreOptions: [MainViewModel.VirtualGroupSourceOption]
+    let targetOptions: [MainViewModel.TargetOption]
+    let title: String
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let t: (String) -> String
+    let onCancel: () -> Void
+    let onSave: () -> Void
+    let onRestore: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+
+            Picker("", selection: $selectedTab) {
+                ForEach(GroupEditorTab.allCases) { tab in
+                    Text(t(tab.localizationKey)).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .onChange(of: selectedTab) { _, _ in
+                validationKey = nil
+            }
+
+            switch selectedTab {
+            case .create:
+                createPanel
+            case .merge:
+                mergePanel
+            case .restore:
+                restorePanel
+            }
+
+            if let validationKey {
+                Text(t(validationKey))
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Color.red)
+                    .lineLimit(2)
+            }
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+
+                Button(t("rename.dialog.cancel"), action: onCancel)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(AppTheme.toolbarButtonBackground(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                if selectedTab != .restore {
+                    Button(t("group_editor.action.save"), action: onSave)
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.pageBackground(for: theme))
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .background(AppTheme.brand(for: accent, in: theme))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+        .padding(16)
+        .background(AppTheme.surface(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    private var createPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            nameField
+            optionSection(title: t("group_card.section.skills")) {
+                ForEach(skillOptions) { option in
+                    selectableRow(
+                        title: option.title,
+                        subtitle: option.sourceTitle,
+                        isSelected: selectedSkills.contains(skillRef(for: option))
+                    ) {
+                        toggleSkill(option)
+                    }
+                }
+            }
+            targetSection
+            impactList(["group_editor.impact.create_virtual_group"])
+        }
+    }
+
+    private var mergePanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            nameField
+            optionSection(title: t("common.section.source")) {
+                ForEach(sourceOptions) { option in
+                    selectableRow(
+                        title: option.title,
+                        subtitle: "\(option.skillCount)",
+                        isSelected: selectedSourceIds.contains(option.id)
+                    ) {
+                        toggleSource(option.id)
+                    }
+                }
+            }
+            impactList([
+                "group_editor.impact.hide_groups",
+                "group_editor.impact.clear_bindings",
+                "group_editor.impact.save_restore_snapshot",
+            ])
+            targetSection
+        }
+    }
+
+    private var restorePanel: some View {
+        optionSection(title: t("common.section.source")) {
+            ForEach(restoreOptions) { option in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(option.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary(for: theme))
+                            .lineLimit(1)
+                        Text("\(option.skillCount)")
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button(t("group_editor.action.restore")) {
+                        onRestore(option.id)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.pageBackground(for: theme))
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(AppTheme.brand(for: accent, in: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 44)
+                .background(AppTheme.headerControlFill(for: theme))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
+    private var nameField: some View {
+        TextField(t("settings.custom_agents.name_label"), text: $name)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(AppTheme.textPrimary(for: theme))
+            .accessibilityLabel(t("settings.custom_agents.name_label"))
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(AppTheme.headerControlFill(for: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+            }
+            .onSubmit(onSave)
+    }
+
+    private var targetSection: some View {
+        optionSection(title: t("group_editor.section.targets")) {
+            ForEach(targetOptions) { option in
+                selectableRow(
+                    title: option.label,
+                    subtitle: option.id,
+                    isSelected: selectedTargetIds.contains(option.id)
+                ) {
+                    toggleTarget(option.id)
+                }
+            }
+        }
+    }
+
+    private func optionSection<Content: View>(
+        title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    content()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 148)
+            .padding(8)
+            .background(AppTheme.toolbarButtonBackground(for: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private func selectableRow(
+        title: String,
+        subtitle: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(isSelected ? AppTheme.brand(for: accent, in: theme) : AppTheme.textMuted(for: theme))
+                    .frame(width: 16, height: 16)
+
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Text(subtitle)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(isSelected ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.22 : 0.14) : AppTheme.headerControlFill(for: theme))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func impactList(_ keys: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(keys, id: \.self) { key in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(AppTheme.brand(for: accent, in: theme))
+                        .frame(width: 5, height: 5)
+                    Text(t(key))
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(2)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.headerControlFill(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func skillRef(for option: MainViewModel.VirtualGroupSkillOption) -> VirtualGroupSkillRef {
+        VirtualGroupSkillRef(sourceId: option.sourceId, leafId: option.leafId)
+    }
+
+    private func toggleSkill(_ option: MainViewModel.VirtualGroupSkillOption) {
+        let ref = skillRef(for: option)
+        if selectedSkills.contains(ref) {
+            selectedSkills.remove(ref)
+        } else {
+            selectedSkills.insert(ref)
+        }
+        validationKey = nil
+    }
+
+    private func toggleSource(_ sourceId: String) {
+        if selectedSourceIds.contains(sourceId) {
+            selectedSourceIds.remove(sourceId)
+        } else {
+            selectedSourceIds.insert(sourceId)
+        }
+        validationKey = nil
+    }
+
+    private func toggleTarget(_ targetId: String) {
+        if selectedTargetIds.contains(targetId) {
+            selectedTargetIds.remove(targetId)
+        } else {
+            selectedTargetIds.insert(targetId)
+        }
+        validationKey = nil
+    }
 }
 
 private struct RenameSourceDialog: View {

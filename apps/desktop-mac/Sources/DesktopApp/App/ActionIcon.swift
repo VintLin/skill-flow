@@ -10,6 +10,7 @@ enum ActionIcon: String {
     case delete
     case dragHandle = "drag-handle"
     case externalLink
+    case groupEditor = "group-editor"
     case `import`
     case more
     case pin
