@@ -108,6 +108,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "group_editor.tab.restore",
             "group_editor.action.save",
             "group_editor.action.restore",
+            "group_editor.section.targets",
             "group_editor.validation.name_required",
             "group_editor.validation.skills_required",
             "group_editor.validation.groups_required",
