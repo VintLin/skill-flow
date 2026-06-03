@@ -148,6 +148,7 @@ final class MainViewModel {
         let id: String
         let sourceId: String
         let sourceTitle: String
+        let sourceSubtitle: String
         let leafId: String
         let title: String
         let isEnabled: Bool
@@ -156,8 +157,15 @@ final class MainViewModel {
     struct VirtualGroupSourceOption: Identifiable, Equatable {
         let id: String
         let title: String
+        let sourceSubtitle: String
         let skillCount: Int
         let isVirtual: Bool
+    }
+
+    struct VirtualGroupEditorOptions: Equatable {
+        let skillOptions: [VirtualGroupSkillOption]
+        let mergeSourceOptions: [VirtualGroupSourceOption]
+        let restoreSourceOptions: [VirtualGroupSourceOption]
     }
 
     struct SourceRow: Identifiable {
@@ -896,7 +904,15 @@ final class MainViewModel {
             return true
         }
 
-        return matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$"#)
+        if matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$"#) {
+            return true
+        }
+
+        if matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?@[A-Za-z0-9_.-]+$"#) {
+            return true
+        }
+
+        return matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?(?:/[A-Za-z0-9_.-]+)+$"#)
     }
 
     static func normalizedImportLocator(_ value: String) -> String {
@@ -1097,14 +1113,7 @@ final class MainViewModel {
     }
 
     var virtualGroupSourceOptions: [VirtualGroupSourceOption] {
-        groupCards.map { card in
-            VirtualGroupSourceOption(
-                id: card.id,
-                title: card.title,
-                skillCount: card.skills.count,
-                isVirtual: card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "virtual"
-            )
-        }
+        groupCards.map { virtualGroupSourceOption(for: $0) }
     }
 
     func virtualGroupSkillOptions(for sourceId: String) -> [VirtualGroupSkillOption] {
@@ -1112,16 +1121,65 @@ final class MainViewModel {
             return []
         }
 
+        return virtualGroupSkillOptions(for: card)
+    }
+
+    func virtualGroupEditorOptions() -> VirtualGroupEditorOptions {
+        let cards = groupCards
+        let sourceOptions = cards.map { virtualGroupSourceOption(for: $0) }
+        let mergeSourceIds = Set(sourceOptions.filter { !$0.isVirtual }.map(\.id))
+        return VirtualGroupEditorOptions(
+            skillOptions: cards
+                .filter { mergeSourceIds.contains($0.id) }
+                .flatMap { virtualGroupSkillOptions(for: $0) },
+            mergeSourceOptions: sourceOptions.filter { !$0.isVirtual },
+            restoreSourceOptions: sourceOptions.filter(\.isVirtual)
+        )
+    }
+
+    private func virtualGroupSourceOption(for card: GroupCardModel) -> VirtualGroupSourceOption {
+        VirtualGroupSourceOption(
+            id: card.id,
+            title: card.title,
+            sourceSubtitle: virtualGroupSkillSourceSubtitle(for: card),
+            skillCount: card.skills.count,
+            isVirtual: card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "virtual"
+        )
+    }
+
+    private func virtualGroupSkillOptions(for card: GroupCardModel) -> [VirtualGroupSkillOption] {
+        let sourceSubtitle = virtualGroupSkillSourceSubtitle(for: card)
         return card.skills.map { skill in
             VirtualGroupSkillOption(
                 id: "\(card.id):\(skill.id)",
                 sourceId: card.id,
                 sourceTitle: card.title,
+                sourceSubtitle: sourceSubtitle,
                 leafId: skill.id,
                 title: skill.label,
                 isEnabled: skill.isEnabled
             )
         }
+    }
+
+    private func virtualGroupSkillSourceSubtitle(for card: GroupCardModel) -> String {
+        let author = Self.normalizedVirtualGroupAuthor(from: card.byline)
+        if let author {
+            return "\(author) · \(card.title)"
+        }
+        return card.title
+    }
+
+    nonisolated private static func normalizedVirtualGroupAuthor(from byline: String?) -> String? {
+        let trimmed = byline?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+        if trimmed.lowercased().hasPrefix("by ") {
+            let value = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+        return trimmed
     }
 
     func validateVirtualGroupCreate(
@@ -1448,10 +1506,21 @@ final class MainViewModel {
     }
 
     private func subtitleText(locator: String, kind: String) -> String {
-        if let handle = Self.authorHandle(from: locator) {
-            return "by \(handle)"
+        "by \(authorName(locator: locator, kind: kind))"
+    }
+
+    private func authorName(locator: String, kind: String) -> String {
+        let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if ["local", "path", "filesystem"].contains(normalizedKind) {
+            return localized("source.author.local")
         }
-        return "by \(kind.lowercased())"
+        if normalizedKind == "virtual" {
+            return localized("source.author.virtual")
+        }
+        if let handle = Self.authorHandle(from: locator) {
+            return handle
+        }
+        return normalizedKind
     }
 
     private func groupCardMetadata(
@@ -2801,9 +2870,14 @@ final class MainViewModel {
             let rawSourceOriginalDisplayName = source["originalDisplayName"] as? String
             clearRenameDisplayNameOverrideIfConfirmed(sourceId: sourceId, displayName: rawSourceDisplayName)
             clearRenameOriginalDisplayNameOverrideIfConfirmed(sourceId: sourceId, originalDisplayName: rawSourceOriginalDisplayName)
+            let parsedSourceDisplayName = Self.normalizedSummaryDisplayName(
+                kind: kind,
+                displayName: rawSourceDisplayName,
+                originalDisplayName: rawSourceOriginalDisplayName,
+                fallback: sourceId
+            )
             let sourceDisplayName = renamedSourceDisplayNameOverridesBySourceId[sourceId]
-                ?? rawSourceDisplayName
-                ?? sourceId
+                ?? parsedSourceDisplayName
             let sourceOriginalDisplayName = renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId]
                 ?? rawSourceOriginalDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
                 ?? sourceDisplayName
@@ -3139,8 +3213,10 @@ final class MainViewModel {
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
         let groupPath = preparedDetailContent?.groupPath ?? preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
         let author = sourceSnapshot.map { "@\($0.owner.slug)" }
-            ?? Self.authorHandle(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
-            ?? "@\(summary.sourceKind.lowercased())"
+            ?? authorName(
+                locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
+                kind: summary.sourceKind
+            )
         let originLabel = sourceSnapshot.flatMap { Self.displayOriginLabel(from: $0.sourceURL) }
             ?? Self.displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
         let groupStats = groupCardMetadata(sourceId: sourceId, summary: summary, row: SourceRow(
@@ -5721,6 +5797,26 @@ final class MainViewModel {
         }
 
         return trimmed
+    }
+
+    nonisolated private static func normalizedSummaryDisplayName(
+        kind: String,
+        displayName: String?,
+        originalDisplayName: String?,
+        fallback: String
+    ) -> String {
+        let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmedDisplayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedOriginalDisplayName = originalDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedKind == "virtual",
+           trimmedDisplayName?.lowercased().hasPrefix("virtual:") == true,
+           let original = trimmedOriginalDisplayName,
+           !original.isEmpty,
+           !original.lowercased().hasPrefix("virtual:")
+        {
+            return original
+        }
+        return trimmedDisplayName?.nonEmpty ?? trimmedOriginalDisplayName?.nonEmpty ?? fallback
     }
 
     private static func detailTitleFallback(from locator: String, sourceId: String) -> String {

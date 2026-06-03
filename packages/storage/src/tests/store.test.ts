@@ -177,6 +177,40 @@ describe("StateStore", () => {
     });
   });
 
+  test("readState preserves non-ASCII virtual group display names", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+
+    await fs.writeFile(store.manifestPath, `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "skills-2",
+          locator: "virtual:skills-2",
+          kind: "virtual",
+          displayName: "组合工具",
+          originalDisplayName: "组合工具",
+          addedAt: "2026-05-31T00:00:00.000Z",
+        },
+      ],
+      bindings: {},
+    }, null, 2)}\n`, "utf8");
+    await fs.writeFile(store.lockPath, `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [],
+      leafInventory: [],
+      projections: [],
+      deployments: [],
+    }, null, 2)}\n`, "utf8");
+
+    const state = await store.readState();
+
+    expect(state.manifest.sources[0]).toMatchObject({
+      displayName: "组合工具",
+      originalDisplayName: "组合工具",
+    });
+  });
+
   test("writeState persists originalDisplayName on manifest and lock sources", async () => {
     const store = new StateStore(stateRoot);
     await store.init();

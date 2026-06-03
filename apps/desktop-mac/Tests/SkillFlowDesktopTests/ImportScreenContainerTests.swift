@@ -109,6 +109,12 @@ final class ImportScreenContainerTests: XCTestCase {
             ("clawhub:anthropics/skills", true),
             ("git@github.com:owner/repo.git", true),
             ("owner/repo", true),
+            ("owner/repo@skill-name", true),
+            ("owner/repo/skills/skill-name", true),
+            ("owner/repo/path/to/skill", true),
+            ("owner/repo@skill name", false),
+            ("owner/repo@", false),
+            ("owner/repo/path with spaces", false),
         ]
 
         for (locator, expected) in cases {
@@ -118,6 +124,30 @@ final class ImportScreenContainerTests: XCTestCase {
                 "locator: \(locator)"
             )
         }
+    }
+
+    func testHomeSearchSubmitRoutesGitHubSkillSelectorsToImportPage() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        let handled = await container.homeContainer.handleHomeSearchSubmit("paramchoudhary/resumeskills@resume-bullet-writer")
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
+        XCTAssertEqual(container.importContainer.screenState.searchText, "paramchoudhary/resumeskills@resume-bullet-writer")
+        XCTAssertEqual(container.mainViewModel.importSubmittedQuery, "paramchoudhary/resumeskills@resume-bullet-writer")
+    }
+
+    func testHomeSearchSubmitRoutesGitHubSubpathsToImportPage() async {
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+
+        let handled = await container.homeContainer.handleHomeSearchSubmit("paramchoudhary/resumeskills/skills/resume-bullet-writer")
+
+        XCTAssertTrue(handled)
+        XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
+        XCTAssertEqual(container.importContainer.screenState.searchText, "paramchoudhary/resumeskills/skills/resume-bullet-writer")
+        XCTAssertEqual(container.mainViewModel.importSubmittedQuery, "paramchoudhary/resumeskills/skills/resume-bullet-writer")
     }
 
     func testDraftsPersistAcrossContainerRecreationThroughDesktopAppState() {

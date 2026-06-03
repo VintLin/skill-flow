@@ -132,6 +132,14 @@ type RenameSourceResult = {
   originalDisplayName: string;
   isResetToOriginal: boolean;
 };
+
+type GitHubImportLocator = {
+  canonicalRepo: string;
+  originalLocator: string;
+  locator: string;
+  requestedPath?: string;
+  skillSelector?: string;
+};
 export type CreateVirtualGroupOptions = {
   displayName: string;
   skills: VirtualGroupSkillRef[];
@@ -1019,18 +1027,26 @@ export class SkillFlowApp {
           exact: true,
         });
       }
-      const exactRepo = normalizeImportCanonicalRepo(normalizedQuery);
+      const exactLocator = this.parseGitHubImportLocator(normalizedQuery);
+      const exactRepo = exactLocator?.canonicalRepo;
       if (exactRepo) {
         try {
           const details = await fetchSkillsDirectorySourceDetails(exactRepo);
+          const matchedSkillNames = this.importLocatorMatchedSkillNames(exactLocator);
           return ok({
             groups: [
               {
                 id: exactRepo,
                 provider: "skills",
-                locator: exactRepo,
+                locator: exactLocator.originalLocator,
                 canonicalRepo: exactRepo,
-                aliases: [exactRepo, `https://github.com/${exactRepo}`, `https://github.com/${exactRepo}.git`, `git@github.com:${exactRepo}.git`],
+                aliases: [
+                  exactLocator.originalLocator,
+                  exactRepo,
+                  `https://github.com/${exactRepo}`,
+                  `https://github.com/${exactRepo}.git`,
+                  `git@github.com:${exactRepo}.git`,
+                ].filter((value, index, values) => values.indexOf(value) === index),
                 title: details.repoLabel?.split("/")[1] ?? exactRepo.split("/")[1] ?? exactRepo,
                 installed: installedRepos.has(exactRepo),
                 ...(details.description ? { summary: details.description } : {}),
@@ -1038,6 +1054,7 @@ export class SkillFlowApp {
                 ...(details.repoUrl ? { repoUrl: details.repoUrl } : {}),
                 ...(details.starCount !== undefined ? { starCount: details.starCount } : {}),
                 ...(details.totalInstalls !== undefined ? { totalInstalls: details.totalInstalls } : {}),
+                ...(matchedSkillNames.length ? { matchedSkillNames } : {}),
                 enrichState: { status: "ready" as const },
                 previewState: { status: "idle" as const },
               },
@@ -1045,22 +1062,39 @@ export class SkillFlowApp {
             exact: true,
           });
         } catch (error) {
+          const matchedSkillNames = this.importLocatorMatchedSkillNames(exactLocator);
           const exactCandidate = this.buildImmediateImportGroupCandidate(importCache, exactRepo, {
             installed: installedRepos.has(exactRepo),
+            ...(matchedSkillNames.length
+              ? {
+                  matchedSkills: matchedSkillNames.map((skillName) => ({
+                    skillId: skillName,
+                    title: skillName,
+                  })),
+                }
+              : {}),
           });
+          const resolvedExactCandidate = exactLocator.originalLocator !== exactRepo
+            ? {
+                ...exactCandidate,
+                locator: exactLocator.originalLocator,
+                aliases: [exactLocator.originalLocator, ...exactCandidate.aliases]
+                  .filter((value, index, values) => values.indexOf(value) === index),
+              }
+            : exactCandidate;
 
           if (
-            exactCandidate.enrichState.status === "ready" ||
-            exactCandidate.enrichState.status === "failed" &&
-              exactCandidate.enrichState.reasonCode !== "provider_data_unavailable"
+            resolvedExactCandidate.enrichState.status === "ready" ||
+            resolvedExactCandidate.enrichState.status === "failed" &&
+              resolvedExactCandidate.enrichState.reasonCode !== "provider_data_unavailable"
           ) {
-            return ok({ groups: [exactCandidate], exact: true });
+            return ok({ groups: [resolvedExactCandidate], exact: true });
           }
 
           return ok({
             groups: [
               {
-                ...exactCandidate,
+                ...resolvedExactCandidate,
                 enrichState: {
                   status: "failed",
                   reasonCode: this.inferImportReasonCode(error),
@@ -1095,7 +1129,8 @@ export class SkillFlowApp {
   }
 
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
-    const canonicalRepo = normalizeImportCanonicalRepo(locator);
+    const githubLocator = this.parseGitHubImportLocator(locator);
+    const canonicalRepo = githubLocator?.canonicalRepo;
     if (!canonicalRepo) {
       const localPreview = await this.previewDirectImportSource(locator);
       if (localPreview) {
@@ -1109,17 +1144,37 @@ export class SkillFlowApp {
       });
     }
 
+    if (githubLocator.requestedPath) {
+      const githubPreview = await this.previewGitHubImportSource(canonicalRepo, {
+        requestedPath: githubLocator.requestedPath,
+      });
+      if (githubPreview) {
+        return githubPreview;
+      }
+    }
+
     try {
       const snapshot = await this.resolveImportPreviewSnapshot(canonicalRepo);
       const availableTargets = await this.getAvailableTargets();
+      const snapshotSkills = githubLocator.skillSelector
+        ? this.filterImportSnapshotSkills(snapshot.skills, githubLocator.skillSelector, canonicalRepo)
+        : snapshot.skills;
+      if (githubLocator.skillSelector && snapshotSkills.length === 0) {
+        const githubPreview = await this.previewGitHubImportSource(canonicalRepo, {
+          skillSelector: githubLocator.skillSelector,
+        });
+        if (githubPreview) {
+          return githubPreview;
+        }
+      }
       return ok({
         status: "ready",
-        locator: canonicalRepo,
+        locator: githubLocator.locator,
         canonicalRepo,
         snapshot,
-        selectedSkillIds: snapshot.skills.map((skill) => skill.skillId),
+        selectedSkillIds: snapshotSkills.map((skill) => skill.skillId),
         enabledTargets: [],
-        skills: snapshot.skills.map((skill) => ({
+        skills: snapshotSkills.map((skill) => ({
           id: skill.skillId,
           title: skill.title,
           summary: skill.summary ?? "",
@@ -1131,7 +1186,9 @@ export class SkillFlowApp {
         })),
       });
     } catch (error) {
-      const githubPreview = await this.previewGitHubImportSource(canonicalRepo);
+      const githubPreview = await this.previewGitHubImportSource(canonicalRepo, {
+        ...(githubLocator.skillSelector ? { skillSelector: githubLocator.skillSelector } : {}),
+      });
       if (githubPreview) {
         return githubPreview;
       }
@@ -1148,8 +1205,12 @@ export class SkillFlowApp {
     locator: string,
     draft?: ImportDraft,
   ): Promise<Result<ImportSourceResult>> {
-    const normalizedLocator = normalizeImportCanonicalRepo(locator) ?? locator.trim();
-    const prepared = await this.prepareAddSourceImpl(normalizedLocator, { project: false });
+    const githubLocator = this.parseGitHubImportLocator(locator);
+    const normalizedLocator = githubLocator?.locator ?? locator.trim();
+    const prepared = await this.prepareAddSourceImpl(normalizedLocator, {
+      project: false,
+      ...(githubLocator?.requestedPath ? { path: githubLocator.requestedPath } : {}),
+    });
     if (!prepared.ok) {
       return ok({
         status: "failed",
@@ -1158,11 +1219,15 @@ export class SkillFlowApp {
       });
     }
 
+    const importDraft = draft ?? (githubLocator?.skillSelector
+      ? { selectedSkillIds: [githubLocator.skillSelector], enabledTargets: [] }
+      : undefined);
+    const canonicalRepo = githubLocator?.canonicalRepo ?? normalizeImportCanonicalRepo(normalizedLocator);
     const finalDraft = this.resolveImportDraftForPreparedSource(
       prepared.data.leafs,
       prepared.data.availableTargets,
-      normalizeImportCanonicalRepo(normalizedLocator),
-      draft,
+      canonicalRepo,
+      importDraft,
     );
     if (!finalDraft.ok) {
       await this.rollbackPreparedSourceInternal(prepared.data.sourceId);
@@ -1186,7 +1251,7 @@ export class SkillFlowApp {
     return ok({
       status: "ready",
       sourceId: prepared.data.sourceId,
-      canonicalRepo: normalizeImportCanonicalRepo(normalizedLocator) ?? normalizedLocator,
+      canonicalRepo: canonicalRepo ?? normalizedLocator,
     }, [...finalDraft.warnings, ...applied.warnings]);
   }
 
@@ -1580,6 +1645,10 @@ export class SkillFlowApp {
 
   private async previewGitHubImportSource(
     canonicalRepo: string,
+    options: {
+      requestedPath?: string;
+      skillSelector?: string;
+    } = {},
   ): Promise<Result<ImportPreviewResult> | null> {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo);
     if (!normalizedRepo) {
@@ -1587,7 +1656,10 @@ export class SkillFlowApp {
     }
 
     const locator = `https://github.com/${normalizedRepo}.git`;
-    const preview = await this.sourceService.previewSource(locator);
+    const preview = await this.sourceService.previewSource(
+      locator,
+      options.requestedPath ? { path: options.requestedPath } : {},
+    );
     if (!preview.ok) {
       return ok({
         status: "failed",
@@ -1598,7 +1670,16 @@ export class SkillFlowApp {
 
     const availableTargets = await this.getAvailableTargets();
     return ok(
-      this.buildDirectImportPreviewResult(locator, preview.data, availableTargets, normalizedRepo),
+      this.buildDirectImportPreviewResult(
+        locator,
+        preview.data,
+        availableTargets,
+        normalizedRepo,
+        {
+          ...(options.requestedPath ? { requestedPath: options.requestedPath } : {}),
+          ...(options.skillSelector ? { skillSelectors: [options.skillSelector] } : {}),
+        },
+      ),
       preview.warnings,
     );
   }
@@ -1608,8 +1689,21 @@ export class SkillFlowApp {
     preview: SourcePreview,
     availableTargets: DeploymentTargetId[],
     canonicalRepo = locator,
+    options: {
+      requestedPath?: string;
+      skillSelectors?: string[];
+    } = {},
   ): ImportPreviewResult {
-    const skills = preview.leafs.map((leaf) => {
+    const leafs = this.filterPreviewLeafs(preview.leafs, canonicalRepo, options);
+    if (!leafs) {
+      return {
+        status: "failed",
+        reasonCode: "provider_data_unavailable",
+        retryable: false,
+      };
+    }
+
+    const skills = leafs.map((leaf) => {
       const id = leaf.relativePath === "." ? leaf.name : leaf.relativePath;
       return {
         id,
@@ -1631,6 +1725,179 @@ export class SkillFlowApp {
         selectedByDefault: false,
       })),
     };
+  }
+
+  private parseGitHubImportLocator(locator: string): GitHubImportLocator | undefined {
+    const trimmed = this.stripImportLocatorQuotes(locator.trim()).replace(/\/+$/, "");
+    const selectorLocator = this.parseGitHubImportSelectorLocator(trimmed);
+    if (selectorLocator) {
+      return selectorLocator;
+    }
+
+    const treeLocator = this.parseGitHubImportTreeLocator(trimmed);
+    if (treeLocator) {
+      return treeLocator;
+    }
+
+    const subpathLocator = this.parseGitHubImportShorthandSubpath(trimmed);
+    if (subpathLocator) {
+      return subpathLocator;
+    }
+
+    const canonicalRepo = normalizeImportCanonicalRepo(trimmed);
+    if (!canonicalRepo) {
+      return undefined;
+    }
+
+    return {
+      canonicalRepo,
+      originalLocator: canonicalRepo,
+      locator: canonicalRepo,
+    };
+  }
+
+  private parseGitHubImportSelectorLocator(locator: string): GitHubImportLocator | undefined {
+    const match = locator.match(/^([^/\s:@]+)\/([^/@\s]+)@(.+)$/);
+    const owner = match?.[1];
+    const rawRepo = match?.[2];
+    const skillSelector = match?.[3]?.trim().replace(/^\/+|\/+$/g, "");
+    if (!owner || !rawRepo || !skillSelector || skillSelector.includes("@")) {
+      return undefined;
+    }
+
+    return this.githubImportLocator(owner, rawRepo, locator, { skillSelector });
+  }
+
+  private parseGitHubImportTreeLocator(locator: string): GitHubImportLocator | undefined {
+    try {
+      const url = new URL(locator);
+      if (url.hostname !== "github.com") {
+        return undefined;
+      }
+
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length < 2 || parts[2] && parts[2] !== "tree") {
+        return undefined;
+      }
+
+      const requestedPath = parts.length >= 5
+        ? parts.slice(4).join("/")
+        : undefined;
+      return this.githubImportLocator(parts[0], parts[1], locator, {
+        ...(requestedPath ? { requestedPath } : {}),
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  private parseGitHubImportShorthandSubpath(locator: string): GitHubImportLocator | undefined {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(locator) || locator.startsWith("git@")) {
+      return undefined;
+    }
+
+    const parts = locator.split("/");
+    if (parts.length < 3) {
+      return undefined;
+    }
+
+    const requestedPath = parts.slice(2).join("/");
+    if (!requestedPath) {
+      return undefined;
+    }
+
+    return this.githubImportLocator(parts[0], parts[1], locator, { requestedPath });
+  }
+
+  private githubImportLocator(
+    owner: string | undefined,
+    rawRepo: string | undefined,
+    originalLocator: string,
+    options: {
+      requestedPath?: string;
+      skillSelector?: string;
+    } = {},
+  ): GitHubImportLocator | undefined {
+    if (!owner || !rawRepo) {
+      return undefined;
+    }
+    const repo = rawRepo.replace(/\.git$/i, "");
+    const canonicalRepo = normalizeImportCanonicalRepo(`${owner}/${repo}`);
+    if (!canonicalRepo) {
+      return undefined;
+    }
+
+    return {
+      canonicalRepo,
+      originalLocator,
+      locator: `https://github.com/${canonicalRepo}.git`,
+      ...(options.requestedPath ? { requestedPath: options.requestedPath } : {}),
+      ...(options.skillSelector ? { skillSelector: options.skillSelector } : {}),
+    };
+  }
+
+  private importLocatorMatchedSkillNames(locator: GitHubImportLocator): string[] {
+    if (locator.skillSelector) {
+      return [locator.skillSelector];
+    }
+
+    const basename = locator.requestedPath
+      ?.split("/")
+      .filter(Boolean)
+      .at(-1);
+    return basename ? [basename] : [];
+  }
+
+  private filterImportSnapshotSkills(
+    skills: UnifiedSourceSnapshot["skills"],
+    selector: string,
+    canonicalRepo: string,
+  ): UnifiedSourceSnapshot["skills"] {
+    const selectorVariants = this.buildImportSkillSelectorVariants(selector, canonicalRepo);
+    return skills.filter((skill) => {
+      const skillVariants = new Set([
+        ...this.buildImportSkillSelectorVariants(skill.skillId, canonicalRepo),
+        ...this.buildImportSkillSelectorVariants(skill.title, canonicalRepo),
+      ]);
+      return selectorVariants.some((variant) => skillVariants.has(variant));
+    });
+  }
+
+  private filterPreviewLeafs(
+    leafs: LeafRecord[],
+    canonicalRepo: string,
+    options: {
+      requestedPath?: string;
+      skillSelectors?: string[];
+    } = {},
+  ): LeafRecord[] | undefined {
+    let filteredLeafs = leafs;
+    const requestedPath = this.normalizeRequestedPath(options.requestedPath);
+    if (requestedPath) {
+      filteredLeafs = filteredLeafs.filter(
+        (leaf) => leaf.relativePath === requestedPath || leaf.relativePath.startsWith(`${requestedPath}/`),
+      );
+      if (filteredLeafs.length === 0) {
+        return undefined;
+      }
+    }
+
+    if (!options.skillSelectors?.length) {
+      return filteredLeafs;
+    }
+
+    const selectedLeafIds = this.resolveSelectedLeafIds(
+      filteredLeafs,
+      undefined,
+      options.skillSelectors,
+      canonicalRepo,
+    );
+    if (!selectedLeafIds.ok) {
+      return undefined;
+    }
+
+    const selected = new Set(selectedLeafIds.data);
+    return filteredLeafs.filter((leaf) => selected.has(leaf.id));
   }
 
   private async resolveDirectImportLocator(locator: string): Promise<string | undefined> {

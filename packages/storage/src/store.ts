@@ -443,6 +443,8 @@ export class StateStore {
       const originalMatchesDisplayName = source.originalDisplayName === source.displayName;
 
       if (
+        source.kind !== "virtual"
+        &&
         originalMatchesDisplayName
         && derivedDisplayName.length > 0
         && derivedDisplayName !== source.displayName

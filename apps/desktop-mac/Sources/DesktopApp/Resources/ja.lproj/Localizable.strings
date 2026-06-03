@@ -279,6 +279,8 @@
 "source.metadata.owner" = "所有者: %@";
 "source.metadata.owner_with_name" = "所有者: %@ (%@)";
 "source.metadata.repo_url" = "リポジトリ URL: %@";
+"source.author.local" = "ローカル";
+"source.author.virtual" = "組み合わせ";
 "source.snapshot.owner_sources" = "作成者ソース数: %@";
 "source.snapshot.owner_skills" = "作成者スキル数: %@";
 "source.snapshot.owner_installs" = "作成者インストール数: %@";
@@ -344,6 +346,13 @@
 "settings.edit_custom_agent.title" = "カスタム Agent を編集";
 "settings.custom_agents.project_path_hint" = "プロジェクトルートからの相対パスです。例: .my-agent/skills";
 "group_editor.title" = "グループエディタ";
+"group_editor.name" = "グループ名";
+"group_editor.summary.create" = "複数のグループのスキルを組み合わせて、新しい仮想グループを作成します。";
+"group_editor.summary.merge" = "選択したグループを1つの仮想グループに結合し、元のグループを非表示にします。";
+"group_editor.section.skill_groups" = "スキルグループ";
+"group_editor.loading" = "グループを読み込み中...";
+"group_editor.search.placeholder" = "作者、グループ、スキルを検索";
+"group_editor.search.empty" = "一致するスキルはありません";
 "group_editor.tab.create" = "作成";
 "group_editor.tab.merge" = "結合";
 "group_editor.tab.restore" = "復元";

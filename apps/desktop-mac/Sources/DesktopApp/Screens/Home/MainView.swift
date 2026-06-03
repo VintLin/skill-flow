@@ -100,8 +100,9 @@ struct MainView: View {
     @State private var groupEditorName = ""
     @State private var groupEditorSelectedSkills = Set<VirtualGroupSkillRef>()
     @State private var groupEditorSelectedSourceIds = Set<String>()
-    @State private var groupEditorSelectedTargetIds = Set<String>()
     @State private var groupEditorValidationKey: String?
+    @State private var groupEditorOptions: MainViewModel.VirtualGroupEditorOptions?
+    @State private var groupEditorOptionsTask: Task<Void, Never>?
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
 
@@ -205,12 +206,11 @@ struct MainView: View {
                             name: $groupEditorName,
                             selectedSkills: $groupEditorSelectedSkills,
                             selectedSourceIds: $groupEditorSelectedSourceIds,
-                            selectedTargetIds: $groupEditorSelectedTargetIds,
                             validationKey: $groupEditorValidationKey,
-                            skillOptions: groupEditorSkillOptions,
-                            sourceOptions: groupEditorMergeSourceOptions,
-                            restoreOptions: groupEditorRestoreSourceOptions,
-                            targetOptions: viewModel.visibleTargets,
+                            isLoading: groupEditorOptions == nil,
+                            skillOptions: groupEditorOptions?.skillOptions ?? [],
+                            sourceOptions: groupEditorOptions?.mergeSourceOptions ?? [],
+                            restoreOptions: groupEditorOptions?.restoreSourceOptions ?? [],
                             title: t("group_editor.title"),
                             theme: theme,
                             accent: accent,
@@ -221,6 +221,7 @@ struct MainView: View {
                             onSave: {
                                 saveGroupEditor()
                             },
+                            onResetSelections: { resetGroupEditorSelections(clearName: false) },
                             onRestore: { sourceId in
                                 closeGroupEditor()
                                 Task { await viewModel.restoreMergedGroups(virtualGroupId: sourceId) }
@@ -671,51 +672,51 @@ struct MainView: View {
         toolbarIconButton(.settings) { navigation.showSettings() }
     }
 
-    private var groupEditorMergeSourceOptions: [MainViewModel.VirtualGroupSourceOption] {
-        viewModel.virtualGroupSourceOptions.filter { !$0.isVirtual }
-    }
-
-    private var groupEditorRestoreSourceOptions: [MainViewModel.VirtualGroupSourceOption] {
-        viewModel.virtualGroupSourceOptions.filter(\.isVirtual)
-    }
-
-    private var groupEditorSkillOptions: [MainViewModel.VirtualGroupSkillOption] {
-        groupEditorMergeSourceOptions.flatMap { option in
-            viewModel.virtualGroupSkillOptions(for: option.id)
-        }
-    }
-
     private var orderedGroupEditorSelectedSkills: [VirtualGroupSkillRef] {
-        groupEditorSkillOptions
+        (groupEditorOptions?.skillOptions ?? [])
             .map { VirtualGroupSkillRef(sourceId: $0.sourceId, leafId: $0.leafId) }
             .filter { groupEditorSelectedSkills.contains($0) }
     }
 
     private var orderedGroupEditorSelectedSourceIds: [String] {
-        groupEditorMergeSourceOptions
+        (groupEditorOptions?.mergeSourceOptions ?? [])
             .map(\.id)
             .filter { groupEditorSelectedSourceIds.contains($0) }
-    }
-
-    private var orderedGroupEditorSelectedTargetIds: [String] {
-        viewModel.visibleTargets
-            .map(\.id)
-            .filter { groupEditorSelectedTargetIds.contains($0) }
     }
 
     private func openGroupEditor() {
         groupEditorTab = .create
         groupEditorName = ""
+        resetGroupEditorSelections(clearName: false)
+        groupEditorOptions = nil
+        isGroupEditorPresented = true
+        prepareGroupEditorOptions()
+    }
+
+    private func prepareGroupEditorOptions() {
+        groupEditorOptionsTask?.cancel()
+        groupEditorOptionsTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            groupEditorOptions = viewModel.virtualGroupEditorOptions()
+        }
+    }
+
+    private func resetGroupEditorSelections(clearName: Bool) {
+        if clearName {
+            groupEditorName = ""
+        }
         groupEditorSelectedSkills = []
         groupEditorSelectedSourceIds = []
-        groupEditorSelectedTargetIds = Set(viewModel.visibleTargets.map(\.id))
         groupEditorValidationKey = nil
-        isGroupEditorPresented = true
     }
 
     private func closeGroupEditor() {
+        groupEditorOptionsTask?.cancel()
+        groupEditorOptionsTask = nil
         isGroupEditorPresented = false
         groupEditorValidationKey = nil
+        groupEditorOptions = nil
     }
 
     private func saveGroupEditor() {
@@ -725,13 +726,12 @@ struct MainView: View {
             switch viewModel.validateVirtualGroupCreate(displayName: groupEditorName, selectedSkills: skills) {
             case .valid:
                 let displayName = groupEditorName
-                let targetIds = orderedGroupEditorSelectedTargetIds
                 closeGroupEditor()
                 Task {
                     await viewModel.createVirtualGroup(
                         displayName: displayName,
                         skills: skills,
-                        enabledTargets: targetIds
+                        enabledTargets: []
                     )
                 }
             case .nameRequired:
@@ -746,13 +746,12 @@ struct MainView: View {
             switch viewModel.validateVirtualGroupMerge(displayName: groupEditorName, sourceIds: sourceIds) {
             case .valid:
                 let displayName = groupEditorName
-                let targetIds = orderedGroupEditorSelectedTargetIds
                 closeGroupEditor()
                 Task {
                     await viewModel.mergeGroups(
                         displayName: displayName,
                         sourceIds: sourceIds,
-                        enabledTargets: targetIds
+                        enabledTargets: []
                     )
                 }
             case .nameRequired:
@@ -1965,23 +1964,25 @@ private struct LayoutMetrics {
 }
 
 private struct GroupEditorSheet: View {
+    @State private var skillSearchQuery = ""
+
     @Binding var selectedTab: GroupEditorTab
     @Binding var name: String
     @Binding var selectedSkills: Set<VirtualGroupSkillRef>
     @Binding var selectedSourceIds: Set<String>
-    @Binding var selectedTargetIds: Set<String>
     @Binding var validationKey: String?
 
+    let isLoading: Bool
     let skillOptions: [MainViewModel.VirtualGroupSkillOption]
     let sourceOptions: [MainViewModel.VirtualGroupSourceOption]
     let restoreOptions: [MainViewModel.VirtualGroupSourceOption]
-    let targetOptions: [MainViewModel.TargetOption]
     let title: String
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let t: (String) -> String
     let onCancel: () -> Void
     let onSave: () -> Void
+    let onResetSelections: () -> Void
     let onRestore: (String) -> Void
 
     var body: some View {
@@ -2003,17 +2004,25 @@ private struct GroupEditorSheet: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .onChange(of: selectedTab) { _, _ in
-                validationKey = nil
+                skillSearchQuery = ""
+                onResetSelections()
             }
 
-            switch selectedTab {
-            case .create:
-                createPanel
-            case .merge:
-                mergePanel
-            case .restore:
-                restorePanel
+            Group {
+                if isLoading {
+                    loadingPanel
+                } else {
+                    switch selectedTab {
+                    case .create:
+                        createPanel
+                    case .merge:
+                        mergePanel
+                    case .restore:
+                        restorePanel
+                    }
+                }
             }
+            .frame(maxHeight: .infinity, alignment: .topLeading)
 
             if let validationKey {
                 Text(t(validationKey))
@@ -2021,6 +2030,8 @@ private struct GroupEditorSheet: View {
                     .foregroundStyle(Color.red)
                     .lineLimit(2)
             }
+
+            Spacer(minLength: 0)
 
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
@@ -2043,11 +2054,13 @@ private struct GroupEditorSheet: View {
                         .frame(height: 30)
                         .background(AppTheme.brand(for: accent, in: theme))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .disabled(isLoading)
                 }
             }
         }
         .padding(16)
-        .background(AppTheme.surface(for: theme))
+        .frame(width: 560, height: 520, alignment: .topLeading)
+        .background(AppTheme.pageBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
@@ -2055,46 +2068,61 @@ private struct GroupEditorSheet: View {
         }
     }
 
+    private var loadingPanel: some View {
+        VStack(spacing: 10) {
+            Spacer(minLength: 0)
+            ProgressView()
+                .controlSize(.small)
+            Text(t("group_editor.loading"))
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var createPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            nameField
-            optionSection(title: t("group_card.section.skills")) {
-                ForEach(skillOptions) { option in
+            functionSummary("group_editor.summary.create")
+            labeledNameField
+            optionSection(title: t("group_card.section.skills"), showsSearch: true) {
+                if filteredSkillOptions.isEmpty {
+                    emptySearchState
+                }
+                ForEach(filteredSkillOptions) { option in
                     selectableRow(
                         title: option.title,
-                        subtitle: option.sourceTitle,
+                        subtitle: option.sourceSubtitle,
                         isSelected: selectedSkills.contains(skillRef(for: option))
                     ) {
                         toggleSkill(option)
                     }
                 }
             }
-            targetSection
-            impactList(["group_editor.impact.create_virtual_group"])
         }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var mergePanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            nameField
-            optionSection(title: t("common.section.source")) {
-                ForEach(sourceOptions) { option in
+            functionSummary("group_editor.summary.merge")
+            labeledNameField
+            optionSection(title: t("group_editor.section.skill_groups"), showsSearch: true) {
+                if filteredSourceOptions.isEmpty {
+                    emptySearchState
+                }
+                ForEach(filteredSourceOptions) { option in
                     selectableRow(
                         title: option.title,
-                        subtitle: "\(option.skillCount)",
+                        subtitle: mergeSourceSubtitle(for: option),
                         isSelected: selectedSourceIds.contains(option.id)
                     ) {
                         toggleSource(option.id)
                     }
                 }
             }
-            impactList([
-                "group_editor.impact.hide_groups",
-                "group_editor.impact.clear_bindings",
-                "group_editor.impact.save_restore_snapshot",
-            ])
-            targetSection
         }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var restorePanel: some View {
@@ -2141,31 +2169,69 @@ private struct GroupEditorSheet: View {
             .accessibilityLabel(t("settings.custom_agents.name_label"))
             .padding(.horizontal, 10)
             .frame(height: 34)
-            .background(AppTheme.headerControlFill(for: theme))
+            .background(AppTheme.groupCardFill(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-            }
             .onSubmit(onSave)
     }
 
-    private var targetSection: some View {
-        optionSection(title: t("group_editor.section.targets")) {
-            ForEach(targetOptions) { option in
-                selectableRow(
-                    title: option.label,
-                    subtitle: option.id,
-                    isSelected: selectedTargetIds.contains(option.id)
-                ) {
-                    toggleTarget(option.id)
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .frame(width: 14, height: 14)
+
+            TextField(t("group_editor.search.placeholder"), text: $skillSearchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .accessibilityLabel(t("group_editor.search.placeholder"))
+
+            if !skillSearchQuery.isEmpty {
+                Button {
+                    skillSearchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
                 }
+                .buttonStyle(.plain)
             }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(AppTheme.groupCardFill(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var emptySearchState: some View {
+        Text(t("group_editor.search.empty"))
+            .font(.system(size: 12, weight: .regular))
+            .foregroundStyle(AppTheme.textMuted(for: theme))
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .center)
+    }
+
+    private func functionSummary(_ key: String) -> some View {
+        Text(t(key))
+            .font(.system(size: 12, weight: .regular))
+            .foregroundStyle(AppTheme.textMuted(for: theme))
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var labeledNameField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(t("group_editor.name"))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .textCase(.uppercase)
+            nameField
         }
     }
 
     private func optionSection<Content: View>(
         title: String,
+        showsSearch: Bool = false,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -2174,17 +2240,22 @@ private struct GroupEditorSheet: View {
                 .foregroundStyle(AppTheme.textMuted(for: theme))
                 .textCase(.uppercase)
 
+            if showsSearch {
+                searchField
+            }
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     content()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxHeight: 148)
+            .frame(maxHeight: .infinity)
             .padding(8)
-            .background(AppTheme.toolbarButtonBackground(for: theme))
+            .background(AppTheme.groupCardFill(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func selectableRow(
@@ -2214,34 +2285,66 @@ private struct GroupEditorSheet: View {
             }
             .padding(.horizontal, 10)
             .frame(height: 34)
-            .background(isSelected ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.22 : 0.14) : AppTheme.headerControlFill(for: theme))
+            .background(isSelected ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.22 : 0.14) : AppTheme.groupCardFill(for: theme))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
     }
 
-    private func impactList(_ keys: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(keys, id: \.self) { key in
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(AppTheme.brand(for: accent, in: theme))
-                        .frame(width: 5, height: 5)
-                    Text(t(key))
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(2)
-                }
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.headerControlFill(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
     private func skillRef(for option: MainViewModel.VirtualGroupSkillOption) -> VirtualGroupSkillRef {
         VirtualGroupSkillRef(sourceId: option.sourceId, leafId: option.leafId)
+    }
+
+    private var filteredSkillOptions: [MainViewModel.VirtualGroupSkillOption] {
+        let query = normalizedSkillSearchQuery
+        guard !query.isEmpty else {
+            return skillOptions
+        }
+        return skillOptions.filter { option in
+            matchesSearch(
+                query,
+                fields: [option.title, option.sourceTitle, option.sourceSubtitle]
+            )
+        }
+    }
+
+    private var filteredSourceOptions: [MainViewModel.VirtualGroupSourceOption] {
+        let query = normalizedSkillSearchQuery
+        guard !query.isEmpty else {
+            return sourceOptions
+        }
+
+        return sourceOptions.filter { option in
+            if matchesSearch(query, fields: [option.title, option.sourceSubtitle]) {
+                return true
+            }
+            return (skillsBySourceId[option.id] ?? []).contains { skill in
+                matchesSearch(
+                    query,
+                    fields: [skill.title, skill.sourceTitle, skill.sourceSubtitle]
+                )
+            }
+        }
+    }
+
+    private func mergeSourceSubtitle(for option: MainViewModel.VirtualGroupSourceOption) -> String {
+        "\(option.sourceSubtitle) · \(option.skillCount)"
+    }
+
+    private var skillsBySourceId: [String: [MainViewModel.VirtualGroupSkillOption]] {
+        Dictionary(grouping: skillOptions, by: \.sourceId)
+    }
+
+    private var normalizedSkillSearchQuery: String {
+        skillSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func matchesSearch(_ query: String, fields: [String]) -> Bool {
+        fields.contains { field in
+            field.trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+                .contains(query)
+        }
     }
 
     private func toggleSkill(_ option: MainViewModel.VirtualGroupSkillOption) {
@@ -2263,14 +2366,6 @@ private struct GroupEditorSheet: View {
         validationKey = nil
     }
 
-    private func toggleTarget(_ targetId: String) {
-        if selectedTargetIds.contains(targetId) {
-            selectedTargetIds.remove(targetId)
-        } else {
-            selectedTargetIds.insert(targetId)
-        }
-        validationKey = nil
-    }
 }
 
 private struct RenameSourceDialog: View {
