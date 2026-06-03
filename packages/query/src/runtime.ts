@@ -500,10 +500,15 @@ export class SkillFlowApp {
       },
     };
 
+    const applied = await this.planAndApplySources(manifest, lockFile, [id]);
+    if (!applied.ok) {
+      return fail(applied.errors, applied.warnings);
+    }
+
     await this.store.writeState(manifest, lockFile);
     await this.store.writeVirtualGroups(nextVirtualGroups);
 
-    return ok({ group, source, binding });
+    return ok({ group, source, binding }, applied.warnings);
   }
 
   private async mergeGroupsImpl(
@@ -893,7 +898,7 @@ export class SkillFlowApp {
       });
     }
 
-    const summary = this.workflowService.getSummaries(manifest, lockFile).find((item) => item.source.id === sourceId);
+    const summary = this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups).find((item) => item.source.id === sourceId);
     if (!summary) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -902,7 +907,7 @@ export class SkillFlowApp {
     }
 
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
-    const leafs = this.getSourceLeafsForBinding(source, binding, lockFile);
+    const leafs = this.getSourceLeafsForBinding(source, binding, lockFile, virtualGroups);
     const deployments = getManagedDeployments(lockFile).filter(
       (deployment) => deployment.sourceId === sourceId,
     );
@@ -922,7 +927,7 @@ export class SkillFlowApp {
     const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
     const scopedSource = prepared.manifest.sources.find((item) => item.id === sourceId) ?? source;
     const scopedSummary =
-      this.workflowService.getSummaries(prepared.manifest, lockFile).find((item) => item.source.id === sourceId)
+      this.workflowService.getSummaries(prepared.manifest, lockFile, undefined, virtualGroups).find((item) => item.source.id === sourceId)
       ?? summary;
     const scopedBinding = prepared.manifest.bindings[sourceId] ?? binding;
     const scopedDeployments = scopedDraft.enabledTargets.length === 0
@@ -2043,7 +2048,7 @@ export class SkillFlowApp {
     const hiddenSourceIds = this.hiddenSourceIdsFromVirtualGroups(virtualGroups);
     return ok(
       {
-        summaries: this.workflowService.getSummaries(manifest, lockFile)
+        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups)
           .filter((summary) => !hiddenSourceIds.has(summary.source.id)),
         pinnedSourceIds: reconciledPreferences.pinnedSourceIds,
         recentProjects: reconciledPreferences.recentProjects,
@@ -2076,12 +2081,13 @@ export class SkillFlowApp {
       return fail(reconciled.errors, reconciled.warnings);
     }
     const { manifest, lockFile } = await this.store.readState();
+    const virtualGroups = await this.store.readVirtualGroups();
     await this.persistNormalizedBindings(manifest, lockFile);
     return ok(
       {
         manifest,
         lockFile,
-        summaries: this.workflowService.getSummaries(manifest, lockFile),
+        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups),
       },
       pruned.warnings,
     );
@@ -3805,17 +3811,23 @@ export class SkillFlowApp {
     source: Manifest["sources"][number],
     binding: SourceBinding,
     lockFile: LockFile,
+    virtualGroups?: VirtualGroupsState,
   ): LeafRecord[] {
     if (source.kind !== "virtual") {
       return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
     }
 
-    return [
+    const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
+    const includedLeafIds = virtualGroups?.groups[source.id]?.includedSkills
+      .map((skill) => skill.leafId)
+      .filter((leafId) => existingLeafIds.has(leafId));
+
+    return (includedLeafIds ?? [
       ...new Set([
         ...(binding.selectedLeafIds ?? []),
         ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
       ]),
-    ]
+    ].filter((leafId) => existingLeafIds.has(leafId)))
       .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
       .filter((leaf): leaf is LeafRecord => Boolean(leaf));
   }

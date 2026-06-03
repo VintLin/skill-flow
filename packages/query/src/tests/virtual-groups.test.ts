@@ -99,6 +99,18 @@ describe.sequential("virtual groups", () => {
     });
     expect(lockFile.sources.some((source) => source.id === "writing-stack")).toBe(false);
     expect(await pathExists(app.store.getSourceCheckoutPath("virtual", "writing-stack"))).toBe(false);
+    const deployments = getManagedDeployments(lockFile)
+      .filter((deployment) => deployment.sourceId === "writing-stack");
+    expect(deployments.map((deployment) => deployment.target).sort()).toEqual([
+      "codex",
+      "codex",
+      "cursor",
+      "cursor",
+    ]);
+    await expect(pathExists(path.join(sandbox.targetsRoot, "codex", "drafting"))).resolves.toBe(true);
+    await expect(pathExists(path.join(sandbox.targetsRoot, "codex", "revision"))).resolves.toBe(true);
+    await expect(pathExists(path.join(sandbox.targetsRoot, "cursor", "drafting"))).resolves.toBe(true);
+    await expect(pathExists(path.join(sandbox.targetsRoot, "cursor", "revision"))).resolves.toBe(true);
 
     const virtualGroups = await app.store.readVirtualGroups();
     expect(virtualGroups.groups["writing-stack"]).toEqual({
@@ -238,6 +250,71 @@ describe.sequential("virtual groups", () => {
       .map((action) => action.leafId)
       .sort();
     expect(plannedLeafIds).toEqual([...leafIds].sort());
+  });
+
+  test("keeps disabled virtual group skills visible in summaries and inspect", async () => {
+    const writingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/drafting/SKILL.md": skillDoc("drafting", "Draft writing."),
+    });
+    const editingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/revision/SKILL.md": skillDoc("revision", "Revise writing."),
+    });
+    const app = new SkillFlowApp();
+    const writing = await app.addSource(writingRepo, {
+      sourceIdOverride: "writing-source",
+      project: false,
+    });
+    const editing = await app.addSource(editingRepo, {
+      sourceIdOverride: "editing-source",
+      project: false,
+    });
+    expect(writing.ok).toBe(true);
+    expect(editing.ok).toBe(true);
+    if (!writing.ok || !editing.ok) {
+      return;
+    }
+    const leafIds = [
+      "writing-source:skills/drafting",
+      "editing-source:skills/revision",
+    ];
+    const created = await app.createVirtualGroup({
+      displayName: "Writing Stack",
+      skills: [
+        { sourceId: "writing-source", leafId: leafIds[0]! },
+        { sourceId: "editing-source", leafId: leafIds[1]! },
+      ],
+      enabledTargets: ["codex"],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const applied = await app.applyDraft("writing-stack", {
+      selectedLeafIds: [leafIds[0]!],
+      enabledTargets: ["codex"],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    const summary = listed.data.summaries.find((item) => item.source.id === "writing-stack");
+    expect(summary?.leafs.map((leaf) => leaf.id)).toEqual(leafIds);
+    expect(summary?.bindings.selectedLeafIds).toEqual([leafIds[0]]);
+
+    const inspected = await app.inspectSource("writing-stack");
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+    expect(inspected.data.leafs.map((leaf) => leaf.id)).toEqual(leafIds);
+    expect(inspected.data.binding.selectedLeafIds).toEqual([leafIds[0]]);
   });
 
   test("finds virtual group project scoped deployments during inspect", async () => {

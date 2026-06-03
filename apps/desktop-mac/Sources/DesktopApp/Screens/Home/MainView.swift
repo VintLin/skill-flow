@@ -1016,6 +1016,7 @@ struct MainView: View {
                                 onTogglePinned: {
                                     Task { await viewModel.togglePinned(sourceId: card.id) }
                                 },
+                                canDelete: !MainViewModel.isVirtualHomeSource(card),
                                 onDelete: {
                                     Task { await viewModel.deleteSource(sourceId: card.id) }
                                 },

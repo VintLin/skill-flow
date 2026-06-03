@@ -129,6 +129,23 @@ final class MainViewModelVirtualGroupTests: XCTestCase {
         XCTAssertEqual(query.listCallCount, 1)
     }
 
+    func testHomeCardDoesNotExposeDeleteActionForVirtualGroups() throws {
+        let homeSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+        let cardSource = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(homeSource.contains("canDelete: !MainViewModel.isVirtualHomeSource(card)"))
+        XCTAssertTrue(cardSource.contains("if canDelete {"))
+        XCTAssertTrue(cardSource.contains("title: t(\"group_card.action.delete\")"))
+    }
+
+    private func sourceText(at relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
     private func groupCard(sourceKind: String) -> MainViewModel.GroupCardModel {
         MainViewModel.GroupCardModel(
             id: "alpha",

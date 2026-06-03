@@ -351,6 +351,7 @@ struct SharedGroupCard: View {
     let onRename: (() -> Void)?
     let onUpdate: () -> Void
     let onTogglePinned: () -> Void
+    let canDelete: Bool
     let onDelete: () -> Void
     let onToggleSkill: (String, Bool) -> Void
     let onToggleAllSkills: () -> Void
@@ -391,6 +392,7 @@ struct SharedGroupCard: View {
         onRename: (() -> Void)? = nil,
         onUpdate: @escaping () -> Void,
         onTogglePinned: @escaping () -> Void,
+        canDelete: Bool = true,
         onDelete: @escaping () -> Void,
         onToggleSkill: @escaping (String, Bool) -> Void,
         onToggleAllSkills: @escaping () -> Void,
@@ -421,6 +423,7 @@ struct SharedGroupCard: View {
         self.onRename = onRename
         self.onUpdate = onUpdate
         self.onTogglePinned = onTogglePinned
+        self.canDelete = canDelete
         self.onDelete = onDelete
         self.onToggleSkill = onToggleSkill
         self.onToggleAllSkills = onToggleAllSkills
@@ -774,13 +777,15 @@ struct SharedGroupCard: View {
                         isDeletingTags.toggle()
                     }
                 }
-                actionMenuButton(
-                    title: t("group_card.action.delete"),
-                    icon: .delete,
-                    foreground: AppTheme.statusError(for: theme)
-                ) {
-                    isActionMenuOpen = false
-                    onDelete()
+                if canDelete {
+                    actionMenuButton(
+                        title: t("group_card.action.delete"),
+                        icon: .delete,
+                        foreground: AppTheme.statusError(for: theme)
+                    ) {
+                        isActionMenuOpen = false
+                        onDelete()
+                    }
                 }
             }
             .padding(6)
