@@ -109,6 +109,18 @@ private final class StubBridgeTransport: DesktopBridgeTransporting, @unchecked S
         return .success(command: .importSource)
     }
 
+    func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
         recordedCommands.append("rename-source:\(sourceId):\(displayName)")
         return .success(command: .renameSource)

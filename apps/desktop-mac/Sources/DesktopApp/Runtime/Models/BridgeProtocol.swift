@@ -9,6 +9,9 @@ enum BridgeCommand: String, Codable, Sendable {
     case scanLocalImportGroups = "scan-local-import-groups"
     case previewImportSource = "preview-import-source"
     case importSource = "import-source"
+    case createVirtualGroup = "create-virtual-group"
+    case mergeGroups = "merge-groups"
+    case restoreMergedGroups = "restore-merged-groups"
     case renameSource = "rename-source"
     case togglePin = "toggle-pin"
     case doctor
@@ -89,6 +92,11 @@ enum ProjectScopeSelection: Hashable, Codable, Sendable {
             return ["kind": "project", "projectId": projectId]
         }
     }
+}
+
+struct VirtualGroupSkillRef: Hashable, Sendable {
+    let sourceId: String
+    let leafId: String
 }
 
 struct AnyCodable: Codable, @unchecked Sendable {

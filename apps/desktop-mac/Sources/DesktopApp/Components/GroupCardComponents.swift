@@ -351,6 +351,7 @@ struct SharedGroupCard: View {
     let onRename: (() -> Void)?
     let onUpdate: () -> Void
     let onTogglePinned: () -> Void
+    let canDelete: Bool
     let onDelete: () -> Void
     let onToggleSkill: (String, Bool) -> Void
     let onToggleAllSkills: () -> Void
@@ -391,6 +392,7 @@ struct SharedGroupCard: View {
         onRename: (() -> Void)? = nil,
         onUpdate: @escaping () -> Void,
         onTogglePinned: @escaping () -> Void,
+        canDelete: Bool = true,
         onDelete: @escaping () -> Void,
         onToggleSkill: @escaping (String, Bool) -> Void,
         onToggleAllSkills: @escaping () -> Void,
@@ -421,6 +423,7 @@ struct SharedGroupCard: View {
         self.onRename = onRename
         self.onUpdate = onUpdate
         self.onTogglePinned = onTogglePinned
+        self.canDelete = canDelete
         self.onDelete = onDelete
         self.onToggleSkill = onToggleSkill
         self.onToggleAllSkills = onToggleAllSkills
@@ -482,7 +485,7 @@ struct SharedGroupCard: View {
                     cardRow(
                         title: t("common.section.agents"),
                         selection: card.targetSelection,
-                        items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled, nil) },
+                        items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled, nil, nil) },
                         compact: true,
                         loading: card.targetsLoading,
                         onToggleAll: onToggleAllTargets,
@@ -774,13 +777,15 @@ struct SharedGroupCard: View {
                         isDeletingTags.toggle()
                     }
                 }
-                actionMenuButton(
-                    title: t("group_card.action.delete"),
-                    icon: .delete,
-                    foreground: AppTheme.statusError(for: theme)
-                ) {
-                    isActionMenuOpen = false
-                    onDelete()
+                if canDelete {
+                    actionMenuButton(
+                        title: t("group_card.action.delete"),
+                        icon: .delete,
+                        foreground: AppTheme.statusError(for: theme)
+                    ) {
+                        isActionMenuOpen = false
+                        onDelete()
+                    }
                 }
             }
             .padding(6)
@@ -965,7 +970,7 @@ struct SharedGroupCard: View {
     private func cardRow(
         title: String,
         selection: SelectionState,
-        items: [(id: String, label: String, shortLabel: String, isEnabled: Bool, highlightQuery: String?)],
+        items: [(id: String, label: String, shortLabel: String, isEnabled: Bool, sourceTitle: String?, highlightQuery: String?)],
         compact: Bool,
         loading: Bool,
         onToggleAll: @escaping () -> Void,
@@ -1004,7 +1009,12 @@ struct SharedGroupCard: View {
                                         isOn: item.isEnabled
                                     )
                                 } else {
-                                    skillToggle(item.label, highlightQuery: item.highlightQuery, isOn: item.isEnabled)
+                                    skillToggle(
+                                        item.label,
+                                        sourceTitle: item.sourceTitle,
+                                        highlightQuery: item.highlightQuery,
+                                        isOn: item.isEnabled
+                                    )
                                 }
                             }
                             .buttonStyle(.plain)
@@ -1032,7 +1042,7 @@ struct SharedGroupCard: View {
                 cardRow(
                     title: t("group_card.section.skills"),
                     selection: card.skillSelection,
-                    items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled, $0.highlightQuery) },
+                    items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled, $0.sourceTitle, $0.highlightQuery) },
                     compact: false,
                     loading: card.skillsLoading,
                     onToggleAll: onToggleAllSkills,
@@ -1070,9 +1080,23 @@ struct SharedGroupCard: View {
         displayMode.showsLoadingStatPlaceholders && (card.skillsLoading || card.targetsLoading)
     }
 
-    private func skillToggle(_ text: String, highlightQuery: String?, isOn: Bool) -> some View {
-        highlightedSkillText(text, highlightQuery: highlightQuery)
-            .font(.system(size: scale.chipFontSize, weight: .regular))
+    private func skillToggle(_ text: String, sourceTitle: String?, highlightQuery: String?, isOn: Bool) -> some View {
+        HStack(spacing: 5) {
+            highlightedSkillText(text, highlightQuery: highlightQuery)
+                .font(.system(size: scale.chipFontSize, weight: .regular))
+                .lineLimit(1)
+            if let sourceTitle {
+                Text(sourceTitle)
+                    .font(.system(size: max(9, scale.chipFontSize - 2), weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, 4)
+                    .frame(maxWidth: 96, minHeight: max(12, scale.chipHeight - 14))
+                    .background(AppTheme.documentBlock(for: theme).opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: max(4, scale.cornerRadius - 5)))
+            }
+        }
             .padding(.horizontal, max(6, scale.cardInset - 2))
             .frame(height: scale.chipHeight)
             .background(isOn ? AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30) : AppTheme.documentBlock(for: theme))

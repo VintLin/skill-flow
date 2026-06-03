@@ -40,6 +40,9 @@ import type {
   TargetBinding,
   UnifiedSourceSnapshot,
   UnifiedSourceTrust,
+  VirtualGroupRecord,
+  VirtualGroupSkillRef,
+  VirtualGroupsState,
   Warning,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
@@ -133,6 +136,34 @@ type RenameSourceResult = {
   displayName: string;
   originalDisplayName: string;
   isResetToOriginal: boolean;
+};
+
+type GitHubImportLocator = {
+  canonicalRepo: string;
+  originalLocator: string;
+  locator: string;
+  requestedPath?: string;
+  skillSelector?: string;
+};
+export type CreateVirtualGroupOptions = {
+  displayName: string;
+  skills: VirtualGroupSkillRef[];
+  enabledTargets?: DeploymentTargetId[];
+};
+export type CreateVirtualGroupResult = {
+  group: VirtualGroupRecord;
+  source: Manifest["sources"][number];
+  binding: SourceBinding;
+};
+export type MergeGroupsOptions = {
+  displayName: string;
+  sourceIds: string[];
+  enabledTargets: DeploymentTargetId[];
+};
+export type RestoreMergedGroupsResult = {
+  virtualGroupId: string;
+  restoredSourceIds: string[];
+  skippedSourceIds: string[];
 };
 type TargetRootOverrides = Partial<Record<DeploymentTargetId, string>>;
 type ApplyDraftResult = {
@@ -395,6 +426,279 @@ export class SkillFlowApp {
     return this.runSerializedMutation(() => this.rollbackPreparedSourceInternal(sourceId));
   }
 
+  async createVirtualGroup(
+    options: CreateVirtualGroupOptions,
+  ): Promise<Result<CreateVirtualGroupResult>> {
+    return this.runSerializedMutation(() => this.createVirtualGroupImpl(options));
+  }
+
+  async mergeGroups(
+    options: MergeGroupsOptions,
+  ): Promise<Result<CreateVirtualGroupResult>> {
+    return this.runSerializedMutation(() => this.mergeGroupsImpl(options));
+  }
+
+  async restoreMergedGroups(
+    virtualGroupId: string,
+  ): Promise<Result<RestoreMergedGroupsResult>> {
+    return this.runSerializedMutation(() => this.restoreMergedGroupsImpl(virtualGroupId));
+  }
+
+  private async createVirtualGroupImpl(
+    options: CreateVirtualGroupOptions,
+  ): Promise<Result<CreateVirtualGroupResult>> {
+    const displayName = options.displayName.trim();
+    if (!displayName) {
+      return fail({
+        code: "VIRTUAL_GROUP_NAME_EMPTY",
+        message: "Virtual group name cannot be empty.",
+      });
+    }
+    if (options.skills.length === 0) {
+      return fail({
+        code: "VIRTUAL_GROUP_SKILLS_EMPTY",
+        message: "Virtual group must include at least one skill.",
+      });
+    }
+
+    const { manifest, lockFile } = await this.store.readState();
+    const virtualGroups = await this.store.readVirtualGroups();
+    const includedSkills = this.validateVirtualSkillRefs(options.skills, manifest, lockFile);
+    if (!includedSkills.ok) {
+      return fail(includedSkills.errors, includedSkills.warnings);
+    }
+    if (includedSkills.data.length === 0) {
+      return fail({
+        code: "VIRTUAL_GROUP_SKILLS_EMPTY",
+        message: "Virtual group must include at least one skill.",
+      });
+    }
+    const conflict = this.findVirtualSkillNameConflict(includedSkills.data, lockFile);
+    if (conflict) {
+      return fail(conflict);
+    }
+
+    const id = this.uniqueVirtualSourceId(displayName, manifest, virtualGroups);
+    const now = new Date().toISOString();
+    const selectedLeafIds = includedSkills.data.map((skill) => skill.leafId);
+    const enabledTargets = [...new Set(options.enabledTargets ?? [])];
+    const source: Manifest["sources"][number] = {
+      id,
+      locator: `virtual:${id}`,
+      kind: "virtual",
+      displayName,
+      originalDisplayName: displayName,
+      addedAt: now,
+      selectionMode: "all",
+    };
+    const binding = this.bindingFromDraft({
+      selectedLeafIds,
+      enabledTargets,
+    });
+    const group: VirtualGroupRecord = {
+      id,
+      displayName,
+      includedSkills: includedSkills.data,
+      hiddenSourceIds: [],
+      restoreSnapshots: {},
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    manifest.sources.push(source);
+    manifest.bindings[id] = binding;
+    const nextVirtualGroups: VirtualGroupsState = {
+      schemaVersion: 1,
+      groups: {
+        ...virtualGroups.groups,
+        [id]: group,
+      },
+    };
+
+    const applied = await this.planAndApplySources(manifest, lockFile, [id]);
+    if (!applied.ok) {
+      return fail(applied.errors, applied.warnings);
+    }
+
+    await this.store.writeState(manifest, lockFile);
+    await this.store.writeVirtualGroups(nextVirtualGroups);
+
+    return ok({ group, source, binding }, applied.warnings);
+  }
+
+  private async mergeGroupsImpl(
+    options: MergeGroupsOptions,
+  ): Promise<Result<CreateVirtualGroupResult>> {
+    const displayName = options.displayName.trim();
+    if (!displayName) {
+      return fail({
+        code: "VIRTUAL_GROUP_NAME_EMPTY",
+        message: "Virtual group name cannot be empty.",
+      });
+    }
+
+    const sourceIds = [
+      ...new Set(options.sourceIds.map((sourceId) => sourceId.trim()).filter(Boolean)),
+    ];
+    if (sourceIds.length < 2) {
+      return fail({
+        code: "MERGE_GROUPS_TOO_FEW",
+        message: "Merge requires at least two source groups.",
+      });
+    }
+
+    const { manifest, lockFile } = await this.store.readState();
+    const virtualGroups = await this.store.readVirtualGroups();
+    const sources = sourceIds.map((sourceId) =>
+      manifest.sources.find((source) => source.id === sourceId),
+    );
+    const missingSourceId = sourceIds.find((sourceId, index) =>
+      !sources[index] || sources[index]?.kind === "virtual",
+    );
+    if (missingSourceId) {
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Skills group id '${missingSourceId}' is not registered.`,
+      });
+    }
+
+    const includedSkills = sourceIds.flatMap((sourceId) =>
+      lockFile.leafInventory
+        .filter((leaf) => leaf.sourceId === sourceId)
+        .map((leaf) => ({ sourceId, leafId: leaf.id })),
+    );
+    if (includedSkills.length === 0) {
+      return fail({
+        code: "VIRTUAL_GROUP_SKILLS_EMPTY",
+        message: "Virtual group must include at least one skill.",
+      });
+    }
+    const conflict = this.findVirtualSkillNameConflict(includedSkills, lockFile);
+    if (conflict) {
+      return fail(conflict);
+    }
+
+    const id = this.uniqueVirtualSourceId(displayName, manifest, virtualGroups);
+    const now = new Date().toISOString();
+    const selectedLeafIds = includedSkills.map((skill) => skill.leafId);
+    const enabledTargets = [...new Set(options.enabledTargets)];
+    const source: Manifest["sources"][number] = {
+      id,
+      locator: `virtual:${id}`,
+      kind: "virtual",
+      displayName,
+      originalDisplayName: displayName,
+      addedAt: now,
+      selectionMode: "all",
+    };
+    const binding = this.bindingFromDraft({
+      selectedLeafIds,
+      enabledTargets,
+    });
+    const restoreSnapshots: VirtualGroupRecord["restoreSnapshots"] = {};
+    for (const sourceId of sourceIds) {
+      const sourceToRestore = manifest.sources.find((item) => item.id === sourceId);
+      if (!sourceToRestore) {
+        continue;
+      }
+      restoreSnapshots[sourceId] = this.draftFromSourceBinding(
+        sourceToRestore,
+        manifest.bindings[sourceId] ?? { targets: {} },
+        lockFile,
+        virtualGroups,
+      );
+    }
+
+    const group: VirtualGroupRecord = {
+      id,
+      displayName,
+      includedSkills,
+      hiddenSourceIds: sourceIds,
+      restoreSnapshots,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    manifest.sources.push(source);
+    manifest.bindings[id] = binding;
+    for (const sourceId of sourceIds) {
+      manifest.bindings[sourceId] = { selectedLeafIds: [], targets: {} };
+    }
+    const applied = await this.planAndApplySources(manifest, lockFile, [id, ...sourceIds]);
+    if (!applied.ok) {
+      return fail(applied.errors, applied.warnings);
+    }
+    await this.ensureProjectionLedger(manifest, lockFile);
+    const nextVirtualGroups: VirtualGroupsState = {
+      schemaVersion: 1,
+      groups: {
+        ...virtualGroups.groups,
+        [id]: group,
+      },
+    };
+
+    await this.store.writeState(manifest, lockFile);
+    await this.store.writeVirtualGroups(nextVirtualGroups);
+
+    return ok({ group, source, binding });
+  }
+
+  private async restoreMergedGroupsImpl(
+    virtualGroupId: string,
+  ): Promise<Result<RestoreMergedGroupsResult>> {
+    const { manifest, lockFile } = await this.store.readState();
+    const virtualGroups = await this.store.readVirtualGroups();
+    const group = virtualGroups.groups[virtualGroupId];
+    if (!group) {
+      return fail({
+        code: "VIRTUAL_GROUP_NOT_FOUND",
+        message: `Virtual group id '${virtualGroupId}' is not registered.`,
+      });
+    }
+    if (group.hiddenSourceIds.length === 0) {
+      return fail({
+        code: "VIRTUAL_GROUP_RESTORE_UNAVAILABLE",
+        message: `Virtual group '${virtualGroupId}' does not have hidden source groups to restore.`,
+      });
+    }
+
+    const restoredSourceIds: string[] = [];
+    const skippedSourceIds: string[] = [];
+    for (const sourceId of group.hiddenSourceIds) {
+      const source = manifest.sources.find((item) => item.id === sourceId);
+      const snapshot = group.restoreSnapshots[sourceId];
+      if (!source || !snapshot) {
+        skippedSourceIds.push(sourceId);
+        continue;
+      }
+      manifest.bindings[sourceId] = this.bindingFromDraft(snapshot);
+      restoredSourceIds.push(sourceId);
+    }
+
+    manifest.bindings[virtualGroupId] = this.bindingFromDraft(EMPTY_DRAFT);
+    const applied = await this.planAndApplySources(manifest, lockFile, [
+      virtualGroupId,
+      ...restoredSourceIds,
+    ]);
+    if (!applied.ok) {
+      return fail(applied.errors, applied.warnings);
+    }
+    await this.ensureProjectionLedger(manifest, lockFile);
+    manifest.sources = manifest.sources.filter((source) => source.id !== virtualGroupId);
+    delete manifest.bindings[virtualGroupId];
+    const remainingGroups = { ...virtualGroups.groups };
+    delete remainingGroups[virtualGroupId];
+    const nextVirtualGroups: VirtualGroupsState = {
+      schemaVersion: 1,
+      groups: remainingGroups,
+    };
+
+    await this.store.writeState(manifest, lockFile);
+    await this.store.writeVirtualGroups(nextVirtualGroups);
+
+    return ok({ virtualGroupId, restoredSourceIds, skippedSourceIds });
+  }
+
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
     const { manifest, lockFile } = await this.readStateConsistently();
     const normalizedQuery = this.normalizeSearchQuery(query);
@@ -603,7 +907,8 @@ export class SkillFlowApp {
     }>
   > {
     const { manifest, lockFile } = await this.store.readState();
-    this.normalizeBindings(manifest, lockFile);
+    const virtualGroups = await this.store.readVirtualGroups();
+    this.normalizeBindings(manifest, lockFile, virtualGroups);
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
       return fail({
@@ -612,7 +917,7 @@ export class SkillFlowApp {
       });
     }
 
-    const summary = this.workflowService.getSummaries(manifest, lockFile).find((item) => item.source.id === sourceId);
+    const summary = this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups).find((item) => item.source.id === sourceId);
     if (!summary) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -621,7 +926,7 @@ export class SkillFlowApp {
     }
 
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
-    const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
+    const leafs = this.getSourceLeafsForBinding(source, binding, lockFile, virtualGroups);
     const deployments = getManagedDeployments(lockFile).filter(
       (deployment) => deployment.sourceId === sourceId,
     );
@@ -631,17 +936,17 @@ export class SkillFlowApp {
     }
 
     const initialDrafts: Record<string, DraftBinding> = {
-      [sourceId]: this.draftFromBinding(sourceId, binding, lockFile),
+      [sourceId]: this.draftFromSourceBinding(source, binding, lockFile, virtualGroups),
     };
     const preferences = await this.store.readPreferences();
     const scopedDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
 
     const scopedManifest = this.cloneManifest(manifest);
-    this.normalizeBindings(scopedManifest, lockFile);
+    this.normalizeBindings(scopedManifest, lockFile, virtualGroups);
     const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
     const scopedSource = prepared.manifest.sources.find((item) => item.id === sourceId) ?? source;
     const scopedSummary =
-      this.workflowService.getSummaries(prepared.manifest, lockFile).find((item) => item.source.id === sourceId)
+      this.workflowService.getSummaries(prepared.manifest, lockFile, undefined, virtualGroups).find((item) => item.source.id === sourceId)
       ?? summary;
     const scopedBinding = prepared.manifest.bindings[sourceId] ?? binding;
     const scopedDeployments = scopedDraft.enabledTargets.length === 0
@@ -1070,18 +1375,26 @@ export class SkillFlowApp {
           exact: true,
         });
       }
-      const exactRepo = normalizeImportCanonicalRepo(normalizedQuery);
+      const exactLocator = this.parseGitHubImportLocator(normalizedQuery);
+      const exactRepo = exactLocator?.canonicalRepo;
       if (exactRepo) {
         try {
           const details = await fetchSkillsDirectorySourceDetails(exactRepo);
+          const matchedSkillNames = this.importLocatorMatchedSkillNames(exactLocator);
           return ok({
             groups: [
               {
                 id: exactRepo,
                 provider: "skills",
-                locator: exactRepo,
+                locator: exactLocator.originalLocator,
                 canonicalRepo: exactRepo,
-                aliases: [exactRepo, `https://github.com/${exactRepo}`, `https://github.com/${exactRepo}.git`, `git@github.com:${exactRepo}.git`],
+                aliases: [
+                  exactLocator.originalLocator,
+                  exactRepo,
+                  `https://github.com/${exactRepo}`,
+                  `https://github.com/${exactRepo}.git`,
+                  `git@github.com:${exactRepo}.git`,
+                ].filter((value, index, values) => values.indexOf(value) === index),
                 title: details.repoLabel?.split("/")[1] ?? exactRepo.split("/")[1] ?? exactRepo,
                 installed: installedRepos.has(exactRepo),
                 ...(details.description ? { summary: details.description } : {}),
@@ -1089,6 +1402,7 @@ export class SkillFlowApp {
                 ...(details.repoUrl ? { repoUrl: details.repoUrl } : {}),
                 ...(details.starCount !== undefined ? { starCount: details.starCount } : {}),
                 ...(details.totalInstalls !== undefined ? { totalInstalls: details.totalInstalls } : {}),
+                ...(matchedSkillNames.length ? { matchedSkillNames } : {}),
                 enrichState: { status: "ready" as const },
                 previewState: { status: "idle" as const },
               },
@@ -1096,22 +1410,39 @@ export class SkillFlowApp {
             exact: true,
           });
         } catch (error) {
+          const matchedSkillNames = this.importLocatorMatchedSkillNames(exactLocator);
           const exactCandidate = this.buildImmediateImportGroupCandidate(importCache, exactRepo, {
             installed: installedRepos.has(exactRepo),
+            ...(matchedSkillNames.length
+              ? {
+                  matchedSkills: matchedSkillNames.map((skillName) => ({
+                    skillId: skillName,
+                    title: skillName,
+                  })),
+                }
+              : {}),
           });
+          const resolvedExactCandidate = exactLocator.originalLocator !== exactRepo
+            ? {
+                ...exactCandidate,
+                locator: exactLocator.originalLocator,
+                aliases: [exactLocator.originalLocator, ...exactCandidate.aliases]
+                  .filter((value, index, values) => values.indexOf(value) === index),
+              }
+            : exactCandidate;
 
           if (
-            exactCandidate.enrichState.status === "ready" ||
-            exactCandidate.enrichState.status === "failed" &&
-              exactCandidate.enrichState.reasonCode !== "provider_data_unavailable"
+            resolvedExactCandidate.enrichState.status === "ready" ||
+            resolvedExactCandidate.enrichState.status === "failed" &&
+              resolvedExactCandidate.enrichState.reasonCode !== "provider_data_unavailable"
           ) {
-            return ok({ groups: [exactCandidate], exact: true });
+            return ok({ groups: [resolvedExactCandidate], exact: true });
           }
 
           return ok({
             groups: [
               {
-                ...exactCandidate,
+                ...resolvedExactCandidate,
                 enrichState: {
                   status: "failed",
                   reasonCode: this.inferImportReasonCode(error),
@@ -1146,7 +1477,8 @@ export class SkillFlowApp {
   }
 
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
-    const canonicalRepo = normalizeImportCanonicalRepo(locator);
+    const githubLocator = this.parseGitHubImportLocator(locator);
+    const canonicalRepo = githubLocator?.canonicalRepo;
     if (!canonicalRepo) {
       const localPreview = await this.previewDirectImportSource(locator);
       if (localPreview) {
@@ -1160,17 +1492,37 @@ export class SkillFlowApp {
       });
     }
 
+    if (githubLocator.requestedPath) {
+      const githubPreview = await this.previewGitHubImportSource(canonicalRepo, {
+        requestedPath: githubLocator.requestedPath,
+      });
+      if (githubPreview) {
+        return githubPreview;
+      }
+    }
+
     try {
       const snapshot = await this.resolveImportPreviewSnapshot(canonicalRepo);
       const availableTargets = await this.getAvailableTargets();
+      const snapshotSkills = githubLocator.skillSelector
+        ? this.filterImportSnapshotSkills(snapshot.skills, githubLocator.skillSelector, canonicalRepo)
+        : snapshot.skills;
+      if (githubLocator.skillSelector && snapshotSkills.length === 0) {
+        const githubPreview = await this.previewGitHubImportSource(canonicalRepo, {
+          skillSelector: githubLocator.skillSelector,
+        });
+        if (githubPreview) {
+          return githubPreview;
+        }
+      }
       return ok({
         status: "ready",
-        locator: canonicalRepo,
+        locator: githubLocator.locator,
         canonicalRepo,
         snapshot,
-        selectedSkillIds: snapshot.skills.map((skill) => skill.skillId),
+        selectedSkillIds: snapshotSkills.map((skill) => skill.skillId),
         enabledTargets: [],
-        skills: snapshot.skills.map((skill) => ({
+        skills: snapshotSkills.map((skill) => ({
           id: skill.skillId,
           title: skill.title,
           summary: skill.summary ?? "",
@@ -1182,7 +1534,9 @@ export class SkillFlowApp {
         })),
       });
     } catch (error) {
-      const githubPreview = await this.previewGitHubImportSource(canonicalRepo);
+      const githubPreview = await this.previewGitHubImportSource(canonicalRepo, {
+        ...(githubLocator.skillSelector ? { skillSelector: githubLocator.skillSelector } : {}),
+      });
       if (githubPreview) {
         return githubPreview;
       }
@@ -1199,8 +1553,12 @@ export class SkillFlowApp {
     locator: string,
     draft?: ImportDraft,
   ): Promise<Result<ImportSourceResult>> {
-    const normalizedLocator = normalizeImportCanonicalRepo(locator) ?? locator.trim();
-    const prepared = await this.prepareAddSourceImpl(normalizedLocator, { project: false });
+    const githubLocator = this.parseGitHubImportLocator(locator);
+    const normalizedLocator = githubLocator?.locator ?? locator.trim();
+    const prepared = await this.prepareAddSourceImpl(normalizedLocator, {
+      project: false,
+      ...(githubLocator?.requestedPath ? { path: githubLocator.requestedPath } : {}),
+    });
     if (!prepared.ok) {
       return ok({
         status: "failed",
@@ -1209,11 +1567,15 @@ export class SkillFlowApp {
       });
     }
 
+    const importDraft = draft ?? (githubLocator?.skillSelector
+      ? { selectedSkillIds: [githubLocator.skillSelector], enabledTargets: [] }
+      : undefined);
+    const canonicalRepo = githubLocator?.canonicalRepo ?? normalizeImportCanonicalRepo(normalizedLocator);
     const finalDraft = this.resolveImportDraftForPreparedSource(
       prepared.data.leafs,
       prepared.data.availableTargets,
-      normalizeImportCanonicalRepo(normalizedLocator),
-      draft,
+      canonicalRepo,
+      importDraft,
     );
     if (!finalDraft.ok) {
       await this.rollbackPreparedSourceInternal(prepared.data.sourceId);
@@ -1237,7 +1599,7 @@ export class SkillFlowApp {
     return ok({
       status: "ready",
       sourceId: prepared.data.sourceId,
-      canonicalRepo: normalizeImportCanonicalRepo(normalizedLocator) ?? normalizedLocator,
+      canonicalRepo: canonicalRepo ?? normalizedLocator,
     }, [...finalDraft.warnings, ...applied.warnings]);
   }
 
@@ -1631,6 +1993,10 @@ export class SkillFlowApp {
 
   private async previewGitHubImportSource(
     canonicalRepo: string,
+    options: {
+      requestedPath?: string;
+      skillSelector?: string;
+    } = {},
   ): Promise<Result<ImportPreviewResult> | null> {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo);
     if (!normalizedRepo) {
@@ -1638,7 +2004,10 @@ export class SkillFlowApp {
     }
 
     const locator = `https://github.com/${normalizedRepo}.git`;
-    const preview = await this.sourceService.previewSource(locator);
+    const preview = await this.sourceService.previewSource(
+      locator,
+      options.requestedPath ? { path: options.requestedPath } : {},
+    );
     if (!preview.ok) {
       return ok({
         status: "failed",
@@ -1649,7 +2018,16 @@ export class SkillFlowApp {
 
     const availableTargets = await this.getAvailableTargets();
     return ok(
-      this.buildDirectImportPreviewResult(locator, preview.data, availableTargets, normalizedRepo),
+      this.buildDirectImportPreviewResult(
+        locator,
+        preview.data,
+        availableTargets,
+        normalizedRepo,
+        {
+          ...(options.requestedPath ? { requestedPath: options.requestedPath } : {}),
+          ...(options.skillSelector ? { skillSelectors: [options.skillSelector] } : {}),
+        },
+      ),
       preview.warnings,
     );
   }
@@ -1659,8 +2037,21 @@ export class SkillFlowApp {
     preview: SourcePreview,
     availableTargets: DeploymentTargetId[],
     canonicalRepo = locator,
+    options: {
+      requestedPath?: string;
+      skillSelectors?: string[];
+    } = {},
   ): ImportPreviewResult {
-    const skills = preview.leafs.map((leaf) => {
+    const leafs = this.filterPreviewLeafs(preview.leafs, canonicalRepo, options);
+    if (!leafs) {
+      return {
+        status: "failed",
+        reasonCode: "provider_data_unavailable",
+        retryable: false,
+      };
+    }
+
+    const skills = leafs.map((leaf) => {
       const id = leaf.relativePath === "." ? leaf.name : leaf.relativePath;
       return {
         id,
@@ -1682,6 +2073,179 @@ export class SkillFlowApp {
         selectedByDefault: false,
       })),
     };
+  }
+
+  private parseGitHubImportLocator(locator: string): GitHubImportLocator | undefined {
+    const trimmed = this.stripImportLocatorQuotes(locator.trim()).replace(/\/+$/, "");
+    const selectorLocator = this.parseGitHubImportSelectorLocator(trimmed);
+    if (selectorLocator) {
+      return selectorLocator;
+    }
+
+    const treeLocator = this.parseGitHubImportTreeLocator(trimmed);
+    if (treeLocator) {
+      return treeLocator;
+    }
+
+    const subpathLocator = this.parseGitHubImportShorthandSubpath(trimmed);
+    if (subpathLocator) {
+      return subpathLocator;
+    }
+
+    const canonicalRepo = normalizeImportCanonicalRepo(trimmed);
+    if (!canonicalRepo) {
+      return undefined;
+    }
+
+    return {
+      canonicalRepo,
+      originalLocator: canonicalRepo,
+      locator: canonicalRepo,
+    };
+  }
+
+  private parseGitHubImportSelectorLocator(locator: string): GitHubImportLocator | undefined {
+    const match = locator.match(/^([^/\s:@]+)\/([^/@\s]+)@(.+)$/);
+    const owner = match?.[1];
+    const rawRepo = match?.[2];
+    const skillSelector = match?.[3]?.trim().replace(/^\/+|\/+$/g, "");
+    if (!owner || !rawRepo || !skillSelector || skillSelector.includes("@")) {
+      return undefined;
+    }
+
+    return this.githubImportLocator(owner, rawRepo, locator, { skillSelector });
+  }
+
+  private parseGitHubImportTreeLocator(locator: string): GitHubImportLocator | undefined {
+    try {
+      const url = new URL(locator);
+      if (url.hostname !== "github.com") {
+        return undefined;
+      }
+
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length < 2 || parts[2] && parts[2] !== "tree") {
+        return undefined;
+      }
+
+      const requestedPath = parts.length >= 5
+        ? parts.slice(4).join("/")
+        : undefined;
+      return this.githubImportLocator(parts[0], parts[1], locator, {
+        ...(requestedPath ? { requestedPath } : {}),
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  private parseGitHubImportShorthandSubpath(locator: string): GitHubImportLocator | undefined {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(locator) || locator.startsWith("git@")) {
+      return undefined;
+    }
+
+    const parts = locator.split("/");
+    if (parts.length < 3) {
+      return undefined;
+    }
+
+    const requestedPath = parts.slice(2).join("/");
+    if (!requestedPath) {
+      return undefined;
+    }
+
+    return this.githubImportLocator(parts[0], parts[1], locator, { requestedPath });
+  }
+
+  private githubImportLocator(
+    owner: string | undefined,
+    rawRepo: string | undefined,
+    originalLocator: string,
+    options: {
+      requestedPath?: string;
+      skillSelector?: string;
+    } = {},
+  ): GitHubImportLocator | undefined {
+    if (!owner || !rawRepo) {
+      return undefined;
+    }
+    const repo = rawRepo.replace(/\.git$/i, "");
+    const canonicalRepo = normalizeImportCanonicalRepo(`${owner}/${repo}`);
+    if (!canonicalRepo) {
+      return undefined;
+    }
+
+    return {
+      canonicalRepo,
+      originalLocator,
+      locator: `https://github.com/${canonicalRepo}.git`,
+      ...(options.requestedPath ? { requestedPath: options.requestedPath } : {}),
+      ...(options.skillSelector ? { skillSelector: options.skillSelector } : {}),
+    };
+  }
+
+  private importLocatorMatchedSkillNames(locator: GitHubImportLocator): string[] {
+    if (locator.skillSelector) {
+      return [locator.skillSelector];
+    }
+
+    const basename = locator.requestedPath
+      ?.split("/")
+      .filter(Boolean)
+      .at(-1);
+    return basename ? [basename] : [];
+  }
+
+  private filterImportSnapshotSkills(
+    skills: UnifiedSourceSnapshot["skills"],
+    selector: string,
+    canonicalRepo: string,
+  ): UnifiedSourceSnapshot["skills"] {
+    const selectorVariants = this.buildImportSkillSelectorVariants(selector, canonicalRepo);
+    return skills.filter((skill) => {
+      const skillVariants = new Set([
+        ...this.buildImportSkillSelectorVariants(skill.skillId, canonicalRepo),
+        ...this.buildImportSkillSelectorVariants(skill.title, canonicalRepo),
+      ]);
+      return selectorVariants.some((variant) => skillVariants.has(variant));
+    });
+  }
+
+  private filterPreviewLeafs(
+    leafs: LeafRecord[],
+    canonicalRepo: string,
+    options: {
+      requestedPath?: string;
+      skillSelectors?: string[];
+    } = {},
+  ): LeafRecord[] | undefined {
+    let filteredLeafs = leafs;
+    const requestedPath = this.normalizeRequestedPath(options.requestedPath);
+    if (requestedPath) {
+      filteredLeafs = filteredLeafs.filter(
+        (leaf) => leaf.relativePath === requestedPath || leaf.relativePath.startsWith(`${requestedPath}/`),
+      );
+      if (filteredLeafs.length === 0) {
+        return undefined;
+      }
+    }
+
+    if (!options.skillSelectors?.length) {
+      return filteredLeafs;
+    }
+
+    const selectedLeafIds = this.resolveSelectedLeafIds(
+      filteredLeafs,
+      undefined,
+      options.skillSelectors,
+      canonicalRepo,
+    );
+    if (!selectedLeafIds.ok) {
+      return undefined;
+    }
+
+    const selected = new Set(selectedLeafIds.data);
+    return filteredLeafs.filter((leaf) => selected.has(leaf.id));
   }
 
   private async resolveDirectImportLocator(locator: string): Promise<string | undefined> {
@@ -2095,9 +2659,12 @@ export class SkillFlowApp {
       manifest,
       lockFile,
     );
+    const virtualGroups = await this.store.readVirtualGroups();
+    const hiddenSourceIds = this.hiddenSourceIdsFromVirtualGroups(virtualGroups);
     return ok(
       {
-        summaries: this.workflowService.getSummaries(manifest, lockFile),
+        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups)
+          .filter((summary) => !hiddenSourceIds.has(summary.source.id)),
         pinnedSourceIds: reconciledPreferences.pinnedSourceIds,
         recentProjects: reconciledPreferences.recentProjects,
         selectedProjectScope: reconciledPreferences.selectedProjectScope,
@@ -2129,12 +2696,13 @@ export class SkillFlowApp {
       return fail(reconciled.errors, reconciled.warnings);
     }
     const { manifest, lockFile } = await this.store.readState();
+    const virtualGroups = await this.store.readVirtualGroups();
     await this.persistNormalizedBindings(manifest, lockFile);
     return ok(
       {
         manifest,
         lockFile,
-        summaries: this.workflowService.getSummaries(manifest, lockFile),
+        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups),
       },
       pruned.warnings,
     );
@@ -2576,7 +3144,7 @@ export class SkillFlowApp {
       removedImportedTargets,
     );
     const detachedWarnings = await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
     await this.store.writeState(prepared.manifest, lockFile);
 
     const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
@@ -2693,7 +3261,7 @@ export class SkillFlowApp {
     const { manifest, lockFile } = await this.store.readState();
     this.normalizeBindings(manifest, lockFile);
     await this.ensureProjectionLedger(manifest, lockFile);
-    const warnings: Warning[] = await this.cleanupOrphanTargetSymlinks(lockFile);
+    const warnings: Warning[] = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
 
     const requestedIds = sourceIds?.length
       ? sourceIds
@@ -2875,7 +3443,7 @@ export class SkillFlowApp {
     }
 
     const detachedWarnings = await this.cleanupDetachedTargetSymlinksForSources(lockFile, sourceIds);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
     warnings.push(...detachedWarnings.map((warning) => warning.message));
     warnings.push(...orphanWarnings.map((warning) => warning.message));
 
@@ -2920,6 +3488,107 @@ export class SkillFlowApp {
       selectedLeafIds: [...draft.selectedLeafIds],
       targets,
     };
+  }
+
+  private uniqueVirtualSourceId(
+    displayName: string,
+    manifest: Manifest,
+    virtualGroups: VirtualGroupsState,
+  ): string {
+    const baseId = deriveSourceId(displayName) || "virtual-group";
+    const usedIds = new Set([
+      ...manifest.sources.map((source) => source.id),
+      ...Object.keys(virtualGroups.groups),
+    ]);
+    let candidate = baseId;
+    let suffix = 2;
+    while (usedIds.has(candidate)) {
+      candidate = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
+  }
+
+  private validateVirtualSkillRefs(
+    skills: VirtualGroupSkillRef[],
+    manifest: Manifest,
+    lockFile: LockFile,
+  ): Result<VirtualGroupSkillRef[]> {
+    const includedSkills: VirtualGroupSkillRef[] = [];
+    const seen = new Set<string>();
+
+    for (const skill of skills) {
+      const sourceId = skill.sourceId.trim();
+      const leafId = skill.leafId.trim();
+      const source = manifest.sources.find((item) => item.id === sourceId);
+      if (!source) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+
+      const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
+      if (!leaf || leaf.sourceId !== sourceId) {
+        return fail({
+          code: "LEAF_NOT_FOUND",
+          message: `Skill leaf '${leafId}' is not registered in skills group '${sourceId}'.`,
+        });
+      }
+
+      const key = `${sourceId}\0${leafId}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      includedSkills.push({ sourceId, leafId });
+    }
+
+    return ok(includedSkills);
+  }
+
+  private findVirtualSkillNameConflict(
+    skills: VirtualGroupSkillRef[],
+    lockFile: LockFile,
+  ): { code: string; message: string } | undefined {
+    const refsByName = new Map<string, Array<{ sourceId: string; leaf: LeafRecord }>>();
+
+    for (const skill of skills) {
+      const leaf = lockFile.leafInventory.find((item) => item.id === skill.leafId);
+      if (!leaf) {
+        continue;
+      }
+      const projectedName = leaf.linkName.trim();
+      if (!projectedName) {
+        continue;
+      }
+      refsByName.set(projectedName, [
+        ...(refsByName.get(projectedName) ?? []),
+        { sourceId: skill.sourceId, leaf },
+      ]);
+    }
+
+    const duplicates = [...refsByName.entries()].filter(([, refs]) => refs.length > 1);
+    if (duplicates.length === 0) {
+      return undefined;
+    }
+
+    return {
+      code: "VIRTUAL_GROUP_SKILL_NAME_CONFLICT",
+      message: `Virtual group contains duplicate projected skill names: ${
+        duplicates
+          .map(([name, refs]) =>
+            `${name} (${refs.map((ref) => `${ref.sourceId}:${ref.leaf.relativePath}`).join(", ")})`
+          )
+          .join("; ")
+      }.`,
+    };
+  }
+
+  private hiddenSourceIdsFromVirtualGroups(virtualGroups: VirtualGroupsState): Set<string> {
+    return new Set(
+      Object.values(virtualGroups.groups).flatMap((group) => group.hiddenSourceIds),
+    );
   }
 
   private resolveDraftForScope(
@@ -2970,7 +3639,7 @@ export class SkillFlowApp {
   private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
     const { manifest, lockFile } = await this.store.readState();
     await this.ensureProjectionLedger(manifest, lockFile);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(lockFile);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
     const removedSourceIds: string[] = [];
     const warnings: Warning[] = [];
 
@@ -3037,7 +3706,10 @@ export class SkillFlowApp {
     return ok({ removedSourceIds }, [...orphanWarnings, ...warnings]);
   }
 
-  private async cleanupOrphanTargetSymlinks(lockFile: LockFile): Promise<Warning[]> {
+  private async cleanupOrphanTargetSymlinks(
+    manifest: Manifest,
+    lockFile: LockFile,
+  ): Promise<Warning[]> {
     const warnings: Warning[] = [];
     const managedStateRoot = await fs.realpath(this.store.rootPath).catch(() =>
       path.resolve(this.store.rootPath),
@@ -3076,7 +3748,7 @@ export class SkillFlowApp {
           (projection) => path.resolve(projection.targetPath) === resolvedTargetPath,
         );
         const hasResolvableProjection = matchingProjections.some((projection) =>
-          this.isProjectionStillResolvable(lockFile, projection),
+          this.isProjectionStillResolvable(manifest, lockFile, projection),
         );
         if (hasResolvableProjection) {
           continue;
@@ -3161,13 +3833,19 @@ export class SkillFlowApp {
     return warnings;
   }
 
-  private isProjectionStillResolvable(lockFile: LockFile, projection: ProjectionRecord): boolean {
-    if (!lockFile.sources.some((source) => source.id === projection.sourceId)) {
+  private isProjectionStillResolvable(
+    manifest: Manifest,
+    lockFile: LockFile,
+    projection: ProjectionRecord,
+  ): boolean {
+    const source = manifest.sources.find((item) => item.id === projection.sourceId);
+    if (!source) {
       return false;
     }
 
     if (projection.mode === "managed") {
-      return lockFile.leafInventory.some((leaf) => leaf.id === projection.leafId);
+      const binding = manifest.bindings[source.id] ?? { targets: {} };
+      return Boolean(this.findLeafForSourceBinding(source, binding, lockFile, projection.leafId));
     }
 
     return true;
@@ -3647,12 +4325,16 @@ export class SkillFlowApp {
     }
   }
 
-  private normalizeBindings(manifest: Manifest, lockFile: LockFile): boolean {
+  private normalizeBindings(
+    manifest: Manifest,
+    lockFile: LockFile,
+    virtualGroups?: VirtualGroupsState,
+  ): boolean {
     let changed = false;
 
     for (const source of manifest.sources) {
       const currentBinding = manifest.bindings[source.id] ?? { targets: {} };
-      const normalizedDraft = this.draftFromBinding(source.id, currentBinding, lockFile);
+      const normalizedDraft = this.draftFromSourceBinding(source, currentBinding, lockFile, virtualGroups);
       const normalizedBinding = this.bindingFromDraft(normalizedDraft);
 
       if (JSON.stringify(currentBinding) === JSON.stringify(normalizedBinding)) {
@@ -3666,6 +4348,23 @@ export class SkillFlowApp {
     return changed;
   }
 
+  private draftFromSourceBinding(
+    source: Manifest["sources"][number],
+    binding: SourceBinding,
+    lockFile: LockFile,
+    virtualGroups?: VirtualGroupsState,
+  ): DraftBinding {
+    const leafIds = source.kind === "virtual"
+      ? this.getVirtualSourceAllowedLeafIds(source.id, binding, lockFile, virtualGroups)
+      : new Set(
+          lockFile.leafInventory
+            .filter((leaf) => leaf.sourceId === source.id)
+            .map((leaf) => leaf.id),
+        );
+
+    return this.draftFromBindingAllowedLeafIds(binding, leafIds);
+  }
+
   private draftFromBinding(
     sourceId: string,
     binding: SourceBinding,
@@ -3676,6 +4375,13 @@ export class SkillFlowApp {
         .filter((leaf) => leaf.sourceId === sourceId)
         .map((leaf) => leaf.id),
     );
+    return this.draftFromBindingAllowedLeafIds(binding, leafIds);
+  }
+
+  private draftFromBindingAllowedLeafIds(
+    binding: SourceBinding,
+    leafIds: Set<string>,
+  ): DraftBinding {
     const enabledTargets = Object.entries(binding.targets)
       .filter(([, targetBinding]) => targetBinding?.enabled)
       .map(([target]) => target) as DeploymentTargetName[];
@@ -3691,6 +4397,67 @@ export class SkillFlowApp {
       enabledTargets,
       selectedLeafIds,
     };
+  }
+
+  private getVirtualSourceAllowedLeafIds(
+    sourceId: string,
+    binding: SourceBinding,
+    lockFile: LockFile,
+    virtualGroups?: VirtualGroupsState,
+  ): Set<string> {
+    const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
+    const includedLeafIds = virtualGroups?.groups[sourceId]?.includedSkills
+      .map((skill) => skill.leafId)
+      .filter((leafId) => existingLeafIds.has(leafId));
+
+    if (includedLeafIds) {
+      return new Set(includedLeafIds);
+    }
+
+    return new Set(
+      [
+        ...(binding.selectedLeafIds ?? []),
+        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
+      ].filter((leafId) => existingLeafIds.has(leafId)),
+    );
+  }
+
+  private getSourceLeafsForBinding(
+    source: Manifest["sources"][number],
+    binding: SourceBinding,
+    lockFile: LockFile,
+    virtualGroups?: VirtualGroupsState,
+  ): LeafRecord[] {
+    if (source.kind !== "virtual") {
+      return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
+    }
+
+    const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
+    const includedLeafIds = virtualGroups?.groups[source.id]?.includedSkills
+      .map((skill) => skill.leafId)
+      .filter((leafId) => existingLeafIds.has(leafId));
+
+    return (includedLeafIds ?? [
+      ...new Set([
+        ...(binding.selectedLeafIds ?? []),
+        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
+      ]),
+    ].filter((leafId) => existingLeafIds.has(leafId)))
+      .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+      .filter((leaf): leaf is LeafRecord => Boolean(leaf));
+  }
+
+  private findLeafForSourceBinding(
+    source: Manifest["sources"][number],
+    binding: SourceBinding,
+    lockFile: LockFile,
+    leafId: string,
+  ): LeafRecord | undefined {
+    if (source.kind !== "virtual") {
+      return lockFile.leafInventory.find((leaf) => leaf.sourceId === source.id && leaf.id === leafId);
+    }
+
+    return this.getSourceLeafsForBinding(source, binding, lockFile).find((leaf) => leaf.id === leafId);
   }
 
   private selectLeafIdsForRequestedPath(
@@ -3968,7 +4735,7 @@ export class SkillFlowApp {
     }
 
     await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]);
-    await this.cleanupOrphanTargetSymlinks(lockFile);
+    await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
     await this.store.writeState(manifest, lockFile);
 
     return this.sourceService.removeSource([sourceId]);
@@ -4242,9 +5009,7 @@ export class SkillFlowApp {
 
       const projectedLinkNames = this.buildProjectedLinkNameMap(manifest, lockFile, target);
       for (const leafId of targetBinding.leafIds) {
-        const leaf = lockFile.leafInventory.find(
-          (candidate) => candidate.sourceId === sourceId && candidate.id === leafId,
-        );
+        const leaf = this.findLeafForSourceBinding(source, binding, lockFile, leafId);
         if (!leaf) {
           continue;
         }
@@ -4369,9 +5134,7 @@ export class SkillFlowApp {
         }
 
         for (const leafId of targetBinding.leafIds) {
-          const leaf = lockFile.leafInventory.find(
-            (candidate) => candidate.sourceId === source.id && candidate.id === leafId,
-          );
+          const leaf = this.findLeafForSourceBinding(source, binding, lockFile, leafId);
           if (!leaf) {
             continue;
           }

@@ -82,6 +82,18 @@ private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked
         fatalError("unused")
     }
 
+    func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
         fatalError("unused")
     }

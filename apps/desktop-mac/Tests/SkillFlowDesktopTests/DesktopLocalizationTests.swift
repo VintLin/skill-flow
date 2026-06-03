@@ -65,6 +65,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "home.sidebar.pinned",
             "home.sidebar.local",
             "home.sidebar.remote",
+            "home.sidebar.virtual",
             "home.sidebar.expand",
             "home.sidebar.collapse",
             "group_card.action.rename",
@@ -96,6 +97,46 @@ final class DesktopLocalizationTests: XCTestCase {
         for locale in locales {
             for key in staleKeys {
                 XCTAssertEqual(L10n.string(key, locale: locale), key, "Unexpected stale localization for \(key)")
+            }
+        }
+    }
+
+    func testGroupEditorLocalizationKeysExist() {
+        let requiredKeys = [
+            "group_editor.title",
+            "group_editor.tab.create",
+            "group_editor.tab.merge",
+            "group_editor.tab.restore",
+            "group_editor.name",
+            "group_editor.summary.create",
+            "group_editor.summary.merge",
+            "group_editor.section.skill_groups",
+            "group_editor.loading",
+            "source.author.local",
+            "source.author.virtual",
+            "group_editor.search.placeholder",
+            "group_editor.search.empty",
+            "group_editor.action.save",
+            "group_editor.action.restore",
+            "group_editor.validation.name_required",
+            "group_editor.validation.skills_required",
+            "group_editor.validation.groups_required",
+            "group_editor.impact.create_virtual_group",
+            "group_editor.impact.hide_groups",
+            "group_editor.impact.clear_bindings",
+            "group_editor.impact.save_restore_snapshot",
+        ]
+        let locales = [
+            Locale(identifier: "zh-Hans"),
+            Locale(identifier: "en"),
+            Locale(identifier: "ja"),
+        ]
+
+        for locale in locales {
+            for key in requiredKeys {
+                let value = L10n.string(key, locale: locale)
+                XCTAssertNotEqual(value, key, "Missing localization for \(key) in \(locale.identifier)")
+                XCTAssertFalse(value.isEmpty, "Empty localization for \(key) in \(locale.identifier)")
             }
         }
     }

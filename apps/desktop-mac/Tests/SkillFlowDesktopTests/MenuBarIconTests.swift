@@ -348,6 +348,15 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(warning?.isTemplate, true)
     }
 
+    func testSkillGroupEditorActionIconLoadsRenamedSvg() {
+        XCTAssertEqual(ActionIcon.groupEditor.rawValue, "skill-group-editor")
+
+        let image = ActionIcon.groupEditor.image(size: 14)
+
+        XCTAssertNotNil(image)
+        XCTAssertEqual(image?.size, NSSize(width: 14, height: 14))
+    }
+
     func testAppInitializationKeepsDockIconAtSystemSize() {
         _ = SkillFlowDesktopApp()
 

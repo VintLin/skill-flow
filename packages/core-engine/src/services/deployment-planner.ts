@@ -30,7 +30,7 @@ export class DeploymentPlanner {
   ): Promise<Result<DeploymentPlan>> {
     const binding = manifest.bindings[sourceId] ?? { targets: {} };
     const source = manifest.sources.find((item) => item.id === sourceId);
-    const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
+    const leafs = this.resolveSourceLeafs(sourceId, binding, manifest, lockFile);
     const previousDeployments = getManagedDeployments(lockFile).filter(
       (deployment) => deployment.sourceId === sourceId,
     );
@@ -75,6 +75,27 @@ export class DeploymentPlanner {
       warnings,
       blocked: actions.filter((action) => action.kind === "blocked"),
     });
+  }
+
+  private resolveSourceLeafs(
+    sourceId: string,
+    binding: Manifest["bindings"][string],
+    manifest: Manifest,
+    lockFile: LockFile,
+  ): LeafRecord[] {
+    const source = manifest.sources.find((item) => item.id === sourceId);
+    if (source?.kind !== "virtual") {
+      return lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
+    }
+
+    return [
+      ...new Set([
+        ...(binding.selectedLeafIds ?? []),
+        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
+      ]),
+    ]
+      .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+      .filter((leaf): leaf is LeafRecord => Boolean(leaf));
   }
 
   // fetch -> scan -> diff -> replan -> reapply

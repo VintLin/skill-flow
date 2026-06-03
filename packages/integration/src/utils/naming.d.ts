@@ -1,8 +1,9 @@
+import type { SourceKind } from "@skill-flow/domain/types";
 type SourceLike = {
     id: string;
     locator: string;
     displayName: string;
-    kind?: "local" | "git" | "clawhub";
+    kind?: SourceKind;
 };
 type ProjectedSkillInput = {
     leafId: string;

@@ -281,6 +281,66 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(try fixture.lastCommand(), "rename-source")
     }
 
+    func testCreateVirtualGroupSendsExpectedPayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.createVirtualGroup(
+            displayName: "Writing Stack",
+            skills: [
+                VirtualGroupSkillRef(sourceId: "source-a", leafId: "skill-a"),
+                VirtualGroupSkillRef(sourceId: "source-b", leafId: "skill-b"),
+            ],
+            enabledTargets: ["codex", "claude"]
+        )
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "create-virtual-group")
+        XCTAssertEqual(payload["displayName"] as? String, "Writing Stack")
+        XCTAssertEqual(payload["enabledTargets"] as? [String], ["codex", "claude"])
+
+        let skills = try XCTUnwrap(payload["skills"] as? [[String: Any]])
+        XCTAssertEqual(skills.count, 2)
+        XCTAssertEqual(skills[0]["sourceId"] as? String, "source-a")
+        XCTAssertEqual(skills[0]["leafId"] as? String, "skill-a")
+        XCTAssertEqual(skills[1]["sourceId"] as? String, "source-b")
+        XCTAssertEqual(skills[1]["leafId"] as? String, "skill-b")
+    }
+
+    func testMergeGroupsSendsExpectedPayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.mergeGroups(
+            displayName: "Merged Tools",
+            sourceIds: ["source-a", "source-b"],
+            enabledTargets: ["codex"]
+        )
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "merge-groups")
+        XCTAssertEqual(payload["displayName"] as? String, "Merged Tools")
+        XCTAssertEqual(payload["sourceIds"] as? [String], ["source-a", "source-b"])
+        XCTAssertEqual(payload["enabledTargets"] as? [String], ["codex"])
+    }
+
+    func testRestoreMergedGroupsSendsExpectedPayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.restoreMergedGroups(virtualGroupId: "virtual-group-1")
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "restore-merged-groups")
+        XCTAssertEqual(payload["virtualGroupId"] as? String, "virtual-group-1")
+    }
+
     private func sourceText() throws -> String {
         let desktopRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

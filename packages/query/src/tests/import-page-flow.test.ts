@@ -151,9 +151,10 @@ describe.sequential("import page flow", () => {
 
     expect(result.data.exact).toBe(true);
     expect(result.data.groups[0]).toMatchObject({
-      locator: "vintlin/skill-flow",
+      locator: "https://github.com/VintLin/skill-flow/tree/main/releases",
       canonicalRepo: "vintlin/skill-flow",
       title: "skill-flow",
+      matchedSkillNames: ["releases"],
     });
   });
 
@@ -179,6 +180,46 @@ describe.sequential("import page flow", () => {
       groups: [
         {
           canonicalRepo: "open-gsd/gsd-core",
+          enrichState: {
+            status: "failed",
+            reasonCode: "provider_data_unavailable",
+            retryable: true,
+          },
+          previewState: { status: "idle" },
+        },
+      ],
+    });
+  });
+
+  test("exact import search keeps GitHub repo skill suffix as a selector", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url === "https://skills.sh/paramchoudhary/resumeskills") {
+        return responseWithStatus(404);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }));
+
+    const app = new SkillFlowApp();
+    const result = await app.searchImportGroups("paramchoudhary/resumeskills@resume-bullet-writer");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data).toMatchObject({
+      exact: true,
+      groups: [
+        {
+          canonicalRepo: "paramchoudhary/resumeskills",
+          locator: "paramchoudhary/resumeskills@resume-bullet-writer",
+          matchedSkills: [
+            {
+              skillId: "resume-bullet-writer",
+              title: "resume-bullet-writer",
+            },
+          ],
           enrichState: {
             status: "failed",
             reasonCode: "provider_data_unavailable",
@@ -223,6 +264,73 @@ describe.sequential("import page flow", () => {
     expect(preview.data.canonicalRepo).toBe("open-gsd/gsd-core");
     expect(preview.data.locator).toBe("https://github.com/open-gsd/gsd-core.git");
     expect(preview.data.skills.map((skill) => skill.id)).toEqual(["skills/direct"]);
+  });
+
+  test("previewImportSource treats GitHub repo suffix as a skill selector", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/resume-bullet-writer/SKILL.md": skillDoc("resume-bullet-writer", "Write resume bullets."),
+      "skills/resume-tailor/SKILL.md": skillDoc("resume-tailor", "Tailor resumes."),
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url === "https://skills.sh/paramchoudhary/resumeskills") {
+        return responseWithStatus(404);
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }));
+
+    const previewSource = SourceService.prototype.previewSource;
+    vi.spyOn(SourceService.prototype, "previewSource").mockImplementation(async function (_locator) {
+      return previewSource.call(this, repoPath);
+    });
+
+    const app = new SkillFlowApp();
+    const preview = await app.previewImportSource("paramchoudhary/resumeskills@resume-bullet-writer");
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) {
+      return;
+    }
+    expect(preview.data.status).toBe("ready");
+    if (preview.data.status !== "ready") {
+      return;
+    }
+
+    expect(preview.data.canonicalRepo).toBe("paramchoudhary/resumeskills");
+    expect(preview.data.locator).toBe("https://github.com/paramchoudhary/resumeskills.git");
+    expect(preview.data.selectedSkillIds).toEqual(["skills/resume-bullet-writer"]);
+    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["skills/resume-bullet-writer"]);
+  });
+
+  test("previewImportSource supports GitHub shorthand subpaths", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/resume-bullet-writer/SKILL.md": skillDoc("resume-bullet-writer", "Write resume bullets."),
+      "skills/resume-tailor/SKILL.md": skillDoc("resume-tailor", "Tailor resumes."),
+    });
+
+    const previewSource = SourceService.prototype.previewSource;
+    const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockImplementation(
+      async function (_locator, options) {
+        return previewSource.call(this, repoPath, options);
+      },
+    );
+
+    const app = new SkillFlowApp();
+    const preview = await app.previewImportSource("paramchoudhary/resumeskills/skills/resume-bullet-writer");
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+
+    expect(previewSpy).toHaveBeenCalledWith(
+      "https://github.com/paramchoudhary/resumeskills.git",
+      { path: "skills/resume-bullet-writer" },
+    );
+    expect(preview.data.canonicalRepo).toBe("paramchoudhary/resumeskills");
+    expect(preview.data.selectedSkillIds).toEqual(["skills/resume-bullet-writer"]);
+    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["skills/resume-bullet-writer"]);
   });
 
   test("previewImportSource is read-only and defaults to all skills with no agents", async () => {

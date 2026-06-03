@@ -177,6 +177,40 @@ describe("StateStore", () => {
     });
   });
 
+  test("readState preserves non-ASCII virtual group display names", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+
+    await fs.writeFile(store.manifestPath, `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "skills-2",
+          locator: "virtual:skills-2",
+          kind: "virtual",
+          displayName: "组合工具",
+          originalDisplayName: "组合工具",
+          addedAt: "2026-05-31T00:00:00.000Z",
+        },
+      ],
+      bindings: {},
+    }, null, 2)}\n`, "utf8");
+    await fs.writeFile(store.lockPath, `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [],
+      leafInventory: [],
+      projections: [],
+      deployments: [],
+    }, null, 2)}\n`, "utf8");
+
+    const state = await store.readState();
+
+    expect(state.manifest.sources[0]).toMatchObject({
+      displayName: "组合工具",
+      originalDisplayName: "组合工具",
+    });
+  });
+
   test("writeState persists originalDisplayName on manifest and lock sources", async () => {
     const store = new StateStore(stateRoot);
     await store.init();
@@ -361,6 +395,214 @@ describe("StateStore", () => {
     expect(await store.pruneMissingSourceIds()).toEqual({
       ...emptyPreferences,
       pinnedSourceIds: ["alpha"],
+    });
+  });
+
+  test("virtual group state defaults to an empty file shape", async () => {
+    const store = new StateStore(stateRoot);
+
+    const virtualGroups = await store.readVirtualGroups();
+
+    expect(virtualGroups).toEqual({
+      schemaVersion: 1,
+      groups: {},
+    });
+  });
+
+  test("virtual group state round trips merge metadata", async () => {
+    const store = new StateStore(stateRoot);
+
+    await store.writeVirtualGroups({
+      schemaVersion: 1,
+      groups: {
+        "writing-stack": {
+          id: "writing-stack",
+          displayName: "Writing Stack",
+          includedSkills: [
+            { sourceId: "alpha", leafId: "alpha:skills/review" },
+            { sourceId: "beta", leafId: "beta:skills/plan" },
+          ],
+          hiddenSourceIds: ["alpha", "beta"],
+          restoreSnapshots: {
+            alpha: { selectedLeafIds: ["alpha:skills/review"], enabledTargets: ["codex"] },
+            beta: { selectedLeafIds: ["beta:skills/plan"], enabledTargets: ["cursor"] },
+          },
+          createdAt: "2026-06-02T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+        },
+      },
+    });
+
+    await expect(store.readVirtualGroups()).resolves.toEqual({
+      schemaVersion: 1,
+      groups: {
+        "writing-stack": {
+          id: "writing-stack",
+          displayName: "Writing Stack",
+          includedSkills: [
+            { sourceId: "alpha", leafId: "alpha:skills/review" },
+            { sourceId: "beta", leafId: "beta:skills/plan" },
+          ],
+          hiddenSourceIds: ["alpha", "beta"],
+          restoreSnapshots: {
+            alpha: { selectedLeafIds: ["alpha:skills/review"], enabledTargets: ["codex"] },
+            beta: { selectedLeafIds: ["beta:skills/plan"], enabledTargets: ["cursor"] },
+          },
+          createdAt: "2026-06-02T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:00:00.000Z",
+        },
+      },
+    });
+  });
+
+  test("virtual group state normalizes malformed persisted metadata", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    await fs.writeFile(
+      store.virtualGroupsPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          groups: {
+            "writing-stack": {
+              displayName: 42,
+              includedSkills: [
+                { sourceId: "alpha", leafId: "alpha:skills/review" },
+                { sourceId: "beta" },
+                null,
+              ],
+              hiddenSourceIds: ["alpha", "alpha", "beta", 42],
+              restoreSnapshots: {
+                alpha: {
+                  selectedLeafIds: ["alpha:skills/review", 42],
+                  enabledTargets: ["codex", 42],
+                },
+                beta: null,
+              },
+              createdAt: 42,
+            },
+            ignored: null,
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    await expect(store.readVirtualGroups()).resolves.toEqual({
+      schemaVersion: 1,
+      groups: {
+        "writing-stack": {
+          id: "writing-stack",
+          displayName: "writing-stack",
+          includedSkills: [
+            { sourceId: "alpha", leafId: "alpha:skills/review" },
+          ],
+          hiddenSourceIds: ["alpha", "beta"],
+          restoreSnapshots: {
+            alpha: {
+              selectedLeafIds: ["alpha:skills/review"],
+              enabledTargets: ["codex"],
+            },
+            beta: {
+              selectedLeafIds: [],
+              enabledTargets: [],
+            },
+          },
+          createdAt: "1970-01-01T00:00:00.000Z",
+          updatedAt: "1970-01-01T00:00:00.000Z",
+        },
+      },
+    });
+  });
+
+  test("virtual group state uses map keys as canonical group ids", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    await fs.writeFile(
+      store.virtualGroupsPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          groups: {
+            oldKey: {
+              id: "newKey",
+              displayName: "Old Key",
+            },
+            newKey: {
+              id: "newKey",
+              displayName: "New Key",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    await expect(store.readVirtualGroups()).resolves.toMatchObject({
+      groups: {
+        oldKey: {
+          id: "oldKey",
+          displayName: "Old Key",
+        },
+        newKey: {
+          id: "newKey",
+          displayName: "New Key",
+        },
+      },
+    });
+  });
+
+  test("virtual group state ignores non-object restore snapshots", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    await fs.writeFile(
+      store.virtualGroupsPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          groups: {
+            arraySnapshots: {
+              restoreSnapshots: [
+                { selectedLeafIds: ["array:skill"], enabledTargets: ["codex"] },
+              ],
+            },
+            stringSnapshots: {
+              restoreSnapshots: "abc",
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    await expect(store.readVirtualGroups()).resolves.toEqual({
+      schemaVersion: 1,
+      groups: {
+        arraySnapshots: {
+          id: "arraySnapshots",
+          displayName: "arraySnapshots",
+          includedSkills: [],
+          hiddenSourceIds: [],
+          restoreSnapshots: {},
+          createdAt: "1970-01-01T00:00:00.000Z",
+          updatedAt: "1970-01-01T00:00:00.000Z",
+        },
+        stringSnapshots: {
+          id: "stringSnapshots",
+          displayName: "stringSnapshots",
+          includedSkills: [],
+          hiddenSourceIds: [],
+          restoreSnapshots: {},
+          createdAt: "1970-01-01T00:00:00.000Z",
+          updatedAt: "1970-01-01T00:00:00.000Z",
+        },
+      },
     });
   });
 

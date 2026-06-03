@@ -1,9 +1,11 @@
 import type {
   DoctorReport,
   HealthStatus,
+  LeafRecord,
   LockFile,
   Manifest,
   SourceBinding,
+  VirtualGroupsState,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
 
@@ -12,11 +14,12 @@ export class WorkflowService {
     manifest: Manifest,
     lockFile: LockFile,
     audit?: DoctorReport,
+    virtualGroups?: VirtualGroupsState,
   ): WorkflowSummary[] {
     return manifest.sources.map((source) => {
       const lock = lockFile.sources.find((item) => item.id === source.id);
-      const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
       const bindings = manifest.bindings[source.id] ?? ({ targets: {} } satisfies SourceBinding);
+      const leafs = this.resolveSourceLeafs(source, bindings, lockFile, manifest, virtualGroups);
       const activeTargetCount = Object.values(bindings.targets).filter(
         (binding) => binding?.enabled,
       ).length;
@@ -41,6 +44,7 @@ export class WorkflowService {
           activeTargetCount,
           lock,
           issueCounts,
+          source.kind === "virtual",
         ),
         issueCounts,
         ...(issueCounts.error > 0
@@ -52,14 +56,49 @@ export class WorkflowService {
     });
   }
 
+  private resolveSourceLeafs(
+    source: Manifest["sources"][number],
+    binding: SourceBinding,
+    lockFile: LockFile,
+    manifest: Manifest,
+    virtualGroups?: VirtualGroupsState,
+  ): LeafRecord[] {
+    if (source.kind !== "virtual") {
+      return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
+    }
+
+    const sourceTitlesById = new Map(manifest.sources.map((item) => [item.id, item.displayName]));
+    const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
+    const includedLeafIds = virtualGroups?.groups[source.id]?.includedSkills
+      .map((skill) => skill.leafId)
+      .filter((leafId) => existingLeafIds.has(leafId));
+    const selectedLeafIds = includedLeafIds ?? [
+      ...new Set([
+        ...(binding.selectedLeafIds ?? []),
+        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
+      ]),
+    ].filter((leafId) => existingLeafIds.has(leafId));
+    return selectedLeafIds
+      .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+      .filter((leaf): leaf is LeafRecord => Boolean(leaf))
+      .map((leaf) => {
+        const sourceTitle = sourceTitlesById.get(leaf.sourceId);
+        return {
+          ...leaf,
+          ...(sourceTitle ? { sourceTitle } : {}),
+        };
+      });
+  }
+
   private resolveHealth(
     invalidLeafCount: number,
     warningCount: number,
     activeTargetCount: number,
     lock?: LockFile["sources"][number],
     issueCounts: { warning: number; error: number } = { warning: 0, error: 0 },
+    isVirtualSource = false,
   ): HealthStatus {
-    if (!lock) {
+    if (!lock && !isVirtualSource) {
       return "BLOCKED";
     }
     if (issueCounts.error > 0) {
