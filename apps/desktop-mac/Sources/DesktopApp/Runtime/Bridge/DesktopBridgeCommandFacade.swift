@@ -19,6 +19,18 @@ struct DesktopBridgeCommandFacade<Transport: DesktopBridgeTransporting>: Desktop
         try await bridgeClient.importSource(locator: locator, selectedSkillIds: selectedSkillIds, enabledTargets: enabledTargets)
     }
 
+    func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await bridgeClient.createVirtualGroup(displayName: displayName, skills: skills, enabledTargets: enabledTargets)
+    }
+
+    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await bridgeClient.mergeGroups(displayName: displayName, sourceIds: sourceIds, enabledTargets: enabledTargets)
+    }
+
+    func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse {
+        try await bridgeClient.restoreMergedGroups(virtualGroupId: virtualGroupId)
+    }
+
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
         try await bridgeClient.renameSource(sourceId: sourceId, displayName: displayName)
     }

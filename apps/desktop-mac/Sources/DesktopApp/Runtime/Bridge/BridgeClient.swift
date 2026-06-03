@@ -117,6 +117,47 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
+    func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            let skillPayloads: [[String: Any]] = skills.map { skill in
+                [
+                    "sourceId": skill.sourceId,
+                    "leafId": skill.leafId,
+                ]
+            }
+            return try await self.send(
+                command: .createVirtualGroup,
+                payload: [
+                    "displayName": AnyCodable(displayName),
+                    "skills": AnyCodable(skillPayloads),
+                    "enabledTargets": AnyCodable(enabledTargets),
+                ]
+            )
+        }
+    }
+
+    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(
+                command: .mergeGroups,
+                payload: [
+                    "displayName": AnyCodable(displayName),
+                    "sourceIds": AnyCodable(sourceIds),
+                    "enabledTargets": AnyCodable(enabledTargets),
+                ]
+            )
+        }
+    }
+
+    func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(
+                command: .restoreMergedGroups,
+                payload: ["virtualGroupId": AnyCodable(virtualGroupId)]
+            )
+        }
+    }
+
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(
