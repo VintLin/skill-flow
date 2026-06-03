@@ -17,7 +17,7 @@ export class WorkflowService {
     return manifest.sources.map((source) => {
       const lock = lockFile.sources.find((item) => item.id === source.id);
       const bindings = manifest.bindings[source.id] ?? ({ targets: {} } satisfies SourceBinding);
-      const leafs = this.resolveSourceLeafs(source, bindings, lockFile);
+      const leafs = this.resolveSourceLeafs(source, bindings, lockFile, manifest);
       const activeTargetCount = Object.values(bindings.targets).filter(
         (binding) => binding?.enabled,
       ).length;
@@ -58,11 +58,13 @@ export class WorkflowService {
     source: Manifest["sources"][number],
     binding: SourceBinding,
     lockFile: LockFile,
+    manifest: Manifest,
   ): LeafRecord[] {
     if (source.kind !== "virtual") {
       return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
     }
 
+    const sourceTitlesById = new Map(manifest.sources.map((item) => [item.id, item.displayName]));
     const selectedLeafIds = [
       ...new Set([
         ...(binding.selectedLeafIds ?? []),
@@ -71,7 +73,14 @@ export class WorkflowService {
     ];
     return selectedLeafIds
       .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
-      .filter((leaf): leaf is LeafRecord => Boolean(leaf));
+      .filter((leaf): leaf is LeafRecord => Boolean(leaf))
+      .map((leaf) => {
+        const sourceTitle = sourceTitlesById.get(leaf.sourceId);
+        return {
+          ...leaf,
+          ...(sourceTitle ? { sourceTitle } : {}),
+        };
+      });
   }
 
   private resolveHealth(

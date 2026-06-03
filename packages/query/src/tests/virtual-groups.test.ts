@@ -485,6 +485,23 @@ describe.sequential("virtual groups", () => {
       return;
     }
     expect(listed.data.summaries.map((summary) => summary.source.id)).toEqual(["writing-stack"]);
+    const summary = listed.data.summaries[0];
+    expect(summary?.leafs.map((leaf) => ({
+      id: leaf.id,
+      sourceId: leaf.sourceId,
+      sourceTitle: leaf.sourceTitle,
+    }))).toEqual([
+      {
+        id: alphaLeafId,
+        sourceId: "alpha",
+        sourceTitle: manifest.sources.find((source) => source.id === "alpha")?.displayName,
+      },
+      {
+        id: betaLeafId,
+        sourceId: "beta",
+        sourceTitle: manifest.sources.find((source) => source.id === "beta")?.displayName,
+      },
+    ]);
   });
 
   test("restore merged groups re-shows source groups and deletes the virtual group", async () => {

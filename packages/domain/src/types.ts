@@ -213,6 +213,7 @@ export type LeafRecord = {
   skillFilePath: string;
   contentHash: string;
   metadataWarnings: string[];
+  sourceTitle?: string;
   valid: true;
 };
 
