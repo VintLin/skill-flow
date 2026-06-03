@@ -2,6 +2,28 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.3.11 - 2026-06-03
+
+### Added
+
+- Added a macOS Skill group editor entry in the home header for creating combined groups, merging existing groups, and restoring merged groups.
+- Added virtual Skill group support across storage, query runtime, CLI bridge commands, desktop bridge payloads, and deployment planning.
+- Added search inside the Skill group editor so users can filter by author, group, and skill names before selecting items.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.10` to `1.3.11`.
+- Changed the group editor to open immediately with a loading state while the available group and skill data is prepared.
+- Changed local and combined group author labels to use localized display names, including `本地` / `local` and `组合` / `combined`.
+- Changed merged group selection copy and rows so group authors are visible when similarly named Skill groups are listed.
+
+### Fixed
+
+- Fixed virtual Skill group display names so combined groups keep the user-entered group name instead of showing storage identifiers such as `virtual:skills-2`.
+- Fixed group editor tab switching so it reuses a prepared snapshot instead of recomputing group cards during each mode change.
+- Fixed editor layout spacing so the skill list can stretch before the footer actions instead of leaving excess empty space.
+- Fixed source and deployment synchronization for virtual groups so selected skills and targets are cleared and restored consistently.
+
 ## v1.3.10 - 2026-05-31
 
 ### Added
