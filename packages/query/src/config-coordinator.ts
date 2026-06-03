@@ -12,6 +12,7 @@ import type {
   SharedPreferences,
   SourceUpdateResult,
   WorkflowSummary,
+  VirtualGroupsState,
 } from "@skill-flow/domain/types";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
@@ -22,6 +23,7 @@ type ConfigCoordinatorDeps = {
     init(): Promise<void>;
     readManifest(): Promise<Manifest>;
     readPreferences(): Promise<SharedPreferences>;
+    readVirtualGroups(): Promise<VirtualGroupsState>;
     writePreferences(preferences: SharedPreferences): Promise<void>;
   };
   recentProjectService: {
@@ -35,6 +37,7 @@ type ConfigCoordinatorDeps = {
       manifest: Manifest,
       lockFile: LockFile,
       audit?: DoctorReport,
+      virtualGroups?: VirtualGroupsState,
     ): WorkflowSummary[];
   };
   getAvailableTargets(): Promise<DeploymentTargetId[]>;
@@ -110,10 +113,12 @@ export class ConfigCoordinator {
       level: "info",
       message: "Building config summaries...",
     });
+    const virtualGroups = await this.deps.store.readVirtualGroups();
     const summaries = this.deps.workflowService.getSummaries(
       configData.data.manifest,
       configData.data.lockFile,
       audit.data,
+      virtualGroups,
     );
     const bootStatus: ConfigBootStatus = {
       phase: "success",

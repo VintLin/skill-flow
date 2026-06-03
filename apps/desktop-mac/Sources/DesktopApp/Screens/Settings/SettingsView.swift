@@ -12,7 +12,6 @@ struct SettingsView: View {
 
     var theme: DesktopThemeMode = .light
     var detectedTargetIds: [String] = []
-    var onAddCustomAgent: () -> Void = {}
     var onEditCustomAgent: (String) -> Void = { _ in }
 
     private enum DropdownKind: Hashable {
@@ -178,9 +177,6 @@ struct SettingsView: View {
                 settingsSection(
                     title: t("settings.section.agent_display"),
                     description: t("settings.section.agent_display.description"),
-                    headerTrailing: {
-                        addCustomAgentButton
-                    },
                     rows: {
                         agentDisplayRows
                     }
@@ -616,28 +612,6 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .desktopMotionButton(kind: .primary, theme: theme, accent: currentAccent, isEnabled: true)
-    }
-
-    private var addCustomAgentButton: some View {
-        Button {
-            onAddCustomAgent()
-        } label: {
-            HStack(spacing: 6) {
-                actionIcon(.plus, size: 12)
-                Text(t("settings.action.add_custom_agent"))
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .foregroundStyle(AppTheme.brand(for: currentAccent, in: theme))
-            .padding(.horizontal, 10)
-            .frame(height: Self.actionControlHeight)
-            .background(Self.controlBackground(for: .pageBackground, theme: theme))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-            }
-        }
-        .buttonStyle(.plain)
     }
 
     private func settingsActionLoadingIndicator() -> some View {

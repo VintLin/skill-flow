@@ -42,6 +42,14 @@ final class ImportScreenContainer {
         return true
     }
 
+    var importPageMode: MainViewModel.ImportPageMode {
+        mainViewModel.importPageMode
+    }
+
+    func setImportPageMode(_ mode: MainViewModel.ImportPageMode) {
+        mainViewModel.importPageMode = mode
+    }
+
     func snapshot(locale: Locale) -> Snapshot? {
         guard isActive else {
             return nil
@@ -74,6 +82,7 @@ final class ImportScreenContainer {
     func importLocalDirectory(_ path: String) async {
         screenState.searchText = path
         await mainViewModel.loadLocalImportGroups(path: path)
+        mainViewModel.importPageMode = .localScan
     }
 
     func previewGroupsIfNeeded(_ groupIds: [String]) async {
@@ -87,12 +96,13 @@ final class ImportScreenContainer {
     }
 
     func importGroup(_ card: ImportViewModel.Card) async {
-        let draft = draft(for: card)
         let choice = selectedLocalChoice(for: card)
         let locator = choice?.locator ?? card.locator
-        let selectedSkillIds = choice?.selectedSkillIds.isEmpty == false
-            ? choice?.selectedSkillIds ?? draft.selectedSkillIds
-            : draft.selectedSkillIds
+        let selectedSkillIds = selectedSkillIdsForImport(for: card)
+        guard !selectedSkillIds.isEmpty || card.skills.isEmpty else {
+            return
+        }
+        let draft = draft(for: card)
 
         await mainViewModel.importImportGroup(
             groupId: card.id,
@@ -118,9 +128,20 @@ final class ImportScreenContainer {
     func draft(for card: ImportViewModel.Card) -> ImportDraftState {
         state.importState.draftsByItemId[card.id]
             ?? ImportDraftState(
-                selectedSkillIds: card.skills.map(\.id),
+                selectedSkillIds: card.skills.filter(\.selectedByDefault).map(\.id),
                 enabledTargetIds: []
             )
+    }
+
+    func selectedSkillIdsForImport(for card: ImportViewModel.Card) -> [String] {
+        let draft = draft(for: card)
+        guard let choice = selectedLocalChoice(for: card),
+              !choice.selectedSkillIds.isEmpty else {
+            return draft.selectedSkillIds
+        }
+
+        let draftSelected = Set(draft.selectedSkillIds)
+        return choice.selectedSkillIds.filter { draftSelected.contains($0) }
     }
 
     func selectedLocalChoice(for card: ImportViewModel.Card) -> MainViewModel.LocalImportChoice? {

@@ -5,6 +5,7 @@ import type {
   LockFile,
   Manifest,
   WorkflowSummary,
+  VirtualGroupsState,
 } from "@skill-flow/domain/types";
 import { ConfigCoordinator } from "../config-coordinator.js";
 
@@ -68,6 +69,11 @@ const audit: DoctorReport = {
   issues: [],
 };
 
+const emptyVirtualGroups: VirtualGroupsState = {
+  schemaVersion: 1,
+  groups: {},
+};
+
 const summaries: WorkflowSummary[] = [
   {
     source: manifest.sources[0]!,
@@ -118,6 +124,7 @@ describe("ConfigCoordinator", () => {
           .fn()
           .mockResolvedValueOnce(initialPreferences)
           .mockResolvedValueOnce(refreshedPreferences),
+        readVirtualGroups: vi.fn().mockResolvedValue(emptyVirtualGroups),
         writePreferences: vi.fn().mockResolvedValue(undefined),
       },
       recentProjectService: {
@@ -184,6 +191,7 @@ describe("ConfigCoordinator", () => {
         init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
         readPreferences: vi.fn().mockResolvedValue(preferences),
+        readVirtualGroups: vi.fn().mockResolvedValue(emptyVirtualGroups),
         writePreferences: vi.fn().mockResolvedValue(undefined),
       },
       recentProjectService: {
@@ -253,6 +261,7 @@ describe("ConfigCoordinator", () => {
         init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
         readPreferences: vi.fn().mockResolvedValue(preferences),
+        readVirtualGroups: vi.fn().mockResolvedValue(emptyVirtualGroups),
         writePreferences: vi.fn().mockResolvedValue(undefined),
       },
       recentProjectService: {

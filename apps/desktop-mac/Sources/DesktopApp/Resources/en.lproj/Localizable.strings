@@ -225,6 +225,7 @@
 "toast.import.exists" = "This group is already available locally.";
 "toast.import.success" = "Imported source.";
 "toast.import.local_scan_failed" = "Local scan failed: %@";
+"toast.import.local_already_scanned" = "This local skill is already in the scan list.";
 "toast.project_scope.switched" = "Switched to %@.";
 "toast.project_scope.initialized" = "Initialized project config for %@.";
 "toast.project_scope.refresh.loading" = "Refreshing projects...";
@@ -261,9 +262,15 @@
 "update.feedback.needs_review" = "Needs review";
 "update.feedback.updated" = "Updated";
 "update.feedback.up_to_date" = "Up to date";
+"import.mode.recommended" = "Recommended";
+"import.mode.local_scan" = "Local Scan";
 "import.local.button" = "Import Local";
 "import.local.button.help" = "Scan a local skill directory.";
 "import.local.panel.prompt" = "Import";
+"import.local.sources.title" = "Sources";
+"import.local.source.manual" = "Manual";
+"import.local.sources.more" = "%d more paths";
+"import.local.action.choose_version" = "Choose Version";
 "import.local.detected.title" = "Local detected";
 "import.local.detected.description" = "Skills found in local agent directories.";
 "import.local.status.matched" = "Local skill matches the origin group.";

@@ -315,12 +315,13 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertFalse(source.contains("homeSidebarRail"))
         XCTAssertTrue(source.contains("if isHomePage {"))
         XCTAssertTrue(source.contains("homeShell(layout: layout)"))
+        XCTAssertTrue(source.contains("nonHomeShell(layout: layout)"))
 
         guard
-            let bodyStart = source.range(of: "VStack(spacing: 0) {"),
+            let bodyStart = source.range(of: "Group {\n                    if isHomePage {"),
             let bodyEnd = source.range(of: "\n                if isEditCustomAgentPresented", range: bodyStart.upperBound..<source.endIndex)
         else {
-            XCTFail("Expected root body stack was not found")
+            XCTFail("Expected root route shell block was not found")
             return
         }
 
@@ -343,6 +344,45 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let shellSource = String(source[shellStart.lowerBound..<shellEnd.lowerBound])
 
         XCTAssertTrue(shellSource.contains(".ignoresSafeArea(.container, edges: .top)"))
+    }
+
+    func testNonHomeShellExtendsIntoHiddenTitlebarSafeArea() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let shellStart = source.range(of: "private func nonHomeShell(layout: LayoutMetrics) -> some View"),
+            let shellEnd = source.range(of: "\n    private var topBarTitleRow", range: shellStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected nonHomeShell block was not found")
+            return
+        }
+
+        let shellSource = String(source[shellStart.lowerBound..<shellEnd.lowerBound])
+
+        XCTAssertTrue(shellSource.contains("topBar(layout: layout)"))
+        XCTAssertTrue(shellSource.contains("pageContent(layout: layout)"))
+        XCTAssertTrue(shellSource.contains(".ignoresSafeArea(.container, edges: .top)"))
+    }
+
+    func testNonHomeHeaderReservesTrafficLightLeadingInset() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        guard
+            let topBarStart = source.range(of: "private func topBar(layout: LayoutMetrics) -> some View"),
+            let nonHomeBranchStart = source.range(of: "} else if isImportPage {", range: topBarStart.upperBound..<source.endIndex),
+            let topBarEnd = source.range(of: "\n        }\n    }\n\n    private func nonHomeShell", range: nonHomeBranchStart.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected non-home topBar branches were not found")
+            return
+        }
+
+        let nonHomeTopBarSource = String(source[nonHomeBranchStart.lowerBound..<topBarEnd.lowerBound])
+
+        XCTAssertTrue(source.contains("static let nonHomeHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset + homeCollapsedHeaderButtonGap"))
+        XCTAssertTrue(source.contains("static let nonHomeHeaderTrailingPadding: CGFloat = homeMainHeaderSidePadding"))
+        XCTAssertTrue(nonHomeTopBarSource.contains(".padding(.leading, Self.nonHomeHeaderLeadingPadding)"))
+        XCTAssertTrue(nonHomeTopBarSource.contains(".padding(.trailing, Self.nonHomeHeaderTrailingPadding)"))
+        XCTAssertFalse(nonHomeTopBarSource.contains(".padding(.horizontal, 16)"))
     }
 
     func testHomeShellDoesNotPlaceGlobalTapGestureOverHeaderControls() throws {

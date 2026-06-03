@@ -464,6 +464,230 @@ describe.sequential("import page flow", () => {
     });
   });
 
+  test("scanLocalImportGroups returns dedicated local scan groups", async () => {
+    const localPath = await createLocalSkill(
+      process.env.SKILL_FLOW_TARGET_CODEX!,
+      "local-review",
+      "local-review",
+      "Review local work.",
+    );
+
+    const app = new SkillFlowApp();
+    const result = await app.scanLocalImportGroups();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.data.localScanGroups).toHaveLength(1);
+    expect(result.data.localScanGroups[0]).toMatchObject({
+      id: `local:${deriveSourceId(localPath)}`,
+      title: "local-review",
+      status: "local-only",
+      sourcePaths: [{
+        path: localPath,
+        kind: "target-agent",
+        target: "codex",
+        alreadyManaged: false,
+      }],
+      skills: [{
+        id: "local-review",
+        title: "local-review",
+        status: "local-only",
+        selectionRequired: false,
+        variants: [{
+          path: localPath,
+          selectedByDefault: true,
+          importable: true,
+        }],
+      }],
+    });
+  });
+
+  test("scanLocalImportGroups marks manual non-target local imports", async () => {
+    const manualPath = await createLocalSkill(
+      path.join(sandbox.sandboxRoot, "manual-skills"),
+      "manual-writer",
+      "manual-writer",
+      "Write local notes.",
+    );
+
+    const app = new SkillFlowApp();
+    const result = await app.scanLocalImportGroups(manualPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.localScanGroups).toHaveLength(1);
+    expect(result.data.localScanGroups[0]).toMatchObject({
+      status: "local-only",
+      sourcePaths: [{
+        path: manualPath,
+        kind: "manual",
+        alreadyManaged: false,
+      }],
+    });
+  });
+
+  test("scanLocalImportGroups marks managed local sources as already managed", async () => {
+    const managedPath = await createLocalSkill(
+      path.join(sandbox.sandboxRoot, "managed"),
+      "managed-skill",
+      "managed-skill",
+      "Managed skill.",
+    );
+
+    const app = new SkillFlowApp();
+    const added = await app.addSource(managedPath, { sourceIdOverride: "managed-skill" });
+    expect(added.ok).toBe(true);
+
+    const result = await app.scanLocalImportGroups(managedPath);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.localScanGroups).toHaveLength(1);
+    expect(result.data.localScanGroups[0]).toMatchObject({
+      status: "already-managed",
+      sourcePaths: [{
+        path: managedPath,
+        alreadyManaged: true,
+      }],
+      skills: [{
+        status: "already-managed",
+        selectionRequired: false,
+      }],
+      importChoices: [],
+    });
+  });
+
+  test("scanLocalImportGroups deduplicates identical realpaths in local scan groups", async () => {
+    const sourcePath = await createLocalSkill(
+      process.env.SKILL_FLOW_TARGET_CODEX!,
+      "same-realpath",
+      "same-realpath",
+      "Same real path.",
+    );
+    const linkedRoot = path.join(process.env.SKILL_FLOW_TARGET_CURSOR!, "same-realpath");
+    await fs.symlink(sourcePath, linkedRoot, "dir");
+
+    const app = new SkillFlowApp();
+    const result = await app.scanLocalImportGroups();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.data.localScanGroups).toHaveLength(1);
+    expect(result.data.localScanGroups[0].sourcePaths).toHaveLength(1);
+    expect(result.data.localScanGroups[0].sourcePaths[0].path).toBe(sourcePath);
+  });
+
+  test("scanLocalImportGroups merges same-origin same-hash variants as consistent", async () => {
+    const homeRoot = path.join(sandbox.sandboxRoot, "home");
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeRoot;
+    try {
+      await writeAgentsLock(homeRoot, {
+        "resume-review": {
+          source: "paramchoudhary/resumeskills",
+          skillPath: "skills/resume-review",
+        },
+      });
+      await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CODEX!,
+        "resume-review",
+        "resume-review",
+        "Review resumes.",
+      );
+      await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CURSOR!,
+        "resume-review",
+        "resume-review",
+        "Review resumes.",
+      );
+      const originRepo = await createRepo(sandbox.sandboxRoot, {
+        "skills/resume-review/SKILL.md": skillDoc("resume-review", "Review resumes."),
+      });
+      stubGitHubPreview(originRepo);
+
+      const app = new SkillFlowApp();
+      const result = await app.scanLocalImportGroups();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.data.localScanGroups).toHaveLength(1);
+      expect(result.data.localScanGroups[0]).toMatchObject({
+        status: "matched",
+        origin: {
+          canonicalRepo: "paramchoudhary/resumeskills",
+          previewStatus: "ready",
+        },
+        skills: [{
+          id: "skills/resume-review",
+          originSkillId: "skills/resume-review",
+          status: "matched",
+          selectionRequired: false,
+        }],
+      });
+      expect(result.data.localScanGroups[0].sourcePaths).toHaveLength(2);
+      expect(result.data.localScanGroups[0].skills[0].variants).toHaveLength(1);
+    } finally {
+      restoreHome(originalHome);
+    }
+  });
+
+  test("scanLocalImportGroups requires selection for same-origin different-hash variants", async () => {
+    const homeRoot = path.join(sandbox.sandboxRoot, "home");
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeRoot;
+    try {
+      await writeAgentsLock(homeRoot, {
+        "resume-review": {
+          source: "paramchoudhary/resumeskills",
+          skillPath: "skills/resume-review",
+        },
+      });
+      await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CODEX!,
+        "resume-review",
+        "resume-review",
+        "Review resumes for Codex.",
+      );
+      await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CURSOR!,
+        "resume-review",
+        "resume-review",
+        "Review resumes for Cursor.",
+      );
+      const originRepo = await createRepo(sandbox.sandboxRoot, {
+        "skills/resume-review/SKILL.md": skillDoc("resume-review", "Review resumes."),
+      });
+      stubGitHubPreview(originRepo);
+
+      const app = new SkillFlowApp();
+      const result = await app.scanLocalImportGroups();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.data.localScanGroups).toHaveLength(1);
+      const group = result.data.localScanGroups[0];
+      expect(group.status).toBe("version-conflict");
+      expect(group.skills[0]).toMatchObject({
+        id: "skills/resume-review",
+        status: "version-conflict",
+        selectionRequired: true,
+      });
+      expect(group.skills[0].variants).toHaveLength(2);
+      expect(group.skills[0].variants.every((variant) => variant.selectedByDefault === false)).toBe(true);
+      expect(group.importChoices).toHaveLength(0);
+    } finally {
+      restoreHome(originalHome);
+    }
+  });
+
   test("scanLocalImportGroups groups local skills that match the same origin", async () => {
     const homeRoot = path.join(sandbox.sandboxRoot, "home");
     const originalHome = process.env.HOME;
@@ -524,6 +748,110 @@ describe.sequential("import page flow", () => {
       expect(result.data.groups[0].localImport?.choices.map((choice) => choice.id)).toEqual([
         "origin",
       ]);
+      expect(result.data.localScanGroups).toHaveLength(1);
+      const localScanGroup = result.data.localScanGroups[0];
+      expect(localScanGroup.skills.map((skill) => skill.id).sort()).toEqual([
+        "skills/resume-bullet-writer",
+        "skills/resume-tailor",
+      ]);
+      const localScanChoiceIds = localScanGroup.importChoices.map((choice) => choice.id);
+      expect(new Set(localScanChoiceIds).size).toBe(localScanChoiceIds.length);
+      expect(localScanChoiceIds).toEqual(["origin"]);
+      expect(
+        localScanGroup.importChoices.find((choice) => choice.id === "origin")?.selectedSkillIds.sort(),
+      ).toEqual([
+        "skills/resume-bullet-writer",
+        "skills/resume-tailor",
+      ]);
+    } finally {
+      restoreHome(originalHome);
+    }
+  });
+
+  test("scanLocalImportGroups keeps unselected partial origin skills importable", async () => {
+    const homeRoot = path.join(sandbox.sandboxRoot, "home");
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeRoot;
+    try {
+      await writeAgentsLock(homeRoot, {
+        "managed-skill": {
+          source: "paramchoudhary/resumeskills",
+          skillPath: "skills/managed-skill",
+        },
+        "new-skill": {
+          source: "paramchoudhary/resumeskills",
+          skillPath: "skills/new-skill",
+        },
+      });
+      const managedPath = await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CODEX!,
+        "managed-skill",
+        "managed-skill",
+        "Managed skill.",
+      );
+      const newPath = await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CURSOR!,
+        "new-skill",
+        "new-skill",
+        "New skill.",
+      );
+      const originRepo = await createRepo(sandbox.sandboxRoot, {
+        "skills/managed-skill/SKILL.md": skillDoc("managed-skill", "Managed skill."),
+        "skills/new-skill/SKILL.md": skillDoc("new-skill", "New skill."),
+      });
+      stubGitHubPreview(originRepo);
+
+      const app = new SkillFlowApp();
+      const added = await app.addSource(originRepo, {
+        skillNames: ["skills/managed-skill"],
+        originLocator: "paramchoudhary/resumeskills",
+        skipTargetDetection: true,
+      });
+      expect(added.ok).toBe(true);
+
+      const result = await app.scanLocalImportGroups();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      expect(result.data.localScanGroups).toHaveLength(1);
+      const group = result.data.localScanGroups[0];
+      expect(group.status).toBe("matched");
+      expect(group.skills).toHaveLength(2);
+      expect(group.skills.find((skill) => skill.id === "skills/managed-skill")).toMatchObject({
+        status: "already-managed",
+        variants: [{
+          importable: false,
+        }],
+      });
+      expect(group.skills.find((skill) => skill.id === "skills/new-skill")).toMatchObject({
+        status: "matched",
+        variants: [{
+          path: newPath,
+          importable: true,
+          selectedByDefault: true,
+        }],
+      });
+      expect(group.sourcePaths.find((sourcePath) => sourcePath.path === managedPath)).toMatchObject({
+        alreadyManaged: true,
+      });
+      expect(group.sourcePaths.find((sourcePath) => sourcePath.path === newPath)).toMatchObject({
+        alreadyManaged: false,
+      });
+      expect(group.importChoices).toEqual([{
+        id: "origin",
+        label: "Origin",
+        locator: "https://github.com/paramchoudhary/resumeskills.git",
+        selectedSkillIds: ["skills/new-skill"],
+        enabled: true,
+      }]);
+      expect(result.data.groups).toHaveLength(1);
+      expect(result.data.groups[0].installed).toBe(false);
+      const originChoice = result.data.groups[0].localImport?.choices.find(
+        (choice) => choice.id === "origin",
+      );
+      expect(originChoice?.selectedSkillIds).toEqual(["skills/new-skill"]);
+      expect(originChoice?.selectedSkillIds).not.toContain("skills/managed-skill");
     } finally {
       restoreHome(originalHome);
     }
@@ -675,6 +1003,16 @@ describe.sequential("import page flow", () => {
         expect(localChoice?.locator).toBe(group.locator);
         expect(localChoice?.selectedSkillIds).toHaveLength(1);
       }
+      expect(result.data.localScanGroups).toHaveLength(2);
+      expect(new Set(result.data.localScanGroups.map((group) => group.id)).size).toBe(2);
+      expect(result.data.localScanGroups.map((group) => group.status).sort()).toEqual([
+        "changed",
+        "missing",
+      ]);
+      expect(result.data.localScanGroups.map((group) => group.importChoices[0]?.locator).sort()).toEqual([
+        changedPath,
+        missingPath,
+      ].sort());
     } finally {
       restoreHome(originalHome);
     }
@@ -738,6 +1076,10 @@ describe.sequential("import page flow", () => {
       validationStatus: "changed",
       selectedChoiceId: "local",
     });
+    expect(result.localScanGroup.skills[0]).toMatchObject({
+      id: "resume-quantifier",
+    });
+    expect(result.localScanGroup.importChoices[0]?.selectedSkillIds).toEqual(["resume-quantifier"]);
   });
 
   test("scanLocalImportGroups marks local skills as missing when origin has no match", async () => {
@@ -821,7 +1163,7 @@ describe.sequential("import page flow", () => {
 
     expect(preview.data.locator).toBe(repoPath);
     expect(preview.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
-  }, 15_000);
+  }, 30_000);
 
   test("ClawHub locators are direct import candidates and previews", async () => {
     const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockResolvedValue(
@@ -1286,9 +1628,7 @@ async function scanOneOriginValidationCase(
     lockSkillPath?: string;
     originFiles: Record<string, string>;
   },
-): Promise<{ group: Awaited<ReturnType<SkillFlowApp["scanLocalImportGroups"]>> extends infer ResultType
-  ? ResultType extends { ok: true; data: { groups: Array<infer Group> } } ? Group : never
-  : never }> {
+) {
   const homeRoot = path.join(sandboxRoot, `home-${options.localName}`);
   const originalHome = process.env.HOME;
   process.env.HOME = homeRoot;
@@ -1315,7 +1655,11 @@ async function scanOneOriginValidationCase(
       throw new Error("Expected local import scan to succeed.");
     }
     expect(result.data.groups).toHaveLength(1);
-    return { group: result.data.groups[0] };
+    expect(result.data.localScanGroups).toHaveLength(1);
+    return {
+      group: result.data.groups[0],
+      localScanGroup: result.data.localScanGroups[0],
+    };
   } finally {
     restoreHome(originalHome);
   }

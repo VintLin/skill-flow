@@ -180,9 +180,13 @@ final class DesktopLocalizationTests: XCTestCase {
 
     func testImportLocalKeysExistInAllSupportedLocales() {
         let requiredKeys = [
+            "import.mode.recommended",
+            "import.mode.local_scan",
             "import.local.button",
             "import.local.button.help",
             "import.local.panel.prompt",
+            "import.local.sources.title",
+            "import.local.source.manual",
             "import.local.detected.title",
             "import.local.detected.description",
             "import.local.status.matched",
@@ -191,6 +195,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "import.local.status.ambiguous",
             "import.local.status.origin_unavailable",
             "import.local.status.local_only",
+            "import.local.action.choose_version",
             "import.error.scan_local",
         ]
         let locales = [
@@ -209,6 +214,11 @@ final class DesktopLocalizationTests: XCTestCase {
             let toastValue = L10n.string(toastKey, locale: locale, arguments: ["boom"])
             XCTAssertNotEqual(toastValue, toastKey, "Missing localization for \(toastKey) in \(locale.identifier)")
             XCTAssertTrue(toastValue.contains("boom"), "Missing scan error argument in \(locale.identifier)")
+
+            let morePathsKey = "import.local.sources.more"
+            let morePathsValue = L10n.string(morePathsKey, locale: locale, arguments: [2])
+            XCTAssertNotEqual(morePathsValue, morePathsKey, "Missing localization for \(morePathsKey) in \(locale.identifier)")
+            XCTAssertTrue(morePathsValue.contains("2"), "Missing source path count in \(locale.identifier)")
         }
     }
 

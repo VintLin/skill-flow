@@ -43,14 +43,17 @@ final class SettingsViewTests: XCTestCase {
         XCTAssertEqual(SettingsView.actionControlHeight, 32)
     }
 
-    func testSettingsUsesSingleAgentsSectionWithInlineCustomAgentAction() throws {
-        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+    func testSettingsUsesSingleAgentsSectionAndMainHeaderCustomAgentAction() throws {
+        let settingsSource = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+        let mainSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
-        XCTAssertTrue(source.contains("settings.section.agent_display"))
-        XCTAssertTrue(source.contains("settings.action.add_custom_agent"))
-        XCTAssertTrue(source.contains("EditCustomAgentSheet"))
-        XCTAssertFalse(source.contains("ManageAgentsSheet"))
-        XCTAssertFalse(source.contains("settings.section.custom_agents"))
+        XCTAssertTrue(settingsSource.contains("settings.section.agent_display"))
+        XCTAssertTrue(mainSource.contains("settingsHeaderActions"))
+        XCTAssertTrue(mainSource.contains("settings.action.add_custom_agent"))
+        XCTAssertTrue(mainSource.contains("EditCustomAgentSheet"))
+        XCTAssertFalse(settingsSource.contains("settings.action.add_custom_agent"))
+        XCTAssertFalse(settingsSource.contains("ManageAgentsSheet"))
+        XCTAssertFalse(settingsSource.contains("settings.section.custom_agents"))
     }
 
     func testAgentDisplayOnlyShowsInlineCustomEditActions() throws {
@@ -105,10 +108,10 @@ final class SettingsViewTests: XCTestCase {
         XCTAssertFalse(source.contains(".sheet(item: $activeSheet)"))
     }
 
-    func testAgentDisplaySectionKeepsDirectAddButtonWithIcon() throws {
-        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+    func testSettingsHeaderKeepsDirectAddButtonWithIcon() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
-        XCTAssertTrue(source.contains("actionIcon(.plus, size: 12)"))
+        XCTAssertTrue(source.contains("actionIcon(.plus, size: 13)"))
         XCTAssertTrue(source.contains("settings.action.add_custom_agent"))
         XCTAssertFalse(source.contains("settings.manage_agents.title"))
     }

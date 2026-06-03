@@ -252,6 +252,71 @@ describe.sequential("virtual groups", () => {
     expect(plannedLeafIds).toEqual([...leafIds].sort());
   });
 
+  test("bootstraps virtual group leafs and display name from virtual group state when manifest is stale", async () => {
+    const writingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/drafting/SKILL.md": skillDoc("drafting", "Draft writing."),
+    });
+    const editingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/revision/SKILL.md": skillDoc("revision", "Revise writing."),
+    });
+    const app = new SkillFlowApp();
+    const writing = await app.addSource(writingRepo, {
+      sourceIdOverride: "writing-source",
+      project: false,
+    });
+    const editing = await app.addSource(editingRepo, {
+      sourceIdOverride: "editing-source",
+      project: false,
+    });
+    expect(writing.ok).toBe(true);
+    expect(editing.ok).toBe(true);
+    if (!writing.ok || !editing.ok) {
+      return;
+    }
+
+    const leafIds = [
+      "writing-source:skills/drafting",
+      "editing-source:skills/revision",
+    ];
+    const created = await app.createVirtualGroup({
+      displayName: "Writing Stack",
+      skills: [
+        { sourceId: "writing-source", leafId: leafIds[0]! },
+        { sourceId: "editing-source", leafId: leafIds[1]! },
+      ],
+      enabledTargets: [],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const { manifest, lockFile } = await app.store.readState();
+    const source = manifest.sources.find((item) => item.id === "writing-stack");
+    expect(source).toBeDefined();
+    if (!source) {
+      return;
+    }
+    source.displayName = "virtual:writing-stack";
+    source.originalDisplayName = "virtual:writing-stack";
+    manifest.bindings["writing-stack"] = {
+      selectedLeafIds: [],
+      targets: {},
+    };
+    await app.store.writeState(manifest, lockFile);
+
+    const bootstrapped = await app.bootstrapWorkspaceState();
+    expect(bootstrapped.ok).toBe(true);
+    if (!bootstrapped.ok) {
+      return;
+    }
+
+    const summary = bootstrapped.data.summaries.find((item) => item.source.id === "writing-stack");
+    expect(summary?.source.displayName).toBe("Writing Stack");
+    expect(summary?.source.originalDisplayName).toBe("Writing Stack");
+    expect(summary?.leafs.map((leaf) => leaf.id)).toEqual(leafIds);
+  });
+
   test("keeps disabled virtual group skills visible in summaries and inspect", async () => {
     const writingRepo = await createRepo(sandbox.sandboxRoot, {
       "skills/drafting/SKILL.md": skillDoc("drafting", "Draft writing."),

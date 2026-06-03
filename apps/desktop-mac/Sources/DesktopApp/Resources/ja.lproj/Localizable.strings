@@ -225,6 +225,7 @@
 "toast.import.exists" = "この Group はすでにローカルに存在します。";
 "toast.import.success" = "ソースをインポートしました。";
 "toast.import.local_scan_failed" = "ローカルスキャンに失敗しました：%@";
+"toast.import.local_already_scanned" = "このローカル Skill はすでにスキャン一覧にあります。";
 "toast.project_scope.switched" = "%@ に切り替えました。";
 "toast.project_scope.initialized" = "%@ のプロジェクト設定を初期化しました。";
 "toast.project_scope.refresh.loading" = "プロジェクト一覧を更新中...";
@@ -261,9 +262,15 @@
 "update.feedback.needs_review" = "要確認";
 "update.feedback.updated" = "更新済み";
 "update.feedback.up_to_date" = "最新";
+"import.mode.recommended" = "おすすめ";
+"import.mode.local_scan" = "ローカルスキャン";
 "import.local.button" = "ローカルをインポート";
 "import.local.button.help" = "ローカル Skill ディレクトリをスキャンします。";
 "import.local.panel.prompt" = "インポート";
+"import.local.sources.title" = "ソース";
+"import.local.source.manual" = "手動";
+"import.local.sources.more" = "他 %d 件のパス";
+"import.local.action.choose_version" = "バージョンを選択";
 "import.local.detected.title" = "検出されたローカル";
 "import.local.detected.description" = "ローカル Agent ディレクトリで見つかった Skill。";
 "import.local.status.matched" = "ローカル Skill は元の Group と一致しています。";

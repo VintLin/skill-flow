@@ -574,6 +574,11 @@ final class MainViewModel {
         case failed(PresentationText)
     }
 
+    enum ImportPageMode: String, Equatable {
+        case recommended
+        case localScan
+    }
+
     struct ImportGroupSkill: Identifiable, Equatable {
         let id: String
         let title: String
@@ -852,6 +857,7 @@ final class MainViewModel {
     var searchQuery: String = ""
     var importSubmittedQuery: String = ""
     var importSearchPhase: ImportLoadPhase = .idle
+    var importPageMode: ImportPageMode = .recommended
     var recommendedImportGroups: [ImportGroupItem] = []
     var localImportGroups: [ImportGroupItem] = []
     var localImportScanPhase: ImportLoadPhase = .idle
@@ -2091,7 +2097,16 @@ final class MainViewModel {
     }
 
     var importDisplayGroups: [ImportGroupItem] {
-        importSubmittedQuery.isEmpty ? recommendedImportGroups + localImportGroups : searchImportGroups
+        if !importSubmittedQuery.isEmpty {
+            return searchImportGroups
+        }
+
+        switch importPageMode {
+        case .recommended:
+            return recommendedImportGroups
+        case .localScan:
+            return localImportGroups
+        }
     }
 
     func isImportingImportGroup(_ groupId: String) -> Bool {
@@ -2121,7 +2136,8 @@ final class MainViewModel {
         do {
             let response = try await queryFacade.scanLocalImportGroups(path: path)
             let payload = response.data?.value as? [String: Any] ?? [:]
-            let groups = parseImportGroupsPayload(payload: payload)
+            let localScanGroups = parseLocalScanGroupsPayload(payload: payload)
+            let groups = localScanGroups.isEmpty ? parseImportGroupsPayload(payload: payload) : localScanGroups
 
             if path == nil {
                 localImportGroups = groups
@@ -2129,6 +2145,12 @@ final class MainViewModel {
                 var merged = localImportGroups
                 for group in groups {
                     if let index = merged.firstIndex(where: { $0.id == group.id }) {
+                        let incomingPaths = localImportPaths(for: group)
+                        let existingPaths = localImportPaths(for: merged[index])
+                        if !incomingPaths.isDisjoint(with: existingPaths) {
+                            showToast(style: .neutral, text: localizedText("toast.import.local_already_scanned"))
+                            continue
+                        }
                         merged[index] = group
                     } else {
                         merged.append(group)
@@ -2142,6 +2164,14 @@ final class MainViewModel {
             localImportScanPhase = .failed(.plain(error.localizedDescription))
             showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
         }
+    }
+
+    private func localImportPaths(for group: ImportGroupItem) -> Set<String> {
+        let paths = group.localImport?.detectedSkills.map(\.localPath) ?? []
+        if paths.isEmpty {
+            return [group.locator]
+        }
+        return Set(paths)
     }
 
     func submitImportSearch(_ query: String) async {
@@ -2239,6 +2269,181 @@ final class MainViewModel {
 
     func showImportAlreadyExistsToast() {
         showToast(style: .neutral, text: localizedText("toast.import.exists"))
+    }
+
+    private func parseLocalScanGroupsPayload(payload: [String: Any]) -> [ImportGroupItem] {
+        let groups = payload["localScanGroups"] as? [[String: Any]] ?? []
+        return groups.compactMap { group in
+            guard let id = (group["id"] as? String)?.nonEmpty,
+                  let title = (group["title"] as? String)?.nonEmpty,
+                  let status = (group["status"] as? String)?.nonEmpty
+            else {
+                return nil
+            }
+
+            let origin = group["origin"] as? [String: Any]
+            let canonicalRepo = (origin?["canonicalRepo"] as? String)?.nonEmpty ?? id
+            let sourcePaths = group["sourcePaths"] as? [[String: Any]] ?? []
+            let skillsPayload = group["skills"] as? [[String: Any]] ?? []
+            let enabledChoicesPayload = (group["importChoices"] as? [[String: Any]] ?? [])
+                .filter { $0["enabled"] as? Bool ?? false }
+            let choices = parseLocalScanImportChoices(enabledChoicesPayload)
+            let selectionRequired = skillsPayload.contains { $0["selectionRequired"] as? Bool ?? false }
+            let selectedChoiceId = status == "version-conflict"
+                ? nil
+                : (choices.count == 1 && !selectionRequired ? choices[0].id : nil)
+            let groupSkills = parseLocalScanGroupSkills(skillsPayload, groupStatus: status)
+            let matchedSkills = groupSkills.map { skill in
+                ImportMatchedSkill(skillId: skill.id, title: skill.title, installs: nil)
+            }
+            let allSourcePathsAlreadyManaged = !sourcePaths.isEmpty
+                && sourcePaths.allSatisfy { $0["alreadyManaged"] as? Bool ?? false }
+            let isInstalledLocally = status == "version-conflict"
+                ? false
+                : (status == "already-managed" || allSourcePathsAlreadyManaged)
+
+            return ImportGroupItem(
+                id: id,
+                title: title,
+                locator: choices.first?.locator
+                    ?? sourcePaths.compactMap { ($0["path"] as? String)?.nonEmpty }.first
+                    ?? id,
+                canonicalRepo: canonicalRepo,
+                isInstalledLocally: isInstalledLocally,
+                aliases: uniqueSorted([canonicalRepo, id]),
+                summary: "",
+                starCount: nil,
+                totalInstalls: nil,
+                skillCount: groupSkills.isEmpty ? nil : groupSkills.count,
+                matchedSkillNames: uniqueSorted(groupSkills.map(\.title)),
+                matchedSkills: matchedSkills,
+                provider: origin == nil ? "local" : "skills",
+                localImport: LocalImportInfo(
+                    validationStatus: status,
+                    selectedChoiceId: selectedChoiceId,
+                    choices: choices,
+                    detectedSkills: parseLocalScanDetectedSkills(
+                        groupStatus: status,
+                        skills: skillsPayload,
+                        sourcePaths: sourcePaths
+                    )
+                ),
+                snapshot: nil,
+                enrichPhase: .ready,
+                previewPhase: .ready,
+                skills: groupSkills,
+                targets: []
+            )
+        }
+    }
+
+    private func parseLocalScanImportChoices(_ payload: [[String: Any]]) -> [LocalImportChoice] {
+        payload.compactMap { choice in
+            guard let id = (choice["id"] as? String)?.nonEmpty,
+                  let label = (choice["label"] as? String)?.nonEmpty,
+                  let locator = (choice["locator"] as? String)?.nonEmpty else {
+                return nil
+            }
+
+            return LocalImportChoice(
+                id: id,
+                label: label,
+                locator: locator,
+                selectedSkillIds: choice["selectedSkillIds"] as? [String] ?? []
+            )
+        }
+    }
+
+    private func parseLocalScanDetectedSkills(
+        groupStatus: String,
+        skills: [[String: Any]],
+        sourcePaths: [[String: Any]]
+    ) -> [LocalImportDetectedSkill] {
+        var detectedSkills: [LocalImportDetectedSkill] = []
+        var seenPaths = Set<String>()
+
+        for sourcePath in sourcePaths {
+            guard let path = (sourcePath["path"] as? String)?.nonEmpty else {
+                continue
+            }
+            let skill = localScanSkillPayload(forPath: path, skills: skills)
+            detectedSkills.append(makeLocalScanDetectedSkill(
+                path: path,
+                sourcePath: sourcePath,
+                skill: skill,
+                groupStatus: groupStatus
+            ))
+            seenPaths.insert(path)
+        }
+
+        for skill in skills {
+            for variant in skill["variants"] as? [[String: Any]] ?? [] {
+                guard let path = (variant["path"] as? String)?.nonEmpty,
+                      !seenPaths.contains(path) else {
+                    continue
+                }
+                detectedSkills.append(makeLocalScanDetectedSkill(
+                    path: path,
+                    sourcePath: nil,
+                    skill: skill,
+                    groupStatus: groupStatus
+                ))
+                seenPaths.insert(path)
+            }
+        }
+
+        return detectedSkills
+    }
+
+    private func localScanSkillPayload(forPath path: String, skills: [[String: Any]]) -> [String: Any]? {
+        skills.first { skill in
+            let variants = skill["variants"] as? [[String: Any]] ?? []
+            return variants.contains { ($0["path"] as? String)?.nonEmpty == path }
+        } ?? skills.first
+    }
+
+    private func makeLocalScanDetectedSkill(
+        path: String,
+        sourcePath: [String: Any]?,
+        skill: [String: Any]?,
+        groupStatus: String
+    ) -> LocalImportDetectedSkill {
+        let skillId = (skill?["id"] as? String)?.nonEmpty
+            ?? URL(fileURLWithPath: path).lastPathComponent.nonEmpty
+            ?? path
+        let title = (skill?["title"] as? String)?.nonEmpty ?? skillId
+        let status = (skill?["status"] as? String)?.nonEmpty ?? groupStatus
+        let target = (sourcePath?["target"] as? String)?.nonEmpty
+
+        return LocalImportDetectedSkill(
+            id: "\(skillId):\(path)",
+            title: title,
+            localPath: path,
+            discoveredTargets: target.map { [$0] } ?? [],
+            validationStatus: status,
+            originSkillId: (skill?["originSkillId"] as? String)?.nonEmpty
+        )
+    }
+
+    private func parseLocalScanGroupSkills(
+        _ payload: [[String: Any]],
+        groupStatus: String
+    ) -> [ImportGroupSkill] {
+        payload.compactMap { skill in
+            guard let id = (skill["id"] as? String)?.nonEmpty,
+                  let title = (skill["title"] as? String)?.nonEmpty else {
+                return nil
+            }
+
+            let status = (skill["status"] as? String)?.nonEmpty ?? groupStatus
+            let selectionRequired = skill["selectionRequired"] as? Bool ?? false
+            return ImportGroupSkill(
+                id: id,
+                title: title,
+                summary: "",
+                selectedByDefault: !selectionRequired && status != "already-managed"
+            )
+        }
     }
 
     private func parseImportGroupsPayload(payload: [String: Any]) -> [ImportGroupItem] {

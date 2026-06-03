@@ -174,7 +174,10 @@ struct ImportScreen: View {
                 },
                 actionButtonTitle: Self.importActionTitle(for: card, localized: { key in t(key) }),
                 actionButtonIcon: ActionIcon.import,
-                isActionButtonDisabled: Self.importActionIsDisabled(for: card),
+                isActionButtonDisabled: Self.importActionIsDisabled(
+                    for: card,
+                    selectedSkillIds: container.selectedSkillIdsForImport(for: card)
+                ),
                 onActionButton: {
                     Task {
                         await container.handleImportAction(for: card)
@@ -194,6 +197,10 @@ struct ImportScreen: View {
             if card.localValidationStatus != nil, !card.localChoices.isEmpty {
                 localChoiceControl(for: card)
             }
+
+            if !card.localSourcePaths.isEmpty {
+                localSourcePathsView(for: card)
+            }
         }
     }
 
@@ -211,6 +218,32 @@ struct ImportScreen: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private func localSourcePathsView(for card: ImportViewModel.Card) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(t("import.local.sources.title"))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+            ForEach(card.localSourcePaths.prefix(3)) { sourcePath in
+                HStack(spacing: 6) {
+                    Text(sourcePath.targetLabel ?? t("import.local.source.manual"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                    Text(sourcePath.path)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            if card.localSourcePaths.count > 3 {
+                Text(t("import.local.sources.more", card.localSourcePaths.count - 3))
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+            }
         }
         .padding(.horizontal, 2)
     }
@@ -301,18 +334,27 @@ struct ImportScreen: View {
         }
     }
 
-    static func importActionIsDisabled(for card: ImportViewModel.Card) -> Bool {
+    static func importActionIsDisabled(
+        for card: ImportViewModel.Card,
+        draft: ImportDraftState? = nil,
+        selectedSkillIds: [String]? = nil
+    ) -> Bool {
         card.isInstalledLocally
+            || card.requiresLocalVariantSelection
+            || ((selectedSkillIds ?? draft?.selectedSkillIds)?.isEmpty == true && !card.skills.isEmpty)
     }
 
     static func importActionTitle(
         for card: ImportViewModel.Card,
         localized: (String) -> String
     ) -> String? {
-        guard card.isInstalledLocally else {
-            return nil
+        if card.isInstalledLocally {
+            return localized("group_card.action.installed")
         }
-        return localized("group_card.action.installed")
+        if card.requiresLocalVariantSelection {
+            return localized("import.local.action.choose_version")
+        }
+        return nil
     }
 
     static func localValidationStatusTextKey(for status: String?) -> String {

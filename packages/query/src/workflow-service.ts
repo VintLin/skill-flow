@@ -20,6 +20,7 @@ export class WorkflowService {
       const lock = lockFile.sources.find((item) => item.id === source.id);
       const bindings = manifest.bindings[source.id] ?? ({ targets: {} } satisfies SourceBinding);
       const leafs = this.resolveSourceLeafs(source, bindings, lockFile, manifest, virtualGroups);
+      const summarySource = this.resolveSummarySource(source, virtualGroups);
       const activeTargetCount = Object.values(bindings.targets).filter(
         (binding) => binding?.enabled,
       ).length;
@@ -33,7 +34,7 @@ export class WorkflowService {
       };
 
       return {
-        source,
+        source: summarySource,
         lock,
         leafs,
         bindings,
@@ -54,6 +55,24 @@ export class WorkflowService {
             : {}),
       };
     });
+  }
+
+  private resolveSummarySource(
+    source: Manifest["sources"][number],
+    virtualGroups?: VirtualGroupsState,
+  ): Manifest["sources"][number] {
+    if (source.kind !== "virtual") {
+      return source;
+    }
+    const displayName = virtualGroups?.groups[source.id]?.displayName.trim();
+    if (!displayName) {
+      return source;
+    }
+    return {
+      ...source,
+      displayName,
+      originalDisplayName: displayName,
+    };
   }
 
   private resolveSourceLeafs(

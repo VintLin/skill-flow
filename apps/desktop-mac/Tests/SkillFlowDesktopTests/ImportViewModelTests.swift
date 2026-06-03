@@ -202,6 +202,87 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertEqual(sections[0].cards[0].localChoices.map(\.id), ["local-choice"])
     }
 
+    func testLocalScanCardExposesSourcePathsAndVersionConflict() {
+        let item = makeItem(
+            id: "local-conflict",
+            title: "Local Conflict",
+            locator: "/Users/me/skills/conflict-a",
+            canonicalRepo: "local:conflict",
+            provider: "local",
+            localImport: .init(
+                validationStatus: "version-conflict",
+                selectedChoiceId: nil,
+                choices: [],
+                detectedSkills: [
+                    .init(
+                        id: "conflict",
+                        title: "Conflict",
+                        localPath: "/Users/me/skills/conflict-a",
+                        discoveredTargets: ["codex"],
+                        validationStatus: "version-conflict",
+                        originSkillId: nil
+                    ),
+                    .init(
+                        id: "conflict",
+                        title: "Conflict",
+                        localPath: "/Users/me/skills/conflict-b",
+                        discoveredTargets: ["cursor"],
+                        validationStatus: "version-conflict",
+                        originSkillId: nil
+                    ),
+                ]
+            )
+        )
+
+        let card = ImportViewModel.card(from: item, locale: locale)
+
+        XCTAssertEqual(card.localValidationStatus, "version-conflict")
+        XCTAssertEqual(card.localSourcePaths.map(\.path), [
+            "/Users/me/skills/conflict-a",
+            "/Users/me/skills/conflict-b",
+        ])
+        XCTAssertTrue(card.requiresLocalVariantSelection)
+    }
+
+    func testLocalScanCardWithChangedChoiceRemainsImportableWithoutDefaultSelection() {
+        let item = makeItem(
+            id: "local-changed",
+            title: "Local Changed",
+            locator: "/Users/me/skills/writer",
+            canonicalRepo: "local:writer",
+            provider: "local",
+            localImport: .init(
+                validationStatus: "changed",
+                selectedChoiceId: nil,
+                choices: [
+                    .init(
+                        id: "local",
+                        label: "Local",
+                        locator: "file:///Users/me/skills/writer",
+                        selectedSkillIds: ["writer"]
+                    ),
+                ],
+                detectedSkills: [
+                    .init(
+                        id: "writer",
+                        title: "Writer",
+                        localPath: "/Users/me/skills/writer",
+                        discoveredTargets: ["codex"],
+                        validationStatus: "changed",
+                        originSkillId: "skills/writer"
+                    ),
+                ]
+            )
+        )
+
+        let card = ImportViewModel.card(from: item, locale: locale)
+
+        XCTAssertEqual(card.localValidationStatus, "changed")
+        XCTAssertEqual(card.localChoices.map(\.id), ["local"])
+        XCTAssertFalse(card.requiresLocalVariantSelection)
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card))
+    }
+
     func testRecommendedContentToleratesDuplicateLocalAndRemoteRecommendationKeys() {
         let viewModel = ImportViewModel(
             items: [

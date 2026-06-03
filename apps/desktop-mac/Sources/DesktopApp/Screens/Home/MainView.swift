@@ -146,10 +146,7 @@ struct MainView: View {
                     if isHomePage {
                         homeShell(layout: layout)
                     } else {
-                        VStack(spacing: 0) {
-                            topBar(layout: layout)
-                            pageContent(layout: layout)
-                        }
+                        nonHomeShell(layout: layout)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -379,18 +376,37 @@ struct MainView: View {
                 .frame(height: 52)
                 .background(AppTheme.headerBackground(for: theme))
             } else if isImportPage {
-                HStack(spacing: 12) {
+                let searchWidth = Self.importHeaderSearchWidth(
+                    forWindowWidth: layout.width,
+                    locale: locale,
+                    includesSearchAction: importSearchActionState != .hidden
+                )
+                HStack(spacing: Self.importHeaderItemSpacing(forWindowWidth: layout.width)) {
                     topBarTitleRow
-                        .frame(width: Self.headerLeadingWidth, alignment: .leading)
-                    importSearchField
+                        .frame(width: Self.importHeaderLeadingWidth(forWindowWidth: layout.width), alignment: .leading)
+                    importSearchField(width: searchWidth)
                     if importSearchActionState != .hidden {
                         importSearchActionButton
                             .transition(.opacity.combined(with: .scale(scale: 0.92)))
                     }
                     Spacer(minLength: 0)
-                    importLocalButton
+                    importHeaderActions(forWindowWidth: layout.width)
+                    settingsButton
                 }
-                .padding(.horizontal, 16)
+                .padding(.leading, Self.nonHomeHeaderLeadingPadding)
+                .padding(.trailing, Self.nonHomeHeaderTrailingPadding)
+                .frame(height: 52)
+                .background(AppTheme.headerBackground(for: theme))
+            } else if isSettingsPage {
+                HStack(spacing: 10) {
+                    topBarTitleRow
+                        .frame(width: Self.headerLeadingWidth, alignment: .leading)
+                    Spacer(minLength: 0)
+                    settingsHeaderActions
+                    settingsButton
+                }
+                .padding(.leading, Self.nonHomeHeaderLeadingPadding)
+                .padding(.trailing, Self.nonHomeHeaderTrailingPadding)
                 .frame(height: 52)
                 .background(AppTheme.headerBackground(for: theme))
             } else {
@@ -399,11 +415,20 @@ struct MainView: View {
                         .frame(width: Self.headerLeadingWidth, alignment: .leading)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
+                .padding(.leading, Self.nonHomeHeaderLeadingPadding)
+                .padding(.trailing, Self.nonHomeHeaderTrailingPadding)
                 .frame(height: 52)
                 .background(AppTheme.headerBackground(for: theme))
             }
         }
+    }
+
+    private func nonHomeShell(layout: LayoutMetrics) -> some View {
+        VStack(spacing: 0) {
+            topBar(layout: layout)
+            pageContent(layout: layout)
+        }
+        .ignoresSafeArea(.container, edges: .top)
     }
 
     private var topBarTitleRow: some View {
@@ -426,6 +451,10 @@ struct MainView: View {
 
     private var isImportPage: Bool {
         homeViewModel.currentRoute == .importPage
+    }
+
+    private var isSettingsPage: Bool {
+        homeViewModel.currentRoute == .settings
     }
 
     private var headerLogoRow: some View {
@@ -511,7 +540,7 @@ struct MainView: View {
         }
     }
 
-    private var importSearchField: some View {
+    private func importSearchField(width: CGFloat) -> some View {
         HStack(spacing: 8) {
             actionIcon(.search, size: 11)
                 .foregroundStyle(AppTheme.textMuted(for: theme))
@@ -537,7 +566,7 @@ struct MainView: View {
 
         }
         .padding(.horizontal, 12)
-        .frame(width: Self.headerSearchFieldWidth, height: Self.headerSearchFieldHeight, alignment: .leading)
+        .frame(width: width, height: Self.headerSearchFieldHeight, alignment: .leading)
         .background(AppTheme.headerControlFill(for: theme))
         .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -590,12 +619,57 @@ struct MainView: View {
         toolbarIconButton(.import) { navigation.showImportPage() }
     }
 
+    private func importHeaderActions(forWindowWidth width: CGFloat) -> some View {
+        HStack(spacing: Self.importHeaderItemSpacing(forWindowWidth: width)) {
+            importModeButton(.recommended, titleKey: "import.mode.recommended", icon: .importRecommended)
+            importModeButton(.localScan, titleKey: "import.mode.local_scan", icon: .importLocalScan)
+            importLocalButton
+        }
+    }
+
+    private func importModeButton(_ mode: MainViewModel.ImportPageMode, titleKey: String, icon: ActionIcon) -> some View {
+        let isSelected = importContainer.importPageMode == mode
+        return Button {
+            importContainer.setImportPageMode(mode)
+        } label: {
+            HStack(spacing: 7) {
+                actionIcon(icon, size: 13)
+                    .foregroundStyle(isSelected ? AppTheme.brand(for: accent, in: theme) : AppTheme.textPrimary(for: theme))
+                Text(t(titleKey))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isSelected ? AppTheme.brand(for: accent, in: theme) : AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: Self.headerSearchFieldHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .desktopMotionButton(
+            kind: isSelected ? .primary : .subtle,
+            theme: theme,
+            accent: accent,
+            isEnabled: true
+        )
+        .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(
+                    isSelected ? AppTheme.brand(for: accent, in: theme).opacity(0.45) : AppTheme.cardBorder(for: theme),
+                    lineWidth: isSelected ? 1 : 0.5
+                )
+        }
+    }
+
     private var importLocalButton: some View {
         Button {
             presentImportLocalDirectoryPanel()
         } label: {
             HStack(spacing: 7) {
-                actionIcon(.import, size: 13)
+                actionIcon(.importLocal, size: 13)
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                 Text(t("import.local.button"))
                     .font(.system(size: 12, weight: .medium))
@@ -705,6 +779,52 @@ struct MainView: View {
 
     private var settingsButton: some View {
         toolbarIconButton(.settings) { navigation.showSettings() }
+    }
+
+    private var settingsHeaderActions: some View {
+        settingsAddCustomAgentButton
+    }
+
+    private var settingsAddCustomAgentButton: some View {
+        Button {
+            beginAddCustomAgent()
+        } label: {
+            HStack(spacing: 7) {
+                actionIcon(.plus, size: 13)
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                Text(t("settings.action.add_custom_agent"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: Self.headerSearchFieldHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .desktopMotionButton(kind: .subtle, theme: theme, accent: accent, isEnabled: true)
+        .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    private func beginAddCustomAgent() {
+        customAgentDraft = settingsViewModel.customAgentDraft()
+        customAgentErrors = [:]
+        editingCustomAgentId = nil
+        isEditCustomAgentPresented = true
+    }
+
+    private func beginEditCustomAgent(targetId: String) {
+        customAgentDraft = settingsViewModel.customAgentDraft(editingId: targetId)
+        customAgentErrors = [:]
+        editingCustomAgentId = targetId
+        isEditCustomAgentPresented = true
     }
 
     private var orderedGroupEditorSelectedSkills: [VirtualGroupSkillRef] {
@@ -858,17 +978,8 @@ struct MainView: View {
                 viewModel: settingsViewModel,
                 theme: theme,
                 detectedTargetIds: viewModel.detectedTargetIdsForSettings,
-                onAddCustomAgent: {
-                    customAgentDraft = settingsViewModel.customAgentDraft()
-                    customAgentErrors = [:]
-                    editingCustomAgentId = nil
-                    isEditCustomAgentPresented = true
-                },
                 onEditCustomAgent: { targetId in
-                    customAgentDraft = settingsViewModel.customAgentDraft(editingId: targetId)
-                    customAgentErrors = [:]
-                    editingCustomAgentId = targetId
-                    isEditCustomAgentPresented = true
+                    beginEditCustomAgent(targetId: targetId)
                 }
             )
         case .detail:
@@ -1147,8 +1258,8 @@ struct MainView: View {
     }
 
     nonisolated static let headerSearchFieldWidth: CGFloat = 384
-    static let headerSearchFieldHeight: CGFloat = 34
-    static let headerSearchActionButtonSize: CGFloat = headerSearchFieldHeight
+    nonisolated static let headerSearchFieldHeight: CGFloat = 34
+    nonisolated static let headerSearchActionButtonSize: CGFloat = headerSearchFieldHeight
     static func importPromptLeadingWidth(for locale: Locale) -> CGFloat {
         measuredPromptWidth(for: importSearchPrompts(locale: locale).map(\.leadingText))
     }
@@ -1806,7 +1917,17 @@ struct MainView: View {
 
 extension MainView {
     nonisolated static let toolbarButtonSize: CGFloat = 34
-    static let headerLeadingWidth: CGFloat = 220
+    nonisolated static let headerLeadingWidth: CGFloat = 220
+    nonisolated static let nonHomeHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset + homeCollapsedHeaderButtonGap
+    nonisolated static let nonHomeHeaderTrailingPadding: CGFloat = homeMainHeaderSidePadding
+    nonisolated static let importHeaderMinimumSearchFieldWidth: CGFloat = 196
+    nonisolated static let importHeaderHorizontalPadding: CGFloat = nonHomeHeaderLeadingPadding + nonHomeHeaderTrailingPadding
+    nonisolated static let importHeaderRegularItemSpacing: CGFloat = 12
+    nonisolated static let importHeaderCompactItemSpacing: CGFloat = 6
+    nonisolated static let importHeaderCompactLeadingWidth: CGFloat = 84
+    private static let importHeaderModeButtonHorizontalPadding: CGFloat = 22
+    private static let importHeaderModeButtonWidthAllowance: CGFloat = 8
+    private static let importHeaderModeButtonIconAllowance: CGFloat = 12
     nonisolated static let homeSidebarRegularWidth: CGFloat = 244
     nonisolated static let homeSidebarNarrowWidth: CGFloat = 208
     nonisolated static let homeSidebarTrafficLightLeadingInset: CGFloat = 68
@@ -1869,6 +1990,62 @@ extension MainView {
         let agentWidth = ceil((agentTitle as NSString).size(withAttributes: [.font: font]).width)
         let contentWidth = max(projectWidth + homeLeadingProjectIndicatorAllowance, max(filterWidth, agentWidth))
         return contentWidth + homeLeadingButtonHorizontalPadding
+    }
+
+    nonisolated static func importHeaderItemSpacing(forWindowWidth width: CGFloat) -> CGFloat {
+        width <= 860 ? importHeaderCompactItemSpacing : importHeaderRegularItemSpacing
+    }
+
+    nonisolated static func importHeaderLeadingWidth(forWindowWidth width: CGFloat) -> CGFloat {
+        width <= 860 ? importHeaderCompactLeadingWidth : headerLeadingWidth
+    }
+
+    static func importHeaderModeAndActionButtonWidth(for locale: Locale) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let titles = [
+            L10n.string("import.mode.recommended", locale: locale),
+            L10n.string("import.mode.local_scan", locale: locale),
+            L10n.string("import.local.button", locale: locale),
+        ]
+        return titles.reduce(CGFloat(0)) { total, title in
+            total
+                + ceil((title as NSString).size(withAttributes: [.font: font]).width)
+                + importHeaderModeButtonHorizontalPadding
+                + importHeaderModeButtonWidthAllowance
+                + importHeaderModeButtonIconAllowance
+        }
+    }
+
+    static func fixedImportHeaderControlsWidth(
+        forWindowWidth width: CGFloat,
+        locale: Locale,
+        includesSearchAction: Bool = false
+    ) -> CGFloat {
+        let spacing = importHeaderItemSpacing(forWindowWidth: width)
+        let searchActionWidth = includesSearchAction ? headerSearchActionButtonSize : 0
+        let spacingCount: CGFloat = includesSearchAction ? 7 : 6
+        return importHeaderLeadingWidth(forWindowWidth: width)
+            + searchActionWidth
+            + toolbarButtonSize
+            + importHeaderModeAndActionButtonWidth(for: locale)
+            + importHeaderHorizontalPadding
+            + (spacing * spacingCount)
+    }
+
+    static func importHeaderSearchWidth(
+        forWindowWidth width: CGFloat,
+        locale: Locale,
+        includesSearchAction: Bool = false
+    ) -> CGFloat {
+        let availableWidth = width - fixedImportHeaderControlsWidth(
+            forWindowWidth: width,
+            locale: locale,
+            includesSearchAction: includesSearchAction
+        )
+        if availableWidth >= importHeaderMinimumSearchFieldWidth {
+            return min(headerSearchFieldWidth, availableWidth)
+        }
+        return max(0, availableWidth)
     }
 
     nonisolated static func homeMainColumnWidth(forWindowWidth width: CGFloat, isSidebarVisible: Bool) -> CGFloat {

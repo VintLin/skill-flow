@@ -629,6 +629,67 @@ export type LocalImportCandidateInfo = {
   detectedSkills: LocalImportDetectedSkill[];
 };
 
+export type LocalScanSourcePathKind = "target-agent" | "manual";
+
+export type LocalScanGroupStatus =
+  | "local-only"
+  | "matched"
+  | "changed"
+  | "missing"
+  | "ambiguous"
+  | "origin-unavailable"
+  | "version-conflict"
+  | "already-managed";
+
+export type LocalScanSourcePath = {
+  path: string;
+  kind: LocalScanSourcePathKind;
+  contentHash: string;
+  alreadyManaged: boolean;
+  target?: DeploymentTargetId;
+};
+
+export type LocalScanSkillVariant = {
+  id: string;
+  path: string;
+  contentHash: string;
+  selectedByDefault: boolean;
+  importable: boolean;
+};
+
+export type LocalScanSkill = {
+  id: string;
+  title: string;
+  status: LocalScanGroupStatus;
+  variants: LocalScanSkillVariant[];
+  selectionRequired: boolean;
+  originSkillId?: string;
+};
+
+export type LocalScanOrigin = {
+  canonicalRepo: string;
+  locator: string;
+  previewStatus: "ready" | "failed";
+};
+
+export type LocalScanImportChoice = {
+  id: string;
+  label: string;
+  locator: string;
+  selectedSkillIds: string[];
+  enabled: boolean;
+};
+
+export type LocalScanGroup = {
+  id: string;
+  title: string;
+  status: LocalScanGroupStatus;
+  sourcePaths: LocalScanSourcePath[];
+  skills: LocalScanSkill[];
+  importChoices: LocalScanImportChoice[];
+  origin?: LocalScanOrigin;
+};
+
 export type ImportGroupCandidate = {
   id: string;
   provider: "skills" | "local";

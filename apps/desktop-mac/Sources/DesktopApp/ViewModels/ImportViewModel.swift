@@ -53,6 +53,13 @@ struct ImportViewModel: Equatable {
         let selectedByDefault: Bool
     }
 
+    struct LocalSourcePath: Identifiable, Equatable {
+        let id: String
+        let path: String
+        let targetLabel: String?
+        let isManual: Bool
+    }
+
     struct Card: Identifiable, Equatable {
         let id: String
         let title: String
@@ -73,6 +80,8 @@ struct ImportViewModel: Equatable {
         let localValidationStatus: String?
         let selectedLocalChoiceId: String?
         let localChoices: [MainViewModel.LocalImportChoice]
+        let localSourcePaths: [LocalSourcePath]
+        let requiresLocalVariantSelection: Bool
 
         init(
             id: String,
@@ -93,7 +102,9 @@ struct ImportViewModel: Equatable {
             provider: String = "skills",
             localValidationStatus: String? = nil,
             selectedLocalChoiceId: String? = nil,
-            localChoices: [MainViewModel.LocalImportChoice] = []
+            localChoices: [MainViewModel.LocalImportChoice] = [],
+            localSourcePaths: [LocalSourcePath] = [],
+            requiresLocalVariantSelection: Bool = false
         ) {
             self.id = id
             self.title = title
@@ -114,6 +125,8 @@ struct ImportViewModel: Equatable {
             self.localValidationStatus = localValidationStatus
             self.selectedLocalChoiceId = selectedLocalChoiceId
             self.localChoices = localChoices
+            self.localSourcePaths = localSourcePaths
+            self.requiresLocalVariantSelection = requiresLocalVariantSelection
         }
     }
 
@@ -171,7 +184,9 @@ struct ImportViewModel: Equatable {
             provider: item.provider,
             localValidationStatus: item.localImport?.validationStatus,
             selectedLocalChoiceId: item.localImport?.selectedChoiceId,
-            localChoices: item.localImport?.choices ?? []
+            localChoices: item.localImport?.choices ?? [],
+            localSourcePaths: localSourcePaths(for: item),
+            requiresLocalVariantSelection: item.localImport?.validationStatus == "version-conflict"
         )
     }
 
@@ -390,6 +405,22 @@ struct ImportViewModel: Equatable {
 
         return fallbackTargetIds.map { targetId in
             MainViewModel.ImportGroupTarget(id: targetId, selectedByDefault: false)
+        }
+    }
+
+    private static func localSourcePaths(for item: MainViewModel.ImportGroupItem) -> [LocalSourcePath] {
+        let detectedSkills = item.localImport?.detectedSkills ?? []
+        let uniquePaths = Array(Set(detectedSkills.map(\.localPath))).sorted()
+        return uniquePaths.map { localPath in
+            let targets = detectedSkills
+                .filter { $0.localPath == localPath }
+                .flatMap(\.discoveredTargets)
+            return LocalSourcePath(
+                id: localPath,
+                path: localPath,
+                targetLabel: targets.sorted().first,
+                isManual: targets.isEmpty
+            )
         }
     }
 

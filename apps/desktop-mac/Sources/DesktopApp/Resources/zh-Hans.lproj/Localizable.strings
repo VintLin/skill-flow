@@ -225,6 +225,7 @@
 "toast.import.exists" = "该 Group 已存在于本地。";
 "toast.import.success" = "已导入来源。";
 "toast.import.local_scan_failed" = "本地扫描失败：%@";
+"toast.import.local_already_scanned" = "该本地 Skill 已在扫描列表中。";
 "toast.project_scope.switched" = "已切换到 %@。";
 "toast.project_scope.initialized" = "已初始化 %@ 的项目配置。";
 "toast.project_scope.refresh.loading" = "正在刷新项目列表...";
@@ -261,9 +262,15 @@
 "update.feedback.needs_review" = "待复核";
 "update.feedback.updated" = "已更新";
 "update.feedback.up_to_date" = "已最新";
-"import.local.button" = "导入本地";
+"import.mode.recommended" = "推荐下载";
+"import.mode.local_scan" = "本地扫描";
+"import.local.button" = "本地导入";
 "import.local.button.help" = "扫描本地 Skill 目录。";
 "import.local.panel.prompt" = "导入";
+"import.local.sources.title" = "来源路径";
+"import.local.source.manual" = "手动";
+"import.local.sources.more" = "还有 %d 个路径";
+"import.local.action.choose_version" = "选择版本";
 "import.local.detected.title" = "本地检测";
 "import.local.detected.description" = "从本地 Agent 目录发现的 Skill。";
 "import.local.status.matched" = "本地 Skill 与原始 Group 一致。";

@@ -12,6 +12,9 @@ enum ActionIcon: String {
     case externalLink
     case groupEditor = "skill-group-editor"
     case `import`
+    case importLocal = "import-local"
+    case importLocalScan = "import-local-scan"
+    case importRecommended = "import-recommended"
     case more
     case pin
     case plus
