@@ -711,7 +711,7 @@ export class SkillFlowApp {
     try {
       const { manifest, lockFile } = await this.store.readState();
       const scanned = localPath
-        ? await this.scanSingleLocalImportSkill(localPath)
+        ? await this.scanSingleLocalImportSkill(localPath, manifest, lockFile)
         : await this.workspaceBootstrapService.scanUnmanagedLocalSkills(manifest, lockFile);
       const installedRepos = this.installedCanonicalRepos(manifest);
       const groupsByKey = new Map<string, LocalSkillScanResult[]>();
@@ -751,10 +751,23 @@ export class SkillFlowApp {
     }
   }
 
-  private async scanSingleLocalImportSkill(localPath: string): Promise<LocalSkillScanResult[]> {
+  private async scanSingleLocalImportSkill(
+    localPath: string,
+    manifest: Manifest,
+    lockFile: LockFile,
+  ): Promise<LocalSkillScanResult[]> {
     const resolvedPath = await this.resolveLocalImportSkillPath(localPath);
     if (!resolvedPath) {
       throw new Error(`Local skill path must be a directory containing SKILL.md: ${localPath}`);
+    }
+
+    const unmanagedSkills = await this.workspaceBootstrapService.scanUnmanagedLocalSkills(
+      manifest,
+      lockFile,
+    );
+    const matchedUnmanagedSkill = unmanagedSkills.find((skill) => skill.path === resolvedPath);
+    if (matchedUnmanagedSkill) {
+      return [matchedUnmanagedSkill];
     }
 
     const metadata = await this.readLocalImportSkillMetadata(path.join(resolvedPath, "SKILL.md"));
@@ -878,7 +891,7 @@ export class SkillFlowApp {
             locator: originLocator,
             selectedSkillIds: detectedSkills.map((skill) => skill.originSkillId ?? skill.id),
           },
-          this.buildLocalImportChoice(localSkills),
+          ...(localSkills.length === 1 ? [this.buildLocalImportChoice(localSkills)] : []),
         ],
         detectedSkills,
       },

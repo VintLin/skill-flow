@@ -413,6 +413,59 @@ describe.sequential("import page flow", () => {
         "resume-bullet-writer",
         "resume-tailor",
       ]);
+      expect(result.data.groups[0].localImport?.choices.map((choice) => choice.id)).toEqual([
+        "origin",
+      ]);
+    } finally {
+      restoreHome(originalHome);
+    }
+  });
+
+  test("scanLocalImportGroups preserves origin metadata for manually selected local skills", async () => {
+    const homeRoot = path.join(sandbox.sandboxRoot, "home");
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeRoot;
+    try {
+      await writeAgentsLock(homeRoot, {
+        "resume-bullet-writer": {
+          source: "paramchoudhary/resumeskills",
+          skillPath: "skills/resume-bullet-writer",
+        },
+      });
+      const localPath = await createLocalSkill(
+        process.env.SKILL_FLOW_TARGET_CODEX!,
+        "resume-bullet-writer",
+        "resume-bullet-writer",
+        "Write better bullets.",
+      );
+      const originRepo = await createRepo(sandbox.sandboxRoot, {
+        "skills/resume-bullet-writer/SKILL.md": skillDoc(
+          "resume-bullet-writer",
+          "Write better bullets.",
+        ),
+      });
+      stubGitHubPreview(originRepo);
+
+      const app = new SkillFlowApp();
+      const result = await app.scanLocalImportGroups(localPath);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) {
+        return;
+      }
+
+      expect(result.data.groups).toHaveLength(1);
+      expect(result.data.groups[0]).toMatchObject({
+        provider: "skills",
+        canonicalRepo: "paramchoudhary/resumeskills",
+        localImport: {
+          validationStatus: "matched",
+          selectedChoiceId: "origin",
+        },
+      });
+      expect(result.data.groups[0].localImport?.detectedSkills[0]).toMatchObject({
+        originSkillId: "skills/resume-bullet-writer",
+      });
     } finally {
       restoreHome(originalHome);
     }
