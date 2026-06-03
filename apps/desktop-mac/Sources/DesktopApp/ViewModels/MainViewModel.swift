@@ -137,6 +137,29 @@ final class MainViewModel {
         let count: Int
     }
 
+    enum VirtualGroupValidationResult: Equatable {
+        case valid
+        case nameRequired
+        case skillsRequired
+        case groupsRequired
+    }
+
+    struct VirtualGroupSkillOption: Identifiable, Equatable {
+        let id: String
+        let sourceId: String
+        let sourceTitle: String
+        let leafId: String
+        let title: String
+        let isEnabled: Bool
+    }
+
+    struct VirtualGroupSourceOption: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let skillCount: Int
+        let isVirtual: Bool
+    }
+
     struct SourceRow: Identifiable {
         let id: String
         let displayName: String
@@ -1067,6 +1090,60 @@ final class MainViewModel {
         groupCards(matching: searchQuery)
     }
 
+    var virtualGroupSourceOptions: [VirtualGroupSourceOption] {
+        groupCards.map { card in
+            VirtualGroupSourceOption(
+                id: card.id,
+                title: card.title,
+                skillCount: card.skills.count,
+                isVirtual: card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "virtual"
+            )
+        }
+    }
+
+    func virtualGroupSkillOptions(for sourceId: String) -> [VirtualGroupSkillOption] {
+        guard let card = groupCards.first(where: { $0.id == sourceId }) else {
+            return []
+        }
+
+        return card.skills.map { skill in
+            VirtualGroupSkillOption(
+                id: "\(card.id):\(skill.id)",
+                sourceId: card.id,
+                sourceTitle: card.title,
+                leafId: skill.id,
+                title: skill.label,
+                isEnabled: skill.isEnabled
+            )
+        }
+    }
+
+    func validateVirtualGroupCreate(
+        displayName: String,
+        selectedSkills: [VirtualGroupSkillRef]
+    ) -> VirtualGroupValidationResult {
+        if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .nameRequired
+        }
+        if selectedSkills.isEmpty {
+            return .skillsRequired
+        }
+        return .valid
+    }
+
+    func validateVirtualGroupMerge(
+        displayName: String,
+        sourceIds: [String]
+    ) -> VirtualGroupValidationResult {
+        if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .nameRequired
+        }
+        if normalizedUniqueValues(sourceIds).count < 2 {
+            return .groupsRequired
+        }
+        return .valid
+    }
+
     func setSelectedHomeAgentFilter(_ targetId: String?) {
         selectedHomeAgentFilterId = targetId
     }
@@ -1260,6 +1337,77 @@ final class MainViewModel {
             showToast(style: .success, text: localizedText(toastKey, result.displayName))
         } catch {
             showToast(style: .error, text: localizedText("toast.rename.failed", firstErrorLine(from: error)))
+        }
+    }
+
+    func createVirtualGroup(
+        displayName: String,
+        skills: [VirtualGroupSkillRef],
+        enabledTargets: [String]
+    ) async {
+        let normalizedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validateVirtualGroupCreate(displayName: normalizedDisplayName, selectedSkills: skills) == .valid else {
+            return
+        }
+
+        do {
+            let response = try await commandFacade.createVirtualGroup(
+                displayName: normalizedDisplayName,
+                skills: skills,
+                enabledTargets: enabledTargets
+            )
+            guard response.ok else {
+                showBridgeCommandFailure(response)
+                return
+            }
+            await refreshList()
+        } catch {
+            showToast(style: .error, message: firstErrorLine(from: error))
+        }
+    }
+
+    func mergeGroups(
+        displayName: String,
+        sourceIds: [String],
+        enabledTargets: [String]
+    ) async {
+        let normalizedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedSourceIds = normalizedUniqueValues(sourceIds)
+        guard validateVirtualGroupMerge(displayName: normalizedDisplayName, sourceIds: normalizedSourceIds) == .valid else {
+            return
+        }
+
+        do {
+            let response = try await commandFacade.mergeGroups(
+                displayName: normalizedDisplayName,
+                sourceIds: normalizedSourceIds,
+                enabledTargets: enabledTargets
+            )
+            guard response.ok else {
+                showBridgeCommandFailure(response)
+                return
+            }
+            await refreshList()
+        } catch {
+            showToast(style: .error, message: firstErrorLine(from: error))
+        }
+    }
+
+    func restoreMergedGroups(virtualGroupId: String) async {
+        let normalizedVirtualGroupId = virtualGroupId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedVirtualGroupId.isEmpty else {
+            return
+        }
+
+        do {
+            let response = try await commandFacade.restoreMergedGroups(virtualGroupId: normalizedVirtualGroupId)
+            guard response.ok else {
+                showBridgeCommandFailure(response)
+                return
+            }
+            await refreshList()
+        } catch {
+            showToast(style: .error, message: firstErrorLine(from: error))
         }
     }
 
@@ -2918,6 +3066,22 @@ final class MainViewModel {
         return AgentDisplayCatalog.orderedTargetIds(in: values, customAgents: routeState?.settings.customAgents ?? [])
     }
 
+    private func normalizedUniqueValues(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var normalized: [String] = []
+
+        for value in values {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !seen.contains(trimmed) else {
+                continue
+            }
+            seen.insert(trimmed)
+            normalized.append(trimmed)
+        }
+
+        return normalized
+    }
+
     private func normalizeDraft(_ draft: DraftState) -> DraftState {
         DraftState(
             selectedLeafIds: uniqueSorted(draft.selectedLeafIds),
@@ -4041,6 +4205,19 @@ final class MainViewModel {
 
     private func showToast(style: ToastStyle, text: PresentationText) {
         toast = ToastState(style: style, text: text)
+    }
+
+    private func showBridgeCommandFailure(_ response: BridgeResponse) {
+        let error = BridgeClientError.commandFailed(bridgeCommandFailureMessage(from: response), response: response)
+        showToast(style: .error, message: firstErrorLine(from: error))
+    }
+
+    private func bridgeCommandFailureMessage(from response: BridgeResponse) -> String {
+        if !response.errors.isEmpty {
+            return response.errors.map(\.message).joined(separator: "\n")
+        }
+
+        return localized("bridge.error.command_failed_default")
     }
 
     private func localizedText(_ key: String, _ arguments: String...) -> PresentationText {
