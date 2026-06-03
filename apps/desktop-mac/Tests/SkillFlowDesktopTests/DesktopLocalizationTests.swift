@@ -137,6 +137,40 @@ final class DesktopLocalizationTests: XCTestCase {
         }
     }
 
+    func testImportLocalKeysExistInAllSupportedLocales() {
+        let requiredKeys = [
+            "import.local.button",
+            "import.local.button.help",
+            "import.local.panel.prompt",
+            "import.local.detected.title",
+            "import.local.detected.description",
+            "import.local.status.matched",
+            "import.local.status.changed",
+            "import.local.status.missing",
+            "import.local.status.ambiguous",
+            "import.local.status.origin_unavailable",
+            "import.local.status.local_only",
+            "import.error.scan_local",
+        ]
+        let locales = [
+            Locale(identifier: "zh-Hans"),
+            Locale(identifier: "en"),
+            Locale(identifier: "ja"),
+        ]
+
+        for locale in locales {
+            for key in requiredKeys {
+                let value = L10n.string(key, locale: locale)
+                XCTAssertNotEqual(value, key, "Missing localization for \(key) in \(locale.identifier)")
+            }
+
+            let toastKey = "toast.import.local_scan_failed"
+            let toastValue = L10n.string(toastKey, locale: locale, arguments: ["boom"])
+            XCTAssertNotEqual(toastValue, toastKey, "Missing localization for \(toastKey) in \(locale.identifier)")
+            XCTAssertTrue(toastValue.contains("boom"), "Missing scan error argument in \(locale.identifier)")
+        }
+    }
+
     func testChinesePinnedStatusUsesPinnedWording() {
         XCTAssertEqual(L10n.string("home.sidebar.pinned", locale: Locale(identifier: "zh-Hans")), "置顶")
     }
