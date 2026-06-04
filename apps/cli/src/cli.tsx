@@ -17,6 +17,7 @@ import {
 import { filterAddWarnings, resolveAddSourceLocator } from "@skill-flow/integration/utils/cli";
 import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import { runBridgeCommand } from "./bridge-runner.js";
+import { runMigrateStateCli } from "./state-migration-command.js";
 
 const program = new Command();
 const app = new SkillFlowApp();
@@ -159,6 +160,22 @@ program
   });
 
 program
+  .command("migrate-state")
+  .requiredOption("--to <version>", "Target state schema version")
+  .option("--dry-run", "Print planned migration actions without modifying state")
+  .option("--state-root <path>", "Override the skill-flow state root for this command")
+  .option("--no-backup", "Do not create a backup before migration")
+  .action(async (options: {
+    to: string;
+    dryRun?: boolean;
+    stateRoot?: string;
+    backup?: boolean;
+  }) => {
+    const runtime = options.stateRoot ? createAppForStateRoot(options.stateRoot) : app;
+    process.exitCode = await runMigrateStateCli(runtime, options);
+  });
+
+program
   .command("update")
   .argument("[sourceId]", "Optional skills group id")
   .option("--all", "Update all registered skills groups")
@@ -251,6 +268,18 @@ function printWarnings(messages: string[]) {
   for (const message of messages) {
     console.warn(`warning: ${message}`);
   }
+}
+
+function createAppForStateRoot(stateRoot: string): SkillFlowApp {
+  const previousStateRoot = process.env.SKILL_FLOW_STATE_ROOT;
+  process.env.SKILL_FLOW_STATE_ROOT = stateRoot;
+  const runtime = new SkillFlowApp();
+  if (previousStateRoot === undefined) {
+    delete process.env.SKILL_FLOW_STATE_ROOT;
+  } else {
+    process.env.SKILL_FLOW_STATE_ROOT = previousStateRoot;
+  }
+  return runtime;
 }
 
 async function runRenderedAddFlow(

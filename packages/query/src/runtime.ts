@@ -117,7 +117,13 @@ import { InventoryService } from "@skill-flow/core-engine/services/inventory-ser
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { SourceService } from "@skill-flow/core-engine/services/source-service";
+import {
+  StateMigrationService,
+  type StateMigrationOptions,
+  type StateMigrationResult,
+} from "@skill-flow/core-engine/services/state-migration-service";
 import { WorkflowService } from "./workflow-service.js";
+import type { StateMigrationStatus } from "@skill-flow/storage/state-schema-v2";
 import type {
   AddSourceOptions,
   SourcePreview,
@@ -865,6 +871,16 @@ export class SkillFlowApp {
         enabledTargets: draft?.enabledTargets ?? [],
       },
       () => this.importSourceImpl(locator, draft),
+    );
+  }
+
+  inspectStateMigration(): Promise<StateMigrationStatus> {
+    return new StateMigrationService({ stateRoot: this.store.rootPath }).inspect();
+  }
+
+  migrateState(options: StateMigrationOptions): Promise<StateMigrationResult> {
+    return this.runSerializedMutation(() =>
+      new StateMigrationService({ stateRoot: this.store.rootPath }).migrate(options),
     );
   }
 
