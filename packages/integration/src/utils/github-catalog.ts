@@ -1,4 +1,5 @@
 import type { SourceStats } from "@skill-flow/domain/types";
+import { fetchWithTimeout } from "./fetch-timeout.js";
 import { parseGitHubRepo } from "./naming.js";
 
 type GitHubTreeResponse = {
@@ -28,7 +29,7 @@ export async function fetchGitHubSkillPaths(
     throw new Error(`Unsupported GitHub locator '${locator}'.`);
   }
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://api.github.com/repos/${repo.owner}/${repo.repo}/git/trees/${branch}?recursive=1`,
     { headers: buildGitHubHeaders() },
   );
@@ -55,7 +56,7 @@ export async function fetchGitHubRepoDetails(locator: string): Promise<SourceSta
     return {};
   }
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://api.github.com/repos/${repo.owner}/${repo.repo}`,
     { headers: buildGitHubHeaders() },
   );

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { promisify } from "node:util";
+import { FetchTimeoutError, fetchWithTimeout } from "./fetch-timeout.js";
 
 const BUNDLED_NPX_ENV = "SKILL_FLOW_BUNDLED_NPX";
 const execFileAsync = promisify(execFile);
@@ -124,7 +125,7 @@ export async function inspectClawHubSkill(
     query.set("files", "true");
   }
   const queryString = query.toString();
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://clawhub.ai/api/v1/skills/${encodeURIComponent(slug)}${queryString ? `?${queryString}` : ""}`,
   );
 
@@ -144,7 +145,10 @@ export async function inspectClawHubSkill(
 
   try {
     return await response.json() as ClawHubInspectResult;
-  } catch {
+  } catch (error) {
+    if (error instanceof FetchTimeoutError) {
+      throw error;
+    }
     throw createProviderError(
       "CLAWHUB_RESPONSE_INVALID",
       `Unable to parse ClawHub skill payload for '${slug}'.`,

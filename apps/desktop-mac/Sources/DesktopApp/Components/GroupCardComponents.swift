@@ -358,6 +358,7 @@ struct SharedGroupCard: View {
     let onToggleTarget: (String, Bool, Bool) -> Void
     let onToggleAllTargets: () -> Void
     let actionButtonTitle: String?
+    let actionButtonHelpText: String?
     let actionButtonIcon: ActionIcon
     let isActionButtonDisabled: Bool
     let onActionButton: (() -> Void)?
@@ -399,6 +400,7 @@ struct SharedGroupCard: View {
         onToggleTarget: @escaping (String, Bool, Bool) -> Void,
         onToggleAllTargets: @escaping () -> Void,
         actionButtonTitle: String? = nil,
+        actionButtonHelpText: String? = nil,
         actionButtonIcon: ActionIcon = .import,
         isActionButtonDisabled: Bool = false,
         onActionButton: (() -> Void)? = nil,
@@ -430,6 +432,7 @@ struct SharedGroupCard: View {
         self.onToggleTarget = onToggleTarget
         self.onToggleAllTargets = onToggleAllTargets
         self.actionButtonTitle = actionButtonTitle
+        self.actionButtonHelpText = actionButtonHelpText
         self.actionButtonIcon = actionButtonIcon
         self.isActionButtonDisabled = isActionButtonDisabled
         self.onActionButton = onActionButton
@@ -852,7 +855,7 @@ struct SharedGroupCard: View {
             isEnabled: !isDisabled
         )
         .disabled(isDisabled)
-        .help(buttonTitle)
+        .help(actionButtonHelpText ?? buttonTitle)
     }
 
     private var loadingMessage: String {

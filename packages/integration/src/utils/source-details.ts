@@ -12,6 +12,7 @@ import { parseGitHubRepo } from "./naming.js";
 import {
   parseSkillsSourcePage,
 } from "./skills-directory.js";
+import { fetchWithTimeout } from "./fetch-timeout.js";
 
 export const SOURCE_METADATA_CACHE_TTL_MS = 8 * 60 * 60_000;
 
@@ -130,7 +131,7 @@ export async function fetchSkillsDirectorySourceDetails(locator: string): Promis
 
   const canonicalRepo = `${repo.owner}/${repo.repo}`.toLowerCase();
   const sourceUrl = `https://skills.sh/${canonicalRepo}`;
-  const response = await fetch(sourceUrl);
+  const response = await fetchWithTimeout(sourceUrl);
   if (!response.ok) {
     if (response.status === 404) {
       throw createProviderError(

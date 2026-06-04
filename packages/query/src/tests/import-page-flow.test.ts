@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
+import * as gitUtils from "@skill-flow/integration/utils/git";
 import { ok } from "@skill-flow/integration/utils/result";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import { SourceService } from "@skill-flow/core-engine/services/source-service";
@@ -408,6 +409,55 @@ describe.sequential("import page flow", () => {
       "https://skills.sh/anthropics/skills",
       "https://skills.sh/anthropics",
     ]);
+  });
+
+  test("previewImportSource reports provider timeout without hanging", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({});
+      vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
+      vi.stubGlobal("fetch", vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(init.signal?.reason);
+          }, { once: true });
+        });
+      }));
+
+      const app = new SkillFlowApp();
+      await app.store.writeImportDataCache({
+        searches: {},
+        repos: {},
+        recommendations: {},
+      });
+      const previewPromise = app.previewImportSource("anthropics/skills");
+
+      await vi.waitFor(() => {
+        expect(globalThis.fetch).toHaveBeenCalled();
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.waitFor(() => {
+        expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.waitFor(() => {
+        expect(globalThis.fetch).toHaveBeenCalledTimes(4);
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      const preview = await previewPromise;
+
+      expect(preview.ok).toBe(true);
+      if (!preview.ok) {
+        return;
+      }
+      expect(preview.data).toMatchObject({
+        status: "failed",
+        reasonCode: "provider_request_failed",
+        retryable: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("previewImportSource supports local paths", async () => {

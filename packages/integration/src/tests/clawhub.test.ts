@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  inspectClawHubSkill,
   installClawHubSkill,
   searchClawHubSkills,
 } from "../utils/clawhub.js";
@@ -37,6 +38,9 @@ describe("clawhub utils", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     if (originalBundledNpx === undefined) {
       delete process.env.SKILL_FLOW_BUNDLED_NPX;
     } else {
@@ -131,5 +135,24 @@ describe("clawhub utils", () => {
       message:
         "ClawHub security block: 'agent-browser' is flagged as suspicious. Use --force to install suspicious skills in non-interactive mode.",
     });
+  });
+
+  test("times out when ClawHub inspect response body hangs", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: vi.fn(() => new Promise(() => {})),
+    })));
+
+    const inspected = inspectClawHubSkill("find-skills");
+    const assertion = expect(inspected).rejects.toMatchObject({
+      name: "FetchTimeoutError",
+      code: "FETCH_TIMEOUT",
+      timeoutMs: 30_000,
+      url: "https://clawhub.ai/api/v1/skills/find-skills",
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await assertion;
   });
 });

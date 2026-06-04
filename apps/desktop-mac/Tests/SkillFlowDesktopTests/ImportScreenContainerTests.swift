@@ -989,6 +989,138 @@ final class ImportScreenContainerTests: XCTestCase {
         )
     }
 
+    func testImportActionIsDisabledWhenAnotherImportIsRunning() {
+        let card = ImportViewModel.Card(
+            id: "openai-skills",
+            title: "OpenAI Skills",
+            locator: "openai/skills",
+            canonicalRepo: "openai/skills",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @openai",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card))
+        XCTAssertTrue(ImportScreen.importActionIsDisabled(for: card, isAnotherImportRunning: true))
+    }
+
+    func testImportActionHelpTextUsesActiveImportDisabledReasonOnlyWhenCardHasNoActionTitle() {
+        let freshCard = ImportViewModel.Card(
+            id: "openai-skills",
+            title: "OpenAI Skills",
+            locator: "openai/skills",
+            canonicalRepo: "openai/skills",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @openai",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+        let installedCard = ImportViewModel.Card(
+            id: "anthropics-skills",
+            title: "Anthropic Skills",
+            locator: "anthropics/skills",
+            canonicalRepo: "anthropics/skills",
+            isInstalledLocally: true,
+            aliases: [],
+            summary: "",
+            subtitle: "by @anthropics",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+        let variantSelectionCard = ImportViewModel.Card(
+            id: "local-skills",
+            title: "Local Skills",
+            locator: "file:///Users/Vint/skills",
+            canonicalRepo: "local-skills",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @local",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            requiresLocalVariantSelection: true
+        )
+        let localized: (String) -> String = { key in
+            switch key {
+            case "group_card.action.installed":
+                return "Installed"
+            case "import.local.action.choose_version":
+                return "Choose Version"
+            default:
+                return key
+            }
+        }
+
+        XCTAssertEqual(
+            ImportScreen.importActionHelpText(
+                for: freshCard,
+                activeImportDisabledReason: "Another import is already running.",
+                localized: localized
+            ),
+            "Another import is already running."
+        )
+        XCTAssertEqual(
+            ImportScreen.importActionHelpText(
+                for: installedCard,
+                activeImportDisabledReason: "Another import is already running.",
+                localized: localized
+            ),
+            "Installed"
+        )
+        XCTAssertEqual(
+            ImportScreen.importActionHelpText(
+                for: variantSelectionCard,
+                activeImportDisabledReason: "Another import is already running.",
+                localized: localized
+            ),
+            "Choose Version"
+        )
+        XCTAssertNil(ImportScreen.importActionHelpText(for: freshCard, activeImportDisabledReason: nil, localized: localized))
+    }
+
+    func testImportScreenPassesActiveImportReasonToSharedGroupCard() throws {
+        let source = try String(
+            contentsOfFile: sourceRoot()
+                .appendingPathComponent("Sources/DesktopApp/Screens/Import/ImportScreen.swift")
+                .path,
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("let isAnotherImportRunning = importingGroupId != nil && importingGroupId != card.id"))
+        XCTAssertTrue(source.contains("activeImportDisabledReason: isAnotherImportRunning"))
+        XCTAssertTrue(source.contains("actionButtonHelpText: Self.importActionHelpText("))
+    }
+
+    func testSharedGroupCardUsesActionButtonHelpTextForHelp() throws {
+        let source = try String(
+            contentsOfFile: sourceRoot()
+                .appendingPathComponent("Sources/DesktopApp/Components/GroupCardComponents.swift")
+                .path,
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("let actionButtonHelpText: String?"))
+        XCTAssertTrue(source.contains("actionButtonHelpText: String? = nil"))
+        XCTAssertTrue(source.contains(".help(actionButtonHelpText ?? buttonTitle)"))
+    }
+
     func testImportViewModelFallsBackToVisibleTargetsWhenPreviewTargetsAreUnavailable() {
         let viewModel = ImportViewModel(
             items: [

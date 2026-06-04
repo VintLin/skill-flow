@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum RuntimeDependency: String {
@@ -47,6 +48,46 @@ enum BridgeClientError: Error, LocalizedError {
 final class BridgeClient: @unchecked Sendable {
     static let desktopPrerequisitesURL = URL(string: "https://github.com/VintLin/skill-flow#desktop-prerequisites")!
 
+    private enum ProcessExitOutcome {
+        case exited
+        case timedOut
+    }
+
+    private final class ProcessExitWaitState: @unchecked Sendable {
+        private var continuation: CheckedContinuation<ProcessExitOutcome, Never>?
+        private var outcome: ProcessExitOutcome?
+        private let lock = NSLock()
+
+        func setContinuation(_ continuation: CheckedContinuation<ProcessExitOutcome, Never>) {
+            lock.lock()
+            if let outcome {
+                lock.unlock()
+                continuation.resume(returning: outcome)
+                return
+            }
+
+            self.continuation = continuation
+            lock.unlock()
+        }
+
+        @discardableResult
+        func resolve(_ outcome: ProcessExitOutcome) -> Bool {
+            lock.lock()
+            guard self.outcome == nil else {
+                lock.unlock()
+                return false
+            }
+
+            self.outcome = outcome
+            let continuation = self.continuation
+            self.continuation = nil
+            lock.unlock()
+
+            continuation?.resume(returning: outcome)
+            return true
+        }
+    }
+
     private final class ThreadSafeBuffer: @unchecked Sendable {
         private var data = Data()
         private let lock = NSLock()
@@ -65,6 +106,13 @@ final class BridgeClient: @unchecked Sendable {
     }
 
     private let mutationCoordinator = MutationCoordinator()
+    private let commandTimeoutMilliseconds: UInt64
+    private let commandTimeoutGraceMilliseconds: UInt64
+
+    init(commandTimeoutMilliseconds: UInt64 = 60_000, commandTimeoutGraceMilliseconds: UInt64 = 1_000) {
+        self.commandTimeoutMilliseconds = commandTimeoutMilliseconds
+        self.commandTimeoutGraceMilliseconds = commandTimeoutGraceMilliseconds
+    }
 
     func bootstrap() async throws -> BridgeResponse {
         try await send(command: .bootstrap)
@@ -274,13 +322,10 @@ final class BridgeClient: @unchecked Sendable {
 
         let outputBuffer = ThreadSafeBuffer()
         let errorBuffer = ThreadSafeBuffer()
-        let exitStream = AsyncStream<Void> { continuation in
-            process.terminationHandler = { _ in
-                continuation.yield(())
-                continuation.finish()
-            }
+        let exitWaitState = ProcessExitWaitState()
+        process.terminationHandler = { _ in
+            exitWaitState.resolve(.exited)
         }
-        var exitIterator = exitStream.makeAsyncIterator()
 
         outputPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
@@ -297,8 +342,17 @@ final class BridgeClient: @unchecked Sendable {
         inputPipe.fileHandleForWriting.write(requestData)
         inputPipe.fileHandleForWriting.closeFile()
 
-        _ = await exitIterator.next()
-        process.terminationHandler = nil
+        let didExit = await waitForProcessExit(process, state: exitWaitState, timeoutMilliseconds: commandTimeoutMilliseconds)
+
+        if !didExit {
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+            process.terminationHandler = nil
+            if process.isRunning {
+                await terminateTimedOutProcess(process)
+            }
+            throw BridgeClientError.timeout(commandTimeoutMilliseconds)
+        }
 
         outputPipe.fileHandleForReading.readabilityHandler = nil
         errorPipe.fileHandleForReading.readabilityHandler = nil
@@ -349,6 +403,59 @@ final class BridgeClient: @unchecked Sendable {
             throw dependencyError
         }
         throw BridgeClientError.commandFailed(message, response: response)
+    }
+
+    private func waitForProcessExit(
+        _ process: Process,
+        state: ProcessExitWaitState,
+        timeoutMilliseconds: UInt64
+    ) async -> Bool {
+        let timeoutTask = Task {
+            try? await Task.sleep(nanoseconds: Self.nanoseconds(fromMilliseconds: timeoutMilliseconds))
+            state.resolve(.timedOut)
+        }
+
+        let outcome = await withCheckedContinuation { continuation in
+            state.setContinuation(continuation)
+        }
+        timeoutTask.cancel()
+        process.terminationHandler = nil
+
+        return outcome == .exited
+    }
+
+    private func terminateTimedOutProcess(_ process: Process) async {
+        let state = ProcessExitWaitState()
+        process.terminationHandler = { _ in
+            state.resolve(.exited)
+        }
+
+        process.terminate()
+
+        let didExitAfterTerminate = await waitForProcessExit(
+            process,
+            state: state,
+            timeoutMilliseconds: commandTimeoutGraceMilliseconds
+        )
+        guard !didExitAfterTerminate, process.isRunning else {
+            return
+        }
+
+        let killState = ProcessExitWaitState()
+        process.terminationHandler = { _ in
+            killState.resolve(.exited)
+        }
+        kill(process.processIdentifier, SIGKILL)
+        _ = await waitForProcessExit(
+            process,
+            state: killState,
+            timeoutMilliseconds: commandTimeoutGraceMilliseconds
+        )
+    }
+
+    private static func nanoseconds(fromMilliseconds milliseconds: UInt64) -> UInt64 {
+        let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+        return overflow ? UInt64.max : nanoseconds
     }
 
     private func resolveHelperURL() throws -> URL {

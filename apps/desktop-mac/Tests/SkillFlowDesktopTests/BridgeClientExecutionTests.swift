@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 
@@ -5,12 +6,15 @@ import XCTest
 
 final class BridgeClientExecutionTests: XCTestCase {
     private var fixture: SlowBridgeFixture?
+    private var stubbornFixture: StubbornBridgeFixture?
     private var recordingFixture: RecordingBridgeFixture?
     private var savedNodeOverride: String?
 
     override func tearDownWithError() throws {
         try fixture?.tearDown()
         fixture = nil
+        try stubbornFixture?.tearDown()
+        stubbornFixture = nil
         try recordingFixture?.tearDown()
         recordingFixture = nil
         if let savedNodeOverride {
@@ -50,6 +54,42 @@ final class BridgeClientExecutionTests: XCTestCase {
 
         XCTAssertEqual(response.command, .list)
         XCTAssertTrue(response.ok)
+    }
+
+    func testListTimesOutWhenHelperNeverExits() async throws {
+        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 5_000)
+        self.fixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient(commandTimeoutMilliseconds: 50) }
+
+        do {
+            _ = try await bridge.list()
+            XCTFail("Expected list to time out before the helper exits.")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Operation timed out after 50ms.")
+        }
+    }
+
+    func testTimedOutHelperIsForceKilledWhenItIgnoresTerminate() async throws {
+        let fixture = try StubbornBridgeFixture.install()
+        stubbornFixture = fixture
+
+        let bridge = await MainActor.run {
+            BridgeClient(commandTimeoutMilliseconds: 50, commandTimeoutGraceMilliseconds: 50)
+        }
+        let listTask = Task {
+            try await bridge.list()
+        }
+        let pid = try await fixture.waitForPid()
+
+        do {
+            _ = try await listTask.value
+            XCTFail("Expected list to time out before the helper exits.")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Operation timed out after 50ms.")
+        }
+
+        try await waitForProcessToExit(pid: pid, timeoutNanoseconds: 1_000_000_000)
     }
 
     func testListFailsWithActionableNodeRequirementWhenNodeIsMissing() async throws {
@@ -350,6 +390,24 @@ final class BridgeClientExecutionTests: XCTestCase {
             .appendingPathComponent("Sources/DesktopApp/Runtime/Bridge/BridgeClient.swift")
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
+
+    private func waitForProcessToExit(pid: Int32, timeoutNanoseconds: UInt64) async throws {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
+        while Date() < deadline {
+            if !isProcessRunning(pid: pid) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Expected helper process \(pid) to exit.")
+    }
+
+    private func isProcessRunning(pid: Int32) -> Bool {
+        if kill(pid, 0) == 0 {
+            return true
+        }
+        return errno == EPERM
+    }
 }
 
 private final class SlowBridgeFixture {
@@ -409,6 +467,73 @@ private final class SlowBridgeFixture {
             process.stdout.write(JSON.stringify(response));
           }, \(delayMilliseconds));
         });
+        """
+    }
+}
+
+private final class StubbornBridgeFixture {
+    private let rootURL: URL
+    private let pidURL: URL
+    private let savedHelperOverride: String?
+
+    private init(rootURL: URL, pidURL: URL, savedHelperOverride: String?) {
+        self.rootURL = rootURL
+        self.pidURL = pidURL
+        self.savedHelperOverride = savedHelperOverride
+    }
+
+    static func install() throws -> StubbornBridgeFixture {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("skillflow-desktop-bridge-stubborn-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
+        let pidURL = rootURL.appendingPathComponent("helper.pid")
+        try helperScript(pidPath: pidURL.path).write(to: helperURL, atomically: true, encoding: .utf8)
+
+        let savedHelperOverride = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_HELPER_OVERRIDE"]
+        setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
+
+        return StubbornBridgeFixture(rootURL: rootURL, pidURL: pidURL, savedHelperOverride: savedHelperOverride)
+    }
+
+    func waitForPid() async throws -> Int32 {
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            if let contents = try? String(contentsOf: pidURL, encoding: .utf8),
+               let pid = Int32(contents.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return pid
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        throw XCTSkip("Timed out waiting for stubborn helper PID.")
+    }
+
+    func tearDown() throws {
+        if let savedHelperOverride {
+            setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", savedHelperOverride, 1)
+        } else {
+            unsetenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE")
+        }
+
+        if let contents = try? String(contentsOf: pidURL, encoding: .utf8),
+           let pid = Int32(contents.trimmingCharacters(in: .whitespacesAndNewlines)),
+           kill(pid, 0) == 0 {
+            kill(pid, SIGKILL)
+        }
+
+        if FileManager.default.fileExists(atPath: rootURL.path) {
+            try FileManager.default.removeItem(at: rootURL)
+        }
+    }
+
+    private static func helperScript(pidPath: String) -> String {
+        """
+        const fs = require("node:fs");
+        fs.writeFileSync(\(String(reflecting: pidPath)), String(process.pid));
+        process.on("SIGTERM", () => {});
+        process.stdin.resume();
+        setInterval(() => {}, 1000);
         """
     }
 }

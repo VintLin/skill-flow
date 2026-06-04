@@ -28,6 +28,7 @@ import {
 import {
   installClawHubSkill,
 } from "@skill-flow/integration/utils/clawhub";
+import { fetchWithTimeout } from "@skill-flow/integration/utils/fetch-timeout";
 import { git, isGitAvailable } from "@skill-flow/integration/utils/git";
 import { parseGitHubRepo, parseHostedGitRepo } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
@@ -1519,8 +1520,12 @@ export class SourceService {
     branch: string,
     archivePath: string,
   ): Promise<void> {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`,
+      {},
+      {
+        timeoutMessage: `GitHub archive download timed out for '${owner}/${repo}' branch '${branch}'.`,
+      },
     );
     if (!response.ok) {
       throw new Error(`GitHub archive download failed with status ${response.status} for branch '${branch}'.`);
@@ -1536,7 +1541,7 @@ export class SourceService {
     branch: string,
     archivePath: string,
   ): Promise<void> {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://${host}/api/v4/projects/${encodeURIComponent(projectPath)}/repository/archive.zip?sha=${encodeURIComponent(branch)}`,
       {
         headers: {
@@ -1544,6 +1549,9 @@ export class SourceService {
             ? { "PRIVATE-TOKEN": process.env.GITLAB_TOKEN }
             : {}),
         },
+      },
+      {
+        timeoutMessage: `GitLab archive download timed out for '${host}/${projectPath}' branch '${branch}'.`,
       },
     );
     if (!response.ok) {

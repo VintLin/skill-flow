@@ -271,6 +271,7 @@
 "import.local.source.manual" = "手动";
 "import.local.sources.more" = "还有 %d 个路径";
 "import.local.action.choose_version" = "选择版本";
+"import.action.disabled.import_running" = "已有导入任务正在进行。";
 "import.local.detected.title" = "本地检测";
 "import.local.detected.description" = "从本地 Agent 目录发现的 Skill。";
 "import.local.status.matched" = "本地 Skill 与原始 Group 一致。";

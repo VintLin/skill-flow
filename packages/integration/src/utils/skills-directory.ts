@@ -8,6 +8,7 @@ import type {
   UnifiedSourceSnapshot,
   UnifiedSourceTrust,
 } from "@skill-flow/domain/types";
+import { fetchWithTimeout } from "./fetch-timeout.js";
 import { fetchGitHubRepoDetails } from "./github-catalog.js";
 import { parseGitHubRepo } from "./naming.js";
 
@@ -132,7 +133,7 @@ export async function searchSkillsDirectory(
     return [];
   }
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${SKILLS_DIRECTORY_BASE_URL}/api/search?q=${encodeURIComponent(normalizedQuery)}&limit=${limit}`,
   );
   if (!response.ok) {
@@ -319,7 +320,7 @@ export async function fetchSkillsDirectorySourcePreview(
 export async function fetchSkillsDirectoryFeedGroups(
   feedId: Exclude<ImportRecommendationFeedId, "seed">,
 ): Promise<string[]> {
-  const response = await fetch(`${SKILLS_DIRECTORY_BASE_URL}${FEED_PATHS[feedId]}`);
+  const response = await fetchWithTimeout(`${SKILLS_DIRECTORY_BASE_URL}${FEED_PATHS[feedId]}`);
   if (!response.ok) {
     throw createProviderError(
       response.status === 429 ? "SKILLS_FEED_RATE_LIMITED" : "SKILLS_FEED_REQUEST_FAILED",
@@ -539,7 +540,7 @@ async function fetchSkillsDirectoryHtml(
   url: string,
   kind: "source" | "owner" | "skill",
 ): Promise<string> {
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   if (!response.ok) {
     if (response.status === 404) {
       throw createProviderError(

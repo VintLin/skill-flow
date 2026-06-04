@@ -271,6 +271,7 @@
 "import.local.source.manual" = "手動";
 "import.local.sources.more" = "他 %d 件のパス";
 "import.local.action.choose_version" = "バージョンを選択";
+"import.action.disabled.import_running" = "別のインポートが実行中です。";
 "import.local.detected.title" = "検出されたローカル";
 "import.local.detected.description" = "ローカル Agent ディレクトリで見つかった Skill。";
 "import.local.status.matched" = "ローカル Skill は元の Group と一致しています。";

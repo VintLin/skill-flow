@@ -147,7 +147,9 @@ struct ImportScreen: View {
         importingGroupId: String?,
         displayMode: GroupCardDisplayMode
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let isAnotherImportRunning = importingGroupId != nil && importingGroupId != card.id
+
+        return VStack(alignment: .leading, spacing: 8) {
             SharedGroupCard(
                 card: importCardModel(for: card),
                 theme: theme,
@@ -173,10 +175,18 @@ struct ImportScreen: View {
                     container.toggleAllTargets(for: card)
                 },
                 actionButtonTitle: Self.importActionTitle(for: card, localized: { key in t(key) }),
+                actionButtonHelpText: Self.importActionHelpText(
+                    for: card,
+                    activeImportDisabledReason: isAnotherImportRunning
+                        ? t("import.action.disabled.import_running")
+                        : nil,
+                    localized: { key in t(key) }
+                ),
                 actionButtonIcon: ActionIcon.import,
                 isActionButtonDisabled: Self.importActionIsDisabled(
                     for: card,
-                    selectedSkillIds: container.selectedSkillIdsForImport(for: card)
+                    selectedSkillIds: container.selectedSkillIdsForImport(for: card),
+                    isAnotherImportRunning: isAnotherImportRunning
                 ),
                 onActionButton: {
                     Task {
@@ -337,10 +347,12 @@ struct ImportScreen: View {
     static func importActionIsDisabled(
         for card: ImportViewModel.Card,
         draft: ImportDraftState? = nil,
-        selectedSkillIds: [String]? = nil
+        selectedSkillIds: [String]? = nil,
+        isAnotherImportRunning: Bool = false
     ) -> Bool {
         card.isInstalledLocally
             || card.requiresLocalVariantSelection
+            || isAnotherImportRunning
             || ((selectedSkillIds ?? draft?.selectedSkillIds)?.isEmpty == true && !card.skills.isEmpty)
     }
 
@@ -355,6 +367,17 @@ struct ImportScreen: View {
             return localized("import.local.action.choose_version")
         }
         return nil
+    }
+
+    static func importActionHelpText(
+        for card: ImportViewModel.Card,
+        activeImportDisabledReason: String?,
+        localized: (String) -> String
+    ) -> String? {
+        if let actionTitle = importActionTitle(for: card, localized: localized) {
+            return actionTitle
+        }
+        return activeImportDisabledReason
     }
 
     static func localValidationStatusTextKey(for status: String?) -> String {

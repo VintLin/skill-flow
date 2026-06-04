@@ -271,6 +271,7 @@
 "import.local.source.manual" = "Manual";
 "import.local.sources.more" = "%d more paths";
 "import.local.action.choose_version" = "Choose Version";
+"import.action.disabled.import_running" = "Another import is already running.";
 "import.local.detected.title" = "Local detected";
 "import.local.detected.description" = "Skills found in local agent directories.";
 "import.local.status.matched" = "Local skill matches the origin group.";
