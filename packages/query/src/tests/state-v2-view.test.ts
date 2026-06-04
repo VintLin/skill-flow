@@ -87,7 +87,7 @@ describe("state v2 runtime view adapters", () => {
     expect(manifest.bindings.stack?.selectedLeafIds).toEqual(["stack:member-1"]);
   });
 
-  test("projects active v2 projections to deployment views", () => {
+  test("projects active v2 projections to deployments and all v2 projections to projection views", () => {
     const lockView = projectLockFileV2ToView(
       lockFile({
         sources: {
@@ -122,7 +122,39 @@ describe("state v2 runtime view adapters", () => {
     ]);
     expect(lockView.projections).toEqual([
       {
-        ...lockView.deployments[0],
+        sourceId: "repo",
+        leafId: "repo:review",
+        target: "codex",
+        targetPath: "/targets/codex/review",
+        targetRootPath: "/targets/codex",
+        strategy: "symlink",
+        status: "active",
+        contentHash: "hash-repo-review",
+        appliedAt: "2026-04-02T00:00:00.000Z",
+        mode: "managed",
+      },
+      {
+        sourceId: "repo",
+        leafId: "repo:review",
+        target: "cursor",
+        targetPath: "/targets/cursor/review",
+        targetRootPath: "/targets/cursor",
+        strategy: "symlink",
+        status: "removed",
+        contentHash: "hash-repo-review",
+        appliedAt: "2026-04-02T00:00:00.000Z",
+        mode: "managed",
+      },
+      {
+        sourceId: "repo",
+        leafId: "repo:review",
+        target: "claude-code",
+        targetPath: "/targets/claude-code/review",
+        targetRootPath: "/targets/claude-code",
+        strategy: "symlink",
+        status: "blocked",
+        contentHash: "hash-repo-review",
+        appliedAt: "2026-04-02T00:00:00.000Z",
         mode: "managed",
       },
     ]);

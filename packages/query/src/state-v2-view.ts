@@ -7,6 +7,7 @@ import type {
   Manifest,
   ManifestFileV2,
   PreferencesFileV2,
+  ProjectionRecord,
   SharedPreferences,
   SourceBinding,
   SourceBindingV2,
@@ -82,6 +83,7 @@ export function projectLockFileV2ToView(
   const activeDeployments = lockFile.projections
     .filter((projection) => projection.status === "active")
     .map(projectProjectionV2ToDeploymentView);
+  const projections = lockFile.projections.map(projectProjectionV2ToView);
 
   return {
     schemaVersion: 1,
@@ -91,10 +93,7 @@ export function projectLockFileV2ToView(
     leafInventory: lockFile.leafInventory
       .filter((leaf) => leaf.valid)
       .map((leaf) => projectLeafV2ToView(leaf, manifestSourceById.get(leaf.sourceId)?.displayName)),
-    projections: activeDeployments.map((deployment) => ({
-      ...deployment,
-      mode: "managed",
-    })),
+    projections,
     deployments: activeDeployments,
   };
 }
@@ -209,5 +208,22 @@ function projectProjectionV2ToDeploymentView(
     status: "active",
     contentHash: projection.contentHash,
     appliedAt: projection.updatedAt,
+  };
+}
+
+function projectProjectionV2ToView(
+  projection: LockFileV2["projections"][number],
+): ProjectionRecord {
+  return {
+    sourceId: projection.sourceId,
+    leafId: projection.leafId,
+    target: projection.target,
+    targetPath: projection.targetPath,
+    ...(projection.targetRootPath ? { targetRootPath: projection.targetRootPath } : {}),
+    strategy: projection.strategy,
+    status: projection.status,
+    contentHash: projection.contentHash,
+    appliedAt: projection.updatedAt,
+    mode: "managed",
   };
 }
