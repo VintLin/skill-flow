@@ -5,6 +5,7 @@ protocol DesktopCommanding: Sendable {
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse
     func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse
     func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse
+    func commitImportSource(preparationId: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse
     func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse
     func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse
     func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse
@@ -12,4 +13,10 @@ protocol DesktopCommanding: Sendable {
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse
     func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse
     func doctor() async throws -> BridgeResponse
+}
+
+extension DesktopCommanding {
+    func commitImportSource(preparationId: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        throw BridgeClientError.invalidResponse
+    }
 }

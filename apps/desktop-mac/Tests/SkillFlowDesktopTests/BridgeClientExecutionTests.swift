@@ -307,6 +307,39 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(scope["projectId"] as? String, "repo-a")
     }
 
+    func testPrepareImportSourceSendsExpectedPayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.prepareImportSource(locator: "anthropics/skills")
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "prepare-import-source")
+        XCTAssertEqual(payload["locator"] as? String, "anthropics/skills")
+    }
+
+    func testCommitImportSourceSendsExpectedPayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.commitImportSource(
+            preparationId: "prep-1",
+            selectedSkillIds: ["review"],
+            enabledTargets: ["codex"]
+        )
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "commit-import-source")
+        XCTAssertEqual(payload["preparationId"] as? String, "prep-1")
+        let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
+        XCTAssertEqual(draft["selectedSkillIds"] as? [String], ["review"])
+        XCTAssertEqual(draft["enabledTargets"] as? [String], ["codex"])
+    }
+
     func testRenameSourceEncodesPayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture

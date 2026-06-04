@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 
 @testable import SkillFlowDesktop
@@ -1407,6 +1408,32 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(ImportScreen.showsResultsHeader(searchPhase: .loading, cardCount: 0))
     }
 
+    func testPreviewGroupsIfNeededBoundsConcurrentPreviews() async {
+        let state = DesktopAppState()
+        let query = RecordingPreviewQueryFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        model.recommendedImportGroups = (0..<4).map { index in
+            makeItem(id: "group-\(index)", title: "Group \(index)", locator: "owner/repo-\(index)")
+        }
+
+        await container.previewGroupsIfNeeded(model.recommendedImportGroups.map(\.id))
+
+        let previewLocators = await query.recordedPreviewLocators().sorted()
+        let maxConcurrentPreviewCount = await query.recordedMaxConcurrentPreviewCount()
+
+        XCTAssertEqual(previewLocators, [
+            "owner/repo-0",
+            "owner/repo-1",
+            "owner/repo-2",
+            "owner/repo-3",
+        ])
+        XCTAssertLessThanOrEqual(maxConcurrentPreviewCount, 2)
+    }
+
     func testImportEmptyAndLoadingStatesUsePlainCenteredPresentation() {
         XCTAssertFalse(ImportScreen.usesChromedEmptyState(searchPhase: .idle, cardCount: 0))
         XCTAssertFalse(ImportScreen.usesChromedEmptyState(searchPhase: .failed(.plain("x")), cardCount: 0))
@@ -1526,6 +1553,110 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
 
     func doctor() async throws -> BridgeResponse {
         fatalError("unused")
+    }
+}
+
+private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sendable {
+    private let recorder = PreviewConcurrencyRecorder()
+
+    func recordedPreviewLocators() async -> [String] {
+        await recorder.recordedPreviewLocators()
+    }
+
+    func recordedMaxConcurrentPreviewCount() async -> Int {
+        await recorder.recordedMaxConcurrentPreviewCount()
+    }
+
+    func bootstrap() async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func list() async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func searchImportGroups(query: String?) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func scanLocalImportGroups(path: String?) async throws -> BridgeResponse {
+        fatalError("unused")
+    }
+
+    func prepareImportSource(locator: String) async throws -> BridgeResponse {
+        BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .prepareImportSource,
+            ok: true,
+            data: AnyCodable([
+                "status": "ready",
+                "preparationId": "prep-\(locator.replacingOccurrences(of: "/", with: "-"))",
+            ]),
+            warnings: [],
+            errors: []
+        )
+    }
+
+    func previewImportSource(locator: String) async throws -> BridgeResponse {
+        await recorder.begin(locator: locator)
+        try await Task.sleep(nanoseconds: 80_000_000)
+        await recorder.end()
+
+        return BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .previewImportSource,
+            ok: true,
+            data: AnyCodable([
+                "status": "ready",
+                "locator": locator,
+                "skills": [
+                    [
+                        "id": "browse",
+                        "title": "Browse",
+                        "summary": "",
+                    ],
+                ],
+                "targets": [],
+                "selectedSkillIds": ["browse"],
+                "enabledTargets": [],
+            ]),
+            warnings: [],
+            errors: []
+        )
+    }
+}
+
+private actor PreviewConcurrencyRecorder {
+    private var previewLocators: [String] = []
+    private var activePreviewCount = 0
+    private var maxConcurrentPreviewCount = 0
+
+    func begin(locator: String) {
+        previewLocators.append(locator)
+        activePreviewCount += 1
+        maxConcurrentPreviewCount = max(maxConcurrentPreviewCount, activePreviewCount)
+    }
+
+    func end() {
+        activePreviewCount -= 1
+    }
+
+    func recordedPreviewLocators() -> [String] {
+        previewLocators
+    }
+
+    func recordedMaxConcurrentPreviewCount() -> Int {
+        maxConcurrentPreviewCount
     }
 }
 

@@ -65,6 +65,8 @@ struct ImportViewModel: Equatable {
         let title: String
         let locator: String
         let canonicalRepo: String
+        let preparationId: String?
+        let preparationStatus: String?
         let isInstalledLocally: Bool
         let aliases: [String]
         let summary: String
@@ -88,6 +90,8 @@ struct ImportViewModel: Equatable {
             title: String,
             locator: String,
             canonicalRepo: String,
+            preparationId: String? = nil,
+            preparationStatus: String? = nil,
             isInstalledLocally: Bool,
             aliases: [String],
             summary: String,
@@ -110,6 +114,8 @@ struct ImportViewModel: Equatable {
             self.title = title
             self.locator = locator
             self.canonicalRepo = canonicalRepo
+            self.preparationId = preparationId
+            self.preparationStatus = preparationStatus
             self.isInstalledLocally = isInstalledLocally
             self.aliases = aliases
             self.summary = summary
@@ -165,6 +171,8 @@ struct ImportViewModel: Equatable {
             title: item.title,
             locator: item.locator,
             canonicalRepo: item.canonicalRepo,
+            preparationId: item.preparationId,
+            preparationStatus: item.preparationStatus,
             isInstalledLocally: item.isInstalledLocally,
             aliases: item.aliases,
             summary: summary(for: item, locale: locale),
@@ -215,6 +223,8 @@ struct ImportViewModel: Equatable {
                 title: baseCard.title,
                 locator: baseCard.locator,
                 canonicalRepo: baseCard.canonicalRepo,
+                preparationId: baseCard.preparationId,
+                preparationStatus: baseCard.preparationStatus,
                 isInstalledLocally: baseCard.isInstalledLocally,
                 aliases: baseCard.aliases,
                 summary: baseCard.summary,
@@ -229,7 +239,9 @@ struct ImportViewModel: Equatable {
                 provider: baseCard.provider,
                 localValidationStatus: baseCard.localValidationStatus,
                 selectedLocalChoiceId: baseCard.selectedLocalChoiceId,
-                localChoices: baseCard.localChoices
+                localChoices: baseCard.localChoices,
+                localSourcePaths: baseCard.localSourcePaths,
+                requiresLocalVariantSelection: baseCard.requiresLocalVariantSelection
             )
 
             sectionsByCategoryId[entry.categoryId, default: []].append((entry: entry, card: decoratedCard))

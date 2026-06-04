@@ -323,10 +323,13 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(previewed?.snapshot?.repoStars, 406)
         XCTAssertEqual(previewed?.snapshot?.trust?.labels, ["Official", "Trending"])
         XCTAssertEqual(previewed?.matchedSkills, [])
+        XCTAssertEqual(previewed?.preparationId, "prep-anthropics-skills")
+        XCTAssertEqual(previewed?.preparationStatus, "ready")
 
         let requests = fixture.loggedRequests().map(\.command)
         XCTAssertFalse(requests.contains("search-import-groups"))
         XCTAssertTrue(requests.contains("preview-import-source"))
+        XCTAssertTrue(requests.contains("prepare-import-source"))
     }
 
     func testImportPageShowsCachedSnapshotSkillsBeforePreviewRuns() async throws {
@@ -451,8 +454,10 @@ final class WorkflowCoverageTests: XCTestCase {
             selectedSkillIds: ["research"],
             enabledTargets: ["cursor"]
         )
-        await Task.yield()
-        await Task.yield()
+        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
+            model.sourceIds.contains("anthropics-skills")
+                && model.recommendedImportGroups.first(where: { $0.id == "anthropics-skills" })?.isInstalledLocally == true
+        }
 
         XCTAssertEqual(model.currentRoute, .importPage)
         XCTAssertEqual(runtime.state.view.currentRoute, .importPage)
@@ -466,8 +471,11 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(model.toast?.message, "Imported source.")
 
         let importRequests = fixture.loggedRequests().filter { $0.command == "import-source" }
-        XCTAssertEqual(importRequests.count, 1)
-        let draft = importRequests.first?.payload?["draft"]?.value as? [String: Any]
+        XCTAssertEqual(importRequests.count, 0)
+        let commitRequests = fixture.loggedRequests().filter { $0.command == "commit-import-source" }
+        XCTAssertEqual(commitRequests.count, 1)
+        XCTAssertEqual(commitRequests.first?.payload?["preparationId"]?.value as? String, "prep-anthropics-skills")
+        let draft = commitRequests.first?.payload?["draft"]?.value as? [String: Any]
         XCTAssertEqual(draft?["selectedSkillIds"] as? [String], ["research"])
         XCTAssertEqual(draft?["enabledTargets"] as? [String], ["cursor"])
     }
@@ -489,8 +497,10 @@ final class WorkflowCoverageTests: XCTestCase {
             selectedSkillIds: ["research"],
             enabledTargets: []
         )
-        await Task.yield()
-        await Task.yield()
+        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
+            model.currentRoute == .detail(sourceId: "anthropics-skills")
+                && model.searchImportGroups.first(where: { $0.canonicalRepo == "anthropics/skills" })?.isInstalledLocally == true
+        }
 
         XCTAssertEqual(model.currentRoute, .detail(sourceId: "anthropics-skills"))
         XCTAssertEqual(
@@ -1085,6 +1095,10 @@ private struct TestFixture {
       return aliases[raw] || raw.replace(/\\.git$/, '');
     }
 
+    function preparationIdFor(value) {
+      return `prep-${normalizeRepo(value).replace(/[^a-z0-9]+/g, '-')}`;
+    }
+
     function installedCanonicalRepos(state) {
       return new Set(
         Object.values(state.sources || {})
@@ -1397,6 +1411,34 @@ private struct TestFixture {
         return;
       }
 
+      if (request.command === 'prepare-import-source') {
+        const locator = String((request.payload && request.payload.locator) || '');
+        const normalizedLocator = normalizeRepo(locator);
+        const group = (state.importGroups || []).find((candidate) => {
+          const aliases = [candidate.canonicalRepo, candidate.locator].concat(candidate.aliases || []).map(normalizeRepo);
+          return aliases.includes(normalizedLocator);
+        });
+
+        if (!group) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            status: 'failed',
+            reasonCode: 'provider_data_unavailable',
+            retryable: true
+          }, [], [])));
+          return;
+        }
+
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          status: 'ready',
+          preparationId: preparationIdFor(group.canonicalRepo),
+          locator: group.locator,
+          canonicalRepo: group.canonicalRepo,
+          preparedAt: '2026-06-04T00:00:00.000Z',
+          expiresAt: '2026-06-05T00:00:00.000Z'
+        }, [], [])));
+        return;
+      }
+
       if (request.command === 'import-source') {
         const locator = String((request.payload && request.payload.locator) || '');
         const failureReason = state.importFailures && state.importFailures[locator];
@@ -1445,6 +1487,47 @@ private struct TestFixture {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           status: 'ready',
           sourceId: group.id
+        }, [], [])));
+        return;
+      }
+
+      if (request.command === 'commit-import-source') {
+        const preparationId = String((request.payload && request.payload.preparationId) || '');
+        const group = (state.importGroups || []).find((candidate) => preparationIdFor(candidate.canonicalRepo) === preparationId);
+
+        if (!group) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            status: 'failed',
+            reasonCode: 'provider_data_unavailable'
+          }, [], [])));
+          return;
+        }
+
+        const draft = request.payload && request.payload.draft ? request.payload.draft : {};
+        const selectedSkillIds = Array.isArray(draft.selectedSkillIds) && draft.selectedSkillIds.length > 0
+          ? draft.selectedSkillIds
+          : (group.skills || []).map((skill) => skill.id);
+        const enabledTargets = Array.isArray(draft.enabledTargets) ? draft.enabledTargets : [];
+
+        if (!state.sources) {
+          state.sources = {};
+        }
+        state.sources[group.id] = {
+          displayName: group.title,
+          locator: group.locator,
+          kind: 'git',
+          canonicalRepo: group.canonicalRepo,
+          leafIds: (group.skills || []).map((skill) => skill.id),
+          selectedLeafIds: selectedSkillIds,
+          enabledTargets
+        };
+        writeState(state);
+
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          status: 'ready',
+          sourceId: group.id,
+          preparationId,
+          usedPreparation: true
         }, [], [])));
         return;
       }

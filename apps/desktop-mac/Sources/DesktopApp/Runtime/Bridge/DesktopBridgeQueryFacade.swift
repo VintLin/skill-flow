@@ -15,5 +15,6 @@ struct DesktopBridgeQueryFacade<Transport: DesktopBridgeTransporting>: DesktopQu
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { try await bridgeClient.inspectEnrichment(sourceId: sourceId) }
     func searchImportGroups(query: String?) async throws -> BridgeResponse { try await bridgeClient.searchImportGroups(query: query) }
     func scanLocalImportGroups(path: String?) async throws -> BridgeResponse { try await bridgeClient.scanLocalImportGroups(path: path) }
+    func prepareImportSource(locator: String) async throws -> BridgeResponse { try await bridgeClient.prepareImportSource(locator: locator) }
     func previewImportSource(locator: String) async throws -> BridgeResponse { try await bridgeClient.previewImportSource(locator: locator) }
 }

@@ -86,8 +86,18 @@ final class ImportScreenContainer {
     }
 
     func previewGroupsIfNeeded(_ groupIds: [String]) async {
+        let maxConcurrentPreviews = 2
+        var iterator = groupIds.makeIterator()
         await withTaskGroup(of: Void.self) { group in
-            for groupId in groupIds {
+            for _ in 0..<maxConcurrentPreviews {
+                guard let groupId = iterator.next() else { break }
+                group.addTask { [mainViewModel] in
+                    await mainViewModel.previewImportGroupIfNeeded(groupId)
+                }
+            }
+
+            while await group.next() != nil {
+                guard let groupId = iterator.next() else { continue }
                 group.addTask { [mainViewModel] in
                     await mainViewModel.previewImportGroupIfNeeded(groupId)
                 }

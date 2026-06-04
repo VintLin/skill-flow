@@ -619,6 +619,10 @@ final class MainViewModel {
         let title: String
         let locator: String
         let canonicalRepo: String
+        let preparationId: String?
+        let preparationStatus: String?
+        let preparedAt: String?
+        let expiresAt: String?
         let isInstalledLocally: Bool
         let aliases: [String]
         let summary: String
@@ -634,6 +638,56 @@ final class MainViewModel {
         let previewPhase: ImportLoadPhase
         let skills: [ImportGroupSkill]
         let targets: [ImportGroupTarget]
+
+        init(
+            id: String,
+            title: String,
+            locator: String,
+            canonicalRepo: String,
+            preparationId: String? = nil,
+            preparationStatus: String? = nil,
+            preparedAt: String? = nil,
+            expiresAt: String? = nil,
+            isInstalledLocally: Bool,
+            aliases: [String],
+            summary: String,
+            starCount: Int?,
+            totalInstalls: Int?,
+            skillCount: Int?,
+            matchedSkillNames: [String],
+            matchedSkills: [ImportMatchedSkill],
+            provider: String,
+            localImport: LocalImportInfo?,
+            snapshot: SourceSnapshotData?,
+            enrichPhase: ImportLoadPhase,
+            previewPhase: ImportLoadPhase,
+            skills: [ImportGroupSkill],
+            targets: [ImportGroupTarget]
+        ) {
+            self.id = id
+            self.title = title
+            self.locator = locator
+            self.canonicalRepo = canonicalRepo
+            self.preparationId = preparationId
+            self.preparationStatus = preparationStatus
+            self.preparedAt = preparedAt
+            self.expiresAt = expiresAt
+            self.isInstalledLocally = isInstalledLocally
+            self.aliases = aliases
+            self.summary = summary
+            self.starCount = starCount
+            self.totalInstalls = totalInstalls
+            self.skillCount = skillCount
+            self.matchedSkillNames = matchedSkillNames
+            self.matchedSkills = matchedSkills
+            self.provider = provider
+            self.localImport = localImport
+            self.snapshot = snapshot
+            self.enrichPhase = enrichPhase
+            self.previewPhase = previewPhase
+            self.skills = skills
+            self.targets = targets
+        }
     }
 
     struct DeploymentRow: Identifiable {
@@ -2234,11 +2288,23 @@ final class MainViewModel {
         }
 
         do {
-            let response = try await commandFacade.importSource(
-                locator: locator,
-                selectedSkillIds: finalSelectedSkillIds,
-                enabledTargets: finalEnabledTargets
-            )
+            let item = importGroupItem(id: groupId)
+            let response: BridgeResponse
+            if let preparationId = item?.preparationId,
+               item?.preparationStatus == "ready",
+               item?.locator == locator {
+                response = try await commandFacade.commitImportSource(
+                    preparationId: preparationId,
+                    selectedSkillIds: finalSelectedSkillIds,
+                    enabledTargets: finalEnabledTargets
+                )
+            } else {
+                response = try await commandFacade.importSource(
+                    locator: locator,
+                    selectedSkillIds: finalSelectedSkillIds,
+                    enabledTargets: finalEnabledTargets
+                )
+            }
             guard let payload = response.data?.value as? [String: Any],
                   let status = payload["status"] as? String
             else {
@@ -2254,12 +2320,16 @@ final class MainViewModel {
 
             let sourceId = payload["sourceId"] as? String ?? ""
             cancelDeferredDraftSync()
-            await synchronizeState(
-                refreshDoctor: true,
-                inspectSourceId: sourceId.nonEmpty
-            )
-            if currentRoute != .importPage, let sourceId = sourceId.nonEmpty {
-                routeState?.view.currentRoute = .detail(sourceId: sourceId)
+            importingImportGroupId = nil
+            Task { [weak self] in
+                guard let self else { return }
+                await self.synchronizeState(
+                    refreshDoctor: true,
+                    inspectSourceId: sourceId.nonEmpty
+                )
+                if self.currentRoute != .importPage, let sourceId = sourceId.nonEmpty {
+                    self.routeState?.view.currentRoute = .detail(sourceId: sourceId)
+                }
             }
             showToast(style: .success, text: localizedText("toast.import.success"))
         } catch {
@@ -2309,6 +2379,10 @@ final class MainViewModel {
                     ?? sourcePaths.compactMap { ($0["path"] as? String)?.nonEmpty }.first
                     ?? id,
                 canonicalRepo: canonicalRepo,
+                preparationId: nil,
+                preparationStatus: nil,
+                preparedAt: nil,
+                expiresAt: nil,
                 isInstalledLocally: isInstalledLocally,
                 aliases: uniqueSorted([canonicalRepo, id]),
                 summary: "",
@@ -2483,6 +2557,10 @@ final class MainViewModel {
                 title: title,
                 locator: locator,
                 canonicalRepo: canonicalRepo,
+                preparationId: (group["preparationId"] as? String)?.nonEmpty,
+                preparationStatus: (group["preparationStatus"] as? String)?.nonEmpty,
+                preparedAt: (group["preparedAt"] as? String)?.nonEmpty,
+                expiresAt: (group["expiresAt"] as? String)?.nonEmpty,
                 isInstalledLocally: group["installed"] as? Bool ?? false,
                 aliases: aliases,
                 summary: summary,
@@ -2592,6 +2670,10 @@ final class MainViewModel {
                     title: Self.localRecommendationTitle(for: recommendation.canonicalRepo),
                     locator: recommendation.locator,
                     canonicalRepo: recommendation.canonicalRepo,
+                    preparationId: nil,
+                    preparationStatus: nil,
+                    preparedAt: nil,
+                    expiresAt: nil,
                     isInstalledLocally: isInstalledLocally,
                     aliases: uniqueSorted([recommendation.canonicalRepo, recommendation.locator]),
                     summary: "",
@@ -2863,6 +2945,10 @@ final class MainViewModel {
                 title: snapshot?.title ?? item.title,
                 locator: (payload["locator"] as? String)?.nonEmpty ?? fallbackLocator,
                 canonicalRepo: item.canonicalRepo,
+                preparationId: (payload["preparationId"] as? String)?.nonEmpty ?? item.preparationId,
+                preparationStatus: (payload["preparationStatus"] as? String)?.nonEmpty ?? item.preparationStatus,
+                preparedAt: (payload["preparedAt"] as? String)?.nonEmpty ?? item.preparedAt,
+                expiresAt: (payload["expiresAt"] as? String)?.nonEmpty ?? item.expiresAt,
                 isInstalledLocally: item.isInstalledLocally,
                 aliases: item.aliases,
                 summary: item.summary.nonEmpty ?? snapshot?.description ?? "",
@@ -2889,6 +2975,10 @@ final class MainViewModel {
                 title: item.title,
                 locator: item.locator,
                 canonicalRepo: item.canonicalRepo,
+                preparationId: item.preparationId,
+                preparationStatus: item.preparationStatus,
+                preparedAt: item.preparedAt,
+                expiresAt: item.expiresAt,
                 isInstalledLocally: item.isInstalledLocally,
                 aliases: item.aliases,
                 summary: item.summary,
@@ -3333,6 +3423,10 @@ final class MainViewModel {
                 title: item.title,
                 locator: item.locator,
                 canonicalRepo: item.canonicalRepo,
+                preparationId: item.preparationId,
+                preparationStatus: item.preparationStatus,
+                preparedAt: item.preparedAt,
+                expiresAt: item.expiresAt,
                 isInstalledLocally: isInstalledLocally,
                 aliases: item.aliases,
                 summary: item.summary,
@@ -4275,7 +4369,14 @@ final class MainViewModel {
 
         importPreviewTokenSeed &+= 1
         let token = importPreviewTokenSeed
-        let task = Task { try await bridgeClient.previewImportSource(locator: locator) }
+        let task = Task { [queryFacade] in
+            let response = try await queryFacade.previewImportSource(locator: locator)
+            return await Self.responseByAddingImportPreparation(
+                response,
+                locator: locator,
+                queryFacade: queryFacade
+            )
+        }
         importPreviewTasksByGroupId[groupId] = task
         importPreviewTokensByGroupId[groupId] = token
 
@@ -4293,6 +4394,44 @@ final class MainViewModel {
             }
             throw error
         }
+    }
+
+    private static func responseByAddingImportPreparation(
+        _ response: BridgeResponse,
+        locator: String,
+        queryFacade: any DesktopQuerying
+    ) async -> BridgeResponse {
+        guard response.ok,
+              var payload = response.data?.value as? [String: Any],
+              payload["status"] as? String == "ready",
+              payload["preparationId"] == nil
+        else {
+            return response
+        }
+
+        do {
+            let prepared = try await queryFacade.prepareImportSource(locator: locator)
+            if prepared.ok,
+               let preparationPayload = prepared.data?.value as? [String: Any] {
+                payload["preparationId"] = preparationPayload["preparationId"]
+                payload["preparationStatus"] = preparationPayload["status"]
+                payload["preparedAt"] = preparationPayload["preparedAt"]
+                payload["expiresAt"] = preparationPayload["expiresAt"]
+                return BridgeResponse(
+                    protocolVersion: response.protocolVersion,
+                    requestId: response.requestId,
+                    command: response.command,
+                    ok: response.ok,
+                    data: AnyCodable(payload),
+                    warnings: response.warnings + prepared.warnings,
+                    errors: response.errors + prepared.errors
+                )
+            }
+        } catch {
+            return response
+        }
+
+        return response
     }
 
     private func synchronizeState(

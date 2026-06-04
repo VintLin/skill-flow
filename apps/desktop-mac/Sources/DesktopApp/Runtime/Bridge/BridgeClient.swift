@@ -160,6 +160,29 @@ final class BridgeClient: @unchecked Sendable {
         try await send(command: .previewImportSource, payload: ["locator": AnyCodable(locator)])
     }
 
+    func prepareImportSource(locator: String) async throws -> BridgeResponse {
+        try await send(command: .prepareImportSource, payload: ["locator": AnyCodable(locator)])
+    }
+
+    func commitImportSource(
+        preparationId: String,
+        selectedSkillIds: [String],
+        enabledTargets: [String]
+    ) async throws -> BridgeResponse {
+        try await mutationCoordinator.runMutation {
+            try await self.send(
+                command: .commitImportSource,
+                payload: [
+                    "preparationId": AnyCodable(preparationId),
+                    "draft": AnyCodable([
+                        "selectedSkillIds": selectedSkillIds,
+                        "enabledTargets": enabledTargets,
+                    ]),
+                ]
+            )
+        }
+    }
+
     func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
             try await self.send(
