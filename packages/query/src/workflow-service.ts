@@ -13,8 +13,8 @@ export class WorkflowService {
   getSummaries(
     manifest: Manifest,
     lockFile: LockFile,
-    audit?: DoctorReport,
-    collections?: CollectionsFileV2 | object,
+    audit: DoctorReport | undefined,
+    collections: CollectionsFileV2,
   ): WorkflowSummary[] {
     return manifest.sources.map((source) => {
       const lock = lockFile.sources.find((item) => item.id === source.id);
@@ -59,7 +59,7 @@ export class WorkflowService {
 
   private resolveSummarySource(
     source: Manifest["sources"][number],
-    collections?: CollectionsFileV2 | object,
+    collections: CollectionsFileV2,
   ): Manifest["sources"][number] {
     if (source.kind !== "virtual") {
       return source;
@@ -79,7 +79,7 @@ export class WorkflowService {
     source: Manifest["sources"][number],
     lockFile: LockFile,
     manifest: Manifest,
-    collections?: CollectionsFileV2 | object,
+    collections: CollectionsFileV2,
   ): LeafRecord[] {
     if (source.kind !== "virtual") {
       return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
@@ -107,14 +107,8 @@ export class WorkflowService {
     });
   }
 
-  private resolveCollectionRecord(
-    collections: CollectionsFileV2 | object | undefined,
-    sourceId: string,
-  ) {
-    if (!collections || !("collections" in collections)) {
-      return undefined;
-    }
-    return (collections as CollectionsFileV2).collections[sourceId];
+  private resolveCollectionRecord(collections: CollectionsFileV2, sourceId: string) {
+    return collections.collections[sourceId];
   }
 
   private resolveHealth(

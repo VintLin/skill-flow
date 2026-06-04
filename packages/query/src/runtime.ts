@@ -5,6 +5,7 @@ import { createChannelAdapters, type ChannelAdapter } from "@skill-flow/integrat
 import type {
   AddSourceDraftOptions,
   AddSourcePreparation,
+  CollectionsFileV2,
   DeploymentTargetId,
   DraftBinding,
   DeploymentAction,
@@ -54,6 +55,7 @@ import type {
 } from "@skill-flow/domain/types";
 import { getBootstrapImportedTargets, getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { StateStore } from "@skill-flow/storage/store";
+import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import {
   isImportDataCacheExpired,
 } from "@skill-flow/storage/import-data-cache";
@@ -251,6 +253,7 @@ export class SkillFlowApp {
   private static readonly importPreviewPrewarmLimit = 4;
 
   readonly store: StateStore;
+  private readonly stateStoreV2: StateStoreV2;
   adapters: ChannelAdapter[];
   readonly inventoryService: InventoryService;
   readonly sourceService: SourceService;
@@ -270,6 +273,7 @@ export class SkillFlowApp {
 
   constructor() {
     this.store = new StateStore();
+    this.stateStoreV2 = new StateStoreV2(this.store.rootPath);
     const adapters = createChannelAdapters();
     this.adapters = adapters;
     this.inventoryService = new InventoryService();
@@ -282,7 +286,13 @@ export class SkillFlowApp {
     this.recentProjectService = new RecentProjectService();
     this.workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
     this.configCoordinator = new ConfigCoordinator({
-      store: this.store,
+      store: {
+        init: () => this.store.init(),
+        readManifest: () => this.store.readManifest(),
+        readPreferences: () => this.store.readPreferences(),
+        readCollections: () => this.readCollectionsForRuntime(),
+        writePreferences: (preferences) => this.store.writePreferences(preferences),
+      },
       recentProjectService: this.recentProjectService,
       doctorService: this.doctorService,
       workflowService: this.workflowService,
@@ -290,6 +300,10 @@ export class SkillFlowApp {
       pruneMissingCheckouts: () => this.pruneMissingCheckoutsImpl(),
       getConfigData: () => this.getConfigDataImpl(),
     });
+  }
+
+  private readCollectionsForRuntime(): Promise<CollectionsFileV2> {
+    return this.stateStoreV2.readCollections();
   }
 
   private async refreshAdapters(): Promise<ChannelAdapter[]> {
@@ -961,6 +975,7 @@ export class SkillFlowApp {
   > {
     const { manifest, lockFile } = await this.store.readState();
     const virtualGroups = await this.store.readVirtualGroups();
+    const collections = await this.readCollectionsForRuntime();
     this.normalizeBindings(manifest, lockFile, virtualGroups);
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
@@ -970,7 +985,7 @@ export class SkillFlowApp {
       });
     }
 
-    const summary = this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups).find((item) => item.source.id === sourceId);
+    const summary = this.workflowService.getSummaries(manifest, lockFile, undefined, collections).find((item) => item.source.id === sourceId);
     if (!summary) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -999,7 +1014,7 @@ export class SkillFlowApp {
     const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
     const scopedSource = prepared.manifest.sources.find((item) => item.id === sourceId) ?? source;
     const scopedSummary =
-      this.workflowService.getSummaries(prepared.manifest, lockFile, undefined, virtualGroups).find((item) => item.source.id === sourceId)
+      this.workflowService.getSummaries(prepared.manifest, lockFile, undefined, collections).find((item) => item.source.id === sourceId)
       ?? summary;
     const scopedBinding = prepared.manifest.bindings[sourceId] ?? binding;
     const scopedDeployments = scopedDraft.enabledTargets.length === 0
@@ -3290,10 +3305,11 @@ export class SkillFlowApp {
       lockFile,
     );
     const virtualGroups = await this.store.readVirtualGroups();
+    const collections = await this.readCollectionsForRuntime();
     const hiddenSourceIds = this.hiddenSourceIdsFromVirtualGroups(virtualGroups);
     return ok(
       {
-        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups)
+        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, collections)
           .filter((summary) => !hiddenSourceIds.has(summary.source.id)),
         pinnedSourceIds: reconciledPreferences.pinnedSourceIds,
         recentProjects: reconciledPreferences.recentProjects,
@@ -3327,12 +3343,13 @@ export class SkillFlowApp {
     }
     const { manifest, lockFile } = await this.store.readState();
     const virtualGroups = await this.store.readVirtualGroups();
+    const collections = await this.readCollectionsForRuntime();
     await this.persistNormalizedBindings(manifest, lockFile);
     return ok(
       {
         manifest,
         lockFile,
-        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, virtualGroups),
+        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, collections),
       },
       pruned.warnings,
     );

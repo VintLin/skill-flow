@@ -23,7 +23,7 @@ type ConfigCoordinatorDeps = {
     init(): Promise<void>;
     readManifest(): Promise<Manifest>;
     readPreferences(): Promise<SharedPreferences>;
-    readCollections?: () => Promise<CollectionsFileV2>;
+    readCollections(): Promise<CollectionsFileV2>;
     writePreferences(preferences: SharedPreferences): Promise<void>;
   };
   recentProjectService: {
@@ -36,8 +36,8 @@ type ConfigCoordinatorDeps = {
     getSummaries(
       manifest: Manifest,
       lockFile: LockFile,
-      audit?: DoctorReport,
-      collections?: CollectionsFileV2,
+      audit: DoctorReport | undefined,
+      collections: CollectionsFileV2,
     ): WorkflowSummary[];
   };
   getAvailableTargets(): Promise<DeploymentTargetId[]>;
@@ -113,12 +113,6 @@ export class ConfigCoordinator {
       level: "info",
       message: "Building config summaries...",
     });
-    if (!this.deps.store.readCollections) {
-      return fail({
-        code: "COLLECTIONS_STATE_READER_MISSING",
-        message: "Collections V2 state reader is not available.",
-      });
-    }
     const collections = await this.deps.store.readCollections();
     const summaries = this.deps.workflowService.getSummaries(
       configData.data.manifest,
