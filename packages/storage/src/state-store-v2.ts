@@ -117,6 +117,9 @@ export class StateStoreV2 {
     await this.withIoLock(async () => {
       await this.init();
       assertManifestFileV2(manifest, this.manifestPath);
+      await this.assertMigrationGenerationMatchesExistingAuthorityFiles({
+        manifest,
+      });
       await writeManifestV2(this.stateRoot, manifest);
     });
   }
@@ -132,6 +135,9 @@ export class StateStoreV2 {
     await this.withIoLock(async () => {
       await this.init();
       assertLockFileV2(lockFile, this.lockPath);
+      await this.assertMigrationGenerationMatchesExistingAuthorityFiles({
+        lockFile,
+      });
       await writeLockV2(this.stateRoot, lockFile);
     });
   }
@@ -147,6 +153,9 @@ export class StateStoreV2 {
     await this.withIoLock(async () => {
       await this.init();
       assertPreferencesFileV2(preferences, this.preferencesPath);
+      await this.assertMigrationGenerationMatchesExistingAuthorityFiles({
+        preferences,
+      });
       await writePreferencesV2(this.stateRoot, preferences);
     });
   }
@@ -162,6 +171,9 @@ export class StateStoreV2 {
     await this.withIoLock(async () => {
       await this.init();
       assertCollectionsFileV2(collections, this.collectionsPath);
+      await this.assertMigrationGenerationMatchesExistingAuthorityFiles({
+        collections,
+      });
       await writeCollectionsV2(this.stateRoot, collections);
     });
   }
@@ -252,6 +264,24 @@ export class StateStoreV2 {
 
   private readCollectionsRaw(): Promise<CollectionsFileV2> {
     return readAuthorityFile(this.collectionsPath, assertCollectionsFileV2);
+  }
+
+  private async assertMigrationGenerationMatchesExistingAuthorityFiles(
+    nextState: Partial<StateStoreV2State>,
+  ): Promise<void> {
+    const [manifest, lockFile, preferences, collections] = await Promise.all([
+      nextState.manifest ? Promise.resolve(nextState.manifest) : this.readManifestRaw(),
+      nextState.lockFile ? Promise.resolve(nextState.lockFile) : this.readLockRaw(),
+      nextState.preferences ? Promise.resolve(nextState.preferences) : this.readPreferencesRaw(),
+      nextState.collections ? Promise.resolve(nextState.collections) : this.readCollectionsRaw(),
+    ]);
+    assertMigrationGenerationMatch(
+      this.stateRoot,
+      manifest,
+      lockFile,
+      preferences,
+      collections,
+    );
   }
 
   private getAuthorityPath(fileName: AuthorityFileName): string {

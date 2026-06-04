@@ -9,6 +9,7 @@ import type {
   PreferencesFileV2,
 } from "@skill-flow/domain/types";
 import { StateStoreV2, StateStoreV2Error } from "../state-store-v2.js";
+import type { StateStoreV2State } from "../state-store-v2.js";
 
 async function readJsonFile<T>(filePath: string): Promise<T> {
   return JSON.parse(await fs.readFile(filePath, "utf8")) as T;
@@ -17,6 +18,10 @@ async function readJsonFile<T>(filePath: string): Promise<T> {
 async function writeJsonFile(filePath: string, payload: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 describe("StateStoreV2", () => {
@@ -216,22 +221,73 @@ describe("StateStoreV2", () => {
   });
 
   test("manifest missing required root field causes STATE_MIGRATION_BLOCKED", async () => {
-    const store = new StateStoreV2(stateRoot);
-    await writeJsonFile(store.manifestPath, {
-      schemaVersion: 2,
-      migrationGeneration: "mg_missing_bindings",
-      sources: [],
-      targets: {},
-    });
-
-    await expect(store.readManifest()).rejects.toMatchObject({
-      code: "STATE_MIGRATION_BLOCKED",
-      reasonCode: "STATE_MIGRATION_BLOCKED",
-      path: store.manifestPath,
-      details: {
+    const cases = [
+      {
+        name: "manifest",
+        writeInvalidFile: async (store: StateStoreV2) => writeJsonFile(store.manifestPath, {
+          schemaVersion: 2,
+          migrationGeneration: "mg_missing_bindings",
+          sources: [],
+          targets: {},
+        }),
+        read: (store: StateStoreV2) => store.readManifest(),
+        path: (store: StateStoreV2) => store.manifestPath,
         fieldPath: "bindings",
       },
-    });
+      {
+        name: "lock",
+        writeInvalidFile: async (store: StateStoreV2) => writeJsonFile(store.lockPath, {
+          schemaVersion: 2,
+          migrationGeneration: "mg_missing_leaf_inventory",
+          sources: {},
+          projections: [],
+        }),
+        read: (store: StateStoreV2) => store.readLock(),
+        path: (store: StateStoreV2) => store.lockPath,
+        fieldPath: "leafInventory",
+      },
+      {
+        name: "preferences",
+        writeInvalidFile: async (store: StateStoreV2) => writeJsonFile(store.preferencesPath, {
+          schemaVersion: 2,
+          migrationGeneration: "mg_missing_project_drafts",
+          pinnedSourceIds: [],
+        }),
+        read: (store: StateStoreV2) => store.readPreferences(),
+        path: (store: StateStoreV2) => store.preferencesPath,
+        fieldPath: "projectSourceDrafts",
+      },
+      {
+        name: "collections",
+        writeInvalidFile: async (store: StateStoreV2) => writeJsonFile(store.collectionsPath, {
+          schemaVersion: 2,
+          migrationGeneration: "mg_missing_collections",
+        }),
+        read: (store: StateStoreV2) => store.readCollections(),
+        path: (store: StateStoreV2) => store.collectionsPath,
+        fieldPath: "collections",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const caseRoot = await fs.mkdtemp(path.join(os.tmpdir(), `skill-flow-${testCase.name}-missing-root-`));
+      try {
+        const store = new StateStoreV2(caseRoot);
+        await store.init();
+        await testCase.writeInvalidFile(store);
+
+        await expect(testCase.read(store), testCase.name).rejects.toMatchObject({
+          code: "STATE_MIGRATION_BLOCKED",
+          reasonCode: "STATE_MIGRATION_BLOCKED",
+          path: testCase.path(store),
+          details: {
+            fieldPath: testCase.fieldPath,
+          },
+        });
+      } finally {
+        await fs.rm(caseRoot, { recursive: true, force: true });
+      }
+    }
   });
 
   test("writeManifest validates required root fields", async () => {
@@ -332,5 +388,76 @@ describe("StateStoreV2", () => {
         reasonCode: "STATE_MIGRATION_GENERATION_MISMATCH",
       },
     });
+  });
+
+  test("single authority writes reject mismatched migrationGeneration without changing files", async () => {
+    const cases = [
+      {
+        name: "manifest",
+        path: (store: StateStoreV2) => store.manifestPath,
+        payload: (state: StateStoreV2State) => ({
+          ...state.manifest,
+          migrationGeneration: "mg_single_write_other",
+        }),
+        write: (store: StateStoreV2, payload: unknown) =>
+          store.writeManifest(payload as ManifestFileV2),
+      },
+      {
+        name: "lock",
+        path: (store: StateStoreV2) => store.lockPath,
+        payload: (state: StateStoreV2State) => ({
+          ...state.lockFile,
+          migrationGeneration: "mg_single_write_other",
+        }),
+        write: (store: StateStoreV2, payload: unknown) =>
+          store.writeLock(payload as LockFileV2),
+      },
+      {
+        name: "preferences",
+        path: (store: StateStoreV2) => store.preferencesPath,
+        payload: (state: StateStoreV2State) => ({
+          ...state.preferences,
+          migrationGeneration: "mg_single_write_other",
+        }),
+        write: (store: StateStoreV2, payload: unknown) =>
+          store.writePreferences(payload as PreferencesFileV2),
+      },
+      {
+        name: "collections",
+        path: (store: StateStoreV2) => store.collectionsPath,
+        payload: (state: StateStoreV2State) => ({
+          ...state.collections,
+          migrationGeneration: "mg_single_write_other",
+        }),
+        write: (store: StateStoreV2, payload: unknown) =>
+          store.writeCollections(payload as CollectionsFileV2),
+      },
+    ];
+
+    for (const testCase of cases) {
+      const caseRoot = await fs.mkdtemp(path.join(os.tmpdir(), `skill-flow-${testCase.name}-generation-mismatch-`));
+      try {
+        const store = new StateStoreV2(caseRoot);
+        await store.init();
+        const currentState = await store.readState();
+        const originalPayload = await readJsonFile<unknown>(testCase.path(store));
+
+        await expect(
+          testCase.write(store, testCase.payload(cloneJson(currentState))),
+          testCase.name,
+        ).rejects.toMatchObject({
+          code: "STATE_MIGRATION_BLOCKED",
+          reasonCode: "STATE_MIGRATION_BLOCKED",
+          path: caseRoot,
+          details: {
+            reasonCode: "STATE_MIGRATION_GENERATION_MISMATCH",
+          },
+        });
+        await expect(readJsonFile<unknown>(testCase.path(store)), testCase.name)
+          .resolves.toEqual(originalPayload);
+      } finally {
+        await fs.rm(caseRoot, { recursive: true, force: true });
+      }
+    }
   });
 });
