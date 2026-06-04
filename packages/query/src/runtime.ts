@@ -641,7 +641,6 @@ export class SkillFlowApp {
         sourceToRestore,
         manifest.bindings[sourceId] ?? { targets: {} },
         lockFile,
-        virtualGroups,
       );
     }
 
@@ -974,9 +973,8 @@ export class SkillFlowApp {
     }>
   > {
     const { manifest, lockFile } = await this.store.readState();
-    const virtualGroups = await this.store.readVirtualGroups();
     const collections = await this.readCollectionsForRuntime();
-    this.normalizeBindings(manifest, lockFile, virtualGroups);
+    this.normalizeBindings(manifest, lockFile, collections);
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
       return fail({
@@ -994,7 +992,7 @@ export class SkillFlowApp {
     }
 
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
-    const leafs = this.getSourceLeafsForBinding(source, binding, lockFile, virtualGroups);
+    const leafs = this.getSourceLeafsForBinding(source, binding, lockFile, collections);
     const deployments = getManagedDeployments(lockFile).filter(
       (deployment) => deployment.sourceId === sourceId,
     );
@@ -1004,13 +1002,13 @@ export class SkillFlowApp {
     }
 
     const initialDrafts: Record<string, DraftBinding> = {
-      [sourceId]: this.draftFromSourceBinding(source, binding, lockFile, virtualGroups),
+      [sourceId]: this.draftFromSourceBinding(source, binding, lockFile, collections),
     };
     const preferences = await this.store.readPreferences();
     const scopedDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
 
     const scopedManifest = this.cloneManifest(manifest);
-    this.normalizeBindings(scopedManifest, lockFile, virtualGroups);
+    this.normalizeBindings(scopedManifest, lockFile, collections);
     const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
     const scopedSource = prepared.manifest.sources.find((item) => item.id === sourceId) ?? source;
     const scopedSummary =
@@ -3304,9 +3302,8 @@ export class SkillFlowApp {
       manifest,
       lockFile,
     );
-    const virtualGroups = await this.store.readVirtualGroups();
     const collections = await this.readCollectionsForRuntime();
-    const hiddenSourceIds = this.hiddenSourceIdsFromVirtualGroups(virtualGroups);
+    const hiddenSourceIds = this.hiddenSourceIdsFromCollections(collections);
     return ok(
       {
         summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, collections)
@@ -3342,7 +3339,6 @@ export class SkillFlowApp {
       return fail(reconciled.errors, reconciled.warnings);
     }
     const { manifest, lockFile } = await this.store.readState();
-    const virtualGroups = await this.store.readVirtualGroups();
     const collections = await this.readCollectionsForRuntime();
     await this.persistNormalizedBindings(manifest, lockFile);
     return ok(
@@ -4232,9 +4228,9 @@ export class SkillFlowApp {
     };
   }
 
-  private hiddenSourceIdsFromVirtualGroups(virtualGroups: VirtualGroupsState): Set<string> {
+  private hiddenSourceIdsFromCollections(collections: CollectionsFileV2): Set<string> {
     return new Set(
-      Object.values(virtualGroups.groups).flatMap((group) => group.hiddenSourceIds),
+      Object.values(collections.collections).flatMap((collection) => collection.hiddenSourceIds),
     );
   }
 
@@ -4975,13 +4971,13 @@ export class SkillFlowApp {
   private normalizeBindings(
     manifest: Manifest,
     lockFile: LockFile,
-    virtualGroups?: VirtualGroupsState,
+    collections?: CollectionsFileV2,
   ): boolean {
     let changed = false;
 
     for (const source of manifest.sources) {
       const currentBinding = manifest.bindings[source.id] ?? { targets: {} };
-      const normalizedDraft = this.draftFromSourceBinding(source, currentBinding, lockFile, virtualGroups);
+      const normalizedDraft = this.draftFromSourceBinding(source, currentBinding, lockFile, collections);
       const normalizedBinding = this.bindingFromDraft(normalizedDraft);
 
       if (JSON.stringify(currentBinding) === JSON.stringify(normalizedBinding)) {
@@ -4999,10 +4995,10 @@ export class SkillFlowApp {
     source: Manifest["sources"][number],
     binding: SourceBinding,
     lockFile: LockFile,
-    virtualGroups?: VirtualGroupsState,
+    collections?: CollectionsFileV2,
   ): DraftBinding {
     const leafIds = source.kind === "virtual"
-      ? this.getVirtualSourceAllowedLeafIds(source.id, binding, lockFile, virtualGroups)
+      ? this.getVirtualSourceAllowedLeafIds(source.id, binding, lockFile, collections)
       : new Set(
           lockFile.leafInventory
             .filter((leaf) => leaf.sourceId === source.id)
@@ -5050,15 +5046,15 @@ export class SkillFlowApp {
     sourceId: string,
     binding: SourceBinding,
     lockFile: LockFile,
-    virtualGroups?: VirtualGroupsState,
+    collections?: CollectionsFileV2,
   ): Set<string> {
     const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
-    const includedLeafIds = virtualGroups?.groups[sourceId]?.includedSkills
-      .map((skill) => skill.leafId)
+    const collectionLeafIds = collections?.collections[sourceId]?.members
+      .map((member) => member.snapshot.leafId)
       .filter((leafId) => existingLeafIds.has(leafId));
 
-    if (includedLeafIds) {
-      return new Set(includedLeafIds);
+    if (collectionLeafIds) {
+      return new Set(collectionLeafIds);
     }
 
     return new Set(
@@ -5073,24 +5069,27 @@ export class SkillFlowApp {
     source: Manifest["sources"][number],
     binding: SourceBinding,
     lockFile: LockFile,
-    virtualGroups?: VirtualGroupsState,
+    collections?: CollectionsFileV2,
   ): LeafRecord[] {
     if (source.kind !== "virtual") {
       return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
     }
 
-    const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
-    const includedLeafIds = virtualGroups?.groups[source.id]?.includedSkills
-      .map((skill) => skill.leafId)
-      .filter((leafId) => existingLeafIds.has(leafId));
+    const leafsById = new Map(lockFile.leafInventory.map((leaf) => [leaf.id, leaf]));
+    const collection = collections?.collections[source.id];
+    if (collection) {
+      return collection.members
+        .map((member) => leafsById.get(member.snapshot.leafId))
+        .filter((leaf): leaf is LeafRecord => Boolean(leaf));
+    }
 
-    return (includedLeafIds ?? [
+    return ([
       ...new Set([
         ...(binding.selectedLeafIds ?? []),
         ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
       ]),
-    ].filter((leafId) => existingLeafIds.has(leafId)))
-      .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+    ])
+      .map((leafId) => leafsById.get(leafId))
       .filter((leaf): leaf is LeafRecord => Boolean(leaf));
   }
 
