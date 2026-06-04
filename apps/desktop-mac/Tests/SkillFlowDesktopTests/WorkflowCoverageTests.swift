@@ -457,9 +457,12 @@ final class WorkflowCoverageTests: XCTestCase {
             model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" })?.preparationStatus == "ready"
         }
 
+        let card = try XCTUnwrap(model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" }))
+        XCTAssertEqual(card.locator, "anthropics/skills")
+
         await model.importImportGroup(
             groupId: "anthropics-skills",
-            locator: "anthropic/skills",
+            locator: card.locator,
             selectedSkillIds: ["research"],
             enabledTargets: ["cursor"]
         )
@@ -773,7 +776,7 @@ private struct TestFixture {
                 ImportGroupState(
                     id: "anthropics-skills",
                     title: "Anthropic Skills",
-                    locator: "anthropic/skills",
+                    locator: "anthropics/skills",
                     canonicalRepo: "anthropics/skills",
                     aliases: [
                         "anthropic/skills",

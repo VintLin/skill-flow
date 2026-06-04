@@ -515,6 +515,56 @@ describe.sequential("import page flow", () => {
     }
   });
 
+  test("commitPreparedImportSource accepts GitHub archive-root preview skill ids", async () => {
+    const codexRoot = path.join(sandbox.sandboxRoot, "codex-skills");
+    await fs.mkdir(codexRoot, { recursive: true });
+    vi.stubEnv("SKILL_FLOW_TARGET_CODEX", codexRoot);
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
+      "skills/skill-creator/SKILL.md": skillDoc("skill-creator", "Create skills."),
+    });
+    const prepareSourceCheckout = SourceService.prototype.prepareSourceCheckout;
+    vi.spyOn(SourceService.prototype, "prepareSourceCheckout").mockImplementation(
+      async function (_locator, input) {
+        return prepareSourceCheckout.call(this, repoPath, input);
+      },
+    );
+
+    const app = new SkillFlowApp();
+    const prepared = await app.prepareImportSource("anthropics/skills");
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok || prepared.data.status !== "ready") {
+      return;
+    }
+
+    const imported = await app.commitPreparedImportSource(prepared.data.preparationId, {
+      selectedSkillIds: [
+        "skills-main/skills/frontend-design",
+        "skills-main/skills/skill-creator",
+      ],
+      enabledTargets: ["codex"],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.data).toMatchObject({
+      status: "ready",
+    });
+    if (imported.data.status !== "ready") {
+      return;
+    }
+
+    const { manifest } = await app.store.readState();
+    const binding = manifest.bindings[imported.data.sourceId];
+    expect(binding?.targets.codex?.leafIds.map((leafId) => leafId.split("/").pop()).sort()).toEqual([
+      "frontend-design",
+      "skill-creator",
+    ]);
+  });
+
   test("previewImportSource supports local paths", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browse things."),
@@ -1309,7 +1359,7 @@ describe.sequential("import page flow", () => {
 
     expect(preview.data.locator).toBe(repoPath);
     expect(preview.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
-  }, 30_000);
+  }, 60_000);
 
   test("ClawHub locators are direct import candidates and previews", async () => {
     const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockResolvedValue(

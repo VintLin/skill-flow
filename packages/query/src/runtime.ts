@@ -3081,6 +3081,21 @@ export class SkillFlowApp {
     const repo = parseGitHubRepo(canonicalRepo);
     const variants = new Set<string>([normalized]);
     const prefixes = new Set<string>();
+    const pathSegments = value
+      .trim()
+      .replace(/\\/g, "/")
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    if (pathSegments.length > 1) {
+      for (let index = 1; index < pathSegments.length; index += 1) {
+        const suffix = this.normalizeImportSkillSelector(pathSegments.slice(index).join("/"));
+        if (suffix) {
+          variants.add(suffix);
+        }
+      }
+    }
 
     if (repo) {
       const normalizedOwner = this.normalizeImportSkillSelector(repo.owner);
