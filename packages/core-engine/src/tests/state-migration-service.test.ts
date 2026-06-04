@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { hashDirectory } from "@skill-flow/integration/utils/fs";
 import { inspectStateMigrationStatus } from "@skill-flow/storage/state-schema-v2";
 import { StateMigrationService } from "../services/state-migration-service.js";
 
@@ -114,6 +115,127 @@ describe("state migration service", () => {
     });
   });
 
+  test("migrates legacy virtual group refs into materialized collection members", async () => {
+    await seedLegacyVirtualGroupState({
+      groupId: "group-1",
+      sourceId: "source-a",
+      leafId: "leaf-a",
+      skillPath: "skills/frontend-design",
+      skillContent: "# Frontend Design\n",
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await service.migrate({ to: 2, backup: true });
+
+    const collections = await readJsonFile<CollectionsJson>(path.join(stateRoot, "collections.json"), {
+      collections: {},
+    });
+    const manifest = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "manifest.json"), {});
+    const generation = await readJsonFile<Record<string, unknown>>(
+      path.join(stateRoot, "source/collection/group-1/.skillflow-generation.json"),
+      {},
+    );
+
+    const collection = collections.collections["group-1"];
+    if (!collection) {
+      throw new Error("Expected group-1 collection");
+    }
+    expect(collection.materializedSourceId).toBe("group-1");
+    expect(generation.migrationGeneration).toBe(manifest.migrationGeneration);
+    expect(collection.members[0]).toMatchObject({
+      origin: {
+        sourceId: "source-a",
+        leafId: "leaf-a",
+        repoPath: "skills/frontend-design",
+      },
+      updatePolicy: "frozen",
+    });
+  });
+
+  test("collection restore selections keep original source leaf ids", async () => {
+    await seedLegacyVirtualGroupState({
+      groupId: "group-1",
+      sourceId: "source-a",
+      leafId: "leaf-a",
+      skillPath: "skills/frontend-design",
+      restoreSelectedLeafIds: ["leaf-a", "source-a:missing-legacy-leaf"],
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await service.migrate({ to: 2, backup: true });
+
+    const collections = await readJsonFile<CollectionsJson>(path.join(stateRoot, "collections.json"), {
+      collections: {},
+    });
+    const collection = collections.collections["group-1"];
+    if (!collection) {
+      throw new Error("Expected group-1 collection");
+    }
+    const restoreSelection = collection.restoreSelections["source-a"];
+    if (!restoreSelection) {
+      throw new Error("Expected source-a restore selection");
+    }
+
+    expect(restoreSelection.bestEffort).toBe(true);
+    expect(restoreSelection.selectedLeafIds).toContain("leaf-a");
+    expect(restoreSelection.selectedLeafIds).not.toContain("group-1:member-1");
+    expect(restoreSelection.selectedLeafIds).not.toContain("source-a:missing-legacy-leaf");
+    expect(restoreSelection.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "RESTORE_SELECTION_LEAF_UNMAPPED",
+        details: expect.objectContaining({ legacyLeafId: "source-a:missing-legacy-leaf" }),
+      }),
+    );
+  });
+
+  test("fails when a virtual group member origin leaf is missing", async () => {
+    await seedLegacyVirtualGroupState({
+      groupId: "group-1",
+      sourceId: "source-a",
+      leafId: "leaf-a",
+      skillPath: "skills/frontend-design",
+      includedLeafId: "leaf-missing",
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await expect(service.migrate({ to: 2, backup: true })).rejects.toMatchObject({
+      reasonCode: "STATE_MIGRATION_VIRTUAL_MEMBER_ORIGIN_MISSING",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: "STATE_MIGRATION_VIRTUAL_MEMBER_ORIGIN_MISSING",
+          path: expect.stringContaining("virtual-groups.json"),
+          details: expect.objectContaining({ sourceId: "source-a", leafId: "leaf-missing" }),
+        }),
+      ]),
+    });
+  });
+
+  test("fails when copied collection member hash differs from v1 lock hash", async () => {
+    await seedLegacyVirtualGroupState({
+      groupId: "group-1",
+      sourceId: "source-a",
+      leafId: "leaf-a",
+      skillPath: "skills/frontend-design",
+      skillContent: "# Frontend Design\n",
+      lockedContentHash: "hash-original",
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await expect(service.migrate({ to: 2, backup: true })).rejects.toMatchObject({
+      reasonCode: "STATE_MIGRATION_COLLECTION_HASH_MISMATCH",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: "STATE_MIGRATION_COLLECTION_HASH_MISMATCH",
+          path: expect.stringContaining("source/collection/group-1"),
+          details: expect.objectContaining({
+            expectedHash: "hash-original",
+            actualHash: expect.any(String),
+          }),
+        }),
+      ]),
+    });
+  });
+
   async function seedV1BasicState() {
     await writeJsonFile(path.join(stateRoot, "manifest.json"), {
       schemaVersion: 1,
@@ -144,7 +266,157 @@ describe("state migration service", () => {
     await seedV1BasicState();
     await fs.writeFile(path.join(stateRoot, "virtual-groups.json"), "{", "utf8");
   }
+
+  async function seedLegacyVirtualGroupState(input: {
+    groupId: string;
+    sourceId: string;
+    leafId: string;
+    skillPath: string;
+    skillContent?: string;
+    lockedContentHash?: string;
+    includedLeafId?: string;
+    restoreSelectedLeafIds?: string[];
+  }) {
+    const now = "2026-06-04T00:00:00.000Z";
+    const sourceRoot = path.join(stateRoot, "source", "local", input.sourceId);
+    const skillDir = path.join(sourceRoot, input.skillPath);
+    const skillFilePath = path.join(skillDir, "SKILL.md");
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(skillFilePath, input.skillContent ?? "# Skill\n", "utf8");
+    const actualHash = await hashDirectory(skillDir);
+    const contentHash = input.lockedContentHash ?? actualHash;
+    const includedLeafId = input.includedLeafId ?? input.leafId;
+
+    await writeJsonFile(path.join(stateRoot, "manifest.json"), {
+      schemaVersion: 1,
+      sources: [
+        {
+          id: input.sourceId,
+          locator: sourceRoot,
+          kind: "local",
+          displayName: "Source A",
+          originalDisplayName: "Source A",
+          addedAt: now,
+          selectionMode: "all",
+        },
+        {
+          id: input.groupId,
+          locator: `virtual:${input.groupId}`,
+          kind: "virtual",
+          displayName: "Group 1",
+          originalDisplayName: "Group 1",
+          addedAt: now,
+          selectionMode: "all",
+        },
+      ],
+      bindings: {
+        [input.sourceId]: {
+          selectedLeafIds: [input.leafId],
+          targets: {},
+        },
+        [input.groupId]: {
+          selectedLeafIds: [includedLeafId],
+          targets: {
+            codex: {
+              enabled: true,
+              leafIds: [includedLeafId],
+            },
+          },
+        },
+      },
+    });
+    await writeJsonFile(path.join(stateRoot, "lock.json"), {
+      schemaVersion: 1,
+      sources: [
+        {
+          id: input.sourceId,
+          locator: sourceRoot,
+          kind: "local",
+          displayName: "Source A",
+          originalDisplayName: "Source A",
+          checkoutPath: sourceRoot,
+          updatedAt: now,
+          leafIds: [input.leafId],
+          invalidLeafs: [],
+        },
+      ],
+      leafInventory: [
+        {
+          id: input.leafId,
+          sourceId: input.sourceId,
+          name: "frontend-design",
+          linkName: "frontend-design",
+          title: "Frontend Design",
+          description: "",
+          relativePath: input.skillPath,
+          absolutePath: skillDir,
+          skillFilePath,
+          contentHash,
+          metadataWarnings: [],
+          valid: true,
+        },
+      ],
+      deployments: [
+        {
+          sourceId: input.groupId,
+          leafId: includedLeafId,
+          target: "codex",
+          targetPath: path.join(stateRoot, "targets", "codex", "frontend-design"),
+          strategy: "symlink",
+          status: "active",
+          contentHash,
+          appliedAt: now,
+        },
+      ],
+    });
+    await writeJsonFile(path.join(stateRoot, "preferences.json"), {
+      pinnedSourceIds: [],
+      projectDrafts: {},
+    });
+    await writeJsonFile(path.join(stateRoot, "collections.json"), {
+      collections: {},
+    });
+    await writeJsonFile(path.join(stateRoot, "virtual-groups.json"), {
+      schemaVersion: 1,
+      groups: {
+        [input.groupId]: {
+          id: input.groupId,
+          displayName: "Group 1",
+          includedSkills: [{ sourceId: input.sourceId, leafId: includedLeafId }],
+          hiddenSourceIds: [input.sourceId],
+          restoreSnapshots: input.restoreSelectedLeafIds
+            ? {
+                [input.sourceId]: {
+                  selectedLeafIds: input.restoreSelectedLeafIds,
+                  enabledTargets: ["codex"],
+                },
+              }
+            : {},
+          createdAt: now,
+          updatedAt: now,
+        },
+      },
+    });
+  }
 });
+
+type CollectionsJson = {
+  collections: Record<
+    string,
+    {
+      materializedSourceId: string;
+      members: Array<Record<string, unknown>>;
+      restoreSelections: Record<
+        string,
+        {
+          selectedLeafIds: string[];
+          bestEffort: boolean;
+          diagnostics: Array<Record<string, unknown>>;
+        }
+      >;
+    }
+  >;
+};
 
 async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
   try {

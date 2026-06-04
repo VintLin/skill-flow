@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DiagnosticV2 } from "@skill-flow/domain/types";
+import { hashDirectory } from "@skill-flow/integration/utils/fs";
 import {
   inspectStateMigrationStatus,
   type StateMigrationStatus,
@@ -236,27 +237,25 @@ async function rewriteAuthorityFiles(
   migrationGeneration: string,
 ): Promise<void> {
   const manifest = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "manifest.json"), {});
+  const lock = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "lock.json"), {});
+  const materialized = await materializeLegacyCollections(stateRoot, manifest, lock, migrationGeneration);
+
   await writeJsonFile(path.join(stateRoot, "manifest.json"), {
     ...manifest,
     schemaVersion: 2,
     migrationGeneration,
-    sources: Array.isArray(manifest.sources) ? manifest.sources : [],
-    bindings: isRecord(manifest.bindings) ? manifest.bindings : {},
+    sources: materialized.manifestSources,
+    bindings: materialized.bindings,
     targets: isRecord(manifest.targets) ? manifest.targets : {},
   });
 
-  const lock = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "lock.json"), {});
   await writeJsonFile(path.join(stateRoot, "lock.json"), {
     ...lock,
     schemaVersion: 2,
     migrationGeneration,
-    sources: isRecord(lock.sources) ? lock.sources : {},
-    leafInventory: Array.isArray(lock.leafInventory) ? lock.leafInventory : [],
-    projections: Array.isArray(lock.projections)
-      ? lock.projections
-      : Array.isArray(lock.deployments)
-        ? lock.deployments
-        : [],
+    sources: materialized.lockSources,
+    leafInventory: materialized.leafInventory,
+    projections: materialized.projections,
   });
 
   const preferences = await readJsonFile<Record<string, unknown>>(
@@ -283,7 +282,566 @@ async function rewriteAuthorityFiles(
     ...collections,
     schemaVersion: 2,
     migrationGeneration,
-    collections: isRecord(collections.collections) ? collections.collections : {},
+    collections: {
+      ...(isRecord(collections.collections) ? collections.collections : {}),
+      ...materialized.collections,
+    },
+  });
+}
+
+type LegacySource = {
+  id: string;
+  locator: string;
+  kind: string;
+  displayName: string;
+  originalDisplayName: string | undefined;
+  addedAt: string | undefined;
+};
+
+type LegacyLeaf = {
+  id: string;
+  sourceId: string;
+  name: string | undefined;
+  linkName: string | undefined;
+  title: string | undefined;
+  description: string | undefined;
+  relativePath: string;
+  absolutePath: string | undefined;
+  skillFilePath: string | undefined;
+  contentHash: string;
+  metadataWarnings: string[] | undefined;
+};
+
+type LegacySourceLock = {
+  id: string;
+  locator: string;
+  kind: string;
+  displayName: string;
+  checkoutPath: string;
+  updatedAt: string | undefined;
+  leafIds: string[] | undefined;
+  commitSha: string | undefined;
+};
+
+type LegacyVirtualGroup = {
+  id: string;
+  displayName: string;
+  includedSkills: Array<{ sourceId: string; leafId: string }>;
+  hiddenSourceIds: string[];
+  restoreSnapshots: Record<string, { selectedLeafIds: string[]; enabledTargets: string[] }>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type MaterializedCollections = {
+  manifestSources: Array<Record<string, unknown>>;
+  bindings: Record<string, unknown>;
+  lockSources: Record<string, Record<string, unknown>>;
+  leafInventory: Array<Record<string, unknown>>;
+  projections: Array<Record<string, unknown>>;
+  collections: Record<string, Record<string, unknown>>;
+};
+
+async function materializeLegacyCollections(
+  stateRoot: string,
+  manifest: Record<string, unknown>,
+  lock: Record<string, unknown>,
+  migrationGeneration: string,
+): Promise<MaterializedCollections> {
+  const legacySources = readLegacySources(manifest.sources);
+  const legacyBindings = isRecord(manifest.bindings) ? manifest.bindings : {};
+  const legacyLockSources = readLegacyLockSources(lock.sources);
+  const legacyLeafs = readLegacyLeafs(lock.leafInventory);
+  const virtualGroups = await readLegacyVirtualGroups(stateRoot);
+  const memberLeafIdByLegacyRef = new Map<string, string>();
+  const collectionLeafs: Array<Record<string, unknown>> = [];
+  const collectionLockSources: Record<string, Record<string, unknown>> = {};
+  const collections: Record<string, Record<string, unknown>> = {};
+  const now = new Date().toISOString();
+
+  for (const group of Object.values(virtualGroups)) {
+    const collectionRoot = path.join(stateRoot, "source", "collection", group.id);
+    await fs.rm(collectionRoot, { recursive: true, force: true });
+    await fs.mkdir(collectionRoot, { recursive: true });
+
+    const members: Array<Record<string, unknown>> = [];
+    const collectionLeafIds: string[] = [];
+    for (const [index, ref] of group.includedSkills.entries()) {
+      const originLeaf = legacyLeafs.find(
+        (leaf) => leaf.id === ref.leafId && leaf.sourceId === ref.sourceId,
+      );
+      const originSource = legacySources.find((source) => source.id === ref.sourceId);
+      const originLock = legacyLockSources.find((source) => source.id === ref.sourceId);
+      if (!originLeaf || !originSource || !originLock) {
+        throw virtualMemberOriginMissing(stateRoot, ref);
+      }
+
+      const memberId = `member-${index + 1}`;
+      const leafId = `${group.id}:${memberId}`;
+      const memberPath = path.join(collectionRoot, memberId);
+      const sourceSkillPath = await resolveLegacySkillPath(stateRoot, originSource, originLock, originLeaf);
+      await fs.cp(sourceSkillPath, memberPath, { recursive: true, force: true });
+      const actualHash = await hashDirectory(memberPath);
+      if (actualHash !== originLeaf.contentHash) {
+        throw collectionHashMismatch(collectionRoot, originLeaf.contentHash, actualHash);
+      }
+
+      memberLeafIdByLegacyRef.set(legacyRefKey(group.id, ref.leafId), leafId);
+      collectionLeafIds.push(leafId);
+      collectionLeafs.push({
+        id: leafId,
+        sourceId: group.id,
+        relativePath: memberId,
+        skillFilePath: path.join(memberId, "SKILL.md"),
+        displayName: originLeaf.title ?? originLeaf.name ?? originLeaf.linkName ?? memberId,
+        contentHash: actualHash,
+        selectors: {
+          legacyAliases: [originLeaf.id, originLeaf.relativePath],
+        },
+        valid: true,
+        diagnostics: [],
+      });
+      members.push({
+        id: memberId,
+        origin: {
+          sourceId: ref.sourceId,
+          leafId: ref.leafId,
+          sourceLocator: originSource.locator,
+          canonicalLocator: originLock.locator,
+          repoPath: originLeaf.relativePath,
+          contentHashAtCapture: originLeaf.contentHash,
+          capturedAt: now,
+        },
+        snapshot: {
+          leafId,
+          materializedPath: memberId,
+          skillFilePath: path.join(memberId, "SKILL.md"),
+          relativePath: memberId,
+          contentHash: actualHash,
+        },
+        updatePolicy: "frozen",
+      });
+    }
+
+    await writeJsonFile(path.join(collectionRoot, ".skillflow-generation.json"), {
+      schemaVersion: 2,
+      migrationGeneration,
+      collectionId: group.id,
+      createdAt: now,
+      diagnostics: [],
+    });
+
+    collectionLockSources[group.id] = {
+      sourceId: group.id,
+      canonicalLocator: `collection:${group.id}`,
+      revision: {
+        provider: "collection",
+        capturedAt: now,
+      },
+      localPath: collectionRoot,
+      leafIds: collectionLeafIds,
+    };
+    collections[group.id] = {
+      id: group.id,
+      displayName: group.displayName,
+      materializedSourceId: group.id,
+      members,
+      hiddenSourceIds: group.hiddenSourceIds,
+      restoreSelections: buildRestoreSelections(group, legacyLeafs),
+      createdAt: group.createdAt,
+      updatedAt: group.updatedAt,
+    };
+  }
+
+  const manifestSources = legacySources
+    .filter((source) => source.kind !== "virtual" || virtualGroups[source.id])
+    .map((source) => toManifestSourceV2(source, virtualGroups[source.id]));
+  const lockSources = {
+    ...Object.fromEntries(
+      legacyLockSources.map((source) => [source.id, toLockSourceV2(source)]),
+    ),
+    ...collectionLockSources,
+  };
+
+  return {
+    manifestSources,
+    bindings: rewriteBindings(legacySources, legacyBindings, virtualGroups, memberLeafIdByLegacyRef),
+    lockSources,
+    leafInventory: [
+      ...legacyLeafs.map(toLeafRecordV2),
+      ...collectionLeafs,
+    ],
+    projections: rewriteProjections(lock, memberLeafIdByLegacyRef),
+    collections,
+  };
+}
+
+function readLegacySources(input: unknown): LegacySource[] {
+  return Array.isArray(input)
+    ? input.filter(isRecord).flatMap((source) => {
+        if (
+          typeof source.id !== "string" ||
+          typeof source.locator !== "string" ||
+          typeof source.kind !== "string"
+        ) {
+          return [];
+        }
+        return [{
+          id: source.id,
+          locator: source.locator,
+          kind: source.kind,
+          displayName: typeof source.displayName === "string" ? source.displayName : source.id,
+          originalDisplayName: typeof source.originalDisplayName === "string" ? source.originalDisplayName : undefined,
+          addedAt: typeof source.addedAt === "string" ? source.addedAt : undefined,
+        }];
+      })
+    : [];
+}
+
+function readLegacyLockSources(input: unknown): LegacySourceLock[] {
+  return Array.isArray(input)
+    ? input.filter(isRecord).flatMap((source) => {
+        if (
+          typeof source.id !== "string" ||
+          typeof source.locator !== "string" ||
+          typeof source.kind !== "string" ||
+          typeof source.checkoutPath !== "string"
+        ) {
+          return [];
+        }
+        return [{
+          id: source.id,
+          locator: source.locator,
+          kind: source.kind,
+          displayName: typeof source.displayName === "string" ? source.displayName : source.id,
+          checkoutPath: source.checkoutPath,
+          updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : undefined,
+          leafIds: Array.isArray(source.leafIds)
+            ? source.leafIds.filter((value): value is string => typeof value === "string")
+            : undefined,
+          commitSha: typeof source.commitSha === "string" ? source.commitSha : undefined,
+        }];
+      })
+    : [];
+}
+
+function readLegacyLeafs(input: unknown): LegacyLeaf[] {
+  return Array.isArray(input)
+    ? input.filter(isRecord).flatMap((leaf) => {
+        if (
+          typeof leaf.id !== "string" ||
+          typeof leaf.sourceId !== "string" ||
+          typeof leaf.relativePath !== "string" ||
+          typeof leaf.contentHash !== "string"
+        ) {
+          return [];
+        }
+        return [{
+          id: leaf.id,
+          sourceId: leaf.sourceId,
+          name: typeof leaf.name === "string" ? leaf.name : undefined,
+          linkName: typeof leaf.linkName === "string" ? leaf.linkName : undefined,
+          title: typeof leaf.title === "string" ? leaf.title : undefined,
+          description: typeof leaf.description === "string" ? leaf.description : undefined,
+          relativePath: leaf.relativePath,
+          absolutePath: typeof leaf.absolutePath === "string" ? leaf.absolutePath : undefined,
+          skillFilePath: typeof leaf.skillFilePath === "string" ? leaf.skillFilePath : undefined,
+          contentHash: leaf.contentHash,
+          metadataWarnings: Array.isArray(leaf.metadataWarnings)
+            ? leaf.metadataWarnings.filter((value): value is string => typeof value === "string")
+            : undefined,
+        }];
+      })
+    : [];
+}
+
+async function readLegacyVirtualGroups(stateRoot: string): Promise<Record<string, LegacyVirtualGroup>> {
+  const virtualGroupsPath = path.join(stateRoot, "virtual-groups.json");
+  if (!(await pathExists(virtualGroupsPath))) {
+    return {};
+  }
+
+  const payload = await readJsonFile<Record<string, unknown>>(virtualGroupsPath, {});
+  const groups = isRecord(payload.groups) ? payload.groups : {};
+  const parsed: Record<string, LegacyVirtualGroup> = {};
+  for (const [id, group] of Object.entries(groups)) {
+    if (!isRecord(group)) {
+      continue;
+    }
+    parsed[id] = {
+      id,
+      displayName: typeof group.displayName === "string" ? group.displayName : id,
+      includedSkills: Array.isArray(group.includedSkills)
+        ? group.includedSkills.filter(isRecord).flatMap((skill) =>
+            typeof skill.sourceId === "string" && typeof skill.leafId === "string"
+              ? [{ sourceId: skill.sourceId, leafId: skill.leafId }]
+              : [],
+          )
+        : [],
+      hiddenSourceIds: Array.isArray(group.hiddenSourceIds)
+        ? group.hiddenSourceIds.filter((value): value is string => typeof value === "string")
+        : [],
+      restoreSnapshots: readRestoreSnapshots(group.restoreSnapshots),
+      createdAt: typeof group.createdAt === "string" ? group.createdAt : new Date(0).toISOString(),
+      updatedAt: typeof group.updatedAt === "string" ? group.updatedAt : new Date(0).toISOString(),
+    };
+  }
+  return parsed;
+}
+
+function readRestoreSnapshots(input: unknown): LegacyVirtualGroup["restoreSnapshots"] {
+  if (!isRecord(input)) {
+    return {};
+  }
+
+  const snapshots: LegacyVirtualGroup["restoreSnapshots"] = {};
+  for (const [sourceId, snapshot] of Object.entries(input)) {
+    if (!isRecord(snapshot)) {
+      continue;
+    }
+    snapshots[sourceId] = {
+      selectedLeafIds: Array.isArray(snapshot.selectedLeafIds)
+        ? snapshot.selectedLeafIds.filter((value): value is string => typeof value === "string")
+        : [],
+      enabledTargets: Array.isArray(snapshot.enabledTargets)
+        ? snapshot.enabledTargets.filter((value): value is string => typeof value === "string")
+        : [],
+    };
+  }
+  return snapshots;
+}
+
+async function resolveLegacySkillPath(
+  stateRoot: string,
+  source: LegacySource,
+  lock: LegacySourceLock,
+  leaf: LegacyLeaf,
+): Promise<string> {
+  const candidates = [
+    path.join(stateRoot, "source", source.kind, source.id, leaf.relativePath),
+    path.join(stateRoot, "source", lock.kind, lock.id, leaf.relativePath),
+    path.join(lock.checkoutPath, leaf.relativePath),
+    leaf.absolutePath,
+  ].filter((value): value is string => typeof value === "string");
+
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw virtualMemberOriginMissing(stateRoot, {
+    sourceId: source.id,
+    leafId: leaf.id,
+  });
+}
+
+function toManifestSourceV2(
+  source: LegacySource,
+  group: LegacyVirtualGroup | undefined,
+): Record<string, unknown> {
+  if (group) {
+    return {
+      id: group.id,
+      kind: "collection",
+      locator: `collection:${group.id}`,
+      canonicalLocator: `collection:${group.id}`,
+      displayName: group.displayName,
+      enabled: true,
+      createdAt: group.createdAt,
+      updatedAt: group.updatedAt,
+    };
+  }
+
+  const timestamp = source.addedAt ?? new Date(0).toISOString();
+  return {
+    id: source.id,
+    kind: mapSourceKind(source.kind),
+    locator: source.locator,
+    canonicalLocator: source.locator,
+    displayName: source.displayName,
+    enabled: true,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function toLockSourceV2(source: LegacySourceLock): Record<string, unknown> {
+  return {
+    sourceId: source.id,
+    canonicalLocator: source.locator,
+    revision: {
+      provider: mapSourceKind(source.kind),
+      commit: source.commitSha,
+      capturedAt: source.updatedAt ?? new Date(0).toISOString(),
+    },
+    localPath: source.checkoutPath,
+    leafIds: source.leafIds ?? [],
+  };
+}
+
+function toLeafRecordV2(leaf: LegacyLeaf): Record<string, unknown> {
+  return {
+    id: leaf.id,
+    sourceId: leaf.sourceId,
+    relativePath: leaf.relativePath,
+    skillFilePath: leaf.skillFilePath ?? path.join(leaf.relativePath, "SKILL.md"),
+    displayName: leaf.title ?? leaf.name ?? leaf.linkName ?? leaf.relativePath,
+    contentHash: leaf.contentHash,
+    selectors: {
+      legacyAliases: [leaf.id, leaf.relativePath],
+    },
+    valid: true,
+    diagnostics: (leaf.metadataWarnings ?? []).map((warning) => ({
+      code: "LEGACY_METADATA_WARNING",
+      message: warning,
+      retryable: false,
+    })),
+  };
+}
+
+function rewriteBindings(
+  legacySources: LegacySource[],
+  legacyBindings: Record<string, unknown>,
+  virtualGroups: Record<string, LegacyVirtualGroup>,
+  memberLeafIdByLegacyRef: Map<string, string>,
+): Record<string, unknown> {
+  const bindings: Record<string, unknown> = {};
+  for (const source of legacySources) {
+    const rawBinding = legacyBindings[source.id];
+    const binding: Record<string, unknown> = isRecord(rawBinding) ? rawBinding : {};
+    const targets = isRecord(binding.targets) ? binding.targets : {};
+    const rawSelectedLeafIds = binding.selectedLeafIds;
+    const selectedLeafIds = Array.isArray(rawSelectedLeafIds)
+      ? rawSelectedLeafIds.filter((value): value is string => typeof value === "string")
+      : [];
+    bindings[source.id] = {
+      sourceId: source.id,
+      selectionMode: selectedLeafIds.length > 0 ? "selected" : "all",
+      selectedLeafIds: virtualGroups[source.id]
+        ? selectedLeafIds.map((leafId) => memberLeafIdByLegacyRef.get(legacyRefKey(source.id, leafId)) ?? leafId)
+        : selectedLeafIds,
+      enabledTargets: Object.entries(targets)
+        .filter(([, value]) => isRecord(value) && value.enabled === true)
+        .map(([target]) => target),
+    };
+  }
+  return bindings;
+}
+
+function rewriteProjections(
+  lock: Record<string, unknown>,
+  memberLeafIdByLegacyRef: Map<string, string>,
+): Array<Record<string, unknown>> {
+  const projections = Array.isArray(lock.projections)
+    ? lock.projections
+    : Array.isArray(lock.deployments)
+      ? lock.deployments
+      : [];
+
+  return projections.filter(isRecord).map((projection) => {
+    const sourceId = typeof projection.sourceId === "string" ? projection.sourceId : "";
+    const leafId = typeof projection.leafId === "string" ? projection.leafId : "";
+    return {
+      target: projection.target,
+      sourceId,
+      leafId: memberLeafIdByLegacyRef.get(legacyRefKey(sourceId, leafId)) ?? leafId,
+      targetPath: projection.targetPath,
+      contentHash: projection.contentHash,
+      status: projection.status,
+      updatedAt: typeof projection.appliedAt === "string"
+        ? projection.appliedAt
+        : typeof projection.updatedAt === "string"
+          ? projection.updatedAt
+          : new Date(0).toISOString(),
+    };
+  });
+}
+
+function buildRestoreSelections(
+  group: LegacyVirtualGroup,
+  legacyLeafs: LegacyLeaf[],
+): Record<string, Record<string, unknown>> {
+  const selections: Record<string, Record<string, unknown>> = {};
+  for (const [sourceId, snapshot] of Object.entries(group.restoreSnapshots)) {
+    const sourceLeafIds = new Set(
+      legacyLeafs.filter((leaf) => leaf.sourceId === sourceId).map((leaf) => leaf.id),
+    );
+    const selectedLeafIds: string[] = [];
+    const diagnostics: DiagnosticV2[] = [];
+    for (const leafId of snapshot.selectedLeafIds) {
+      if (sourceLeafIds.has(leafId)) {
+        selectedLeafIds.push(leafId);
+      } else {
+        diagnostics.push({
+          code: "RESTORE_SELECTION_LEAF_UNMAPPED",
+          message: "Legacy restore selection leaf could not be mapped.",
+          retryable: false,
+          details: { legacyLeafId: leafId },
+        });
+      }
+    }
+    selections[sourceId] = {
+      sourceId,
+      selectedLeafIds,
+      bestEffort: diagnostics.length > 0,
+      diagnostics,
+    };
+  }
+  return selections;
+}
+
+function mapSourceKind(kind: string): string {
+  if (kind === "clawhub") {
+    return "github";
+  }
+  if (kind === "git" || kind === "github" || kind === "local" || kind === "collection") {
+    return kind;
+  }
+  return "local";
+}
+
+function legacyRefKey(sourceId: string, leafId: string): string {
+  return `${sourceId}\0${leafId}`;
+}
+
+function virtualMemberOriginMissing(
+  stateRoot: string,
+  ref: { sourceId: string; leafId: string },
+): StateMigrationError {
+  return new StateMigrationError({
+    reasonCode: "STATE_MIGRATION_VIRTUAL_MEMBER_ORIGIN_MISSING",
+    diagnostics: [
+      {
+        code: "STATE_MIGRATION_VIRTUAL_MEMBER_ORIGIN_MISSING",
+        message: "Legacy virtual group member origin could not be resolved.",
+        path: path.join(stateRoot, "virtual-groups.json"),
+        details: ref,
+        retryable: false,
+      },
+    ],
+  });
+}
+
+function collectionHashMismatch(
+  collectionRoot: string,
+  expectedHash: string,
+  actualHash: string,
+): StateMigrationError {
+  return new StateMigrationError({
+    reasonCode: "STATE_MIGRATION_COLLECTION_HASH_MISMATCH",
+    diagnostics: [
+      {
+        code: "STATE_MIGRATION_COLLECTION_HASH_MISMATCH",
+        message: "Copied collection member content hash differs from the v1 lock hash.",
+        path: collectionRoot,
+        details: {
+          expectedHash,
+          actualHash,
+        },
+        retryable: false,
+      },
+    ],
   });
 }
 
