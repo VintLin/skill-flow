@@ -7,7 +7,9 @@ export type BridgeCommandName =
   | "inspect-enrichment"
   | "search-import-groups"
   | "scan-local-import-groups"
+  | "prepare-import-source"
   | "preview-import-source"
+  | "commit-import-source"
   | "import-source"
   | "toggle-pin"
   | "rename-source"
@@ -66,7 +68,7 @@ export function parseBridgeRequest(input: unknown): BridgeRequest {
 
   if (!isBridgeCommandName(command)) {
     throw new Error(
-      "Bridge request 'command' must be one of: bootstrap, list, inspect, inspect-enrichment, search-import-groups, scan-local-import-groups, preview-import-source, import-source, toggle-pin, rename-source, create-virtual-group, merge-groups, restore-merged-groups, doctor, add, apply, update, uninstall, save-settings.",
+      "Bridge request 'command' must be one of: bootstrap, list, inspect, inspect-enrichment, search-import-groups, scan-local-import-groups, prepare-import-source, preview-import-source, commit-import-source, import-source, toggle-pin, rename-source, create-virtual-group, merge-groups, restore-merged-groups, doctor, add, apply, update, uninstall, save-settings.",
     );
   }
 
@@ -135,7 +137,9 @@ export function isBridgeCommandName(value: unknown): value is BridgeCommandName 
     value === "inspect-enrichment" ||
     value === "search-import-groups" ||
     value === "scan-local-import-groups" ||
+    value === "prepare-import-source" ||
     value === "preview-import-source" ||
+    value === "commit-import-source" ||
     value === "import-source" ||
     value === "toggle-pin" ||
     value === "rename-source" ||

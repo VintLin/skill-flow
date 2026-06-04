@@ -707,6 +707,57 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.data).toHaveProperty("status", "ready");
   });
 
+  test("accepts valid prepare-import-source payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "prepare-import-source",
+      payload: {
+        locator: repoPath,
+      },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("status", "ready");
+    expect(response.data).toHaveProperty("preparationId");
+  });
+
+  test("accepts valid commit-import-source payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const prepared = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "prepare-import-source",
+      payload: {
+        locator: repoPath,
+      },
+    });
+    expect(prepared.ok).toBe(true);
+    const preparationId = (prepared.data as Record<string, unknown>).preparationId as string;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "commit-import-source",
+      payload: {
+        preparationId,
+        draft: {
+          selectedSkillIds: ["review"],
+          enabledTargets: [],
+        },
+      },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("status", "ready");
+    expect(response.data).toHaveProperty("usedPreparation", true);
+  });
+
   test("accepts valid import-source payload", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),

@@ -149,10 +149,45 @@ export async function executeBridgeRequest(
           })),
         });
       }
+      case "prepare-import-source": {
+        const payload = expectObjectPayload(request.payload, "prepare-import-source");
+        const locator = expectString(payload.locator, "locator", "prepare-import-source");
+        const result = await app.prepareImportSource(locator);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
       case "preview-import-source": {
         const payload = expectObjectPayload(request.payload, "preview-import-source");
         const locator = expectString(payload.locator, "locator", "preview-import-source");
         const result = await app.previewImportSource(locator);
+        if (!result.ok) {
+          return toFailureResponse(request, result.errors, result.warnings);
+        }
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result.data),
+          warnings: result.warnings.map((warning) => ({
+            code: warning.code,
+            message: warning.message,
+          })),
+        });
+      }
+      case "commit-import-source": {
+        const payload = expectObjectPayload(request.payload, "commit-import-source");
+        const preparationId = expectString(payload.preparationId, "preparationId", "commit-import-source");
+        const draft = expectOptionalImportDraft(payload.draft);
+        const result = await app.commitPreparedImportSource(preparationId, draft);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
         }

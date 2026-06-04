@@ -486,6 +486,47 @@ describe.sequential("import page flow", () => {
     expect(preview.data.targets.length).toBeGreaterThan(0);
   });
 
+  test("previewImportSource returns a ready preparation id for local imports", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const preview = await app.previewImportSource(repoPath);
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+    expect(preview.data.preparationId).toMatch(/^prep-/);
+    expect(preview.data.preparationStatus).toBe("ready");
+  });
+
+  test("importSource uses ready preparation from preview", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const preview = await app.previewImportSource(repoPath);
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+
+    const imported = await app.importSource(repoPath, {
+      selectedSkillIds: ["review"],
+      enabledTargets: [],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok || imported.data.status !== "ready") {
+      return;
+    }
+    expect(imported.data.usedPreparation).toBe(true);
+    expect(imported.data.preparationId).toBe(preview.data.preparationId);
+  });
+
   test("scanLocalImportGroups builds local fallback cards for local-only skills", async () => {
     const localPath = await createLocalSkill(
       process.env.SKILL_FLOW_TARGET_CODEX!,

@@ -21,6 +21,7 @@ import type {
   ImportSearchHit,
   ImportSearchSnapshot,
   ImportPreviewResult,
+  ImportPreparationResult,
   ImportReasonCode,
   ImportSourceResult,
   LeafRecord,
@@ -114,6 +115,7 @@ import { ConfigCoordinator } from "./config-coordinator.js";
 import { DeploymentPlanner } from "@skill-flow/core-engine/services/deployment-planner";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
+import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { SourceService } from "@skill-flow/core-engine/services/source-service";
 import { WorkflowService } from "./workflow-service.js";
@@ -246,6 +248,7 @@ export class SkillFlowApp {
   adapters: ChannelAdapter[];
   readonly inventoryService: InventoryService;
   readonly sourceService: SourceService;
+  readonly importPreparationService: ImportPreparationService;
   planner: DeploymentPlanner;
   applier: DeploymentApplier;
   readonly doctorService: DoctorService;
@@ -265,6 +268,7 @@ export class SkillFlowApp {
     this.adapters = adapters;
     this.inventoryService = new InventoryService();
     this.sourceService = new SourceService(this.store, this.inventoryService);
+    this.importPreparationService = new ImportPreparationService(this.store, this.sourceService);
     this.planner = new DeploymentPlanner(adapters);
     this.applier = new DeploymentApplier(adapters);
     this.doctorService = new DoctorService(this.store);
@@ -828,6 +832,25 @@ export class SkillFlowApp {
 
   async previewImportSource(locator: string): Promise<Result<ImportPreviewResult>> {
     return this.previewImportSourceImpl(locator);
+  }
+
+  async prepareImportSource(locator: string): Promise<Result<ImportPreparationResult>> {
+    return this.prepareImportSourceImpl(locator);
+  }
+
+  async commitPreparedImportSource(
+    preparationId: string,
+    draft?: ImportDraft,
+  ): Promise<Result<ImportSourceResult>> {
+    return this.runAuditedMutation(
+      "import-source",
+      {
+        preparationId,
+        selectedSkillIds: draft?.selectedSkillIds ?? [],
+        enabledTargets: draft?.enabledTargets ?? [],
+      },
+      () => this.commitPreparedImportSourceImpl(preparationId, draft),
+    );
   }
 
   async importSource(
@@ -1924,6 +1947,66 @@ export class SkillFlowApp {
     }
   }
 
+  private async prepareImportSourceImpl(locator: string): Promise<Result<ImportPreparationResult>> {
+    const githubLocator = this.parseGitHubImportLocator(locator);
+    if (githubLocator) {
+      return this.importPreparationService.prepareImportSource(githubLocator.locator, {
+        project: false,
+        ...(githubLocator.requestedPath ? { path: githubLocator.requestedPath } : {}),
+      });
+    }
+
+    const directLocator = await this.resolveDirectImportLocator(locator);
+    return this.importPreparationService.prepareImportSource(directLocator ?? locator.trim(), {
+      project: false,
+    });
+  }
+
+  private async commitPreparedImportSourceImpl(
+    preparationId: string,
+    draft?: ImportDraft,
+    canonicalRepo?: string,
+  ): Promise<Result<ImportSourceResult>> {
+    const committed = await this.importPreparationService.commitPreparedImportSource(preparationId);
+    if (!committed.ok) {
+      return committed;
+    }
+    if (committed.data.status !== "ready") {
+      return ok(committed.data, committed.warnings);
+    }
+    const committedData = committed.data;
+
+    const { lockFile } = await this.store.readState();
+    const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === committedData.sourceId);
+    const availableTargets = await this.getAvailableTargets();
+    const finalDraft = this.resolveImportDraftForPreparedSource(
+      sourceLeafs,
+      availableTargets,
+      canonicalRepo ?? committedData.canonicalRepo,
+      draft,
+    );
+    if (!finalDraft.ok) {
+      await this.rollbackPreparedSourceInternal(committedData.sourceId);
+      return ok({
+        status: "failed",
+        reasonCode: finalDraft.errors[0]?.code ?? "IMPORT_PREVIEW_INVALID",
+        retryable: true,
+      }, [...committed.warnings, ...finalDraft.warnings]);
+    }
+
+    const applied = await this.applyDraftImpl(committedData.sourceId, finalDraft.data, { kind: "global" });
+    if (!applied.ok) {
+      await this.rollbackPreparedSourceInternal(committedData.sourceId);
+      return ok({
+        status: "failed",
+        reasonCode: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
+        retryable: true,
+      }, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
+    }
+
+    return ok(committedData, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
+  }
+
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
     const githubLocator = this.parseGitHubImportLocator(locator);
     const canonicalRepo = githubLocator?.canonicalRepo;
@@ -2003,6 +2086,22 @@ export class SkillFlowApp {
   ): Promise<Result<ImportSourceResult>> {
     const githubLocator = this.parseGitHubImportLocator(locator);
     const normalizedLocator = githubLocator?.locator ?? locator.trim();
+    const preparation = await this.importPreparationService.prepareImportSource(normalizedLocator, {
+      project: false,
+      ...(githubLocator?.requestedPath ? { path: githubLocator.requestedPath } : {}),
+    });
+    const importDraft = draft ?? (githubLocator?.skillSelector
+      ? { selectedSkillIds: [githubLocator.skillSelector], enabledTargets: [] }
+      : undefined);
+    const canonicalRepo = githubLocator?.canonicalRepo ?? normalizeImportCanonicalRepo(normalizedLocator);
+    if (preparation.ok && preparation.data.status === "ready") {
+      return this.commitPreparedImportSourceImpl(
+        preparation.data.preparationId,
+        importDraft,
+        canonicalRepo,
+      );
+    }
+
     const prepared = await this.prepareAddSourceImpl(normalizedLocator, {
       project: false,
       ...(githubLocator?.requestedPath ? { path: githubLocator.requestedPath } : {}),
@@ -2015,10 +2114,6 @@ export class SkillFlowApp {
       });
     }
 
-    const importDraft = draft ?? (githubLocator?.skillSelector
-      ? { selectedSkillIds: [githubLocator.skillSelector], enabledTargets: [] }
-      : undefined);
-    const canonicalRepo = githubLocator?.canonicalRepo ?? normalizeImportCanonicalRepo(normalizedLocator);
     const finalDraft = this.resolveImportDraftForPreparedSource(
       prepared.data.leafs,
       prepared.data.availableTargets,
@@ -2049,6 +2144,42 @@ export class SkillFlowApp {
       sourceId: prepared.data.sourceId,
       canonicalRepo: canonicalRepo ?? normalizedLocator,
     }, [...finalDraft.warnings, ...applied.warnings]);
+  }
+
+  private withImportPreparation(
+    preview: Result<ImportPreviewResult>,
+    preparation: Result<ImportPreparationResult>,
+  ): Result<ImportPreviewResult> {
+    if (!preview.ok || preview.data.status !== "ready") {
+      return preview;
+    }
+
+    return ok({
+      ...preview.data,
+      ...this.importPreparationPreviewFields(preparation),
+    }, preview.warnings);
+  }
+
+  private importPreparationPreviewFields(
+    preparation: Result<ImportPreparationResult>,
+  ): Partial<Extract<ImportPreviewResult, { status: "ready" }>> {
+    if (!preparation.ok) {
+      return {};
+    }
+
+    if (preparation.data.status === "failed") {
+      return {
+        ...(preparation.data.preparationId ? { preparationId: preparation.data.preparationId } : {}),
+        preparationStatus: "failed",
+      };
+    }
+
+    return {
+      preparationId: preparation.data.preparationId,
+      preparationStatus: preparation.data.status,
+      ...(preparation.data.preparedAt ? { preparedAt: preparation.data.preparedAt } : {}),
+      ...(preparation.data.expiresAt ? { expiresAt: preparation.data.expiresAt } : {}),
+    };
   }
 
   private async resolveSourceMetadata(
@@ -2422,6 +2553,11 @@ export class SkillFlowApp {
       return null;
     }
 
+    const preparation = await pathExists(resolvedLocator)
+      ? await this.importPreparationService.prepareImportSource(resolvedLocator, {
+          project: false,
+        })
+      : undefined;
     const preview = await this.sourceService.previewSource(resolvedLocator);
     if (!preview.ok) {
       return ok({
@@ -2433,10 +2569,11 @@ export class SkillFlowApp {
 
     const availableTargets = await this.getAvailableTargets();
 
-    return ok(
+    const result = ok(
       this.buildDirectImportPreviewResult(resolvedLocator, preview.data, availableTargets),
       preview.warnings,
     );
+    return preparation ? this.withImportPreparation(result, preparation) : result;
   }
 
   private async previewGitHubImportSource(
