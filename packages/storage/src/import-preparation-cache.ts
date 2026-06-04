@@ -107,6 +107,7 @@ function normalizeRecord(id: string, value: unknown): ImportPreparationRecord | 
 
   return {
     id,
+    ...(stringValue(value.cacheKey) ? { cacheKey: stringValue(value.cacheKey)! } : {}),
     locator,
     canonicalRepo,
     sourceKind,

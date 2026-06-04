@@ -742,6 +742,7 @@ export type ImportPreparationStatus =
 
 export type ImportPreparationRecord = {
   id: string;
+  cacheKey?: string;
   locator: string;
   canonicalRepo: string;
   sourceKind: SourceKind;

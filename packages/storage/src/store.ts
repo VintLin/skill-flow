@@ -295,7 +295,7 @@ export class StateStore {
       await this.init();
       const cache = await this.readImportPreparationCacheRaw();
       cache.records[record.id] = record;
-      cache.locatorIndex[record.locator] = record.id;
+      cache.locatorIndex[record.cacheKey ?? record.locator] = record.id;
       await writeJsonFile(
         this.importPreparationPath,
         normalizeImportPreparationCache(cache),
@@ -309,8 +309,8 @@ export class StateStore {
       const cache = await this.readImportPreparationCacheRaw();
       const record = cache.records[preparationId];
       delete cache.records[preparationId];
-      if (record && cache.locatorIndex[record.locator] === preparationId) {
-        delete cache.locatorIndex[record.locator];
+      if (record && cache.locatorIndex[record.cacheKey ?? record.locator] === preparationId) {
+        delete cache.locatorIndex[record.cacheKey ?? record.locator];
       }
       await writeJsonFile(
         this.importPreparationPath,

@@ -47,6 +47,52 @@ describe.sequential("source service", () => {
     expect(added.data.lock.originalDisplayName).toBe(added.data.manifest.displayName);
   });
 
+  test("commits an existing prepared checkout without fetching the locator again", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const store = new StateStore();
+    const sourceService = new SourceService(store, new InventoryService());
+    const preparedPath = path.join(sandbox.sandboxRoot, "prepared-review");
+    await fs.cp(repoPath, preparedPath, { recursive: true });
+
+    const result = await sourceService.commitPreparedSource({
+      locator: repoPath,
+      checkoutPath: preparedPath,
+      options: { project: false },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.leafCount).toBe(1);
+    await expect(fs.stat(store.getSourceCheckoutPath("local", result.data.manifest.id))).resolves.toBeTruthy();
+    await expect(fs.stat(preparedPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("prepareSourceCheckout fetches and scans a reusable checkout", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const sourceService = createSourceService();
+    const checkoutPath = path.join(sandbox.sandboxRoot, "prepared-source");
+
+    const prepared = await sourceService.prepareSourceCheckout(repoPath, {
+      checkoutPath,
+      options: { project: false },
+    });
+
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    expect(prepared.data.checkoutPath).toBe(checkoutPath);
+    expect(prepared.data.kind).toBe("local");
+    expect(prepared.data.leafs.map((leaf) => leaf.name)).toEqual(["review"]);
+    await expect(fs.stat(path.join(checkoutPath, "skills", "review", "SKILL.md"))).resolves.toBeTruthy();
+  });
+
   test("updateSources preserves imported originalDisplayName", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "SKILL.md": skillDoc("alpha", "Alpha skill."),

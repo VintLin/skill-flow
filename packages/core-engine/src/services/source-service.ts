@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import type {
   DeploymentTargetName,
   LockFile,
+  Manifest,
   Result,
   SourceUpdateDiff,
   SourceUpdateResult,
@@ -43,6 +44,26 @@ export type SourceSnapshot = {
   lock: SourceLockRecord;
   leafCount: number;
   invalidLeafCount: number;
+};
+
+export type PreparedSourceCheckout = {
+  locator: string;
+  displayName: string;
+  requestedPath?: string;
+  kind: SourceKind;
+  sourceId: string;
+  checkoutPath: string;
+  leafs: LockFile["leafInventory"];
+  commitSha?: string;
+  contentHash?: string;
+  resolvedVersion?: string;
+};
+
+export type CommitPreparedSourceOptions = {
+  locator: string;
+  checkoutPath: string;
+  options?: AddSourceOptions;
+  removePreparedOnFailure?: boolean;
 };
 
 export type SourcePreview = {
@@ -94,106 +115,27 @@ export class SourceService {
     locator: string,
     options: AddSourceOptions = {},
   ): Promise<Result<SourceSnapshot>> {
-    const { manifest, lockFile } = await this.store.readState();
-
-    const resolved = this.resolveUniqueLocalSource(
-      await this.resolveSource(locator, options),
-      manifest.sources,
-      Boolean(options.sourceIdOverride),
-    );
-
-    if (
-      manifest.sources.some(
-        (source) => source.id === resolved.sourceId && source.locator === resolved.locator,
-      )
-    ) {
-      return fail({
-        code: "SOURCE_EXISTS",
-        message: `Skills group '${formatGroupLabel({ id: resolved.sourceId, locator: resolved.locator, displayName: resolved.displayName })}' is already registered with id '${resolved.sourceId}'.`,
-      });
-    }
-
-    if (manifest.sources.some((source) => source.id === resolved.sourceId)) {
-      return fail({
-        code: "SOURCE_EXISTS",
-        message: `Skills group '${formatGroupLabel({ id: resolved.sourceId, locator: resolved.locator, displayName: resolved.displayName })}' is already registered with id '${resolved.sourceId}'.`,
-      });
-    }
-
-    const checkoutPath = this.store.getSourceCheckoutPath(
-      resolved.kind,
-      resolved.sourceId,
-    );
-    const tempCheckoutPath = `${checkoutPath}.${process.pid}.${crypto.randomUUID()}.add`;
-    await ensureDir(this.store.getSourceRoot(resolved.kind));
-
-    try {
-      await this.fetchSource(resolved, tempCheckoutPath);
-    } catch (error) {
-      await removePath(tempCheckoutPath);
-      return fail({
-        code:
-          resolved.kind === "git"
-            ? "GIT_CLONE_FAILED"
-            : resolved.kind === "local"
-              ? "LOCAL_IMPORT_FAILED"
-              : "CLAWHUB_FETCH_FAILED",
-        message: `Unable to fetch source '${resolved.locator}': ${String(error)}`,
-      });
-    }
-
-    const snapshot = await this.buildSnapshot(
-      resolved.kind,
-      resolved.sourceId,
-      resolved.locator,
-      resolved.displayName,
-      tempCheckoutPath,
-      resolved.requestedPath,
+    const prepared = await this.prepareSourceCheckout(locator, {
       options,
-    );
-
-    if (!snapshot.ok) {
-      await removePath(tempCheckoutPath);
-      return fail(snapshot.errors, snapshot.warnings);
+      suffix: "add",
+    });
+    if (!prepared.ok) {
+      return fail(prepared.errors, prepared.warnings);
     }
 
-    if (await pathExists(checkoutPath)) {
-      await removePath(tempCheckoutPath);
-      return fail({
-        code: "SOURCE_CHECKOUT_PATH_EXISTS",
-        message: `Unable to register source '${resolved.locator}' because checkout path already exists at ${checkoutPath}.`,
-      });
-    }
-
-    try {
-      await fs.rename(tempCheckoutPath, checkoutPath);
-    } catch (error) {
-      await removePath(tempCheckoutPath).catch(() => {});
-      return fail({
-        code: "SOURCE_CHECKOUT_MOVE_FAILED",
-        message: `Unable to finalize source '${resolved.locator}' at ${checkoutPath}: ${String(error)}`,
-      });
-    }
-    snapshot.data.lock.checkoutPath = checkoutPath;
-    snapshot.data.leafs = snapshot.data.leafs.map((leaf) => ({
-      ...leaf,
-      absolutePath: path.join(checkoutPath, leaf.relativePath),
-      skillFilePath: path.join(checkoutPath, leaf.relativePath, "SKILL.md"),
-    }));
-
-    manifest.sources.push(snapshot.data.manifest);
-    manifest.bindings[resolved.sourceId] = { targets: {} };
-    lockFile.sources.push(snapshot.data.lock);
-    lockFile.leafInventory.push(...snapshot.data.leafs);
-
-    await this.store.writeState(manifest, lockFile);
-
-    return ok({
-      manifest: snapshot.data.manifest,
-      lock: snapshot.data.lock,
-      leafCount: snapshot.data.leafs.length,
-      invalidLeafCount: snapshot.data.lock.invalidLeafs.length,
-    }, snapshot.warnings);
+    const committed = await this.commitPreparedSource({
+      locator,
+      checkoutPath: prepared.data.checkoutPath,
+      options: {
+        ...options,
+        sourceIdOverride: prepared.data.sourceId,
+        displayNameOverride: prepared.data.displayName,
+      },
+      removePreparedOnFailure: true,
+    });
+    return committed.ok
+      ? committed
+      : fail(committed.errors, [...prepared.warnings, ...committed.warnings]);
   }
 
   async previewSource(
@@ -241,6 +183,187 @@ export class SourceService {
     } finally {
       await removePath(tempCheckoutPath).catch(() => {});
     }
+  }
+
+  async prepareSourceCheckout(
+    locator: string,
+    input: {
+      options?: AddSourceOptions;
+      checkoutPath?: string;
+      suffix?: string;
+    } = {},
+  ): Promise<Result<PreparedSourceCheckout>> {
+    const options = input.options ?? {};
+    const { manifest } = await this.store.readState();
+    const resolved = this.resolveUniqueLocalSource(
+      await this.resolveSource(locator, options),
+      manifest.sources,
+      Boolean(options.sourceIdOverride),
+    );
+    const checkoutPath = input.checkoutPath ?? path.join(
+      this.store.getSourceRoot(resolved.kind),
+      `.${input.suffix ?? "prepare"}-${process.pid}-${crypto.randomUUID()}`,
+    );
+    await ensureDir(path.dirname(checkoutPath));
+
+    try {
+      await this.fetchSource(resolved, checkoutPath);
+    } catch (error) {
+      await removePath(checkoutPath);
+      return fail({
+        code: this.fetchFailureCode(resolved.kind),
+        message: `Unable to fetch source '${resolved.locator}': ${String(error)}`,
+      });
+    }
+
+    const snapshot = await this.buildSnapshot(
+      resolved.kind,
+      resolved.sourceId,
+      resolved.locator,
+      resolved.displayName,
+      checkoutPath,
+      resolved.requestedPath,
+      options,
+    );
+    if (!snapshot.ok) {
+      await removePath(checkoutPath);
+      return fail(snapshot.errors, snapshot.warnings);
+    }
+
+    return ok({
+      locator: resolved.locator,
+      displayName: resolved.displayName,
+      ...(resolved.requestedPath ? { requestedPath: resolved.requestedPath } : {}),
+      kind: resolved.kind,
+      sourceId: resolved.sourceId,
+      checkoutPath,
+      leafs: snapshot.data.leafs,
+      ...(snapshot.data.lock.commitSha ? { commitSha: snapshot.data.lock.commitSha } : {}),
+      ...(snapshot.data.lock.contentHash ? { contentHash: snapshot.data.lock.contentHash } : {}),
+      ...(snapshot.data.lock.resolvedVersion ? { resolvedVersion: snapshot.data.lock.resolvedVersion } : {}),
+    }, snapshot.warnings);
+  }
+
+  async commitPreparedSource(
+    input: CommitPreparedSourceOptions,
+  ): Promise<Result<SourceSnapshot>> {
+    const options = input.options ?? {};
+    const { manifest, lockFile } = await this.store.readState();
+    const resolved = this.resolveUniqueLocalSource(
+      await this.resolveSource(input.locator, options),
+      manifest.sources,
+      Boolean(options.sourceIdOverride),
+    );
+
+    return this.finalizePreparedCheckout({
+      resolved,
+      preparedCheckoutPath: input.checkoutPath,
+      manifest,
+      lockFile,
+      options,
+      removePreparedOnFailure: input.removePreparedOnFailure ?? false,
+    });
+  }
+
+  private async finalizePreparedCheckout(args: {
+    resolved: SourceResolution;
+    preparedCheckoutPath: string;
+    manifest: Manifest;
+    lockFile: LockFile;
+    options: AddSourceOptions;
+    removePreparedOnFailure: boolean;
+  }): Promise<Result<SourceSnapshot>> {
+    if (
+      args.manifest.sources.some(
+        (source) => source.id === args.resolved.sourceId && source.locator === args.resolved.locator,
+      )
+    ) {
+      if (args.removePreparedOnFailure) {
+        await removePath(args.preparedCheckoutPath).catch(() => {});
+      }
+      return fail({
+        code: "SOURCE_EXISTS",
+        message: `Skills group '${formatGroupLabel({ id: args.resolved.sourceId, locator: args.resolved.locator, displayName: args.resolved.displayName })}' is already registered with id '${args.resolved.sourceId}'.`,
+      });
+    }
+
+    if (args.manifest.sources.some((source) => source.id === args.resolved.sourceId)) {
+      if (args.removePreparedOnFailure) {
+        await removePath(args.preparedCheckoutPath).catch(() => {});
+      }
+      return fail({
+        code: "SOURCE_EXISTS",
+        message: `Skills group '${formatGroupLabel({ id: args.resolved.sourceId, locator: args.resolved.locator, displayName: args.resolved.displayName })}' is already registered with id '${args.resolved.sourceId}'.`,
+      });
+    }
+
+    const checkoutPath = this.store.getSourceCheckoutPath(
+      args.resolved.kind,
+      args.resolved.sourceId,
+    );
+    const tempFinalPath = `${checkoutPath}.${process.pid}.${crypto.randomUUID()}.commit`;
+    await ensureDir(this.store.getSourceRoot(args.resolved.kind));
+
+    const snapshot = await this.buildSnapshot(
+      args.resolved.kind,
+      args.resolved.sourceId,
+      args.resolved.locator,
+      args.resolved.displayName,
+      args.preparedCheckoutPath,
+      args.resolved.requestedPath,
+      args.options,
+    );
+    if (!snapshot.ok) {
+      if (args.removePreparedOnFailure) {
+        await removePath(args.preparedCheckoutPath).catch(() => {});
+      }
+      return fail(snapshot.errors, snapshot.warnings);
+    }
+
+    if (await pathExists(checkoutPath)) {
+      if (args.removePreparedOnFailure) {
+        await removePath(args.preparedCheckoutPath).catch(() => {});
+      }
+      return fail({
+        code: "SOURCE_CHECKOUT_PATH_EXISTS",
+        message: `Unable to register source '${args.resolved.locator}' because checkout path already exists at ${checkoutPath}.`,
+      });
+    }
+
+    try {
+      await fs.rename(args.preparedCheckoutPath, tempFinalPath);
+      await fs.rename(tempFinalPath, checkoutPath);
+    } catch (error) {
+      await removePath(tempFinalPath).catch(() => {});
+      if (args.removePreparedOnFailure) {
+        await removePath(args.preparedCheckoutPath).catch(() => {});
+      }
+      return fail({
+        code: "SOURCE_CHECKOUT_MOVE_FAILED",
+        message: `Unable to finalize source '${args.resolved.locator}' at ${checkoutPath}: ${String(error)}`,
+      });
+    }
+
+    snapshot.data.lock.checkoutPath = checkoutPath;
+    snapshot.data.leafs = snapshot.data.leafs.map((leaf) => ({
+      ...leaf,
+      absolutePath: path.join(checkoutPath, leaf.relativePath),
+      skillFilePath: path.join(checkoutPath, leaf.relativePath, "SKILL.md"),
+    }));
+
+    args.manifest.sources.push(snapshot.data.manifest);
+    args.manifest.bindings[args.resolved.sourceId] = { targets: {} };
+    args.lockFile.sources.push(snapshot.data.lock);
+    args.lockFile.leafInventory.push(...snapshot.data.leafs);
+
+    await this.store.writeState(args.manifest, args.lockFile);
+
+    return ok({
+      manifest: snapshot.data.manifest,
+      lock: snapshot.data.lock,
+      leafCount: snapshot.data.leafs.length,
+      invalidLeafCount: snapshot.data.lock.invalidLeafs.length,
+    }, snapshot.warnings);
   }
 
   async updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
@@ -1204,6 +1327,14 @@ export class SourceService {
       }
       return;
     }
+  }
+
+  private fetchFailureCode(kind: SourceKind): string {
+    return kind === "git"
+      ? "GIT_CLONE_FAILED"
+      : kind === "local"
+        ? "LOCAL_IMPORT_FAILED"
+        : "CLAWHUB_FETCH_FAILED";
   }
 
   private async updateSource(
