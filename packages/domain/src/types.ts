@@ -822,3 +822,382 @@ export type ImportSourceResult =
       reasonCode: string;
       retryable: boolean;
     };
+
+export type SchemaVersionV2 = 2;
+export type MigrationGenerationV2 = `mg_${string}`;
+export type SourceIdV2 = string;
+export type SkillLeafIdV2 = string;
+export type RepoPathV2 = string;
+
+export type DiagnosticV2 = {
+  code: string;
+  message: string;
+  path?: string;
+  fieldPath?: string;
+  retryable?: boolean;
+  details?: Record<string, unknown>;
+};
+
+export type SourceKindV2 = "git" | "github" | "local" | "collection";
+
+export type SourceManifestRecordV2 = {
+  id: SourceIdV2;
+  kind: SourceKindV2;
+  locator: string;
+  canonicalLocator: string;
+  displayName: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SourceBindingV2 = {
+  sourceId: SourceIdV2;
+  selectionMode: "all" | "selected";
+  selectedLeafIds: SkillLeafIdV2[];
+  enabledTargets: DeploymentTargetId[];
+};
+
+export type TargetBindingV2 = {
+  target: DeploymentTargetId;
+  leafIds: SkillLeafIdV2[];
+};
+
+export type ManifestFileV2 = {
+  schemaVersion: SchemaVersionV2;
+  migrationGeneration: MigrationGenerationV2;
+  sources: SourceManifestRecordV2[];
+  bindings: Record<SourceIdV2, SourceBindingV2>;
+  targets: Record<string, TargetBindingV2>;
+};
+
+export type SourceRevisionV2 = {
+  provider: "git" | "github" | "local" | "collection";
+  ref?: string;
+  commit?: string;
+  archiveEtag?: string;
+  capturedAt: string;
+};
+
+export type LeafSelectorIndexV2 = {
+  providerSkillId?: string;
+  legacyAliases: string[];
+};
+
+export type LeafRecordV2 = {
+  id: SkillLeafIdV2;
+  sourceId: SourceIdV2;
+  relativePath: RepoPathV2;
+  skillFilePath: string;
+  displayName: string;
+  contentHash: string;
+  selectors: LeafSelectorIndexV2;
+  valid: boolean;
+  diagnostics: DiagnosticV2[];
+};
+
+export type ProjectionRecordV2 = {
+  target: DeploymentTargetId;
+  sourceId: SourceIdV2;
+  leafId: SkillLeafIdV2;
+  targetPath: string;
+  contentHash: string;
+  status: "active" | "removed" | "blocked";
+  updatedAt: string;
+};
+
+export type SourceLockRecordV2 = {
+  sourceId: SourceIdV2;
+  canonicalLocator: string;
+  revision: SourceRevisionV2;
+  localPath: string;
+  leafIds: SkillLeafIdV2[];
+};
+
+export type LockFileV2 = {
+  schemaVersion: SchemaVersionV2;
+  migrationGeneration: MigrationGenerationV2;
+  sources: Record<SourceIdV2, SourceLockRecordV2>;
+  leafInventory: LeafRecordV2[];
+  projections: ProjectionRecordV2[];
+};
+
+export type ProjectSourceDraftV2 = {
+  sourceId: SourceIdV2;
+  selectedLeafIds: SkillLeafIdV2[];
+  enabledTargets: DeploymentTargetId[];
+  updatedAt: string;
+};
+
+export type ImportSkillSelectorV2 = { kind: "repoPath"; path: RepoPathV2 };
+
+export type ImportSkillSelectionV2 = {
+  uiId: string;
+  selector: ImportSkillSelectorV2;
+};
+
+export type LocalImportChoiceV2 = {
+  sourceChoiceId: string;
+  legacyChoiceId?: string;
+  label: string;
+  locator: string;
+  detectedSourcePath: string;
+  detectedSkillPath?: RepoPathV2;
+  variant: "single-skill" | "multi-skill" | "source-root";
+  selectedSkills: ImportSkillSelectionV2[];
+  enabledTargets: DeploymentTargetId[];
+};
+
+export type LocalScanDetectedSkillV2 = {
+  leafId: SkillLeafIdV2;
+  existingSourceIdHint?: SourceIdV2;
+  sourcePath: string;
+  skillFilePath: string;
+  relativePath: RepoPathV2;
+  displayName: string;
+  contentHash: string;
+  selector: ImportSkillSelectorV2;
+  diagnostics: DiagnosticV2[];
+};
+
+export type LocalScanImportChoiceV2 = {
+  scanId: string;
+  sourceChoiceId: string;
+  rootPath: string;
+  sourcePath: string;
+  variant: "single-source" | "multi-source" | "mixed";
+  detectedSkills: LocalScanDetectedSkillV2[];
+  selectedSkills: ImportSkillSelectionV2[];
+  enabledTargets: DeploymentTargetId[];
+};
+
+export type PreferencesFileV2 = {
+  schemaVersion: SchemaVersionV2;
+  migrationGeneration: MigrationGenerationV2;
+  pinnedSourceIds: SourceIdV2[];
+  projectSourceDrafts: Record<string, Record<SourceIdV2, ProjectSourceDraftV2>>;
+  localImportChoices?: LocalImportChoiceV2[];
+  localScanImportChoices?: LocalScanImportChoiceV2[];
+};
+
+export type SkillCollectionMemberOriginV2 = {
+  sourceId: SourceIdV2;
+  leafId: SkillLeafIdV2;
+  sourceLocator: string;
+  canonicalLocator: string;
+  repoPath: RepoPathV2;
+  contentHashAtCapture: string;
+  capturedAt: string;
+};
+
+export type MaterializedSkillSnapshotV2 = {
+  leafId: SkillLeafIdV2;
+  materializedPath: string;
+  skillFilePath: string;
+  relativePath: string;
+  contentHash: string;
+};
+
+export type SkillCollectionMemberV2 = {
+  id: string;
+  origin: SkillCollectionMemberOriginV2;
+  snapshot: MaterializedSkillSnapshotV2;
+  updatePolicy: "frozen";
+};
+
+export type SkillCollectionRestoreSelectionV2 = {
+  sourceId: SourceIdV2;
+  selectedLeafIds: SkillLeafIdV2[];
+  bestEffort: boolean;
+  diagnostics: DiagnosticV2[];
+};
+
+export type SkillCollectionRecordV2 = {
+  id: SourceIdV2;
+  displayName: string;
+  materializedSourceId: SourceIdV2;
+  members: SkillCollectionMemberV2[];
+  hiddenSourceIds: SourceIdV2[];
+  restoreSelections: Record<SourceIdV2, SkillCollectionRestoreSelectionV2>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CollectionsFileV2 = {
+  schemaVersion: SchemaVersionV2;
+  migrationGeneration: MigrationGenerationV2;
+  collections: Record<SourceIdV2, SkillCollectionRecordV2>;
+};
+
+export type MigrationMarkerFileV2 = {
+  schemaVersion: SchemaVersionV2;
+  migrationGeneration: MigrationGenerationV2;
+  status: "running" | "failed";
+  startedAt: string;
+  stagingRoot: string;
+  backupPath?: string;
+  diagnostics: DiagnosticV2[];
+};
+
+export type CollectionGenerationMarkerV2 = {
+  schemaVersion: SchemaVersionV2;
+  migrationGeneration: MigrationGenerationV2;
+  collectionId: SourceIdV2;
+  createdAt: string;
+  diagnostics: DiagnosticV2[];
+};
+
+export type ImportPreviewSkillV2 = {
+  legacyId: string;
+  uiId: string;
+  title: string;
+  selector: ImportSkillSelectorV2;
+  origin: {
+    provider: "github" | "git" | "local" | "archive";
+    providerSkillId?: string;
+    providerPath?: string;
+    archivePath?: string;
+    repoPath?: RepoPathV2;
+  };
+  diagnostics: DiagnosticV2[];
+  legacyAliases: string[];
+};
+
+export type ImportDraftV2 = {
+  selectedSkills: ImportSkillSelectionV2[];
+  enabledTargets: DeploymentTargetId[];
+};
+
+export type PreparedSkillRefV2 = {
+  uiId: string;
+  selector: ImportSkillSelectorV2;
+  leafId: SkillLeafIdV2;
+  repoPath: RepoPathV2;
+  contentHash: string;
+  legacyAliases: string[];
+};
+
+export type ImportPreparationRecordV2 = {
+  schemaVersion: SchemaVersionV2;
+  preparationId: string;
+  status: "ready" | "committing" | "committed" | "failed" | "expired";
+  sourceLocator: string;
+  canonicalLocator: string;
+  requestedPath?: string;
+  sourceSelectionKey: string;
+  existingSourceIdHint?: SourceIdV2;
+  sourceKind: SourceKindV2;
+  checkoutPath: string;
+  sourceRevision: SourceRevisionV2;
+  availableTargets: DeploymentTargetId[];
+  skillRefs: PreparedSkillRefV2[];
+  currentAttempt?: {
+    attemptId: string;
+    commitStartedAt?: string;
+  };
+  lease: {
+    token: string;
+    expiresAt: string;
+    state: "ready" | "committing" | "committed" | "expired";
+  };
+  failure?: {
+    reasonCode: string;
+    retryable: boolean;
+    message: string;
+    diagnostics: DiagnosticV2[];
+  };
+  diagnostics: DiagnosticV2[];
+  preparedAt: string;
+  expiresAt: string;
+  createdAt: string;
+};
+
+export type SourceUpdateDiffV2 = {
+  kind: "moved" | "changed" | "added" | "removed" | "invalidated";
+  sourceId: SourceIdV2;
+  leafId: SkillLeafIdV2;
+  previous?: Partial<LeafRecordV2>;
+  current?: Partial<LeafRecordV2>;
+  diagnostics: DiagnosticV2[];
+};
+
+export type SourceUpdateResultV2 = {
+  sourceId: SourceIdV2;
+  status: "updated" | "unchanged" | "failed";
+  diffs: SourceUpdateDiffV2[];
+  diagnostics: DiagnosticV2[];
+};
+
+export type RepairTargetsResultV2 = {
+  actions: Array<{
+    kind: "relink" | "remove" | "block" | "noop";
+    target: DeploymentTargetId;
+    sourceId?: SourceIdV2;
+    leafId?: SkillLeafIdV2;
+    previous?: Partial<ProjectionRecordV2>;
+    current?: Partial<ProjectionRecordV2>;
+    diagnostics: DiagnosticV2[];
+  }>;
+  diagnostics: DiagnosticV2[];
+};
+
+export type AddSourceDraftOptionsV2 = {
+  locator: string;
+  skillNames?: string[];
+  selectedSkills?: ImportSkillSelectionV2[];
+  enabledTargets?: DeploymentTargetId[];
+  skipTargetDetection?: boolean;
+};
+
+export type TargetDetectionV2 = {
+  target: DeploymentTargetId;
+  available: boolean;
+  rootPath: string;
+  reasonCode?: string;
+  diagnostics: DiagnosticV2[];
+};
+
+export type AddSourcePreparationV2 = {
+  sourceId: SourceIdV2;
+  selectors: ImportSkillSelectorV2[];
+  leafIds: SkillLeafIdV2[];
+  detectedTargets: TargetDetectionV2[];
+  diagnostics: DiagnosticV2[];
+};
+
+export type SourceMetadataCacheEntryV2 = {
+  cacheKey: string;
+  canonicalLocator: string;
+  provider: RepoMetadataProvider;
+  status: "ready" | "failed" | "unsupported";
+  checkedAt: string;
+  expiresAt: string;
+  providerMetadata?: SourceStats;
+  diagnostics: DiagnosticV2[];
+};
+
+export type SourceMetadataCacheV2 = Record<string, SourceMetadataCacheEntryV2>;
+
+export type ImportDataCacheV2 = {
+  searches: Record<string, ImportSearchSnapshot>;
+  repos: Record<string, RepoMetadataCacheEntry>;
+  recommendations: Record<string, ImportRecommendationFeed>;
+};
+
+export type ImportDiscoveryCandidateV2 = {
+  uiId: string;
+  legacyId: string;
+  title: string;
+  selector: ImportSkillSelectorV2;
+  origin: ImportPreviewSkillV2["origin"];
+  diagnostics: DiagnosticV2[];
+};
+
+export type ImportDiscoveryGroupCandidateV2 = {
+  groupId: string;
+  canonicalLocator: string;
+  title: string;
+  candidates: ImportDiscoveryCandidateV2[];
+  installed: boolean;
+  diagnostics: DiagnosticV2[];
+};
