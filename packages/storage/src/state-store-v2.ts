@@ -22,6 +22,7 @@ const AUTHORITY_FILES = [
   "preferences.json",
   "collections.json",
 ] as const;
+const MIGRATION_GENERATION_PATTERN = /^mg_/;
 
 type AuthorityFileName = typeof AUTHORITY_FILES[number];
 
@@ -94,6 +95,13 @@ export class StateStoreV2 {
         this.readPreferencesRaw(),
         this.readCollectionsRaw(),
       ]);
+      assertMigrationGenerationMatch(
+        this.stateRoot,
+        manifest,
+        lockFile,
+        preferences,
+        collections,
+      );
       return { manifest, lockFile, preferences, collections };
     });
   }
@@ -108,7 +116,7 @@ export class StateStoreV2 {
   async writeManifest(manifest: ManifestFileV2): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      assertAuthoritySchema(manifest, this.manifestPath);
+      assertManifestFileV2(manifest, this.manifestPath);
       await writeManifestV2(this.stateRoot, manifest);
     });
   }
@@ -123,7 +131,7 @@ export class StateStoreV2 {
   async writeLock(lockFile: LockFileV2): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      assertAuthoritySchema(lockFile, this.lockPath);
+      assertLockFileV2(lockFile, this.lockPath);
       await writeLockV2(this.stateRoot, lockFile);
     });
   }
@@ -138,7 +146,7 @@ export class StateStoreV2 {
   async writePreferences(preferences: PreferencesFileV2): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      assertAuthoritySchema(preferences, this.preferencesPath);
+      assertPreferencesFileV2(preferences, this.preferencesPath);
       await writePreferencesV2(this.stateRoot, preferences);
     });
   }
@@ -153,7 +161,7 @@ export class StateStoreV2 {
   async writeCollections(collections: CollectionsFileV2): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      assertAuthoritySchema(collections, this.collectionsPath);
+      assertCollectionsFileV2(collections, this.collectionsPath);
       await writeCollectionsV2(this.stateRoot, collections);
     });
   }
@@ -161,10 +169,17 @@ export class StateStoreV2 {
   async writeState(state: StateStoreV2State): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      assertAuthoritySchema(state.manifest, this.manifestPath);
-      assertAuthoritySchema(state.lockFile, this.lockPath);
-      assertAuthoritySchema(state.preferences, this.preferencesPath);
-      assertAuthoritySchema(state.collections, this.collectionsPath);
+      assertManifestFileV2(state.manifest, this.manifestPath);
+      assertLockFileV2(state.lockFile, this.lockPath);
+      assertPreferencesFileV2(state.preferences, this.preferencesPath);
+      assertCollectionsFileV2(state.collections, this.collectionsPath);
+      assertMigrationGenerationMatch(
+        this.stateRoot,
+        state.manifest,
+        state.lockFile,
+        state.preferences,
+        state.collections,
+      );
       await Promise.all([
         writeManifestV2(this.stateRoot, state.manifest),
         writeLockV2(this.stateRoot, state.lockFile),
@@ -224,19 +239,19 @@ export class StateStoreV2 {
   }
 
   private readManifestRaw(): Promise<ManifestFileV2> {
-    return readAuthorityFile(this.manifestPath);
+    return readAuthorityFile(this.manifestPath, assertManifestFileV2);
   }
 
   private readLockRaw(): Promise<LockFileV2> {
-    return readAuthorityFile(this.lockPath);
+    return readAuthorityFile(this.lockPath, assertLockFileV2);
   }
 
   private readPreferencesRaw(): Promise<PreferencesFileV2> {
-    return readAuthorityFile(this.preferencesPath);
+    return readAuthorityFile(this.preferencesPath, assertPreferencesFileV2);
   }
 
   private readCollectionsRaw(): Promise<CollectionsFileV2> {
-    return readAuthorityFile(this.collectionsPath);
+    return readAuthorityFile(this.collectionsPath, assertCollectionsFileV2);
   }
 
   private getAuthorityPath(fileName: AuthorityFileName): string {
@@ -253,7 +268,10 @@ export class StateStoreV2 {
   }
 }
 
-async function readAuthorityFile<T>(filePath: string): Promise<T> {
+async function readAuthorityFile<T>(
+  filePath: string,
+  validate: (payload: unknown, filePath: string) => asserts payload is T,
+): Promise<T> {
   let payload: unknown;
   try {
     payload = JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
@@ -266,11 +284,45 @@ async function readAuthorityFile<T>(filePath: string): Promise<T> {
     );
   }
 
-  assertAuthoritySchema(payload, filePath);
-  return payload as T;
+  validate(payload, filePath);
+  return payload;
 }
 
-function assertAuthoritySchema(payload: unknown, filePath: string): void {
+function assertManifestFileV2(payload: unknown, filePath: string): asserts payload is ManifestFileV2 {
+  assertAuthoritySchema(payload, filePath);
+  assertArrayField(payload, filePath, "sources");
+  assertRecordField(payload, filePath, "bindings");
+  assertRecordField(payload, filePath, "targets");
+}
+
+function assertLockFileV2(payload: unknown, filePath: string): asserts payload is LockFileV2 {
+  assertAuthoritySchema(payload, filePath);
+  assertRecordField(payload, filePath, "sources");
+  assertArrayField(payload, filePath, "leafInventory");
+  assertArrayField(payload, filePath, "projections");
+}
+
+function assertPreferencesFileV2(
+  payload: unknown,
+  filePath: string,
+): asserts payload is PreferencesFileV2 {
+  assertAuthoritySchema(payload, filePath);
+  assertArrayField(payload, filePath, "pinnedSourceIds");
+  assertRecordField(payload, filePath, "projectSourceDrafts");
+}
+
+function assertCollectionsFileV2(
+  payload: unknown,
+  filePath: string,
+): asserts payload is CollectionsFileV2 {
+  assertAuthoritySchema(payload, filePath);
+  assertRecordField(payload, filePath, "collections");
+}
+
+function assertAuthoritySchema(
+  payload: unknown,
+  filePath: string,
+): asserts payload is { schemaVersion: 2; migrationGeneration: MigrationGenerationV2 } & Record<string, unknown> {
   if (!isRecord(payload)) {
     throw new StateStoreV2Error(
       "STATE_MIGRATION_BLOCKED",
@@ -294,6 +346,88 @@ function assertAuthoritySchema(payload: unknown, filePath: string): void {
       "State schema version is not supported.",
       filePath,
       { schemaVersion: payload.schemaVersion },
+    );
+  }
+
+  if (
+    typeof payload.migrationGeneration !== "string"
+    || !MIGRATION_GENERATION_PATTERN.test(payload.migrationGeneration)
+  ) {
+    throw new StateStoreV2Error(
+      "STATE_MIGRATION_BLOCKED",
+      "State authority file has an invalid migrationGeneration.",
+      filePath,
+      {
+        reasonCode: "STATE_AUTHORITY_FIELD_INVALID",
+        fieldPath: "migrationGeneration",
+        expected: "string matching /^mg_/",
+      },
+    );
+  }
+}
+
+function assertArrayField(
+  payload: Record<string, unknown>,
+  filePath: string,
+  fieldPath: string,
+): void {
+  if (!Array.isArray(payload[fieldPath])) {
+    throw new StateStoreV2Error(
+      "STATE_MIGRATION_BLOCKED",
+      "State authority file has an invalid root field.",
+      filePath,
+      {
+        reasonCode: "STATE_AUTHORITY_FIELD_INVALID",
+        fieldPath,
+        expected: "array",
+      },
+    );
+  }
+}
+
+function assertRecordField(
+  payload: Record<string, unknown>,
+  filePath: string,
+  fieldPath: string,
+): void {
+  if (!isRecord(payload[fieldPath])) {
+    throw new StateStoreV2Error(
+      "STATE_MIGRATION_BLOCKED",
+      "State authority file has an invalid root field.",
+      filePath,
+      {
+        reasonCode: "STATE_AUTHORITY_FIELD_INVALID",
+        fieldPath,
+        expected: "object",
+      },
+    );
+  }
+}
+
+function assertMigrationGenerationMatch(
+  stateRoot: string,
+  manifest: ManifestFileV2,
+  lockFile: LockFileV2,
+  preferences: PreferencesFileV2,
+  collections: CollectionsFileV2,
+): void {
+  const migrationGenerations = {
+    manifest: manifest.migrationGeneration,
+    lock: lockFile.migrationGeneration,
+    preferences: preferences.migrationGeneration,
+    collections: collections.migrationGeneration,
+  };
+  const uniqueGenerations = new Set(Object.values(migrationGenerations));
+
+  if (uniqueGenerations.size > 1) {
+    throw new StateStoreV2Error(
+      "STATE_MIGRATION_BLOCKED",
+      "State authority files have different migrationGeneration values.",
+      stateRoot,
+      {
+        reasonCode: "STATE_MIGRATION_GENERATION_MISMATCH",
+        migrationGenerations,
+      },
     );
   }
 }

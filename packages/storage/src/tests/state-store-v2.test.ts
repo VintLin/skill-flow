@@ -214,4 +214,123 @@ describe("StateStoreV2", () => {
       },
     });
   });
+
+  test("manifest missing required root field causes STATE_MIGRATION_BLOCKED", async () => {
+    const store = new StateStoreV2(stateRoot);
+    await writeJsonFile(store.manifestPath, {
+      schemaVersion: 2,
+      migrationGeneration: "mg_missing_bindings",
+      sources: [],
+      targets: {},
+    });
+
+    await expect(store.readManifest()).rejects.toMatchObject({
+      code: "STATE_MIGRATION_BLOCKED",
+      reasonCode: "STATE_MIGRATION_BLOCKED",
+      path: store.manifestPath,
+      details: {
+        fieldPath: "bindings",
+      },
+    });
+  });
+
+  test("writeManifest validates required root fields", async () => {
+    const store = new StateStoreV2(stateRoot);
+
+    await expect(
+      store.writeManifest({
+        schemaVersion: 2,
+        migrationGeneration: "mg_write_invalid",
+        sources: [],
+        targets: {},
+      } as unknown as ManifestFileV2),
+    ).rejects.toMatchObject({
+      code: "STATE_MIGRATION_BLOCKED",
+      reasonCode: "STATE_MIGRATION_BLOCKED",
+      path: store.manifestPath,
+      details: {
+        fieldPath: "bindings",
+      },
+    });
+  });
+
+  test("readState rejects authority files with mismatched migrationGeneration", async () => {
+    const store = new StateStoreV2(stateRoot);
+    await writeJsonFile(store.manifestPath, {
+      schemaVersion: 2,
+      migrationGeneration: "mg_manifest",
+      sources: [],
+      bindings: {},
+      targets: {},
+    });
+    await writeJsonFile(store.lockPath, {
+      schemaVersion: 2,
+      migrationGeneration: "mg_manifest",
+      sources: {},
+      leafInventory: [],
+      projections: [],
+    });
+    await writeJsonFile(store.preferencesPath, {
+      schemaVersion: 2,
+      migrationGeneration: "mg_preferences",
+      pinnedSourceIds: [],
+      projectSourceDrafts: {},
+    });
+    await writeJsonFile(store.collectionsPath, {
+      schemaVersion: 2,
+      migrationGeneration: "mg_manifest",
+      collections: {},
+    });
+
+    await expect(store.readState()).rejects.toMatchObject({
+      code: "STATE_MIGRATION_BLOCKED",
+      reasonCode: "STATE_MIGRATION_BLOCKED",
+      path: stateRoot,
+      details: {
+        reasonCode: "STATE_MIGRATION_GENERATION_MISMATCH",
+      },
+    });
+  });
+
+  test("writeState rejects authority files with mismatched migrationGeneration", async () => {
+    const store = new StateStoreV2(stateRoot);
+    await store.init();
+
+    await expect(
+      store.writeState({
+        manifest: {
+          schemaVersion: 2,
+          migrationGeneration: "mg_write_manifest",
+          sources: [],
+          bindings: {},
+          targets: {},
+        },
+        lockFile: {
+          schemaVersion: 2,
+          migrationGeneration: "mg_write_lock",
+          sources: {},
+          leafInventory: [],
+          projections: [],
+        },
+        preferences: {
+          schemaVersion: 2,
+          migrationGeneration: "mg_write_manifest",
+          pinnedSourceIds: [],
+          projectSourceDrafts: {},
+        },
+        collections: {
+          schemaVersion: 2,
+          migrationGeneration: "mg_write_manifest",
+          collections: {},
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "STATE_MIGRATION_BLOCKED",
+      reasonCode: "STATE_MIGRATION_BLOCKED",
+      path: stateRoot,
+      details: {
+        reasonCode: "STATE_MIGRATION_GENERATION_MISMATCH",
+      },
+    });
+  });
 });
