@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import type {
   DeploymentTargetId,
   ImportDataCache,
+  ImportPreparationCache,
+  ImportPreparationRecord,
   ImportRecommendationFeed,
   LockFile,
   Manifest,
@@ -21,6 +23,11 @@ import {
   createEmptyImportDataCache,
   normalizeImportDataCache,
 } from "./import-data-cache.js";
+import {
+  createEmptyImportPreparationCache,
+  normalizeImportPreparationCache,
+  pruneImportPreparationCache,
+} from "./import-preparation-cache.js";
 import {
   createEmptySharedPreferences,
   normalizeSharedPreferences,
@@ -100,6 +107,18 @@ export class StateStore {
 
   get importDataPath(): string {
     return path.join(this.catalogStateRoot, "import-data.json");
+  }
+
+  get importPreparationPath(): string {
+    return path.join(this.catalogStateRoot, "import-preparations.json");
+  }
+
+  get importPreparationCheckoutRoot(): string {
+    return path.join(this.catalogStateRoot, "import-preparations");
+  }
+
+  getImportPreparationCheckoutPath(preparationId: string): string {
+    return path.join(this.importPreparationCheckoutRoot, preparationId);
   }
 
   get mutationLockPath(): string {
@@ -254,6 +273,66 @@ export class StateStore {
     });
   }
 
+  async readImportPreparationCache(): Promise<ImportPreparationCache> {
+    return this.withIoLock(async () => {
+      await this.init();
+      return this.readImportPreparationCacheRaw();
+    });
+  }
+
+  async writeImportPreparationCache(cache: ImportPreparationCache): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      await writeJsonFile(
+        this.importPreparationPath,
+        normalizeImportPreparationCache(cache),
+      );
+    });
+  }
+
+  async writeImportPreparationRecord(record: ImportPreparationRecord): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      const cache = await this.readImportPreparationCacheRaw();
+      cache.records[record.id] = record;
+      cache.locatorIndex[record.locator] = record.id;
+      await writeJsonFile(
+        this.importPreparationPath,
+        normalizeImportPreparationCache(cache),
+      );
+    });
+  }
+
+  async deleteImportPreparationRecord(preparationId: string): Promise<void> {
+    await this.withIoLock(async () => {
+      await this.init();
+      const cache = await this.readImportPreparationCacheRaw();
+      const record = cache.records[preparationId];
+      delete cache.records[preparationId];
+      if (record && cache.locatorIndex[record.locator] === preparationId) {
+        delete cache.locatorIndex[record.locator];
+      }
+      await writeJsonFile(
+        this.importPreparationPath,
+        normalizeImportPreparationCache(cache),
+      );
+    });
+  }
+
+  async pruneImportPreparationRecords(
+    options: { now?: Date; maxRecords?: number } = {},
+  ): Promise<ImportPreparationCache> {
+    return this.withIoLock(async () => {
+      await this.init();
+      const pruned = pruneImportPreparationCache(
+        await this.readImportPreparationCacheRaw(),
+        options,
+      );
+      await writeJsonFile(this.importPreparationPath, pruned);
+      return pruned;
+    });
+  }
+
   async writeImportSourceSnapshotEntry(entry: UnifiedSourceSnapshotCacheEntry): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
@@ -369,6 +448,7 @@ export class StateStore {
     await ensureDir(this.getSourceRoot("clawhub"));
     await ensureDir(this.catalogStateRoot);
     await ensureDir(this.catalogRoot);
+    await ensureDir(this.importPreparationCheckoutRoot);
 
     if (!(await pathExists(this.manifestPath))) {
       await writeJsonFile(this.manifestPath, this.createEmptyManifest());
@@ -419,6 +499,15 @@ export class StateStore {
       await readJsonFile<unknown>(
         this.importDataPath,
         createEmptyImportDataCache(),
+      ),
+    );
+  }
+
+  private async readImportPreparationCacheRaw(): Promise<ImportPreparationCache> {
+    return normalizeImportPreparationCache(
+      await readJsonFile<unknown>(
+        this.importPreparationPath,
+        createEmptyImportPreparationCache(),
       ),
     );
   }

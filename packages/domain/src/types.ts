@@ -733,11 +733,69 @@ export type ImportDraft = {
   enabledTargets: DeploymentTargetId[];
 };
 
+export type ImportPreparationStatus =
+  | "preparing"
+  | "ready"
+  | "committing"
+  | "failed"
+  | "stale";
+
+export type ImportPreparationRecord = {
+  id: string;
+  locator: string;
+  canonicalRepo: string;
+  sourceKind: SourceKind;
+  checkoutPath: string;
+  sourceId: string;
+  displayName: string;
+  requestedPath?: string;
+  status: ImportPreparationStatus;
+  preparedAt: string;
+  expiresAt: string;
+  commitSha?: string;
+  skillIds: string[];
+  availableTargets: DeploymentTargetId[];
+  failure?: {
+    reasonCode: string;
+    retryable: boolean;
+    message: string;
+  };
+};
+
+export type ImportPreparationCache = {
+  records: Record<string, ImportPreparationRecord>;
+  locatorIndex: Record<string, string>;
+};
+
+export type ImportPreparationResult =
+  | {
+      status: "preparing" | "ready" | "stale";
+      preparationId: string;
+      locator: string;
+      canonicalRepo: string;
+      preparedAt?: string;
+      expiresAt?: string;
+    }
+  | {
+      status: "failed";
+      preparationId?: string;
+      reasonCode: ImportReasonCode | string;
+      retryable: boolean;
+    };
+
+export type ImportCommitDraft = ImportDraft & {
+  preparationId: string;
+};
+
 export type ImportPreviewResult =
   | {
       status: "ready";
       locator: string;
       canonicalRepo: string;
+      preparationId?: string;
+      preparationStatus?: ImportPreparationStatus;
+      preparedAt?: string;
+      expiresAt?: string;
       snapshot?: UnifiedSourceSnapshot;
       selectedSkillIds: string[];
       enabledTargets: DeploymentTargetId[];
@@ -755,6 +813,8 @@ export type ImportSourceResult =
       status: "ready";
       sourceId: string;
       canonicalRepo: string;
+      preparationId?: string;
+      usedPreparation?: boolean;
     }
   | {
       status: "failed";

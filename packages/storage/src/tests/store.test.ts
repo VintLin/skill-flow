@@ -644,4 +644,41 @@ describe("StateStore", () => {
       },
     });
   });
+
+  test("persists import preparation records separately from import data cache", async () => {
+    const store = new StateStore(stateRoot);
+    await store.writeImportPreparationRecord({
+      id: "prep-1",
+      locator: "anthropics/skills",
+      canonicalRepo: "anthropics/skills",
+      sourceKind: "git",
+      checkoutPath: store.getImportPreparationCheckoutPath("prep-1"),
+      sourceId: "anthropics-skills",
+      displayName: "skills",
+      status: "ready",
+      preparedAt: "2026-06-04T00:00:00.000Z",
+      expiresAt: "2026-06-05T00:00:00.000Z",
+      skillIds: ["review"],
+      availableTargets: ["cursor"],
+    });
+
+    await expect(fs.stat(store.importPreparationPath)).resolves.toBeTruthy();
+    expect(store.getImportPreparationCheckoutPath("prep-1")).toContain("import-preparations/prep-1");
+    expect(await store.readImportPreparationCache()).toMatchObject({
+      records: {
+        "prep-1": {
+          locator: "anthropics/skills",
+          status: "ready",
+        },
+      },
+      locatorIndex: {
+        "anthropics/skills": "prep-1",
+      },
+    });
+    expect(await store.readImportDataCache()).toEqual({
+      searches: {},
+      repos: {},
+      recommendations: {},
+    });
+  });
 });
