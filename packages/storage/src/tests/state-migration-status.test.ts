@@ -44,7 +44,6 @@ describe("state migration status", () => {
       schemaVersion: 2,
       sources: [],
       bindings: {},
-      targets: {},
     });
     await writeV2AuthorityFiles({ migrationGeneration: "mg_test", skipManifest: true });
 
@@ -122,7 +121,6 @@ describe("state migration status", () => {
         migrationGeneration: "mg_test",
         sources: [],
         bindings: {},
-        targets: {},
       });
     }
 
@@ -154,7 +152,6 @@ describe("state migration status", () => {
         migrationGeneration: options.migrationGeneration,
         sources: [],
         bindings: {},
-        targets: {},
       });
     }
     await writeJson("lock.json", {
@@ -168,7 +165,11 @@ describe("state migration status", () => {
       schemaVersion: 2,
       migrationGeneration: options.migrationGeneration,
       pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" },
+      recentProjects: [],
       projectSourceDrafts: {},
+      customTargets: [],
+      agentDisplayOrder: [],
     });
     await writeJson("collections.json", {
       schemaVersion: 2,

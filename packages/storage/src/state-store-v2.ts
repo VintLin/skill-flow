@@ -227,7 +227,6 @@ export class StateStoreV2 {
         migrationGeneration,
         sources: [],
         bindings: {},
-        targets: {},
       }),
       writeLockV2(this.stateRoot, {
         schemaVersion: 2,
@@ -240,7 +239,11 @@ export class StateStoreV2 {
         schemaVersion: 2,
         migrationGeneration,
         pinnedSourceIds: [],
+        selectedProjectScope: { kind: "global" },
+        recentProjects: [],
         projectSourceDrafts: {},
+        customTargets: [],
+        agentDisplayOrder: [],
       }),
       writeCollectionsV2(this.stateRoot, {
         schemaVersion: 2,
@@ -322,7 +325,6 @@ function assertManifestFileV2(payload: unknown, filePath: string): asserts paylo
   assertAuthoritySchema(payload, filePath);
   assertArrayField(payload, filePath, "sources");
   assertRecordField(payload, filePath, "bindings");
-  assertRecordField(payload, filePath, "targets");
 }
 
 function assertLockFileV2(payload: unknown, filePath: string): asserts payload is LockFileV2 {
@@ -338,7 +340,11 @@ function assertPreferencesFileV2(
 ): asserts payload is PreferencesFileV2 {
   assertAuthoritySchema(payload, filePath);
   assertArrayField(payload, filePath, "pinnedSourceIds");
+  assertRecordField(payload, filePath, "selectedProjectScope");
+  assertArrayField(payload, filePath, "recentProjects");
   assertRecordField(payload, filePath, "projectSourceDrafts");
+  assertArrayField(payload, filePath, "customTargets");
+  assertArrayField(payload, filePath, "agentDisplayOrder");
 }
 
 function assertCollectionsFileV2(

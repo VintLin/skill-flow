@@ -858,17 +858,11 @@ export type SourceBindingV2 = {
   enabledTargets: DeploymentTargetId[];
 };
 
-export type TargetBindingV2 = {
-  target: DeploymentTargetId;
-  leafIds: SkillLeafIdV2[];
-};
-
 export type ManifestFileV2 = {
   schemaVersion: SchemaVersionV2;
   migrationGeneration: MigrationGenerationV2;
   sources: SourceManifestRecordV2[];
   bindings: Record<SourceIdV2, SourceBindingV2>;
-  targets: Record<string, TargetBindingV2>;
 };
 
 export type SourceRevisionV2 = {
@@ -888,6 +882,10 @@ export type LeafRecordV2 = {
   id: SkillLeafIdV2;
   sourceId: SourceIdV2;
   relativePath: RepoPathV2;
+  linkName: string;
+  title: string;
+  description: string;
+  absolutePath: string;
   skillFilePath: string;
   displayName: string;
   contentHash: string;
@@ -901,6 +899,8 @@ export type ProjectionRecordV2 = {
   sourceId: SourceIdV2;
   leafId: SkillLeafIdV2;
   targetPath: string;
+  targetRootPath?: string;
+  strategy: DeploymentStrategy;
   contentHash: string;
   status: "active" | "removed" | "blocked";
   updatedAt: string;
@@ -975,7 +975,11 @@ export type PreferencesFileV2 = {
   schemaVersion: SchemaVersionV2;
   migrationGeneration: MigrationGenerationV2;
   pinnedSourceIds: SourceIdV2[];
+  selectedProjectScope: ProjectScope;
+  recentProjects: RecentProject[];
   projectSourceDrafts: Record<string, Record<SourceIdV2, ProjectSourceDraftV2>>;
+  customTargets: CustomTargetDefinition[];
+  agentDisplayOrder: DeploymentTargetId[];
   localImportChoices?: LocalImportChoiceV2[];
   localScanImportChoices?: LocalScanImportChoiceV2[];
 };

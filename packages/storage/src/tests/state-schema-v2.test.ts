@@ -30,7 +30,6 @@ describe("state schema v2", () => {
       migrationGeneration: "mg_test",
       sources: [],
       bindings: {},
-      targets: {},
     });
     await writeLockV2(stateRoot, {
       schemaVersion: 2,

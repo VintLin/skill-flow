@@ -52,8 +52,8 @@ describe("StateStoreV2", () => {
       migrationGeneration: manifest.migrationGeneration,
       sources: [],
       bindings: {},
-      targets: {},
     });
+    expect(manifest).not.toHaveProperty("targets");
     expect(lockFile).toEqual({
       schemaVersion: 2,
       migrationGeneration: manifest.migrationGeneration,
@@ -65,7 +65,11 @@ describe("StateStoreV2", () => {
       schemaVersion: 2,
       migrationGeneration: manifest.migrationGeneration,
       pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" },
+      recentProjects: [],
       projectSourceDrafts: {},
+      customTargets: [],
+      agentDisplayOrder: [],
     });
     expect(collections).toEqual({
       schemaVersion: 2,
@@ -101,12 +105,6 @@ describe("StateStoreV2", () => {
           enabledTargets: ["codex"],
         },
       },
-      targets: {
-        codex: {
-          target: "codex",
-          leafIds: ["source-alpha:skills/build"],
-        },
-      },
     };
     const lockFile: LockFileV2 = {
       schemaVersion: 2,
@@ -129,6 +127,10 @@ describe("StateStoreV2", () => {
           id: "source-alpha:skills/build",
           sourceId: "source-alpha",
           relativePath: "skills/build",
+          linkName: "build",
+          title: "Build",
+          description: "Build project artifacts",
+          absolutePath: "/tmp/alpha/skills/build",
           skillFilePath: "/tmp/alpha/skills/build/SKILL.md",
           displayName: "Build",
           contentHash: "hash",
@@ -143,6 +145,8 @@ describe("StateStoreV2", () => {
           sourceId: "source-alpha",
           leafId: "source-alpha:skills/build",
           targetPath: "/tmp/codex/build",
+          targetRootPath: "/tmp/codex",
+          strategy: "symlink",
           contentHash: "hash",
           status: "active",
           updatedAt: "2026-06-04T00:00:00.000Z",
@@ -153,6 +157,16 @@ describe("StateStoreV2", () => {
       schemaVersion: 2,
       migrationGeneration,
       pinnedSourceIds: ["source-alpha"],
+      selectedProjectScope: { kind: "project", projectId: "project:/tmp/demo" },
+      recentProjects: [
+        {
+          projectId: "project:/tmp/demo",
+          title: "Demo",
+          lastActivityAt: "2026-06-04T00:00:00.000Z",
+          projectPath: "/tmp/demo",
+          tools: ["codex"],
+        },
+      ],
       projectSourceDrafts: {
         "project:/tmp/demo": {
           "source-alpha": {
@@ -163,6 +177,18 @@ describe("StateStoreV2", () => {
           },
         },
       },
+      customTargets: [
+        {
+          id: "custom-target",
+          name: "Custom target",
+          globalPath: "/tmp/custom/global",
+          projectPathTemplate: ".custom",
+          strategy: "copy",
+          createdAt: "2026-06-04T00:00:00.000Z",
+          updatedAt: "2026-06-04T00:00:00.000Z",
+        },
+      ],
+      agentDisplayOrder: ["codex", "custom-target"],
     };
     const collections: CollectionsFileV2 = {
       schemaVersion: 2,
@@ -206,7 +232,6 @@ describe("StateStoreV2", () => {
       migrationGeneration: "mg_unknown",
       sources: [],
       bindings: {},
-      targets: {},
     });
 
     await expect(store.readState()).rejects.toBeInstanceOf(StateStoreV2Error);
@@ -228,7 +253,6 @@ describe("StateStoreV2", () => {
           schemaVersion: 2,
           migrationGeneration: "mg_missing_bindings",
           sources: [],
-          targets: {},
         }),
         read: (store: StateStoreV2) => store.readManifest(),
         path: (store: StateStoreV2) => store.manifestPath,
@@ -252,10 +276,74 @@ describe("StateStoreV2", () => {
           schemaVersion: 2,
           migrationGeneration: "mg_missing_project_drafts",
           pinnedSourceIds: [],
+          selectedProjectScope: { kind: "global" },
+          recentProjects: [],
+          customTargets: [],
+          agentDisplayOrder: [],
         }),
         read: (store: StateStoreV2) => store.readPreferences(),
         path: (store: StateStoreV2) => store.preferencesPath,
         fieldPath: "projectSourceDrafts",
+      },
+      {
+        name: "preferences selected scope",
+        writeInvalidFile: async (store: StateStoreV2) => writeJsonFile(store.preferencesPath, {
+          schemaVersion: 2,
+          migrationGeneration: "mg_missing_selected_scope",
+          pinnedSourceIds: [],
+          recentProjects: [],
+          projectSourceDrafts: {},
+          customTargets: [],
+          agentDisplayOrder: [],
+        }),
+        read: (store: StateStoreV2) => store.readPreferences(),
+        path: (store: StateStoreV2) => store.preferencesPath,
+        fieldPath: "selectedProjectScope",
+      },
+      {
+        name: "preferences recent projects",
+        writeInvalidFile: async (store: StateStoreV2) => writeJsonFile(store.preferencesPath, {
+          schemaVersion: 2,
+          migrationGeneration: "mg_missing_recent_projects",
+          pinnedSourceIds: [],
+          selectedProjectScope: { kind: "global" },
+          projectSourceDrafts: {},
+          customTargets: [],
+          agentDisplayOrder: [],
+        }),
+        read: (store: StateStoreV2) => store.readPreferences(),
+        path: (store: StateStoreV2) => store.preferencesPath,
+        fieldPath: "recentProjects",
+      },
+      {
+        name: "preferences custom targets",
+        writeInvalidFile: async (store: StateStoreV2) => writeJsonFile(store.preferencesPath, {
+          schemaVersion: 2,
+          migrationGeneration: "mg_missing_custom_targets",
+          pinnedSourceIds: [],
+          selectedProjectScope: { kind: "global" },
+          recentProjects: [],
+          projectSourceDrafts: {},
+          agentDisplayOrder: [],
+        }),
+        read: (store: StateStoreV2) => store.readPreferences(),
+        path: (store: StateStoreV2) => store.preferencesPath,
+        fieldPath: "customTargets",
+      },
+      {
+        name: "preferences agent display order",
+        writeInvalidFile: async (store: StateStoreV2) => writeJsonFile(store.preferencesPath, {
+          schemaVersion: 2,
+          migrationGeneration: "mg_missing_agent_order",
+          pinnedSourceIds: [],
+          selectedProjectScope: { kind: "global" },
+          recentProjects: [],
+          projectSourceDrafts: {},
+          customTargets: [],
+        }),
+        read: (store: StateStoreV2) => store.readPreferences(),
+        path: (store: StateStoreV2) => store.preferencesPath,
+        fieldPath: "agentDisplayOrder",
       },
       {
         name: "collections",
@@ -298,7 +386,6 @@ describe("StateStoreV2", () => {
         schemaVersion: 2,
         migrationGeneration: "mg_write_invalid",
         sources: [],
-        targets: {},
       } as unknown as ManifestFileV2),
     ).rejects.toMatchObject({
       code: "STATE_MIGRATION_BLOCKED",
@@ -317,7 +404,6 @@ describe("StateStoreV2", () => {
       migrationGeneration: "mg_manifest",
       sources: [],
       bindings: {},
-      targets: {},
     });
     await writeJsonFile(store.lockPath, {
       schemaVersion: 2,
@@ -330,7 +416,11 @@ describe("StateStoreV2", () => {
       schemaVersion: 2,
       migrationGeneration: "mg_preferences",
       pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" },
+      recentProjects: [],
       projectSourceDrafts: {},
+      customTargets: [],
+      agentDisplayOrder: [],
     });
     await writeJsonFile(store.collectionsPath, {
       schemaVersion: 2,
@@ -359,7 +449,6 @@ describe("StateStoreV2", () => {
           migrationGeneration: "mg_write_manifest",
           sources: [],
           bindings: {},
-          targets: {},
         },
         lockFile: {
           schemaVersion: 2,
@@ -372,7 +461,11 @@ describe("StateStoreV2", () => {
           schemaVersion: 2,
           migrationGeneration: "mg_write_manifest",
           pinnedSourceIds: [],
+          selectedProjectScope: { kind: "global" },
+          recentProjects: [],
           projectSourceDrafts: {},
+          customTargets: [],
+          agentDisplayOrder: [],
         },
         collections: {
           schemaVersion: 2,

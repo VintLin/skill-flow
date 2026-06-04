@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { DiagnosticV2 } from "@skill-flow/domain/types";
+import type {
+  DeploymentStrategy,
+  DiagnosticV2,
+  ProjectScope,
+} from "@skill-flow/domain/types";
 import { hashDirectory } from "@skill-flow/integration/utils/fs";
 import {
   inspectStateMigrationStatus,
@@ -245,7 +249,6 @@ async function rewriteAuthorityFiles(
     migrationGeneration,
     sources: materialized.manifestSources,
     bindings: materialized.bindings,
-    targets: isRecord(manifest.targets) ? manifest.targets : {},
   });
 
   await writeJsonFile(path.join(stateRoot, "lock.json"), {
@@ -264,7 +267,11 @@ async function rewriteAuthorityFiles(
     schemaVersion: 2,
     migrationGeneration,
     pinnedSourceIds: Array.isArray(preferences.pinnedSourceIds) ? preferences.pinnedSourceIds : [],
+    selectedProjectScope: readProjectScope(preferences.selectedProjectScope),
+    recentProjects: readRecentProjects(preferences.recentProjects),
     projectSourceDrafts: migrateProjectSourceDrafts(preferences),
+    customTargets: readCustomTargets(preferences.customTargets),
+    agentDisplayOrder: readStringArray(preferences.agentDisplayOrder),
   };
   if (Array.isArray(preferences.localImportChoices)) {
     preferencesPayload.localImportChoices = preferences.localImportChoices;
@@ -318,6 +325,84 @@ function migrateProjectSourceDrafts(
   }
 
   return result;
+}
+
+function readProjectScope(input: unknown): ProjectScope {
+  if (!isRecord(input)) {
+    return { kind: "global" };
+  }
+  if (input.kind === "project" && typeof input.projectId === "string") {
+    return { kind: "project", projectId: input.projectId };
+  }
+  return { kind: "global" };
+}
+
+function readRecentProjects(input: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input.filter(isRecord).flatMap((project) => {
+    if (
+      typeof project.projectId !== "string" ||
+      typeof project.title !== "string" ||
+      typeof project.lastActivityAt !== "string"
+    ) {
+      return [];
+    }
+
+    const record: Record<string, unknown> = {
+      projectId: project.projectId,
+      title: project.title,
+      lastActivityAt: project.lastActivityAt,
+    };
+    if (typeof project.projectPath === "string") {
+      record.projectPath = project.projectPath;
+    }
+    if (Array.isArray(project.tools)) {
+      record.tools = project.tools.filter((value): value is string => typeof value === "string");
+    }
+    return [record];
+  });
+}
+
+function readCustomTargets(input: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input.filter(isRecord).flatMap((target) => {
+    if (
+      typeof target.id !== "string" ||
+      typeof target.name !== "string" ||
+      typeof target.globalPath !== "string" ||
+      typeof target.projectPathTemplate !== "string" ||
+      typeof target.createdAt !== "string" ||
+      typeof target.updatedAt !== "string"
+    ) {
+      return [];
+    }
+
+    return [{
+      id: target.id,
+      name: target.name,
+      globalPath: target.globalPath,
+      projectPathTemplate: target.projectPathTemplate,
+      strategy: readDeploymentStrategy(target.strategy),
+      createdAt: target.createdAt,
+      updatedAt: target.updatedAt,
+    }];
+  });
+}
+
+function readStringArray(input: unknown): string[] {
+  return Array.isArray(input)
+    ? input.filter((value): value is string => typeof value === "string")
+    : [];
+}
+
+function readDeploymentStrategy(input: unknown): DeploymentStrategy {
+  return input === "copy" ? "copy" : "symlink";
 }
 
 type LegacySource = {
@@ -382,6 +467,7 @@ async function materializeLegacyCollections(
   const legacySources = readLegacySources(manifest.sources);
   const legacyBindings = isRecord(manifest.bindings) ? manifest.bindings : {};
   const legacyLockSources = readLegacyLockSources(lock.sources);
+  const legacyLockSourceById = new Map(legacyLockSources.map((source) => [source.id, source]));
   const legacyLeafs = readLegacyLeafs(lock.leafInventory);
   const virtualGroups = await readLegacyVirtualGroups(stateRoot);
   const memberLeafIdByLegacyRef = new Map<string, string>();
@@ -423,7 +509,11 @@ async function materializeLegacyCollections(
         id: leafId,
         sourceId: group.id,
         relativePath: memberId,
-        skillFilePath: path.join(memberId, "SKILL.md"),
+        linkName: memberId,
+        title: originLeaf.title ?? originLeaf.name ?? originLeaf.linkName ?? memberId,
+        description: originLeaf.description ?? "",
+        absolutePath: memberPath,
+        skillFilePath: path.join(memberPath, "SKILL.md"),
         displayName: originLeaf.title ?? originLeaf.name ?? originLeaf.linkName ?? memberId,
         contentHash: actualHash,
         selectors: {
@@ -499,7 +589,7 @@ async function materializeLegacyCollections(
     bindings: rewriteBindings(legacySources, legacyBindings, virtualGroups, memberLeafIdByLegacyRef),
     lockSources,
     leafInventory: [
-      ...legacyLeafs.map(toLeafRecordV2),
+      ...legacyLeafs.map((leaf) => toLeafRecordV2(leaf, legacyLockSourceById.get(leaf.sourceId))),
       ...collectionLeafs,
     ],
     projections: rewriteProjections(lock, memberLeafIdByLegacyRef),
@@ -711,13 +801,26 @@ function toLockSourceV2(source: LegacySourceLock): Record<string, unknown> {
   };
 }
 
-function toLeafRecordV2(leaf: LegacyLeaf): Record<string, unknown> {
+function toLeafRecordV2(
+  leaf: LegacyLeaf,
+  lockSource: LegacySourceLock | undefined,
+): Record<string, unknown> {
+  const linkName = leaf.linkName ?? leaf.name ?? path.basename(leaf.relativePath);
+  const title = leaf.title ?? leaf.name ?? linkName;
+  const absolutePath = leaf.absolutePath ?? (lockSource
+    ? path.join(lockSource.checkoutPath, leaf.relativePath)
+    : path.resolve(leaf.relativePath));
+
   return {
     id: leaf.id,
     sourceId: leaf.sourceId,
     relativePath: leaf.relativePath,
+    linkName,
+    title,
+    description: leaf.description ?? "",
+    absolutePath,
     skillFilePath: leaf.skillFilePath ?? path.join(leaf.relativePath, "SKILL.md"),
-    displayName: leaf.title ?? leaf.name ?? leaf.linkName ?? leaf.relativePath,
+    displayName: title,
     contentHash: leaf.contentHash,
     selectors: {
       legacyAliases: [leaf.id, leaf.relativePath],
@@ -778,6 +881,12 @@ function rewriteProjections(
       sourceId,
       leafId: memberLeafIdByLegacyRef.get(legacyRefKey(sourceId, leafId)) ?? leafId,
       targetPath: projection.targetPath,
+      targetRootPath: typeof projection.targetRootPath === "string"
+        ? projection.targetRootPath
+        : typeof projection.targetPath === "string"
+          ? path.dirname(projection.targetPath)
+          : undefined,
+      strategy: readDeploymentStrategy(projection.strategy),
       contentHash: projection.contentHash,
       status: projection.status,
       updatedAt: typeof projection.appliedAt === "string"

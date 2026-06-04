@@ -59,7 +59,6 @@ describe("state migration service", () => {
       "migrationGeneration",
       "schemaVersion",
       "sources",
-      "targets",
     ]);
     expect(Object.keys(lock).sort()).toEqual([
       "leafInventory",
@@ -69,10 +68,14 @@ describe("state migration service", () => {
       "sources",
     ]);
     expect(Object.keys(preferences).sort()).toEqual([
+      "agentDisplayOrder",
+      "customTargets",
       "migrationGeneration",
       "pinnedSourceIds",
       "projectSourceDrafts",
+      "recentProjects",
       "schemaVersion",
+      "selectedProjectScope",
     ]);
     expect(Object.keys(collections).sort()).toEqual([
       "collections",
@@ -106,8 +109,33 @@ describe("state migration service", () => {
     expect(source).not.toHaveProperty("originRequestedPath");
 
     expect(lock).not.toHaveProperty("deployments");
+    expect(manifest).not.toHaveProperty("targets");
     expect(preferences).not.toHaveProperty("projectDrafts");
     expect(collections).not.toHaveProperty("selectionMode");
+    const [leaf] = lock.leafInventory as Array<Record<string, unknown>>;
+    if (!leaf) {
+      throw new Error("Expected migrated leaf");
+    }
+    expect(leaf).toMatchObject({
+      id: "leaf-a",
+      sourceId: "source-a",
+      linkName: "review",
+      title: "Review",
+      description: "",
+      absolutePath: path.join(stateRoot, "source", "local", "source-a", "skills", "review"),
+    });
+    const [projection] = lock.projections as Array<Record<string, unknown>>;
+    if (!projection) {
+      throw new Error("Expected migrated projection");
+    }
+    expect(projection).toMatchObject({
+      sourceId: "source-a",
+      leafId: "leaf-a",
+      target: "codex",
+      strategy: "symlink",
+      targetRootPath: path.join(stateRoot, "targets", "codex"),
+    });
+    expect(projection).not.toHaveProperty("mode");
     expect(preferences.projectSourceDrafts).toEqual({
       "project:/tmp/demo": {
         "source-a": {
@@ -118,6 +146,28 @@ describe("state migration service", () => {
         },
       },
     });
+    expect(preferences.selectedProjectScope).toEqual({ kind: "project", projectId: "project:/tmp/demo" });
+    expect(preferences.recentProjects).toEqual([
+      {
+        projectId: "project:/tmp/demo",
+        title: "Demo",
+        lastActivityAt: "2026-06-04T00:00:00.000Z",
+        projectPath: "/tmp/demo",
+        tools: ["codex"],
+      },
+    ]);
+    expect(preferences.customTargets).toEqual([
+      {
+        id: "custom-target",
+        name: "Custom Target",
+        globalPath: path.join(stateRoot, "custom-targets", "global"),
+        projectPathTemplate: ".custom-target",
+        strategy: "copy",
+        createdAt: "2026-06-04T00:00:00.000Z",
+        updatedAt: "2026-06-04T00:00:00.000Z",
+      },
+    ]);
+    expect(preferences.agentDisplayOrder).toEqual(["codex", "custom-target"]);
   });
 
   test("prunes rebuildable cache only after authority state is current", async () => {
@@ -369,6 +419,16 @@ describe("state migration service", () => {
     });
     await writeJsonFile(path.join(stateRoot, "preferences.json"), {
       pinnedSourceIds: [],
+      selectedProjectScope: { kind: "project", projectId: "project:/tmp/demo" },
+      recentProjects: [
+        {
+          projectId: "project:/tmp/demo",
+          title: "Demo",
+          lastActivityAt: now,
+          projectPath: "/tmp/demo",
+          tools: ["codex"],
+        },
+      ],
       projectDrafts: {
         "project:/tmp/demo": {
           "source-a": {
@@ -377,6 +437,18 @@ describe("state migration service", () => {
           },
         },
       },
+      customTargets: [
+        {
+          id: "custom-target",
+          name: "Custom Target",
+          globalPath: path.join(stateRoot, "custom-targets", "global"),
+          projectPathTemplate: ".custom-target",
+          strategy: "copy",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      agentDisplayOrder: ["codex", "custom-target"],
       legacyPanelState: { expanded: true },
     });
     await writeJsonFile(path.join(stateRoot, "collections.json"), {
