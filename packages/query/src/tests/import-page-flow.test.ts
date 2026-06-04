@@ -82,6 +82,61 @@ describe.sequential("import page flow", () => {
     ).toBe(true);
   });
 
+  test("recommendations prewarm source previews for faster first import", async () => {
+    vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({
+      provider: "github",
+      repoLabel: "anthropics/skills",
+      repoUrl: "https://github.com/anthropics/skills",
+      starCount: 406,
+    });
+    const requestedUrls: string[] = [];
+    let resolveAnthropicsSource: ((response: ResponseLike) => void) | undefined;
+    const anthropicsSource = new Promise<ResponseLike>((resolve) => {
+      resolveAnthropicsSource = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === "https://skills.sh/anthropics/skills") {
+        return anthropicsSource;
+      }
+      if (url === "https://skills.sh/anthropics") {
+        return responseWithHtml(`
+          <span>11<!-- --> <!-- -->sources</span>
+          <a href="https://github.com/anthropics">GitHub</a>
+        `);
+      }
+      return responseWithHtml("<h1>empty</h1>");
+    }));
+
+    const app = new SkillFlowApp();
+    const recommendations = await app.listRecommendedImportGroups();
+    expect(recommendations.ok).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(requestedUrls).toContain("https://skills.sh/anthropics/skills");
+    });
+
+    const previewPromise = app.previewImportSource("anthropic/skills");
+    await Promise.resolve();
+    expect(requestedUrls.filter((url) => url === "https://skills.sh/anthropics/skills")).toHaveLength(1);
+
+    resolveAnthropicsSource?.(responseWithHtml(`
+      <h1>anthropics<!-- -->/<!-- -->skills</h1>
+      <span>2<!-- --> <!-- -->skills</span>
+      <a href="https://github.com/anthropics/skills">GitHub</a>
+      <a href="/anthropics/skills/research"><h3>research</h3></a>
+      <a href="/anthropics/skills/debugging"><h3>debugging</h3></a>
+    `));
+    const preview = await previewPromise;
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      return;
+    }
+    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["research", "debugging"]);
+  });
+
   test("exact import search returns a single canonical group card", async () => {
     vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({
       provider: "github",

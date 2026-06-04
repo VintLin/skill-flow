@@ -97,4 +97,27 @@ describe.sequential("ImportPreparationService", () => {
       expect(Object.values(cache.records).some((record) => record.status === "failed")).toBe(true);
     }
   });
+
+  test("retries fresh preparation after a failed cached preparation", async () => {
+    const repoPath = path.join(sandbox.sandboxRoot, "retryable-repo");
+    const { service } = createService();
+
+    const failed = await service.prepareImportSource(repoPath);
+    expect(failed.ok).toBe(true);
+    if (!failed.ok) {
+      return;
+    }
+    expect(failed.data.status).toBe("failed");
+
+    await fs.mkdir(path.join(repoPath, "skills", "review"), { recursive: true });
+    await fs.writeFile(path.join(repoPath, "skills", "review", "SKILL.md"), skillDoc("review", "Review code."));
+
+    const retried = await service.prepareImportSource(repoPath);
+
+    expect(retried.ok).toBe(true);
+    if (!retried.ok) {
+      return;
+    }
+    expect(retried.data.status).toBe("ready");
+  });
 });

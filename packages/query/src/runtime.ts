@@ -101,7 +101,6 @@ import {
 import {
   buildImportGroupCandidate,
   fetchSkillsDirectoryFeedGroups,
-  fetchSkillsDirectorySourcePreview,
   fetchSkillsDirectorySourceSnapshot,
   groupSkillsDirectorySearchHits,
   IMPORT_RECOMMENDATION_CACHE_TTL_MS,
@@ -243,6 +242,7 @@ async function resolveUsableProjectPath(projectPath: string | undefined): Promis
 
 export class SkillFlowApp {
   private static readonly importGroupResolveConcurrency = 3;
+  private static readonly importPreviewPrewarmLimit = 4;
 
   readonly store: StateStore;
   adapters: ChannelAdapter[];
@@ -1045,6 +1045,8 @@ export class SkillFlowApp {
           installed: installedRepos.has(canonicalRepo),
         }),
       );
+
+    this.prewarmImportPreviewSnapshots(groups, importCache);
 
     return ok({ groups });
   }
@@ -2331,6 +2333,29 @@ export class SkillFlowApp {
     };
   }
 
+  private prewarmImportPreviewSnapshots(
+    groups: ImportGroupCandidate[],
+    importCache: ImportDataCache,
+  ): void {
+    let started = 0;
+    for (const group of groups) {
+      if (group.provider !== "skills" || group.installed) {
+        continue;
+      }
+      const normalizedRepo = normalizeImportCanonicalRepo(group.canonicalRepo) ?? group.canonicalRepo;
+      const cached = importCache.repos?.[normalizedRepo];
+      const cachedSnapshot = cached?.providers.skills?.snapshot;
+      if (cached && cachedSnapshot && !isImportDataCacheExpired(cached)) {
+        continue;
+      }
+      this.refreshImportSourceSnapshotInBackground(normalizedRepo);
+      started += 1;
+      if (started >= SkillFlowApp.importPreviewPrewarmLimit) {
+        break;
+      }
+    }
+  }
+
   private async buildDirectImportGroupCandidate(
     locator: string,
     manifest: Manifest,
@@ -2521,22 +2546,11 @@ export class SkillFlowApp {
     }
 
     try {
-      const trust = await this.resolveCachedImportSourceTrust(normalizedRepo, {
-        refreshInBackground: false,
+      return await this.refreshImportSourceSnapshotTracked(normalizedRepo, {
+        includeSkillDetails: false,
+        refreshTrustInBackground: false,
+        ...(cachedSnapshot ? { cachedSnapshot } : {}),
       });
-      const snapshot = await fetchSkillsDirectorySourcePreview(normalizedRepo, {
-        ...(this.hasUnifiedSourceTrust(trust) ? { trust } : {}),
-      });
-      const mergedSnapshot = cachedSnapshot
-        ? this.mergeSourceSnapshots(cachedSnapshot, snapshot)
-        : snapshot;
-      await this.store.writeImportSourceSnapshotEntry({
-        canonicalRepo: normalizedRepo,
-        checkedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + IMPORT_SOURCE_CACHE_TTL_MS).toISOString(),
-        data: mergedSnapshot,
-      });
-      return mergedSnapshot;
     } catch (error) {
       if (cachedSnapshot) {
         return cachedSnapshot;

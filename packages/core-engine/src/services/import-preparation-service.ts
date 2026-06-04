@@ -142,13 +142,9 @@ export class ImportPreparationService {
       };
     }
 
-    if (record.status === "failed" && record.failure) {
-      return {
-        status: "failed",
-        preparationId: record.id,
-        reasonCode: record.failure.reasonCode,
-        retryable: record.failure.retryable,
-      };
+    if (record.status === "failed") {
+      await this.store.deleteImportPreparationRecord(record.id);
+      return undefined;
     }
 
     return undefined;

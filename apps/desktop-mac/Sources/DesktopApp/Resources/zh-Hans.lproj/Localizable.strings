@@ -191,6 +191,8 @@
 "group_card.action.delete_tags" = "删除标签";
 "group_card.action.done_delete_tags" = "取消";
 "group_card.action.delete" = "删除";
+"import.action.preparing" = "正在准备...";
+"import.action.retry_prepare" = "重试";
 "group_card.loading.downloading" = "正在下载...";
 "group_tag.action.add" = "添加标签";
 "group_tag.filter.all" = "ALL";

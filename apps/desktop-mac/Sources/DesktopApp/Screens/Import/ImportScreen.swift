@@ -352,6 +352,7 @@ struct ImportScreen: View {
     ) -> Bool {
         card.isInstalledLocally
             || card.requiresLocalVariantSelection
+            || card.preparationStatus == "preparing"
             || isAnotherImportRunning
             || ((selectedSkillIds ?? draft?.selectedSkillIds)?.isEmpty == true && !card.skills.isEmpty)
     }
@@ -365,6 +366,12 @@ struct ImportScreen: View {
         }
         if card.requiresLocalVariantSelection {
             return localized("import.local.action.choose_version")
+        }
+        if card.preparationStatus == "preparing" {
+            return localized("import.action.preparing")
+        }
+        if card.preparationStatus == "failed" || card.preparationStatus == "stale" {
+            return localized("import.action.retry_prepare")
         }
         return nil
     }

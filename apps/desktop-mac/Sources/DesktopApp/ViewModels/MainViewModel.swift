@@ -892,6 +892,9 @@ final class MainViewModel {
     @ObservationIgnored private var importPreviewTasksByGroupId: [String: Task<BridgeResponse, Error>] = [:]
     private var importPreviewTokensByGroupId: [String: UInt64] = [:]
     private var importPreviewTokenSeed: UInt64 = 0
+    @ObservationIgnored private var importPreparationTasksByGroupId: [String: Task<Void, Never>] = [:]
+    private var importPreparationTokensByGroupId: [String: UInt64] = [:]
+    private var importPreparationTokenSeed: UInt64 = 0
     @ObservationIgnored private var saveStateResetTasksBySourceId: [ScopedSourceKey: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
@@ -2259,6 +2262,10 @@ final class MainViewModel {
             let response = try await fetchImportPreviewResponse(groupId: groupId, locator: item.locator)
             let payload = response.data?.value as? [String: Any] ?? [:]
             applyImportPreviewPayload(payload, for: groupId, fallbackLocator: item.locator)
+            startImportPreparationIfNeeded(
+                groupId: groupId,
+                locator: importGroupItem(id: groupId)?.locator ?? item.locator
+            )
         } catch {
             setPreviewPhase(.failed(.plain(error.localizedDescription)), for: groupId)
         }
@@ -2288,7 +2295,21 @@ final class MainViewModel {
         }
 
         do {
-            let item = importGroupItem(id: groupId)
+            var item = importGroupItem(id: groupId)
+            if item?.locator == locator {
+                if item?.preparationStatus == "preparing" {
+                    showToast(style: .neutral, text: localizedText("import.action.preparing"))
+                    return
+                }
+                if item?.preparationStatus == "failed" || item?.preparationStatus == "stale" {
+                    await prepareImportGroup(groupId: groupId, locator: locator)
+                    item = importGroupItem(id: groupId)
+                    if item?.preparationStatus != "ready" {
+                        showToast(style: .error, text: importFailureToastText(reasonCode: "IMPORT_PREPARE_FAILED"))
+                        return
+                    }
+                }
+            }
             let response: BridgeResponse
             if let preparationId = item?.preparationId,
                item?.preparationStatus == "ready",
@@ -2334,6 +2355,79 @@ final class MainViewModel {
             showToast(style: .success, text: localizedText("toast.import.success"))
         } catch {
             showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
+        }
+    }
+
+    private func startImportPreparationIfNeeded(groupId: String, locator: String) {
+        guard let item = importGroupItem(id: groupId) else { return }
+        guard item.locator == locator else { return }
+        guard item.preparationId == nil || item.preparationStatus == "failed" || item.preparationStatus == "stale" else { return }
+        guard importPreparationTasksByGroupId[groupId] == nil else { return }
+
+        importPreparationTokenSeed &+= 1
+        let token = importPreparationTokenSeed
+        setImportPreparation(
+            groupId: groupId,
+            preparationId: item.preparationId,
+            preparationStatus: "preparing",
+            preparedAt: item.preparedAt,
+            expiresAt: item.expiresAt
+        )
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.prepareImportGroup(groupId: groupId, locator: locator, token: token)
+        }
+        importPreparationTasksByGroupId[groupId] = task
+        importPreparationTokensByGroupId[groupId] = token
+    }
+
+    private func prepareImportGroup(groupId: String, locator: String, token: UInt64? = nil) async {
+        if token == nil {
+            importPreparationTokenSeed &+= 1
+            importPreparationTokensByGroupId[groupId] = importPreparationTokenSeed
+            setImportPreparation(
+                groupId: groupId,
+                preparationId: importGroupItem(id: groupId)?.preparationId,
+                preparationStatus: "preparing",
+                preparedAt: importGroupItem(id: groupId)?.preparedAt,
+                expiresAt: importGroupItem(id: groupId)?.expiresAt
+            )
+        }
+        let activeToken = token ?? importPreparationTokensByGroupId[groupId]
+
+        do {
+            let response = try await queryFacade.prepareImportSource(locator: locator)
+            guard importPreparationTokensByGroupId[groupId] == activeToken,
+                  importGroupItem(id: groupId)?.locator == locator
+            else {
+                return
+            }
+
+            let payload = response.data?.value as? [String: Any] ?? [:]
+            setImportPreparation(
+                groupId: groupId,
+                preparationId: (payload["preparationId"] as? String)?.nonEmpty,
+                preparationStatus: (payload["status"] as? String)?.nonEmpty ?? "failed",
+                preparedAt: (payload["preparedAt"] as? String)?.nonEmpty,
+                expiresAt: (payload["expiresAt"] as? String)?.nonEmpty
+            )
+        } catch {
+            guard importPreparationTokensByGroupId[groupId] == activeToken else {
+                return
+            }
+            setImportPreparation(
+                groupId: groupId,
+                preparationId: importGroupItem(id: groupId)?.preparationId,
+                preparationStatus: "failed",
+                preparedAt: importGroupItem(id: groupId)?.preparedAt,
+                expiresAt: importGroupItem(id: groupId)?.expiresAt
+            )
+        }
+
+        if importPreparationTokensByGroupId[groupId] == activeToken {
+            importPreparationTasksByGroupId.removeValue(forKey: groupId)
+            importPreparationTokensByGroupId.removeValue(forKey: groupId)
         }
     }
 
@@ -2992,6 +3086,42 @@ final class MainViewModel {
                 snapshot: item.snapshot,
                 enrichPhase: item.enrichPhase,
                 previewPhase: phase,
+                skills: item.skills,
+                targets: item.targets
+            )
+        }
+    }
+
+    private func setImportPreparation(
+        groupId: String,
+        preparationId: String?,
+        preparationStatus: String?,
+        preparedAt: String?,
+        expiresAt: String?
+    ) {
+        mutateImportGroup(groupId) { item in
+            ImportGroupItem(
+                id: item.id,
+                title: item.title,
+                locator: item.locator,
+                canonicalRepo: item.canonicalRepo,
+                preparationId: preparationId,
+                preparationStatus: preparationStatus,
+                preparedAt: preparedAt,
+                expiresAt: expiresAt,
+                isInstalledLocally: item.isInstalledLocally,
+                aliases: item.aliases,
+                summary: item.summary,
+                starCount: item.starCount,
+                totalInstalls: item.totalInstalls,
+                skillCount: item.skillCount,
+                matchedSkillNames: item.matchedSkillNames,
+                matchedSkills: item.matchedSkills,
+                provider: item.provider,
+                localImport: item.localImport,
+                snapshot: item.snapshot,
+                enrichPhase: item.enrichPhase,
+                previewPhase: item.previewPhase,
                 skills: item.skills,
                 targets: item.targets
             )
@@ -4370,12 +4500,7 @@ final class MainViewModel {
         importPreviewTokenSeed &+= 1
         let token = importPreviewTokenSeed
         let task = Task { [queryFacade] in
-            let response = try await queryFacade.previewImportSource(locator: locator)
-            return await Self.responseByAddingImportPreparation(
-                response,
-                locator: locator,
-                queryFacade: queryFacade
-            )
+            try await queryFacade.previewImportSource(locator: locator)
         }
         importPreviewTasksByGroupId[groupId] = task
         importPreviewTokensByGroupId[groupId] = token
@@ -4394,44 +4519,6 @@ final class MainViewModel {
             }
             throw error
         }
-    }
-
-    private static func responseByAddingImportPreparation(
-        _ response: BridgeResponse,
-        locator: String,
-        queryFacade: any DesktopQuerying
-    ) async -> BridgeResponse {
-        guard response.ok,
-              var payload = response.data?.value as? [String: Any],
-              payload["status"] as? String == "ready",
-              payload["preparationId"] == nil
-        else {
-            return response
-        }
-
-        do {
-            let prepared = try await queryFacade.prepareImportSource(locator: locator)
-            if prepared.ok,
-               let preparationPayload = prepared.data?.value as? [String: Any] {
-                payload["preparationId"] = preparationPayload["preparationId"]
-                payload["preparationStatus"] = preparationPayload["status"]
-                payload["preparedAt"] = preparationPayload["preparedAt"]
-                payload["expiresAt"] = preparationPayload["expiresAt"]
-                return BridgeResponse(
-                    protocolVersion: response.protocolVersion,
-                    requestId: response.requestId,
-                    command: response.command,
-                    ok: response.ok,
-                    data: AnyCodable(payload),
-                    warnings: response.warnings + prepared.warnings,
-                    errors: response.errors + prepared.errors
-                )
-            }
-        } catch {
-            return response
-        }
-
-        return response
     }
 
     private func synchronizeState(

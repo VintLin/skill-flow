@@ -1434,6 +1434,120 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertLessThanOrEqual(maxConcurrentPreviewCount, 2)
     }
 
+    func testPreviewReturnsBeforeBackgroundPreparationFinishes() async {
+        let query = RecordingPreviewQueryFacade(blockPrepareUntilReleased: true)
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        model.recommendedImportGroups = [
+            makeItem(id: "owner-repo", title: "Owner Repo", locator: "owner/repo")
+        ]
+
+        let previewTask = Task {
+            await model.previewImportGroupIfNeeded("owner-repo")
+        }
+
+        await waitForCondition(timeoutNanoseconds: 500_000_000) {
+            model.recommendedImportGroups.first?.previewPhase == .ready
+        }
+
+        let previewed = model.recommendedImportGroups.first
+        XCTAssertEqual(previewed?.skills.map(\.id), ["browse"])
+        XCTAssertEqual(previewed?.preparationStatus, "preparing")
+        XCTAssertNil(previewed?.preparationId)
+        let prepareLocators = await query.recordedPrepareLocators()
+        XCTAssertEqual(prepareLocators, ["owner/repo"])
+
+        await query.releasePrepare()
+        await previewTask.value
+
+        await waitForCondition(timeoutNanoseconds: 500_000_000) {
+            model.recommendedImportGroups.first?.preparationStatus == "ready"
+        }
+        XCTAssertEqual(model.recommendedImportGroups.first?.preparationId, "prep-owner-repo")
+    }
+
+    func testImportActionShowsPreparationStatus() {
+        let preparingCard = ImportViewModel.Card(
+            id: "preparing",
+            title: "Preparing",
+            locator: "owner/preparing",
+            canonicalRepo: "owner/preparing",
+            preparationStatus: "preparing",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @owner",
+            stats: .init(skillCount: 1, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [
+                .init(id: "browse", title: "Browse", summary: "", selectedByDefault: true)
+            ],
+            targets: []
+        )
+        let failedCard = ImportViewModel.Card(
+            id: "failed",
+            title: "Failed",
+            locator: "owner/failed",
+            canonicalRepo: "owner/failed",
+            preparationStatus: "failed",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @owner",
+            stats: .init(skillCount: 1, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [
+                .init(id: "browse", title: "Browse", summary: "", selectedByDefault: true)
+            ],
+            targets: []
+        )
+
+        XCTAssertTrue(ImportScreen.importActionIsDisabled(for: preparingCard))
+        XCTAssertEqual(
+            ImportScreen.importActionTitle(for: preparingCard, localized: { $0 }),
+            "import.action.preparing"
+        )
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: failedCard))
+        XCTAssertEqual(
+            ImportScreen.importActionTitle(for: failedCard, localized: { $0 }),
+            "import.action.retry_prepare"
+        )
+    }
+
+    func testFailedPreparationRetryDoesNotFallBackToDirectImport() async {
+        let commands = RecordingImportCommandFacade()
+        let query = RecordingPreviewQueryFacade(prepareStatus: "failed")
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo",
+                preparationStatus: "failed"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkillIds: ["browse"],
+            enabledTargets: []
+        )
+
+        let prepareLocators = await query.recordedPrepareLocators()
+        XCTAssertEqual(prepareLocators, ["owner/repo"])
+        XCTAssertEqual(commands.importCalls, [])
+        XCTAssertEqual(model.toast?.style, .error)
+    }
+
     func testImportEmptyAndLoadingStatesUsePlainCenteredPresentation() {
         XCTAssertFalse(ImportScreen.usesChromedEmptyState(searchPhase: .idle, cardCount: 0))
         XCTAssertFalse(ImportScreen.usesChromedEmptyState(searchPhase: .failed(.plain("x")), cardCount: 0))
@@ -1443,12 +1557,18 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(ImportScreen.usesCenteredStandaloneState(searchPhase: .loading, cardCount: 2))
     }
 
-    private func makeItem(id: String, title: String, locator: String) -> MainViewModel.ImportGroupItem {
+    private func makeItem(
+        id: String,
+        title: String,
+        locator: String,
+        preparationStatus: String? = nil
+    ) -> MainViewModel.ImportGroupItem {
         MainViewModel.ImportGroupItem(
             id: id,
             title: title,
             locator: locator,
             canonicalRepo: locator,
+            preparationStatus: preparationStatus,
             isInstalledLocally: false,
             aliases: [],
             summary: "",
@@ -1484,6 +1604,21 @@ final class ImportScreenContainerTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+    }
+
+    private func waitForCondition(
+        timeoutNanoseconds: UInt64,
+        pollIntervalNanoseconds: UInt64 = 20_000_000,
+        _ condition: @escaping () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+        }
+        XCTFail("Timed out waiting for condition")
     }
 }
 
@@ -1558,6 +1693,13 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
 
 private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sendable {
     private let recorder = PreviewConcurrencyRecorder()
+    private let blockPrepareUntilReleased: Bool
+    private let prepareStatus: String
+
+    init(blockPrepareUntilReleased: Bool = false, prepareStatus: String = "ready") {
+        self.blockPrepareUntilReleased = blockPrepareUntilReleased
+        self.prepareStatus = prepareStatus
+    }
 
     func recordedPreviewLocators() async -> [String] {
         await recorder.recordedPreviewLocators()
@@ -1565,6 +1707,14 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
 
     func recordedMaxConcurrentPreviewCount() async -> Int {
         await recorder.recordedMaxConcurrentPreviewCount()
+    }
+
+    func recordedPrepareLocators() async -> [String] {
+        await recorder.recordedPrepareLocators()
+    }
+
+    func releasePrepare() async {
+        await recorder.releasePrepare()
     }
 
     func bootstrap() async throws -> BridgeResponse {
@@ -1592,13 +1742,17 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
     }
 
     func prepareImportSource(locator: String) async throws -> BridgeResponse {
-        BridgeResponse(
+        await recorder.recordPrepare(locator: locator)
+        if blockPrepareUntilReleased {
+            await recorder.waitForPrepareRelease()
+        }
+        return BridgeResponse(
             protocolVersion: "1",
             requestId: nil,
             command: .prepareImportSource,
             ok: true,
             data: AnyCodable([
-                "status": "ready",
+                "status": prepareStatus,
                 "preparationId": "prep-\(locator.replacingOccurrences(of: "/", with: "-"))",
             ]),
             warnings: [],
@@ -1638,8 +1792,11 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
 
 private actor PreviewConcurrencyRecorder {
     private var previewLocators: [String] = []
+    private var prepareLocators: [String] = []
     private var activePreviewCount = 0
     private var maxConcurrentPreviewCount = 0
+    private var prepareReleased = false
+    private var prepareContinuations: [CheckedContinuation<Void, Never>] = []
 
     func begin(locator: String) {
         previewLocators.append(locator)
@@ -1657,6 +1814,30 @@ private actor PreviewConcurrencyRecorder {
 
     func recordedMaxConcurrentPreviewCount() -> Int {
         maxConcurrentPreviewCount
+    }
+
+    func recordPrepare(locator: String) {
+        prepareLocators.append(locator)
+    }
+
+    func recordedPrepareLocators() -> [String] {
+        prepareLocators
+    }
+
+    func waitForPrepareRelease() async {
+        if prepareReleased {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            prepareContinuations.append(continuation)
+        }
+    }
+
+    func releasePrepare() {
+        prepareReleased = true
+        let continuations = prepareContinuations
+        prepareContinuations = []
+        continuations.forEach { $0.resume() }
     }
 }
 

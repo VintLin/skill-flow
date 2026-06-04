@@ -323,8 +323,14 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(previewed?.snapshot?.repoStars, 406)
         XCTAssertEqual(previewed?.snapshot?.trust?.labels, ["Official", "Trending"])
         XCTAssertEqual(previewed?.matchedSkills, [])
-        XCTAssertEqual(previewed?.preparationId, "prep-anthropics-skills")
-        XCTAssertEqual(previewed?.preparationStatus, "ready")
+        XCTAssertNil(previewed?.preparationId)
+        XCTAssertEqual(previewed?.preparationStatus, "preparing")
+
+        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
+            let prepared = model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" })
+            return prepared?.preparationId == "prep-anthropics-skills"
+                && prepared?.preparationStatus == "ready"
+        }
 
         let requests = fixture.loggedRequests().map(\.command)
         XCTAssertFalse(requests.contains("search-import-groups"))
@@ -447,6 +453,9 @@ final class WorkflowCoverageTests: XCTestCase {
         runtime.state.view.currentRoute = .importPage
         await model.loadImportPageIfNeeded()
         await model.previewImportGroupIfNeeded("anthropics-skills")
+        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
+            model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" })?.preparationStatus == "ready"
+        }
 
         await model.importImportGroup(
             groupId: "anthropics-skills",
