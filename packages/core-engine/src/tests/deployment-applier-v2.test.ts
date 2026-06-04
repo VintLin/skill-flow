@@ -43,7 +43,11 @@ description: Two.
 `,
     });
 
-    const applier = new DeploymentApplierV2();
+    const applier = new DeploymentApplierV2({
+      trustedTargetRoots: {
+        codex: rootPath,
+      },
+    });
     const result = await applier.applyPlan(lockFile, [
       {
         kind: "create",
@@ -100,7 +104,7 @@ description: Two.
     expect(await pathExists(path.join(rootPath, "two"))).toBe(true);
   });
 
-  test("removes matching V2 projections from the lock file", async () => {
+  test("marks matching V2 projections removed in the lock file", async () => {
     const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
     const targetPath = path.join(rootPath, "one");
     const sourcePath = path.join(sandbox.sandboxRoot, "source-a", "one");
@@ -129,7 +133,11 @@ description: One.
     });
     await fs.symlink(sourcePath, targetPath, "junction");
 
-    const applier = new DeploymentApplierV2();
+    const applier = new DeploymentApplierV2({
+      trustedTargetRoots: {
+        codex: rootPath,
+      },
+    });
     const result = await applier.applyPlan(lockFile, [
       {
         kind: "remove",
@@ -145,8 +153,209 @@ description: One.
     ]);
 
     expect(result.ok).toBe(true);
-    expect(lockFile.projections).toEqual([]);
+    expect(lockFile.projections).toEqual([
+      expect.objectContaining({
+        target: "codex",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        targetPath,
+        targetRootPath: rootPath,
+        strategy: "symlink",
+        contentHash: "hash-one",
+        status: "removed",
+        updatedAt: expect.any(String),
+      }),
+    ]);
     expect(await pathExists(targetPath)).toBe(false);
+  });
+
+  test("writes blocked projections without touching disk", async () => {
+    const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
+    const targetPath = path.join(rootPath, "blocked");
+    const lockFile = createLockFile({ projections: [] });
+
+    const applier = new DeploymentApplierV2({
+      trustedTargetRoots: {
+        codex: rootPath,
+      },
+    });
+    const result = await applier.applyPlan(lockFile, [
+      {
+        kind: "blocked",
+        sourceId: "source-a",
+        leafId: "source-a:blocked",
+        target: "codex",
+        strategy: "symlink",
+        sourcePath: path.join(sandbox.sandboxRoot, "source-a", "blocked"),
+        targetPath,
+        targetRootPath: rootPath,
+        contentHash: "hash-blocked",
+        reason: "Target unavailable.",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(lockFile.projections).toEqual([
+      expect.objectContaining({
+        target: "codex",
+        sourceId: "source-a",
+        leafId: "source-a:blocked",
+        targetPath,
+        targetRootPath: rootPath,
+        strategy: "symlink",
+        contentHash: "hash-blocked",
+        status: "blocked",
+        updatedAt: expect.any(String),
+      }),
+    ]);
+    expect(await pathExists(targetPath)).toBe(false);
+  });
+
+  test("throws when no trusted root is available for writes", async () => {
+    const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
+    const sourcePath = path.join(sandbox.sandboxRoot, "source-a", "one");
+    const lockFile = createLockFile({ projections: [] });
+
+    await writeRepoFiles(sourcePath, {
+      "SKILL.md": `---
+name: one
+description: One.
+---
+`,
+    });
+
+    const applier = new DeploymentApplierV2();
+
+    await expect(applier.applyPlan(lockFile, [
+      {
+        kind: "create",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        target: "codex",
+        strategy: "symlink",
+        sourcePath,
+        targetPath: path.join(rootPath, "one"),
+        targetRootPath: rootPath,
+        contentHash: "hash-one",
+      },
+    ])).rejects.toThrow("Managed target root is unavailable for codex.");
+    expect(lockFile.projections).toEqual([]);
+  });
+
+  test("throws when no trusted root is available for removes", async () => {
+    const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
+    const targetPath = path.join(rootPath, "one");
+    const lockFile = createLockFile({
+      projections: [
+        {
+          target: "codex",
+          sourceId: "source-a",
+          leafId: "source-a:one",
+          targetPath,
+          targetRootPath: rootPath,
+          strategy: "symlink",
+          contentHash: "hash-one",
+          status: "active",
+          updatedAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+    });
+    const applier = new DeploymentApplierV2();
+
+    await expect(applier.applyPlan(lockFile, [
+      {
+        kind: "remove",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        target: "codex",
+        strategy: "symlink",
+        sourcePath: "",
+        targetPath,
+        targetRootPath: rootPath,
+        contentHash: "hash-one",
+      },
+    ])).rejects.toThrow("Managed target root is unavailable for codex.");
+    expect(lockFile.projections).toEqual([
+      expect.objectContaining({
+        status: "active",
+      }),
+    ]);
+  });
+
+  test("throws when target path is outside trusted root", async () => {
+    const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
+    const outsidePath = path.join(sandbox.sandboxRoot, "outside", "one");
+    const sourcePath = path.join(sandbox.sandboxRoot, "source-a", "one");
+    const lockFile = createLockFile({ projections: [] });
+
+    await writeRepoFiles(sourcePath, {
+      "SKILL.md": `---
+name: one
+description: One.
+---
+`,
+    });
+
+    const applier = new DeploymentApplierV2({
+      trustedTargetRoots: {
+        codex: rootPath,
+      },
+    });
+
+    await expect(applier.applyPlan(lockFile, [
+      {
+        kind: "create",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        target: "codex",
+        strategy: "symlink",
+        sourcePath,
+        targetPath: outsidePath,
+        targetRootPath: path.dirname(outsidePath),
+        contentHash: "hash-one",
+      },
+    ])).rejects.toThrow("Refusing to modify path outside managed root for codex:");
+    expect(lockFile.projections).toEqual([]);
+    expect(await pathExists(outsidePath)).toBe(false);
+  });
+
+  test("skips noop actions without changing the lock file", async () => {
+    const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
+    const projection: LockFileV2["projections"][number] = {
+      target: "codex",
+      sourceId: "source-a",
+      leafId: "source-a:one",
+      targetPath: path.join(rootPath, "one"),
+      targetRootPath: rootPath,
+      strategy: "symlink",
+      contentHash: "hash-one",
+      status: "active",
+      updatedAt: "2026-06-03T00:00:00.000Z",
+    };
+    const lockFile = createLockFile({ projections: [projection] });
+
+    const applier = new DeploymentApplierV2({
+      trustedTargetRoots: {
+        codex: rootPath,
+      },
+    });
+    const result = await applier.applyPlan(lockFile, [
+      {
+        kind: "noop",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        target: "codex",
+        strategy: "symlink",
+        sourcePath: "",
+        targetPath: projection.targetPath,
+        targetRootPath: rootPath,
+        contentHash: "hash-one",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.data.applied : []).toEqual([]);
+    expect(lockFile.projections).toEqual([projection]);
   });
 });
 

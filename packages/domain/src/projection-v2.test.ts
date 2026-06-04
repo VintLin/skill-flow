@@ -32,6 +32,17 @@ describe("projection v2", () => {
           status: "removed",
           updatedAt: "2026-06-04T00:00:00.000Z",
         },
+        {
+          target: "codex",
+          sourceId: "source-a",
+          leafId: "source-a:three",
+          targetPath: "/targets/codex/three",
+          targetRootPath: "/targets/codex",
+          strategy: "symlink",
+          contentHash: "hash-three",
+          status: "blocked",
+          updatedAt: "2026-06-04T00:00:00.000Z",
+        },
       ],
     };
 

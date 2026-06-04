@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   DeploymentAction,
+  DeploymentTargetId,
   LockFileV2,
   ProjectionRecordV2,
   Result,
@@ -17,25 +18,35 @@ import {
 } from "@skill-flow/integration/utils/fs";
 import { ok } from "@skill-flow/integration/utils/result";
 
+export type DeploymentApplierV2Options = {
+  adapters?: ChannelAdapter[];
+  trustedTargetRoots?: Partial<Record<DeploymentTargetId, string>>;
+};
+
 export class DeploymentApplierV2 {
-  constructor(private readonly adapters: ChannelAdapter[] = []) {}
+  private readonly adapters: ChannelAdapter[];
+  private readonly trustedTargetRoots: Partial<Record<DeploymentTargetId, string>>;
+
+  constructor(options: ChannelAdapter[] | DeploymentApplierV2Options = {}) {
+    if (Array.isArray(options)) {
+      this.adapters = options;
+      this.trustedTargetRoots = {};
+      return;
+    }
+
+    this.adapters = options.adapters ?? [];
+    this.trustedTargetRoots = options.trustedTargetRoots ?? {};
+  }
 
   async applyPlan(
     lockFile: LockFileV2,
     actions: DeploymentAction[],
   ): Promise<Result<{ applied: DeploymentAction[] }>> {
     const applied: DeploymentAction[] = [];
-    const targetRoots = new Map(
-      await Promise.all(
-        this.adapters.map(async (adapter) => {
-          const detection = await adapter.detect();
-          return [adapter.target, detection.rootPath] as const;
-        }),
-      ),
-    );
+    const targetRoots = await this.resolveTrustedTargetRoots();
 
     for (const action of actions) {
-      if (action.kind === "blocked" || action.kind === "noop") {
+      if (action.kind === "noop") {
         continue;
       }
 
@@ -43,8 +54,13 @@ export class DeploymentApplierV2 {
         action.target,
         action.targetPath,
         targetRoots,
-        action.targetRootPath,
       );
+
+      if (action.kind === "blocked") {
+        this.upsertProjection(lockFile, action, "blocked");
+        applied.push(action);
+        continue;
+      }
 
       if (action.kind === "remove") {
         if (
@@ -53,9 +69,7 @@ export class DeploymentApplierV2 {
         ) {
           await removePath(action.targetPath);
         }
-        lockFile.projections = lockFile.projections.filter(
-          (projection) => !this.matchesAction(projection, action),
-        );
+        this.upsertProjection(lockFile, action, "removed");
         applied.push(action);
         continue;
       }
@@ -70,7 +84,6 @@ export class DeploymentApplierV2 {
           action.target,
           action.previousTargetPath,
           targetRoots,
-          action.previousTargetRootPath,
         );
         if (!(await this.hasPersistentOwnerForPath(lockFile, actions, action, action.previousTargetPath))) {
           await removePath(action.previousTargetPath);
@@ -85,7 +98,6 @@ export class DeploymentApplierV2 {
           action.target,
           action.relocateExternalToTargetPath,
           targetRoots,
-          action.targetRootPath,
         );
         await ensureDir(path.dirname(action.relocateExternalToTargetPath));
         await fs.rename(action.targetPath, action.relocateExternalToTargetPath);
@@ -97,22 +109,7 @@ export class DeploymentApplierV2 {
         await copyDirectory(action.sourcePath, action.targetPath);
       }
 
-      const nextProjection: ProjectionRecordV2 = {
-        target: action.target,
-        sourceId: action.sourceId,
-        leafId: action.leafId,
-        targetPath: action.targetPath,
-        ...(action.targetRootPath ? { targetRootPath: action.targetRootPath } : {}),
-        strategy: action.strategy,
-        contentHash: action.contentHash,
-        status: "active",
-        updatedAt: new Date().toISOString(),
-      };
-
-      lockFile.projections = [
-        ...lockFile.projections.filter((projection) => !this.matchesAction(projection, action)),
-        nextProjection,
-      ];
+      this.upsertProjection(lockFile, action, "active");
       applied.push(action);
     }
 
@@ -154,16 +151,49 @@ export class DeploymentApplierV2 {
     );
   }
 
+  private async resolveTrustedTargetRoots(): Promise<Map<DeploymentTargetId, string>> {
+    const detectedRoots = await Promise.all(
+      this.adapters.map(async (adapter) => {
+        const detection = await adapter.detect();
+        return [adapter.target, detection.rootPath] as const;
+      }),
+    );
+    const explicitRoots = Object.entries(this.trustedTargetRoots).filter(
+      (entry): entry is [DeploymentTargetId, string] => Boolean(entry[1]),
+    );
+
+    return new Map([...detectedRoots, ...explicitRoots]);
+  }
+
+  private upsertProjection(
+    lockFile: LockFileV2,
+    action: DeploymentAction,
+    status: ProjectionRecordV2["status"],
+  ): void {
+    const nextProjection: ProjectionRecordV2 = {
+      target: action.target,
+      sourceId: action.sourceId,
+      leafId: action.leafId,
+      targetPath: action.targetPath,
+      ...(action.targetRootPath ? { targetRootPath: action.targetRootPath } : {}),
+      strategy: action.strategy,
+      contentHash: action.contentHash,
+      status,
+      updatedAt: new Date().toISOString(),
+    };
+
+    lockFile.projections = [
+      ...lockFile.projections.filter((projection) => !this.matchesAction(projection, action)),
+      nextProjection,
+    ];
+  }
+
   private assertManagedTargetPath(
     target: DeploymentAction["target"],
     targetPath: string,
     targetRoots: Map<DeploymentAction["target"], string>,
-    explicitRootPath?: string,
   ) {
-    const roots = [
-      explicitRootPath,
-      targetRoots.get(target),
-    ].filter((value): value is string => Boolean(value));
+    const roots = [targetRoots.get(target)].filter((value): value is string => Boolean(value));
     if (roots.length === 0) {
       throw new Error(`Managed target root is unavailable for ${target}.`);
     }

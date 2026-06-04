@@ -132,6 +132,52 @@ describe("deployment planner v2", () => {
       }),
     ]);
   });
+
+  test("does not plan remove actions for non-active projections when the target is disabled", async () => {
+    const rootPath = "/targets/codex";
+    const manifest = createManifest({
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
+    const lockFile = createLockFile({
+      projections: [
+        {
+          target: "codex",
+          sourceId: "source-a",
+          leafId: "source-a:one",
+          targetPath: path.join(rootPath, "one"),
+          targetRootPath: rootPath,
+          strategy: "symlink",
+          contentHash: "hash-one",
+          status: "removed",
+          updatedAt: "2026-06-03T00:00:00.000Z",
+        },
+        {
+          target: "codex",
+          sourceId: "source-a",
+          leafId: "source-a:two",
+          targetPath: path.join(rootPath, "two"),
+          targetRootPath: rootPath,
+          strategy: "symlink",
+          contentHash: "hash-two",
+          status: "blocked",
+          updatedAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+    });
+    const planner = new DeploymentPlannerV2([
+      createAdapter({ target: "codex", rootPath }),
+    ]);
+
+    const result = await planner.planForSource("source-a", manifest, lockFile);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.actions).toEqual([]);
+  });
 });
 
 function createManifest(binding: {
