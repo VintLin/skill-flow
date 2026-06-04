@@ -54,11 +54,70 @@ describe("state migration service", () => {
     const preferences = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "preferences.json"), {});
     const collections = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "collections.json"), {});
 
+    expect(Object.keys(manifest).sort()).toEqual([
+      "bindings",
+      "migrationGeneration",
+      "schemaVersion",
+      "sources",
+      "targets",
+    ]);
+    expect(Object.keys(lock).sort()).toEqual([
+      "leafInventory",
+      "migrationGeneration",
+      "projections",
+      "schemaVersion",
+      "sources",
+    ]);
+    expect(Object.keys(preferences).sort()).toEqual([
+      "migrationGeneration",
+      "pinnedSourceIds",
+      "projectSourceDrafts",
+      "schemaVersion",
+    ]);
+    expect(Object.keys(collections).sort()).toEqual([
+      "collections",
+      "migrationGeneration",
+      "schemaVersion",
+    ]);
     expect(manifest.schemaVersion).toBe(2);
     expect(manifest.migrationGeneration).toMatch(/^mg_/);
     expect(lock.migrationGeneration).toBe(manifest.migrationGeneration);
     expect(preferences.migrationGeneration).toBe(manifest.migrationGeneration);
     expect(collections.migrationGeneration).toBe(manifest.migrationGeneration);
+
+    const [source] = manifest.sources as Array<Record<string, unknown>>;
+    if (!source) {
+      throw new Error("Expected migrated source");
+    }
+    expect(Object.keys(source).sort()).toEqual([
+      "canonicalLocator",
+      "createdAt",
+      "displayName",
+      "enabled",
+      "id",
+      "kind",
+      "locator",
+      "updatedAt",
+    ]);
+    expect(source).not.toHaveProperty("originalDisplayName");
+    expect(source).not.toHaveProperty("addedAt");
+    expect(source).not.toHaveProperty("selectionMode");
+    expect(source).not.toHaveProperty("originLocator");
+    expect(source).not.toHaveProperty("originRequestedPath");
+
+    expect(lock).not.toHaveProperty("deployments");
+    expect(preferences).not.toHaveProperty("projectDrafts");
+    expect(collections).not.toHaveProperty("selectionMode");
+    expect(preferences.projectSourceDrafts).toEqual({
+      "project:/tmp/demo": {
+        "source-a": {
+          sourceId: "source-a",
+          selectedLeafIds: ["leaf-a"],
+          enabledTargets: ["codex"],
+          updatedAt: expect.any(String),
+        },
+      },
+    });
   });
 
   test("prunes rebuildable cache only after authority state is current", async () => {
@@ -237,24 +296,92 @@ describe("state migration service", () => {
   });
 
   async function seedV1BasicState() {
+    const now = "2026-06-04T00:00:00.000Z";
     await writeJsonFile(path.join(stateRoot, "manifest.json"), {
       schemaVersion: 1,
-      sources: [],
-      bindings: {},
+      originalDisplayName: "Legacy manifest",
+      sources: [
+        {
+          id: "source-a",
+          locator: path.join(stateRoot, "source", "local", "source-a"),
+          kind: "local",
+          displayName: "Source A",
+          originalDisplayName: "Original Source A",
+          addedAt: now,
+          selectionMode: "selected",
+          originLocator: "legacy:source-a",
+          originRequestedPath: "/legacy/source-a",
+        },
+      ],
+      bindings: {
+        "source-a": {
+          selectedLeafIds: ["leaf-a"],
+          targets: {
+            codex: {
+              enabled: true,
+              leafIds: ["leaf-a"],
+            },
+          },
+        },
+      },
       targets: {},
     });
     await writeJsonFile(path.join(stateRoot, "lock.json"), {
       schemaVersion: 1,
-      sources: [],
-      leafInventory: [],
-      deployments: [],
+      sources: [
+        {
+          id: "source-a",
+          locator: path.join(stateRoot, "source", "local", "source-a"),
+          kind: "local",
+          displayName: "Source A",
+          checkoutPath: path.join(stateRoot, "source", "local", "source-a"),
+          updatedAt: now,
+          leafIds: ["leaf-a"],
+          originalDisplayName: "Original Source A",
+        },
+      ],
+      leafInventory: [
+        {
+          id: "leaf-a",
+          sourceId: "source-a",
+          name: "review",
+          linkName: "review",
+          title: "Review",
+          description: "",
+          relativePath: "skills/review",
+          skillFilePath: "skills/review/SKILL.md",
+          contentHash: "hash-review",
+          metadataWarnings: [],
+        },
+      ],
+      deployments: [
+        {
+          sourceId: "source-a",
+          leafId: "leaf-a",
+          target: "codex",
+          targetPath: path.join(stateRoot, "targets", "codex", "review"),
+          strategy: "symlink",
+          status: "active",
+          contentHash: "hash-review",
+          appliedAt: now,
+        },
+      ],
     });
     await writeJsonFile(path.join(stateRoot, "preferences.json"), {
       pinnedSourceIds: [],
-      projectDrafts: {},
+      projectDrafts: {
+        "project:/tmp/demo": {
+          "source-a": {
+            selectedLeafIds: ["leaf-a"],
+            enabledTargets: ["codex"],
+          },
+        },
+      },
+      legacyPanelState: { expanded: true },
     });
     await writeJsonFile(path.join(stateRoot, "collections.json"), {
       collections: {},
+      selectionMode: "legacy",
     });
     await writeJsonFile(path.join(stateRoot, "catalog", "import-data.json"), {
       schemaVersion: 1,

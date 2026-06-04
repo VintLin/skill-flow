@@ -241,7 +241,6 @@ async function rewriteAuthorityFiles(
   const materialized = await materializeLegacyCollections(stateRoot, manifest, lock, migrationGeneration);
 
   await writeJsonFile(path.join(stateRoot, "manifest.json"), {
-    ...manifest,
     schemaVersion: 2,
     migrationGeneration,
     sources: materialized.manifestSources,
@@ -250,7 +249,6 @@ async function rewriteAuthorityFiles(
   });
 
   await writeJsonFile(path.join(stateRoot, "lock.json"), {
-    ...lock,
     schemaVersion: 2,
     migrationGeneration,
     sources: materialized.lockSources,
@@ -262,31 +260,64 @@ async function rewriteAuthorityFiles(
     path.join(stateRoot, "preferences.json"),
     {},
   );
-  await writeJsonFile(path.join(stateRoot, "preferences.json"), {
-    ...preferences,
+  const preferencesPayload: Record<string, unknown> = {
     schemaVersion: 2,
     migrationGeneration,
     pinnedSourceIds: Array.isArray(preferences.pinnedSourceIds) ? preferences.pinnedSourceIds : [],
-    projectSourceDrafts: isRecord(preferences.projectSourceDrafts)
-      ? preferences.projectSourceDrafts
-      : isRecord(preferences.projectDrafts)
-        ? preferences.projectDrafts
-        : {},
+    projectSourceDrafts: migrateProjectSourceDrafts(preferences),
+  };
+  if (Array.isArray(preferences.localImportChoices)) {
+    preferencesPayload.localImportChoices = preferences.localImportChoices;
+  }
+  if (Array.isArray(preferences.localScanImportChoices)) {
+    preferencesPayload.localScanImportChoices = preferences.localScanImportChoices;
+  }
+  await writeJsonFile(path.join(stateRoot, "preferences.json"), {
+    ...preferencesPayload,
   });
 
-  const collections = await readJsonFile<Record<string, unknown>>(
-    path.join(stateRoot, "collections.json"),
-    {},
-  );
   await writeJsonFile(path.join(stateRoot, "collections.json"), {
-    ...collections,
     schemaVersion: 2,
     migrationGeneration,
-    collections: {
-      ...(isRecord(collections.collections) ? collections.collections : {}),
-      ...materialized.collections,
-    },
+    collections: materialized.collections,
   });
+}
+
+function migrateProjectSourceDrafts(
+  preferences: Record<string, unknown>,
+): Record<string, Record<string, Record<string, unknown>>> {
+  const source = isRecord(preferences.projectSourceDrafts)
+    ? preferences.projectSourceDrafts
+    : isRecord(preferences.projectDrafts)
+      ? preferences.projectDrafts
+      : {};
+  const updatedAt = new Date().toISOString();
+  const result: Record<string, Record<string, Record<string, unknown>>> = {};
+
+  for (const [projectId, projectDrafts] of Object.entries(source)) {
+    if (!isRecord(projectDrafts)) {
+      continue;
+    }
+    const scopedDrafts: Record<string, Record<string, unknown>> = {};
+    for (const [sourceId, draft] of Object.entries(projectDrafts)) {
+      if (!isRecord(draft)) {
+        continue;
+      }
+      scopedDrafts[sourceId] = {
+        sourceId: typeof draft.sourceId === "string" ? draft.sourceId : sourceId,
+        selectedLeafIds: Array.isArray(draft.selectedLeafIds)
+          ? draft.selectedLeafIds.filter((value): value is string => typeof value === "string")
+          : [],
+        enabledTargets: Array.isArray(draft.enabledTargets)
+          ? draft.enabledTargets.filter((value): value is string => typeof value === "string")
+          : [],
+        updatedAt: typeof draft.updatedAt === "string" ? draft.updatedAt : updatedAt,
+      };
+    }
+    result[projectId] = scopedDrafts;
+  }
+
+  return result;
 }
 
 type LegacySource = {
