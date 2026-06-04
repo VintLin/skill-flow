@@ -544,6 +544,30 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertTrue(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
     }
 
+    func testImportPageShowsActionableSkillNotFoundFailureToast() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.importFailures = ["anthropics/skills": "ADD_SKILL_NOT_FOUND"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        await model.loadImportPageIfNeeded()
+
+        await model.importImportGroup(
+            groupId: "anthropics-skills",
+            locator: "anthropics/skills",
+            selectedSkillIds: ["skills-main/skills/frontend-design"],
+            enabledTargets: []
+        )
+
+        XCTAssertFalse(model.sourceIds.contains("anthropics-skills"))
+        XCTAssertEqual(model.toast?.style, .error)
+        XCTAssertEqual(
+            model.toast?.message,
+            "Import failed: selected skills were not found in this source. (ADD_SKILL_NOT_FOUND)"
+        )
+    }
+
     func testV120WorkflowCoverage() async throws {
         let fixture = try TestFixture.install()
 

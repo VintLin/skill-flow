@@ -222,7 +222,10 @@
 "toast.import.failed.no_valid_leafs" = "Import failed: no recognizable Skill files were found.";
 "toast.import.failed.source_path_not_found" = "Import failed: the selected path does not contain a valid Skill.";
 "toast.import.failed.add_agent_not_available" = "Import failed: agent installation is not available.";
+"toast.import.failed.add_skill_not_found" = "Import failed: selected skills were not found in this source. (ADD_SKILL_NOT_FOUND)";
+"toast.import.failed.import_prepare_failed" = "Import failed: unable to prepare the source checkout. (IMPORT_PREPARE_FAILED)";
 "toast.import.failed.invalid_response" = "Import failed: invalid response.";
+"toast.import.failed.reason_code" = "Import failed: %@.";
 "toast.import.failed.generic" = "Import failed. Try again later.";
 "toast.import.exists" = "This group is already available locally.";
 "toast.import.success" = "Imported source.";

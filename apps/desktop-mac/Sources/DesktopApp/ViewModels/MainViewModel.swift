@@ -3189,9 +3189,17 @@ final class MainViewModel {
             return localizedText("toast.import.failed.source_path_not_found")
         case "ADD_AGENT_NOT_AVAILABLE":
             return localizedText("toast.import.failed.add_agent_not_available")
-        case "IMPORT_PREPARE_FAILED", "IMPORT_PREVIEW_INVALID", "IMPORT_APPLY_FAILED":
+        case "ADD_SKILL_NOT_FOUND":
+            return localizedText("toast.import.failed.add_skill_not_found")
+        case "IMPORT_PREPARE_FAILED":
+            return localizedText("toast.import.failed.import_prepare_failed")
+        case "IMPORT_PREVIEW_INVALID", "IMPORT_APPLY_FAILED":
             return localizedText("toast.import.failed.invalid_response")
         default:
+            if let reasonCode = reasonCode?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !reasonCode.isEmpty {
+                return localizedText("toast.import.failed.reason_code", reasonCode)
+            }
             return localizedText("toast.import.failed.generic")
         }
     }

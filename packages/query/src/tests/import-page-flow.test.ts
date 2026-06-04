@@ -519,50 +519,93 @@ describe.sequential("import page flow", () => {
     const codexRoot = path.join(sandbox.sandboxRoot, "codex-skills");
     await fs.mkdir(codexRoot, { recursive: true });
     vi.stubEnv("SKILL_FLOW_TARGET_CODEX", codexRoot);
-    const repoPath = await createRepo(sandbox.sandboxRoot, {
+    const anthropicsRepoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
       "skills/skill-creator/SKILL.md": skillDoc("skill-creator", "Create skills."),
     });
+    const vercelRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/react-best-practices/SKILL.md": skillDoc("react-best-practices", "React practices."),
+      "skills/debugging/SKILL.md": skillDoc("debugging", "Debug apps."),
+    });
+    const gstackRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "review/SKILL.md": skillDoc("review", "Review changes."),
+      "qa/SKILL.md": skillDoc("qa", "Check quality."),
+    });
+    const repoPaths = new Map([
+      ["anthropics/skills", anthropicsRepoPath],
+      ["vercel-labs/agent-skills", vercelRepoPath],
+      ["garrytan/gstack", gstackRepoPath],
+    ]);
     const prepareSourceCheckout = SourceService.prototype.prepareSourceCheckout;
     vi.spyOn(SourceService.prototype, "prepareSourceCheckout").mockImplementation(
-      async function (_locator, input) {
+      async function (locator, input) {
+        const repoPath = repoPaths.get(locator);
+        if (!repoPath) {
+          throw new Error(`Unexpected locator: ${locator}`);
+        }
         return prepareSourceCheckout.call(this, repoPath, input);
       },
     );
 
     const app = new SkillFlowApp();
-    const prepared = await app.prepareImportSource("anthropics/skills");
+    const cases = [
+      {
+        locator: "anthropics/skills",
+        selectedSkillIds: [
+          "skills-main/skills/frontend-design",
+          "skills-main/skills/skill-creator",
+        ],
+        expectedLeafNames: ["frontend-design", "skill-creator"],
+      },
+      {
+        locator: "vercel-labs/agent-skills",
+        selectedSkillIds: [
+          "agent-skills-main/skills/react-best-practices",
+          "agent-skills-main/skills/debugging",
+        ],
+        expectedLeafNames: ["debugging", "react-best-practices"],
+      },
+      {
+        locator: "garrytan/gstack",
+        selectedSkillIds: [
+          "gstack-main/review",
+          "gstack-main/qa",
+        ],
+        expectedLeafNames: ["qa", "review"],
+      },
+    ];
 
-    expect(prepared.ok).toBe(true);
-    if (!prepared.ok || prepared.data.status !== "ready") {
-      return;
+    for (const testCase of cases) {
+      const prepared = await app.prepareImportSource(testCase.locator);
+
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok || prepared.data.status !== "ready") {
+        return;
+      }
+
+      const imported = await app.commitPreparedImportSource(prepared.data.preparationId, {
+        selectedSkillIds: testCase.selectedSkillIds,
+        enabledTargets: ["codex"],
+      });
+
+      expect(imported.ok).toBe(true);
+      if (!imported.ok) {
+        return;
+      }
+      expect(imported.data).toMatchObject({
+        status: "ready",
+      });
+      if (imported.data.status !== "ready") {
+        return;
+      }
+
+      const { manifest } = await app.store.readState();
+      const binding = manifest.bindings[imported.data.sourceId];
+      const boundLeafNames = binding?.targets.codex?.leafIds.map((leafId) =>
+        leafId.split(":").pop()?.split("/").pop(),
+      ).sort();
+      expect(boundLeafNames).toEqual(testCase.expectedLeafNames);
     }
-
-    const imported = await app.commitPreparedImportSource(prepared.data.preparationId, {
-      selectedSkillIds: [
-        "skills-main/skills/frontend-design",
-        "skills-main/skills/skill-creator",
-      ],
-      enabledTargets: ["codex"],
-    });
-
-    expect(imported.ok).toBe(true);
-    if (!imported.ok) {
-      return;
-    }
-    expect(imported.data).toMatchObject({
-      status: "ready",
-    });
-    if (imported.data.status !== "ready") {
-      return;
-    }
-
-    const { manifest } = await app.store.readState();
-    const binding = manifest.bindings[imported.data.sourceId];
-    expect(binding?.targets.codex?.leafIds.map((leafId) => leafId.split("/").pop()).sort()).toEqual([
-      "frontend-design",
-      "skill-creator",
-    ]);
   });
 
   test("previewImportSource supports local paths", async () => {

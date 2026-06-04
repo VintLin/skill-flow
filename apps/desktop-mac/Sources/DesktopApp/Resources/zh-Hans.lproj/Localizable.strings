@@ -222,7 +222,10 @@
 "toast.import.failed.no_valid_leafs" = "导入失败：未找到可识别的 Skill 文件。";
 "toast.import.failed.source_path_not_found" = "导入失败：所选路径不包含有效 Skill。";
 "toast.import.failed.add_agent_not_available" = "导入失败：当前无法安装 Agent。";
+"toast.import.failed.add_skill_not_found" = "导入失败：所选 Skill 在该来源中不存在。（ADD_SKILL_NOT_FOUND）";
+"toast.import.failed.import_prepare_failed" = "导入失败：无法准备来源检出目录。（IMPORT_PREPARE_FAILED）";
 "toast.import.failed.invalid_response" = "导入失败：响应无效。";
+"toast.import.failed.reason_code" = "导入失败：%@。";
 "toast.import.failed.generic" = "导入失败，请稍后再试。";
 "toast.import.exists" = "该 Group 已存在于本地。";
 "toast.import.success" = "已导入来源。";
