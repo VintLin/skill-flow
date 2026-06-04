@@ -1,5 +1,7 @@
 import type {
   DeploymentRecord,
+  DeploymentTargetId,
+  DeploymentStrategy,
   DraftBinding,
   LeafRecord,
   LockFile,
@@ -19,8 +21,24 @@ import type {
 
 export type StateV2AuthorityView = {
   manifest: Manifest;
-  lockFile: LockFile;
+  lockFile: LockFileV2View;
   preferences: SharedPreferences;
+};
+
+export type ProjectionStatusView = Readonly<{
+  sourceId: string;
+  leafId: string;
+  target: DeploymentTargetId;
+  targetPath: string;
+  targetRootPath?: string;
+  strategy: DeploymentStrategy;
+  status: LockFileV2["projections"][number]["status"];
+  contentHash: string;
+  updatedAt: string;
+}>;
+
+export type LockFileV2View = LockFile & {
+  readonly projectionViews: readonly ProjectionStatusView[];
 };
 
 export type StateV2AuthorityFiles = {
@@ -78,12 +96,13 @@ export function projectSourceBindingV2ToView(
 export function projectLockFileV2ToView(
   lockFile: LockFileV2,
   manifest: Pick<ManifestFileV2, "sources">,
-): LockFile {
+): LockFileV2View {
   const manifestSourceById = new Map(manifest.sources.map((source) => [source.id, source]));
   const activeDeployments = lockFile.projections
     .filter((projection) => projection.status === "active")
     .map(projectProjectionV2ToDeploymentView);
-  const projections = lockFile.projections.map(projectProjectionV2ToView);
+  const projections = activeDeployments.map(projectDeploymentToManagedProjectionView);
+  const projectionViews = lockFile.projections.map(projectProjectionV2ToView);
 
   return {
     schemaVersion: 1,
@@ -94,6 +113,7 @@ export function projectLockFileV2ToView(
       .filter((leaf) => leaf.valid)
       .map((leaf) => projectLeafV2ToView(leaf, manifestSourceById.get(leaf.sourceId)?.displayName)),
     projections,
+    projectionViews,
     deployments: activeDeployments,
   };
 }
@@ -103,7 +123,10 @@ export function projectPreferencesV2ToView(preferences: PreferencesFileV2): Shar
     schemaVersion: 1,
     pinnedSourceIds: [...preferences.pinnedSourceIds],
     selectedProjectScope: { ...preferences.selectedProjectScope },
-    recentProjects: preferences.recentProjects.map((project) => ({ ...project })),
+    recentProjects: preferences.recentProjects.map((project) => ({
+      ...project,
+      ...(project.tools ? { tools: [...project.tools] } : {}),
+    })),
     projectDrafts: Object.fromEntries(
       Object.entries(preferences.projectSourceDrafts).map(([projectId, drafts]) => [
         projectId,
@@ -211,9 +234,16 @@ function projectProjectionV2ToDeploymentView(
   };
 }
 
+function projectDeploymentToManagedProjectionView(deployment: DeploymentRecord): ProjectionRecord {
+  return {
+    ...deployment,
+    mode: "managed",
+  };
+}
+
 function projectProjectionV2ToView(
   projection: LockFileV2["projections"][number],
-): ProjectionRecord {
+): ProjectionStatusView {
   return {
     sourceId: projection.sourceId,
     leafId: projection.leafId,
@@ -223,7 +253,6 @@ function projectProjectionV2ToView(
     strategy: projection.strategy,
     status: projection.status,
     contentHash: projection.contentHash,
-    appliedAt: projection.updatedAt,
-    mode: "managed",
+    updatedAt: projection.updatedAt,
   };
 }

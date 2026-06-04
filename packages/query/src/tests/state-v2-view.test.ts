@@ -5,6 +5,7 @@ import type {
   PreferencesFileV2,
   SourceBindingV2,
 } from "@skill-flow/domain/types";
+import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import {
   projectLockFileV2ToView,
   projectManifestV2ToView,
@@ -87,7 +88,7 @@ describe("state v2 runtime view adapters", () => {
     expect(manifest.bindings.stack?.selectedLeafIds).toEqual(["stack:member-1"]);
   });
 
-  test("projects active v2 projections to deployments and all v2 projections to projection views", () => {
+  test("projects active v2 projections to deployments and keeps full status views separate", () => {
     const lockView = projectLockFileV2ToView(
       lockFile({
         sources: {
@@ -133,6 +134,20 @@ describe("state v2 runtime view adapters", () => {
         appliedAt: "2026-04-02T00:00:00.000Z",
         mode: "managed",
       },
+    ]);
+    expect(getManagedDeployments(lockView)).toEqual(lockView.deployments);
+    expect(lockView.projectionViews).toEqual([
+      {
+        sourceId: "repo",
+        leafId: "repo:review",
+        target: "codex",
+        targetPath: "/targets/codex/review",
+        targetRootPath: "/targets/codex",
+        strategy: "symlink",
+        status: "active",
+        contentHash: "hash-repo-review",
+        updatedAt: "2026-04-02T00:00:00.000Z",
+      },
       {
         sourceId: "repo",
         leafId: "repo:review",
@@ -142,8 +157,7 @@ describe("state v2 runtime view adapters", () => {
         strategy: "symlink",
         status: "removed",
         contentHash: "hash-repo-review",
-        appliedAt: "2026-04-02T00:00:00.000Z",
-        mode: "managed",
+        updatedAt: "2026-04-02T00:00:00.000Z",
       },
       {
         sourceId: "repo",
@@ -154,14 +168,13 @@ describe("state v2 runtime view adapters", () => {
         strategy: "symlink",
         status: "blocked",
         contentHash: "hash-repo-review",
-        appliedAt: "2026-04-02T00:00:00.000Z",
-        mode: "managed",
+        updatedAt: "2026-04-02T00:00:00.000Z",
       },
     ]);
   });
 
   test("maps projectSourceDrafts to public projectDrafts", () => {
-    const preferences = projectPreferencesV2ToView({
+    const authorityPreferences: PreferencesFileV2 = {
       schemaVersion: 2,
       migrationGeneration: "mg_test",
       pinnedSourceIds: ["repo"],
@@ -186,7 +199,8 @@ describe("state v2 runtime view adapters", () => {
       },
       customTargets: [],
       agentDisplayOrder: ["codex"],
-    });
+    };
+    const preferences = projectPreferencesV2ToView(authorityPreferences);
 
     expect(preferences.projectDrafts).toEqual({
       "project-a": {
@@ -196,6 +210,8 @@ describe("state v2 runtime view adapters", () => {
         },
       },
     });
+    preferences.recentProjects[0]?.tools?.push("cursor");
+    expect(authorityPreferences.recentProjects[0]?.tools).toEqual(["codex"]);
   });
 });
 
