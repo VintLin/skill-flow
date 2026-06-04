@@ -332,6 +332,8 @@ function assertLockFileV2(payload: unknown, filePath: string): asserts payload i
   assertRecordField(payload, filePath, "sources");
   assertArrayField(payload, filePath, "leafInventory");
   assertArrayField(payload, filePath, "projections");
+  assertLeafInventoryV2(payload.leafInventory as unknown[], filePath);
+  assertProjectionsV2(payload.projections as unknown[], filePath);
 }
 
 function assertPreferencesFileV2(
@@ -438,6 +440,70 @@ function assertRecordField(
       },
     );
   }
+}
+
+function assertLeafInventoryV2(
+  leafInventory: unknown[],
+  filePath: string,
+): void {
+  leafInventory.forEach((leaf, index) => {
+    const itemPath = `leafInventory[${index}]`;
+    if (!isRecord(leaf)) {
+      throwInvalidAuthorityField(filePath, itemPath, "object");
+    }
+
+    for (const field of ["linkName", "title", "description", "absolutePath"]) {
+      assertStringField(leaf, filePath, `${itemPath}.${field}`);
+    }
+  });
+}
+
+function assertProjectionsV2(
+  projections: unknown[],
+  filePath: string,
+): void {
+  projections.forEach((projection, index) => {
+    const itemPath = `projections[${index}]`;
+    if (!isRecord(projection)) {
+      throwInvalidAuthorityField(filePath, itemPath, "object");
+    }
+
+    assertStringField(projection, filePath, `${itemPath}.strategy`);
+    if ("targetRootPath" in projection && typeof projection.targetRootPath !== "string") {
+      throwInvalidAuthorityField(filePath, `${itemPath}.targetRootPath`, "string");
+    }
+    if ("mode" in projection) {
+      throwInvalidAuthorityField(filePath, `${itemPath}.mode`, "absent");
+    }
+  });
+}
+
+function assertStringField(
+  payload: Record<string, unknown>,
+  filePath: string,
+  fieldPath: string,
+): void {
+  const fieldName = fieldPath.slice(fieldPath.lastIndexOf(".") + 1);
+  if (typeof payload[fieldName] !== "string") {
+    throwInvalidAuthorityField(filePath, fieldPath, "string");
+  }
+}
+
+function throwInvalidAuthorityField(
+  filePath: string,
+  fieldPath: string,
+  expected: string,
+): never {
+  throw new StateStoreV2Error(
+    "STATE_MIGRATION_BLOCKED",
+    "State authority file has an invalid field.",
+    filePath,
+    {
+      reasonCode: "STATE_AUTHORITY_FIELD_INVALID",
+      fieldPath,
+      expected,
+    },
+  );
 }
 
 function assertMigrationGenerationMatch(

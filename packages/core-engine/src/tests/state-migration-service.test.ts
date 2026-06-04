@@ -170,6 +170,34 @@ describe("state migration service", () => {
     expect(preferences.agentDisplayOrder).toEqual(["codex", "custom-target"]);
   });
 
+  test("falls back to legacy deployments when legacy projections has no managed entries", async () => {
+    await seedV1BasicState();
+    const lockPath = path.join(stateRoot, "lock.json");
+    const legacyLock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    await writeJsonFile(lockPath, {
+      ...legacyLock,
+      projections: [],
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await service.migrate({ to: 2, backup: true });
+
+    const lock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    expect(lock).not.toHaveProperty("deployments");
+    expect(lock.projections).toEqual([
+      expect.objectContaining({
+        sourceId: "source-a",
+        leafId: "leaf-a",
+        target: "codex",
+        targetPath: path.join(stateRoot, "targets", "codex", "review"),
+        strategy: "symlink",
+        targetRootPath: path.join(stateRoot, "targets", "codex"),
+        contentHash: "hash-review",
+        status: "active",
+      }),
+    ]);
+  });
+
   test("prunes rebuildable cache only after authority state is current", async () => {
     await seedV1BasicState();
     await writeJsonFile(path.join(stateRoot, "catalog", "source-metadata.json"), {});

@@ -867,13 +867,17 @@ function rewriteProjections(
   lock: Record<string, unknown>,
   memberLeafIdByLegacyRef: Map<string, string>,
 ): Array<Record<string, unknown>> {
-  const projections = Array.isArray(lock.projections)
-    ? lock.projections
+  const legacyProjections = Array.isArray(lock.projections)
+    ? lock.projections.filter(isRecord)
+    : [];
+  const managedProjections = legacyProjections.filter((projection) => projection.mode === "managed");
+  const projections = managedProjections.length > 0
+    ? managedProjections
     : Array.isArray(lock.deployments)
-      ? lock.deployments
+      ? lock.deployments.filter(isRecord)
       : [];
 
-  return projections.filter(isRecord).map((projection) => {
+  return projections.map((projection) => {
     const sourceId = typeof projection.sourceId === "string" ? projection.sourceId : "";
     const leafId = typeof projection.leafId === "string" ? projection.leafId : "";
     return {

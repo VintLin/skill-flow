@@ -397,6 +397,80 @@ describe("StateStoreV2", () => {
     });
   });
 
+  test("readLock rejects leaf records missing V2 runtime fields", async () => {
+    const cases = ["linkName", "title", "description", "absolutePath"] as const;
+
+    for (const field of cases) {
+      const caseRoot = await fs.mkdtemp(path.join(os.tmpdir(), `skill-flow-lock-missing-${field}-`));
+      try {
+        const store = new StateStoreV2(caseRoot);
+        await store.init();
+        const lockFile = createValidLockFile();
+        delete (lockFile.leafInventory[0] as Record<string, unknown>)[field];
+        await writeJsonFile(store.lockPath, lockFile);
+
+        await expect(store.readLock(), field).rejects.toMatchObject({
+          code: "STATE_MIGRATION_BLOCKED",
+          reasonCode: "STATE_MIGRATION_BLOCKED",
+          path: store.lockPath,
+          details: {
+            fieldPath: `leafInventory[0].${field}`,
+          },
+        });
+      } finally {
+        await fs.rm(caseRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test("readLock rejects projections missing strategy or carrying legacy mode", async () => {
+    const cases = [
+      {
+        name: "missing strategy",
+        mutate: (lockFile: LockFileV2) => {
+          delete (lockFile.projections[0] as Record<string, unknown>).strategy;
+        },
+        fieldPath: "projections[0].strategy",
+      },
+      {
+        name: "legacy mode",
+        mutate: (lockFile: LockFileV2) => {
+          (lockFile.projections[0] as Record<string, unknown>).mode = "managed";
+        },
+        fieldPath: "projections[0].mode",
+      },
+      {
+        name: "invalid target root",
+        mutate: (lockFile: LockFileV2) => {
+          (lockFile.projections[0] as Record<string, unknown>).targetRootPath = 42;
+        },
+        fieldPath: "projections[0].targetRootPath",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const caseRoot = await fs.mkdtemp(path.join(os.tmpdir(), `skill-flow-lock-${testCase.name}-`));
+      try {
+        const store = new StateStoreV2(caseRoot);
+        await store.init();
+        const lockFile = createValidLockFile();
+        testCase.mutate(lockFile);
+        await writeJsonFile(store.lockPath, lockFile);
+
+        await expect(store.readLock(), testCase.name).rejects.toMatchObject({
+          code: "STATE_MIGRATION_BLOCKED",
+          reasonCode: "STATE_MIGRATION_BLOCKED",
+          path: store.lockPath,
+          details: {
+            fieldPath: testCase.fieldPath,
+          },
+        });
+      } finally {
+        await fs.rm(caseRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
   test("readState rejects authority files with mismatched migrationGeneration", async () => {
     const store = new StateStoreV2(stateRoot);
     await writeJsonFile(store.manifestPath, {
@@ -554,3 +628,52 @@ describe("StateStoreV2", () => {
     }
   });
 });
+
+function createValidLockFile(): LockFileV2 {
+  return {
+    schemaVersion: 2,
+    migrationGeneration: "mg_valid_lock",
+    sources: {
+      "source-alpha": {
+        sourceId: "source-alpha",
+        canonicalLocator: "github:acme/alpha",
+        revision: {
+          provider: "git",
+          capturedAt: "2026-06-04T00:00:00.000Z",
+        },
+        localPath: "/tmp/alpha",
+        leafIds: ["source-alpha:skills/build"],
+      },
+    },
+    leafInventory: [
+      {
+        id: "source-alpha:skills/build",
+        sourceId: "source-alpha",
+        relativePath: "skills/build",
+        linkName: "build",
+        title: "Build",
+        description: "Build project artifacts",
+        absolutePath: "/tmp/alpha/skills/build",
+        skillFilePath: "/tmp/alpha/skills/build/SKILL.md",
+        displayName: "Build",
+        contentHash: "hash",
+        selectors: { legacyAliases: ["alpha:build"] },
+        valid: true,
+        diagnostics: [],
+      },
+    ],
+    projections: [
+      {
+        target: "codex",
+        sourceId: "source-alpha",
+        leafId: "source-alpha:skills/build",
+        targetPath: "/tmp/codex/build",
+        targetRootPath: "/tmp/codex",
+        strategy: "symlink",
+        contentHash: "hash",
+        status: "active",
+        updatedAt: "2026-06-04T00:00:00.000Z",
+      },
+    ],
+  };
+}
