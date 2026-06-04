@@ -5,4 +5,5 @@ export * from "./services/inventory-service.js";
 export * from "./services/import-preparation-service.js";
 export * from "./services/recent-project-service.js";
 export * from "./services/source-service.js";
+export * from "./services/state-migration-service.js";
 export * from "./services/workspace-bootstrap-service.js";
