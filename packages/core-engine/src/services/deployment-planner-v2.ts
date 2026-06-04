@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type {
   DeploymentAction,
   DeploymentPlan,
@@ -10,6 +12,10 @@ import type {
   Warning,
 } from "@skill-flow/domain/types";
 import type { ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
+import {
+  buildProjectedSkillNameCandidates,
+  getHostedGitOwner,
+} from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 
 export class DeploymentPlannerV2 {
@@ -30,16 +36,20 @@ export class DeploymentPlannerV2 {
 
     const binding = manifest.bindings[sourceId];
     const sourceLeafs = this.resolveSourceLeafs(sourceLock.leafIds, lockFile);
-    const previousProjections = lockFile.projections.filter(
+    const activeProjections = lockFile.projections.filter(
+      (projection) => projection.status === "active",
+    );
+    const previousProjections = activeProjections.filter(
       (projection) => projection.sourceId === sourceId && projection.status === "active",
     );
+    const source = manifest.sources.find((item) => item.id === sourceId);
     const actions: DeploymentAction[] = [];
     const warnings: Warning[] = [];
 
     for (const adapter of this.adapters) {
       const detection = await adapter.detect();
       const desiredLeafIds = this.resolveDesiredLeafIds(adapter.target, binding, sourceLock.leafIds);
-      const plannedForTarget = this.planTarget(
+      const plannedForTarget = await this.planTarget(
         sourceId,
         adapter,
         detection.available,
@@ -48,6 +58,12 @@ export class DeploymentPlannerV2 {
         desiredLeafIds,
         sourceLeafs,
         previousProjections,
+        activeProjections,
+        {
+          id: sourceId,
+          displayName: source?.displayName ?? sourceId,
+          author: getHostedGitOwner(source?.locator ?? ""),
+        },
       );
 
       actions.push(...plannedForTarget.actions);
@@ -87,7 +103,7 @@ export class DeploymentPlannerV2 {
       .filter((leaf): leaf is LeafRecordV2 => Boolean(leaf));
   }
 
-  private planTarget(
+  private async planTarget(
     sourceId: string,
     adapter: ChannelAdapter,
     targetAvailable: boolean,
@@ -96,7 +112,9 @@ export class DeploymentPlannerV2 {
     desiredLeafIds: Set<SkillLeafIdV2>,
     sourceLeafs: LeafRecordV2[],
     previousProjections: ProjectionRecordV2[],
-  ): DeploymentPlan {
+    activeProjections: ProjectionRecordV2[],
+    sourceRef: { id: string; displayName: string; author?: string | undefined },
+  ): Promise<DeploymentPlan> {
     const actions: DeploymentAction[] = [];
     const warnings: Warning[] = [];
     const desiredLeafs = sourceLeafs.filter((leaf) => desiredLeafIds.has(leaf.id));
@@ -123,7 +141,18 @@ export class DeploymentPlannerV2 {
 
     for (const leaf of desiredLeafs) {
       const existing = previousByLeafId.get(leaf.id);
-      const targetPath = adapter.resolveTargetPath(rootPath, leaf.linkName);
+      const targetPathCandidates = buildProjectedSkillNameCandidates({
+        preferredName: leaf.linkName,
+        groupId: sourceRef.id,
+        groupName: sourceRef.displayName,
+        groupAuthor: sourceRef.author,
+        skillName: leaf.linkName,
+      }).map((linkName) => ({
+        linkName,
+        targetPath: adapter.resolveTargetPath(rootPath, linkName),
+      }));
+      const preferredTargetPath =
+        targetPathCandidates[0]?.targetPath ?? adapter.resolveTargetPath(rootPath, leaf.linkName);
       const targetRootPath = rootPath;
 
       if (!targetAvailable) {
@@ -134,7 +163,7 @@ export class DeploymentPlannerV2 {
           target: adapter.target,
           strategy: adapter.strategy,
           sourcePath: leaf.absolutePath,
-          targetPath,
+          targetPath: preferredTargetPath,
           targetRootPath,
           contentHash: leaf.contentHash,
           ...(unavailableReason ? { reason: unavailableReason } : {}),
@@ -142,22 +171,119 @@ export class DeploymentPlannerV2 {
         continue;
       }
 
+      let chosenCandidate:
+        | {
+            linkName: string;
+            targetPath: string;
+            diskState: Awaited<ReturnType<DeploymentPlannerV2["inspectTargetPath"]>>;
+            relocateExternalToTargetPath?: string;
+          }
+        | undefined;
+      for (const candidate of targetPathCandidates) {
+        const diskState = await this.inspectTargetPath(
+          candidate.targetPath,
+          leaf.absolutePath,
+          leaf,
+          adapter.target,
+          adapter.strategy,
+          activeProjections,
+        );
+
+        if (
+          diskState.managedBySkillFlow &&
+          !this.matchesProjection(diskState.managedProjection, sourceId, leaf.id, adapter.target)
+        ) {
+          continue;
+        }
+
+        if (diskState.foreign) {
+          if (
+            candidate.targetPath === preferredTargetPath &&
+            diskState.externalExactMatch
+          ) {
+            const relocationTargetPath = await this.resolveExternalRelocationTargetPath(
+              preferredTargetPath,
+              rootPath,
+              adapter.target,
+              activeProjections,
+            );
+            if (relocationTargetPath) {
+              chosenCandidate = {
+                ...candidate,
+                diskState,
+                relocateExternalToTargetPath: relocationTargetPath,
+              };
+              break;
+            }
+          }
+          continue;
+        }
+
+        chosenCandidate = {
+          ...candidate,
+          diskState,
+        };
+        break;
+      }
+
+      if (!chosenCandidate) {
+        actions.push({
+          kind: "blocked",
+          sourceId,
+          leafId: leaf.id,
+          target: adapter.target,
+          strategy: adapter.strategy,
+          sourcePath: leaf.absolutePath,
+          targetPath: preferredTargetPath,
+          targetRootPath,
+          reason: "Target path is unavailable and no safe fallback name is available.",
+          contentHash: leaf.contentHash,
+        });
+        continue;
+      }
+
+      if (
+        chosenCandidate.targetPath !== preferredTargetPath &&
+        !chosenCandidate.diskState.externalExactMatch
+      ) {
+        warnings.push({
+          code: "EXTERNAL_NAME_COLLISION_RENAMED",
+          message: `${leaf.linkName} kept existing target content at ${preferredTargetPath} and will deploy as ${chosenCandidate.linkName}.`,
+        });
+      }
+      if (chosenCandidate.relocateExternalToTargetPath) {
+        warnings.push({
+          code: "EXTERNAL_SKILL_RELOCATED",
+          message: `${leaf.linkName} reclaimed ${preferredTargetPath} and moved the external skill to ${chosenCandidate.relocateExternalToTargetPath}.`,
+        });
+      }
+
       actions.push({
-        kind: this.resolveDesiredAction(existing, leaf, targetPath, targetRootPath, adapter.strategy),
+        kind: this.resolveDesiredAction(
+          existing,
+          chosenCandidate.diskState.matchesExpected,
+          leaf,
+          chosenCandidate.targetPath,
+          targetRootPath,
+          adapter.strategy,
+        ),
         sourceId,
         leafId: leaf.id,
         target: adapter.target,
         strategy: adapter.strategy,
         sourcePath: leaf.absolutePath,
-        targetPath,
+        targetPath: chosenCandidate.targetPath,
         targetRootPath,
-        ...(existing && existing.targetPath !== targetPath
+        ...(existing && existing.targetPath !== chosenCandidate.targetPath
           ? {
               previousTargetPath: existing.targetPath,
               ...(existing.targetRootPath
                 ? { previousTargetRootPath: existing.targetRootPath }
                 : {}),
             }
+          : {}),
+        ...(chosenCandidate.relocateExternalToTargetPath
+          ? { relocateExternalToTargetPath: chosenCandidate.relocateExternalToTargetPath }
           : {}),
         contentHash: leaf.contentHash,
       });
@@ -176,16 +302,18 @@ export class DeploymentPlannerV2 {
 
   private resolveDesiredAction(
     existing: ProjectionRecordV2 | undefined,
+    matchesExpected: boolean,
     leaf: LeafRecordV2,
     targetPath: string,
     targetRootPath: string,
     strategy: ChannelAdapter["strategy"],
   ): DeploymentAction["kind"] {
     if (!existing) {
-      return "create";
+      return matchesExpected ? "noop" : "create";
     }
 
     if (
+      !matchesExpected ||
       existing.contentHash !== leaf.contentHash ||
       existing.targetPath !== targetPath ||
       existing.targetRootPath !== targetRootPath ||
@@ -195,6 +323,203 @@ export class DeploymentPlannerV2 {
     }
 
     return "noop";
+  }
+
+  private async inspectTargetPath(
+    targetPath: string,
+    expectedSourcePath: string,
+    leaf: LeafRecordV2,
+    target: ChannelAdapter["target"],
+    strategy: ChannelAdapter["strategy"],
+    activeProjections: ProjectionRecordV2[],
+  ): Promise<{
+    exists: boolean;
+    matchesExpected: boolean;
+    foreign: boolean;
+    managedBySkillFlow: boolean;
+    managedProjection?: ProjectionRecordV2;
+    externalExactMatch: boolean;
+    identity?: { name: string; description: string };
+  }> {
+    const managedProjection = activeProjections.find(
+      (projection) => projection.target === target && projection.targetPath === targetPath,
+    );
+
+    try {
+      const stats = await fs.lstat(targetPath);
+      if (stats.isSymbolicLink()) {
+        const linked = await fs.readlink(targetPath);
+        const resolved = path.resolve(path.dirname(targetPath), linked);
+        const matchesExpected = resolved === expectedSourcePath;
+        return {
+          exists: true,
+          matchesExpected,
+          foreign: !matchesExpected,
+          managedBySkillFlow: Boolean(managedProjection),
+          ...(managedProjection ? { managedProjection } : {}),
+          ...(await this.buildExternalIdentityState(targetPath, leaf, managedProjection)),
+        };
+      }
+
+      const matchesExpected =
+        strategy === "copy" &&
+        this.matchesProjection(managedProjection, leaf.sourceId, leaf.id, target);
+      return {
+        exists: true,
+        matchesExpected,
+        foreign: !matchesExpected,
+        managedBySkillFlow: Boolean(managedProjection),
+        ...(managedProjection ? { managedProjection } : {}),
+        ...(await this.buildExternalIdentityState(targetPath, leaf, managedProjection)),
+      };
+    } catch {
+      return {
+        exists: false,
+        matchesExpected: false,
+        foreign: false,
+        managedBySkillFlow: Boolean(managedProjection),
+        ...(managedProjection ? { managedProjection } : {}),
+        externalExactMatch: false,
+      };
+    }
+  }
+
+  private async buildExternalIdentityState(
+    targetPath: string,
+    leaf: LeafRecordV2,
+    managedProjection: ProjectionRecordV2 | undefined,
+  ) {
+    const identity = !managedProjection ? await this.readSkillIdentity(targetPath) : undefined;
+    return {
+      externalExactMatch:
+        !managedProjection &&
+        identity?.name === leaf.linkName &&
+        identity.description === leaf.description,
+      ...(identity ? { identity } : {}),
+    };
+  }
+
+  private async readSkillIdentity(targetPath: string) {
+    try {
+      const raw = await fs.readFile(path.join(targetPath, "SKILL.md"), "utf8");
+      const lines = raw.split(/\r?\n/);
+      if (lines[0]?.trim() !== "---") {
+        return undefined;
+      }
+
+      const data: Record<string, string> = {};
+      let index = 1;
+      while (index < lines.length) {
+        const line = lines[index] ?? "";
+        if (line.trim() === "---") {
+          break;
+        }
+
+        const pair = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+        if (!pair) {
+          index += 1;
+          continue;
+        }
+
+        const key = pair[1];
+        const rest = pair[2];
+        if (!key || rest === undefined) {
+          index += 1;
+          continue;
+        }
+
+        if (rest === "|" || rest === ">") {
+          const blockLines: string[] = [];
+          index += 1;
+          while (index < lines.length) {
+            const blockLine = lines[index] ?? "";
+            if (blockLine.length === 0) {
+              blockLines.push("");
+              index += 1;
+              continue;
+            }
+            if (!blockLine.startsWith("  ")) {
+              break;
+            }
+            blockLines.push(blockLine.slice(2));
+            index += 1;
+          }
+          data[key] = blockLines.join("\n").trim();
+          continue;
+        }
+
+        data[key] = rest.trim();
+        index += 1;
+      }
+
+      const name = data.name?.trim();
+      const description = data.description?.trim();
+      if (!name || !description) {
+        return undefined;
+      }
+      return { name, description };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async resolveExternalRelocationTargetPath(
+    preferredTargetPath: string,
+    rootPath: string,
+    target: ChannelAdapter["target"],
+    activeProjections: ProjectionRecordV2[],
+  ): Promise<string | undefined> {
+    const currentLinkName = path.basename(preferredTargetPath);
+    for (const relocationLinkName of this.buildExternalRelocationLinkNames(currentLinkName)) {
+      const relocationTargetPath = path.join(rootPath, relocationLinkName);
+      if (await this.isExistingOrManagedTargetPath(relocationTargetPath, target, activeProjections)) {
+        continue;
+      }
+
+      return relocationTargetPath;
+    }
+
+    return undefined;
+  }
+
+  private buildExternalRelocationLinkNames(currentLinkName: string) {
+    return Array.from({ length: 12 }, (_, index) =>
+      index === 0 ? `${currentLinkName}-external` : `${currentLinkName}-external-${index + 1}`,
+    );
+  }
+
+  private async isExistingOrManagedTargetPath(
+    targetPath: string,
+    target: ChannelAdapter["target"],
+    activeProjections: ProjectionRecordV2[],
+  ): Promise<boolean> {
+    if (
+      activeProjections.some(
+        (projection) => projection.target === target && projection.targetPath === targetPath,
+      )
+    ) {
+      return true;
+    }
+
+    try {
+      await fs.lstat(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private matchesProjection(
+    projection: ProjectionRecordV2 | undefined,
+    sourceId: string,
+    leafId: string,
+    target: ChannelAdapter["target"],
+  ): boolean {
+    return (
+      projection?.sourceId === sourceId &&
+      projection.leafId === leafId &&
+      projection.target === target
+    );
   }
 
   private removeAction(

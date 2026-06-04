@@ -166,6 +166,8 @@ description: One.
         updatedAt: expect.any(String),
       }),
     ]);
+    expect(lockFile.projections.every((projection) => !("mode" in projection))).toBe(true);
+    expect("deployments" in lockFile).toBe(false);
     expect(await pathExists(targetPath)).toBe(false);
   });
 
