@@ -1,4 +1,5 @@
 import type {
+  CollectionsFileV2,
   ConfigBootStatus,
   DeploymentTargetId,
   DoctorReport,
@@ -12,7 +13,6 @@ import type {
   SharedPreferences,
   SourceUpdateResult,
   WorkflowSummary,
-  VirtualGroupsState,
 } from "@skill-flow/domain/types";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
@@ -23,7 +23,7 @@ type ConfigCoordinatorDeps = {
     init(): Promise<void>;
     readManifest(): Promise<Manifest>;
     readPreferences(): Promise<SharedPreferences>;
-    readVirtualGroups(): Promise<VirtualGroupsState>;
+    readCollections?: () => Promise<CollectionsFileV2>;
     writePreferences(preferences: SharedPreferences): Promise<void>;
   };
   recentProjectService: {
@@ -37,7 +37,7 @@ type ConfigCoordinatorDeps = {
       manifest: Manifest,
       lockFile: LockFile,
       audit?: DoctorReport,
-      virtualGroups?: VirtualGroupsState,
+      collections?: CollectionsFileV2,
     ): WorkflowSummary[];
   };
   getAvailableTargets(): Promise<DeploymentTargetId[]>;
@@ -113,12 +113,18 @@ export class ConfigCoordinator {
       level: "info",
       message: "Building config summaries...",
     });
-    const virtualGroups = await this.deps.store.readVirtualGroups();
+    if (!this.deps.store.readCollections) {
+      return fail({
+        code: "COLLECTIONS_STATE_READER_MISSING",
+        message: "Collections V2 state reader is not available.",
+      });
+    }
+    const collections = await this.deps.store.readCollections();
     const summaries = this.deps.workflowService.getSummaries(
       configData.data.manifest,
       configData.data.lockFile,
       audit.data,
-      virtualGroups,
+      collections,
     );
     const bootStatus: ConfigBootStatus = {
       phase: "success",

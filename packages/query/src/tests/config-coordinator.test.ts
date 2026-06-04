@@ -1,11 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 import type {
+  CollectionsFileV2,
   DoctorReport,
   DraftBinding,
   LockFile,
   Manifest,
   WorkflowSummary,
-  VirtualGroupsState,
 } from "@skill-flow/domain/types";
 import { ConfigCoordinator } from "../config-coordinator.js";
 
@@ -69,9 +69,10 @@ const audit: DoctorReport = {
   issues: [],
 };
 
-const emptyVirtualGroups: VirtualGroupsState = {
-  schemaVersion: 1,
-  groups: {},
+const emptyCollections: CollectionsFileV2 = {
+  schemaVersion: 2,
+  migrationGeneration: "mg_test",
+  collections: {},
 };
 
 const summaries: WorkflowSummary[] = [
@@ -116,6 +117,7 @@ describe("ConfigCoordinator", () => {
       ],
     };
 
+    const getSummaries = vi.fn().mockReturnValue(summaries);
     const coordinator = new ConfigCoordinator({
       store: {
         init: vi.fn().mockResolvedValue(undefined),
@@ -124,7 +126,7 @@ describe("ConfigCoordinator", () => {
           .fn()
           .mockResolvedValueOnce(initialPreferences)
           .mockResolvedValueOnce(refreshedPreferences),
-        readVirtualGroups: vi.fn().mockResolvedValue(emptyVirtualGroups),
+        readCollections: vi.fn().mockResolvedValue(emptyCollections),
         writePreferences: vi.fn().mockResolvedValue(undefined),
       },
       recentProjectService: {
@@ -134,7 +136,7 @@ describe("ConfigCoordinator", () => {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
       },
       workflowService: {
-        getSummaries: vi.fn().mockReturnValue(summaries),
+        getSummaries,
       },
       getAvailableTargets: vi.fn().mockResolvedValue(["codex"]),
       pruneMissingCheckouts: vi.fn().mockResolvedValue({
@@ -175,6 +177,7 @@ describe("ConfigCoordinator", () => {
     expect(result.data.recentProjects[0]?.projectId).toBe("acme/skill-flow");
     expect(result.data.selectedProjectScope).toEqual({ kind: "global" });
     expect(result.data.projectDrafts).toEqual({});
+    expect(getSummaries).toHaveBeenCalledWith(manifest, lockFile, audit, emptyCollections);
   });
 
   test("keeps config boot usable when prune removes missing groups", async () => {
@@ -191,7 +194,7 @@ describe("ConfigCoordinator", () => {
         init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
         readPreferences: vi.fn().mockResolvedValue(preferences),
-        readVirtualGroups: vi.fn().mockResolvedValue(emptyVirtualGroups),
+        readCollections: vi.fn().mockResolvedValue(emptyCollections),
         writePreferences: vi.fn().mockResolvedValue(undefined),
       },
       recentProjectService: {
@@ -261,7 +264,7 @@ describe("ConfigCoordinator", () => {
         init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
         readPreferences: vi.fn().mockResolvedValue(preferences),
-        readVirtualGroups: vi.fn().mockResolvedValue(emptyVirtualGroups),
+        readCollections: vi.fn().mockResolvedValue(emptyCollections),
         writePreferences: vi.fn().mockResolvedValue(undefined),
       },
       recentProjectService: {

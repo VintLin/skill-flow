@@ -1,11 +1,11 @@
 import type {
+  CollectionsFileV2,
   DoctorReport,
   HealthStatus,
   LeafRecord,
   LockFile,
   Manifest,
   SourceBinding,
-  VirtualGroupsState,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
 
@@ -14,13 +14,13 @@ export class WorkflowService {
     manifest: Manifest,
     lockFile: LockFile,
     audit?: DoctorReport,
-    virtualGroups?: VirtualGroupsState,
+    collections?: CollectionsFileV2 | object,
   ): WorkflowSummary[] {
     return manifest.sources.map((source) => {
       const lock = lockFile.sources.find((item) => item.id === source.id);
       const bindings = manifest.bindings[source.id] ?? ({ targets: {} } satisfies SourceBinding);
-      const leafs = this.resolveSourceLeafs(source, bindings, lockFile, manifest, virtualGroups);
-      const summarySource = this.resolveSummarySource(source, virtualGroups);
+      const leafs = this.resolveSourceLeafs(source, lockFile, manifest, collections);
+      const summarySource = this.resolveSummarySource(source, collections);
       const activeTargetCount = Object.values(bindings.targets).filter(
         (binding) => binding?.enabled,
       ).length;
@@ -59,12 +59,12 @@ export class WorkflowService {
 
   private resolveSummarySource(
     source: Manifest["sources"][number],
-    virtualGroups?: VirtualGroupsState,
+    collections?: CollectionsFileV2 | object,
   ): Manifest["sources"][number] {
     if (source.kind !== "virtual") {
       return source;
     }
-    const displayName = virtualGroups?.groups[source.id]?.displayName.trim();
+    const displayName = this.resolveCollectionRecord(collections, source.id)?.displayName.trim();
     if (!displayName) {
       return source;
     }
@@ -77,36 +77,44 @@ export class WorkflowService {
 
   private resolveSourceLeafs(
     source: Manifest["sources"][number],
-    binding: SourceBinding,
     lockFile: LockFile,
     manifest: Manifest,
-    virtualGroups?: VirtualGroupsState,
+    collections?: CollectionsFileV2 | object,
   ): LeafRecord[] {
     if (source.kind !== "virtual") {
       return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
     }
 
     const sourceTitlesById = new Map(manifest.sources.map((item) => [item.id, item.displayName]));
-    const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
-    const includedLeafIds = virtualGroups?.groups[source.id]?.includedSkills
-      .map((skill) => skill.leafId)
-      .filter((leafId) => existingLeafIds.has(leafId));
-    const selectedLeafIds = includedLeafIds ?? [
-      ...new Set([
-        ...(binding.selectedLeafIds ?? []),
-        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
-      ]),
-    ].filter((leafId) => existingLeafIds.has(leafId));
-    return selectedLeafIds
-      .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
-      .filter((leaf): leaf is LeafRecord => Boolean(leaf))
-      .map((leaf) => {
-        const sourceTitle = sourceTitlesById.get(leaf.sourceId);
-        return {
-          ...leaf,
-          ...(sourceTitle ? { sourceTitle } : {}),
-        };
-      });
+    const leafsById = new Map(lockFile.leafInventory.map((leaf) => [leaf.id, leaf]));
+    const collection = this.resolveCollectionRecord(collections, source.id);
+    if (!collection) {
+      return [];
+    }
+
+    return collection.members.flatMap((member): LeafRecord[] => {
+      const leaf = leafsById.get(member.snapshot.leafId);
+      if (!leaf) {
+        return [];
+      }
+      const sourceTitle = sourceTitlesById.get(member.origin.sourceId)
+        ?? member.origin.sourceLocator
+        ?? member.origin.canonicalLocator;
+      return [{
+        ...leaf,
+        sourceTitle,
+      }];
+    });
+  }
+
+  private resolveCollectionRecord(
+    collections: CollectionsFileV2 | object | undefined,
+    sourceId: string,
+  ) {
+    if (!collections || !("collections" in collections)) {
+      return undefined;
+    }
+    return (collections as CollectionsFileV2).collections[sourceId];
   }
 
   private resolveHealth(
