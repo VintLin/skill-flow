@@ -3,11 +3,70 @@ import fs from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
+import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import { SkillFlowApp } from "../runtime.js";
 import { createRepo, pathExists, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("project scoped drafts", () => {
   const sandbox = useSkillFlowSandbox();
+
+  test("applyDraft(project) writes v2 projectSourceDrafts without legacy preferences", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "alpha",
+      project: false,
+    });
+    expect(added.ok).toBe(true);
+    const store = new StateStoreV2(sandbox.stateRoot);
+    const state = await store.readState();
+    await store.writeState({
+      ...state,
+      preferences: {
+        ...state.preferences,
+        selectedProjectScope: { kind: "project", projectId: "repo-a" },
+        recentProjects: [{
+          projectId: "repo-a",
+          title: "Repo A",
+          lastActivityAt: "2026-06-05T00:00:00.000Z",
+          projectPath: repoPath,
+          tools: ["codex"],
+        }],
+      },
+    });
+    const legacyReadPreferences = vi
+      .spyOn(app.store, "readPreferences")
+      .mockRejectedValue(new Error("legacy readPreferences"));
+    const legacyWritePreferences = vi
+      .spyOn(app.store, "writePreferences")
+      .mockRejectedValue(new Error("legacy writePreferences"));
+
+    const applied = await app.applyDraft(
+      "alpha",
+      {
+        selectedLeafIds: ["alpha:skills/review"],
+        enabledTargets: ["codex"],
+      },
+      { kind: "project", projectId: "repo-a" },
+    );
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(legacyWritePreferences).not.toHaveBeenCalled();
+    const nextState = await store.readState();
+    expect(nextState.preferences.projectSourceDrafts["repo-a"]?.alpha).toEqual(
+      expect.objectContaining({
+        sourceId: "alpha",
+        selectedLeafIds: ["alpha:skills/review"],
+        enabledTargets: ["codex"],
+      }),
+    );
+  });
 
   test("bootstrapWorkspaceState returns recent projects and selected scope", async () => {
     vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([

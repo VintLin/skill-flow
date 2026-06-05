@@ -3877,11 +3877,11 @@ export class SkillFlowApp {
       };
     }
 
-    const { manifest, lockFile } = await this.store.readState();
-    const before = await this.captureSourceAuditSnapshot(manifest, lockFile, sourceId);
+    const beforeView = await this.readRuntimeAuthorityView();
+    const before = await this.captureSourceAuditSnapshot(beforeView.manifest, beforeView.lockFile, sourceId);
     const result = await this.applyDraftImpl(sourceId, draft, scope);
-    const { manifest: nextManifest, lockFile: nextLockFile } = await this.store.readState();
-    const after = await this.captureSourceAuditSnapshot(nextManifest, nextLockFile, sourceId);
+    const afterView = await this.readRuntimeAuthorityView();
+    const after = await this.captureSourceAuditSnapshot(afterView.manifest, afterView.lockFile, sourceId);
 
     return {
       result,
@@ -3901,7 +3901,8 @@ export class SkillFlowApp {
     scope: ProjectScope,
   ): Promise<Result<ApplyDraftResult>> {
     if (scope.kind === "project") {
-      const { manifest, lockFile } = await this.store.readState();
+      const runtimeView = await this.readRuntimeAuthorityView();
+      const { manifest, lockFile, preferences } = runtimeView;
       if (!manifest.sources.some((source) => source.id === sourceId)) {
         return fail({
           code: "SOURCE_NOT_FOUND",
@@ -3910,7 +3911,6 @@ export class SkillFlowApp {
       }
 
       this.normalizeBindings(manifest, lockFile);
-      const preferences = await this.store.readPreferences();
       const initialDrafts: Record<string, DraftBinding> = {
         [sourceId]: this.draftFromBinding(
           sourceId,
@@ -3938,7 +3938,7 @@ export class SkillFlowApp {
         ? ok({} as TargetRootOverrides)
         : await this.resolveProjectTargetRoots(scope, scopedTargets);
       if (!targetRootOverrides.ok) {
-        const preferencesAfterFailure = await this.store.readPreferences();
+        const preferencesAfterFailure = (await this.readRuntimeAuthorityView()).preferences;
         return {
           ok: false,
           data: {
@@ -4003,7 +4003,7 @@ export class SkillFlowApp {
           return fail(scopedApply.errors, scopedApply.warnings);
         }
 
-        await this.store.writePreferences(nextPreferences);
+        await this.writePreferencesV2FromView(nextPreferences);
         const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
         return ok(
           {
@@ -4016,7 +4016,7 @@ export class SkillFlowApp {
         );
       }
 
-      await this.store.writePreferences(nextPreferences);
+      await this.writePreferencesV2FromView(nextPreferences);
       const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
       return ok(
         {
@@ -6144,7 +6144,7 @@ export class SkillFlowApp {
     scope: Extract<ProjectScope, { kind: "project" }>,
     targets: DeploymentTargetId[],
   ): Promise<Result<TargetRootOverrides>> {
-    const preferences = await this.store.readPreferences();
+    const { preferences } = await this.readRuntimeAuthorityView();
     const resolved = await this.resolveProjectTargetRootOverrides(scope, targets, preferences);
     if (!resolved.ok && resolved.errors.some((error) => error.code === "PROJECT_SCOPE_PATH_UNAVAILABLE")) {
       await this.removeUnavailableProjectScope(scope.projectId, preferences);
@@ -6196,7 +6196,7 @@ export class SkillFlowApp {
     projectId: string,
     preferences?: SharedPreferences,
   ): Promise<void> {
-    const currentPreferences = preferences ?? await this.store.readPreferences();
+    const currentPreferences = preferences ?? (await this.readRuntimeAuthorityView()).preferences;
     if (
       !currentPreferences.recentProjects.some((project) => project.projectId === projectId) &&
       !(projectId in currentPreferences.projectDrafts) &&
@@ -6209,7 +6209,7 @@ export class SkillFlowApp {
     }
 
     const { [projectId]: _removedDrafts, ...remainingProjectDrafts } = currentPreferences.projectDrafts;
-    await this.store.writePreferences({
+    await this.writePreferencesV2FromView({
       ...currentPreferences,
       selectedProjectScope:
         currentPreferences.selectedProjectScope.kind === "project" &&
