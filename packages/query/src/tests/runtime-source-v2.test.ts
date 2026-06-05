@@ -372,4 +372,77 @@ describe.sequential("runtime source v2 write chain", () => {
       }),
     ]));
   });
+
+  test("repairTargets recreates managed target paths from v2 projections", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "repair-targets-source",
+      draft: {
+        selectedLeafIds: ["repair-targets-source:skills/review"],
+        enabledTargets: ["codex"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    await fs.rm(path.join(sandbox.targetsRoot, "codex", "review"), {
+      recursive: true,
+      force: true,
+    });
+    const legacyReadState = vi
+      .spyOn(app.store, "readState")
+      .mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi
+      .spyOn(app.store, "writeState")
+      .mockRejectedValue(new Error("legacy writeState"));
+
+    const repaired = await app.repairTargets(["repair-targets-source"]);
+
+    expect(repaired.ok).toBe(true);
+    if (!repaired.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    await expect(
+      pathExists(path.join(sandbox.targetsRoot, "codex", "review")),
+    ).resolves.toBe(true);
+    const rawLock = JSON.parse(
+      await fs.readFile(path.join(sandbox.stateRoot, "lock.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(rawLock.deployments).toBeUndefined();
+  });
+
+  test("repairSource refreshes v2 inventory without replanning targets", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "repair-source",
+      project: false,
+    });
+    expect(added.ok).toBe(true);
+    await writeRepoFiles(repoPath, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+    const legacyUpdate = vi
+      .spyOn(app.sourceService, "updateSources")
+      .mockRejectedValue(new Error("legacy updateSources"));
+
+    const repaired = await app.repairSource(["repair-source"]);
+
+    expect(repaired.ok).toBe(true);
+    if (!repaired.ok) {
+      return;
+    }
+    expect(legacyUpdate).not.toHaveBeenCalled();
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.lockFile.sources["repair-source"]?.leafIds).toEqual([
+      "repair-source:skills/one",
+      "repair-source:skills/two",
+    ]);
+    expect(state.lockFile.projections).toEqual([]);
+  });
 });

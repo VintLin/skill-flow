@@ -4174,10 +4174,11 @@ export class SkillFlowApp {
   private async repairTargetsImpl(
     sourceIds?: string[],
   ): Promise<Result<{ actions: DeploymentAction[] }>> {
-    const { manifest, lockFile } = await this.store.readState();
-    this.normalizeBindings(manifest, lockFile);
-    await this.ensureProjectionLedger(manifest, lockFile);
-    const warnings: Warning[] = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
+    const state = await this.stateStoreV2.readState();
+    const manifest = this.cloneManifestV2(state.manifest);
+    const lockFile = this.cloneLockFileV2(state.lockFile);
+    const preferences = projectStateV2ToView(state).preferences;
+    const warnings: Warning[] = [];
 
     const requestedIds = sourceIds?.length
       ? sourceIds
@@ -4193,35 +4194,27 @@ export class SkillFlowApp {
 
     const planSourceIds = requestedIds.filter(
       (sourceId) =>
-        this.hasActiveTargets(manifest, sourceId) ||
-        getManagedDeployments(lockFile).some((deployment) => deployment.sourceId === sourceId),
+        this.hasActiveTargetsV2(manifest, sourceId) ||
+        lockFile.projections.some((projection) =>
+          projection.sourceId === sourceId && projection.status === "active"
+        ),
     );
-    for (const sourceId of requestedIds) {
-      if (planSourceIds.includes(sourceId)) {
-        continue;
-      }
-      const sourceLock = lockFile.sources.find((source) => source.id === sourceId);
-      if (
-        sourceLock?.importMode === "bootstrap-detected" ||
-        (lockFile.projections ?? []).some(
-          (projection) =>
-            projection.sourceId === sourceId &&
-            projection.mode === "bootstrap-imported",
-        )
-      ) {
-        warnings.push({
-          code: "REPAIR_TARGETS_SKIPPED_BOOTSTRAP_IMPORTED",
-          message: `Skipped repair for bootstrap-imported source '${sourceId}' because it has no managed target bindings.`,
-        });
-      }
-    }
-    const planned = await this.planAndApplySources(manifest, lockFile, planSourceIds);
+    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences);
     if (!planned.ok) {
       return fail(planned.errors, [...warnings, ...planned.warnings]);
     }
+    const applier = new DeploymentApplierV2(this.createAdaptersForPreferences(preferences));
+    const applied = await applier.applyPlan(lockFile, planned.data.actions);
+    if (!applied.ok) {
+      return fail(applied.errors, [...warnings, ...planned.warnings, ...applied.warnings]);
+    }
 
-    await this.store.writeState(manifest, lockFile);
-    return ok({ actions: planned.data.actions }, [...warnings, ...planned.warnings]);
+    await this.stateStoreV2.writeState({
+      ...state,
+      manifest,
+      lockFile,
+    });
+    return ok({ actions: planned.data.actions }, [...warnings, ...planned.warnings, ...applied.warnings]);
   }
 
   async repairSource(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
@@ -4229,29 +4222,7 @@ export class SkillFlowApp {
   }
 
   private async repairSourceImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
-    const pruned = await this.pruneMissingCheckoutsImpl();
-    if (!pruned.ok) {
-      return fail(pruned.errors, pruned.warnings);
-    }
-
-    const requestedIds = sourceIds?.filter(
-      (sourceId) => !pruned.data.removedSourceIds.includes(sourceId),
-    );
-    if (sourceIds?.length && requestedIds?.length === 0) {
-      return ok({ updated: [] }, pruned.warnings);
-    }
-
-    const repaired = await this.sourceService.updateSources(requestedIds);
-    if (!repaired.ok) {
-      return repaired;
-    }
-
-    const { manifest, lockFile } = await this.store.readState();
-    this.applySourceUpdateResults(manifest, lockFile, repaired.data.updated);
-    await this.persistNormalizedBindings(manifest, lockFile);
-    await this.store.writeState(manifest, lockFile);
-
-    return ok(repaired.data, [...pruned.warnings, ...repaired.warnings]);
+    return this.sourceAuthorityServiceV2.updateSources(sourceIds);
   }
 
   async repairState(
