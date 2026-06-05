@@ -445,4 +445,41 @@ describe.sequential("runtime source v2 write chain", () => {
     ]);
     expect(state.lockFile.projections).toEqual([]);
   });
+
+  test("bootstrapWorkspaceState prunes missing v2 checkouts without legacy state", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "missing-checkout",
+      project: false,
+    });
+    expect(added.ok).toBe(true);
+    await fs.rm(path.join(sandbox.stateRoot, "source", "local", "missing-checkout"), {
+      recursive: true,
+      force: true,
+    });
+    const legacyReadState = vi
+      .spyOn(app.store, "readState")
+      .mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi
+      .spyOn(app.store, "writeState")
+      .mockRejectedValue(new Error("legacy writeState"));
+
+    const bootstrapped = await app.bootstrapWorkspaceState();
+
+    expect(bootstrapped.ok).toBe(true);
+    if (!bootstrapped.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.manifest.sources).toEqual([]);
+    expect(state.manifest.bindings).toEqual({});
+    expect(state.lockFile.sources).toEqual({});
+    expect(state.lockFile.leafInventory).toEqual([]);
+    expect(state.lockFile.projections).toEqual([]);
+  });
 });

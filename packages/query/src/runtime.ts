@@ -4821,31 +4821,33 @@ export class SkillFlowApp {
   }
 
   private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
-    const { manifest, lockFile } = await this.store.readState();
-    await this.ensureProjectionLedger(manifest, lockFile);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
+    const state = await this.stateStoreV2.readState();
     const removedSourceIds: string[] = [];
     const warnings: Warning[] = [];
 
-    for (const source of lockFile.sources) {
-      if (await pathExists(source.checkoutPath)) {
+    for (const source of state.manifest.sources) {
+      const lock = state.lockFile.sources[source.id];
+      if (!lock || await pathExists(lock.localPath)) {
         continue;
       }
 
       removedSourceIds.push(source.id);
       warnings.push({
         code: "SOURCE_CHECKOUT_MISSING",
-        message: `Removed ${source.displayName} because checkout is missing at ${source.checkoutPath}.`,
+        message: `Removed ${source.displayName} because checkout is missing at ${lock.localPath}.`,
       });
 
-      const projections = (lockFile.projections ?? []).filter(
+      const projections = state.lockFile.projections.filter(
         (projection) => projection.sourceId === source.id,
       );
       for (const projection of projections) {
         if (!(await pathExists(projection.targetPath))) {
           continue;
         }
-        if (!this.isProjectionPathManaged(lockFile, projection)) {
+        if (
+          !projection.targetRootPath ||
+          !isPathInside(projection.targetRootPath, projection.targetPath)
+        ) {
           warnings.push({
             code: "SOURCE_CHECKOUT_PRUNE_SKIPPED",
             message: `Skipped unmanaged deployment path ${projection.targetPath} while pruning ${source.displayName}.`,
@@ -4853,7 +4855,15 @@ export class SkillFlowApp {
           continue;
         }
         try {
-          if (!this.hasPersistentProjectionOwnerForPath(lockFile, projection)) {
+          const hasPersistentOwner = state.lockFile.projections.some((candidate) =>
+            candidate.targetPath === projection.targetPath &&
+            !(
+              candidate.sourceId === projection.sourceId &&
+              candidate.leafId === projection.leafId &&
+              candidate.target === projection.target
+            )
+          );
+          if (!hasPersistentOwner) {
             await removePath(projection.targetPath);
           }
         } catch (error) {
@@ -4866,28 +4876,38 @@ export class SkillFlowApp {
     }
 
     if (removedSourceIds.length === 0) {
-      if (orphanWarnings.length > 0) {
-        await this.store.writeState(manifest, lockFile);
-      }
-      return ok({ removedSourceIds: [] }, orphanWarnings);
+      return ok({ removedSourceIds: [] });
     }
 
-    manifest.sources = manifest.sources.filter((source) => !removedSourceIds.includes(source.id));
+    const nextBindings = { ...state.manifest.bindings };
     for (const sourceId of removedSourceIds) {
-      delete manifest.bindings[sourceId];
+      delete nextBindings[sourceId];
     }
-    lockFile.sources = lockFile.sources.filter((source) => !removedSourceIds.includes(source.id));
-    lockFile.leafInventory = lockFile.leafInventory.filter(
+    const nextLockSources = { ...state.lockFile.sources };
+    for (const sourceId of removedSourceIds) {
+      delete nextLockSources[sourceId];
+    }
+
+    await this.stateStoreV2.writeState({
+      ...state,
+      manifest: {
+        ...state.manifest,
+        sources: state.manifest.sources.filter((source) => !removedSourceIds.includes(source.id)),
+        bindings: nextBindings,
+      },
+      lockFile: {
+        ...state.lockFile,
+        sources: nextLockSources,
+        leafInventory: state.lockFile.leafInventory.filter(
       (leaf) => !removedSourceIds.includes(leaf.sourceId),
-    );
-    lockFile.projections = (lockFile.projections ?? []).filter(
+        ),
+        projections: state.lockFile.projections.filter(
       (projection) => !removedSourceIds.includes(projection.sourceId),
-    );
+        ),
+      },
+    });
 
-    await this.store.writeState(manifest, lockFile);
-    await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
-
-    return ok({ removedSourceIds }, [...orphanWarnings, ...warnings]);
+    return ok({ removedSourceIds }, warnings);
   }
 
   private async cleanupOrphanTargetSymlinks(
