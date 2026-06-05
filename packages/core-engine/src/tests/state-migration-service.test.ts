@@ -315,6 +315,7 @@ describe("state migration service", () => {
 
     expect(restoreSelection.bestEffort).toBe(true);
     expect(restoreSelection.selectedLeafIds).toContain("leaf-a");
+    expect(restoreSelection.enabledTargets).toEqual(["codex"]);
     expect(restoreSelection.selectedLeafIds).not.toContain("group-1:member-1");
     expect(restoreSelection.selectedLeafIds).not.toContain("source-a:missing-legacy-leaf");
     expect(restoreSelection.diagnostics).toContainEqual(
@@ -637,6 +638,7 @@ type CollectionsJson = {
         string,
         {
           selectedLeafIds: string[];
+          enabledTargets: string[];
           bestEffort: boolean;
           diagnostics: Array<Record<string, unknown>>;
         }

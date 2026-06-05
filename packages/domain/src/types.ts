@@ -1012,6 +1012,7 @@ export type SkillCollectionMemberV2 = {
 export type SkillCollectionRestoreSelectionV2 = {
   sourceId: SourceIdV2;
   selectedLeafIds: SkillLeafIdV2[];
+  enabledTargets: DeploymentTargetId[];
   bestEffort: boolean;
   diagnostics: DiagnosticV2[];
 };

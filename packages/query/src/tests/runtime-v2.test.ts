@@ -511,6 +511,147 @@ describe.sequential("runtime v2 authority reads", () => {
     await expectRawLockToBeV2Only(sandbox.stateRoot);
   });
 
+  test("mergeGroups and restoreMergedGroups use v2 collection state only", async () => {
+    await writeAuthorityState(sandbox.stateRoot, createMergeAuthorityState(sandbox));
+    await writeMergeSourceLeafFiles(sandbox);
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+    const legacyReadVirtualGroups = vi.spyOn(app.store, "readVirtualGroups").mockRejectedValue(new Error("legacy readVirtualGroups"));
+    const legacyWriteVirtualGroups = vi.spyOn(app.store, "writeVirtualGroups").mockRejectedValue(new Error("legacy writeVirtualGroups"));
+
+    const merged = await app.mergeGroups({
+      displayName: "Writing Stack",
+      sourceIds: ["repo", "beta"],
+      enabledTargets: ["codex"],
+    });
+
+    expect(merged.ok).toBe(true);
+    if (!merged.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(legacyReadVirtualGroups).not.toHaveBeenCalled();
+    expect(legacyWriteVirtualGroups).not.toHaveBeenCalled();
+    expect(merged.data.group).toEqual(expect.objectContaining({
+      id: "writing-stack",
+      hiddenSourceIds: ["repo", "beta"],
+      includedSkills: [
+        { sourceId: "repo", leafId: "repo:one" },
+        { sourceId: "repo", leafId: "repo:two" },
+        { sourceId: "beta", leafId: "beta:one" },
+      ],
+    }));
+
+    const mergedState = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(mergedState.manifest.bindings.repo).toEqual({
+      sourceId: "repo",
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
+    expect(mergedState.manifest.bindings.beta).toEqual({
+      sourceId: "beta",
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
+    expect(mergedState.collections.collections["writing-stack"]?.restoreSelections).toEqual({
+      repo: {
+        sourceId: "repo",
+        selectedLeafIds: ["repo:one"],
+        enabledTargets: ["codex"],
+        bestEffort: false,
+        diagnostics: [],
+      },
+      beta: {
+        sourceId: "beta",
+        selectedLeafIds: ["beta:one"],
+        enabledTargets: ["cursor"],
+        bestEffort: false,
+        diagnostics: [],
+      },
+    });
+    expect(mergedState.lockFile.sources["writing-stack"]?.leafIds).toEqual([
+      "writing-stack:member-1",
+      "writing-stack:member-2",
+      "writing-stack:member-3",
+    ]);
+    expect(mergedState.lockFile.projections.filter((projection) => projection.status === "active"))
+      .toEqual([
+        expect.objectContaining({
+          sourceId: "writing-stack",
+          leafId: "writing-stack:member-1",
+          target: "codex",
+        }),
+        expect.objectContaining({
+          sourceId: "writing-stack",
+          leafId: "writing-stack:member-2",
+          target: "codex",
+        }),
+        expect.objectContaining({
+          sourceId: "writing-stack",
+          leafId: "writing-stack:member-3",
+          target: "codex",
+        }),
+      ]);
+
+    const restored = await app.restoreMergedGroups("writing-stack");
+
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) {
+      return;
+    }
+    expect(restored.data).toEqual({
+      virtualGroupId: "writing-stack",
+      restoredSourceIds: ["repo", "beta"],
+      skippedSourceIds: [],
+    });
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(legacyReadVirtualGroups).not.toHaveBeenCalled();
+    expect(legacyWriteVirtualGroups).not.toHaveBeenCalled();
+
+    const restoredState = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(restoredState.manifest.sources.some((source) => source.id === "writing-stack")).toBe(false);
+    expect(restoredState.manifest.bindings["writing-stack"]).toBeUndefined();
+    expect(restoredState.lockFile.sources["writing-stack"]).toBeUndefined();
+    expect(restoredState.lockFile.leafInventory.some((leaf) => leaf.sourceId === "writing-stack")).toBe(false);
+    expect(restoredState.collections.collections["writing-stack"]).toBeUndefined();
+    expect(restoredState.manifest.bindings.repo).toEqual({
+      sourceId: "repo",
+      selectionMode: "selected",
+      selectedLeafIds: ["repo:one"],
+      enabledTargets: ["codex"],
+    });
+    expect(restoredState.manifest.bindings.beta).toEqual({
+      sourceId: "beta",
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets: ["cursor"],
+    });
+    expect(restoredState.lockFile.projections.filter((projection) => projection.status === "active"))
+      .toEqual([
+        expect.objectContaining({
+          sourceId: "repo",
+          leafId: "repo:one",
+          target: "codex",
+        }),
+        expect.objectContaining({
+          sourceId: "beta",
+          leafId: "beta:one",
+          target: "cursor",
+        }),
+      ]);
+    await expect(pathExists(path.join(sandbox.stateRoot, "source", "collection", "writing-stack"))).resolves.toBe(false);
+    await expect(pathExists(path.join(sandbox.stateRoot, "virtual-groups.json"))).resolves.toBe(false);
+    await expectRawLockToBeV2Only(sandbox.stateRoot);
+  });
+
   test("inspectSource fails on v1 authority instead of falling back", async () => {
     await writeV1AuthorityFiles(sandbox.stateRoot);
     const app = new SkillFlowApp();
@@ -636,10 +777,76 @@ function createAuthorityState(
   };
 }
 
-function createLeaf(id: string, linkName: string, sourceRoot: string): LockFileV2["leafInventory"][number] {
+function createMergeAuthorityState(
+  sandbox: ReturnType<typeof useSkillFlowSandbox>,
+): ReturnType<typeof createAuthorityState> {
+  const state = createAuthorityState(sandbox);
+  const betaRoot = path.join(sandbox.sandboxRoot, "sources", "beta");
+  state.manifest.sources.push({
+    id: "beta",
+    kind: "github",
+    locator: "https://github.com/acme/beta",
+    canonicalLocator: "github:acme/beta",
+    displayName: "Beta Repo",
+    enabled: true,
+    createdAt: "2026-06-04T00:00:00.000Z",
+    updatedAt: "2026-06-04T00:00:00.000Z",
+  });
+  state.manifest.bindings.beta = {
+    sourceId: "beta",
+    selectionMode: "selected",
+    selectedLeafIds: ["beta:one"],
+    enabledTargets: ["cursor"],
+  };
+  state.lockFile.sources.beta = {
+    sourceId: "beta",
+    canonicalLocator: "github:acme/beta",
+    revision: {
+      provider: "github",
+      commit: "def456",
+      capturedAt: "2026-06-04T00:00:00.000Z",
+    },
+    localPath: betaRoot,
+    leafIds: ["beta:one"],
+  };
+  state.lockFile.leafInventory.push(createLeaf("beta:one", "beta-one", betaRoot, "beta"));
+  state.lockFile.projections = [
+    {
+      target: "codex",
+      sourceId: "repo",
+      leafId: "repo:one",
+      targetPath: path.join(sandbox.targetsRoot, "codex", "one"),
+      targetRootPath: path.join(sandbox.targetsRoot, "codex"),
+      strategy: "symlink",
+      contentHash: "hash-one",
+      status: "active",
+      updatedAt: "2026-06-04T00:00:00.000Z",
+    },
+    {
+      target: "cursor",
+      sourceId: "beta",
+      leafId: "beta:one",
+      targetPath: path.join(sandbox.targetsRoot, "cursor", "beta-one"),
+      targetRootPath: path.join(sandbox.targetsRoot, "cursor"),
+      strategy: "symlink",
+      contentHash: "hash-beta-one",
+      status: "active",
+      updatedAt: "2026-06-04T00:00:00.000Z",
+    },
+  ];
+
+  return state;
+}
+
+function createLeaf(
+  id: string,
+  linkName: string,
+  sourceRoot: string,
+  sourceId = "repo",
+): LockFileV2["leafInventory"][number] {
   return {
     id,
-    sourceId: "repo",
+    sourceId,
     relativePath: linkName,
     linkName,
     title: linkName,
@@ -672,6 +879,12 @@ async function writeSourceLeafFiles(sandbox: ReturnType<typeof useSkillFlowSandb
     writeSkillFile(path.join(sourceRoot, "one"), "one", "one skill"),
     writeSkillFile(path.join(sourceRoot, "two"), "two", "two skill"),
   ]);
+}
+
+async function writeMergeSourceLeafFiles(sandbox: ReturnType<typeof useSkillFlowSandbox>): Promise<void> {
+  await writeSourceLeafFiles(sandbox);
+  const betaRoot = path.join(sandbox.sandboxRoot, "sources", "beta");
+  await writeSkillFile(path.join(betaRoot, "beta-one"), "beta-one", "beta one skill");
 }
 
 async function writeSkillFile(skillRoot: string, name: string, description: string): Promise<void> {

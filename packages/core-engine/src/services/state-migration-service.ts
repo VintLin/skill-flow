@@ -928,6 +928,7 @@ function buildRestoreSelections(
     selections[sourceId] = {
       sourceId,
       selectedLeafIds,
+      enabledTargets: [...snapshot.enabledTargets],
       bestEffort: diagnostics.length > 0,
       diagnostics,
     };

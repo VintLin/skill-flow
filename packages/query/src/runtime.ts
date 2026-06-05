@@ -657,13 +657,18 @@ export class SkillFlowApp {
       });
     }
 
-    const { manifest, lockFile } = await this.store.readState();
-    const virtualGroups = await this.store.readVirtualGroups();
+    const state = await this.stateStoreV2.readState();
+    const manifest = this.cloneManifestV2(state.manifest);
+    const lockFile = this.cloneLockFileV2(state.lockFile);
+    const collections: CollectionsFileV2 = {
+      ...state.collections,
+      collections: { ...state.collections.collections },
+    };
     const sources = sourceIds.map((sourceId) =>
       manifest.sources.find((source) => source.id === sourceId),
     );
     const missingSourceId = sourceIds.find((sourceId, index) =>
-      !sources[index] || sources[index]?.kind === "virtual",
+      !sources[index] || sources[index]?.kind === "collection",
     );
     if (missingSourceId) {
       return fail({
@@ -673,9 +678,7 @@ export class SkillFlowApp {
     }
 
     const includedSkills = sourceIds.flatMap((sourceId) =>
-      lockFile.leafInventory
-        .filter((leaf) => leaf.sourceId === sourceId)
-        .map((leaf) => ({ sourceId, leafId: leaf.id })),
+      (lockFile.sources[sourceId]?.leafIds ?? []).map((leafId) => ({ sourceId, leafId })),
     );
     if (includedSkills.length === 0) {
       return fail({
@@ -683,88 +686,147 @@ export class SkillFlowApp {
         message: "Virtual group must include at least one skill.",
       });
     }
-    const conflict = this.findVirtualSkillNameConflict(includedSkills, lockFile);
+    const validSkills = this.validateCollectionSkillRefs(includedSkills, manifest, lockFile);
+    if (!validSkills.ok) {
+      return fail(validSkills.errors, validSkills.warnings);
+    }
+    const conflict = this.findCollectionSkillNameConflict(validSkills.data, lockFile);
     if (conflict) {
       return fail(conflict);
     }
 
-    const id = this.uniqueVirtualSourceId(displayName, manifest, virtualGroups);
+    const id = this.uniqueCollectionSourceId(displayName, manifest, collections);
     const now = new Date().toISOString();
-    const selectedLeafIds = includedSkills.map((skill) => skill.leafId);
     const enabledTargets = [...new Set(options.enabledTargets)];
-    const source: Manifest["sources"][number] = {
+    const materialized = await this.materializeCollectionMembers(
       id,
-      locator: `virtual:${id}`,
-      kind: "virtual",
-      displayName,
-      originalDisplayName: displayName,
-      addedAt: now,
-      selectionMode: "all",
-    };
-    const binding = this.bindingFromDraft({
-      selectedLeafIds,
-      enabledTargets,
-    });
-    const restoreSnapshots: VirtualGroupRecord["restoreSnapshots"] = {};
-    for (const sourceId of sourceIds) {
-      const sourceToRestore = manifest.sources.find((item) => item.id === sourceId);
-      if (!sourceToRestore) {
-        continue;
-      }
-      restoreSnapshots[sourceId] = this.draftFromSourceBinding(
-        sourceToRestore,
-        manifest.bindings[sourceId] ?? { targets: {} },
-        lockFile,
-      );
+      validSkills.data,
+      manifest,
+      lockFile,
+      state.manifest.migrationGeneration,
+      now,
+    );
+    if (!materialized.ok) {
+      return fail(materialized.errors, materialized.warnings);
     }
 
-    const group: VirtualGroupRecord = {
+    const source: ManifestFileV2["sources"][number] = {
+      id,
+      kind: "collection",
+      locator: `collection:${id}`,
+      canonicalLocator: `collection:${id}`,
+      displayName,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const restoreSelections: SkillCollectionRecordV2["restoreSelections"] = {};
+    for (const sourceId of sourceIds) {
+      const sourceLock = lockFile.sources[sourceId];
+      const binding = manifest.bindings[sourceId];
+      if (!sourceLock || !binding) {
+        continue;
+      }
+      restoreSelections[sourceId] = {
+        sourceId,
+        selectedLeafIds: binding.selectionMode === "all"
+          ? [...sourceLock.leafIds]
+          : [...binding.selectedLeafIds],
+        enabledTargets: [...binding.enabledTargets],
+        bestEffort: false,
+        diagnostics: [],
+      };
+    }
+
+    const collection: SkillCollectionRecordV2 = {
       id,
       displayName,
-      includedSkills,
+      materializedSourceId: id,
+      members: materialized.data.members,
       hiddenSourceIds: sourceIds,
-      restoreSnapshots,
+      restoreSelections,
       createdAt: now,
       updatedAt: now,
     };
 
     manifest.sources.push(source);
-    manifest.bindings[id] = binding;
-    for (const sourceId of sourceIds) {
-      manifest.bindings[sourceId] = { selectedLeafIds: [], targets: {} };
-    }
-    const applied = await this.planAndApplySources(manifest, lockFile, [id, ...sourceIds]);
-    if (!applied.ok) {
-      return fail(applied.errors, applied.warnings);
-    }
-    await this.ensureProjectionLedger(manifest, lockFile);
-    const nextVirtualGroups: VirtualGroupsState = {
-      schemaVersion: 1,
-      groups: {
-        ...virtualGroups.groups,
-        [id]: group,
-      },
+    manifest.bindings[id] = {
+      sourceId: id,
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets,
     };
+    lockFile.sources[id] = {
+      sourceId: id,
+      canonicalLocator: `collection:${id}`,
+      revision: {
+        provider: "collection",
+        capturedAt: now,
+      },
+      localPath: materialized.data.collectionRoot,
+      leafIds: materialized.data.leafs.map((leaf) => leaf.id),
+    };
+    lockFile.leafInventory = [...lockFile.leafInventory, ...materialized.data.leafs];
+    collections.collections[id] = collection;
+    for (const sourceId of sourceIds) {
+      manifest.bindings[sourceId] = {
+        sourceId,
+        selectionMode: "selected",
+        selectedLeafIds: [],
+        enabledTargets: [],
+      };
+    }
+    const preferences = projectStateV2ToView({ ...state, manifest, lockFile }).preferences;
+    const plan = await this.planForSourcesV2(manifest, lockFile, [id, ...sourceIds], preferences);
+    if (!plan.ok) {
+      return fail(plan.errors, plan.warnings);
+    }
+    const applyResult = await new DeploymentApplierV2(this.createAdaptersForPreferences(preferences))
+      .applyPlan(lockFile, plan.data.actions);
+    if (!applyResult.ok) {
+      return fail(applyResult.errors, [...plan.warnings, ...applyResult.warnings]);
+    }
 
-    await this.store.writeState(manifest, lockFile);
-    await this.store.writeVirtualGroups(nextVirtualGroups);
+    await this.stateStoreV2.writeState({
+      ...state,
+      manifest,
+      lockFile,
+      collections,
+    });
 
-    return ok({ group, source, binding });
+    const view = projectStateV2ToView({ ...state, manifest, lockFile });
+    const group = this.collectionToVirtualGroupView(collection);
+    const viewSource = view.manifest.sources.find((item) => item.id === id) ?? {
+      id,
+      locator: `collection:${id}`,
+      kind: "virtual" as const,
+      displayName,
+      originalDisplayName: displayName,
+      addedAt: now,
+    };
+    const binding = view.manifest.bindings[id] ?? { selectedLeafIds: [], targets: {} };
+
+    return ok({ group, source: viewSource, binding }, [...plan.warnings, ...applyResult.warnings]);
   }
 
   private async restoreMergedGroupsImpl(
     virtualGroupId: string,
   ): Promise<Result<RestoreMergedGroupsResult>> {
-    const { manifest, lockFile } = await this.store.readState();
-    const virtualGroups = await this.store.readVirtualGroups();
-    const group = virtualGroups.groups[virtualGroupId];
-    if (!group) {
+    const state = await this.stateStoreV2.readState();
+    const manifest = this.cloneManifestV2(state.manifest);
+    const lockFile = this.cloneLockFileV2(state.lockFile);
+    const collections: CollectionsFileV2 = {
+      ...state.collections,
+      collections: { ...state.collections.collections },
+    };
+    const collection = collections.collections[virtualGroupId];
+    if (!collection) {
       return fail({
         code: "VIRTUAL_GROUP_NOT_FOUND",
         message: `Virtual group id '${virtualGroupId}' is not registered.`,
       });
     }
-    if (group.hiddenSourceIds.length === 0) {
+    if (collection.hiddenSourceIds.length === 0) {
       return fail({
         code: "VIRTUAL_GROUP_RESTORE_UNAVAILABLE",
         message: `Virtual group '${virtualGroupId}' does not have hidden source groups to restore.`,
@@ -773,39 +835,59 @@ export class SkillFlowApp {
 
     const restoredSourceIds: string[] = [];
     const skippedSourceIds: string[] = [];
-    for (const sourceId of group.hiddenSourceIds) {
+    for (const sourceId of collection.hiddenSourceIds) {
       const source = manifest.sources.find((item) => item.id === sourceId);
-      const snapshot = group.restoreSnapshots[sourceId];
-      if (!source || !snapshot) {
+      const sourceLock = lockFile.sources[sourceId];
+      const selection = collection.restoreSelections[sourceId];
+      if (!source || !sourceLock || !selection) {
         skippedSourceIds.push(sourceId);
         continue;
       }
-      manifest.bindings[sourceId] = this.bindingFromDraft(snapshot);
+      manifest.bindings[sourceId] = this.bindingV2FromRestoreSelection(selection, sourceLock.leafIds);
       restoredSourceIds.push(sourceId);
     }
 
-    manifest.bindings[virtualGroupId] = this.bindingFromDraft(EMPTY_DRAFT);
-    const applied = await this.planAndApplySources(manifest, lockFile, [
+    manifest.bindings[virtualGroupId] = {
+      sourceId: virtualGroupId,
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    };
+    const preferences = projectStateV2ToView({ ...state, manifest, lockFile }).preferences;
+    const plan = await this.planForSourcesV2(manifest, lockFile, [
       virtualGroupId,
       ...restoredSourceIds,
-    ]);
-    if (!applied.ok) {
-      return fail(applied.errors, applied.warnings);
+    ], preferences);
+    if (!plan.ok) {
+      return fail(plan.errors, plan.warnings);
     }
-    await this.ensureProjectionLedger(manifest, lockFile);
+    const applyResult = await new DeploymentApplierV2(this.createAdaptersForPreferences(preferences))
+      .applyPlan(lockFile, plan.data.actions);
+    if (!applyResult.ok) {
+      return fail(applyResult.errors, [...plan.warnings, ...applyResult.warnings]);
+    }
     manifest.sources = manifest.sources.filter((source) => source.id !== virtualGroupId);
     delete manifest.bindings[virtualGroupId];
-    const remainingGroups = { ...virtualGroups.groups };
-    delete remainingGroups[virtualGroupId];
-    const nextVirtualGroups: VirtualGroupsState = {
-      schemaVersion: 1,
-      groups: remainingGroups,
-    };
+    const collectionSource = lockFile.sources[virtualGroupId];
+    delete lockFile.sources[virtualGroupId];
+    lockFile.leafInventory = lockFile.leafInventory.filter((leaf) => leaf.sourceId !== virtualGroupId);
+    lockFile.projections = lockFile.projections.filter((projection) => projection.sourceId !== virtualGroupId);
+    delete collections.collections[virtualGroupId];
 
-    await this.store.writeState(manifest, lockFile);
-    await this.store.writeVirtualGroups(nextVirtualGroups);
+    await this.stateStoreV2.writeState({
+      ...state,
+      manifest,
+      lockFile,
+      collections,
+    });
+    if (collectionSource) {
+      await removePath(collectionSource.localPath);
+    }
 
-    return ok({ virtualGroupId, restoredSourceIds, skippedSourceIds });
+    return ok(
+      { virtualGroupId, restoredSourceIds, skippedSourceIds },
+      [...plan.warnings, ...applyResult.warnings],
+    );
   }
 
   async findSkills(query: string): Promise<Result<{ candidates: SkillCandidate[] }>> {
@@ -4537,12 +4619,32 @@ export class SkillFlowApp {
           sourceId,
           {
             selectedLeafIds: [...selection.selectedLeafIds],
-            enabledTargets: [],
+            enabledTargets: [...selection.enabledTargets],
           },
         ]),
       ),
       createdAt: collection.createdAt,
       updatedAt: collection.updatedAt,
+    };
+  }
+
+  private bindingV2FromRestoreSelection(
+    selection: SkillCollectionRecordV2["restoreSelections"][string],
+    sourceLeafIds: string[],
+  ): ManifestFileV2["bindings"][string] {
+    const sourceLeafIdSet = new Set(sourceLeafIds);
+    const selectedLeafIds = [...new Set(selection.selectedLeafIds)]
+      .filter((leafId) => sourceLeafIdSet.has(leafId));
+    const selectedLeafIdSet = new Set(selectedLeafIds);
+    const selectsEveryCurrentLeaf =
+      sourceLeafIds.length > 0 &&
+      sourceLeafIds.every((leafId) => selectedLeafIdSet.has(leafId));
+
+    return {
+      sourceId: selection.sourceId,
+      selectionMode: selectsEveryCurrentLeaf ? "all" : "selected",
+      selectedLeafIds: selectsEveryCurrentLeaf ? [] : selectedLeafIds,
+      enabledTargets: [...new Set(selection.enabledTargets)],
     };
   }
 
