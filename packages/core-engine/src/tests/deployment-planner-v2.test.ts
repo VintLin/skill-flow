@@ -385,6 +385,240 @@ describe("deployment planner v2", () => {
     ]);
   });
 
+  test("does not claim a normalized target path managed by another active projection", async () => {
+    const rootPath = await createTempRoot();
+    const manifest = createManifest({
+      selectionMode: "selected",
+      selectedLeafIds: ["source-a:one"],
+      enabledTargets: ["codex"],
+    });
+    const lockFile = createLockFile({
+      projections: [
+        {
+          target: "codex",
+          sourceId: "source-b",
+          leafId: "source-b:one",
+          targetPath: `${rootPath}${path.sep}nested${path.sep}..${path.sep}one`,
+          targetRootPath: rootPath,
+          strategy: "symlink",
+          contentHash: "hash-other",
+          status: "active",
+          updatedAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+    });
+    const planner = new DeploymentPlannerV2([
+      createAdapter({ target: "codex", rootPath }),
+    ]);
+
+    const result = await planner.planForSource("source-a", manifest, lockFile);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "create",
+        leafId: "source-a:one",
+        targetPath: path.join(rootPath, "Source A-one"),
+      }),
+    ]);
+  });
+
+  test("does not claim a target path managed by another active projection on another target", async () => {
+    const rootPath = await createTempRoot();
+    const manifest = createManifest({
+      selectionMode: "selected",
+      selectedLeafIds: ["source-a:one"],
+      enabledTargets: ["codex"],
+    });
+    const lockFile = createLockFile({
+      projections: [
+        {
+          target: "cursor",
+          sourceId: "source-b",
+          leafId: "source-b:one",
+          targetPath: path.join(rootPath, "one"),
+          targetRootPath: rootPath,
+          strategy: "symlink",
+          contentHash: "hash-other",
+          status: "active",
+          updatedAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+    });
+    const planner = new DeploymentPlannerV2([
+      createAdapter({ target: "codex", rootPath }),
+    ]);
+
+    const result = await planner.planForSource("source-a", manifest, lockFile);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "create",
+        leafId: "source-a:one",
+        targetPath: path.join(rootPath, "Source A-one"),
+      }),
+    ]);
+  });
+
+  test("updates copy projections when target contents cannot be verified against the source", async () => {
+    const rootPath = await createTempRoot();
+    await writeSkill(path.join(rootPath, "one"), {
+      name: "one",
+      description: "stale description",
+    });
+    const manifest = createManifest({
+      selectionMode: "selected",
+      selectedLeafIds: ["source-a:one"],
+      enabledTargets: ["codex"],
+    });
+    const lockFile = createLockFile({
+      projections: [
+        {
+          target: "codex",
+          sourceId: "source-a",
+          leafId: "source-a:one",
+          targetPath: path.join(rootPath, "one"),
+          targetRootPath: rootPath,
+          strategy: "copy",
+          contentHash: "hash-one",
+          status: "active",
+          updatedAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+    });
+    const planner = new DeploymentPlannerV2([
+      createAdapter({ target: "codex", rootPath, strategy: "copy" }),
+    ]);
+
+    const result = await planner.planForSource("source-a", manifest, lockFile);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "update",
+        leafId: "source-a:one",
+        targetPath: path.join(rootPath, "one"),
+      }),
+    ]);
+  });
+
+  test("plans create for unmanaged exact symlinks so V2 projections are recorded", async () => {
+    const rootPath = await createTempRoot();
+    const targetPath = path.join(rootPath, "one");
+    await fs.symlink("/sources/source-a/one", targetPath, "junction");
+    const manifest = createManifest({
+      selectionMode: "selected",
+      selectedLeafIds: ["source-a:one"],
+      enabledTargets: ["codex"],
+    });
+    const lockFile = createLockFile();
+    const planner = new DeploymentPlannerV2([
+      createAdapter({ target: "codex", rootPath }),
+    ]);
+
+    const result = await planner.planForSource("source-a", manifest, lockFile);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "create",
+        leafId: "source-a:one",
+        targetPath,
+      }),
+    ]);
+  });
+
+  test("relocation candidates reject paths owned by any active projection", async () => {
+    const rootPath = await createTempRoot();
+    await writeSkill(path.join(rootPath, "one"), {
+      name: "one",
+      description: "one description",
+    });
+    const manifest = createManifest({
+      selectionMode: "selected",
+      selectedLeafIds: ["source-a:one"],
+      enabledTargets: ["codex"],
+    });
+    const lockFile = createLockFile({
+      projections: [
+        {
+          target: "cursor",
+          sourceId: "source-b",
+          leafId: "source-b:one",
+          targetPath: path.join(rootPath, "one-external"),
+          targetRootPath: rootPath,
+          strategy: "symlink",
+          contentHash: "hash-other",
+          status: "active",
+          updatedAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+    });
+    const planner = new DeploymentPlannerV2([
+      createAdapter({ target: "codex", rootPath }),
+    ]);
+
+    const result = await planner.planForSource("source-a", manifest, lockFile);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "create",
+        leafId: "source-a:one",
+        targetPath: path.join(rootPath, "one"),
+        relocateExternalToTargetPath: path.join(rootPath, "one-external-2"),
+      }),
+    ]);
+  });
+
+  test("blocks adapter candidates that resolve outside the detected target root", async () => {
+    const rootPath = await createTempRoot();
+    const manifest = createManifest({
+      selectionMode: "selected",
+      selectedLeafIds: ["source-a:one"],
+      enabledTargets: ["codex"],
+    });
+    const lockFile = createLockFile();
+    const planner = new DeploymentPlannerV2([
+      createAdapter({
+        target: "codex",
+        rootPath,
+        resolveTargetPath: (_rootPath, linkName) =>
+          path.join(rootPath, "..", "outside", linkName),
+      }),
+    ]);
+
+    const result = await planner.planForSource("source-a", manifest, lockFile);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "blocked",
+        leafId: "source-a:one",
+        targetPath: path.join(rootPath, "..", "outside", "one"),
+      }),
+    ]);
+  });
+
   test("blocks desired leafs when the target is unavailable", async () => {
     const rootPath = "/targets/codex";
     const manifest = createManifest({
@@ -503,6 +737,7 @@ function createAdapter(options: {
   strategy?: DeploymentStrategy;
   available?: boolean;
   reason?: string;
+  resolveTargetPath?: (rootPath: string, linkName: string) => string;
 }): ChannelAdapter {
   const strategy = options.strategy ?? "symlink";
   return {
@@ -518,6 +753,9 @@ function createAdapter(options: {
       };
     },
     resolveTargetPath(rootPath: string, linkName: string): string {
+      if (options.resolveTargetPath) {
+        return options.resolveTargetPath(rootPath, linkName);
+      }
       return path.join(rootPath, linkName);
     },
   };

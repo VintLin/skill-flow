@@ -16,6 +16,7 @@ import {
   buildProjectedSkillNameCandidates,
   getHostedGitOwner,
 } from "@skill-flow/integration/utils/naming";
+import { hashDirectory, isPathInside } from "@skill-flow/integration/utils/fs";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 
 export class DeploymentPlannerV2 {
@@ -154,6 +155,9 @@ export class DeploymentPlannerV2 {
       const preferredTargetPath =
         targetPathCandidates[0]?.targetPath ?? adapter.resolveTargetPath(rootPath, leaf.linkName);
       const targetRootPath = rootPath;
+      const containedTargetPathCandidates = targetPathCandidates.filter((candidate) =>
+        isPathInside(rootPath, candidate.targetPath),
+      );
 
       if (!targetAvailable) {
         actions.push({
@@ -179,11 +183,12 @@ export class DeploymentPlannerV2 {
             relocateExternalToTargetPath?: string;
           }
         | undefined;
-      for (const candidate of targetPathCandidates) {
+      for (const candidate of containedTargetPathCandidates) {
         const diskState = await this.inspectTargetPath(
           candidate.targetPath,
           leaf.absolutePath,
           leaf,
+          sourceId,
           adapter.target,
           adapter.strategy,
           activeProjections,
@@ -204,7 +209,6 @@ export class DeploymentPlannerV2 {
             const relocationTargetPath = await this.resolveExternalRelocationTargetPath(
               preferredTargetPath,
               rootPath,
-              adapter.target,
               activeProjections,
             );
             if (relocationTargetPath) {
@@ -309,7 +313,7 @@ export class DeploymentPlannerV2 {
     strategy: ChannelAdapter["strategy"],
   ): DeploymentAction["kind"] {
     if (!existing) {
-      return matchesExpected ? "noop" : "create";
+      return "create";
     }
 
     if (
@@ -329,6 +333,7 @@ export class DeploymentPlannerV2 {
     targetPath: string,
     expectedSourcePath: string,
     leaf: LeafRecordV2,
+    sourceId: string,
     target: ChannelAdapter["target"],
     strategy: ChannelAdapter["strategy"],
     activeProjections: ProjectionRecordV2[],
@@ -341,9 +346,18 @@ export class DeploymentPlannerV2 {
     externalExactMatch: boolean;
     identity?: { name: string; description: string };
   }> {
-    const managedProjection = activeProjections.find(
-      (projection) => projection.target === target && projection.targetPath === targetPath,
+    const managedProjections = await this.findActiveProjectionOwners(
+      targetPath,
+      activeProjections,
     );
+    const blockingManagedProjection = managedProjections.find(
+      (projection) => !this.matchesProjection(projection, sourceId, leaf.id, target),
+    );
+    const managedProjection =
+      blockingManagedProjection ??
+      managedProjections.find((projection) =>
+        this.matchesProjection(projection, sourceId, leaf.id, target),
+      );
 
     try {
       const stats = await fs.lstat(targetPath);
@@ -363,12 +377,13 @@ export class DeploymentPlannerV2 {
 
       const matchesExpected =
         strategy === "copy" &&
-        this.matchesProjection(managedProjection, leaf.sourceId, leaf.id, target);
+        this.matchesProjection(managedProjection, sourceId, leaf.id, target) &&
+        (await this.copyTargetMatchesExpected(targetPath, expectedSourcePath, leaf.contentHash));
       return {
         exists: true,
         matchesExpected,
-        foreign: !matchesExpected,
-        managedBySkillFlow: Boolean(managedProjection),
+        foreign: !matchesExpected && !managedProjection,
+        managedBySkillFlow: managedProjections.length > 0,
         ...(managedProjection ? { managedProjection } : {}),
         ...(await this.buildExternalIdentityState(targetPath, leaf, managedProjection)),
       };
@@ -377,10 +392,26 @@ export class DeploymentPlannerV2 {
         exists: false,
         matchesExpected: false,
         foreign: false,
-        managedBySkillFlow: Boolean(managedProjection),
+        managedBySkillFlow: managedProjections.length > 0,
         ...(managedProjection ? { managedProjection } : {}),
         externalExactMatch: false,
       };
+    }
+  }
+
+  private async copyTargetMatchesExpected(
+    targetPath: string,
+    expectedSourcePath: string,
+    contentHash: string,
+  ): Promise<boolean> {
+    try {
+      const [targetHash, sourceHash] = await Promise.all([
+        hashDirectory(targetPath),
+        hashDirectory(expectedSourcePath),
+      ]);
+      return targetHash === contentHash && sourceHash === contentHash;
+    } catch {
+      return false;
     }
   }
 
@@ -466,13 +497,15 @@ export class DeploymentPlannerV2 {
   private async resolveExternalRelocationTargetPath(
     preferredTargetPath: string,
     rootPath: string,
-    target: ChannelAdapter["target"],
     activeProjections: ProjectionRecordV2[],
   ): Promise<string | undefined> {
     const currentLinkName = path.basename(preferredTargetPath);
     for (const relocationLinkName of this.buildExternalRelocationLinkNames(currentLinkName)) {
       const relocationTargetPath = path.join(rootPath, relocationLinkName);
-      if (await this.isExistingOrManagedTargetPath(relocationTargetPath, target, activeProjections)) {
+      if (!isPathInside(rootPath, relocationTargetPath)) {
+        continue;
+      }
+      if (await this.isExistingOrManagedTargetPath(relocationTargetPath, activeProjections)) {
         continue;
       }
 
@@ -490,14 +523,9 @@ export class DeploymentPlannerV2 {
 
   private async isExistingOrManagedTargetPath(
     targetPath: string,
-    target: ChannelAdapter["target"],
     activeProjections: ProjectionRecordV2[],
   ): Promise<boolean> {
-    if (
-      activeProjections.some(
-        (projection) => projection.target === target && projection.targetPath === targetPath,
-      )
-    ) {
+    if ((await this.findActiveProjectionOwners(targetPath, activeProjections)).length > 0) {
       return true;
     }
 
@@ -507,6 +535,28 @@ export class DeploymentPlannerV2 {
     } catch {
       return false;
     }
+  }
+
+  private async findActiveProjectionOwners(
+    targetPath: string,
+    activeProjections: ProjectionRecordV2[],
+  ): Promise<ProjectionRecordV2[]> {
+    const expectedPath = await this.resolvePhysicalTargetPath(targetPath);
+    const owners: ProjectionRecordV2[] = [];
+    for (const projection of activeProjections) {
+      const projectionPath = await this.resolvePhysicalTargetPath(projection.targetPath);
+      if (projectionPath === expectedPath) {
+        owners.push(projection);
+      }
+    }
+    return owners;
+  }
+
+  private async resolvePhysicalTargetPath(targetPath: string): Promise<string> {
+    const resolvedPath = path.resolve(targetPath);
+    const parentPath = path.dirname(resolvedPath);
+    const physicalParentPath = await fs.realpath(parentPath).catch(() => path.resolve(parentPath));
+    return path.join(physicalParentPath, path.basename(resolvedPath));
   }
 
   private matchesProjection(

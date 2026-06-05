@@ -359,6 +359,110 @@ description: One.
     expect(result.ok ? result.data.applied : []).toEqual([]);
     expect(lockFile.projections).toEqual([projection]);
   });
+
+  test("records projection when creating over an unmanaged exact symlink", async () => {
+    const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
+    const sourcePath = path.join(sandbox.sandboxRoot, "source-a", "one");
+    const targetPath = path.join(rootPath, "one");
+    const lockFile = createLockFile({ projections: [] });
+
+    await writeRepoFiles(sourcePath, {
+      "SKILL.md": `---
+name: one
+description: One.
+---
+`,
+    });
+    await fs.symlink(sourcePath, targetPath, "junction");
+
+    const applier = new DeploymentApplierV2({
+      trustedTargetRoots: {
+        codex: rootPath,
+      },
+    });
+    const result = await applier.applyPlan(lockFile, [
+      {
+        kind: "create",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        target: "codex",
+        strategy: "symlink",
+        sourcePath,
+        targetPath,
+        targetRootPath: rootPath,
+        contentHash: "hash-one",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(lockFile.projections).toEqual([
+      expect.objectContaining({
+        target: "codex",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        targetPath,
+        targetRootPath: rootPath,
+        strategy: "symlink",
+        contentHash: "hash-one",
+        status: "active",
+      }),
+    ]);
+    expect(await fs.realpath(targetPath)).toBe(await fs.realpath(sourcePath));
+  });
+
+  test("relocates external content before deploying to the reclaimed target path", async () => {
+    const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
+    const sourcePath = path.join(sandbox.sandboxRoot, "source-a", "one");
+    const targetPath = path.join(rootPath, "one");
+    const relocatedPath = path.join(rootPath, "one-external");
+    const lockFile = createLockFile({ projections: [] });
+
+    await writeRepoFiles(sourcePath, {
+      "SKILL.md": `---
+name: one
+description: One.
+---
+`,
+    });
+    await writeRepoFiles(targetPath, {
+      "SKILL.md": `---
+name: one
+description: External one.
+---
+`,
+    });
+
+    const applier = new DeploymentApplierV2({
+      trustedTargetRoots: {
+        codex: rootPath,
+      },
+    });
+    const result = await applier.applyPlan(lockFile, [
+      {
+        kind: "create",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        target: "codex",
+        strategy: "symlink",
+        sourcePath,
+        targetPath,
+        targetRootPath: rootPath,
+        relocateExternalToTargetPath: relocatedPath,
+        contentHash: "hash-one",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(await pathExists(relocatedPath)).toBe(true);
+    expect(await fs.readFile(path.join(relocatedPath, "SKILL.md"), "utf8")).toContain("External one.");
+    expect(await fs.realpath(targetPath)).toBe(await fs.realpath(sourcePath));
+    expect(lockFile.projections).toEqual([
+      expect.objectContaining({
+        targetPath,
+        status: "active",
+      }),
+    ]);
+  });
 });
 
 function createLockFile(options: {

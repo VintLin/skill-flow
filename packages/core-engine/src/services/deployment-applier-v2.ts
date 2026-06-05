@@ -103,6 +103,16 @@ export class DeploymentApplierV2 {
         await fs.rename(action.targetPath, action.relocateExternalToTargetPath);
       }
 
+      if (
+        action.strategy === "symlink" &&
+        !action.relocateExternalToTargetPath &&
+        (await this.isExactSymlink(action.targetPath, action.sourcePath))
+      ) {
+        this.upsertProjection(lockFile, action, "active");
+        applied.push(action);
+        continue;
+      }
+
       if (action.strategy === "symlink") {
         await createSymlink(action.sourcePath, action.targetPath);
       } else {
@@ -114,6 +124,20 @@ export class DeploymentApplierV2 {
     }
 
     return ok({ applied });
+  }
+
+  private async isExactSymlink(targetPath: string, sourcePath: string): Promise<boolean> {
+    try {
+      const stats = await fs.lstat(targetPath);
+      if (!stats.isSymbolicLink()) {
+        return false;
+      }
+
+      const linked = await fs.readlink(targetPath);
+      return path.resolve(path.dirname(targetPath), linked) === path.resolve(sourcePath);
+    } catch {
+      return false;
+    }
   }
 
   private async hasPersistentOwnerForPath(
