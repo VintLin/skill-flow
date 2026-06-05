@@ -256,6 +256,75 @@ describe.sequential("runtime v2 authority reads", () => {
     await expectRawLockToBeV2Only(sandbox.stateRoot);
   });
 
+  test("applyDraft records blocked v2 projections for unavailable targets", async () => {
+    const missingTargetRoot = path.join(sandbox.targetsRoot, "missing-target");
+    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox, {
+      lockFile: {
+        projections: [],
+      },
+      preferences: {
+        customTargets: [
+          {
+            id: "missing-target",
+            name: "Missing Target",
+            globalPath: missingTargetRoot,
+            projectPathTemplate: "",
+            strategy: "symlink",
+            createdAt: "2026-06-04T00:00:00.000Z",
+            updatedAt: "2026-06-04T00:00:00.000Z",
+          },
+        ],
+        agentDisplayOrder: ["missing-target"],
+      },
+    }));
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+
+    const applied = await app.applyDraft("repo", {
+      selectedLeafIds: ["repo:one"],
+      enabledTargets: ["missing-target"],
+    });
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(applied.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "blocked",
+        sourceId: "repo",
+        leafId: "repo:one",
+        target: "missing-target",
+        targetPath: path.join(missingTargetRoot, "one"),
+        targetRootPath: missingTargetRoot,
+      }),
+    ]);
+
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.manifest.bindings.repo).toEqual({
+      sourceId: "repo",
+      selectionMode: "selected",
+      selectedLeafIds: ["repo:one"],
+      enabledTargets: ["missing-target"],
+    });
+    expect(state.lockFile.projections).toEqual([
+      expect.objectContaining({
+        sourceId: "repo",
+        leafId: "repo:one",
+        target: "missing-target",
+        targetPath: path.join(missingTargetRoot, "one"),
+        targetRootPath: missingTargetRoot,
+        status: "blocked",
+      }),
+    ]);
+    await expectRawLockToBeV2Only(sandbox.stateRoot);
+  });
+
   test("inspectSource fails on v1 authority instead of falling back", async () => {
     await writeV1AuthorityFiles(sandbox.stateRoot);
     const app = new SkillFlowApp();
@@ -265,6 +334,7 @@ describe.sequential("runtime v2 authority reads", () => {
 });
 
 type AuthorityOverrides = {
+  lockFile?: Partial<LockFileV2>;
   preferences?: Partial<PreferencesFileV2>;
 };
 
@@ -359,6 +429,7 @@ function createAuthorityState(
           updatedAt: "2026-06-04T00:00:00.000Z",
         },
       ],
+      ...overrides.lockFile,
     },
     preferences: {
       schemaVersion: 2,
