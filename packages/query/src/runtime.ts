@@ -3751,9 +3751,9 @@ export class SkillFlowApp {
     displayName: string,
   ): Promise<Result<RenameSourceResult>> {
     const trimmedDisplayName = displayName.trim();
-    const { manifest, lockFile } = await this.store.readState();
-    const manifestSource = manifest.sources.find((source) => source.id === sourceId);
-    const lockSource = lockFile.sources.find((source) => source.id === sourceId);
+    const state = await this.stateStoreV2.readState();
+    const manifestSource = state.manifest.sources.find((source) => source.id === sourceId);
+    const lockSource = state.lockFile.sources[sourceId];
 
     if (!manifestSource || !lockSource) {
       return fail({
@@ -3762,28 +3762,20 @@ export class SkillFlowApp {
       });
     }
 
-    const originalDisplayName =
-      manifestSource.originalDisplayName ?? lockSource.originalDisplayName ?? manifestSource.displayName;
+    const originalDisplayName = deriveDisplayName(manifestSource.locator);
     const isResetToOriginal = trimmedDisplayName === "";
     const nextDisplayName = isResetToOriginal ? originalDisplayName : trimmedDisplayName;
-    const nextManifest: Manifest = {
-      ...manifest,
-      sources: manifest.sources.map((source) =>
-        source.id === sourceId
-          ? { ...source, displayName: nextDisplayName, originalDisplayName }
-          : source,
-      ),
-    };
-    const nextLockFile: LockFile = {
-      ...lockFile,
-      sources: lockFile.sources.map((source) =>
-        source.id === sourceId
-          ? { ...source, displayName: nextDisplayName, originalDisplayName }
-          : source,
-      ),
-    };
-
-    await this.store.writeState(nextManifest, nextLockFile);
+    await this.stateStoreV2.writeState({
+      ...state,
+      manifest: {
+        ...state.manifest,
+        sources: state.manifest.sources.map((source) =>
+          source.id === sourceId
+            ? { ...source, displayName: nextDisplayName, updatedAt: new Date().toISOString() }
+            : source,
+        ),
+      },
+    });
     return ok({
       sourceId,
       displayName: nextDisplayName,
@@ -4325,15 +4317,19 @@ export class SkillFlowApp {
       warnings: string[];
     }>
   > {
-    const { manifest, lockFile } = await this.store.readState();
-    await this.ensureProjectionLedger(manifest, lockFile);
+    const state = await this.stateStoreV2.readState();
     const warnings: string[] = [];
     const removedRefs = sourceIds
-      .map((sourceId) => manifest.sources.find((source) => source.id === sourceId))
-      .filter((source): source is Manifest["sources"][number] => Boolean(source));
+      .map((sourceId) => state.manifest.sources.find((source) => source.id === sourceId))
+      .filter((source): source is ManifestFileV2["sources"][number] => Boolean(source))
+      .map((source) => ({
+        id: source.id,
+        locator: source.locator,
+        displayName: source.displayName,
+      }));
 
     for (const sourceId of sourceIds) {
-      const projections = (lockFile.projections ?? []).filter(
+      const projections = state.lockFile.projections.filter(
         (projection) => projection.sourceId === sourceId,
       );
 
@@ -4341,28 +4337,30 @@ export class SkillFlowApp {
         if (!(await pathExists(projection.targetPath))) {
           continue;
         }
-        if (!this.isProjectionPathManaged(lockFile, projection)) {
+        if (
+          !projection.targetRootPath ||
+          !isPathInside(projection.targetRootPath, projection.targetPath)
+        ) {
           warnings.push(`Refusing to remove unmanaged target path ${projection.targetPath}.`);
           continue;
         }
         try {
-          if (!this.hasPersistentProjectionOwnerForPath(lockFile, projection)) {
+          const hasPersistentOwner = state.lockFile.projections.some((candidate) =>
+            candidate.targetPath === projection.targetPath &&
+            !(
+              candidate.sourceId === projection.sourceId &&
+              candidate.leafId === projection.leafId &&
+              candidate.target === projection.target
+            )
+          );
+          if (!hasPersistentOwner) {
             await removePath(projection.targetPath);
           }
         } catch (error) {
           warnings.push(`Unable to remove ${projection.targetPath}: ${String(error)}`);
         }
       }
-
-      lockFile.projections = (lockFile.projections ?? []).filter(
-        (projection) => projection.sourceId !== sourceId,
-      );
     }
-
-    const detachedWarnings = await this.cleanupDetachedTargetSymlinksForSources(lockFile, sourceIds);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
-    warnings.push(...detachedWarnings.map((warning) => warning.message));
-    warnings.push(...orphanWarnings.map((warning) => warning.message));
 
     if (warnings.length > 0) {
       return fail(
@@ -4379,7 +4377,7 @@ export class SkillFlowApp {
 
     let removed;
     try {
-      removed = await this.sourceService.removeSource(sourceIds);
+      removed = await this.sourceAuthorityServiceV2.removeSource(sourceIds);
     } catch (error) {
       return fail({
         code: "GROUP_DELETE_INCOMPLETE",

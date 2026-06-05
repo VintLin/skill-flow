@@ -230,4 +230,80 @@ describe.sequential("runtime source v2 write chain", () => {
     expect(state.lockFile.leafInventory).toEqual([]);
     expect(state.lockFile.projections).toEqual([]);
   });
+
+  test("renameSource updates v2 manifest without legacy state reads or writes", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "rename-source",
+      project: false,
+    });
+    expect(added.ok).toBe(true);
+    const legacyReadState = vi
+      .spyOn(app.store, "readState")
+      .mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi
+      .spyOn(app.store, "writeState")
+      .mockRejectedValue(new Error("legacy writeState"));
+
+    const renamed = await app.renameSource("rename-source", "Renamed Source");
+
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(renamed.data.displayName).toBe("Renamed Source");
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.manifest.sources.find((source) => source.id === "rename-source")?.displayName)
+      .toBe("Renamed Source");
+  });
+
+  test("uninstall removes v2 source and managed projections without legacy source service", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "remove-source",
+      draft: {
+        selectedLeafIds: ["remove-source:skills/review"],
+        enabledTargets: ["codex"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    await expect(
+      pathExists(path.join(sandbox.targetsRoot, "codex", "review")),
+    ).resolves.toBe(true);
+    const legacyReadState = vi
+      .spyOn(app.store, "readState")
+      .mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi
+      .spyOn(app.store, "writeState")
+      .mockRejectedValue(new Error("legacy writeState"));
+    const legacyRemove = vi
+      .spyOn(app.sourceService, "removeSource")
+      .mockRejectedValue(new Error("legacy removeSource"));
+
+    const removed = await app.uninstall(["remove-source"]);
+
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(legacyRemove).not.toHaveBeenCalled();
+    expect(removed.data.removed).toEqual(["remove-source"]);
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.manifest.sources).toEqual([]);
+    expect(state.lockFile.sources).toEqual({});
+    expect(state.lockFile.projections).toEqual([]);
+    await expect(
+      pathExists(path.join(sandbox.targetsRoot, "codex", "review")),
+    ).resolves.toBe(false);
+  });
 });
