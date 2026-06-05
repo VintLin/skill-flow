@@ -1,11 +1,15 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import type { DeploymentTargetName, LockFile, Manifest } from "@skill-flow/domain/types";
 import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { getTargetScanRoots, TARGET_DEFINITIONS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
-import { hashDirectory, pathExists, readJsonFile } from "@skill-flow/integration/utils/fs";
+import { hashDirectory, pathExists } from "@skill-flow/integration/utils/fs";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
+import {
+  type AgentsOrigin,
+  type AgentsOriginReader,
+  createAgentsOriginReader,
+} from "./agents-origin-reader.js";
 
 export type BootstrapEvent = {
   phase:
@@ -42,28 +46,19 @@ export type LocalSkillScanResult = DetectedExternalSkill & {
   description: string;
 };
 
-type AgentsLockFile = {
-  skills?: Record<
-    string,
-    {
-      source?: string;
-      sourceType?: string;
-      sourceUrl?: string;
-      skillPath?: string;
-      branch?: string;
-      sourceBranch?: string;
-    }
-  >;
-};
-
-type AgentsOrigin = {
-  originLocator: string | undefined;
-  originRequestedPath: string | undefined;
-  originBranch: string | undefined;
+export type WorkspaceBootstrapServiceOptions = {
+  stateRoot: string;
+  agentsOriginReader?: AgentsOriginReader;
 };
 
 export class WorkspaceBootstrapService {
-  constructor(private readonly stateRoot: string) {}
+  private readonly stateRoot: string;
+  private readonly agentsOriginReader: AgentsOriginReader;
+
+  constructor(options: WorkspaceBootstrapServiceOptions) {
+    this.stateRoot = options.stateRoot;
+    this.agentsOriginReader = options.agentsOriginReader ?? createAgentsOriginReader();
+  }
 
   async detectUnmanagedExternalSkills(
     manifest: Manifest,
@@ -81,7 +76,7 @@ export class WorkspaceBootstrapService {
     const managedTargetPaths = new Set(
       getManagedDeployments(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
     );
-    const agentsOrigins = await this.readAgentsOrigins();
+    const agentsOrigins = await this.agentsOriginReader.readAgentsLockOrigins();
     const grouped = new Map<
       string,
       {
@@ -265,36 +260,5 @@ export class WorkspaceBootstrapService {
       : descriptionLine?.[1]?.trim() ?? "";
 
     return { title, description };
-  }
-
-  private async readAgentsOrigins(): Promise<Map<string, AgentsOrigin>> {
-    const lockPath = path.join(os.homedir(), ".agents", ".skill-lock.json");
-    const lockFile = await readJsonFile<AgentsLockFile>(lockPath, {});
-    const results = new Map<string, AgentsOrigin>();
-
-    for (const [name, record] of Object.entries(lockFile.skills ?? {})) {
-      if (!record || record.sourceType !== "github") {
-        continue;
-      }
-      results.set(name, {
-        originLocator: record.source ? `https://github.com/${record.source}.git` : undefined,
-        originRequestedPath: record.skillPath,
-        originBranch: record.branch ?? record.sourceBranch ?? this.parseBranchFromSourceUrl(record.sourceUrl),
-      });
-    }
-
-    return results;
-  }
-
-  private parseBranchFromSourceUrl(sourceUrl?: string) {
-    if (!sourceUrl) {
-      return undefined;
-    }
-    const treeIndex = sourceUrl.indexOf("/tree/");
-    if (treeIndex === -1) {
-      return undefined;
-    }
-    const tail = sourceUrl.slice(treeIndex + "/tree/".length);
-    return tail.split("/")[0] || undefined;
   }
 }

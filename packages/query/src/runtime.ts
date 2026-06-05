@@ -308,7 +308,7 @@ export class SkillFlowApp {
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
     this.recentProjectService = new RecentProjectService();
-    this.workspaceBootstrapService = new WorkspaceBootstrapService(this.stateStoreV2.rootPath);
+    this.workspaceBootstrapService = new WorkspaceBootstrapService({ stateRoot: this.stateStoreV2.rootPath });
     this.configCoordinator = new ConfigCoordinator({
       store: {
         readManifest: async () => (await this.readRuntimeAuthorityView()).manifest,
