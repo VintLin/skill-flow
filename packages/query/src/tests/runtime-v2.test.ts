@@ -1,0 +1,322 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { describe, expect, test, vi } from "vitest";
+import type {
+  CollectionsFileV2,
+  LockFileV2,
+  ManifestFileV2,
+  PreferencesFileV2,
+} from "@skill-flow/domain/types";
+import { StateStoreV2, StateStoreV2Error } from "@skill-flow/storage/state-store-v2";
+import { SkillFlowApp } from "../runtime.js";
+import { useSkillFlowSandbox } from "./test-helpers.js";
+
+describe.sequential("runtime v2 authority reads", () => {
+  const sandbox = useSkillFlowSandbox();
+
+  test("inspectSource reads summary leafs binding and active deployments from v2 authority", async () => {
+    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+
+    const inspected = await app.inspectSource("repo");
+
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(inspected.data.source.displayName).toBe("V2 Repo");
+    expect(inspected.data.summary.source.displayName).toBe("V2 Repo");
+    expect(inspected.data.leafs.map((leaf) => leaf.id)).toEqual(["repo:one", "repo:two"]);
+    expect(inspected.data.binding).toEqual({
+      selectedLeafIds: ["repo:one"],
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: ["repo:one"],
+        },
+      },
+    });
+    expect(inspected.data.deployments).toEqual([
+      expect.objectContaining({
+        sourceId: "repo",
+        leafId: "repo:one",
+        target: "codex",
+        status: "active",
+      }),
+    ]);
+    expect(inspected.data.deployments).toHaveLength(1);
+  });
+
+  test("inspectSource uses v2 projected project drafts for scoped inspect", async () => {
+    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox, {
+      preferences: {
+        selectedProjectScope: { kind: "project", projectId: "project-a" },
+        recentProjects: [
+          {
+            projectId: "project-a",
+            title: "Project A",
+            lastActivityAt: "2026-06-04T00:00:00.000Z",
+            projectPath: sandbox.sandboxRoot,
+          },
+        ],
+        projectSourceDrafts: {
+          "project-a": {
+            repo: {
+              sourceId: "repo",
+              selectedLeafIds: ["repo:two"],
+              enabledTargets: ["cursor"],
+              updatedAt: "2026-06-04T00:00:00.000Z",
+            },
+          },
+        },
+      },
+    }));
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+
+    const inspected = await app.inspectSource("repo", { kind: "project", projectId: "project-a" });
+
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(inspected.data.binding).toEqual({
+      selectedLeafIds: ["repo:two"],
+      targets: {
+        cursor: {
+          enabled: true,
+          leafIds: ["repo:two"],
+        },
+      },
+    });
+    expect(inspected.data.deployments).toEqual([]);
+  });
+
+  test("previewDraft plans from v2 authority without reading legacy state", async () => {
+    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+
+    const preview = await app.previewDraft("repo", {
+      selectedLeafIds: ["repo:one", "repo:two"],
+      enabledTargets: ["codex"],
+    });
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(preview.data.manifest.bindings.repo).toEqual({
+      selectedLeafIds: ["repo:one", "repo:two"],
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: ["repo:one", "repo:two"],
+        },
+      },
+    });
+    expect(preview.data.plan.actions).toEqual([
+      expect.objectContaining({
+        kind: "update",
+        sourceId: "repo",
+        leafId: "repo:one",
+        target: "codex",
+      }),
+      expect.objectContaining({
+        kind: "create",
+        sourceId: "repo",
+        leafId: "repo:two",
+        target: "codex",
+        targetPath: path.join(sandbox.targetsRoot, "codex", "two"),
+      }),
+    ]);
+  });
+
+  test("inspectSource fails on v1 authority instead of falling back", async () => {
+    await writeV1AuthorityFiles(sandbox.stateRoot);
+    const app = new SkillFlowApp();
+
+    await expect(app.inspectSource("repo")).rejects.toBeInstanceOf(StateStoreV2Error);
+  });
+});
+
+type AuthorityOverrides = {
+  preferences?: Partial<PreferencesFileV2>;
+};
+
+function createAuthorityState(
+  sandbox: ReturnType<typeof useSkillFlowSandbox>,
+  overrides: AuthorityOverrides = {},
+): {
+  manifest: ManifestFileV2;
+  lockFile: LockFileV2;
+  preferences: PreferencesFileV2;
+  collections: CollectionsFileV2;
+} {
+  const migrationGeneration = "mg_runtime_v2";
+  const sourceRoot = path.join(sandbox.sandboxRoot, "sources", "repo");
+  return {
+    manifest: {
+      schemaVersion: 2,
+      migrationGeneration,
+      sources: [
+        {
+          id: "repo",
+          kind: "github",
+          locator: "https://github.com/acme/repo",
+          canonicalLocator: "github:acme/repo",
+          displayName: "V2 Repo",
+          enabled: true,
+          createdAt: "2026-06-04T00:00:00.000Z",
+          updatedAt: "2026-06-04T00:00:00.000Z",
+        },
+      ],
+      bindings: {
+        repo: {
+          sourceId: "repo",
+          selectionMode: "selected",
+          selectedLeafIds: ["repo:one"],
+          enabledTargets: ["codex"],
+        },
+      },
+    },
+    lockFile: {
+      schemaVersion: 2,
+      migrationGeneration,
+      sources: {
+        repo: {
+          sourceId: "repo",
+          canonicalLocator: "github:acme/repo",
+          revision: {
+            provider: "github",
+            commit: "abc123",
+            capturedAt: "2026-06-04T00:00:00.000Z",
+          },
+          localPath: sourceRoot,
+          leafIds: ["repo:one", "repo:two"],
+        },
+      },
+      leafInventory: [
+        createLeaf("repo:one", "one", sourceRoot),
+        createLeaf("repo:two", "two", sourceRoot),
+      ],
+      projections: [
+        {
+          target: "codex",
+          sourceId: "repo",
+          leafId: "repo:one",
+          targetPath: path.join(sandbox.targetsRoot, "codex", "one"),
+          targetRootPath: path.join(sandbox.targetsRoot, "codex"),
+          strategy: "symlink",
+          contentHash: "hash-one",
+          status: "active",
+          updatedAt: "2026-06-04T00:00:00.000Z",
+        },
+        {
+          target: "cursor",
+          sourceId: "repo",
+          leafId: "repo:one",
+          targetPath: path.join(sandbox.targetsRoot, "cursor", "one"),
+          targetRootPath: path.join(sandbox.targetsRoot, "cursor"),
+          strategy: "symlink",
+          contentHash: "hash-one",
+          status: "removed",
+          updatedAt: "2026-06-04T00:00:00.000Z",
+        },
+        {
+          target: "claude-code",
+          sourceId: "repo",
+          leafId: "repo:two",
+          targetPath: path.join(sandbox.targetsRoot, "claude", "two"),
+          targetRootPath: path.join(sandbox.targetsRoot, "claude"),
+          strategy: "symlink",
+          contentHash: "hash-two",
+          status: "blocked",
+          updatedAt: "2026-06-04T00:00:00.000Z",
+        },
+      ],
+    },
+    preferences: {
+      schemaVersion: 2,
+      migrationGeneration,
+      pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" },
+      recentProjects: [],
+      projectSourceDrafts: {},
+      customTargets: [],
+      agentDisplayOrder: [],
+      ...overrides.preferences,
+    },
+    collections: {
+      schemaVersion: 2,
+      migrationGeneration,
+      collections: {},
+    },
+  };
+}
+
+function createLeaf(id: string, linkName: string, sourceRoot: string): LockFileV2["leafInventory"][number] {
+  return {
+    id,
+    sourceId: "repo",
+    relativePath: linkName,
+    linkName,
+    title: linkName,
+    description: `${linkName} skill`,
+    absolutePath: path.join(sourceRoot, linkName),
+    skillFilePath: path.join(sourceRoot, linkName, "SKILL.md"),
+    displayName: linkName,
+    contentHash: `hash-${linkName}`,
+    selectors: { legacyAliases: [] },
+    valid: true,
+    diagnostics: [],
+  };
+}
+
+async function writeAuthorityState(
+  stateRoot: string,
+  state: {
+    manifest: ManifestFileV2;
+    lockFile: LockFileV2;
+    preferences: PreferencesFileV2;
+    collections: CollectionsFileV2;
+  },
+): Promise<void> {
+  await new StateStoreV2(stateRoot).writeState(state);
+}
+
+async function writeV1AuthorityFiles(stateRoot: string): Promise<void> {
+  await fs.mkdir(stateRoot, { recursive: true });
+  await Promise.all([
+    fs.writeFile(path.join(stateRoot, "manifest.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [],
+      bindings: {},
+    })}\n`, "utf8"),
+    fs.writeFile(path.join(stateRoot, "lock.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      sources: [],
+      leafInventory: [],
+      deployments: [],
+    })}\n`, "utf8"),
+    fs.writeFile(path.join(stateRoot, "preferences.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      pinnedSourceIds: [],
+      projectDrafts: {},
+    })}\n`, "utf8"),
+    fs.writeFile(path.join(stateRoot, "collections.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      collections: {},
+    })}\n`, "utf8"),
+  ]);
+}

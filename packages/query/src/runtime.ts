@@ -33,6 +33,8 @@ import type {
   LocalScanGroupStatus,
   LocalScanImportChoice,
   LocalScanSkillVariant,
+  LockFileV2,
+  ManifestFileV2,
   ProjectScope,
   ProjectionRecord,
   RecentProject,
@@ -126,6 +128,8 @@ import {
 } from "@skill-flow/core-engine/services/state-migration-service";
 import { WorkflowService } from "./workflow-service.js";
 import type { StateMigrationStatus } from "@skill-flow/storage/state-schema-v2";
+import type { StateStoreV2State } from "@skill-flow/storage/state-store-v2";
+import { projectStateV2ToView, type StateV2AuthorityView } from "./state-v2-view.js";
 import type {
   AddSourceOptions,
   SourcePreview,
@@ -136,6 +140,7 @@ import {
   type BootstrapEvent,
   type LocalSkillScanResult,
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
+import { DeploymentPlannerV2 } from "@skill-flow/core-engine/services/deployment-planner-v2";
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
 
@@ -194,6 +199,10 @@ type ApplyDraftResult = {
   recentProjects?: RecentProject[];
   selectedProjectScope?: ProjectScope;
   projectDrafts?: SharedPreferences["projectDrafts"];
+};
+type RuntimeAuthoritySnapshot = StateV2AuthorityView & {
+  state: StateStoreV2State;
+  collections: CollectionsFileV2;
 };
 type GroupCardEnrichmentSnapshot = {
   sourceMetadata?: SourceMetadataResult;
@@ -306,13 +315,29 @@ export class SkillFlowApp {
     return this.stateStoreV2.readCollections();
   }
 
+  private async readRuntimeAuthorityView(): Promise<RuntimeAuthoritySnapshot> {
+    const state = await this.stateStoreV2.readState();
+    const view = projectStateV2ToView(state);
+
+    return {
+      ...view,
+      state,
+      collections: state.collections,
+    };
+  }
+
+  private createAdaptersForPreferences(preferences: SharedPreferences): ChannelAdapter[] {
+    return createChannelAdapters(
+      getMergedTargetDefinitions(
+        preferences.customTargets,
+        preferences.agentDisplayOrder,
+      ),
+    );
+  }
+
   private async refreshAdapters(): Promise<ChannelAdapter[]> {
     const preferences = await this.store.readPreferences();
-    const targetDefinitions = getMergedTargetDefinitions(
-      preferences.customTargets,
-      preferences.agentDisplayOrder,
-    );
-    this.adapters = createChannelAdapters(targetDefinitions);
+    this.adapters = this.createAdaptersForPreferences(preferences);
     this.planner = new DeploymentPlanner(this.adapters);
     this.applier = new DeploymentApplier(this.adapters);
     return this.adapters;
@@ -972,8 +997,8 @@ export class SkillFlowApp {
       deployments: LockFile["deployments"];
     }>
   > {
-    const { manifest, lockFile } = await this.store.readState();
-    const collections = await this.readCollectionsForRuntime();
+    const runtimeView = await this.readRuntimeAuthorityView();
+    const { manifest, lockFile, preferences, collections } = runtimeView;
     this.normalizeBindings(manifest, lockFile, collections);
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
@@ -993,7 +1018,7 @@ export class SkillFlowApp {
 
     const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
     const leafs = this.getSourceLeafsForBinding(source, binding, lockFile, collections);
-    const deployments = getManagedDeployments(lockFile).filter(
+    const deployments = lockFile.deployments.filter(
       (deployment) => deployment.sourceId === sourceId,
     );
 
@@ -1004,7 +1029,6 @@ export class SkillFlowApp {
     const initialDrafts: Record<string, DraftBinding> = {
       [sourceId]: this.draftFromSourceBinding(source, binding, lockFile, collections),
     };
-    const preferences = await this.store.readPreferences();
     const scopedDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
 
     const scopedManifest = this.cloneManifest(manifest);
@@ -1023,6 +1047,7 @@ export class SkillFlowApp {
         sourceId,
         scope,
         scopedDraft.enabledTargets,
+        preferences,
       );
 
     return ok({
@@ -3558,20 +3583,33 @@ export class SkillFlowApp {
     // config TUI state flow:
     //   draft -> previewDraft() -> plan only
     //   draft -> applyDraft()   -> plan + filesystem + manifest/lock writes
-    const { manifest, lockFile } = await this.readStateConsistently();
-    this.normalizeBindings(manifest, lockFile);
-    const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
-    const plan = await this.planForAffectedSources(
-      prepared.manifest,
-      lockFile,
+    const runtimeView = await this.readRuntimeAuthorityView();
+    const prepared = this.prepareManifestV2ForDraft(
+      this.cloneManifestV2(runtimeView.state.manifest),
+      runtimeView.state.lockFile,
       sourceId,
+      draft,
+    );
+    if (!prepared.ok) {
+      return fail(prepared.errors, prepared.warnings);
+    }
+
+    const plan = await this.planForAffectedSourcesV2(
+      prepared.data.manifest,
+      runtimeView.state.lockFile,
+      sourceId,
+      runtimeView.preferences,
     );
     if (!plan.ok) {
       return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
     }
+    const projected = projectStateV2ToView({
+      ...runtimeView.state,
+      manifest: prepared.data.manifest,
+    });
 
     return ok(
-      { plan: plan.data, manifest: prepared.manifest, lockFile },
+      { plan: plan.data, manifest: projected.manifest, lockFile: projected.lockFile },
       [...prepared.warnings, ...plan.warnings],
     );
   }
@@ -4276,6 +4314,25 @@ export class SkillFlowApp {
       schemaVersion: manifest.schemaVersion,
       sources: manifest.sources.map((source) => ({ ...source })),
       bindings,
+    };
+  }
+
+  private cloneManifestV2(manifest: ManifestFileV2): ManifestFileV2 {
+    return {
+      schemaVersion: manifest.schemaVersion,
+      migrationGeneration: manifest.migrationGeneration,
+      sources: manifest.sources.map((source) => ({ ...source })),
+      bindings: Object.fromEntries(
+        Object.entries(manifest.bindings).map(([sourceId, binding]) => [
+          sourceId,
+          {
+            sourceId: binding.sourceId,
+            selectionMode: binding.selectionMode,
+            selectedLeafIds: [...binding.selectedLeafIds],
+            enabledTargets: [...binding.enabledTargets],
+          },
+        ]),
+      ),
     };
   }
 
@@ -5427,6 +5484,43 @@ export class SkillFlowApp {
     };
   }
 
+  private prepareManifestV2ForDraft(
+    manifest: ManifestFileV2,
+    lockFile: LockFileV2,
+    sourceId: string,
+    draft: DraftBinding,
+  ): Result<{ manifest: ManifestFileV2; warnings: Warning[] }> {
+    if (!manifest.sources.some((source) => source.id === sourceId)) {
+      return fail({
+        code: "SOURCE_NOT_FOUND",
+        message: `Skills group id '${sourceId}' is not registered.`,
+      });
+    }
+
+    const sourceLock = lockFile.sources[sourceId];
+    if (!sourceLock) {
+      return fail({
+        code: "SOURCE_LOCK_MISSING",
+        message: `${sourceId} is missing from V2 lock sources.`,
+      });
+    }
+
+    const enabledTargets = [...new Set(draft.enabledTargets)];
+    const selectedLeafIds = [...new Set(draft.selectedLeafIds)];
+    const selectedLeafIdSet = new Set(selectedLeafIds);
+    const selectsEveryCurrentLeaf =
+      sourceLock.leafIds.length > 0 &&
+      sourceLock.leafIds.every((leafId) => selectedLeafIdSet.has(leafId));
+    manifest.bindings[sourceId] = {
+      sourceId,
+      selectionMode: selectsEveryCurrentLeaf ? "all" : "selected",
+      selectedLeafIds: selectsEveryCurrentLeaf ? [] : selectedLeafIds,
+      enabledTargets,
+    };
+
+    return ok({ manifest, warnings: [] });
+  }
+
   private findExactDuplicateLeafSelections(
     manifest: Manifest,
     lockFile: LockFile,
@@ -5486,6 +5580,19 @@ export class SkillFlowApp {
     return this.planForSources(manifest, lockFile, sourceIds);
   }
 
+  private async planForAffectedSourcesV2(
+    manifest: ManifestFileV2,
+    lockFile: LockFileV2,
+    primarySourceId: string,
+    preferences: SharedPreferences,
+  ): Promise<Result<DeploymentPlan>> {
+    const sourceIds = manifest.sources
+      .map((source) => source.id)
+      .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargetsV2(manifest, sourceId));
+
+    return this.planForSourcesV2(manifest, lockFile, sourceIds, preferences);
+  }
+
   private async planForSources(
     manifest: Manifest,
     lockFile: LockFile,
@@ -5513,6 +5620,35 @@ export class SkillFlowApp {
     }, warnings);
   }
 
+  private async planForSourcesV2(
+    manifest: ManifestFileV2,
+    lockFile: LockFileV2,
+    sourceIds: string[],
+    preferences: SharedPreferences,
+  ): Promise<Result<DeploymentPlan>> {
+    const uniqueSourceIds = [...new Set(sourceIds)];
+    const planner = new DeploymentPlannerV2(this.createAdaptersForPreferences(preferences));
+
+    const actions: DeploymentAction[] = [];
+    const warnings: Warning[] = [];
+
+    for (const sourceId of uniqueSourceIds) {
+      const plan = await planner.planForSource(sourceId, manifest, lockFile);
+      if (!plan.ok) {
+        return fail(plan.errors, [...warnings, ...plan.warnings]);
+      }
+
+      actions.push(...plan.data.actions);
+      warnings.push(...plan.warnings);
+    }
+
+    return ok({
+      actions,
+      warnings,
+      blocked: actions.filter((action) => action.kind === "blocked"),
+    }, warnings);
+  }
+
   // Project-local path application happens here: scope resolves to concrete target roots
   // before planner/applier mutate the filesystem.
   private async resolveProjectTargetRoots(
@@ -5520,11 +5656,23 @@ export class SkillFlowApp {
     targets: DeploymentTargetId[],
   ): Promise<Result<TargetRootOverrides>> {
     const preferences = await this.store.readPreferences();
+    const resolved = await this.resolveProjectTargetRootOverrides(scope, targets, preferences);
+    if (!resolved.ok && resolved.errors.some((error) => error.code === "PROJECT_SCOPE_PATH_UNAVAILABLE")) {
+      await this.removeUnavailableProjectScope(scope.projectId, preferences);
+    }
+
+    return resolved;
+  }
+
+  private async resolveProjectTargetRootOverrides(
+    scope: Extract<ProjectScope, { kind: "project" }>,
+    targets: DeploymentTargetId[],
+    preferences: SharedPreferences,
+  ): Promise<Result<TargetRootOverrides>> {
     const projectPath = await resolveUsableProjectPath(preferences.recentProjects.find(
       (project) => project.projectId === scope.projectId,
     )?.projectPath);
     if (!projectPath) {
-      await this.removeUnavailableProjectScope(scope.projectId, preferences);
       return fail({
         code: "PROJECT_SCOPE_PATH_UNAVAILABLE",
         message: `Project scope '${scope.projectId}' is unavailable because its projectPath is missing or invalid, so project-local skills cannot be mounted.`,
@@ -5613,8 +5761,11 @@ export class SkillFlowApp {
     sourceId: string,
     scope: Extract<ProjectScope, { kind: "project" }>,
     targets: DeploymentTargetId[],
+    preferences?: SharedPreferences,
   ): Promise<LockFile["deployments"]> {
-    const targetRootOverrides = await this.resolveProjectTargetRoots(scope, targets);
+    const targetRootOverrides = preferences
+      ? await this.resolveProjectTargetRootOverrides(scope, targets, preferences)
+      : await this.resolveProjectTargetRoots(scope, targets);
     if (!targetRootOverrides.ok) {
       return [];
     }
@@ -5624,6 +5775,7 @@ export class SkillFlowApp {
       lockFile,
       sourceId,
       targetRootOverrides.data,
+      preferences ? this.createAdaptersForPreferences(preferences) : undefined,
     );
   }
 
@@ -5632,6 +5784,7 @@ export class SkillFlowApp {
     lockFile: LockFile,
     sourceId: string,
     targetRootOverrides: TargetRootOverrides,
+    adaptersOverride?: ChannelAdapter[],
   ): Promise<LockFile["deployments"]> {
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
@@ -5640,7 +5793,7 @@ export class SkillFlowApp {
 
     const binding = manifest.bindings[sourceId] ?? { targets: {} };
     const scopedDeployments: LockFile["deployments"] = [];
-    const adapters = await this.refreshAdapters();
+    const adapters = adaptersOverride ?? await this.refreshAdapters();
 
     for (const [target, rootPath] of Object.entries(targetRootOverrides) as Array<[DeploymentTargetId, string]>) {
       const targetBinding = binding.targets[target];
@@ -5954,6 +6107,10 @@ export class SkillFlowApp {
     }
 
     return Object.values(binding.targets).some((target) => target?.enabled);
+  }
+
+  private hasActiveTargetsV2(manifest: ManifestFileV2, sourceId: string): boolean {
+    return (manifest.bindings[sourceId]?.enabledTargets.length ?? 0) > 0;
   }
 
   private buildLocalCandidates(
