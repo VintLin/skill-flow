@@ -30,7 +30,11 @@ type ConfigCoordinatorDeps = {
     listRecentProjects(): Promise<RecentProject[]>;
   };
   doctorService: {
-    run(manifest: Manifest, lockFile: LockFile): Promise<Result<DoctorReport>>;
+    run(
+      manifest: Manifest,
+      lockFile: LockFile,
+      preferences: SharedPreferences,
+    ): Promise<Result<DoctorReport>>;
   };
   workflowService: {
     getSummaries(
@@ -100,9 +104,11 @@ export class ConfigCoordinator {
       level: "info",
       message: "Auditing current projections...",
     });
+    const currentPreferences = await this.deps.store.readPreferences();
     const audit = await this.deps.doctorService.run(
       configData.data.manifest,
       configData.data.lockFile,
+      currentPreferences,
     );
     if (!audit.ok) {
       return fail(audit.errors, audit.warnings);
@@ -129,7 +135,6 @@ export class ConfigCoordinator {
     // Refresh recent projects and reconcile selected scope against them.
     // This is preference-layer state, not part of manifest/lock global config.
     const recentProjects = await this.deps.recentProjectService.listRecentProjects().catch(() => []);
-    const currentPreferences = await this.deps.store.readPreferences();
     await this.deps.store.writePreferences({
       ...currentPreferences,
       recentProjects,

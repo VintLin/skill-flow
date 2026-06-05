@@ -176,4 +176,63 @@ describe.sequential("SourceAuthorityServiceV2", () => {
       "update-source:skills/two",
     ]);
   });
+
+  test("reconciles v2 leaf inventory from managed checkout", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+    const stateStore = new StateStoreV2(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityServiceV2({
+      stateStore,
+      checkoutService,
+    });
+    const added = await service.addSource(repoPath, {
+      sourceIdOverride: "reconcile-source",
+    });
+    expect(added.ok).toBe(true);
+
+    const state = await stateStore.readState();
+    state.manifest.bindings["reconcile-source"] = {
+      sourceId: "reconcile-source",
+      selectionMode: "selected",
+      selectedLeafIds: [
+        "reconcile-source:skills/one",
+        "reconcile-source:skills/two",
+      ],
+      enabledTargets: ["codex"],
+    };
+    await stateStore.writeState(state);
+    const checkoutPath = state.lockFile.sources["reconcile-source"]!.localPath;
+    await fs.rm(path.join(checkoutPath, "skills", "two"), {
+      recursive: true,
+      force: true,
+    });
+    await writeRepoFiles(checkoutPath, {
+      "skills/three/SKILL.md": skillDoc("three", "Three."),
+    });
+
+    const reconciled = await service.reconcileInventory(["reconcile-source"], {
+      force: true,
+    });
+
+    expect(reconciled.ok).toBe(true);
+    if (!reconciled.ok) {
+      return;
+    }
+    expect(reconciled.data.updatedSourceIds).toEqual(["reconcile-source"]);
+    const nextState = await stateStore.readState();
+    expect(nextState.lockFile.sources["reconcile-source"]?.leafIds).toEqual([
+      "reconcile-source:skills/one",
+      "reconcile-source:skills/three",
+    ]);
+    expect(nextState.manifest.bindings["reconcile-source"]?.selectedLeafIds).toEqual([
+      "reconcile-source:skills/one",
+    ]);
+  });
 });

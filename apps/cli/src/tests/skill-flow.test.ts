@@ -3,6 +3,8 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import type { SharedPreferences } from "@skill-flow/domain/types";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
+import { projectStateV2ToView } from "@skill-flow/query";
+import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import {
   createBareRemote,
@@ -976,20 +978,41 @@ describe.sequential("skill-flow", () => {
     }
 
     const sourceId = added.data.manifest.id;
-    const manifest = await app.store.readManifest();
-    manifest.bindings[sourceId] = {
-      targets: {
-        "claude-code": {
-          enabled: true,
-          leafIds: [`${sourceId}:broken`],
-        },
-      },
+    const stateStore = new StateStoreV2(app.store.rootPath);
+    const state = await stateStore.readState();
+    state.manifest.bindings[sourceId] = {
+      sourceId,
+      selectionMode: "selected",
+      selectedLeafIds: [`${sourceId}:broken`],
+      enabledTargets: ["claude-code"],
     };
-    await app.store.writeManifest(manifest);
+    const baseLeaf = state.lockFile.leafInventory.find((leaf) => leaf.sourceId === sourceId);
+    expect(baseLeaf).toBeDefined();
+    if (!baseLeaf) {
+      return;
+    }
+    state.lockFile.leafInventory.push({
+      ...baseLeaf,
+      id: `${sourceId}:broken`,
+      relativePath: "broken",
+      linkName: "broken",
+      title: "broken",
+      displayName: "broken",
+      valid: false,
+      diagnostics: [{
+        code: "INVALID_SKILL",
+        message: "forced invalid leaf",
+        path: "broken/SKILL.md",
+        retryable: false,
+      }],
+    });
+    await stateStore.writeState(state);
 
+    const view = projectStateV2ToView(await stateStore.readState());
     const doctor = await new DoctorService().run(
-      await app.store.readManifest(),
-      await app.store.readLock(),
+      view.manifest,
+      view.lockFile,
+      view.preferences,
     );
     expect(doctor.ok).toBe(true);
     if (!doctor.ok) {
@@ -1049,11 +1072,7 @@ describe.sequential("skill-flow", () => {
     });
 
     const app = new SkillFlowApp();
-    await app.store.init();
-    const doctor = await new DoctorService().run(
-      await app.store.readManifest(),
-      await app.store.readLock(),
-    );
+    const doctor = await app.doctor();
 
     expect(doctor.ok).toBe(true);
     if (!doctor.ok) {

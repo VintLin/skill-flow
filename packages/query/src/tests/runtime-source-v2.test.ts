@@ -285,9 +285,6 @@ describe.sequential("runtime source v2 write chain", () => {
     const legacyWriteState = vi
       .spyOn(app.store, "writeState")
       .mockRejectedValue(new Error("legacy writeState"));
-    const legacyRemove = vi
-      .spyOn(app.sourceService, "removeSource")
-      .mockRejectedValue(new Error("legacy removeSource"));
 
     const removed = await app.uninstall(["remove-source"]);
 
@@ -297,7 +294,6 @@ describe.sequential("runtime source v2 write chain", () => {
     }
     expect(legacyReadState).not.toHaveBeenCalled();
     expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyRemove).not.toHaveBeenCalled();
     expect(removed.data.removed).toEqual(["remove-source"]);
     const state = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(state.manifest.sources).toEqual([]);
@@ -324,9 +320,6 @@ describe.sequential("runtime source v2 write chain", () => {
     await writeRepoFiles(repoPath, {
       "skills/two/SKILL.md": skillDoc("two", "Two."),
     });
-    const legacyUpdate = vi
-      .spyOn(app.sourceService, "updateSources")
-      .mockRejectedValue(new Error("legacy updateSources"));
     const legacyReadState = vi
       .spyOn(app.store, "readState")
       .mockRejectedValue(new Error("legacy readState"));
@@ -340,7 +333,6 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!updated.ok) {
       return;
     }
-    expect(legacyUpdate).not.toHaveBeenCalled();
     expect(legacyReadState).not.toHaveBeenCalled();
     expect(legacyWriteState).not.toHaveBeenCalled();
     expect(updated.data.updated[0]).toEqual(expect.objectContaining({
@@ -427,9 +419,6 @@ describe.sequential("runtime source v2 write chain", () => {
     await writeRepoFiles(repoPath, {
       "skills/two/SKILL.md": skillDoc("two", "Two."),
     });
-    const legacyUpdate = vi
-      .spyOn(app.sourceService, "updateSources")
-      .mockRejectedValue(new Error("legacy updateSources"));
 
     const repaired = await app.repairSource(["repair-source"]);
 
@@ -437,13 +426,90 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!repaired.ok) {
       return;
     }
-    expect(legacyUpdate).not.toHaveBeenCalled();
     const state = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(state.lockFile.sources["repair-source"]?.leafIds).toEqual([
       "repair-source:skills/one",
       "repair-source:skills/two",
     ]);
     expect(state.lockFile.projections).toEqual([]);
+  });
+
+  test("doctor reconciles inventory through v2 authority", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "doctor-source",
+      project: false,
+    });
+    expect(added.ok).toBe(true);
+    const legacyReadState = vi
+      .spyOn(app.store, "readState")
+      .mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi
+      .spyOn(app.store, "writeState")
+      .mockRejectedValue(new Error("legacy writeState"));
+
+    const report = await app.doctor();
+
+    expect(report.ok).toBe(true);
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+  });
+
+  test("repairState reconciles local checkout and replans through v2 authority", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "repair-state-source",
+      draft: {
+        selectedLeafIds: ["repair-state-source:skills/one"],
+        enabledTargets: ["codex"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    await writeRepoFiles(state.lockFile.sources["repair-state-source"]!.localPath, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+    const legacyReadState = vi
+      .spyOn(app.store, "readState")
+      .mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi
+      .spyOn(app.store, "writeState")
+      .mockRejectedValue(new Error("legacy writeState"));
+
+    const repaired = await app.repairState(["repair-state-source"]);
+
+    expect(repaired.ok).toBe(true);
+    if (!repaired.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(repaired.data.repairedSourceIds).toEqual(["repair-state-source"]);
+    const repairedState = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(repairedState.lockFile.sources["repair-state-source"]?.leafIds).toEqual([
+      "repair-state-source:skills/one",
+      "repair-state-source:skills/two",
+    ]);
+    expect(repairedState.lockFile.projections).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceId: "repair-state-source",
+        leafId: "repair-state-source:skills/one",
+        target: "codex",
+        status: "active",
+      }),
+      expect.objectContaining({
+        sourceId: "repair-state-source",
+        leafId: "repair-state-source:skills/two",
+        target: "codex",
+        status: "active",
+      }),
+    ]));
   });
 
   test("bootstrapWorkspaceState prunes missing v2 checkouts without legacy state", async () => {

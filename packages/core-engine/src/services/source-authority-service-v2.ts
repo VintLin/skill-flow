@@ -23,6 +23,7 @@ import {
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import type {
   PreparedSourceCheckoutV2,
+  SourceCheckoutKind,
   SourceCheckoutService,
 } from "./source-checkout-service.js";
 import type { AddSourceOptions } from "./source-service.js";
@@ -348,6 +349,116 @@ export class SourceAuthorityServiceV2 {
     });
 
     return ok({ updated }, warnings);
+  }
+
+  async reconcileInventory(
+    sourceIds?: string[],
+    options: { force?: boolean } = {},
+  ): Promise<Result<{ updatedSourceIds: string[] }>> {
+    const state = await this.options.stateStore.readState();
+    const selectedIds = sourceIds?.length
+      ? [...new Set(sourceIds)]
+      : state.manifest.sources.map((source) => source.id);
+    const nextManifest = {
+      ...state.manifest,
+      sources: [...state.manifest.sources],
+      bindings: { ...state.manifest.bindings },
+    };
+    const nextLockFile: LockFileV2 = {
+      ...state.lockFile,
+      sources: { ...state.lockFile.sources },
+      leafInventory: [...state.lockFile.leafInventory],
+      projections: [...state.lockFile.projections],
+    };
+    const updatedSourceIds: string[] = [];
+    const warnings: Warning[] = [];
+
+    for (const sourceId of selectedIds) {
+      const source = nextManifest.sources.find((item) => item.id === sourceId);
+      const currentLock = nextLockFile.sources[sourceId];
+      if (!source || !currentLock) {
+        continue;
+      }
+
+      const checkoutKind = this.toCheckoutKind(source.kind);
+      if (!checkoutKind) {
+        continue;
+      }
+
+      const previousLeafs = nextLockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
+      const snapshot = await this.options.checkoutService.buildUpdateSnapshot({
+        kind: checkoutKind,
+        sourceId,
+        locator: source.locator,
+        displayName: source.displayName,
+        checkoutPath: currentLock.localPath,
+      });
+      if (!snapshot.ok) {
+        return fail(snapshot.errors, [...warnings, ...snapshot.warnings]);
+      }
+      warnings.push(...snapshot.warnings);
+
+      const nextLeafs = await Promise.all(
+        snapshot.data.leafs.map((leaf) => this.toLeafRecordV2(leaf, sourceId, currentLock.localPath)),
+      );
+      const leafIdsChanged =
+        JSON.stringify(currentLock.leafIds) !== JSON.stringify(nextLeafs.map((leaf) => leaf.id));
+      const leafInventoryChanged = JSON.stringify(previousLeafs) !== JSON.stringify(nextLeafs);
+      const revisionChanged =
+        currentLock.revision.commit !== snapshot.data.commitSha ||
+        currentLock.revision.capturedAt.length === 0;
+
+      if (!options.force && !leafIdsChanged && !leafInventoryChanged && !revisionChanged) {
+        continue;
+      }
+
+      nextLockFile.sources[sourceId] = {
+        ...currentLock,
+        revision: {
+          ...currentLock.revision,
+          ...(snapshot.data.commitSha ? { commit: snapshot.data.commitSha } : {}),
+          capturedAt: new Date().toISOString(),
+        },
+        leafIds: nextLeafs.map((leaf) => leaf.id),
+      };
+      nextLockFile.leafInventory = [
+        ...nextLockFile.leafInventory.filter((leaf) => leaf.sourceId !== sourceId),
+        ...nextLeafs,
+      ];
+
+      const nextLeafIdSet = new Set(nextLeafs.map((leaf) => leaf.id));
+      const binding = nextManifest.bindings[sourceId];
+      if (binding?.selectionMode === "selected") {
+        nextManifest.bindings[sourceId] = {
+          ...binding,
+          selectedLeafIds: binding.selectedLeafIds.filter((leafId) => nextLeafIdSet.has(leafId)),
+        };
+      }
+
+      updatedSourceIds.push(sourceId);
+    }
+
+    if (updatedSourceIds.length > 0) {
+      await this.options.stateStore.writeState({
+        ...state,
+        manifest: nextManifest,
+        lockFile: nextLockFile,
+      });
+    }
+
+    return ok({ updatedSourceIds }, warnings);
+  }
+
+  private toCheckoutKind(kind: SourceKindV2): SourceCheckoutKind | undefined {
+    switch (kind) {
+      case "github":
+        return "git";
+      case "git":
+      case "local":
+        return kind;
+      case "collection":
+        return undefined;
+    }
   }
 
   private mapSourceKind(kind: PreparedSourceCheckoutV2["kind"]): SourceKindV2 {

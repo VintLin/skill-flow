@@ -8,19 +8,20 @@ import type {
   LockFile,
   Manifest,
   Result,
+  SharedPreferences,
 } from "@skill-flow/domain/types";
 import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { hashDirectory, isBrokenSymlink, pathExists } from "@skill-flow/integration/utils/fs";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
 import { ok } from "@skill-flow/integration/utils/result";
-import { StateStore } from "@skill-flow/storage/store";
 
 export class DoctorService {
-  constructor(private readonly store = new StateStore()) {}
-
-  async run(manifest: Manifest, lockFile: LockFile): Promise<Result<DoctorReport>> {
+  async run(
+    manifest: Manifest,
+    lockFile: LockFile,
+    preferences: SharedPreferences,
+  ): Promise<Result<DoctorReport>> {
     const issues: DoctorIssue[] = [];
-    const preferences = await this.store.readPreferences();
     const adapters = createChannelAdapters(
       getMergedTargetDefinitions(preferences.customTargets, preferences.agentDisplayOrder),
     );

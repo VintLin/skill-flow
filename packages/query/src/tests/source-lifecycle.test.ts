@@ -141,7 +141,7 @@ describe.sequential("source lifecycle", () => {
     expect(lockFile.leafInventory.map((leaf) => leaf.sourceId)).toEqual(["demo-source"]);
   });
 
-  test("inspectSource still returns local detail state when reconcileInventory fails", async () => {
+  test("inspectSource returns local detail state from v2 authority view", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
@@ -152,17 +152,6 @@ describe.sequential("source lifecycle", () => {
     if (!added.ok) {
       return;
     }
-
-    vi.spyOn(app.sourceService, "reconcileInventory").mockResolvedValueOnce({
-      ok: false,
-      errors: [
-        {
-          code: "RECONCILE_FAILED",
-          message: "forced reconcile failure",
-        },
-      ],
-      warnings: [],
-    });
 
     const result = await app.inspectSource(added.data.manifest.id);
 
