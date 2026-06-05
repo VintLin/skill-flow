@@ -34,7 +34,8 @@ describe.sequential("bridge command dispatcher", () => {
     if (!added.ok) {
       return;
     }
-    await app.store.togglePinnedSource(added.data.manifest.id);
+    const pinned = await app.togglePinnedSource(added.data.manifest.id);
+    expect(pinned.ok).toBe(true);
 
     const response = await executeBridgeRequest(app, {
       protocolVersion: PROTOCOL_VERSION,

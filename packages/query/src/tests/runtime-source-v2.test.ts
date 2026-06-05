@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import { SkillFlowApp } from "../runtime.js";
 import {
@@ -14,23 +14,24 @@ import {
 describe.sequential("runtime source v2 write chain", () => {
   const sandbox = useSkillFlowSandbox();
 
+  function expectNoLegacyAuthorityApi(app: SkillFlowApp) {
+    const store = app.store as unknown as Record<string, unknown>;
+    expect(store.readManifest).toBeUndefined();
+    expect(store.writeManifest).toBeUndefined();
+    expect(store.readLock).toBeUndefined();
+    expect(store.writeLock).toBeUndefined();
+    expect(store.readState).toBeUndefined();
+    expect(store.writeState).toBeUndefined();
+    expect(store.readPreferences).toBeUndefined();
+    expect(store.writePreferences).toBeUndefined();
+  }
+
   test("addSource writes v2 authority and applies draft without legacy state reads or writes", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
     });
     const app = new SkillFlowApp();
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyReadPreferences = vi
-      .spyOn(app.store, "readPreferences")
-      .mockRejectedValue(new Error("legacy readPreferences"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
-    const legacyWritePreferences = vi
-      .spyOn(app.store, "writePreferences")
-      .mockRejectedValue(new Error("legacy writePreferences"));
+    expectNoLegacyAuthorityApi(app);
 
     const added = await app.addSource(repoPath, {
       sourceIdOverride: "design-source",
@@ -44,10 +45,7 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!added.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyWritePreferences).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
 
     const state = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(state.manifest.sources).toEqual([
@@ -154,18 +152,7 @@ describe.sequential("runtime source v2 write chain", () => {
       "skills/write/SKILL.md": skillDoc("write", "Write docs."),
     });
     const app = new SkillFlowApp();
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
-    const legacyReadPreferences = vi
-      .spyOn(app.store, "readPreferences")
-      .mockRejectedValue(new Error("legacy readPreferences"));
-    const legacyWritePreferences = vi
-      .spyOn(app.store, "writePreferences")
-      .mockRejectedValue(new Error("legacy writePreferences"));
+    expectNoLegacyAuthorityApi(app);
 
     const prepared = await app.prepareImportSource(repoPath);
     expect(prepared.ok).toBe(true);
@@ -182,10 +169,7 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!committed.ok || committed.data.status !== "ready") {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
-    expect(legacyWritePreferences).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
 
     const state = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(state.manifest.bindings[committed.data.sourceId]).toEqual({
@@ -242,12 +226,7 @@ describe.sequential("runtime source v2 write chain", () => {
       project: false,
     });
     expect(added.ok).toBe(true);
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
+    expectNoLegacyAuthorityApi(app);
 
     const renamed = await app.renameSource("rename-source", "Renamed Source");
 
@@ -255,8 +234,7 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!renamed.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
     expect(renamed.data.displayName).toBe("Renamed Source");
     const state = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(state.manifest.sources.find((source) => source.id === "rename-source")?.displayName)
@@ -279,12 +257,7 @@ describe.sequential("runtime source v2 write chain", () => {
     await expect(
       pathExists(path.join(sandbox.targetsRoot, "codex", "review")),
     ).resolves.toBe(true);
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
+    expectNoLegacyAuthorityApi(app);
 
     const removed = await app.uninstall(["remove-source"]);
 
@@ -292,8 +265,7 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!removed.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
     expect(removed.data.removed).toEqual(["remove-source"]);
     const state = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(state.manifest.sources).toEqual([]);
@@ -320,12 +292,7 @@ describe.sequential("runtime source v2 write chain", () => {
     await writeRepoFiles(repoPath, {
       "skills/two/SKILL.md": skillDoc("two", "Two."),
     });
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
+    expectNoLegacyAuthorityApi(app);
 
     const updated = await app.updateSources(["update-source"]);
 
@@ -333,8 +300,7 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!updated.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
     expect(updated.data.updated[0]).toEqual(expect.objectContaining({
       sourceId: "update-source",
       changed: true,
@@ -382,12 +348,7 @@ describe.sequential("runtime source v2 write chain", () => {
       recursive: true,
       force: true,
     });
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
+    expectNoLegacyAuthorityApi(app);
 
     const repaired = await app.repairTargets(["repair-targets-source"]);
 
@@ -395,8 +356,7 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!repaired.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
     await expect(
       pathExists(path.join(sandbox.targetsRoot, "codex", "review")),
     ).resolves.toBe(true);
@@ -444,18 +404,12 @@ describe.sequential("runtime source v2 write chain", () => {
       project: false,
     });
     expect(added.ok).toBe(true);
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
+    expectNoLegacyAuthorityApi(app);
 
     const report = await app.doctor();
 
     expect(report.ok).toBe(true);
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
   });
 
   test("repairState reconciles local checkout and replans through v2 authority", async () => {
@@ -475,12 +429,7 @@ describe.sequential("runtime source v2 write chain", () => {
     await writeRepoFiles(state.lockFile.sources["repair-state-source"]!.localPath, {
       "skills/two/SKILL.md": skillDoc("two", "Two."),
     });
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
+    expectNoLegacyAuthorityApi(app);
 
     const repaired = await app.repairState(["repair-state-source"]);
 
@@ -488,8 +437,7 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!repaired.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
     expect(repaired.data.repairedSourceIds).toEqual(["repair-state-source"]);
     const repairedState = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(repairedState.lockFile.sources["repair-state-source"]?.leafIds).toEqual([
@@ -526,12 +474,7 @@ describe.sequential("runtime source v2 write chain", () => {
       recursive: true,
       force: true,
     });
-    const legacyReadState = vi
-      .spyOn(app.store, "readState")
-      .mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi
-      .spyOn(app.store, "writeState")
-      .mockRejectedValue(new Error("legacy writeState"));
+    expectNoLegacyAuthorityApi(app);
 
     const bootstrapped = await app.bootstrapWorkspaceState();
 
@@ -539,8 +482,7 @@ describe.sequential("runtime source v2 write chain", () => {
     if (!bootstrapped.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
     const state = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(state.manifest.sources).toEqual([]);
     expect(state.manifest.bindings).toEqual({});
@@ -559,15 +501,7 @@ describe.sequential("runtime source v2 write chain", () => {
       project: false,
     });
     expect(added.ok).toBe(true);
-    const legacyReadManifest = vi
-      .spyOn(app.store, "readManifest")
-      .mockRejectedValue(new Error("legacy readManifest"));
-    const legacyReadPreferences = vi
-      .spyOn(app.store, "readPreferences")
-      .mockRejectedValue(new Error("legacy readPreferences"));
-    const legacyWritePreferences = vi
-      .spyOn(app.store, "writePreferences")
-      .mockRejectedValue(new Error("legacy writePreferences"));
+    expectNoLegacyAuthorityApi(app);
 
     const pinned = await app.togglePinnedSource("pin-source");
 
@@ -576,9 +510,7 @@ describe.sequential("runtime source v2 write chain", () => {
       return;
     }
     expect(pinned.data.pinnedSourceIds).toEqual(["pin-source"]);
-    expect(legacyReadManifest).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
-    expect(legacyWritePreferences).not.toHaveBeenCalled();
+    expectNoLegacyAuthorityApi(app);
     const state = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(state.preferences.pinnedSourceIds).toEqual(["pin-source"]);
   });

@@ -120,7 +120,6 @@ describe("ConfigCoordinator", () => {
     const getSummaries = vi.fn().mockReturnValue(summaries);
     const coordinator = new ConfigCoordinator({
       store: {
-        init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
         readPreferences: vi
           .fn()
@@ -191,7 +190,6 @@ describe("ConfigCoordinator", () => {
     };
     const coordinator = new ConfigCoordinator({
       store: {
-        init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
         readPreferences: vi.fn().mockResolvedValue(preferences),
         readCollections: vi.fn().mockResolvedValue(emptyCollections),
@@ -261,7 +259,6 @@ describe("ConfigCoordinator", () => {
     };
     const coordinator = new ConfigCoordinator({
       store: {
-        init: vi.fn().mockResolvedValue(undefined),
         readManifest: vi.fn(),
         readPreferences: vi.fn().mockResolvedValue(preferences),
         readCollections: vi.fn().mockResolvedValue(emptyCollections),

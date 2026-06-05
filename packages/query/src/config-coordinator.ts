@@ -20,7 +20,6 @@ import type { BootstrapEvent } from "@skill-flow/core-engine/services/workspace-
 
 type ConfigCoordinatorDeps = {
   store: {
-    init(): Promise<void>;
     readManifest(): Promise<Manifest>;
     readPreferences(): Promise<SharedPreferences>;
     readCollections(): Promise<CollectionsFileV2>;

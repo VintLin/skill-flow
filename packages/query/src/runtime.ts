@@ -60,7 +60,7 @@ import type {
   WorkflowSummary,
 } from "@skill-flow/domain/types";
 import { getBootstrapImportedTargets, getManagedDeployments } from "@skill-flow/domain/projection-compat";
-import { StateStore } from "@skill-flow/storage/store";
+import { RuntimeStore } from "@skill-flow/storage/runtime-store";
 import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
 import {
@@ -266,7 +266,7 @@ export class SkillFlowApp {
   private static readonly importGroupResolveConcurrency = 3;
   private static readonly importPreviewPrewarmLimit = 4;
 
-  readonly store: StateStore;
+  readonly store: RuntimeStore;
   private readonly stateStoreV2: StateStoreV2;
   private readonly importPreparationCacheStore: ImportPreparationCacheStore;
   adapters: ChannelAdapter[];
@@ -286,7 +286,7 @@ export class SkillFlowApp {
   private importRecommendationRefreshesByFeed = new Map<ImportRecommendationFeedId, Promise<ImportRecommendationFeed>>();
 
   constructor() {
-    this.store = new StateStore();
+    this.store = new RuntimeStore();
     this.stateStoreV2 = new StateStoreV2(this.store.rootPath);
     this.importPreparationCacheStore = new ImportPreparationCacheStore(this.store.rootPath);
     const adapters = createChannelAdapters();
@@ -308,10 +308,9 @@ export class SkillFlowApp {
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
     this.recentProjectService = new RecentProjectService();
-    this.workspaceBootstrapService = new WorkspaceBootstrapService(this.store);
+    this.workspaceBootstrapService = new WorkspaceBootstrapService(this.stateStoreV2.rootPath);
     this.configCoordinator = new ConfigCoordinator({
       store: {
-        init: () => this.store.init(),
         readManifest: async () => (await this.readRuntimeAuthorityView()).manifest,
         readPreferences: async () => (await this.readRuntimeAuthorityView()).preferences,
         readCollections: () => this.readCollectionsForRuntime(),
@@ -5562,10 +5561,7 @@ export class SkillFlowApp {
 
   private async writeAuditEvent(event: AuditEvent): Promise<void> {
     try {
-      const store = this.store as StateStore & {
-        appendAuditEvent?: (entry: AuditEvent) => Promise<void>;
-      };
-      await store.appendAuditEvent?.(event);
+      await this.store.appendAuditEvent(event);
     } catch {
       // Audit logging must never block the mutation itself.
     }

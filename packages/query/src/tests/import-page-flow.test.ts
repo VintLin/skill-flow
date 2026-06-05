@@ -1791,7 +1791,14 @@ describe.sequential("import page flow", () => {
     expect(Object.keys(lockFile.sources)).toHaveLength(0);
     expect(lockFile.leafInventory).toHaveLength(0);
 
-    await expect(fs.readdir(path.join(app.store.sourceRoot))).resolves.toEqual([]);
+    await expect(
+      fs.readdir(path.join(app.store.sourceRoot)).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") {
+          return [];
+        }
+        throw error;
+      }),
+    ).resolves.toEqual([]);
   });
 });
 

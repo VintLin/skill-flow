@@ -6,7 +6,6 @@ import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { getTargetScanRoots, TARGET_DEFINITIONS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
 import { hashDirectory, pathExists, readJsonFile } from "@skill-flow/integration/utils/fs";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
-import { StateStore } from "@skill-flow/storage/store";
 
 export type BootstrapEvent = {
   phase:
@@ -64,7 +63,7 @@ type AgentsOrigin = {
 };
 
 export class WorkspaceBootstrapService {
-  constructor(private readonly store: StateStore) {}
+  constructor(private readonly stateRoot: string) {}
 
   async detectUnmanagedExternalSkills(
     manifest: Manifest,
@@ -217,7 +216,7 @@ export class WorkspaceBootstrapService {
   }
 
   private isUnderSkillFlowStore(candidatePath: string) {
-    const relative = path.relative(this.store.rootPath, candidatePath);
+    const relative = path.relative(this.stateRoot, candidatePath);
     return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
   }
 
