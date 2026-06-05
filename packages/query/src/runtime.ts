@@ -141,6 +141,7 @@ import {
   type LocalSkillScanResult,
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
 import { DeploymentPlannerV2 } from "@skill-flow/core-engine/services/deployment-planner-v2";
+import { DeploymentApplierV2 } from "@skill-flow/core-engine/services/deployment-applier-v2";
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
 
@@ -3636,6 +3637,25 @@ export class SkillFlowApp {
     draft: DraftBinding,
     scope: ProjectScope,
   ): Promise<AuditedMutationResult<ApplyDraftResult>> {
+    if (scope.kind === "global") {
+      const beforeView = await this.readRuntimeAuthorityView();
+      const before = await this.captureSourceAuditSnapshot(beforeView.manifest, beforeView.lockFile, sourceId);
+      const result = await this.applyDraftImpl(sourceId, draft, scope);
+      const afterView = await this.readRuntimeAuthorityView();
+      const after = await this.captureSourceAuditSnapshot(afterView.manifest, afterView.lockFile, sourceId);
+
+      return {
+        result,
+        auditDetails: {
+          stateTransition: {
+            before,
+            after,
+          },
+          actionSummary: this.summarizeDeploymentActions(result.ok ? result.data.actions : []),
+        },
+      };
+    }
+
     const { manifest, lockFile } = await this.store.readState();
     const before = await this.captureSourceAuditSnapshot(manifest, lockFile, sourceId);
     const result = await this.applyDraftImpl(sourceId, draft, scope);
@@ -3788,21 +3808,22 @@ export class SkillFlowApp {
       );
     }
 
-    const { manifest, lockFile } = await this.store.readState();
-    this.normalizeBindings(manifest, lockFile);
-    await this.ensureProjectionLedger(manifest, lockFile);
-    const previousEnabledTargets = this.getEnabledTargetsForSource(manifest, sourceId);
-    const sourceLock = lockFile.sources.find((source) => source.id === sourceId);
-    const prepared = this.prepareManifestForDraft(manifest, lockFile, sourceId, draft);
+    const state = await this.stateStoreV2.readState();
+    const manifest = this.cloneManifestV2(state.manifest);
+    const lockFile = this.cloneLockFileV2(state.lockFile);
+    const prepared = this.prepareManifestV2ForDraft(manifest, lockFile, sourceId, draft);
+    if (!prepared.ok) {
+      return fail(prepared.errors, prepared.warnings);
+    }
 
-    const plan = await this.planForAffectedSources(prepared.manifest, lockFile, sourceId);
+    const preferences = projectStateV2ToView(state).preferences;
+    const plan = await this.planForAffectedSourcesV2(prepared.data.manifest, lockFile, sourceId, preferences);
     if (!plan.ok) {
       return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
     }
 
-    const applyResult = await this.applier.applyPlan(lockFile, plan.data.actions);
-    await this.ensureProjectionLedger(prepared.manifest, lockFile);
-    await this.store.writeState(prepared.manifest, lockFile);
+    const applier = new DeploymentApplierV2(this.createAdaptersForPreferences(preferences));
+    const applyResult = await applier.applyPlan(lockFile, plan.data.actions);
 
     if (!applyResult.ok) {
       return fail(
@@ -3811,28 +3832,17 @@ export class SkillFlowApp {
       );
     }
 
-    const importedTargets = sourceLock?.importMode === "bootstrap-detected"
-      ? getBootstrapImportedTargets(lockFile, sourceLock)
-      : [];
-    const removedImportedTargets = [...new Set([
-      ...previousEnabledTargets,
-      ...importedTargets,
-    ])].filter((target) => !prepared.draft.enabledTargets.includes(target));
-    const importedCleanupWarnings = await this.cleanupImportedTargetPaths(
-      prepared.manifest,
+    await this.stateStoreV2.writeState({
+      ...state,
+      manifest: prepared.data.manifest,
       lockFile,
-      [sourceId],
-      removedImportedTargets,
-    );
-    const detachedWarnings = await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
-    await this.store.writeState(prepared.manifest, lockFile);
+    });
 
     const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
     return ok(
       {
         actions: plan.data.actions,
-        draft: prepared.draft,
+        draft: prepared.data.draft,
         ...(freshState.summary ? { summary: freshState.summary } : {}),
         ...(freshState.inspect ? { inspect: freshState.inspect } : {}),
       },
@@ -3840,9 +3850,6 @@ export class SkillFlowApp {
         ...prepared.warnings,
         ...plan.warnings,
         ...applyResult.warnings,
-        ...importedCleanupWarnings,
-        ...detachedWarnings,
-        ...orphanWarnings,
       ],
     );
   }
@@ -4333,6 +4340,33 @@ export class SkillFlowApp {
           },
         ]),
       ),
+    };
+  }
+
+  private cloneLockFileV2(lockFile: LockFileV2): LockFileV2 {
+    return {
+      schemaVersion: lockFile.schemaVersion,
+      migrationGeneration: lockFile.migrationGeneration,
+      sources: Object.fromEntries(
+        Object.entries(lockFile.sources).map(([sourceId, source]) => [
+          sourceId,
+          {
+            sourceId: source.sourceId,
+            canonicalLocator: source.canonicalLocator,
+            revision: { ...source.revision },
+            localPath: source.localPath,
+            leafIds: [...source.leafIds],
+          },
+        ]),
+      ),
+      leafInventory: lockFile.leafInventory.map((leaf) => ({
+        ...leaf,
+        selectors: {
+          legacyAliases: [...leaf.selectors.legacyAliases],
+        },
+        diagnostics: leaf.diagnostics.map((diagnostic) => ({ ...diagnostic })),
+      })),
+      projections: lockFile.projections.map((projection) => ({ ...projection })),
     };
   }
 
@@ -5489,7 +5523,7 @@ export class SkillFlowApp {
     lockFile: LockFileV2,
     sourceId: string,
     draft: DraftBinding,
-  ): Result<{ manifest: ManifestFileV2; warnings: Warning[] }> {
+  ): Result<{ manifest: ManifestFileV2; draft: DraftBinding; warnings: Warning[] }> {
     if (!manifest.sources.some((source) => source.id === sourceId)) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -5507,6 +5541,10 @@ export class SkillFlowApp {
 
     const enabledTargets = [...new Set(draft.enabledTargets)];
     const selectedLeafIds = [...new Set(draft.selectedLeafIds)];
+    const normalizedDraft: DraftBinding = {
+      enabledTargets,
+      selectedLeafIds,
+    };
     const selectedLeafIdSet = new Set(selectedLeafIds);
     const selectsEveryCurrentLeaf =
       sourceLock.leafIds.length > 0 &&
@@ -5518,7 +5556,7 @@ export class SkillFlowApp {
       enabledTargets,
     };
 
-    return ok({ manifest, warnings: [] });
+    return ok({ manifest, draft: normalizedDraft, warnings: [] });
   }
 
   private findExactDuplicateLeafSelections(

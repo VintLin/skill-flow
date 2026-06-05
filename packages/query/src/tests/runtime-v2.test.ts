@@ -142,6 +142,120 @@ describe.sequential("runtime v2 authority reads", () => {
     ]);
   });
 
+  test("applyDraft writes global drafts through v2 authority without legacy state reads", async () => {
+    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
+    await writeSourceLeafFiles(sandbox);
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+
+    const applied = await app.applyDraft("repo", {
+      selectedLeafIds: ["repo:one", "repo:two"],
+      enabledTargets: ["codex"],
+    });
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(applied.data.draft).toEqual({
+      selectedLeafIds: ["repo:one", "repo:two"],
+      enabledTargets: ["codex"],
+    });
+    expect(applied.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "update",
+        sourceId: "repo",
+        leafId: "repo:one",
+        target: "codex",
+      }),
+      expect.objectContaining({
+        kind: "create",
+        sourceId: "repo",
+        leafId: "repo:two",
+        target: "codex",
+      }),
+    ]);
+
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.manifest.bindings.repo).toEqual({
+      sourceId: "repo",
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets: ["codex"],
+    });
+    expect(state.lockFile.projections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceId: "repo",
+          leafId: "repo:one",
+          target: "codex",
+          status: "active",
+        }),
+        expect.objectContaining({
+          sourceId: "repo",
+          leafId: "repo:two",
+          target: "codex",
+          status: "active",
+        }),
+      ]),
+    );
+    await expectRawLockToBeV2Only(sandbox.stateRoot);
+  });
+
+  test("applyDraft disables targets by marking v2 projections removed", async () => {
+    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+
+    const applied = await app.applyDraft("repo", {
+      selectedLeafIds: ["repo:one"],
+      enabledTargets: [],
+    });
+
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(applied.data.actions).toEqual([
+      expect.objectContaining({
+        kind: "remove",
+        sourceId: "repo",
+        leafId: "repo:one",
+        target: "codex",
+      }),
+    ]);
+
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.manifest.bindings.repo).toEqual({
+      sourceId: "repo",
+      selectionMode: "selected",
+      selectedLeafIds: ["repo:one"],
+      enabledTargets: [],
+    });
+    expect(state.lockFile.projections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceId: "repo",
+          leafId: "repo:one",
+          target: "codex",
+          status: "removed",
+        }),
+      ]),
+    );
+    expect((state.lockFile as LockFileV2 & { deployments?: unknown }).deployments).toBeUndefined();
+    await expectRawLockToBeV2Only(sandbox.stateRoot);
+  });
+
   test("inspectSource fails on v1 authority instead of falling back", async () => {
     await writeV1AuthorityFiles(sandbox.stateRoot);
     const app = new SkillFlowApp();
@@ -293,6 +407,34 @@ async function writeAuthorityState(
   },
 ): Promise<void> {
   await new StateStoreV2(stateRoot).writeState(state);
+}
+
+async function writeSourceLeafFiles(sandbox: ReturnType<typeof useSkillFlowSandbox>): Promise<void> {
+  const sourceRoot = path.join(sandbox.sandboxRoot, "sources", "repo");
+  await Promise.all([
+    writeSkillFile(path.join(sourceRoot, "one"), "one", "one skill"),
+    writeSkillFile(path.join(sourceRoot, "two"), "two", "two skill"),
+  ]);
+}
+
+async function writeSkillFile(skillRoot: string, name: string, description: string): Promise<void> {
+  await fs.mkdir(skillRoot, { recursive: true });
+  await fs.writeFile(path.join(skillRoot, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n`, "utf8");
+}
+
+async function expectRawLockToBeV2Only(stateRoot: string): Promise<void> {
+  const rawLock = JSON.parse(await fs.readFile(path.join(stateRoot, "lock.json"), "utf8")) as {
+    deployments?: unknown;
+    projections?: Array<{ mode?: unknown }>;
+  };
+  expect(rawLock.deployments).toBeUndefined();
+  expect(rawLock.projections ?? []).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        mode: expect.anything(),
+      }),
+    ]),
+  );
 }
 
 async function writeV1AuthorityFiles(stateRoot: string): Promise<void> {
