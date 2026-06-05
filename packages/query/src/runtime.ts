@@ -3734,16 +3734,25 @@ export class SkillFlowApp {
   private async togglePinnedSourceImpl(
     sourceId: string,
   ): Promise<Result<{ pinnedSourceIds: string[] }>> {
-    const manifest = await this.store.readManifest();
-    if (!manifest.sources.some((source) => source.id === sourceId)) {
+    const state = await this.stateStoreV2.readState();
+    if (!state.manifest.sources.some((source) => source.id === sourceId)) {
       return fail({
         code: "SOURCE_NOT_FOUND",
         message: `Skills group id '${sourceId}' is not registered.`,
       });
     }
 
-    const preferences = await this.store.togglePinnedSource(sourceId);
-    return ok({ pinnedSourceIds: preferences.pinnedSourceIds });
+    const pinnedSourceIds = state.preferences.pinnedSourceIds.includes(sourceId)
+      ? state.preferences.pinnedSourceIds.filter((pinnedSourceId) => pinnedSourceId !== sourceId)
+      : [...state.preferences.pinnedSourceIds, sourceId];
+    await this.stateStoreV2.writeState({
+      ...state,
+      preferences: {
+        ...state.preferences,
+        pinnedSourceIds,
+      },
+    });
+    return ok({ pinnedSourceIds });
   }
 
   private async renameSourceImpl(

@@ -482,4 +482,38 @@ describe.sequential("runtime source v2 write chain", () => {
     expect(state.lockFile.leafInventory).toEqual([]);
     expect(state.lockFile.projections).toEqual([]);
   });
+
+  test("togglePinnedSource writes v2 preferences without legacy manifest or preferences", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "pin-source",
+      project: false,
+    });
+    expect(added.ok).toBe(true);
+    const legacyReadManifest = vi
+      .spyOn(app.store, "readManifest")
+      .mockRejectedValue(new Error("legacy readManifest"));
+    const legacyReadPreferences = vi
+      .spyOn(app.store, "readPreferences")
+      .mockRejectedValue(new Error("legacy readPreferences"));
+    const legacyWritePreferences = vi
+      .spyOn(app.store, "writePreferences")
+      .mockRejectedValue(new Error("legacy writePreferences"));
+
+    const pinned = await app.togglePinnedSource("pin-source");
+
+    expect(pinned.ok).toBe(true);
+    if (!pinned.ok) {
+      return;
+    }
+    expect(pinned.data.pinnedSourceIds).toEqual(["pin-source"]);
+    expect(legacyReadManifest).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(legacyWritePreferences).not.toHaveBeenCalled();
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.preferences.pinnedSourceIds).toEqual(["pin-source"]);
+  });
 });
