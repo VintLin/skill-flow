@@ -652,6 +652,80 @@ describe.sequential("runtime v2 authority reads", () => {
     await expectRawLockToBeV2Only(sandbox.stateRoot);
   });
 
+  test("config reads and settings writes use v2 preferences", async () => {
+    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox, {
+      preferences: {
+        pinnedSourceIds: ["repo", "missing"],
+        projectSourceDrafts: {
+          "project-a": {
+            repo: {
+              sourceId: "repo",
+              selectedLeafIds: ["repo:two"],
+              enabledTargets: ["cursor"],
+              updatedAt: "2026-06-04T00:00:00.000Z",
+            },
+            missing: {
+              sourceId: "missing",
+              selectedLeafIds: ["missing:one"],
+              enabledTargets: ["codex"],
+              updatedAt: "2026-06-04T00:00:00.000Z",
+            },
+          },
+        },
+      },
+    }));
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+    const legacyWritePreferences = vi.spyOn(app.store, "writePreferences").mockRejectedValue(new Error("legacy writePreferences"));
+
+    const saved = await app.saveSettings({
+      customTargets: [
+        {
+          id: "team-target",
+          name: "Team Target",
+          globalPath: path.join(sandbox.targetsRoot, "team-target"),
+          projectPathTemplate: ".team/skills",
+          strategy: "copy",
+          createdAt: "2026-06-04T00:00:00.000Z",
+          updatedAt: "2026-06-04T00:00:00.000Z",
+        },
+      ],
+      agentDisplayOrder: ["team-target", "codex"],
+    });
+    const listed = await app.listWorkflows();
+
+    expect(saved.ok).toBe(true);
+    expect(listed.ok).toBe(true);
+    if (!saved.ok || !listed.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(legacyWritePreferences).not.toHaveBeenCalled();
+    expect(saved.data.customTargets.map((target) => target.id)).toEqual(["team-target"]);
+    expect(saved.data.agentDisplayOrder).toEqual(["team-target", "codex"]);
+    expect(listed.data.summaries.map((summary) => summary.source.id)).toEqual(["repo"]);
+    expect(listed.data.pinnedSourceIds).toEqual(["repo"]);
+    expect(listed.data.customTargets.map((target) => target.id)).toEqual(["team-target"]);
+
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.preferences.schemaVersion).toBe(2);
+    expect(state.preferences.pinnedSourceIds).toEqual(["repo"]);
+    expect(state.preferences.projectSourceDrafts).toEqual({
+      "project-a": {
+        repo: expect.objectContaining({
+          sourceId: "repo",
+          selectedLeafIds: ["repo:two"],
+          enabledTargets: ["cursor"],
+        }),
+      },
+    });
+    expect(state.preferences.customTargets.map((target) => target.id)).toEqual(["team-target"]);
+  });
+
   test("inspectSource fails on v1 authority instead of falling back", async () => {
     await writeV1AuthorityFiles(sandbox.stateRoot);
     const app = new SkillFlowApp();

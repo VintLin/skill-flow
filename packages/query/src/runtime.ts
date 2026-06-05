@@ -36,6 +36,7 @@ import type {
   LocalScanSkillVariant,
   LockFileV2,
   ManifestFileV2,
+  PreferencesFileV2,
   ProjectScope,
   ProjectionRecord,
   RecentProject,
@@ -301,10 +302,12 @@ export class SkillFlowApp {
     this.configCoordinator = new ConfigCoordinator({
       store: {
         init: () => this.store.init(),
-        readManifest: () => this.store.readManifest(),
-        readPreferences: () => this.store.readPreferences(),
+        readManifest: async () => (await this.readRuntimeAuthorityView()).manifest,
+        readPreferences: async () => (await this.readRuntimeAuthorityView()).preferences,
         readCollections: () => this.readCollectionsForRuntime(),
-        writePreferences: (preferences) => this.store.writePreferences(preferences),
+        writePreferences: async (preferences) => {
+          await this.writePreferencesV2FromView(preferences);
+        },
       },
       recentProjectService: this.recentProjectService,
       doctorService: this.doctorService,
@@ -328,6 +331,108 @@ export class SkillFlowApp {
       state,
       collections: state.collections,
     };
+  }
+
+  private async writePreferencesV2FromView(preferences: SharedPreferences): Promise<SharedPreferences> {
+    const state = await this.stateStoreV2.readState();
+    const nextPreferences = this.preferencesV2FromView(preferences, state.preferences);
+    await this.stateStoreV2.writeState({
+      ...state,
+      preferences: nextPreferences,
+    });
+    return projectStateV2ToView({
+      ...state,
+      preferences: nextPreferences,
+    }).preferences;
+  }
+
+  private async pruneMissingSourceIdsV2(preferences?: SharedPreferences): Promise<SharedPreferences> {
+    const state = await this.stateStoreV2.readState();
+    const sourceIds = new Set(state.manifest.sources.map((source) => source.id));
+    const currentPreferences = preferences ?? projectStateV2ToView(state).preferences;
+    const projectDrafts = Object.fromEntries(
+      Object.entries(currentPreferences.projectDrafts).map(([projectId, drafts]) => [
+        projectId,
+        Object.fromEntries(
+          Object.entries(drafts).filter(([sourceId]) => sourceIds.has(sourceId)),
+        ),
+      ]),
+    );
+    const nextPreferences = this.preferencesV2FromView({
+      ...currentPreferences,
+      pinnedSourceIds: currentPreferences.pinnedSourceIds.filter((sourceId) => sourceIds.has(sourceId)),
+      projectDrafts,
+    }, state.preferences);
+    await this.stateStoreV2.writeState({
+      ...state,
+      preferences: nextPreferences,
+    });
+    return projectStateV2ToView({
+      ...state,
+      preferences: nextPreferences,
+    }).preferences;
+  }
+
+  private preferencesV2FromView(
+    preferences: SharedPreferences,
+    previous: PreferencesFileV2,
+  ): PreferencesFileV2 {
+    return {
+      schemaVersion: 2,
+      migrationGeneration: previous.migrationGeneration,
+      pinnedSourceIds: [...preferences.pinnedSourceIds],
+      selectedProjectScope: { ...preferences.selectedProjectScope },
+      recentProjects: preferences.recentProjects.map((project) => ({
+        ...project,
+        ...(project.tools ? { tools: [...project.tools] } : {}),
+      })),
+      projectSourceDrafts: this.projectSourceDraftsV2FromView(preferences.projectDrafts),
+      customTargets: preferences.customTargets.map((target) => ({ ...target })),
+      agentDisplayOrder: [...preferences.agentDisplayOrder],
+      ...(previous.localImportChoices ? { localImportChoices: previous.localImportChoices.map((choice) => ({
+        ...choice,
+        selectedSkills: choice.selectedSkills.map((skill) => ({
+          ...skill,
+          selector: { ...skill.selector },
+        })),
+        enabledTargets: [...choice.enabledTargets],
+      })) } : {}),
+      ...(previous.localScanImportChoices ? { localScanImportChoices: previous.localScanImportChoices.map((choice) => ({
+        ...choice,
+        detectedSkills: choice.detectedSkills.map((skill) => ({
+          ...skill,
+          selector: { ...skill.selector },
+          diagnostics: skill.diagnostics.map((diagnostic) => ({ ...diagnostic })),
+        })),
+        selectedSkills: choice.selectedSkills.map((skill) => ({
+          ...skill,
+          selector: { ...skill.selector },
+        })),
+        enabledTargets: [...choice.enabledTargets],
+      })) } : {}),
+    };
+  }
+
+  private projectSourceDraftsV2FromView(
+    projectDrafts: SharedPreferences["projectDrafts"],
+  ): PreferencesFileV2["projectSourceDrafts"] {
+    const updatedAt = new Date().toISOString();
+    return Object.fromEntries(
+      Object.entries(projectDrafts).map(([projectId, drafts]) => [
+        projectId,
+        Object.fromEntries(
+          Object.entries(drafts).map(([sourceId, draft]) => [
+            sourceId,
+            {
+              sourceId,
+              selectedLeafIds: [...draft.selectedLeafIds],
+              enabledTargets: [...draft.enabledTargets],
+              updatedAt,
+            },
+          ]),
+        ),
+      ]),
+    );
   }
 
   private createAdaptersForPreferences(preferences: SharedPreferences): ChannelAdapter[] {
@@ -1075,14 +1180,15 @@ export class SkillFlowApp {
     agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
   }>> {
     return this.runSerializedMutation(async () => {
-      const preferences = await this.store.readPreferences();
-      await this.store.writePreferences({
+      const preferences = (await this.readRuntimeAuthorityView()).preferences;
+      const saved = await this.writePreferencesV2FromView({
         ...preferences,
         customTargets: input.customTargets,
         agentDisplayOrder: input.agentDisplayOrder,
       });
-      const saved = await this.store.readPreferences();
-      await this.refreshAdapters();
+      this.adapters = this.createAdaptersForPreferences(saved);
+      this.planner = new DeploymentPlanner(this.adapters);
+      this.applier = new DeploymentApplier(this.adapters);
       return ok({
         customTargets: saved.customTargets,
         agentDisplayOrder: saved.agentDisplayOrder,
@@ -3434,31 +3540,17 @@ export class SkillFlowApp {
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
-    const pruned = await this.pruneMissingCheckoutsImpl();
-    if (!pruned.ok) {
-      return fail(pruned.errors, pruned.warnings);
-    }
-    const reconciled = await this.sourceService.reconcileInventory(undefined, {
-      force: true,
-    });
-    if (!reconciled.ok) {
-      return fail(reconciled.errors, reconciled.warnings);
-    }
-    const { manifest, lockFile } = await this.store.readState();
-    await this.store.pruneSourceMetadataCache(manifest.sources.map((source) => source.id));
-    await this.persistNormalizedBindings(manifest, lockFile);
+    const runtimeView = await this.readRuntimeAuthorityView();
+    const { manifest, lockFile, collections } = runtimeView;
     const recentProjects = await this.recentProjectService.listRecentProjects().catch(() => []);
-    const preferences = await this.store.pruneMissingSourceIds();
-    await this.store.writePreferences({
-      ...preferences,
+    const reconciledPreferences = await this.pruneMissingSourceIdsV2({
+      ...runtimeView.preferences,
       recentProjects,
     });
-    const reconciledPreferences = await this.store.readPreferences();
     const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(
       manifest,
       lockFile,
     );
-    const collections = await this.readCollectionsForRuntime();
     const hiddenSourceIds = this.hiddenSourceIdsFromCollections(collections);
     return ok(
       {
@@ -3471,7 +3563,7 @@ export class SkillFlowApp {
         agentDisplayOrder: reconciledPreferences.agentDisplayOrder,
         groupCardEnrichmentBySourceId,
       },
-      pruned.warnings,
+      [],
     );
   }
 
@@ -3484,26 +3576,14 @@ export class SkillFlowApp {
   private async getConfigDataImpl(): Promise<
     Result<{ manifest: Manifest; lockFile: LockFile; summaries: WorkflowSummary[] }>
   > {
-    const pruned = await this.pruneMissingCheckoutsImpl();
-    if (!pruned.ok) {
-      return fail(pruned.errors, pruned.warnings);
-    }
-    const reconciled = await this.sourceService.reconcileInventory(undefined, {
-      force: true,
-    });
-    if (!reconciled.ok) {
-      return fail(reconciled.errors, reconciled.warnings);
-    }
-    const { manifest, lockFile } = await this.store.readState();
-    const collections = await this.readCollectionsForRuntime();
-    await this.persistNormalizedBindings(manifest, lockFile);
+    const { manifest, lockFile, collections } = await this.readRuntimeAuthorityView();
     return ok(
       {
         manifest,
         lockFile,
         summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, collections),
       },
-      pruned.warnings,
+      [],
     );
   }
 
@@ -3558,7 +3638,7 @@ export class SkillFlowApp {
     if (!boot.ok) {
       return fail(boot.errors, boot.warnings);
     }
-    const preferences = await this.store.pruneMissingSourceIds();
+    const preferences = await this.pruneMissingSourceIdsV2();
     const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(
       boot.data.manifest,
       boot.data.lockFile,
