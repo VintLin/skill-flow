@@ -9,7 +9,7 @@ import type {
 } from "@skill-flow/domain/types";
 import { StateStoreV2, StateStoreV2Error } from "@skill-flow/storage/state-store-v2";
 import { SkillFlowApp } from "../runtime.js";
-import { useSkillFlowSandbox } from "./test-helpers.js";
+import { pathExists, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("runtime v2 authority reads", () => {
   const sandbox = useSkillFlowSandbox();
@@ -322,6 +322,192 @@ describe.sequential("runtime v2 authority reads", () => {
         status: "blocked",
       }),
     ]);
+    await expectRawLockToBeV2Only(sandbox.stateRoot);
+  });
+
+  test("createVirtualGroup materializes a v2 collection without legacy state writes", async () => {
+    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
+    await writeSourceLeafFiles(sandbox);
+    const app = new SkillFlowApp();
+    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
+    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
+    const legacyReadVirtualGroups = vi.spyOn(app.store, "readVirtualGroups").mockRejectedValue(new Error("legacy readVirtualGroups"));
+    const legacyWriteVirtualGroups = vi.spyOn(app.store, "writeVirtualGroups").mockRejectedValue(new Error("legacy writeVirtualGroups"));
+
+    const created = await app.createVirtualGroup({
+      displayName: "Writing Stack",
+      skills: [
+        { sourceId: "repo", leafId: "repo:one" },
+        { sourceId: "repo", leafId: "repo:two" },
+      ],
+      enabledTargets: ["codex"],
+    });
+
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(legacyReadPreferences).not.toHaveBeenCalled();
+    expect(legacyReadVirtualGroups).not.toHaveBeenCalled();
+    expect(legacyWriteVirtualGroups).not.toHaveBeenCalled();
+    expect(created.data.group).toEqual(expect.objectContaining({
+      id: "writing-stack",
+      displayName: "Writing Stack",
+      includedSkills: [
+        { sourceId: "repo", leafId: "repo:one" },
+        { sourceId: "repo", leafId: "repo:two" },
+      ],
+      hiddenSourceIds: [],
+    }));
+    expect(created.data.source).toEqual(expect.objectContaining({
+      id: "writing-stack",
+      kind: "virtual",
+      locator: "collection:writing-stack",
+      displayName: "Writing Stack",
+    }));
+    expect(created.data.binding).toEqual({
+      selectedLeafIds: ["writing-stack:member-1", "writing-stack:member-2"],
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: ["writing-stack:member-1", "writing-stack:member-2"],
+        },
+      },
+    });
+
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.manifest.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "writing-stack",
+          kind: "collection",
+          locator: "collection:writing-stack",
+          canonicalLocator: "collection:writing-stack",
+          displayName: "Writing Stack",
+          enabled: true,
+        }),
+      ]),
+    );
+    expect(state.manifest.bindings["writing-stack"]).toEqual({
+      sourceId: "writing-stack",
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets: ["codex"],
+    });
+    expect(state.collections.collections["writing-stack"]).toEqual(expect.objectContaining({
+      id: "writing-stack",
+      displayName: "Writing Stack",
+      materializedSourceId: "writing-stack",
+      hiddenSourceIds: [],
+    }));
+    expect(state.collections.collections["writing-stack"]?.members.map((member) => ({
+      id: member.id,
+      origin: {
+        sourceId: member.origin.sourceId,
+        leafId: member.origin.leafId,
+        canonicalLocator: member.origin.canonicalLocator,
+        repoPath: member.origin.repoPath,
+      },
+      snapshot: {
+        leafId: member.snapshot.leafId,
+        materializedPath: member.snapshot.materializedPath,
+        relativePath: member.snapshot.relativePath,
+      },
+      updatePolicy: member.updatePolicy,
+    }))).toEqual([
+      {
+        id: "member-1",
+        origin: {
+          sourceId: "repo",
+          leafId: "repo:one",
+          canonicalLocator: "github:acme/repo",
+          repoPath: "one",
+        },
+        snapshot: {
+          leafId: "writing-stack:member-1",
+          materializedPath: "member-1",
+          relativePath: "member-1",
+        },
+        updatePolicy: "frozen",
+      },
+      {
+        id: "member-2",
+        origin: {
+          sourceId: "repo",
+          leafId: "repo:two",
+          canonicalLocator: "github:acme/repo",
+          repoPath: "two",
+        },
+        snapshot: {
+          leafId: "writing-stack:member-2",
+          materializedPath: "member-2",
+          relativePath: "member-2",
+        },
+        updatePolicy: "frozen",
+      },
+    ]);
+    expect(state.lockFile.sources["writing-stack"]).toEqual(expect.objectContaining({
+      sourceId: "writing-stack",
+      canonicalLocator: "collection:writing-stack",
+      leafIds: ["writing-stack:member-1", "writing-stack:member-2"],
+    }));
+    expect(state.lockFile.leafInventory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "writing-stack:member-1",
+          sourceId: "writing-stack",
+          relativePath: "member-1",
+          linkName: "member-1",
+          valid: true,
+        }),
+        expect.objectContaining({
+          id: "writing-stack:member-2",
+          sourceId: "writing-stack",
+          relativePath: "member-2",
+          linkName: "member-2",
+          valid: true,
+        }),
+      ]),
+    );
+    expect(state.lockFile.projections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceId: "writing-stack",
+          leafId: "writing-stack:member-1",
+          target: "codex",
+          targetPath: path.join(sandbox.targetsRoot, "codex", "member-1"),
+          status: "active",
+        }),
+        expect.objectContaining({
+          sourceId: "writing-stack",
+          leafId: "writing-stack:member-2",
+          target: "codex",
+          targetPath: path.join(sandbox.targetsRoot, "codex", "member-2"),
+          status: "active",
+        }),
+      ]),
+    );
+    await expect(pathExists(path.join(
+      sandbox.stateRoot,
+      "source",
+      "collection",
+      "writing-stack",
+      "member-1",
+      "SKILL.md",
+    ))).resolves.toBe(true);
+    await expect(pathExists(path.join(
+      sandbox.stateRoot,
+      "source",
+      "collection",
+      "writing-stack",
+      "member-2",
+      "SKILL.md",
+    ))).resolves.toBe(true);
+    await expect(pathExists(path.join(sandbox.targetsRoot, "codex", "member-1"))).resolves.toBe(true);
+    await expect(pathExists(path.join(sandbox.stateRoot, "virtual-groups.json"))).resolves.toBe(false);
     await expectRawLockToBeV2Only(sandbox.stateRoot);
   });
 

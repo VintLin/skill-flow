@@ -25,6 +25,7 @@ import type {
   ImportPreparationResult,
   ImportReasonCode,
   ImportSourceResult,
+  LeafRecordV2,
   LeafRecord,
   LockFile,
   LocalImportChoice,
@@ -40,6 +41,8 @@ import type {
   RecentProject,
   Result,
   SharedPreferences,
+  SkillCollectionMemberV2,
+  SkillCollectionRecordV2,
   SkillCandidate,
   SourceMetadataResult,
   SourceStats,
@@ -523,9 +526,14 @@ export class SkillFlowApp {
       });
     }
 
-    const { manifest, lockFile } = await this.store.readState();
-    const virtualGroups = await this.store.readVirtualGroups();
-    const includedSkills = this.validateVirtualSkillRefs(options.skills, manifest, lockFile);
+    const state = await this.stateStoreV2.readState();
+    const manifest = this.cloneManifestV2(state.manifest);
+    const lockFile = this.cloneLockFileV2(state.lockFile);
+    const collections: CollectionsFileV2 = {
+      ...state.collections,
+      collections: { ...state.collections.collections },
+    };
+    const includedSkills = this.validateCollectionSkillRefs(options.skills, manifest, lockFile);
     if (!includedSkills.ok) {
       return fail(includedSkills.errors, includedSkills.warnings);
     }
@@ -535,57 +543,97 @@ export class SkillFlowApp {
         message: "Virtual group must include at least one skill.",
       });
     }
-    const conflict = this.findVirtualSkillNameConflict(includedSkills.data, lockFile);
+    const conflict = this.findCollectionSkillNameConflict(includedSkills.data, lockFile);
     if (conflict) {
       return fail(conflict);
     }
 
-    const id = this.uniqueVirtualSourceId(displayName, manifest, virtualGroups);
+    const id = this.uniqueCollectionSourceId(displayName, manifest, collections);
     const now = new Date().toISOString();
-    const selectedLeafIds = includedSkills.data.map((skill) => skill.leafId);
     const enabledTargets = [...new Set(options.enabledTargets ?? [])];
-    const source: Manifest["sources"][number] = {
+    const materialized = await this.materializeCollectionMembers(
       id,
-      locator: `virtual:${id}`,
-      kind: "virtual",
+      includedSkills.data,
+      manifest,
+      lockFile,
+      state.manifest.migrationGeneration,
+      now,
+    );
+    if (!materialized.ok) {
+      return fail(materialized.errors, materialized.warnings);
+    }
+    const source: ManifestFileV2["sources"][number] = {
+      id,
+      kind: "collection",
+      locator: `collection:${id}`,
+      canonicalLocator: `collection:${id}`,
       displayName,
-      originalDisplayName: displayName,
-      addedAt: now,
-      selectionMode: "all",
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
     };
-    const binding = this.bindingFromDraft({
-      selectedLeafIds,
-      enabledTargets,
-    });
-    const group: VirtualGroupRecord = {
+    const collection: SkillCollectionRecordV2 = {
       id,
       displayName,
-      includedSkills: includedSkills.data,
+      materializedSourceId: id,
+      members: materialized.data.members,
       hiddenSourceIds: [],
-      restoreSnapshots: {},
+      restoreSelections: {},
       createdAt: now,
       updatedAt: now,
     };
 
     manifest.sources.push(source);
-    manifest.bindings[id] = binding;
-    const nextVirtualGroups: VirtualGroupsState = {
-      schemaVersion: 1,
-      groups: {
-        ...virtualGroups.groups,
-        [id]: group,
-      },
+    manifest.bindings[id] = {
+      sourceId: id,
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets,
     };
+    lockFile.sources[id] = {
+      sourceId: id,
+      canonicalLocator: `collection:${id}`,
+      revision: {
+        provider: "collection",
+        capturedAt: now,
+      },
+      localPath: materialized.data.collectionRoot,
+      leafIds: materialized.data.leafs.map((leaf) => leaf.id),
+    };
+    lockFile.leafInventory = [...lockFile.leafInventory, ...materialized.data.leafs];
+    collections.collections[id] = collection;
 
-    const applied = await this.planAndApplySources(manifest, lockFile, [id]);
-    if (!applied.ok) {
-      return fail(applied.errors, applied.warnings);
+    const preferences = projectStateV2ToView({ ...state, manifest, lockFile }).preferences;
+    const plan = await this.planForSourcesV2(manifest, lockFile, [id], preferences);
+    if (!plan.ok) {
+      return fail(plan.errors, plan.warnings);
+    }
+    const applyResult = await new DeploymentApplierV2(this.createAdaptersForPreferences(preferences))
+      .applyPlan(lockFile, plan.data.actions);
+    if (!applyResult.ok) {
+      return fail(applyResult.errors, [...plan.warnings, ...applyResult.warnings]);
     }
 
-    await this.store.writeState(manifest, lockFile);
-    await this.store.writeVirtualGroups(nextVirtualGroups);
+    await this.stateStoreV2.writeState({
+      ...state,
+      manifest,
+      lockFile,
+      collections,
+    });
 
-    return ok({ group, source, binding }, applied.warnings);
+    const view = projectStateV2ToView({ ...state, manifest, lockFile });
+    const group: VirtualGroupRecord = this.collectionToVirtualGroupView(collection);
+    const viewSource = view.manifest.sources.find((item) => item.id === id) ?? {
+      id,
+      locator: `collection:${id}`,
+      kind: "virtual" as const,
+      displayName,
+      originalDisplayName: displayName,
+      addedAt: now,
+    };
+    const binding = view.manifest.bindings[id] ?? { selectedLeafIds: [], targets: {} };
+
+    return ok({ group, source: viewSource, binding }, [...plan.warnings, ...applyResult.warnings]);
   }
 
   private async mergeGroupsImpl(
@@ -4270,6 +4318,231 @@ export class SkillFlowApp {
           )
           .join("; ")
       }.`,
+    };
+  }
+
+  private uniqueCollectionSourceId(
+    displayName: string,
+    manifest: ManifestFileV2,
+    collections: CollectionsFileV2,
+  ): string {
+    const baseId = deriveSourceId(displayName) || "skill-collection";
+    const usedIds = new Set([
+      ...manifest.sources.map((source) => source.id),
+      ...Object.keys(manifest.bindings),
+      ...Object.keys(collections.collections),
+    ]);
+    let candidate = baseId;
+    let suffix = 2;
+    while (usedIds.has(candidate)) {
+      candidate = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
+  }
+
+  private validateCollectionSkillRefs(
+    skills: VirtualGroupSkillRef[],
+    manifest: ManifestFileV2,
+    lockFile: LockFileV2,
+  ): Result<VirtualGroupSkillRef[]> {
+    const includedSkills: VirtualGroupSkillRef[] = [];
+    const seen = new Set<string>();
+
+    for (const skill of skills) {
+      const sourceId = skill.sourceId.trim();
+      const leafId = skill.leafId.trim();
+      const source = manifest.sources.find((item) => item.id === sourceId);
+      if (!source) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+
+      const sourceLock = lockFile.sources[sourceId];
+      if (!sourceLock) {
+        return fail({
+          code: "SOURCE_LOCK_MISSING",
+          message: `${sourceId} is missing from V2 lock sources.`,
+        });
+      }
+
+      const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
+      if (!leaf || leaf.sourceId !== sourceId || !sourceLock.leafIds.includes(leafId)) {
+        return fail({
+          code: "LEAF_NOT_FOUND",
+          message: `Skill leaf '${leafId}' is not registered in skills group '${sourceId}'.`,
+        });
+      }
+
+      const key = `${sourceId}\0${leafId}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      includedSkills.push({ sourceId, leafId });
+    }
+
+    return ok(includedSkills);
+  }
+
+  private findCollectionSkillNameConflict(
+    skills: VirtualGroupSkillRef[],
+    lockFile: LockFileV2,
+  ): { code: string; message: string } | undefined {
+    const refsByName = new Map<string, Array<{ sourceId: string; leaf: LeafRecordV2 }>>();
+
+    for (const skill of skills) {
+      const leaf = lockFile.leafInventory.find((item) => item.id === skill.leafId);
+      if (!leaf) {
+        continue;
+      }
+      const projectedName = leaf.linkName.trim();
+      if (!projectedName) {
+        continue;
+      }
+      refsByName.set(projectedName, [
+        ...(refsByName.get(projectedName) ?? []),
+        { sourceId: skill.sourceId, leaf },
+      ]);
+    }
+
+    const duplicates = [...refsByName.entries()].filter(([, refs]) => refs.length > 1);
+    if (duplicates.length === 0) {
+      return undefined;
+    }
+
+    return {
+      code: "VIRTUAL_GROUP_SKILL_NAME_CONFLICT",
+      message: `Virtual group contains duplicate projected skill names: ${
+        duplicates
+          .map(([name, refs]) =>
+            `${name} (${refs.map((ref) => `${ref.sourceId}:${ref.leaf.relativePath}`).join(", ")})`
+          )
+          .join("; ")
+      }.`,
+    };
+  }
+
+  private async materializeCollectionMembers(
+    collectionId: string,
+    skills: VirtualGroupSkillRef[],
+    manifest: ManifestFileV2,
+    lockFile: LockFileV2,
+    migrationGeneration: ManifestFileV2["migrationGeneration"],
+    now: string,
+  ): Promise<Result<{
+    collectionRoot: string;
+    members: SkillCollectionMemberV2[];
+    leafs: LeafRecordV2[];
+  }>> {
+    const collectionRoot = path.join(this.stateStoreV2.rootPath, "source", "collection", collectionId);
+
+    try {
+      await fs.rm(collectionRoot, { recursive: true, force: true });
+      await fs.mkdir(collectionRoot, { recursive: true });
+
+      const members: SkillCollectionMemberV2[] = [];
+      const leafs: LeafRecordV2[] = [];
+
+      for (const [index, ref] of skills.entries()) {
+        const originSource = manifest.sources.find((source) => source.id === ref.sourceId);
+        const originLock = lockFile.sources[ref.sourceId];
+        const originLeaf = lockFile.leafInventory.find(
+          (leaf) => leaf.id === ref.leafId && leaf.sourceId === ref.sourceId,
+        );
+        if (!originSource || !originLock || !originLeaf) {
+          return fail({
+            code: "COLLECTION_MEMBER_ORIGIN_MISSING",
+            message: `Skill leaf '${ref.leafId}' is not available for collection '${collectionId}'.`,
+          });
+        }
+
+        const memberId = `member-${index + 1}`;
+        const leafId = `${collectionId}:${memberId}`;
+        const memberPath = path.join(collectionRoot, memberId);
+        await fs.cp(originLeaf.absolutePath, memberPath, { recursive: true, force: true });
+        const actualHash = await hashDirectory(memberPath);
+        const skillFilePath = path.join(memberPath, "SKILL.md");
+
+        leafs.push({
+          id: leafId,
+          sourceId: collectionId,
+          relativePath: memberId,
+          linkName: memberId,
+          title: originLeaf.title || originLeaf.displayName || originLeaf.linkName || memberId,
+          description: originLeaf.description ?? "",
+          absolutePath: memberPath,
+          skillFilePath,
+          displayName: originLeaf.displayName || originLeaf.title || originLeaf.linkName || memberId,
+          contentHash: actualHash,
+          selectors: {
+            legacyAliases: [originLeaf.id, originLeaf.relativePath],
+          },
+          valid: true,
+          diagnostics: [],
+        });
+        members.push({
+          id: memberId,
+          origin: {
+            sourceId: ref.sourceId,
+            leafId: ref.leafId,
+            sourceLocator: originSource.locator,
+            canonicalLocator: originLock.canonicalLocator,
+            repoPath: originLeaf.relativePath,
+            contentHashAtCapture: originLeaf.contentHash,
+            capturedAt: now,
+          },
+          snapshot: {
+            leafId,
+            materializedPath: memberId,
+            skillFilePath: path.join(memberId, "SKILL.md"),
+            relativePath: memberId,
+            contentHash: actualHash,
+          },
+          updatePolicy: "frozen",
+        });
+      }
+
+      await writeJsonFile(path.join(collectionRoot, ".skillflow-generation.json"), {
+        schemaVersion: 2,
+        migrationGeneration,
+        collectionId,
+        createdAt: now,
+        diagnostics: [],
+      });
+
+      return ok({ collectionRoot, members, leafs });
+    } catch (error) {
+      await fs.rm(collectionRoot, { recursive: true, force: true });
+      return fail({
+        code: "COLLECTION_MATERIALIZATION_FAILED",
+        message: `Unable to materialize collection '${collectionId}': ${String(error)}`,
+      });
+    }
+  }
+
+  private collectionToVirtualGroupView(collection: SkillCollectionRecordV2): VirtualGroupRecord {
+    return {
+      id: collection.id,
+      displayName: collection.displayName,
+      includedSkills: collection.members.map((member) => ({
+        sourceId: member.origin.sourceId,
+        leafId: member.origin.leafId,
+      })),
+      hiddenSourceIds: [...collection.hiddenSourceIds],
+      restoreSnapshots: Object.fromEntries(
+        Object.entries(collection.restoreSelections).map(([sourceId, selection]) => [
+          sourceId,
+          {
+            selectedLeafIds: [...selection.selectedLeafIds],
+            enabledTargets: [],
+          },
+        ]),
+      ),
+      createdAt: collection.createdAt,
+      updatedAt: collection.updatedAt,
     };
   }
 
