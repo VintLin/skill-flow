@@ -9,6 +9,7 @@ import {
   createRepo,
   skillDoc,
   useSkillFlowSandbox,
+  writeRepoFiles,
 } from "./test-helpers.js";
 
 describe.sequential("SourceAuthorityServiceV2", () => {
@@ -134,5 +135,45 @@ describe.sequential("SourceAuthorityServiceV2", () => {
       "beta",
       "SKILL.md",
     ))).resolves.toBeTruthy();
+  });
+
+  test("updates v2 leaf inventory from source origin", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const stateStore = new StateStoreV2(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityServiceV2({
+      stateStore,
+      checkoutService,
+    });
+    const added = await service.addSource(repoPath, {
+      sourceIdOverride: "update-source",
+    });
+    expect(added.ok).toBe(true);
+    await writeRepoFiles(repoPath, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+
+    const updated = await service.updateSources(["update-source"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated[0]).toEqual(expect.objectContaining({
+      sourceId: "update-source",
+      changed: true,
+      addedLeafIds: ["update-source:skills/two"],
+    }));
+    const state = await stateStore.readState();
+    expect(state.lockFile.sources["update-source"]?.leafIds).toEqual([
+      "update-source:skills/one",
+      "update-source:skills/two",
+    ]);
   });
 });

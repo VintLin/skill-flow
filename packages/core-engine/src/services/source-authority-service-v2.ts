@@ -7,6 +7,9 @@ import type {
   Result,
   SourceKindV2,
   SourceManifestRecordV2,
+  SourceUpdateDiff,
+  SourceUpdateResult,
+  SourceUpdateResultItem,
   Warning,
 } from "@skill-flow/domain/types";
 import type { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
@@ -245,11 +248,185 @@ export class SourceAuthorityServiceV2 {
     return ok({ removed }, warnings);
   }
 
+  async updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+    const state = await this.options.stateStore.readState();
+    const requestedIds = sourceIds?.length
+      ? [...new Set(sourceIds)]
+      : state.manifest.sources.map((source) => source.id);
+    const nextLockFile: LockFileV2 = {
+      ...state.lockFile,
+      sources: { ...state.lockFile.sources },
+      leafInventory: [...state.lockFile.leafInventory],
+      projections: [...state.lockFile.projections],
+    };
+    const updated: SourceUpdateResultItem[] = [];
+    const warnings: Warning[] = [];
+
+    for (const sourceId of requestedIds) {
+      const source = state.manifest.sources.find((item) => item.id === sourceId);
+      const lock = nextLockFile.sources[sourceId];
+      if (!source || !lock) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+
+      if (source.kind === "collection") {
+        updated.push(this.emptyUpdateResult(sourceId));
+        continue;
+      }
+
+      const tempCheckoutPath = path.join(
+        this.options.stateStore.rootPath,
+        "source",
+        source.kind,
+        `.update-${sourceId}-${process.pid}-${Date.now()}`,
+      );
+      const prepared = await this.options.checkoutService.prepareSourceCheckout(source.locator, {
+        options: {
+          sourceIdOverride: sourceId,
+          displayNameOverride: source.displayName,
+        },
+        checkoutPath: tempCheckoutPath,
+      });
+      if (!prepared.ok) {
+        return fail(prepared.errors, [...warnings, ...prepared.warnings]);
+      }
+      warnings.push(...prepared.warnings);
+
+      const previousLeafs = nextLockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
+
+      const backupPath = `${lock.localPath}.${process.pid}.${Date.now()}.backup`;
+      try {
+        if (await pathExists(lock.localPath)) {
+          await fs.rename(lock.localPath, backupPath);
+        }
+        await ensureDir(path.dirname(lock.localPath));
+        await fs.rename(prepared.data.checkoutPath, lock.localPath);
+        await removePath(backupPath).catch(() => {});
+      } catch (error) {
+        await removePath(prepared.data.checkoutPath).catch(() => {});
+        if (await pathExists(backupPath)) {
+          await fs.rename(backupPath, lock.localPath).catch(() => {});
+        }
+        return fail({
+          code: "SOURCE_CHECKOUT_REPLACE_FAILED",
+          message: `Unable to replace checkout for '${sourceId}': ${String(error)}`,
+        }, warnings);
+      }
+
+      const nextLeafs = await Promise.all(
+        prepared.data.leafs.map((leaf) => this.toLeafRecordV2(leaf, sourceId, lock.localPath)),
+      );
+      const diff = this.buildV2SourceUpdateDiff(
+        sourceId,
+        previousLeafs,
+        nextLeafs,
+        prepared.data.invalidLeafs,
+      );
+
+      nextLockFile.sources[sourceId] = {
+        ...lock,
+        revision: {
+          ...lock.revision,
+          ...(prepared.data.commitSha ? { commit: prepared.data.commitSha } : {}),
+          capturedAt: new Date().toISOString(),
+        },
+        leafIds: nextLeafs.map((leaf) => leaf.id),
+      };
+      nextLockFile.leafInventory = [
+        ...nextLockFile.leafInventory.filter((leaf) => leaf.sourceId !== sourceId),
+        ...nextLeafs,
+      ];
+      updated.push(diff);
+    }
+
+    await this.options.stateStore.writeState({
+      ...state,
+      lockFile: nextLockFile,
+    });
+
+    return ok({ updated }, warnings);
+  }
+
   private mapSourceKind(kind: PreparedSourceCheckoutV2["kind"]): SourceKindV2 {
     if (kind === "clawhub") {
       return "github";
     }
     return kind;
+  }
+
+  private emptyUpdateResult(sourceId: string): SourceUpdateResultItem {
+    return {
+      sourceId,
+      changed: false,
+      addedLeafIds: [],
+      removedLeafIds: [],
+      invalidatedLeafIds: [],
+      diffs: [],
+    };
+  }
+
+  private buildV2SourceUpdateDiff(
+    sourceId: string,
+    previousLeafs: LeafRecordV2[],
+    nextLeafs: LeafRecordV2[],
+    invalidLeafs: Array<{ path: string; reason: string }>,
+  ): SourceUpdateResultItem {
+    const previousById = new Map(previousLeafs.map((leaf) => [leaf.id, leaf]));
+    const nextById = new Map(nextLeafs.map((leaf) => [leaf.id, leaf]));
+    const invalidPaths = new Set(invalidLeafs.map((leaf) => leaf.path));
+    const diffs: SourceUpdateDiff[] = [];
+
+    for (const previous of previousLeafs) {
+      const next = nextById.get(previous.id);
+      if (!next) {
+        diffs.push({
+          kind: invalidPaths.has(previous.relativePath) ? "invalidated" : "removed",
+          sourceId,
+          leafId: previous.id,
+          relativePath: previous.relativePath,
+          contentHash: previous.contentHash,
+        });
+        continue;
+      }
+
+      if (next.contentHash !== previous.contentHash) {
+        diffs.push({
+          kind: "changed",
+          sourceId,
+          leafId: next.id,
+          relativePath: next.relativePath,
+          contentHash: next.contentHash,
+          previousLeafId: previous.id,
+          previousRelativePath: previous.relativePath,
+          previousContentHash: previous.contentHash,
+        });
+      }
+    }
+
+    for (const next of nextLeafs) {
+      if (previousById.has(next.id)) {
+        continue;
+      }
+      diffs.push({
+        kind: "added",
+        sourceId,
+        leafId: next.id,
+        relativePath: next.relativePath,
+        contentHash: next.contentHash,
+      });
+    }
+
+    return {
+      sourceId,
+      changed: diffs.length > 0,
+      addedLeafIds: diffs.filter((diff) => diff.kind === "added").map((diff) => diff.leafId),
+      removedLeafIds: diffs.filter((diff) => diff.kind === "removed").map((diff) => diff.leafId),
+      invalidatedLeafIds: diffs.filter((diff) => diff.kind === "invalidated").map((diff) => diff.leafId),
+      diffs,
+    };
   }
 
   private async toLeafRecordV2(

@@ -8,6 +8,7 @@ import {
   pathExists,
   skillDoc,
   useSkillFlowSandbox,
+  writeRepoFiles,
 } from "./test-helpers.js";
 
 describe.sequential("runtime source v2 write chain", () => {
@@ -305,5 +306,70 @@ describe.sequential("runtime source v2 write chain", () => {
     await expect(
       pathExists(path.join(sandbox.targetsRoot, "codex", "review")),
     ).resolves.toBe(false);
+  });
+
+  test("updateSources refreshes v2 leaf inventory without legacy source service", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "update-source",
+      draft: {
+        selectedLeafIds: ["update-source:skills/one"],
+        enabledTargets: ["codex"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    await writeRepoFiles(repoPath, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+    const legacyUpdate = vi
+      .spyOn(app.sourceService, "updateSources")
+      .mockRejectedValue(new Error("legacy updateSources"));
+    const legacyReadState = vi
+      .spyOn(app.store, "readState")
+      .mockRejectedValue(new Error("legacy readState"));
+    const legacyWriteState = vi
+      .spyOn(app.store, "writeState")
+      .mockRejectedValue(new Error("legacy writeState"));
+
+    const updated = await app.updateSources(["update-source"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(legacyUpdate).not.toHaveBeenCalled();
+    expect(legacyReadState).not.toHaveBeenCalled();
+    expect(legacyWriteState).not.toHaveBeenCalled();
+    expect(updated.data.updated[0]).toEqual(expect.objectContaining({
+      sourceId: "update-source",
+      changed: true,
+      addedLeafIds: ["update-source:skills/two"],
+    }));
+    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    expect(state.lockFile.sources["update-source"]?.leafIds).toEqual([
+      "update-source:skills/one",
+      "update-source:skills/two",
+    ]);
+    expect(state.lockFile.leafInventory.map((leaf) => leaf.id).sort()).toEqual([
+      "update-source:skills/one",
+      "update-source:skills/two",
+    ]);
+    expect(state.lockFile.projections).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceId: "update-source",
+        leafId: "update-source:skills/one",
+        target: "codex",
+        status: "active",
+      }),
+      expect.objectContaining({
+        sourceId: "update-source",
+        leafId: "update-source:skills/two",
+        target: "codex",
+        status: "active",
+      }),
+    ]));
   });
 });

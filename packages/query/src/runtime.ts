@@ -4101,36 +4101,43 @@ export class SkillFlowApp {
   }
 
   private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
-    const pruned = await this.pruneMissingCheckoutsImpl();
-    if (!pruned.ok) {
-      return fail(pruned.errors, pruned.warnings);
-    }
-    const requestedIds = sourceIds?.filter((sourceId) => !pruned.data.removedSourceIds.includes(sourceId));
-    if (sourceIds?.length && requestedIds?.length === 0) {
-      return ok({ updated: [] }, pruned.warnings);
-    }
-
-    const updated = await this.sourceService.updateSources(requestedIds);
+    const updated = await this.sourceAuthorityServiceV2.updateSources(sourceIds);
     if (!updated.ok) {
       return updated;
     }
 
-    const { manifest, lockFile } = await this.store.readState();
-    this.applySourceUpdateResults(manifest, lockFile, updated.data.updated);
-    await this.persistNormalizedBindings(manifest, lockFile);
+    const state = await this.stateStoreV2.readState();
+    const manifest = this.cloneManifestV2(state.manifest);
+    const lockFile = this.cloneLockFileV2(state.lockFile);
+    const preferences = projectStateV2ToView(state).preferences;
+    const updatedSourceIds = new Set(updated.data.updated.map((item) => item.sourceId));
+    const projectedSourceIds = new Set(
+      lockFile.projections
+        .filter((projection) => projection.status === "active")
+        .map((projection) => projection.sourceId),
+    );
     const planSourceIds = manifest.sources
       .map((source) => source.id)
       .filter((id) =>
-        updated.data.updated.some((item) => item.sourceId === id) ||
-        this.hasActiveTargets(manifest, id) ||
-        getManagedDeployments(lockFile).some((deployment) => deployment.sourceId === id),
+        updatedSourceIds.has(id) ||
+        this.hasActiveTargetsV2(manifest, id) ||
+        projectedSourceIds.has(id),
       );
-    const planned = await this.planAndApplySources(manifest, lockFile, planSourceIds);
+    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences);
     if (!planned.ok) {
-      return fail(planned.errors, [...pruned.warnings, ...updated.warnings, ...planned.warnings]);
+      return fail(planned.errors, [...updated.warnings, ...planned.warnings]);
     }
-    await this.store.writeState(manifest, lockFile);
-    return ok(updated.data, [...pruned.warnings, ...updated.warnings, ...planned.warnings]);
+    const applier = new DeploymentApplierV2(this.createAdaptersForPreferences(preferences));
+    const applied = await applier.applyPlan(lockFile, planned.data.actions);
+    if (!applied.ok) {
+      return fail(applied.errors, [...updated.warnings, ...planned.warnings, ...applied.warnings]);
+    }
+    await this.stateStoreV2.writeState({
+      ...state,
+      manifest,
+      lockFile,
+    });
+    return ok(updated.data, [...updated.warnings, ...planned.warnings, ...applied.warnings]);
   }
 
   async doctor(): Promise<Result<DoctorReport>> {
