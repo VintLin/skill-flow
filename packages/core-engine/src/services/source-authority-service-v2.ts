@@ -12,6 +12,7 @@ import type { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import {
   ensureDir,
   hashDirectory,
+  isPathInside,
   pathExists,
   removePath,
 } from "@skill-flow/integration/utils/fs";
@@ -168,6 +169,58 @@ export class SourceAuthorityServiceV2 {
       leafCount: leafs.length,
       invalidLeafCount: prepared.invalidLeafs.length,
     });
+  }
+
+  async removeSource(sourceIds: string[]): Promise<Result<{ removed: string[] }>> {
+    const state = await this.options.stateStore.readState();
+    const removed: string[] = [];
+    const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
+    const nextManifestSources = [...state.manifest.sources];
+    const nextBindings = { ...state.manifest.bindings };
+    const nextLockSources = { ...state.lockFile.sources };
+    let nextLeafInventory = [...state.lockFile.leafInventory];
+    let nextProjections = [...state.lockFile.projections];
+
+    for (const sourceId of sourceIds) {
+      const source = nextManifestSources.find((item) => item.id === sourceId);
+      const lock = nextLockSources[sourceId];
+      if (!source || !lock) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+      if (!isPathInside(sourceRoot, lock.localPath)) {
+        return fail({
+          code: "SOURCE_CHECKOUT_PATH_INVALID",
+          message: `Refusing to delete checkout outside managed root: ${lock.localPath}`,
+        });
+      }
+
+      delete nextLockSources[sourceId];
+      delete nextBindings[sourceId];
+      nextLeafInventory = nextLeafInventory.filter((leaf) => leaf.sourceId !== sourceId);
+      nextProjections = nextProjections.filter((projection) => projection.sourceId !== sourceId);
+      await removePath(lock.localPath);
+      removed.push(sourceId);
+    }
+
+    await this.options.stateStore.writeState({
+      ...state,
+      manifest: {
+        ...state.manifest,
+        sources: nextManifestSources.filter((source) => !removed.includes(source.id)),
+        bindings: nextBindings,
+      },
+      lockFile: {
+        ...state.lockFile,
+        sources: nextLockSources,
+        leafInventory: nextLeafInventory,
+        projections: nextProjections,
+      },
+    });
+
+    return ok({ removed });
   }
 
   private mapSourceKind(kind: PreparedSourceCheckoutV2["kind"]): SourceKindV2 {

@@ -14,6 +14,7 @@ import {
   writeManifestV2,
   writePreferencesV2,
 } from "./state-schema-v2.js";
+import { withFileLock } from "@skill-flow/integration/utils/fs";
 
 const MIGRATION_COMMAND = "skill-flow migrate-state --to v2";
 const AUTHORITY_FILES = [
@@ -199,6 +200,11 @@ export class StateStoreV2 {
         writeCollectionsV2(this.stateRoot, state.collections),
       ]);
     });
+  }
+
+  async withMutationLock<T>(task: () => Promise<T>): Promise<T> {
+    await this.init();
+    return withFileLock(path.join(this.stateRoot, ".mutation.lock"), task);
   }
 
   private async initializeState(): Promise<void> {

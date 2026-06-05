@@ -124,6 +124,8 @@ import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
+import { SourceAuthorityServiceV2 } from "@skill-flow/core-engine/services/source-authority-service-v2";
+import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
 import { SourceService } from "@skill-flow/core-engine/services/source-service";
 import {
   StateMigrationService,
@@ -271,6 +273,8 @@ export class SkillFlowApp {
   adapters: ChannelAdapter[];
   readonly inventoryService: InventoryService;
   readonly sourceService: SourceService;
+  readonly sourceCheckoutService: SourceCheckoutService;
+  readonly sourceAuthorityServiceV2: SourceAuthorityServiceV2;
   readonly importPreparationService: ImportPreparationService;
   planner: DeploymentPlanner;
   applier: DeploymentApplier;
@@ -292,6 +296,14 @@ export class SkillFlowApp {
     this.adapters = adapters;
     this.inventoryService = new InventoryService();
     this.sourceService = new SourceService(this.store, this.inventoryService);
+    this.sourceCheckoutService = new SourceCheckoutService({
+      sourceRoot: path.join(this.stateStoreV2.rootPath, "source"),
+      inventoryService: this.inventoryService,
+    });
+    this.sourceAuthorityServiceV2 = new SourceAuthorityServiceV2({
+      stateStore: this.stateStoreV2,
+      checkoutService: this.sourceCheckoutService,
+    });
     this.importPreparationService = new ImportPreparationService(this.store, this.sourceService);
     this.planner = new DeploymentPlanner(adapters);
     this.applier = new DeploymentApplier(adapters);
@@ -514,13 +526,14 @@ export class SkillFlowApp {
     options?: SkillFlowAddOptions,
   ): Promise<Result<AddSourceResult>> {
     const addOptions = options ?? {};
-    const result = await this.sourceService.addSource(locator, addOptions);
+    const result = await this.sourceAuthorityServiceV2.addSource(locator, addOptions);
     if (!result.ok) {
       return fail(result.errors, result.warnings);
     }
 
-    const { manifest, lockFile } = await this.store.readState();
-    await this.ensureProjectionLedger(manifest, lockFile);
+    const state = await this.stateStoreV2.readState();
+    const view = projectStateV2ToView(state);
+    const { manifest, lockFile } = view;
     const source = manifest.sources.find((item) => item.id === result.data.manifest.id);
     if (!source) {
       return fail({
@@ -529,15 +542,7 @@ export class SkillFlowApp {
       });
     }
 
-    const requestedPath = this.normalizeRequestedPath(source.requestedPath);
-    if (requestedPath) {
-      source.requestedPath = requestedPath;
-      result.data.manifest.requestedPath = requestedPath;
-    } else {
-      delete source.requestedPath;
-      delete result.data.manifest.requestedPath;
-    }
-
+    const requestedPath = this.normalizeRequestedPath(addOptions.path);
     const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
     const availableTargets = addOptions.skipTargetDetection
       ? []
@@ -552,16 +557,6 @@ export class SkillFlowApp {
       await this.rollbackPreparedSourceInternal(source.id);
       return fail(preparedDraft.errors, [...result.warnings, ...preparedDraft.warnings]);
     }
-
-    source.selectionMode =
-      addOptions.selectionMode ??
-      (preparedDraft.data.selectedLeafIds.length >= sourceLeafs.length && sourceLeafs.length > 0
-        ? "all"
-        : "partial");
-    result.data.manifest.selectionMode = source.selectionMode;
-    manifest.bindings[source.id] = { targets: {} };
-    await this.ensureProjectionLedger(manifest, lockFile);
-    await this.store.writeState(manifest, lockFile);
 
     const warnings = [...result.warnings];
     if (
@@ -581,7 +576,20 @@ export class SkillFlowApp {
 
     return ok(
       {
-        ...result.data,
+        manifest: source,
+        lock: lockFile.sources.find((item) => item.id === source.id) ?? {
+          id: source.id,
+          locator: source.locator,
+          kind: source.kind,
+          displayName: source.displayName,
+          originalDisplayName: source.originalDisplayName,
+          checkoutPath: result.data.lock.localPath,
+          updatedAt: new Date().toISOString(),
+          leafIds: result.data.lock.leafIds,
+          invalidLeafs: [],
+        },
+        leafCount: result.data.leafCount,
+        invalidLeafCount: result.data.invalidLeafCount,
         sourceId: source.id,
         availableTargets,
         draft: preparedDraft.data,
@@ -5434,8 +5442,8 @@ export class SkillFlowApp {
 
   private async runSerializedMutation<T>(task: () => Promise<T>): Promise<T> {
     const run = this.mutationQueue.then(
-      () => this.store.withMutationLock(task),
-      () => this.store.withMutationLock(task),
+      () => this.stateStoreV2.withMutationLock(task),
+      () => this.stateStoreV2.withMutationLock(task),
     );
     this.mutationQueue = run.then(
       () => undefined,
@@ -5914,26 +5922,24 @@ export class SkillFlowApp {
   private async rollbackPreparedSourceInternal(
     sourceId: string,
   ): Promise<Result<{ removed: string[] }>> {
-    const { lockFile, manifest } = await this.store.readState();
-    if (!manifest.sources.some((source) => source.id === sourceId)) {
+    const state = await this.stateStoreV2.readState();
+    if (!state.manifest.sources.some((source) => source.id === sourceId)) {
       return fail({
         code: "SOURCE_NOT_FOUND",
         message: `Skills group id '${sourceId}' is not registered.`,
       });
     }
 
-    if (getManagedDeployments(lockFile).some((deployment) => deployment.sourceId === sourceId)) {
+    if (state.lockFile.projections.some((projection) =>
+      projection.sourceId === sourceId && projection.status === "active"
+    )) {
       return fail({
         code: "ADD_ROLLBACK_HAS_DEPLOYMENTS",
         message: `Unable to roll back skills group id '${sourceId}' because deployments already exist.`,
       });
     }
 
-    await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]);
-    await this.cleanupOrphanTargetSymlinks(manifest, lockFile);
-    await this.store.writeState(manifest, lockFile);
-
-    return this.sourceService.removeSource([sourceId]);
+    return this.sourceAuthorityServiceV2.removeSource([sourceId]);
   }
 
   private prepareManifestForDraft(
