@@ -24,7 +24,7 @@ import { git, isGitAvailable } from "@skill-flow/integration/utils/git";
 import { parseGitHubRepo, parseHostedGitRepo } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import { deriveDisplayName, deriveSourceId } from "@skill-flow/integration/utils/source-id";
-import type { AddSourceOptions } from "./source-service.js";
+import type { AddSourceOptions } from "./source-types.js";
 import { InventoryService } from "./inventory-service.js";
 
 const execFileAsync = promisify(execFile);

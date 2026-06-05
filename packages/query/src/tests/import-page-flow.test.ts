@@ -5,8 +5,10 @@ import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import * as gitUtils from "@skill-flow/integration/utils/git";
 import { ok } from "@skill-flow/integration/utils/result";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
-import { SourceService } from "@skill-flow/core-engine/services/source-service";
+import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
+import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import { SkillFlowApp } from "../runtime.js";
+import { projectStateV2ToView } from "../state-v2-view.js";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("import page flow", () => {
@@ -300,8 +302,8 @@ describe.sequential("import page flow", () => {
       throw new Error(`Unexpected URL: ${url}`);
     }));
 
-    const previewSource = SourceService.prototype.previewSource;
-    vi.spyOn(SourceService.prototype, "previewSource").mockImplementation(async function (_locator) {
+    const previewSource = SourceCheckoutService.prototype.previewSource;
+    vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockImplementation(async function (_locator) {
       return previewSource.call(this, repoPath);
     });
 
@@ -336,8 +338,8 @@ describe.sequential("import page flow", () => {
       throw new Error(`Unexpected URL: ${url}`);
     }));
 
-    const previewSource = SourceService.prototype.previewSource;
-    vi.spyOn(SourceService.prototype, "previewSource").mockImplementation(async function (_locator) {
+    const previewSource = SourceCheckoutService.prototype.previewSource;
+    vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockImplementation(async function (_locator) {
       return previewSource.call(this, repoPath);
     });
 
@@ -365,8 +367,8 @@ describe.sequential("import page flow", () => {
       "skills/resume-tailor/SKILL.md": skillDoc("resume-tailor", "Tailor resumes."),
     });
 
-    const previewSource = SourceService.prototype.previewSource;
-    const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockImplementation(
+    const previewSource = SourceCheckoutService.prototype.previewSource;
+    const previewSpy = vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockImplementation(
       async function (_locator, options) {
         return previewSource.call(this, repoPath, options);
       },
@@ -402,7 +404,7 @@ describe.sequential("import page flow", () => {
     }));
 
     const app = new SkillFlowApp();
-    const before = await app.store.readState();
+    const before = await new StateStoreV2(app.store.rootPath).readState();
 
     const preview = await app.previewImportSource("anthropic/skills");
 
@@ -411,7 +413,7 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const after = await app.store.readState();
+    const after = await new StateStoreV2(app.store.rootPath).readState();
     expect(after.manifest).toEqual(before.manifest);
     expect(after.lockFile).toEqual(before.lockFile);
     expect(preview.data.selectedSkillIds).toEqual(["research", "debugging"]);
@@ -536,8 +538,8 @@ describe.sequential("import page flow", () => {
       ["vercel-labs/agent-skills", vercelRepoPath],
       ["garrytan/gstack", gstackRepoPath],
     ]);
-    const prepareSourceCheckout = SourceService.prototype.prepareSourceCheckout;
-    vi.spyOn(SourceService.prototype, "prepareSourceCheckout").mockImplementation(
+    const prepareSourceCheckout = SourceCheckoutService.prototype.prepareSourceCheckout;
+    vi.spyOn(SourceCheckoutService.prototype, "prepareSourceCheckout").mockImplementation(
       async function (locator, input) {
         const repoPath = repoPaths.get(locator);
         if (!repoPath) {
@@ -599,7 +601,7 @@ describe.sequential("import page flow", () => {
         return;
       }
 
-      const { manifest } = await app.store.readState();
+      const { manifest } = projectStateV2ToView(await new StateStoreV2(app.store.rootPath).readState());
       const binding = manifest.bindings[imported.data.sourceId];
       const boundLeafNames = binding?.targets.codex?.leafIds.map((leafId) =>
         leafId.split(":").pop()?.split("/").pop(),
@@ -615,7 +617,7 @@ describe.sequential("import page flow", () => {
     });
 
     const app = new SkillFlowApp();
-    const before = await app.store.readState();
+    const before = await new StateStoreV2(app.store.rootPath).readState();
     const preview = await app.previewImportSource(repoPath);
 
     expect(preview.ok).toBe(true);
@@ -623,7 +625,7 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const after = await app.store.readState();
+    const after = await new StateStoreV2(app.store.rootPath).readState();
     expect(after.manifest).toEqual(before.manifest);
     expect(after.lockFile).toEqual(before.lockFile);
     expect(preview.data.locator).toBe(repoPath);
@@ -1405,7 +1407,7 @@ describe.sequential("import page flow", () => {
   }, 60_000);
 
   test("ClawHub locators are direct import candidates and previews", async () => {
-    const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockResolvedValue(
+    const previewSpy = vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockResolvedValue(
       ok({
         locator: "clawhub:find-skills-skill",
         displayName: "find-skills-skill",
@@ -1487,7 +1489,7 @@ describe.sequential("import page flow", () => {
   });
 
   test("previewImportSource supports GitLab HTTPS locators", async () => {
-    const previewSpy = vi.spyOn(SourceService.prototype, "previewSource").mockResolvedValue(
+    const previewSpy = vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockResolvedValue(
       ok({
         locator: "https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git",
         displayName: "gitlab-mr-review-skill",
@@ -1508,7 +1510,7 @@ describe.sequential("import page flow", () => {
     );
 
     const app = new SkillFlowApp();
-    const before = await app.store.readState();
+    const before = await new StateStoreV2(app.store.rootPath).readState();
     const preview = await app.previewImportSource(
       "https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git",
     );
@@ -1518,7 +1520,7 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const after = await app.store.readState();
+    const after = await new StateStoreV2(app.store.rootPath).readState();
     expect(after.manifest).toEqual(before.manifest);
     expect(after.lockFile).toEqual(before.lockFile);
     expect(previewSpy).toHaveBeenCalledWith("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
@@ -1548,7 +1550,7 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const { manifest, lockFile } = await app.store.readState();
+    const { manifest, lockFile } = projectStateV2ToView(await new StateStoreV2(app.store.rootPath).readState());
     const binding = manifest.bindings[imported.data.sourceId];
     expect(binding?.selectedLeafIds).toHaveLength(1);
     expect(
@@ -1586,7 +1588,7 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const { manifest } = await app.store.readState();
+    const { manifest } = projectStateV2ToView(await new StateStoreV2(app.store.rootPath).readState());
     const binding = manifest.bindings[imported.data.sourceId];
     expect(binding?.selectedLeafIds).toEqual([
       `${imported.data.sourceId}:skills/pdf_analysis`,
@@ -1617,7 +1619,7 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const { manifest, lockFile } = await app.store.readState();
+    const { manifest, lockFile } = projectStateV2ToView(await new StateStoreV2(app.store.rootPath).readState());
     const binding = manifest.bindings[imported.data.sourceId];
     expect(binding?.selectedLeafIds).toHaveLength(1);
     expect(
@@ -1784,9 +1786,9 @@ describe.sequential("import page flow", () => {
       retryable: true,
     });
 
-    const { manifest, lockFile } = await app.store.readState();
+    const { manifest, lockFile } = await new StateStoreV2(app.store.rootPath).readState();
     expect(manifest.sources).toHaveLength(0);
-    expect(lockFile.sources).toHaveLength(0);
+    expect(Object.keys(lockFile.sources)).toHaveLength(0);
     expect(lockFile.leafInventory).toHaveLength(0);
 
     await expect(fs.readdir(path.join(app.store.sourceRoot))).resolves.toEqual([]);
@@ -1852,8 +1854,8 @@ async function writeAgentsLock(
 }
 
 function stubGitHubPreview(repoPath: string) {
-  const previewSource = SourceService.prototype.previewSource;
-  vi.spyOn(SourceService.prototype, "previewSource").mockImplementation(async function (_locator) {
+  const previewSource = SourceCheckoutService.prototype.previewSource;
+  vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockImplementation(async function (_locator) {
     return previewSource.call(this, repoPath);
   });
 }

@@ -138,7 +138,7 @@ import type {
   AddSourceOptions,
   SourcePreview,
   SourceSnapshot,
-} from "@skill-flow/core-engine/services/source-service";
+} from "@skill-flow/core-engine/services/source-types";
 import {
   WorkspaceBootstrapService,
   type BootstrapEvent,

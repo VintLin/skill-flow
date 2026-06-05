@@ -26,7 +26,7 @@ import type {
   SourceCheckoutKind,
   SourceCheckoutService,
 } from "./source-checkout-service.js";
-import type { AddSourceOptions } from "./source-service.js";
+import type { AddSourceOptions } from "./source-types.js";
 
 export type SourceAuthorityServiceV2Options = {
   stateStore: StateStoreV2;
