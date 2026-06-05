@@ -5380,11 +5380,14 @@ export class SkillFlowApp {
   }
 
   private async readManifestConsistently(): Promise<Manifest> {
-    return this.runSerializedMutation(() => this.store.readManifest());
+    return this.runSerializedMutation(async () => (await this.readRuntimeAuthorityView()).manifest);
   }
 
   private async readStateConsistently(): Promise<{ manifest: Manifest; lockFile: LockFile }> {
-    return this.runSerializedMutation(() => this.store.readState());
+    return this.runSerializedMutation(async () => {
+      const view = await this.readRuntimeAuthorityView();
+      return { manifest: view.manifest, lockFile: view.lockFile };
+    });
   }
 
   private async captureSourceAuditSnapshot(
