@@ -33,6 +33,7 @@ export type SourceCheckoutKind = Exclude<SourceKind, "virtual">;
 
 export type PreparedSourceCheckoutV2 = {
   locator: string;
+  originLocator?: string;
   displayName: string;
   requestedPath?: string;
   kind: SourceCheckoutKind;
@@ -167,6 +168,7 @@ export class SourceCheckoutService {
 
     return ok({
       locator: resolved.locator,
+      ...(options.originLocator ? { originLocator: options.originLocator } : {}),
       displayName: resolved.displayName,
       ...(resolved.requestedPath ? { requestedPath: resolved.requestedPath } : {}),
       kind: resolved.kind,

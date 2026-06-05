@@ -7,6 +7,7 @@ import type {
   Result,
   SourceKindV2,
   SourceManifestRecordV2,
+  Warning,
 } from "@skill-flow/domain/types";
 import type { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import {
@@ -63,10 +64,13 @@ export class SourceAuthorityServiceV2 {
       return fail(prepared.errors, prepared.warnings);
     }
 
-    return this.commitPreparedSource({
+    const committed = await this.commitPreparedSource({
       preparedCheckout: prepared.data,
       removePreparedOnFailure: true,
     });
+    return committed.ok
+      ? ok(committed.data, [...prepared.warnings, ...committed.warnings])
+      : fail(committed.errors, [...prepared.warnings, ...committed.warnings]);
   }
 
   async commitPreparedSource(input: {
@@ -119,7 +123,7 @@ export class SourceAuthorityServiceV2 {
       id: sourceId,
       kind: sourceKind,
       locator: prepared.locator,
-      canonicalLocator: prepared.locator,
+      canonicalLocator: input.preparedCheckout.originLocator ?? prepared.locator,
       displayName: prepared.displayName,
       enabled: true,
       createdAt: now,
@@ -175,6 +179,7 @@ export class SourceAuthorityServiceV2 {
     const state = await this.options.stateStore.readState();
     const removed: string[] = [];
     const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
+    const checkoutsToRemove: string[] = [];
     const nextManifestSources = [...state.manifest.sources];
     const nextBindings = { ...state.manifest.bindings };
     const nextLockSources = { ...state.lockFile.sources };
@@ -190,18 +195,23 @@ export class SourceAuthorityServiceV2 {
           message: `Skills group id '${sourceId}' is not registered.`,
         });
       }
-      if (!isPathInside(sourceRoot, lock.localPath)) {
+      const expectedCheckoutPath = path.join(sourceRoot, source.kind, sourceId);
+      const normalizedLocalPath = path.resolve(lock.localPath);
+      if (
+        normalizedLocalPath !== path.resolve(expectedCheckoutPath) ||
+        !isPathInside(sourceRoot, normalizedLocalPath)
+      ) {
         return fail({
           code: "SOURCE_CHECKOUT_PATH_INVALID",
-          message: `Refusing to delete checkout outside managed root: ${lock.localPath}`,
+          message: `Refusing to delete checkout with mismatched managed path: ${lock.localPath}`,
         });
       }
+      checkoutsToRemove.push(normalizedLocalPath);
 
       delete nextLockSources[sourceId];
       delete nextBindings[sourceId];
       nextLeafInventory = nextLeafInventory.filter((leaf) => leaf.sourceId !== sourceId);
       nextProjections = nextProjections.filter((projection) => projection.sourceId !== sourceId);
-      await removePath(lock.localPath);
       removed.push(sourceId);
     }
 
@@ -220,7 +230,19 @@ export class SourceAuthorityServiceV2 {
       },
     });
 
-    return ok({ removed });
+    const warnings: Warning[] = [];
+    for (const checkoutPath of checkoutsToRemove) {
+      try {
+        await removePath(checkoutPath);
+      } catch (error) {
+        warnings.push({
+          code: "SOURCE_CHECKOUT_REMOVE_FAILED",
+          message: `Source authority was removed, but checkout cleanup failed at ${checkoutPath}: ${String(error)}`,
+        });
+      }
+    }
+
+    return ok({ removed }, warnings);
   }
 
   private mapSourceKind(kind: PreparedSourceCheckoutV2["kind"]): SourceKindV2 {

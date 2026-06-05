@@ -62,6 +62,7 @@ import type {
 import { getBootstrapImportedTargets, getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { StateStore } from "@skill-flow/storage/store";
 import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
 import {
   isImportDataCacheExpired,
 } from "@skill-flow/storage/import-data-cache";
@@ -123,6 +124,7 @@ import { DeploymentPlanner } from "@skill-flow/core-engine/services/deployment-p
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
+import { ImportPreparationServiceV2 } from "@skill-flow/core-engine/services/import-preparation-service-v2";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { SourceAuthorityServiceV2 } from "@skill-flow/core-engine/services/source-authority-service-v2";
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
@@ -270,12 +272,14 @@ export class SkillFlowApp {
 
   readonly store: StateStore;
   private readonly stateStoreV2: StateStoreV2;
+  private readonly importPreparationCacheStore: ImportPreparationCacheStore;
   adapters: ChannelAdapter[];
   readonly inventoryService: InventoryService;
   readonly sourceService: SourceService;
   readonly sourceCheckoutService: SourceCheckoutService;
   readonly sourceAuthorityServiceV2: SourceAuthorityServiceV2;
   readonly importPreparationService: ImportPreparationService;
+  readonly importPreparationServiceV2: ImportPreparationServiceV2;
   planner: DeploymentPlanner;
   applier: DeploymentApplier;
   readonly doctorService: DoctorService;
@@ -292,6 +296,7 @@ export class SkillFlowApp {
   constructor() {
     this.store = new StateStore();
     this.stateStoreV2 = new StateStoreV2(this.store.rootPath);
+    this.importPreparationCacheStore = new ImportPreparationCacheStore(this.store.rootPath);
     const adapters = createChannelAdapters();
     this.adapters = adapters;
     this.inventoryService = new InventoryService();
@@ -305,6 +310,11 @@ export class SkillFlowApp {
       checkoutService: this.sourceCheckoutService,
     });
     this.importPreparationService = new ImportPreparationService(this.store, this.sourceService);
+    this.importPreparationServiceV2 = new ImportPreparationServiceV2({
+      cacheStore: this.importPreparationCacheStore,
+      sourceAuthority: this.sourceAuthorityServiceV2,
+      checkoutService: this.sourceCheckoutService,
+    });
     this.planner = new DeploymentPlanner(adapters);
     this.applier = new DeploymentApplier(adapters);
     this.doctorService = new DoctorService(this.store);
@@ -457,7 +467,7 @@ export class SkillFlowApp {
   }
 
   private async refreshAdapters(): Promise<ChannelAdapter[]> {
-    const preferences = await this.store.readPreferences();
+    const { preferences } = await this.readRuntimeAuthorityView();
     this.adapters = this.createAdaptersForPreferences(preferences);
     this.planner = new DeploymentPlanner(this.adapters);
     this.applier = new DeploymentApplier(this.adapters);
@@ -1354,7 +1364,7 @@ export class SkillFlowApp {
     localPath?: string,
   ): Promise<Result<{ groups: ImportGroupCandidate[]; localScanGroups: LocalScanGroup[] }>> {
     try {
-      const { manifest, lockFile } = await this.store.readState();
+      const { manifest, lockFile } = await this.readRuntimeAuthorityView();
       const scanned = localPath
         ? await this.scanSingleLocalImportSkill(localPath, manifest, lockFile)
         : await this.workspaceBootstrapService.scanUnmanagedLocalSkills(manifest, lockFile);
@@ -2251,14 +2261,14 @@ export class SkillFlowApp {
   private async prepareImportSourceImpl(locator: string): Promise<Result<ImportPreparationResult>> {
     const githubLocator = this.parseGitHubImportLocator(locator);
     if (githubLocator) {
-      return this.importPreparationService.prepareImportSource(githubLocator.locator, {
+      return this.importPreparationServiceV2.prepareImportSource(githubLocator.locator, {
         project: false,
         ...(githubLocator.requestedPath ? { path: githubLocator.requestedPath } : {}),
       });
     }
 
     const directLocator = await this.resolveDirectImportLocator(locator);
-    return this.importPreparationService.prepareImportSource(directLocator ?? locator.trim(), {
+    return this.importPreparationServiceV2.prepareImportSource(directLocator ?? locator.trim(), {
       project: false,
     });
   }
@@ -2268,7 +2278,7 @@ export class SkillFlowApp {
     draft?: ImportDraft,
     canonicalRepo?: string,
   ): Promise<Result<ImportSourceResult>> {
-    const committed = await this.importPreparationService.commitPreparedImportSource(preparationId);
+    const committed = await this.importPreparationServiceV2.commitPreparedImportSource(preparationId);
     if (!committed.ok) {
       return committed;
     }
@@ -2277,7 +2287,7 @@ export class SkillFlowApp {
     }
     const committedData = committed.data;
 
-    const { lockFile } = await this.store.readState();
+    const { lockFile } = await this.readRuntimeAuthorityView();
     const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === committedData.sourceId);
     const availableTargets = await this.getAvailableTargets();
     const finalDraft = this.resolveImportDraftForPreparedSource(
@@ -2309,6 +2319,7 @@ export class SkillFlowApp {
   }
 
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
+    await this.stateStoreV2.init();
     const githubLocator = this.parseGitHubImportLocator(locator);
     const canonicalRepo = githubLocator?.canonicalRepo;
     if (!canonicalRepo) {
@@ -2387,7 +2398,7 @@ export class SkillFlowApp {
   ): Promise<Result<ImportSourceResult>> {
     const githubLocator = this.parseGitHubImportLocator(locator);
     const normalizedLocator = githubLocator?.locator ?? locator.trim();
-    const preparation = await this.importPreparationService.prepareImportSource(normalizedLocator, {
+    const preparation = await this.importPreparationServiceV2.prepareImportSource(normalizedLocator, {
       project: false,
       ...(githubLocator?.requestedPath ? { path: githubLocator.requestedPath } : {}),
     });
@@ -2867,11 +2878,11 @@ export class SkillFlowApp {
     }
 
     const preparation = await pathExists(resolvedLocator)
-      ? await this.importPreparationService.prepareImportSource(resolvedLocator, {
+      ? await this.importPreparationServiceV2.prepareImportSource(resolvedLocator, {
           project: false,
         })
       : undefined;
-    const preview = await this.sourceService.previewSource(resolvedLocator);
+    const preview = await this.sourceCheckoutService.previewSource(resolvedLocator);
     if (!preview.ok) {
       return ok({
         status: "failed",

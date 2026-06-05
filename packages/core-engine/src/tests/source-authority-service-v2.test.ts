@@ -83,4 +83,56 @@ describe.sequential("SourceAuthorityServiceV2", () => {
       "SKILL.md",
     ))).resolves.toBeTruthy();
   });
+
+  test("refuses to remove a source whose checkout path does not match its v2 identity", async () => {
+    const alphaRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/alpha/SKILL.md": skillDoc("alpha", "Alpha skill."),
+    });
+    const betaRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/beta/SKILL.md": skillDoc("beta", "Beta skill."),
+    });
+    const stateStore = new StateStoreV2(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityServiceV2({
+      stateStore,
+      checkoutService,
+    });
+    const alpha = await service.addSource(alphaRepo, { sourceIdOverride: "alpha-source" });
+    const beta = await service.addSource(betaRepo, { sourceIdOverride: "beta-source" });
+    expect(alpha.ok).toBe(true);
+    expect(beta.ok).toBe(true);
+
+    const state = await stateStore.readState();
+    state.lockFile.sources["alpha-source"] = {
+      ...state.lockFile.sources["alpha-source"]!,
+      localPath: state.lockFile.sources["beta-source"]!.localPath,
+    };
+    await stateStore.writeState(state);
+
+    const removed = await service.removeSource(["alpha-source"]);
+
+    expect(removed.ok).toBe(false);
+    if (removed.ok) {
+      return;
+    }
+    expect(removed.errors[0]?.code).toBe("SOURCE_CHECKOUT_PATH_INVALID");
+    const after = await stateStore.readState();
+    expect(after.manifest.sources.map((source) => source.id).sort()).toEqual([
+      "alpha-source",
+      "beta-source",
+    ]);
+    await expect(fs.stat(path.join(
+      sandbox.stateRoot,
+      "source",
+      "local",
+      "beta-source",
+      "skills",
+      "beta",
+      "SKILL.md",
+    ))).resolves.toBeTruthy();
+  });
 });

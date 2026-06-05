@@ -166,6 +166,7 @@ function projectSourceManifestV2ToView(source: ManifestFileV2["sources"][number]
     displayName: source.displayName,
     originalDisplayName: source.displayName,
     addedAt: source.createdAt,
+    ...(source.canonicalLocator !== source.locator ? { originLocator: source.canonicalLocator } : {}),
   };
 }
 
