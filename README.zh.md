@@ -163,6 +163,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | `config` | 打开交互式配置 UI |
 | `update [sourceId] --all` | 更新单个或全部已注册 source |
 | `doctor` | 诊断漂移、缺失路径和投影问题 |
+| `migrate-state --to v2 [--dry-run]` | 检查或迁移本地状态目录到 schema v2 |
 | `repair-source [sourceId] --all` | 修复 source checkout 元数据 |
 | `repair-state [sourceId] --all` | 重建 source 侧状态 |
 | `repair-targets [sourceId] --all` | 修复目标部署内容 |
@@ -181,6 +182,20 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 - `catalog/git/*`：内置 Git catalog 缓存
 
 目标目录只是部署结果，不是真正的事实源。
+
+### 状态 schema 迁移
+
+迁移前先 dry-run：
+
+```bash
+skill-flow migrate-state --to v2 --dry-run
+skill-flow migrate-state --to v2
+SKILL_FLOW_STATE_ROOT=/custom/path skill-flow migrate-state --to v2
+```
+
+默认状态目录是 `~/.skillflow/`。正常迁移会创建 `<stateRoot>.backup-YYYYMMDD-HHMMSS` 备份，重写权威状态文件，并清理 `catalog/` 下可重建的 cache；cache 会在后续 CLI 或桌面读取时重建。目标目录不是权威来源，不要用目标目录反推状态。迁移后如果目标目录看起来过期，运行 `skill-flow repair-targets --all`。
+
+回滚时先停止 Skill Flow，把备份状态目录移回原位置，再运行 `skill-flow migrate-state --to v2 --dry-run` 或通过桌面迁移状态检查确认后重新迁移。
 
 ## Monorepo 结构
 

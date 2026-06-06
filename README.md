@@ -163,6 +163,7 @@ Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 | `config` | Open the interactive configuration UI |
 | `update [sourceId] --all` | Refresh one source or all registered sources |
 | `doctor` | Diagnose drift, missing paths, and projection problems |
+| `migrate-state --to v2 [--dry-run]` | Inspect or migrate the local state root to schema v2 |
 | `repair-source [sourceId] --all` | Rebuild source checkout metadata |
 | `repair-state [sourceId] --all` | Rebuild source-side state |
 | `repair-targets [sourceId] --all` | Repair projected target contents |
@@ -181,6 +182,20 @@ Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 - `catalog/git/*`: built-in Git catalog cache
 
 Target directories are deployment outputs, not the source of truth.
+
+### State schema migration
+
+Use a dry run before applying a schema migration:
+
+```bash
+skill-flow migrate-state --to v2 --dry-run
+skill-flow migrate-state --to v2
+SKILL_FLOW_STATE_ROOT=/custom/path skill-flow migrate-state --to v2
+```
+
+The default state root is `~/.skillflow/`. A normal migration creates a backup named `<stateRoot>.backup-YYYYMMDD-HHMMSS`, rewrites the authority files, and prunes rebuildable cache under `catalog/`; cache is rebuilt by later CLI or desktop reads. Target directories are not authoritative and should not be used to reconstruct state. If target folders look stale after migration, run `skill-flow repair-targets --all`.
+
+To roll back, stop Skill Flow, move the backup state root back into place, then run `skill-flow migrate-state --to v2 --dry-run` or use the desktop migration status check before applying migration again.
 
 ## FAQ
 

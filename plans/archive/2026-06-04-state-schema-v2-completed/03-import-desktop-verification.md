@@ -43,6 +43,8 @@ Create:
 - Modify: `packages/query/src/runtime.ts`
 - Test: `packages/query/src/tests/import-page-flow.test.ts`
 
+**Current status (2026-06-06):** `previewImportSource` now emits per-skill `legacyId`, stable `uiId`, `{ kind: "repoPath", path }` selector, origin, diagnostics, legacy aliases, and ready payload `selectedSkills`. `normalizeImportRepoPathSelector` is public in integration utilities, covers repo root/archive-root normalization and invalid selector rejection, and runtime preview/commit selector parsing uses the shared helper. Covered by `import-page-flow.test.ts` and `packages/integration/src/tests/import-selector.test.ts`.
+
 - [ ] **Step 1: Write failing tests**
 
 ```ts
@@ -124,6 +126,8 @@ git commit -m "feat: add import preview selectors"
 - Modify: `packages/storage/src/*`
 - Test: `packages/query/src/tests/import-page-flow.test.ts`
 
+**Current status (2026-06-06):** Import preparation cache/store and V2 service are present, `prepareImportSource` returns preparation metadata, `commitPreparedImportSource` binds selections through preparation records, stale/missing preparation errors are represented, and V2 `selectedSkills` selectors do not fall back to legacy ids. Covered by `packages/query/src/tests/import-page-flow.test.ts`, `packages/query/src/tests/runtime-source-v2.test.ts`, and storage import-preparation cache tests.
+
 - [ ] **Step 1: Write failing tests**
 
 ```ts
@@ -203,6 +207,8 @@ git commit -m "feat: bind import selectors through preparation cache"
 - Modify: `packages/shared-types/src/*`
 - Modify: `packages/query/src/runtime.ts`
 - Test: `packages/query/src/tests/import-page-flow.test.ts`
+
+**Current status (2026-06-06):** CLI bridge parser accepts `draft.selectedSkills` for `commit-import-source` and `import-source`, keeps `selectedSkillIds` legacy fallback, and runtime import binding prefers V2 selectors without falling back to legacy ids. Covered by `apps/cli/src/tests/bridge-command.test.ts` and `packages/query/src/tests/import-page-flow.test.ts`. The planned `import-local-choice` / `import-local-scan-choice` bridge commands do not exist in the current protocol or codebase; local import choice is represented through `import-source` / `commit-import-source` draft payloads instead.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -405,6 +411,8 @@ git commit -m "feat: accept import v2 bridge drafts"
 - Modify: `apps/desktop-mac/Sources/DesktopApp/Screens/Import/ImportScreenContainer.swift`
 - Test: `apps/desktop-mac/Tests/SkillFlowDesktopTests/BridgeClientExecutionTests.swift`
 - Test: `apps/desktop-mac/Tests/SkillFlowDesktopTests/MainViewModelSelectionTests.swift`
+
+**Current status (2026-06-06):** Desktop now has `ImportSkillSelection` / repoPath selector payloads. Import draft state stores `selectedSkills`, import preview parsing preserves `uiId + selector`, bootstrap exposes `capabilities.importDraftV2`, preview ready payloads expose `version: 2`, and `BridgeClient` sends V2 `selectedSkills` only when capability is explicitly known and the selected skills came from a V2-compatible preview. Unknown/missing capability or non-V2 selections use legacy payloads. V2 requests retry legacy once only for `BRIDGE_UNSUPPORTED_IMPORT_DRAFT_V2`. Import failure toast diagnostics now include reason code, first diagnostic code, selector kind/value, target, and bridge code. Covered by `BridgeClientExecutionTests`, `WorkflowCoverageTests`, `ImportScreenContainerTests`, `ImportToastDiagnosticsFormatterTests`, query import preview tests, and CLI bridge bootstrap tests.
 
 - [ ] **Step 1: Write failing Swift tests**
 
@@ -757,6 +765,8 @@ git commit -m "feat: support import v2 desktop bridge"
 - Create: `packages/query/src/tests/state-schema-v2-target-repair.test.ts`
 - Create: `packages/query/src/tests/skill-collection-diagnostics.test.ts`
 
+**Current status (2026-06-06):** Provider import E2E now covers deterministic fixture-backed `preview -> prepare -> commit` flows for `anthropics/skills`, `vercel-labs/agent-skills`, and `garrytan/gstack` using V2 `repoPath` selectors and preparation `skillRefs`. Target repair now covers stale projection path/hash recomputation, unknown target blocking with `TARGET_UNKNOWN`, disabled leaf projection removal, and `inspectTargetStatus` / `applyTargets` drift repair. Collection diagnostics now expose `inspectCollection`, report `COLLECTION_ORIGIN_HASH_CHANGED`, and verify repair deploys materialized snapshots rather than changed origin content. Verified by `npm run -w @skill-flow/query test -- src/tests/state-schema-v2-e2e.test.ts src/tests/state-schema-v2-target-repair.test.ts src/tests/skill-collection-diagnostics.test.ts` (3 files, 9 tests).
+
 - [ ] **Step 1: Add provider e2e tests**
 
 ```ts
@@ -954,6 +964,8 @@ git commit -m "test: verify state schema v2 import and repair"
 - Modify: `README.md`
 - Modify: `README.zh.md`
 - Modify: `releases/<version>.md`
+
+**Current status (2026-06-06):** User migration docs are present in `README.md` and `README.zh.md`, and `releases/RELEASE_v1.3.11.md` documents the state schema V2 migration. Full verification passed with `npm run build`, `npm test`, and `cd apps/desktop-mac && swift test`. Swift ran 466 tests with 1 skipped helper-timeout test and 0 failures.
 
 - [ ] **Step 1: Update user docs**
 

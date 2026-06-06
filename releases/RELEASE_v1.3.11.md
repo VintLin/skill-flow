@@ -28,6 +28,13 @@
 - Skill search can filter by author, group, or skill name.
 - Local and combined author labels are localized, including `本地` / `local` and `组合` / `combined`.
 
+### 4. State schema v2 migration
+
+- State schema v2 migrates Skill Flow's persisted state under `~/.skillflow`.
+- Legacy state is only readable by the migration command and migration status inspection.
+- Run `skill-flow migrate-state --to v2 --dry-run` before applying migration.
+- Migration creates a backup of the state root, prunes rebuildable cache, and keeps target directories as deployment outputs rather than state authority.
+
 ## User-visible changes
 
 - The group editor no longer shows target selection in create and merge views.

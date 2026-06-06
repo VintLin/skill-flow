@@ -12,13 +12,15 @@
 
 ## Active Plan Set
 
-本目录只保留三份活跃计划：
+本目录当前保留五份活跃/闭环计划：
 
 - `01-overview-and-data-model.md`：总控、术语、数据模型、不变量。
 - `02-state-contract-and-migration.md`：TypeScript contract、V2-only runtime、migration CLI。
 - `03-import-desktop-verification.md`：import selector、desktop bridge、端到端验证与发布。
+- `04-architect-review-and-closure-checklist.md`：架构师闭环审查、P0/P1 验收矩阵。
+- `05-v1-authority-public-export-cleanup.md`：V1 authority public export 删除计划与验收证据。
 
-历史草稿位于 `plans/archive/2026-06-04-state-schema-v2-drafts/`，只作追溯材料；实现以本目录三份活跃计划为准。
+历史草稿位于 `plans/archive/2026-06-04-state-schema-v2-drafts/`，只作追溯材料；实现以本目录五份计划为准。
 
 ## Problem Statement
 
