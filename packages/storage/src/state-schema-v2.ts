@@ -14,6 +14,7 @@ const AUTHORITY_FILES = [
   "preferences.json",
   "collections.json",
 ] as const;
+export const CURRENT_MIGRATION_MARKER_VERSION = "1.3.11";
 
 type AuthorityFileName = typeof AUTHORITY_FILES[number];
 
@@ -65,20 +66,92 @@ export function writeCollectionsV2(stateRoot: string, collections: CollectionsFi
 export async function inspectStateMigrationStatus(stateRoot: string): Promise<StateMigrationStatus> {
   const markerPath = path.join(stateRoot, ".skillflow-migration.json");
   if (await pathExists(markerPath)) {
+    const authorityStatus = await inspectAuthorityFiles(stateRoot);
+    const markerDiagnostics: DiagnosticV2[] = [];
+    const markerResult = await readJsonFile(markerPath);
+    let markerGeneration: string | undefined;
+
+    if (!markerResult.ok) {
+      markerDiagnostics.push(markerResult.diagnostic);
+    } else {
+      const markerVersion = getMarkerVersion(markerResult.value);
+      markerGeneration = getMigrationGeneration(markerResult.value);
+
+      if (!markerVersion) {
+        markerDiagnostics.push({
+          code: "STATE_MIGRATION_MARKER_VERSION_MISSING",
+          message: "Migration marker is missing version.",
+          path: markerPath,
+          retryable: false,
+        });
+      } else if (markerVersion !== CURRENT_MIGRATION_MARKER_VERSION) {
+        markerDiagnostics.push({
+          code: "STATE_MIGRATION_MARKER_VERSION_UNSUPPORTED",
+          message: "Migration marker version is not supported by this CLI.",
+          path: markerPath,
+          details: {
+            expectedVersion: CURRENT_MIGRATION_MARKER_VERSION,
+            actualVersion: markerVersion,
+          },
+          retryable: false,
+        });
+      }
+
+      if (!markerGeneration) {
+        markerDiagnostics.push({
+          code: "STATE_MIGRATION_GENERATION_MISSING",
+          message: "Migration marker is missing migrationGeneration.",
+          path: markerPath,
+          retryable: false,
+        });
+      }
+    }
+
+    if (
+      authorityStatus.status === "current" &&
+      markerDiagnostics.length === 0 &&
+      markerGeneration === authorityStatus.migrationGeneration
+    ) {
+      return authorityStatus;
+    }
+
+    if (
+      authorityStatus.status === "current" &&
+      markerGeneration &&
+      markerGeneration !== authorityStatus.migrationGeneration
+    ) {
+      markerDiagnostics.push({
+        code: "STATE_MIGRATION_MARKER_GENERATION_MISMATCH",
+        message: "Migration marker generation does not match authority files.",
+        path: markerPath,
+        details: {
+          expectedGeneration: authorityStatus.migrationGeneration,
+          actualGeneration: markerGeneration,
+        },
+        retryable: false,
+      });
+    }
+
+    if (markerDiagnostics.length === 0) {
+      markerDiagnostics.push({
+        code: "STATE_MIGRATION_MARKER_PRESENT",
+        message: "A state migration marker is present.",
+        path: markerPath,
+        retryable: false,
+      });
+    }
+
     return {
       status: "incomplete",
       reasonCode: "STATE_MIGRATION_INCOMPLETE",
-      diagnostics: [
-        {
-          code: "STATE_MIGRATION_MARKER_PRESENT",
-          message: "A state migration marker is present.",
-          path: markerPath,
-          retryable: false,
-        },
-      ],
+      diagnostics: [...markerDiagnostics, ...statusDiagnostics(authorityStatus)],
     };
   }
 
+  return inspectAuthorityFiles(stateRoot);
+}
+
+async function inspectAuthorityFiles(stateRoot: string): Promise<StateMigrationStatus> {
   const manifestResult = await readJsonAuthorityFile(stateRoot, "manifest.json");
   if (!manifestResult.ok) {
     return invalidStatus(manifestResult.diagnostic);
@@ -183,6 +256,12 @@ export async function inspectStateMigrationStatus(stateRoot: string): Promise<St
     stateRoot,
     migrationGeneration: authorityGeneration ?? "",
   };
+}
+
+function statusDiagnostics(status: StateMigrationStatus): DiagnosticV2[] {
+  return status.status === "incomplete" || status.status === "invalid"
+    ? status.diagnostics
+    : [];
 }
 
 async function inspectCollectionGenerationMarkers(
@@ -305,6 +384,12 @@ function getSchemaVersion(value: unknown): number | undefined {
 function getMigrationGeneration(value: unknown): string | undefined {
   return isRecord(value) && typeof value.migrationGeneration === "string"
     ? value.migrationGeneration
+    : undefined;
+}
+
+function getMarkerVersion(value: unknown): string | undefined {
+  return isRecord(value) && typeof value.version === "string"
+    ? value.version
     : undefined;
 }
 

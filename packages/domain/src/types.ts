@@ -305,6 +305,7 @@ export type DeploymentAction = {
   previousTargetRootPath?: string;
   relocateExternalToTargetPath?: string;
   reason?: string;
+  diagnostics?: DiagnosticV2[];
   contentHash: string;
 };
 
@@ -718,9 +719,15 @@ export type ImportGroupCandidate = {
 
 export type ImportPreviewSkill = {
   id: string;
+  legacyId?: string;
+  uiId?: string;
   title: string;
   summary: string;
   selectedByDefault: boolean;
+  selector?: ImportSkillSelectorV2;
+  origin?: ImportPreviewSkillV2["origin"];
+  diagnostics?: DiagnosticV2[];
+  legacyAliases?: string[];
 };
 
 export type ImportPreviewTarget = {
@@ -729,7 +736,8 @@ export type ImportPreviewTarget = {
 };
 
 export type ImportDraft = {
-  selectedSkillIds: string[];
+  selectedSkillIds?: string[];
+  selectedSkills?: ImportSkillSelectionV2[];
   enabledTargets: DeploymentTargetId[];
 };
 
@@ -741,10 +749,12 @@ export type ImportPreparationStatus =
   | "stale";
 
 export type ImportPreparationRecord = {
+  schemaVersion?: 2;
   id: string;
   cacheKey?: string;
   locator: string;
   canonicalRepo: string;
+  sourceSelectionKey?: string;
   sourceKind: SourceKind;
   checkoutPath: string;
   sourceId: string;
@@ -755,6 +765,7 @@ export type ImportPreparationRecord = {
   expiresAt: string;
   commitSha?: string;
   skillIds: string[];
+  skillRefs?: PreparedSkillRefV2[];
   availableTargets: DeploymentTargetId[];
   failure?: {
     reasonCode: string;
@@ -791,6 +802,7 @@ export type ImportCommitDraft = ImportDraft & {
 export type ImportPreviewResult =
   | {
       status: "ready";
+      version: 2;
       locator: string;
       canonicalRepo: string;
       preparationId?: string;
@@ -799,6 +811,7 @@ export type ImportPreviewResult =
       expiresAt?: string;
       snapshot?: UnifiedSourceSnapshot;
       selectedSkillIds: string[];
+      selectedSkills?: ImportSkillSelectionV2[];
       enabledTargets: DeploymentTargetId[];
       skills: ImportPreviewSkill[];
       targets: ImportPreviewTarget[];
@@ -838,7 +851,7 @@ export type DiagnosticV2 = {
   details?: Record<string, unknown>;
 };
 
-export type SourceKindV2 = "git" | "github" | "local" | "collection";
+export type SourceKindV2 = "git" | "github" | "local" | "clawhub" | "collection";
 
 export type SourceManifestRecordV2 = {
   id: SourceIdV2;
@@ -849,6 +862,8 @@ export type SourceManifestRecordV2 = {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  requestedPath?: string;
+  originRequestedPath?: string;
 };
 
 export type SourceBindingV2 = {
@@ -866,7 +881,7 @@ export type ManifestFileV2 = {
 };
 
 export type SourceRevisionV2 = {
-  provider: "git" | "github" | "local" | "collection";
+  provider: "git" | "github" | "local" | "clawhub" | "collection";
   ref?: string;
   commit?: string;
   archiveEtag?: string;
@@ -912,6 +927,18 @@ export type SourceLockRecordV2 = {
   revision: SourceRevisionV2;
   localPath: string;
   leafIds: SkillLeafIdV2[];
+  packageSlug?: string;
+  resolvedVersion?: string;
+  contentHash?: string;
+  versionMode?: "pinned" | "floating";
+  originBranch?: string;
+  importedFromTargets?: DeploymentTargetId[];
+  observedTargets?: Array<{
+    target: DeploymentTargetId;
+    rootPath: string;
+    targetPath: string;
+  }>;
+  importMode?: "explicit-add" | "bootstrap-detected";
 };
 
 export type LockFileV2 = {
@@ -1036,6 +1063,7 @@ export type CollectionsFileV2 = {
 
 export type MigrationMarkerFileV2 = {
   schemaVersion: SchemaVersionV2;
+  version: string;
   migrationGeneration: MigrationGenerationV2;
   status: "running" | "failed";
   startedAt: string;

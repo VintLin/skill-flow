@@ -79,6 +79,17 @@ describe("StateStoreV2", () => {
     expect(manifest.migrationGeneration).toMatch(/^mg_/);
   });
 
+  test("allows nested mutation lock calls on the same store instance", async () => {
+    const store = new StateStoreV2(stateRoot);
+    await store.init();
+
+    const result = await store.withMutationLock(() =>
+      store.withMutationLock(async () => "nested-ok")
+    );
+
+    expect(result).toBe("nested-ok");
+  });
+
   test("readState returns V2 structures without projecting to V1", async () => {
     const store = new StateStoreV2(stateRoot);
     const migrationGeneration = "mg_runtime_read";

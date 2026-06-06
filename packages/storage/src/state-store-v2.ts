@@ -57,6 +57,7 @@ export class StateStoreV2Error extends Error {
 export class StateStoreV2 {
   private initPromise: Promise<void> | undefined;
   private ioQueue: Promise<void> = Promise.resolve();
+  private mutationLockDepth = 0;
 
   constructor(private readonly stateRoot: string) {}
 
@@ -204,26 +205,38 @@ export class StateStoreV2 {
 
   async withMutationLock<T>(task: () => Promise<T>): Promise<T> {
     await this.init();
-    return withFileLock(path.join(this.stateRoot, ".mutation.lock"), task);
+    if (this.mutationLockDepth > 0) {
+      return task();
+    }
+    return withFileLock(path.join(this.stateRoot, ".mutation.lock"), async () => {
+      this.mutationLockDepth += 1;
+      try {
+        return await task();
+      } finally {
+        this.mutationLockDepth -= 1;
+      }
+    });
   }
 
   private async initializeState(): Promise<void> {
     await fs.mkdir(this.stateRoot, { recursive: true });
 
-    const existingAuthorityFiles = await Promise.all(
-      AUTHORITY_FILES.map(async (fileName) => pathExists(this.getAuthorityPath(fileName))),
-    );
-    if (existingAuthorityFiles.every((exists) => !exists)) {
-      await this.createEmptyAuthorityFiles(createMigrationGeneration());
-      return;
-    }
+    await withFileLock(path.join(this.stateRoot, ".init.lock"), async () => {
+      const existingAuthorityFiles = await Promise.all(
+        AUTHORITY_FILES.map(async (fileName) => pathExists(this.getAuthorityPath(fileName))),
+      );
+      if (existingAuthorityFiles.every((exists) => !exists)) {
+        await this.createEmptyAuthorityFiles(createMigrationGeneration());
+        return;
+      }
 
-    await this.readManifestRaw();
-    await Promise.all([
-      this.readLockRaw(),
-      this.readPreferencesRaw(),
-      this.readCollectionsRaw(),
-    ]);
+      await this.readManifestRaw();
+      await Promise.all([
+        this.readLockRaw(),
+        this.readPreferencesRaw(),
+        this.readCollectionsRaw(),
+      ]);
+    });
   }
 
   private async createEmptyAuthorityFiles(migrationGeneration: MigrationGenerationV2): Promise<void> {

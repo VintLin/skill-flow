@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { inspectStateMigrationStatus } from "../state-schema-v2.js";
+import {
+  CURRENT_MIGRATION_MARKER_VERSION,
+  inspectStateMigrationStatus,
+} from "../state-schema-v2.js";
 
 describe("state migration status", () => {
   let stateRoot = "";
@@ -100,6 +103,117 @@ describe("state migration status", () => {
     expect(status.diagnostics).toContainEqual(
       expect.objectContaining({
         path: expect.stringContaining("source/collection/group-1/.skillflow-generation.json"),
+      }),
+    );
+  });
+
+  test("treats leftover migration marker as current after authority replace completed", async () => {
+    await writeV2AuthorityFiles({ migrationGeneration: "mg_replaced" });
+    await writeJson(".skillflow-migration.json", {
+      schemaVersion: 2,
+      version: CURRENT_MIGRATION_MARKER_VERSION,
+      migrationGeneration: "mg_replaced",
+      status: "running",
+      startedAt: "2026-06-04T00:00:00.000Z",
+      stagingRoot: path.join(stateRoot, ".migration-staging-test"),
+      diagnostics: [],
+    });
+
+    const status = await inspectStateMigrationStatus(stateRoot);
+
+    expect(status).toMatchObject({
+      status: "current",
+      version: 2,
+      migrationGeneration: "mg_replaced",
+    });
+  });
+
+  test("keeps marker as incomplete when marker generation differs from authority", async () => {
+    await writeV2AuthorityFiles({ migrationGeneration: "mg_authority" });
+    await writeJson(".skillflow-migration.json", {
+      schemaVersion: 2,
+      version: CURRENT_MIGRATION_MARKER_VERSION,
+      migrationGeneration: "mg_other",
+      status: "running",
+      startedAt: "2026-06-04T00:00:00.000Z",
+      stagingRoot: path.join(stateRoot, ".migration-staging-test"),
+      diagnostics: [],
+    });
+
+    const status = await inspectStateMigrationStatus(stateRoot);
+
+    expect(status).toMatchObject({
+      status: "incomplete",
+      reasonCode: "STATE_MIGRATION_INCOMPLETE",
+    });
+    if (status.status !== "incomplete") {
+      throw new Error(`Expected incomplete status, received ${status.status}`);
+    }
+    expect(status.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "STATE_MIGRATION_MARKER_GENERATION_MISMATCH",
+        path: expect.stringContaining(".skillflow-migration.json"),
+      }),
+    );
+  });
+
+  test("keeps marker as incomplete when marker version is from another CLI", async () => {
+    await writeV2AuthorityFiles({ migrationGeneration: "mg_replaced" });
+    await writeJson(".skillflow-migration.json", {
+      schemaVersion: 2,
+      version: "0.0.0",
+      migrationGeneration: "mg_replaced",
+      status: "running",
+      startedAt: "2026-06-04T00:00:00.000Z",
+      stagingRoot: path.join(stateRoot, ".migration-staging-test"),
+      diagnostics: [],
+    });
+
+    const status = await inspectStateMigrationStatus(stateRoot);
+
+    expect(status).toMatchObject({
+      status: "incomplete",
+      reasonCode: "STATE_MIGRATION_INCOMPLETE",
+    });
+    if (status.status !== "incomplete") {
+      throw new Error(`Expected incomplete status, received ${status.status}`);
+    }
+    expect(status.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "STATE_MIGRATION_MARKER_VERSION_UNSUPPORTED",
+        path: expect.stringContaining(".skillflow-migration.json"),
+        details: expect.objectContaining({
+          expectedVersion: CURRENT_MIGRATION_MARKER_VERSION,
+          actualVersion: "0.0.0",
+        }),
+      }),
+    );
+  });
+
+  test("keeps marker as incomplete when marker version is missing", async () => {
+    await writeV2AuthorityFiles({ migrationGeneration: "mg_replaced" });
+    await writeJson(".skillflow-migration.json", {
+      schemaVersion: 2,
+      migrationGeneration: "mg_replaced",
+      status: "running",
+      startedAt: "2026-06-04T00:00:00.000Z",
+      stagingRoot: path.join(stateRoot, ".migration-staging-test"),
+      diagnostics: [],
+    });
+
+    const status = await inspectStateMigrationStatus(stateRoot);
+
+    expect(status).toMatchObject({
+      status: "incomplete",
+      reasonCode: "STATE_MIGRATION_INCOMPLETE",
+    });
+    if (status.status !== "incomplete") {
+      throw new Error(`Expected incomplete status, received ${status.status}`);
+    }
+    expect(status.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "STATE_MIGRATION_MARKER_VERSION_MISSING",
+        path: expect.stringContaining(".skillflow-migration.json"),
       }),
     );
   });
