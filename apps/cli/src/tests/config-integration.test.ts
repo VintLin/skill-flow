@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import type { DraftBinding } from "@skill-flow/domain/types";
+import { createLegacyAgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
+import { projectStateV2ToView } from "@skill-flow/query";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
+import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import {
   createRepo,
   pathExists,
@@ -11,6 +14,10 @@ import {
   writeRepoFiles,
 } from "./test-helpers.js";
 
+const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
+const v2View = async (app: { store: { rootPath: string } }) =>
+  projectStateV2ToView(await v2(app).readState());
+
 describe.sequential("config integration", () => {
   const sandbox = useSkillFlowSandbox();
 
@@ -18,22 +25,21 @@ describe.sequential("config integration", () => {
     const app = new SkillFlowApp();
 
     await Promise.all(
-      Array.from({ length: 12 }, () => app.store.init()),
+      Array.from({ length: 12 }, () => v2(app).init()),
     );
 
-    expect(await pathExists(app.store.manifestPath)).toBe(true);
-    expect(await pathExists(app.store.lockPath)).toBe(true);
-    expect(await app.store.readManifest()).toEqual({
-      schemaVersion: 1,
+    expect(await pathExists(v2(app).manifestPath)).toBe(true);
+    expect(await pathExists(v2(app).lockPath)).toBe(true);
+    expect(await v2(app).readManifest()).toMatchObject({
+      schemaVersion: 2,
       sources: [],
       bindings: {},
     });
-    expect(await app.store.readLock()).toEqual({
-      schemaVersion: 1,
-      sources: [],
+    expect(await v2(app).readLock()).toMatchObject({
+      schemaVersion: 2,
+      sources: {},
       leafInventory: [],
       projections: [],
-      deployments: [],
     });
   });
 
@@ -50,9 +56,8 @@ describe.sequential("config integration", () => {
       "junction",
     );
 
-    await app.store.init();
-    const manifest = await app.store.readManifest();
-    const lock = await app.store.readLock();
+
+    const { manifest, lockFile: lock } = await v2View(app);
     const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
       manifest,
       lock,
@@ -68,8 +73,8 @@ describe.sequential("config integration", () => {
         targetPath: path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "linked-skill"),
       },
     ]);
-    expect(await app.store.readManifest()).toEqual(manifest);
-    expect(await app.store.readLock()).toEqual(lock);
+    expect((await v2View(app)).manifest).toEqual(manifest);
+    expect((await v2View(app)).lockFile).toEqual(lock);
   });
 
   test("bootstrap ignores target paths already owned by managed projections even without deployments", async () => {
@@ -94,13 +99,12 @@ describe.sequential("config integration", () => {
       return;
     }
 
-    const { manifest, lockFile } = await app.store.readState();
-    lockFile.deployments = [];
-    await app.store.writeState(manifest, lockFile);
+    const { manifest, lockFile } = await v2View(app);
+    const lockWithoutDeployments = { ...lockFile, deployments: [] };
 
     const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
       manifest,
-      lockFile,
+      lockWithoutDeployments,
     );
 
     expect(detected.some((item) => item.sourceId === sourceId)).toBe(false);
@@ -124,9 +128,8 @@ describe.sequential("config integration", () => {
       "junction",
     );
 
-    await app.store.init();
-    const manifest = await app.store.readManifest();
-    const lock = await app.store.readLock();
+
+    const { manifest, lockFile: lock } = await v2View(app);
     const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
       manifest,
       lock,
@@ -160,9 +163,9 @@ describe.sequential("config integration", () => {
       return;
     }
 
-    const lockAfter = await app.store.readLock();
+    const lockAfter = await v2(app).readLock();
     expect(
-      lockAfter.sources.find((source) => source.id === imported.data.manifest.id)?.observedTargets,
+      lockAfter.sources[imported.data.manifest.id]?.observedTargets,
     ).toEqual(detected[0]!.observedTargets);
   });
 
@@ -200,7 +203,7 @@ describe.sequential("config integration", () => {
     ]);
     expect(boot.data.bootStatus.failedSources).toEqual([]);
 
-    const manifest = await app.store.readManifest();
+    const manifest = await v2(app).readManifest();
     expect(manifest.sources.map((source) => source.id)).toEqual([live.data.manifest.id]);
     expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_OPENCLAW!, "eval"))).toBe(
       false,
@@ -229,8 +232,8 @@ describe.sequential("config integration", () => {
       "SKILL.md": skillDoc("external", "Keep external content."),
     });
 
-    const lock = await app.store.readLock();
-    const deployment = lock.deployments.find(
+    const lock = await v2(app).readLock();
+    const deployment = lock.projections.find(
       (item) => item.sourceId === stale.data.manifest.id && item.target === "openclaw",
     );
     expect(deployment).toBeTruthy();
@@ -238,7 +241,7 @@ describe.sequential("config integration", () => {
       return;
     }
     deployment.targetPath = externalPath;
-    await app.store.writeLock(lock);
+    await v2(app).writeState({ ...(await v2(app).readState()), lockFile: lock });
 
     await fs.rm(stale.data.lock.checkoutPath, { recursive: true, force: true });
 
@@ -250,7 +253,7 @@ describe.sequential("config integration", () => {
     }
     expect(await pathExists(externalPath)).toBe(true);
 
-    const manifest = await app.store.readManifest();
+    const manifest = await v2(app).readManifest();
     expect(manifest.sources).toHaveLength(0);
   });
 
@@ -268,7 +271,7 @@ describe.sequential("config integration", () => {
     const sourceId = added.data.manifest.id;
     const lockPath = path.join(sandbox.stateRoot, "lock.json");
     const lock = JSON.parse(await fs.readFile(lockPath, "utf8")) as {
-      sources: Array<{ id: string; leafIds: string[] }>;
+      sources: Record<string, { sourceId: string; leafIds: string[] }>;
       leafInventory: Array<Record<string, unknown>>;
     };
     const existingLeaf = lock.leafInventory[0] as {
@@ -282,7 +285,7 @@ describe.sequential("config integration", () => {
       title: string;
     };
     const generatedLeafId = `${sourceId}:.agents/skills/generated`;
-    lock.sources[0]!.leafIds.push(generatedLeafId);
+    lock.sources[sourceId]!.leafIds.push(generatedLeafId);
     lock.leafInventory.push({
       ...existingLeaf,
       id: generatedLeafId,
@@ -367,20 +370,14 @@ describe.sequential("config integration", () => {
     }
 
     const sourceId = added.data.manifest.id;
-    const manifest = await app.store.readManifest();
+    const manifest = await v2(app).readManifest();
     manifest.bindings[sourceId] = {
-      targets: {
-        "claude-code": {
-          enabled: true,
-          leafIds: [`${sourceId}:browse`],
-        },
-        codex: {
-          enabled: true,
-          leafIds: [`${sourceId}:review`],
-        },
-      },
+      sourceId,
+      selectionMode: "selected",
+      selectedLeafIds: [`${sourceId}:browse`, `${sourceId}:review`],
+      enabledTargets: ["claude-code", "codex"],
     };
-    await app.store.writeManifest(manifest);
+    await v2(app).writeState({ ...(await v2(app).readState()), manifest: manifest });
 
     const result = await app.getConfigData();
     expect(result.ok).toBe(true);
@@ -388,23 +385,16 @@ describe.sequential("config integration", () => {
       return;
     }
 
-    const normalizedManifest = await app.store.readManifest();
+    const normalizedManifest = await v2(app).readManifest();
     expect(normalizedManifest.bindings[sourceId]).toEqual({
+      sourceId,
+      selectionMode: "selected",
       selectedLeafIds: [`${sourceId}:browse`, `${sourceId}:review`],
-      targets: {
-        "claude-code": {
-          enabled: true,
-          leafIds: [`${sourceId}:browse`, `${sourceId}:review`],
-        },
-        codex: {
-          enabled: true,
-          leafIds: [`${sourceId}:browse`, `${sourceId}:review`],
-        },
-      },
+      enabledTargets: ["claude-code", "codex"],
     });
     expect(
       result.data.summaries.find((summary) => summary.source.id === sourceId)?.bindings,
-    ).toEqual(normalizedManifest.bindings[sourceId]);
+    ).toEqual((await v2View(app)).manifest.bindings[sourceId]);
   });
 
   test("preview and apply can run concurrently without corrupting state files", async () => {
@@ -432,8 +422,7 @@ describe.sequential("config integration", () => {
 
     expect(results.every((result) => result.ok)).toBe(true);
 
-    const manifest = await app.store.readManifest();
-    const lock = await app.store.readLock();
+    const { manifest, lockFile: lock } = await v2View(app);
     expect(manifest.bindings[sourceId]?.targets["claude-code"]?.leafIds).toEqual([
       `${sourceId}:browse`,
     ]);
@@ -468,7 +457,7 @@ describe.sequential("config integration", () => {
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
 
-    const manifest = await app.store.readManifest();
+    const { manifest } = await v2View(app);
     expect(manifest.bindings[sourceId]).toEqual({
       selectedLeafIds: [leafId],
       targets: {
@@ -501,7 +490,7 @@ describe.sequential("config integration", () => {
       return;
     }
 
-    const manifest = await appA.store.readManifest();
+    const manifest = await v2(appA).readManifest();
     expect(manifest.sources.map((source) => source.id).sort()).toEqual(
       [addedA.data.manifest.id, addedB.data.manifest.id].sort(),
     );
@@ -514,8 +503,8 @@ describe.sequential("config integration", () => {
       "SKILL.md": skillDoc("local-writer", "Writes local drafts.").replace(/\n/g, "\r\n"),
     });
 
-    await app.store.init();
-    const { manifest, lockFile } = await app.store.readState();
+
+    const { manifest, lockFile } = await v2View(app);
     const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
       manifest,
       lockFile,
@@ -538,12 +527,14 @@ describe.sequential("config integration", () => {
   });
 
   test("local import scan preserves agents lock origin metadata", async () => {
-    const app = new SkillFlowApp();
     const agentsRoot = path.join(sandbox.sandboxRoot, "home", ".agents");
     const oldHome = process.env.HOME;
 
     try {
       process.env.HOME = path.join(sandbox.sandboxRoot, "home");
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       await writeRepoFiles(
         path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "resume-bullet-writer"),
         {
@@ -563,8 +554,8 @@ describe.sequential("config integration", () => {
         }),
       });
 
-      await app.store.init();
-      const { manifest, lockFile } = await app.store.readState();
+
+      const { manifest, lockFile } = await v2View(app);
       const scanned = await app.workspaceBootstrapService.scanUnmanagedLocalSkills(
         manifest,
         lockFile,

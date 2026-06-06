@@ -603,16 +603,48 @@ function expectOptionalImportDraft(value: JsonValue | undefined): ImportDraft | 
   }
 
   const selectedSkillIds = parseOptionalStringArray(value.selectedSkillIds, "draft.selectedSkillIds");
-  if (!selectedSkillIds) {
-    throw new Error("Field 'draft.selectedSkillIds' must be a string array.");
+  const selectedSkills = parseOptionalImportSkillSelections(value.selectedSkills);
+  if (!selectedSkillIds && !selectedSkills) {
+    throw new Error("Field 'draft.selectedSkills' or 'draft.selectedSkillIds' must be provided.");
   }
 
   const enabledTargets = parseOptionalStringArray(value.enabledTargets, "draft.enabledTargets") ?? [];
 
   return {
-    selectedSkillIds,
+    ...(selectedSkillIds ? { selectedSkillIds } : {}),
+    ...(selectedSkills ? { selectedSkills } : {}),
     enabledTargets: enabledTargets as ImportDraft["enabledTargets"],
   };
+}
+
+function parseOptionalImportSkillSelections(value: JsonValue | undefined): ImportDraft["selectedSkills"] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("Field 'draft.selectedSkills' must be an array.");
+  }
+
+  return value.map((entry, index) => {
+    if (!isJsonObject(entry)) {
+      throw new Error(`Field 'draft.selectedSkills[${index}]' must be a JSON object.`);
+    }
+    const selector = entry.selector;
+    if (!isJsonObject(selector)) {
+      throw new Error(`Field 'draft.selectedSkills[${index}].selector' must be a JSON object.`);
+    }
+    const kind = expectString(selector.kind, `draft.selectedSkills[${index}].selector.kind`, "import-source");
+    if (kind !== "repoPath") {
+      throw new Error(`Field 'draft.selectedSkills[${index}].selector.kind' must be 'repoPath'.`);
+    }
+    return {
+      uiId: expectString(entry.uiId, `draft.selectedSkills[${index}].uiId`, "import-source"),
+      selector: {
+        kind,
+        path: expectString(selector.path, `draft.selectedSkills[${index}].selector.path`, "import-source"),
+      },
+    };
+  });
 }
 
 function expectCustomTargets(value: JsonValue | undefined) {

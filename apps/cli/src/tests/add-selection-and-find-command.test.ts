@@ -2,6 +2,9 @@ import { describe, expect, test } from "vitest";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
+import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+
+const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
 
 describe.sequential("add selection and find command regression", () => {
   const sandbox = useSkillFlowSandbox();
@@ -21,7 +24,6 @@ describe.sequential("add selection and find command regression", () => {
     }
 
     expect(result.data.manifest.requestedPath).toBe("skills/find-skills");
-    expect(result.data.manifest.selectionMode).toBe("partial");
     expect(result.data.leafCount).toBe(2);
     expect(result.warnings).toEqual([
       {
@@ -31,12 +33,14 @@ describe.sequential("add selection and find command regression", () => {
       },
     ]);
 
-    const manifest = await app.store.readManifest();
+    const manifest = await v2(app).readManifest();
     expect(manifest.sources[0]?.requestedPath).toBe("skills/find-skills");
-    expect(manifest.sources[0]?.selectionMode).toBe("partial");
-    expect(manifest.bindings[result.data.manifest.id]?.targets["claude-code"]?.leafIds).toEqual([
-      `${result.data.manifest.id}:skills/find-skills`,
-    ]);
+    expect(manifest.bindings[result.data.manifest.id]).toMatchObject({
+      sourceId: result.data.manifest.id,
+      selectionMode: "selected",
+      selectedLeafIds: [`${result.data.manifest.id}:skills/find-skills`],
+    });
+    expect(manifest.bindings[result.data.manifest.id]?.enabledTargets).toContain("claude-code");
   });
 
   test("treats no-op root paths as a full-group import", async () => {
@@ -53,17 +57,18 @@ describe.sequential("add selection and find command regression", () => {
     }
 
     expect(result.data.manifest.requestedPath).toBeUndefined();
-    expect(result.data.manifest.selectionMode).toBe("all");
     expect(
       result.warnings.some((warning) => warning.code === "ADD_SELECTION_PRESELECTED"),
     ).toBe(false);
 
-    const manifest = await app.store.readManifest();
+    const manifest = await v2(app).readManifest();
     expect(manifest.sources[0]?.requestedPath).toBeUndefined();
-    expect(manifest.sources[0]?.selectionMode).toBe("all");
-    expect(manifest.bindings[result.data.manifest.id]?.targets["claude-code"]?.leafIds).toEqual([
-      `${result.data.manifest.id}:.`,
-    ]);
+    expect(manifest.bindings[result.data.manifest.id]).toMatchObject({
+      sourceId: result.data.manifest.id,
+      selectionMode: "all",
+      selectedLeafIds: [],
+    });
+    expect(manifest.bindings[result.data.manifest.id]?.enabledTargets).toContain("claude-code");
   });
 
   test("builds predictable follow-up add commands from search candidates", () => {

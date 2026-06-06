@@ -16,6 +16,10 @@ import {
   writeRepoFiles,
 } from "./test-helpers.js";
 
+const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
+const v2View = async (app: { store: { rootPath: string } }) =>
+  projectStateV2ToView(await v2(app).readState());
+
 describe.sequential("skill-flow", () => {
   const sandbox = useSkillFlowSandbox();
 
@@ -24,13 +28,13 @@ describe.sequential("skill-flow", () => {
     customTarget: SharedPreferences["customTargets"][number],
     recentProjects: SharedPreferences["recentProjects"] = [],
   ) {
-    const preferences = await app.store.readPreferences();
-    await app.store.writePreferences({
+    const preferences = await v2(app).readPreferences();
+    await v2(app).writeState({ ...(await v2(app).readState()), preferences: {
       ...preferences,
       recentProjects,
       customTargets: [customTarget],
       agentDisplayOrder: [...preferences.agentDisplayOrder, customTarget.id],
-    });
+    } });
   }
 
   test("applyDraft deploys to a custom global target", async () => {
@@ -65,7 +69,7 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lock = await app.store.readLock();
+    const lock = (await v2View(app)).lockFile;
     const deployment = lock.deployments.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "my-agent",
     );
@@ -144,7 +148,7 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lock = await app.store.readLock();
+    const lock = (await v2View(app)).lockFile;
     const deployment = lock.deployments.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );
@@ -186,8 +190,8 @@ describe.sequential("skill-flow", () => {
       "SKILL.md": skillDoc("external", "Keep external content."),
     });
 
-    const lock = await app.store.readLock();
-    const deployment = lock.deployments.find(
+    const lock = await v2(app).readLock();
+    const deployment = lock.projections.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );
     expect(deployment).toBeTruthy();
@@ -195,9 +199,8 @@ describe.sequential("skill-flow", () => {
       return;
     }
     deployment.targetPath = externalPath;
-    const projection = (lock.projections ?? []).find(
+    const projection = lock.projections.find(
       (item) =>
-        item.mode === "managed" &&
         item.sourceId === sourceId &&
         item.leafId === leafId &&
         item.target === "openclaw",
@@ -206,7 +209,7 @@ describe.sequential("skill-flow", () => {
       throw new Error("expected managed projection for openclaw");
     }
     projection.targetPath = externalPath;
-    await app.store.writeLock(lock);
+    await v2(app).writeState({ ...(await v2(app).readState()), lockFile: lock });
 
     const removed = await app.uninstall([sourceId]);
     expect(removed.ok).toBe(false);
@@ -217,7 +220,7 @@ describe.sequential("skill-flow", () => {
     expect(removed.errors[0]?.code).toBe("GROUP_DELETE_INCOMPLETE");
     expect(await pathExists(externalPath)).toBe(true);
 
-    const manifest = await app.store.readManifest();
+    const manifest = (await v2View(app)).manifest;
     expect(manifest.sources.some((source) => source.id === sourceId)).toBe(true);
   });
 
@@ -240,8 +243,8 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lock = await app.store.readLock();
-    const deployment = lock.deployments.find(
+    const lock = await v2(app).readLock();
+    const deployment = lock.projections.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );
     expect(deployment).toBeTruthy();
@@ -250,9 +253,8 @@ describe.sequential("skill-flow", () => {
     }
     deployment.targetPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
     deployment.targetRootPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
-    const projection = (lock.projections ?? []).find(
+    const projection = lock.projections.find(
       (item) =>
-        item.mode === "managed" &&
         item.sourceId === sourceId &&
         item.leafId === leafId &&
         item.target === "openclaw",
@@ -262,7 +264,7 @@ describe.sequential("skill-flow", () => {
     }
     projection.targetPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
     projection.targetRootPath = process.env.SKILL_FLOW_TARGET_OPENCLAW!;
-    await app.store.writeLock(lock);
+    await v2(app).writeState({ ...(await v2(app).readState()), lockFile: lock });
 
     const removed = await app.uninstall([sourceId]);
     expect(removed.ok).toBe(false);
@@ -299,7 +301,7 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lockBefore = await app.store.readLock();
+    const lockBefore = (await v2View(app)).lockFile;
     const deployment = lockBefore.deployments.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );
@@ -345,7 +347,7 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lockBefore = await app.store.readLock();
+    const lockBefore = (await v2View(app)).lockFile;
     const deployment = lockBefore.deployments.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "codex",
     );
@@ -437,14 +439,16 @@ describe.sequential("skill-flow", () => {
     const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "dbs");
     await fs.symlink(path.join(added.data.lock.checkoutPath, "dbs"), targetPath, "junction");
 
-    const manifest = await app.store.readManifest();
+    const manifest = await v2(app).readManifest();
     manifest.bindings[sourceId] = {
+      sourceId,
+      selectionMode: "selected",
       selectedLeafIds: [leafId],
-      targets: {},
+      enabledTargets: [],
     };
-    const lock = await app.store.readLock();
+    const lock = await v2(app).readLock();
     lock.projections = (lock.projections ?? []).filter((projection) => projection.sourceId !== sourceId);
-    await app.store.writeState(manifest, lock);
+    await v2(app).writeState({ ...(await v2(app).readState()), manifest: manifest, lockFile: lock });
 
     const removed = await app.applyDraft(sourceId, {
       enabledTargets: [],
@@ -622,8 +626,7 @@ describe.sequential("skill-flow", () => {
     expect(doctor.ok).toBe(true);
     expect(await pathExists(targetPath)).toBe(false);
 
-    const manifest = await app.store.readManifest();
-    const lock = await app.store.readLock();
+    const { manifest, lockFile: lock } = await v2View(app);
     expect(manifest.sources.some((source) => source.id === sourceId)).toBe(false);
     expect(lock.sources.some((source) => source.id === sourceId)).toBe(false);
   });
@@ -680,9 +683,8 @@ describe.sequential("skill-flow", () => {
     }
 
     const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "gstack");
-    const { manifest, lockFile } = await app.store.readState();
-    lockFile.deployments = [];
-    await app.store.writeState(manifest, lockFile);
+    const { manifest, lockFile } = await v2(app).readState();
+    await v2(app).writeState({ ...(await v2(app).readState()), manifest, lockFile });
     await fs.rm(targetPath, { recursive: true, force: true });
 
     const repaired = await app.repairTargets([sourceId]);
@@ -813,7 +815,7 @@ describe.sequential("skill-flow", () => {
       (stats: { isSymbolicLink(): boolean }) => !stats.isSymbolicLink(),
     );
 
-    const lock = await app.store.readLock();
+    const lock = (await v2View(app)).lockFile;
     const deployment = lock.deployments.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "claude-code",
     );
@@ -841,14 +843,14 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lock = await app.store.readLock();
-    lock.deployments = lock.deployments.filter(
+    const lock = await v2(app).readLock();
+    lock.projections = lock.projections.filter(
       (deployment) =>
         !(deployment.sourceId === sourceId &&
           deployment.leafId === leafId &&
           deployment.target === "claude-code"),
     );
-    await app.store.writeLock(lock);
+    await v2(app).writeState({ ...(await v2(app).readState()), lockFile: lock });
 
     const repaired = await app.repairState([sourceId]);
     expect(repaired.ok).toBe(true);
@@ -858,7 +860,7 @@ describe.sequential("skill-flow", () => {
 
     expect(repaired.data.removedDeploymentCount).toBe(0);
 
-    const nextLock = await app.store.readLock();
+    const nextLock = (await v2View(app)).lockFile;
     expect(
       nextLock.deployments.some(
         (deployment) =>
@@ -1149,8 +1151,8 @@ describe.sequential("skill-flow", () => {
       enabledTargets: ["openclaw"],
       selectedLeafIds: [`${sourceId}:browse`],
     });
-    const lockWithManaged = await app.store.readLock();
-    const managedDeployment = lockWithManaged.deployments.find(
+    const lockWithManaged = await v2(app).readLock();
+    const managedDeployment = lockWithManaged.projections.find(
       (deployment) =>
         deployment.sourceId === sourceId &&
         deployment.leafId === `${sourceId}:browse` &&
@@ -1165,7 +1167,7 @@ describe.sequential("skill-flow", () => {
       "SKILL.md": skillDoc("unmanaged", "Unmanaged skill."),
     });
 
-    lockWithManaged.deployments = lockWithManaged.deployments.filter(
+    lockWithManaged.projections = lockWithManaged.projections.filter(
       (deployment) =>
         !(
           deployment.sourceId === sourceId &&
@@ -1173,7 +1175,7 @@ describe.sequential("skill-flow", () => {
           deployment.target === "openclaw"
         ),
     );
-    lockWithManaged.deployments.push({
+    lockWithManaged.projections.push({
       sourceId,
       leafId: `${sourceId}:ghost`,
       target: "claude-code",
@@ -1181,14 +1183,14 @@ describe.sequential("skill-flow", () => {
       strategy: "symlink",
       status: "active",
       contentHash: "ghost",
-      appliedAt: "2026-03-23T00:00:00.000Z",
+      updatedAt: "2026-03-23T00:00:00.000Z",
     });
-    await app.store.writeLock(lockWithManaged);
+    await v2(app).writeState({ ...(await v2(app).readState()), lockFile: lockWithManaged });
 
     const repaired = await app.repairState();
 
     expect(repaired.ok).toBe(true);
-    const lockAfter = await app.store.readLock();
+    const lockAfter = (await v2View(app)).lockFile;
     expect(lockAfter.leafInventory.map((leaf) => leaf.id)).not.toContain(
       `${sourceId}:extra`,
     );
@@ -1389,8 +1391,7 @@ description: |
         strategy: "symlink",
         status: "active",
         contentHash: "legacy",
-        appliedAt: new Date().toISOString(),
-        mode: "managed",
+        updatedAt: new Date().toISOString(),
       },
     ];
     await fs.writeFile(lockPath, `${JSON.stringify(lockFile, null, 2)}\n`, "utf8");
@@ -1427,10 +1428,20 @@ description: |
     const sourceB = addedB.data.manifest.id;
     const leafA = `${sourceA}:browse`;
     const leafB = `${sourceB}:browse`;
-    const manifest = await app.store.readManifest();
-    manifest.bindings[sourceA] = { targets: {} };
-    manifest.bindings[sourceB] = { targets: {} };
-    await app.store.writeManifest(manifest);
+    const manifest = await v2(app).readManifest();
+    manifest.bindings[sourceA] = {
+      sourceId: sourceA,
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    };
+    manifest.bindings[sourceB] = {
+      sourceId: sourceB,
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    };
+    await v2(app).writeState({ ...(await v2(app).readState()), manifest: manifest });
 
     const firstApply = await app.applyDraft(sourceA, {
       enabledTargets: ["claude-code"],
@@ -1457,7 +1468,7 @@ description: |
       projections?: Array<{ sourceId: string; targetPath: string; mode?: string }>;
     };
     const managedBrowseProjections = (lock.projections ?? []).filter((deployment) =>
-      deployment.mode === "managed" &&
+      deployment.status === "active" &&
       deployment.targetPath.endsWith(path.join("claude", "browse")),
     );
     expect(managedBrowseProjections).toHaveLength(1);
@@ -1484,10 +1495,20 @@ description: |
     const sourceB = addedB.data.manifest.id;
     const leafA = `${sourceA}:browse`;
     const leafB = `${sourceB}:browse`;
-    const manifest = await app.store.readManifest();
-    manifest.bindings[sourceA] = { targets: {} };
-    manifest.bindings[sourceB] = { targets: {} };
-    await app.store.writeManifest(manifest);
+    const manifest = await v2(app).readManifest();
+    manifest.bindings[sourceA] = {
+      sourceId: sourceA,
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    };
+    manifest.bindings[sourceB] = {
+      sourceId: sourceB,
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    };
+    await v2(app).writeState({ ...(await v2(app).readState()), manifest: manifest });
 
     const firstApply = await app.applyDraft(sourceA, {
       enabledTargets: ["claude-code"],
@@ -1683,7 +1704,7 @@ description: |
       selectedLeafIds: [leafId],
     });
 
-    const lock = await app.store.readLock();
+    const lock = (await v2View(app)).lockFile;
     const deployment = lock.deployments.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );

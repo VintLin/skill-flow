@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
+import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+
+const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
 
 describe.sequential("add prepare flow", () => {
   const sandbox = useSkillFlowSandbox();
@@ -27,8 +30,13 @@ describe.sequential("add prepare flow", () => {
       `${result.data.sourceId}:review`,
     ]);
 
-    const manifest = await app.store.readManifest();
-    expect(manifest.bindings[result.data.sourceId]?.targets).toEqual({});
+    const manifest = await v2(app).readManifest();
+    expect(manifest.bindings[result.data.sourceId]).toEqual({
+      sourceId: result.data.sourceId,
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
   });
 
   test("prepareAddSource keeps path as a preselection boundary only", async () => {
@@ -97,7 +105,7 @@ describe.sequential("add prepare flow", () => {
       return;
     }
 
-    const manifest = await app.store.readManifest();
+    const manifest = await v2(app).readManifest();
     expect(manifest.sources).toHaveLength(0);
     expect(manifest.bindings[prepared.data.sourceId]).toBeUndefined();
   });
@@ -164,11 +172,16 @@ describe.sequential("add prepare flow", () => {
       return;
     }
 
-    const { manifest, lockFile } = await app.store.readState();
+    const { manifest, lockFile } = await v2(app).readState();
     expect(manifest.sources.some((source) => source.id === prepared.data.sourceId)).toBe(true);
-    expect(manifest.bindings[prepared.data.sourceId]?.targets).toEqual({});
+    expect(manifest.bindings[prepared.data.sourceId]).toEqual({
+      sourceId: prepared.data.sourceId,
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
     expect(
-      lockFile.deployments.some((deployment) => deployment.sourceId === prepared.data.sourceId),
+      lockFile.projections.some((deployment) => deployment.sourceId === prepared.data.sourceId),
     ).toBe(false);
   });
 
