@@ -3,13 +3,22 @@ import path from "node:path";
 import type {
   DeploymentStrategy,
   DiagnosticV2,
+  LeafRecordV2,
   ProjectScope,
 } from "@skill-flow/domain/types";
-import { hashDirectory } from "@skill-flow/integration/utils/fs";
 import {
+  CURRENT_MIGRATION_MARKER_VERSION,
   inspectStateMigrationStatus,
   type StateMigrationStatus,
 } from "@skill-flow/storage/state-schema-v2";
+import {
+  hasLegacyVirtualGroups,
+  legacyVirtualGroupsPath,
+  type LegacyVirtualGroup,
+  readLegacyVirtualGroups,
+  validateLegacyVirtualGroupsJson,
+} from "./legacy-virtual-group.js";
+import { materializeSkillCollectionMembers } from "./skill-collection-materializer.js";
 
 export type StateMigrationAction =
   | {
@@ -120,7 +129,7 @@ export class StateMigrationService {
       { action: "rewrite", path: path.join(this.stateRoot, "collections.json") },
     ];
 
-    if (await pathExists(path.join(this.stateRoot, "virtual-groups.json"))) {
+    if (await hasLegacyVirtualGroups(this.stateRoot)) {
       actions.push({
         action: "materialize-collection",
         path: path.join(this.stateRoot, "source", "collection"),
@@ -155,6 +164,7 @@ export class StateMigrationService {
 
       await writeJsonFile(markerPath, {
         schemaVersion: 2,
+        version: CURRENT_MIGRATION_MARKER_VERSION,
         migrationGeneration,
         status: "running",
         startedAt,
@@ -214,21 +224,15 @@ export class StateMigrationService {
 }
 
 async function validateLegacyMigrationInputs(stateRoot: string): Promise<void> {
-  const virtualGroupsPath = path.join(stateRoot, "virtual-groups.json");
-  if (!(await pathExists(virtualGroupsPath))) {
-    return;
-  }
-
-  try {
-    JSON.parse(await fs.readFile(virtualGroupsPath, "utf8")) as unknown;
-  } catch (error) {
+  const virtualGroups = await validateLegacyVirtualGroupsJson(stateRoot);
+  if (!virtualGroups.ok) {
     throw new StateMigrationError({
       reasonCode: "STATE_MIGRATION_VALIDATION_FAILED",
       diagnostics: [
         {
           code: "STATE_MIGRATION_VALIDATION_FAILED",
-          message: error instanceof Error ? error.message : "Virtual group state is invalid.",
-          path: virtualGroupsPath,
+          message: virtualGroups.message,
+          path: virtualGroups.path,
           retryable: false,
         },
       ],
@@ -439,16 +443,6 @@ type LegacySourceLock = {
   commitSha: string | undefined;
 };
 
-type LegacyVirtualGroup = {
-  id: string;
-  displayName: string;
-  includedSkills: Array<{ sourceId: string; leafId: string }>;
-  hiddenSourceIds: string[];
-  restoreSnapshots: Record<string, { selectedLeafIds: string[]; enabledTargets: string[] }>;
-  createdAt: string;
-  updatedAt: string;
-};
-
 type MaterializedCollections = {
   manifestSources: Array<Record<string, unknown>>;
   bindings: Record<string, unknown>;
@@ -471,86 +465,55 @@ async function materializeLegacyCollections(
   const legacyLeafs = readLegacyLeafs(lock.leafInventory);
   const virtualGroups = await readLegacyVirtualGroups(stateRoot);
   const memberLeafIdByLegacyRef = new Map<string, string>();
-  const collectionLeafs: Array<Record<string, unknown>> = [];
+  const collectionLeafs: LeafRecordV2[] = [];
   const collectionLockSources: Record<string, Record<string, unknown>> = {};
   const collections: Record<string, Record<string, unknown>> = {};
   const now = new Date().toISOString();
 
   for (const group of Object.values(virtualGroups)) {
-    const collectionRoot = path.join(stateRoot, "source", "collection", group.id);
-    await fs.rm(collectionRoot, { recursive: true, force: true });
-    await fs.mkdir(collectionRoot, { recursive: true });
+    const materialized = await materializeSkillCollectionMembers({
+      stateRoot,
+      collectionId: group.id,
+      refs: group.includedSkills,
+      migrationGeneration,
+      capturedAt: now,
+      resolveOrigin: async (ref, index) => {
+        const originLeaf = legacyLeafs.find(
+          (leaf) => leaf.id === ref.leafId && leaf.sourceId === ref.sourceId,
+        );
+        const originSource = legacySources.find((source) => source.id === ref.sourceId);
+        const originLock = legacyLockSources.find((source) => source.id === ref.sourceId);
+        if (!originLeaf || !originSource || !originLock) {
+          throw virtualMemberOriginMissing(stateRoot, ref);
+        }
 
-    const members: Array<Record<string, unknown>> = [];
-    const collectionLeafIds: string[] = [];
-    for (const [index, ref] of group.includedSkills.entries()) {
-      const originLeaf = legacyLeafs.find(
-        (leaf) => leaf.id === ref.leafId && leaf.sourceId === ref.sourceId,
-      );
-      const originSource = legacySources.find((source) => source.id === ref.sourceId);
-      const originLock = legacyLockSources.find((source) => source.id === ref.sourceId);
-      if (!originLeaf || !originSource || !originLock) {
-        throw virtualMemberOriginMissing(stateRoot, ref);
-      }
-
-      const memberId = `member-${index + 1}`;
-      const leafId = `${group.id}:${memberId}`;
-      const memberPath = path.join(collectionRoot, memberId);
-      const sourceSkillPath = await resolveLegacySkillPath(stateRoot, originSource, originLock, originLeaf);
-      await fs.cp(sourceSkillPath, memberPath, { recursive: true, force: true });
-      const actualHash = await hashDirectory(memberPath);
-      if (actualHash !== originLeaf.contentHash) {
-        throw collectionHashMismatch(collectionRoot, originLeaf.contentHash, actualHash);
-      }
-
-      memberLeafIdByLegacyRef.set(legacyRefKey(group.id, ref.leafId), leafId);
-      collectionLeafIds.push(leafId);
-      collectionLeafs.push({
-        id: leafId,
-        sourceId: group.id,
-        relativePath: memberId,
-        linkName: memberId,
-        title: originLeaf.title ?? originLeaf.name ?? originLeaf.linkName ?? memberId,
-        description: originLeaf.description ?? "",
-        absolutePath: memberPath,
-        skillFilePath: path.join(memberPath, "SKILL.md"),
-        displayName: originLeaf.title ?? originLeaf.name ?? originLeaf.linkName ?? memberId,
-        contentHash: actualHash,
-        selectors: {
-          legacyAliases: [originLeaf.id, originLeaf.relativePath],
-        },
-        valid: true,
-        diagnostics: [],
-      });
-      members.push({
-        id: memberId,
-        origin: {
+        const sourceSkillPath = await resolveLegacySkillPath(stateRoot, originSource, originLock, originLeaf);
+        const label = originLeaf.title ?? originLeaf.name ?? originLeaf.linkName ?? `member-${index + 1}`;
+        return {
           sourceId: ref.sourceId,
           leafId: ref.leafId,
           sourceLocator: originSource.locator,
           canonicalLocator: originLock.locator,
           repoPath: originLeaf.relativePath,
           contentHashAtCapture: originLeaf.contentHash,
-          capturedAt: now,
-        },
-        snapshot: {
-          leafId,
-          materializedPath: memberId,
-          skillFilePath: path.join(memberId, "SKILL.md"),
-          relativePath: memberId,
-          contentHash: actualHash,
-        },
-        updatePolicy: "frozen",
-      });
-    }
-
-    await writeJsonFile(path.join(collectionRoot, ".skillflow-generation.json"), {
-      schemaVersion: 2,
-      migrationGeneration,
-      collectionId: group.id,
-      createdAt: now,
-      diagnostics: [],
+          sourcePath: sourceSkillPath,
+          title: label,
+          description: originLeaf.description ?? "",
+          displayName: label,
+          legacyAliases: [originLeaf.id, originLeaf.relativePath],
+        };
+      },
+      onContentHashMismatch: ({ collectionRoot, expectedHash, actualHash }) => {
+        throw collectionHashMismatch(collectionRoot, expectedHash, actualHash);
+      },
     });
+    for (const [index, ref] of group.includedSkills.entries()) {
+      memberLeafIdByLegacyRef.set(
+        legacyRefKey(group.id, ref.leafId),
+        materialized.leafIds[index] ?? ref.leafId,
+      );
+    }
+    collectionLeafs.push(...materialized.leafs);
 
     collectionLockSources[group.id] = {
       sourceId: group.id,
@@ -559,14 +522,14 @@ async function materializeLegacyCollections(
         provider: "collection",
         capturedAt: now,
       },
-      localPath: collectionRoot,
-      leafIds: collectionLeafIds,
+      localPath: materialized.collectionRoot,
+      leafIds: materialized.leafIds,
     };
     collections[group.id] = {
       id: group.id,
       displayName: group.displayName,
       materializedSourceId: group.id,
-      members,
+      members: materialized.members,
       hiddenSourceIds: group.hiddenSourceIds,
       restoreSelections: buildRestoreSelections(group, legacyLeafs),
       createdAt: group.createdAt,
@@ -674,62 +637,6 @@ function readLegacyLeafs(input: unknown): LegacyLeaf[] {
         }];
       })
     : [];
-}
-
-async function readLegacyVirtualGroups(stateRoot: string): Promise<Record<string, LegacyVirtualGroup>> {
-  const virtualGroupsPath = path.join(stateRoot, "virtual-groups.json");
-  if (!(await pathExists(virtualGroupsPath))) {
-    return {};
-  }
-
-  const payload = await readJsonFile<Record<string, unknown>>(virtualGroupsPath, {});
-  const groups = isRecord(payload.groups) ? payload.groups : {};
-  const parsed: Record<string, LegacyVirtualGroup> = {};
-  for (const [id, group] of Object.entries(groups)) {
-    if (!isRecord(group)) {
-      continue;
-    }
-    parsed[id] = {
-      id,
-      displayName: typeof group.displayName === "string" ? group.displayName : id,
-      includedSkills: Array.isArray(group.includedSkills)
-        ? group.includedSkills.filter(isRecord).flatMap((skill) =>
-            typeof skill.sourceId === "string" && typeof skill.leafId === "string"
-              ? [{ sourceId: skill.sourceId, leafId: skill.leafId }]
-              : [],
-          )
-        : [],
-      hiddenSourceIds: Array.isArray(group.hiddenSourceIds)
-        ? group.hiddenSourceIds.filter((value): value is string => typeof value === "string")
-        : [],
-      restoreSnapshots: readRestoreSnapshots(group.restoreSnapshots),
-      createdAt: typeof group.createdAt === "string" ? group.createdAt : new Date(0).toISOString(),
-      updatedAt: typeof group.updatedAt === "string" ? group.updatedAt : new Date(0).toISOString(),
-    };
-  }
-  return parsed;
-}
-
-function readRestoreSnapshots(input: unknown): LegacyVirtualGroup["restoreSnapshots"] {
-  if (!isRecord(input)) {
-    return {};
-  }
-
-  const snapshots: LegacyVirtualGroup["restoreSnapshots"] = {};
-  for (const [sourceId, snapshot] of Object.entries(input)) {
-    if (!isRecord(snapshot)) {
-      continue;
-    }
-    snapshots[sourceId] = {
-      selectedLeafIds: Array.isArray(snapshot.selectedLeafIds)
-        ? snapshot.selectedLeafIds.filter((value): value is string => typeof value === "string")
-        : [],
-      enabledTargets: Array.isArray(snapshot.enabledTargets)
-        ? snapshot.enabledTargets.filter((value): value is string => typeof value === "string")
-        : [],
-    };
-  }
-  return snapshots;
 }
 
 async function resolveLegacySkillPath(
@@ -937,10 +844,7 @@ function buildRestoreSelections(
 }
 
 function mapSourceKind(kind: string): string {
-  if (kind === "clawhub") {
-    return "github";
-  }
-  if (kind === "git" || kind === "github" || kind === "local" || kind === "collection") {
+  if (kind === "git" || kind === "github" || kind === "local" || kind === "clawhub" || kind === "collection") {
     return kind;
   }
   return "local";
@@ -960,7 +864,7 @@ function virtualMemberOriginMissing(
       {
         code: "STATE_MIGRATION_VIRTUAL_MEMBER_ORIGIN_MISSING",
         message: "Legacy virtual group member origin could not be resolved.",
-        path: path.join(stateRoot, "virtual-groups.json"),
+        path: legacyVirtualGroupsPath(stateRoot),
         details: ref,
         retryable: false,
       },

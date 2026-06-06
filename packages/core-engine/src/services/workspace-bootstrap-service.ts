@@ -8,8 +8,7 @@ import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import {
   type AgentsOrigin,
   type AgentsOriginReader,
-  createAgentsOriginReader,
-} from "./agents-origin-reader.js";
+} from "./legacy-agents-lock.js";
 
 export type BootstrapEvent = {
   phase:
@@ -57,7 +56,9 @@ export class WorkspaceBootstrapService {
 
   constructor(options: WorkspaceBootstrapServiceOptions) {
     this.stateRoot = options.stateRoot;
-    this.agentsOriginReader = options.agentsOriginReader ?? createAgentsOriginReader();
+    this.agentsOriginReader = options.agentsOriginReader ?? {
+      readAgentsLockOrigins: async () => new Map(),
+    };
   }
 
   async detectUnmanagedExternalSkills(

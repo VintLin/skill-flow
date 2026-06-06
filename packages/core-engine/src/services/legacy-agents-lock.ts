@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { readJsonFile } from "@skill-flow/integration/utils/fs";
 
-export type AgentsLockFile = {
+export type LegacyAgentsLockFile = {
   skills?: Record<
     string,
     {
@@ -30,7 +30,7 @@ function resolveHomeDir(): string {
   return process.env.HOME ?? os.homedir();
 }
 
-export function agentsLockPath(homeDir: string = resolveHomeDir()): string {
+export function legacyAgentsLockPath(homeDir: string = resolveHomeDir()): string {
   return path.join(homeDir, ".agents", ".skill-lock.json");
 }
 
@@ -46,12 +46,12 @@ export function parseBranchFromSourceUrl(sourceUrl?: string): string | undefined
   return tail.split("/")[0] || undefined;
 }
 
-export function createAgentsOriginReader(
-  lockPathFactory: () => string = () => agentsLockPath(),
+export function createLegacyAgentsOriginReader(
+  lockPathFactory: () => string = () => legacyAgentsLockPath(),
 ): AgentsOriginReader {
   return {
     async readAgentsLockOrigins(): Promise<Map<string, AgentsOrigin>> {
-      const lockFile = await readJsonFile<AgentsLockFile>(lockPathFactory(), {});
+      const lockFile = await readJsonFile<LegacyAgentsLockFile>(lockPathFactory(), {});
       const results = new Map<string, AgentsOrigin>();
 
       for (const [name, record] of Object.entries(lockFile.skills ?? {})) {

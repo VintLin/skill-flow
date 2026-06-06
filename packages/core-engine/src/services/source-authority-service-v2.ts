@@ -48,6 +48,10 @@ export type SourceSnapshotV2 = {
 export class SourceAuthorityServiceV2 {
   constructor(private readonly options: SourceAuthorityServiceV2Options) {}
 
+  private withMutationLock<T>(task: () => Promise<T>): Promise<T> {
+    return this.options.stateStore.withMutationLock(task);
+  }
+
   async addSource(
     locator: string,
     options: AddSourceV2Options = {},
@@ -78,6 +82,13 @@ export class SourceAuthorityServiceV2 {
   }
 
   async commitPreparedSource(input: {
+    preparedCheckout: PreparedSourceCheckoutV2;
+    removePreparedOnFailure?: boolean;
+  }): Promise<Result<SourceSnapshotV2>> {
+    return this.withMutationLock(() => this.commitPreparedSourceUnlocked(input));
+  }
+
+  private async commitPreparedSourceUnlocked(input: {
     preparedCheckout: PreparedSourceCheckoutV2;
     removePreparedOnFailure?: boolean;
   }): Promise<Result<SourceSnapshotV2>> {
@@ -132,6 +143,7 @@ export class SourceAuthorityServiceV2 {
       enabled: true,
       createdAt: now,
       updatedAt: now,
+      ...(prepared.requestedPath ? { requestedPath: prepared.requestedPath } : {}),
     };
     const lock: LockFileV2["sources"][string] = {
       sourceId,
@@ -143,6 +155,14 @@ export class SourceAuthorityServiceV2 {
       },
       localPath: checkoutPath,
       leafIds: leafs.map((leaf) => leaf.id),
+      ...(prepared.packageSlug ? { packageSlug: prepared.packageSlug } : {}),
+      ...(prepared.resolvedVersion ? { resolvedVersion: prepared.resolvedVersion } : {}),
+      ...(prepared.contentHash ? { contentHash: prepared.contentHash } : {}),
+      ...(prepared.versionMode ? { versionMode: prepared.versionMode } : {}),
+      ...(prepared.originBranch ? { originBranch: prepared.originBranch } : {}),
+      ...(prepared.importedFromTargets ? { importedFromTargets: prepared.importedFromTargets } : {}),
+      ...(prepared.observedTargets ? { observedTargets: prepared.observedTargets } : {}),
+      ...(prepared.importMode ? { importMode: prepared.importMode } : {}),
     };
 
     await this.options.stateStore.writeState({
@@ -180,6 +200,10 @@ export class SourceAuthorityServiceV2 {
   }
 
   async removeSource(sourceIds: string[]): Promise<Result<{ removed: string[] }>> {
+    return this.withMutationLock(() => this.removeSourceUnlocked(sourceIds));
+  }
+
+  private async removeSourceUnlocked(sourceIds: string[]): Promise<Result<{ removed: string[] }>> {
     const state = await this.options.stateStore.readState();
     const removed: string[] = [];
     const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
@@ -250,6 +274,10 @@ export class SourceAuthorityServiceV2 {
   }
 
   async updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+    return this.withMutationLock(() => this.updateSourcesUnlocked(sourceIds));
+  }
+
+  private async updateSourcesUnlocked(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
     const state = await this.options.stateStore.readState();
     const requestedIds = sourceIds?.length
       ? [...new Set(sourceIds)]
@@ -290,6 +318,7 @@ export class SourceAuthorityServiceV2 {
           displayNameOverride: source.displayName,
         },
         checkoutPath: tempCheckoutPath,
+        allowEmptyLeafs: true,
       });
       if (!prepared.ok) {
         return fail(prepared.errors, [...warnings, ...prepared.warnings]);
@@ -352,6 +381,13 @@ export class SourceAuthorityServiceV2 {
   }
 
   async reconcileInventory(
+    sourceIds?: string[],
+    options: { force?: boolean } = {},
+  ): Promise<Result<{ updatedSourceIds: string[] }>> {
+    return this.withMutationLock(() => this.reconcileInventoryUnlocked(sourceIds, options));
+  }
+
+  private async reconcileInventoryUnlocked(
     sourceIds?: string[],
     options: { force?: boolean } = {},
   ): Promise<Result<{ updatedSourceIds: string[] }>> {
@@ -452,6 +488,7 @@ export class SourceAuthorityServiceV2 {
   private toCheckoutKind(kind: SourceKindV2): SourceCheckoutKind | undefined {
     switch (kind) {
       case "github":
+      case "clawhub":
         return "git";
       case "git":
       case "local":
@@ -462,9 +499,6 @@ export class SourceAuthorityServiceV2 {
   }
 
   private mapSourceKind(kind: PreparedSourceCheckoutV2["kind"]): SourceKindV2 {
-    if (kind === "clawhub") {
-      return "github";
-    }
     return kind;
   }
 

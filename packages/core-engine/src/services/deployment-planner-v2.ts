@@ -20,7 +20,10 @@ import { hashDirectory, isPathInside } from "@skill-flow/integration/utils/fs";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 
 export class DeploymentPlannerV2 {
-  constructor(private readonly adapters: ChannelAdapter[]) {}
+  constructor(
+    private readonly adapters: ChannelAdapter[],
+    private readonly projectedLinkNamesByTarget: ReadonlyMap<ChannelAdapter["target"], ReadonlyMap<string, string>> = new Map(),
+  ) {}
 
   async planForSource(
     sourceId: string,
@@ -143,7 +146,7 @@ export class DeploymentPlannerV2 {
     for (const leaf of desiredLeafs) {
       const existing = previousByLeafId.get(leaf.id);
       const targetPathCandidates = buildProjectedSkillNameCandidates({
-        preferredName: leaf.linkName,
+        preferredName: this.projectedLinkNamesByTarget.get(adapter.target)?.get(leaf.id) ?? leaf.linkName,
         groupId: sourceRef.id,
         groupName: sourceRef.displayName,
         groupAuthor: sourceRef.author,
@@ -183,6 +186,13 @@ export class DeploymentPlannerV2 {
             relocateExternalToTargetPath?: string;
           }
         | undefined;
+      let preferredForeignCandidate:
+        | {
+            linkName: string;
+            targetPath: string;
+            diskState: Awaited<ReturnType<DeploymentPlannerV2["inspectTargetPath"]>>;
+          }
+        | undefined;
       for (const candidate of containedTargetPathCandidates) {
         const diskState = await this.inspectTargetPath(
           candidate.targetPath,
@@ -196,12 +206,15 @@ export class DeploymentPlannerV2 {
 
         if (
           diskState.managedBySkillFlow &&
-          !this.matchesProjection(diskState.managedProjection, sourceId, leaf.id, adapter.target)
+          !this.matchesProjectionSourceLeaf(diskState.managedProjection, sourceId, leaf.id)
         ) {
           continue;
         }
 
         if (diskState.foreign) {
+          if (candidate.targetPath === preferredTargetPath) {
+            preferredForeignCandidate = { ...candidate, diskState };
+          }
           if (
             candidate.targetPath === preferredTargetPath &&
             diskState.externalExactMatch
@@ -228,6 +241,20 @@ export class DeploymentPlannerV2 {
           diskState,
         };
         break;
+      }
+
+      if (!chosenCandidate && preferredForeignCandidate) {
+        const relocationTargetPath = await this.resolveExternalRelocationTargetPath(
+          preferredTargetPath,
+          rootPath,
+          activeProjections,
+        );
+        if (relocationTargetPath) {
+          chosenCandidate = {
+            ...preferredForeignCandidate,
+            relocateExternalToTargetPath: relocationTargetPath,
+          };
+        }
       }
 
       if (!chosenCandidate) {
@@ -351,12 +378,15 @@ export class DeploymentPlannerV2 {
       activeProjections,
     );
     const blockingManagedProjection = managedProjections.find(
-      (projection) => !this.matchesProjection(projection, sourceId, leaf.id, target),
+      (projection) => !this.matchesProjectionSourceLeaf(projection, sourceId, leaf.id),
     );
     const managedProjection =
       blockingManagedProjection ??
       managedProjections.find((projection) =>
         this.matchesProjection(projection, sourceId, leaf.id, target),
+      ) ??
+      managedProjections.find((projection) =>
+        this.matchesProjectionSourceLeaf(projection, sourceId, leaf.id),
       );
 
     try {
@@ -413,6 +443,14 @@ export class DeploymentPlannerV2 {
     } catch {
       return false;
     }
+  }
+
+  private matchesProjectionSourceLeaf(
+    projection: ProjectionRecordV2 | undefined,
+    sourceId: string,
+    leafId: string,
+  ): boolean {
+    return projection?.sourceId === sourceId && projection.leafId === leafId;
   }
 
   private async buildExternalIdentityState(

@@ -45,6 +45,11 @@ export type PreparedSourceCheckoutV2 = {
   contentHash?: string;
   resolvedVersion?: string;
   packageSlug?: string;
+  originBranch?: string;
+  importedFromTargets?: SourceLockRecord["importedFromTargets"];
+  observedTargets?: SourceLockRecord["observedTargets"];
+  importMode?: SourceLockRecord["importMode"];
+  versionMode?: SourceLockRecord["versionMode"];
 };
 
 export type SourcePreviewCheckoutV2 = {
@@ -128,6 +133,7 @@ export class SourceCheckoutService {
       existingSources?: Array<{ id: string; kind?: SourceKind; locator: string; displayName: string }>;
       checkoutPath?: string;
       suffix?: string;
+      allowEmptyLeafs?: boolean;
     } = {},
   ): Promise<Result<PreparedSourceCheckoutV2>> {
     const options = input.options ?? {};
@@ -160,6 +166,7 @@ export class SourceCheckoutService {
       checkoutPath,
       resolved.requestedPath,
       options,
+      input.allowEmptyLeafs === undefined ? {} : { allowEmptyLeafs: input.allowEmptyLeafs },
     );
     if (!snapshot.ok) {
       await removePath(checkoutPath);
@@ -180,6 +187,11 @@ export class SourceCheckoutService {
       ...(snapshot.data.lock.contentHash ? { contentHash: snapshot.data.lock.contentHash } : {}),
       ...(snapshot.data.lock.resolvedVersion ? { resolvedVersion: snapshot.data.lock.resolvedVersion } : {}),
       ...(snapshot.data.lock.packageSlug ? { packageSlug: snapshot.data.lock.packageSlug } : {}),
+      ...(snapshot.data.lock.originBranch ? { originBranch: snapshot.data.lock.originBranch } : {}),
+      ...(snapshot.data.lock.importedFromTargets ? { importedFromTargets: snapshot.data.lock.importedFromTargets } : {}),
+      ...(snapshot.data.lock.observedTargets ? { observedTargets: snapshot.data.lock.observedTargets } : {}),
+      ...(snapshot.data.lock.importMode ? { importMode: snapshot.data.lock.importMode } : {}),
+      ...(snapshot.data.lock.versionMode ? { versionMode: snapshot.data.lock.versionMode } : {}),
     }, snapshot.warnings);
   }
 
@@ -252,13 +264,14 @@ export class SourceCheckoutService {
       await pathExists(resolvedPath) &&
       (!fileLocatorPath || !(await this.isGitRepositoryPath(resolvedPath)))
     ) {
+      const requestedPath = this.normalizeRequestedPath(options.path);
       return {
         kind: "local",
         locator: resolvedPath,
         localPath: resolvedPath,
         displayName: options.displayNameOverride ?? deriveDisplayName(resolvedPath),
         sourceId: options.sourceIdOverride ?? deriveSourceId(resolvedPath),
-        ...(options.path ? { requestedPath: options.path } : {}),
+        ...(requestedPath ? { requestedPath } : {}),
       };
     }
 
@@ -301,25 +314,27 @@ export class SourceCheckoutService {
       if (!slug) {
         throw new Error(`Invalid ClawHub locator '${locator}'.`);
       }
+      const requestedPath = this.normalizeRequestedPath(options.path);
 
       return {
         kind: "clawhub",
         locator: trimmed,
         displayName: options.displayNameOverride ?? deriveDisplayName(trimmed),
         sourceId: options.sourceIdOverride ?? deriveSourceId(trimmed),
-        ...(options.path ? { requestedPath: options.path } : {}),
+        ...(requestedPath ? { requestedPath } : {}),
         clawhubSlug: slug,
         ...(version ? { requestedVersion: version, versionMode: "pinned" as const } : { versionMode: "floating" as const }),
       };
     }
 
+    const requestedPath = this.normalizeRequestedPath(options.path);
     return {
       kind: "git",
       locator,
       gitLocator: await this.normalizeLocator(locator),
       displayName: options.displayNameOverride ?? deriveDisplayName(locator),
       sourceId: options.sourceIdOverride ?? deriveSourceId(locator),
-      ...(options.path ? { requestedPath: options.path } : {}),
+      ...(requestedPath ? { requestedPath } : {}),
     };
   }
 
@@ -606,8 +621,8 @@ export class SourceCheckoutService {
       return undefined;
     }
 
-    const normalized = requestedPath.replace(/^\.\/+/, "").replace(/\/+$/, "");
-    return normalized.length > 0 ? normalized : undefined;
+    const normalized = requestedPath.trim().replace(/^\.\/+/, "").replace(/\/+$/, "");
+    return normalized.length > 0 && normalized !== "." ? normalized : undefined;
   }
 
   private stripLocatorQuotes(locator: string): string {

@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { hashDirectory } from "@skill-flow/integration/utils/fs";
-import { inspectStateMigrationStatus } from "@skill-flow/storage/state-schema-v2";
+import {
+  CURRENT_MIGRATION_MARKER_VERSION,
+  inspectStateMigrationStatus,
+} from "@skill-flow/storage/state-schema-v2";
 import { StateMigrationService } from "../services/state-migration-service.js";
 
 describe("state migration service", () => {
@@ -249,6 +252,35 @@ describe("state migration service", () => {
     expect(status).toMatchObject({
       status: "incomplete",
       reasonCode: "STATE_MIGRATION_INCOMPLETE",
+    });
+  });
+
+  test("treats leftover marker as current when authority replace completed", async () => {
+    await seedV1BasicState();
+    const service = new StateMigrationService({ stateRoot });
+    await service.migrate({ to: 2, backup: true });
+    const manifest = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "manifest.json"), {});
+    await writeJsonFile(path.join(stateRoot, ".skillflow-migration.json"), {
+      schemaVersion: 2,
+      version: CURRENT_MIGRATION_MARKER_VERSION,
+      migrationGeneration: manifest.migrationGeneration,
+      status: "running",
+      startedAt: "2026-06-04T00:00:00.000Z",
+      stagingRoot: path.join(stateRoot, ".migration-staging-test"),
+      diagnostics: [],
+    });
+
+    const status = await service.inspect();
+    const result = await service.migrate({ to: 2, backup: true });
+
+    expect(status).toMatchObject({
+      status: "current",
+      migrationGeneration: manifest.migrationGeneration,
+    });
+    expect(result).toEqual({
+      status: "current",
+      stateRoot,
+      actions: [],
     });
   });
 

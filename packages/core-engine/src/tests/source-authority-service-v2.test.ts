@@ -85,6 +85,45 @@ describe.sequential("SourceAuthorityServiceV2", () => {
     ))).resolves.toBeTruthy();
   });
 
+  test("commits prepared sources through the state mutation lock", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
+    });
+    const stateStore = new StateStoreV2(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const prepared = await checkoutService.prepareSourceCheckout(repoPath, {
+      options: { sourceIdOverride: "locked-source" },
+      suffix: "add",
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+
+    let lockCalls = 0;
+    const originalWithMutationLock = stateStore.withMutationLock.bind(stateStore);
+    stateStore.withMutationLock = async (task) => {
+      lockCalls += 1;
+      return originalWithMutationLock(task);
+    };
+    const service = new SourceAuthorityServiceV2({
+      stateStore,
+      checkoutService,
+    });
+
+    const committed = await service.commitPreparedSource({
+      preparedCheckout: prepared.data,
+      removePreparedOnFailure: true,
+    });
+
+    expect(committed.ok).toBe(true);
+    expect(lockCalls).toBe(1);
+  });
+
   test("refuses to remove a source whose checkout path does not match its v2 identity", async () => {
     const alphaRepo = await createRepo(sandbox.sandboxRoot, {
       "skills/alpha/SKILL.md": skillDoc("alpha", "Alpha skill."),

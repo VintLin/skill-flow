@@ -54,6 +54,7 @@ export class DeploymentApplierV2 {
         action.target,
         action.targetPath,
         targetRoots,
+        action.kind === "remove" ? action.targetRootPath : undefined,
       );
 
       if (action.kind === "blocked") {
@@ -84,6 +85,7 @@ export class DeploymentApplierV2 {
           action.target,
           action.previousTargetPath,
           targetRoots,
+          action.previousTargetRootPath,
         );
         if (!(await this.hasPersistentOwnerForPath(lockFile, actions, action, action.previousTargetPath))) {
           await removePath(action.previousTargetPath);
@@ -216,11 +218,14 @@ export class DeploymentApplierV2 {
     target: DeploymentAction["target"],
     targetPath: string,
     targetRoots: Map<DeploymentAction["target"], string>,
+    explicitRootPath?: string,
   ) {
-    const roots = [targetRoots.get(target)].filter((value): value is string => Boolean(value));
-    if (roots.length === 0) {
+    const currentRoot = targetRoots.get(target);
+    if (!currentRoot) {
       throw new Error(`Managed target root is unavailable for ${target}.`);
     }
+    const roots = [explicitRootPath, currentRoot]
+      .filter((value): value is string => Boolean(value));
 
     if (!roots.some((rootPath) => isPathInside(rootPath, targetPath))) {
       throw new Error(`Refusing to modify path outside managed root for ${target}: ${targetPath}`);
