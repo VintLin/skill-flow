@@ -108,6 +108,8 @@ final class BridgeClient: @unchecked Sendable {
     private let mutationCoordinator = MutationCoordinator()
     private let commandTimeoutMilliseconds: UInt64
     private let commandTimeoutGraceMilliseconds: UInt64
+    private let capabilityLock = NSLock()
+    private var importDraftV2Supported = false
 
     init(commandTimeoutMilliseconds: UInt64 = 60_000, commandTimeoutGraceMilliseconds: UInt64 = 1_000) {
         self.commandTimeoutMilliseconds = commandTimeoutMilliseconds
@@ -115,11 +117,15 @@ final class BridgeClient: @unchecked Sendable {
     }
 
     func bootstrap() async throws -> BridgeResponse {
-        try await send(command: .bootstrap)
+        let response = try await send(command: .bootstrap)
+        refreshBridgeCapabilities(from: response, resetWhenMissing: true)
+        return response
     }
 
     func list() async throws -> BridgeResponse {
-        try await send(command: .list)
+        let response = try await send(command: .list)
+        refreshBridgeCapabilities(from: response, resetWhenMissing: false)
+        return response
     }
 
     func inspect(sourceId: String, scope: ProjectScopeSelection = .global) async throws -> BridgeResponse {
@@ -169,33 +175,177 @@ final class BridgeClient: @unchecked Sendable {
         selectedSkillIds: [String],
         enabledTargets: [String]
     ) async throws -> BridgeResponse {
+        try await commitImportSource(
+            preparationId: preparationId,
+            selectedSkills: selectedSkillIds.map(ImportSkillSelection.repoPath),
+            enabledTargets: enabledTargets
+        )
+    }
+
+    func commitImportSource(
+        preparationId: String,
+        selectedSkills: [ImportSkillSelection],
+        enabledTargets: [String]
+    ) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
-            try await self.send(
-                command: .commitImportSource,
-                payload: [
-                    "preparationId": AnyCodable(preparationId),
-                    "draft": AnyCodable([
-                        "selectedSkillIds": selectedSkillIds,
-                        "enabledTargets": enabledTargets,
-                    ]),
-                ]
-            )
+            guard self.supportsImportDraftV2(),
+                  selectedSkills.allSatisfy(\.importDraftV2Compatible) else {
+                return try await self.sendCommitImportSourceLegacy(
+                    preparationId: preparationId,
+                    selectedSkillIds: selectedSkills.map(\.selector.legacySkillId),
+                    enabledTargets: enabledTargets
+                )
+            }
+
+            do {
+                return try await self.sendCommitImportSourceV2(
+                    preparationId: preparationId,
+                    selectedSkills: selectedSkills,
+                    enabledTargets: enabledTargets
+                )
+            } catch {
+                guard self.isUnsupportedImportDraftV2(error) else {
+                    throw error
+                }
+                return try await self.sendCommitImportSourceLegacy(
+                    preparationId: preparationId,
+                    selectedSkillIds: selectedSkills.map(\.selector.legacySkillId),
+                    enabledTargets: enabledTargets
+                )
+            }
         }
     }
 
     func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await importSource(
+            locator: locator,
+            selectedSkills: selectedSkillIds.map(ImportSkillSelection.repoPath),
+            enabledTargets: enabledTargets
+        )
+    }
+
+    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
-            try await self.send(
-                command: .importSource,
-                payload: [
-                    "locator": AnyCodable(locator),
-                    "draft": AnyCodable([
-                        "selectedSkillIds": selectedSkillIds,
-                        "enabledTargets": enabledTargets,
-                    ]),
-                ]
-            )
+            guard self.supportsImportDraftV2(),
+                  selectedSkills.allSatisfy(\.importDraftV2Compatible) else {
+                return try await self.sendImportSourceLegacy(
+                    locator: locator,
+                    selectedSkillIds: selectedSkills.map(\.selector.legacySkillId),
+                    enabledTargets: enabledTargets
+                )
+            }
+
+            do {
+                return try await self.sendImportSourceV2(
+                    locator: locator,
+                    selectedSkills: selectedSkills,
+                    enabledTargets: enabledTargets
+                )
+            } catch {
+                guard self.isUnsupportedImportDraftV2(error) else {
+                    throw error
+                }
+                return try await self.sendImportSourceLegacy(
+                    locator: locator,
+                    selectedSkillIds: selectedSkills.map(\.selector.legacySkillId),
+                    enabledTargets: enabledTargets
+                )
+            }
         }
+    }
+
+    private func sendCommitImportSourceV2(
+        preparationId: String,
+        selectedSkills: [ImportSkillSelection],
+        enabledTargets: [String]
+    ) async throws -> BridgeResponse {
+        try await send(
+            command: .commitImportSource,
+            payload: [
+                "preparationId": AnyCodable(preparationId),
+                "draft": AnyCodable([
+                    "selectedSkills": selectedSkills.map(\.bridgePayload),
+                    "enabledTargets": enabledTargets,
+                ]),
+            ]
+        )
+    }
+
+    private func sendCommitImportSourceLegacy(
+        preparationId: String,
+        selectedSkillIds: [String],
+        enabledTargets: [String]
+    ) async throws -> BridgeResponse {
+        try await send(
+            command: .commitImportSource,
+            payload: [
+                "preparationId": AnyCodable(preparationId),
+                "draft": AnyCodable([
+                    "selectedSkillIds": selectedSkillIds,
+                    "enabledTargets": enabledTargets,
+                ]),
+            ]
+        )
+    }
+
+    private func sendImportSourceV2(
+        locator: String,
+        selectedSkills: [ImportSkillSelection],
+        enabledTargets: [String]
+    ) async throws -> BridgeResponse {
+        try await send(
+            command: .importSource,
+            payload: [
+                "locator": AnyCodable(locator),
+                "draft": AnyCodable([
+                    "selectedSkills": selectedSkills.map(\.bridgePayload),
+                    "enabledTargets": enabledTargets,
+                ]),
+            ]
+        )
+    }
+
+    private func sendImportSourceLegacy(
+        locator: String,
+        selectedSkillIds: [String],
+        enabledTargets: [String]
+    ) async throws -> BridgeResponse {
+        try await send(
+            command: .importSource,
+            payload: [
+                "locator": AnyCodable(locator),
+                "draft": AnyCodable([
+                    "selectedSkillIds": selectedSkillIds,
+                    "enabledTargets": enabledTargets,
+                ]),
+            ]
+        )
+    }
+
+    private func isUnsupportedImportDraftV2(_ error: Error) -> Bool {
+        guard case BridgeClientError.commandFailed(_, let response) = error else {
+            return false
+        }
+        return response?.errors.contains { $0.code == "BRIDGE_UNSUPPORTED_IMPORT_DRAFT_V2" } == true
+    }
+
+    private func refreshBridgeCapabilities(from response: BridgeResponse, resetWhenMissing: Bool) {
+        let payload = response.data?.value as? [String: Any]
+        let capabilities = payload?["capabilities"] as? [String: Any]
+        if capabilities == nil && !resetWhenMissing {
+            return
+        }
+
+        let supportsV2 = capabilities?["importDraftV2"] as? Bool == true
+        capabilityLock.lock()
+        importDraftV2Supported = supportsV2
+        capabilityLock.unlock()
+    }
+
+    private func supportsImportDraftV2() -> Bool {
+        capabilityLock.lock()
+        defer { capabilityLock.unlock() }
+        return importDraftV2Supported
     }
 
     func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {

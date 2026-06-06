@@ -109,6 +109,7 @@ final class ImportScreenContainer {
         let choice = selectedLocalChoice(for: card)
         let locator = choice?.locator ?? card.locator
         let selectedSkillIds = selectedSkillIdsForImport(for: card)
+        let selectedSkills = selectedSkillsForImport(for: card)
         guard !selectedSkillIds.isEmpty || card.skills.isEmpty else {
             return
         }
@@ -118,6 +119,7 @@ final class ImportScreenContainer {
             groupId: card.id,
             locator: locator,
             selectedSkillIds: selectedSkillIds,
+            selectedSkills: selectedSkills,
             enabledTargets: draft.enabledTargetIds
         )
     }
@@ -138,7 +140,7 @@ final class ImportScreenContainer {
     func draft(for card: ImportViewModel.Card) -> ImportDraftState {
         state.importState.draftsByItemId[card.id]
             ?? ImportDraftState(
-                selectedSkillIds: card.skills.filter(\.selectedByDefault).map(\.id),
+                selectedSkills: card.skills.filter(\.selectedByDefault).map(\.selection),
                 enabledTargetIds: []
             )
     }
@@ -152,6 +154,19 @@ final class ImportScreenContainer {
 
         let draftSelected = Set(draft.selectedSkillIds)
         return choice.selectedSkillIds.filter { draftSelected.contains($0) }
+    }
+
+    func selectedSkillsForImport(for card: ImportViewModel.Card) -> [ImportSkillSelection] {
+        let draft = draft(for: card)
+        guard let choice = selectedLocalChoice(for: card),
+              !choice.selectedSkillIds.isEmpty else {
+            return draft.selectedSkills
+        }
+
+        let draftSelected = Set(draft.selectedSkillIds)
+        return choice.selectedSkillIds
+            .filter { draftSelected.contains($0) }
+            .map(ImportSkillSelection.repoPath)
     }
 
     func selectedLocalChoice(for card: ImportViewModel.Card) -> MainViewModel.LocalImportChoice? {
@@ -176,7 +191,7 @@ final class ImportScreenContainer {
         }
 
         state.importState.draftsByItemId[card.id] = ImportDraftState(
-            selectedSkillIds: nextSelectedIds,
+            selectedSkills: card.skills.filter { nextSelectedIds.contains($0.id) }.map(\.selection),
             enabledTargetIds: current.enabledTargetIds
         )
     }
@@ -186,7 +201,7 @@ final class ImportScreenContainer {
         let nextSelectedIds = current.selectedSkillIds.count == card.skills.count ? [] : card.skills.map(\.id)
 
         state.importState.draftsByItemId[card.id] = ImportDraftState(
-            selectedSkillIds: nextSelectedIds,
+            selectedSkills: card.skills.filter { nextSelectedIds.contains($0.id) }.map(\.selection),
             enabledTargetIds: current.enabledTargetIds
         )
     }
@@ -203,7 +218,7 @@ final class ImportScreenContainer {
         }
 
         state.importState.draftsByItemId[card.id] = ImportDraftState(
-            selectedSkillIds: current.selectedSkillIds,
+            selectedSkills: current.selectedSkills,
             enabledTargetIds: nextTargetIds
         )
     }
@@ -213,7 +228,7 @@ final class ImportScreenContainer {
         let nextTargetIds = current.enabledTargetIds.count == card.targets.count ? [] : card.targets.map(\.id)
 
         state.importState.draftsByItemId[card.id] = ImportDraftState(
-            selectedSkillIds: current.selectedSkillIds,
+            selectedSkills: current.selectedSkills,
             enabledTargetIds: nextTargetIds
         )
     }

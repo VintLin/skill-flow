@@ -16,6 +16,22 @@ protocol DesktopCommanding: Sendable {
 }
 
 extension DesktopCommanding {
+    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await importSource(
+            locator: locator,
+            selectedSkillIds: selectedSkills.map(\.selector.legacySkillId),
+            enabledTargets: enabledTargets
+        )
+    }
+
+    func commitImportSource(preparationId: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await commitImportSource(
+            preparationId: preparationId,
+            selectedSkillIds: selectedSkills.map(\.selector.legacySkillId),
+            enabledTargets: enabledTargets
+        )
+    }
+
     func commitImportSource(preparationId: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         throw BridgeClientError.invalidResponse
     }

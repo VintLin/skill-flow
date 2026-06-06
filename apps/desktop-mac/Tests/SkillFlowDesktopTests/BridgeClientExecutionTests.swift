@@ -8,6 +8,7 @@ final class BridgeClientExecutionTests: XCTestCase {
     private var fixture: SlowBridgeFixture?
     private var stubbornFixture: StubbornBridgeFixture?
     private var recordingFixture: RecordingBridgeFixture?
+    private var importDraftRetryFixture: ImportDraftRetryBridgeFixture?
     private var savedNodeOverride: String?
 
     override func tearDownWithError() throws {
@@ -17,6 +18,8 @@ final class BridgeClientExecutionTests: XCTestCase {
         stubbornFixture = nil
         try recordingFixture?.tearDown()
         recordingFixture = nil
+        try importDraftRetryFixture?.tearDown()
+        importDraftRetryFixture = nil
         if let savedNodeOverride {
             setenv("SKILL_FLOW_DESKTOP_NODE_OVERRIDE", savedNodeOverride, 1)
         } else {
@@ -320,7 +323,7 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(payload["locator"] as? String, "anthropics/skills")
     }
 
-    func testCommitImportSourceSendsExpectedPayload() async throws {
+    func testCommitImportSourceSendsLegacyPayloadUntilImportDraftV2CapabilityIsKnown() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
@@ -337,7 +340,109 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(payload["preparationId"] as? String, "prep-1")
         let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
         XCTAssertEqual(draft["selectedSkillIds"] as? [String], ["review"])
+        XCTAssertNil(draft["selectedSkills"])
         XCTAssertEqual(draft["enabledTargets"] as? [String], ["codex"])
+    }
+
+    func testCommitImportSourceSendsSelectedSkillsPayloadAfterImportDraftV2Capability() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+        _ = try await bridge.bootstrap()
+
+        _ = try await bridge.commitImportSource(
+            preparationId: "prep-1",
+            selectedSkills: [
+                ImportSkillSelection(uiId: "skill_review", selector: .repoPath("skills/review")),
+            ],
+            enabledTargets: ["codex"]
+        )
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "commit-import-source")
+        XCTAssertEqual(payload["preparationId"] as? String, "prep-1")
+        let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
+        let selectedSkills = try XCTUnwrap(draft["selectedSkills"] as? [[String: Any]])
+        XCTAssertEqual(selectedSkills.first?["uiId"] as? String, "skill_review")
+        let selector = try XCTUnwrap(selectedSkills.first?["selector"] as? [String: Any])
+        XCTAssertEqual(selector["kind"] as? String, "repoPath")
+        XCTAssertEqual(selector["path"] as? String, "skills/review")
+        XCTAssertNil(draft["selectedSkillIds"])
+        XCTAssertEqual(draft["enabledTargets"] as? [String], ["codex"])
+    }
+
+    func testCommitImportSourceKeepsLegacySelectionAfterCapabilityWhenSelectionIsNotV2Compatible() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+        _ = try await bridge.bootstrap()
+
+        _ = try await bridge.commitImportSource(
+            preparationId: "prep-1",
+            selectedSkills: [
+                .repoPath("skills/review"),
+            ],
+            enabledTargets: ["codex"]
+        )
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "commit-import-source")
+        let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
+        XCTAssertEqual(draft["selectedSkillIds"] as? [String], ["skills/review"])
+        XCTAssertNil(draft["selectedSkills"])
+    }
+
+    func testImportSourceSendsLegacyPayloadUntilImportDraftV2CapabilityIsKnown() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.importSource(
+            locator: "anthropics/skills",
+            selectedSkills: [
+                ImportSkillSelection(uiId: "skill_review", selector: .repoPath("skills/review")),
+            ],
+            enabledTargets: ["codex"]
+        )
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "import-source")
+        XCTAssertEqual(payload["locator"] as? String, "anthropics/skills")
+        let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
+        XCTAssertEqual(draft["selectedSkillIds"] as? [String], ["skills/review"])
+        XCTAssertNil(draft["selectedSkills"])
+    }
+
+    func testCommitImportSourceRetriesLegacyDraftOnlyWhenV2Unsupported() async throws {
+        let fixture = try ImportDraftRetryBridgeFixture.install()
+        importDraftRetryFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+        _ = try await bridge.bootstrap()
+
+        _ = try await bridge.commitImportSource(
+            preparationId: "prep-1",
+            selectedSkills: [
+                ImportSkillSelection(uiId: "skill_review", selector: .repoPath("review")),
+            ],
+            enabledTargets: ["codex"]
+        )
+
+        let requests = try fixture.loggedRequests()
+        let mutationRequests = requests.filter { ($0["command"] as? String) == "commit-import-source" }
+        XCTAssertEqual(mutationRequests.count, 2)
+        let firstPayload = try XCTUnwrap(mutationRequests[0]["payload"] as? [String: Any])
+        let firstDraft = try XCTUnwrap(firstPayload["draft"] as? [String: Any])
+        XCTAssertNotNil(firstDraft["selectedSkills"])
+        XCTAssertNil(firstDraft["selectedSkillIds"])
+
+        let secondPayload = try XCTUnwrap(mutationRequests[1]["payload"] as? [String: Any])
+        let secondDraft = try XCTUnwrap(secondPayload["draft"] as? [String: Any])
+        XCTAssertEqual(secondDraft["selectedSkillIds"] as? [String], ["review"])
+        XCTAssertNil(secondDraft["selectedSkills"])
     }
 
     func testRenameSourceEncodesPayload() async throws {
@@ -632,16 +737,108 @@ private final class RecordingBridgeFixture {
         process.stdin.on("end", () => {
           const request = JSON.parse(input.join("") || "{}");
           fs.writeFileSync(\(String(reflecting: payloadPath)), JSON.stringify(request), "utf8");
+          const data = request.command === "bootstrap"
+            ? { command: request.command ?? "list", capabilities: { importDraftV2: true } }
+            : { command: request.command ?? "list" };
           const response = {
             protocolVersion: "1.0",
             requestId: request.requestId ?? null,
             command: request.command ?? "list",
             ok: true,
-            data: { command: request.command ?? "list" },
+            data,
             warnings: [],
             errors: []
           };
           process.stdout.write(JSON.stringify(response));
+        });
+        """
+    }
+}
+
+private final class ImportDraftRetryBridgeFixture {
+    private let rootURL: URL
+    private let logURL: URL
+    private let savedHelperOverride: String?
+
+    private init(rootURL: URL, logURL: URL, savedHelperOverride: String?) {
+        self.rootURL = rootURL
+        self.logURL = logURL
+        self.savedHelperOverride = savedHelperOverride
+    }
+
+    static func install() throws -> ImportDraftRetryBridgeFixture {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("skillflow-desktop-bridge-retry-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+
+        let logURL = rootURL.appendingPathComponent("requests.json")
+        let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
+        try helperScript(logPath: logURL.path).write(to: helperURL, atomically: true, encoding: .utf8)
+
+        let savedHelperOverride = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_HELPER_OVERRIDE"]
+        setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
+
+        return ImportDraftRetryBridgeFixture(rootURL: rootURL, logURL: logURL, savedHelperOverride: savedHelperOverride)
+    }
+
+    func loggedRequests() throws -> [[String: Any]] {
+        let data = try Data(contentsOf: logURL)
+        let object = try JSONSerialization.jsonObject(with: data)
+        return try XCTUnwrap(object as? [[String: Any]])
+    }
+
+    func tearDown() throws {
+        if let savedHelperOverride {
+            setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", savedHelperOverride, 1)
+        } else {
+            unsetenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE")
+        }
+
+        if FileManager.default.fileExists(atPath: rootURL.path) {
+            try FileManager.default.removeItem(at: rootURL)
+        }
+    }
+
+    private static func helperScript(logPath: String) -> String {
+        """
+        const fs = require("node:fs");
+        const input = [];
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", chunk => input.push(chunk));
+        process.stdin.on("end", () => {
+          const request = JSON.parse(input.join("") || "{}");
+          const logPath = \(String(reflecting: logPath));
+          const requests = fs.existsSync(logPath) ? JSON.parse(fs.readFileSync(logPath, "utf8")) : [];
+          requests.push(request);
+          fs.writeFileSync(logPath, JSON.stringify(requests), "utf8");
+          const draft = request.payload && request.payload.draft ? request.payload.draft : {};
+          if (Array.isArray(draft.selectedSkills) && !Array.isArray(draft.selectedSkillIds)) {
+            process.stdout.write(JSON.stringify({
+              protocolVersion: "1.0",
+              requestId: request.requestId ?? null,
+              command: request.command ?? "list",
+              ok: false,
+              data: null,
+              warnings: [],
+              errors: [{
+                code: "BRIDGE_UNSUPPORTED_IMPORT_DRAFT_V2",
+                message: "selectedSkills is not supported"
+              }]
+            }));
+            return;
+          }
+          const data = request.command === "bootstrap"
+            ? { status: "ready", sourceId: "source-1", capabilities: { importDraftV2: true } }
+            : { status: "ready", sourceId: "source-1" };
+          process.stdout.write(JSON.stringify({
+            protocolVersion: "1.0",
+            requestId: request.requestId ?? null,
+            command: request.command ?? "list",
+            ok: true,
+            data,
+            warnings: [],
+            errors: []
+          }));
         });
         """
     }

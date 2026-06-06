@@ -19,8 +19,16 @@ struct DesktopBridgeCommandFacade<Transport: DesktopBridgeTransporting>: Desktop
         try await bridgeClient.importSource(locator: locator, selectedSkillIds: selectedSkillIds, enabledTargets: enabledTargets)
     }
 
+    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await bridgeClient.importSource(locator: locator, selectedSkills: selectedSkills, enabledTargets: enabledTargets)
+    }
+
     func commitImportSource(preparationId: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         try await bridgeClient.commitImportSource(preparationId: preparationId, selectedSkillIds: selectedSkillIds, enabledTargets: enabledTargets)
+    }
+
+    func commitImportSource(preparationId: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await bridgeClient.commitImportSource(preparationId: preparationId, selectedSkills: selectedSkills, enabledTargets: enabledTargets)
     }
 
     func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {

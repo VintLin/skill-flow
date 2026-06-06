@@ -584,6 +584,21 @@ final class MainViewModel {
         let title: String
         let summary: String
         let selectedByDefault: Bool
+        let selection: ImportSkillSelection
+
+        init(
+            id: String,
+            title: String,
+            summary: String,
+            selectedByDefault: Bool,
+            selection: ImportSkillSelection? = nil
+        ) {
+            self.id = id
+            self.title = title
+            self.summary = summary
+            self.selectedByDefault = selectedByDefault
+            self.selection = selection ?? .repoPath(id)
+        }
     }
 
     struct ImportGroupTarget: Identifiable, Equatable {
@@ -2275,6 +2290,7 @@ final class MainViewModel {
         groupId: String,
         locator: String,
         selectedSkillIds: [String],
+        selectedSkills: [ImportSkillSelection]? = nil,
         enabledTargets: [String]
     ) async {
         guard importingImportGroupId == nil else { return }
@@ -2282,6 +2298,7 @@ final class MainViewModel {
         defer { importingImportGroupId = nil }
 
         var finalSelectedSkillIds = selectedSkillIds
+        var finalSelectedSkills = selectedSkills ?? selectedSkillIds.map(ImportSkillSelection.repoPath)
         var finalEnabledTargets = enabledTargets
 
         if finalSelectedSkillIds.isEmpty,
@@ -2290,6 +2307,7 @@ final class MainViewModel {
             await previewImportGroupIfNeeded(groupId)
             if let refreshed = importGroupItem(id: groupId) {
                 finalSelectedSkillIds = refreshed.skills.filter(\.selectedByDefault).map(\.id)
+                finalSelectedSkills = refreshed.skills.filter(\.selectedByDefault).map(\.selection)
                 finalEnabledTargets = refreshed.targets.filter(\.selectedByDefault).map(\.id)
             }
         }
@@ -2316,13 +2334,13 @@ final class MainViewModel {
                item?.locator == locator {
                 response = try await commandFacade.commitImportSource(
                     preparationId: preparationId,
-                    selectedSkillIds: finalSelectedSkillIds,
+                    selectedSkills: finalSelectedSkills,
                     enabledTargets: finalEnabledTargets
                 )
             } else {
                 response = try await commandFacade.importSource(
                     locator: locator,
-                    selectedSkillIds: finalSelectedSkillIds,
+                    selectedSkills: finalSelectedSkills,
                     enabledTargets: finalEnabledTargets
                 )
             }
@@ -2335,7 +2353,18 @@ final class MainViewModel {
 
             if status != "ready" {
                 let reasonCode = payload["reasonCode"] as? String ?? "unknown"
-                showToast(style: .error, text: importFailureToastText(reasonCode: reasonCode))
+                let diagnostics = parseBridgeDiagnostics(payload["diagnostics"])
+                if diagnostics.isEmpty {
+                    showToast(style: .error, text: importFailureToastText(reasonCode: reasonCode))
+                } else {
+                    let baseMessage = importFailureToastText(reasonCode: reasonCode)
+                        .resolve(locale: Self.presentationLocale)
+                    let diagnosticMessage = ImportToastDiagnosticsFormatter.message(
+                        reasonCode: reasonCode,
+                        diagnostics: diagnostics
+                    )
+                    showToast(style: .error, message: "\(baseMessage) (\(diagnosticMessage))")
+                }
                 return
             }
 
@@ -3005,7 +3034,12 @@ final class MainViewModel {
 
         let skillsPayload = payload["skills"] as? [[String: Any]] ?? []
         let targetsPayload = payload["targets"] as? [[String: Any]] ?? []
+        let previewVersion = (payload["version"] as? Int)
+            ?? (payload["version"] as? Double).map(Int.init)
+        let isImportDraftV2Preview = previewVersion == 2
         let selectedSkillIds = Set(payload["selectedSkillIds"] as? [String] ?? [])
+        let selectedSkillUiIds = Set((payload["selectedSkills"] as? [[String: Any]] ?? [])
+            .compactMap { ($0["uiId"] as? String)?.nonEmpty })
         let enabledTargets = Set(payload["enabledTargets"] as? [String] ?? [])
         let snapshot = parseSourceSnapshot(payload["snapshot"] as? [String: Any])
 
@@ -3020,6 +3054,12 @@ final class MainViewModel {
                 title: title,
                 summary: (skill["summary"] as? String) ?? "",
                 selectedByDefault: selectedSkillIds.contains(id)
+                    || selectedSkillUiIds.contains((skill["uiId"] as? String) ?? ""),
+                selection: parseImportSkillSelection(
+                    skill,
+                    fallbackId: id,
+                    isImportDraftV2Preview: isImportDraftV2Preview
+                )
             )
         }
 
@@ -3060,6 +3100,22 @@ final class MainViewModel {
                 targets: targets
             )
         }
+    }
+
+    private func parseImportSkillSelection(
+        _ payload: [String: Any],
+        fallbackId: String,
+        isImportDraftV2Preview: Bool
+    ) -> ImportSkillSelection {
+        guard isImportDraftV2Preview,
+              let uiId = (payload["uiId"] as? String)?.nonEmpty,
+              let selector = payload["selector"] as? [String: Any],
+              (selector["kind"] as? String) == "repoPath",
+              let selectorPath = (selector["path"] as? String)?.nonEmpty else {
+            return .repoPath(fallbackId)
+        }
+
+        return ImportSkillSelection(uiId: uiId, selector: .repoPath(selectorPath))
     }
 
     private func setPreviewPhase(_ phase: ImportLoadPhase, for groupId: String) {
@@ -3202,6 +3258,13 @@ final class MainViewModel {
             }
             return localizedText("toast.import.failed.generic")
         }
+    }
+
+    private func parseBridgeDiagnostics(_ value: Any?) -> [BridgeDiagnostic] {
+        guard let payloads = value as? [[String: Any]] else {
+            return []
+        }
+        return payloads.compactMap(BridgeDiagnostic.init(payload:))
     }
 
     func uninstallSelectedSource() async {

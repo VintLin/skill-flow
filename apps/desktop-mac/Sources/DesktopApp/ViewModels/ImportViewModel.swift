@@ -32,19 +32,22 @@ struct ImportViewModel: Equatable {
         let summary: String
         let selectedByDefault: Bool
         let highlightQuery: String?
+        let selection: ImportSkillSelection
 
         init(
             id: String,
             title: String,
             summary: String,
             selectedByDefault: Bool,
-            highlightQuery: String? = nil
+            highlightQuery: String? = nil,
+            selection: ImportSkillSelection? = nil
         ) {
             self.id = id
             self.title = title
             self.summary = summary
             self.selectedByDefault = selectedByDefault
             self.highlightQuery = highlightQuery
+            self.selection = selection ?? .repoPath(id)
         }
     }
 
@@ -394,7 +397,8 @@ struct ImportViewModel: Equatable {
                         title: skill.title,
                         summary: skill.summary,
                         selectedByDefault: skill.selectedByDefault,
-                        highlightQuery: matchesQuery ? normalizedQuery : nil
+                        highlightQuery: matchesQuery ? normalizedQuery : nil,
+                        selection: skill.selection
                     )
                 )
             }

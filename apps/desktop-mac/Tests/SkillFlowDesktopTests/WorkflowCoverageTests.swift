@@ -489,6 +489,7 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(commitRequests.first?.payload?["preparationId"]?.value as? String, "prep-anthropics-skills")
         let draft = commitRequests.first?.payload?["draft"]?.value as? [String: Any]
         XCTAssertEqual(draft?["selectedSkillIds"] as? [String], ["research"])
+        XCTAssertNil(draft?["selectedSkills"])
         XCTAssertEqual(draft?["enabledTargets"] as? [String], ["cursor"])
     }
 
@@ -1299,6 +1300,9 @@ private struct TestFixture {
           audit: {
             issues: []
           },
+          capabilities: {
+            importDraftV2: true
+          },
           initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => [sourceId, sourceDraft(source)]))
         }, [], [])));
         return;
@@ -1433,15 +1437,22 @@ private struct TestFixture {
 
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           status: 'ready',
+          version: 2,
           locator: group.locator,
           snapshot: serializeImportGroup(group, false).snapshot,
           skills: (group.skills || []).map((skill) => ({
             id: skill.id,
+            uiId: skill.id,
+            selector: { kind: 'repoPath', path: skill.id },
             title: skill.title,
             summary: skill.summary || ''
           })),
           targets: (group.targets || []).map((target) => ({ id: target })),
           selectedSkillIds: (group.skills || []).map((skill) => skill.id),
+          selectedSkills: (group.skills || []).map((skill) => ({
+            uiId: skill.id,
+            selector: { kind: 'repoPath', path: skill.id }
+          })),
           enabledTargets: []
         }, [], [])));
         return;
@@ -1501,7 +1512,10 @@ private struct TestFixture {
         }
 
         const draft = request.payload && request.payload.draft ? request.payload.draft : {};
-        const selectedSkillIds = Array.isArray(draft.selectedSkillIds) && draft.selectedSkillIds.length > 0
+        const selectedSkills = Array.isArray(draft.selectedSkills) ? draft.selectedSkills : [];
+        const selectedSkillIds = selectedSkills.length > 0
+          ? selectedSkills.map((skill) => skill && skill.selector && skill.selector.path).filter(Boolean)
+          : Array.isArray(draft.selectedSkillIds) && draft.selectedSkillIds.length > 0
           ? draft.selectedSkillIds
           : (group.skills || []).map((skill) => skill.id);
         const enabledTargets = Array.isArray(draft.enabledTargets) ? draft.enabledTargets : [];
@@ -1540,7 +1554,10 @@ private struct TestFixture {
         }
 
         const draft = request.payload && request.payload.draft ? request.payload.draft : {};
-        const selectedSkillIds = Array.isArray(draft.selectedSkillIds) && draft.selectedSkillIds.length > 0
+        const selectedSkills = Array.isArray(draft.selectedSkills) ? draft.selectedSkills : [];
+        const selectedSkillIds = selectedSkills.length > 0
+          ? selectedSkills.map((skill) => skill && skill.selector && skill.selector.path).filter(Boolean)
+          : Array.isArray(draft.selectedSkillIds) && draft.selectedSkillIds.length > 0
           ? draft.selectedSkillIds
           : (group.skills || []).map((skill) => skill.id);
         const enabledTargets = Array.isArray(draft.enabledTargets) ? draft.enabledTargets : [];
