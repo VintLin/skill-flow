@@ -1,7 +1,9 @@
+import path from "node:path";
 import type {
   ImportGroupCandidate,
   ImportRecommendationFeedId,
   ImportSearchHit,
+  ImportSkillSelectorV2,
   SourceStats,
   UnifiedSourceOwner,
   UnifiedSourceSkill,
@@ -97,6 +99,55 @@ export function normalizeImportCanonicalRepo(input: string): string | undefined 
   }
 
   return applyImportRepoAlias(`${repo.owner}/${repo.repo}`.toLowerCase());
+}
+
+export function normalizeImportRepoPathSelector(
+  input: string,
+  options: { archiveRoot?: string } = {},
+): ImportSkillSelectorV2 {
+  const normalized = normalizeImportRepoPath(input, options.archiveRoot);
+  return { kind: "repoPath", path: normalized };
+}
+
+function normalizeImportRepoPath(input: string, archiveRoot?: string): string {
+  const trimmed = input.trim().replaceAll("\\", "/");
+  if (!trimmed || /[\u0000-\u001F\u007F]/.test(trimmed)) {
+    throw new Error("IMPORT_SELECTOR_INVALID");
+  }
+  if (path.posix.isAbsolute(trimmed) || /^[A-Za-z]:\//.test(trimmed)) {
+    throw new Error("IMPORT_SELECTOR_INVALID");
+  }
+
+  const root = archiveRoot ? normalizeArchiveRoot(archiveRoot) : undefined;
+  const withoutRoot = root && (trimmed === root || trimmed.startsWith(`${root}/`))
+    ? trimmed.slice(root.length).replace(/^\/+/, "") || "."
+    : trimmed;
+  const withoutDotPrefix = stripLeadingDotSegments(withoutRoot);
+  if (withoutDotPrefix !== "." && withoutDotPrefix.split("/").some((segment) => segment.length === 0)) {
+    throw new Error("IMPORT_SELECTOR_INVALID");
+  }
+
+  const normalized = path.posix.normalize(withoutDotPrefix);
+  if (!normalized || normalized === ".." || normalized.startsWith("../") || path.posix.isAbsolute(normalized)) {
+    throw new Error("IMPORT_SELECTOR_INVALID");
+  }
+  return normalized;
+}
+
+function normalizeArchiveRoot(archiveRoot: string): string | undefined {
+  const stripped = stripLeadingDotSegments(archiveRoot.trim().replaceAll("\\", "/"));
+  if (!stripped || stripped === ".") {
+    return undefined;
+  }
+  return path.posix.normalize(stripped).replace(/\/+$/, "");
+}
+
+function stripLeadingDotSegments(input: string): string {
+  let value = input;
+  while (value.startsWith("./")) {
+    value = value.slice(2);
+  }
+  return value || ".";
 }
 
 export function buildImportRepoAliases(canonicalRepo: string): string[] {

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { createChannelAdapters, type ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
@@ -7,10 +8,12 @@ import type {
   AddSourcePreparation,
   CollectionsFileV2,
   DeploymentTargetId,
+  DiagnosticV2,
   DraftBinding,
   DeploymentAction,
   DeploymentPlan,
   DeploymentTargetName,
+  DoctorIssue,
   DoctorReport,
   ImportDraft,
   ImportDataCache,
@@ -42,7 +45,6 @@ import type {
   RecentProject,
   Result,
   SharedPreferences,
-  SkillCollectionMemberV2,
   SkillCollectionRecordV2,
   SkillCandidate,
   SourceMetadataResult,
@@ -62,6 +64,7 @@ import type {
 import { getBootstrapImportedTargets, getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { RuntimeStore } from "@skill-flow/storage/runtime-store";
 import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { normalizeSharedPreferences } from "@skill-flow/storage/preferences-store";
 import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
 import {
   isImportDataCacheExpired,
@@ -116,6 +119,7 @@ import {
   IMPORT_SEARCH_CACHE_TTL_MS,
   IMPORT_SOURCE_CACHE_TTL_MS,
   normalizeImportCanonicalRepo,
+  normalizeImportRepoPathSelector,
   searchSkillsDirectory,
 } from "@skill-flow/integration/utils/skills-directory";
 import { ConfigCoordinator } from "./config-coordinator.js";
@@ -144,10 +148,19 @@ import {
   type BootstrapEvent,
   type LocalSkillScanResult,
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
+import type { AgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
 import { DeploymentPlannerV2 } from "@skill-flow/core-engine/services/deployment-planner-v2";
 import { DeploymentApplierV2 } from "@skill-flow/core-engine/services/deployment-applier-v2";
+import {
+  SkillCollectionMemberOriginMissingError,
+  materializeSkillCollectionMembers,
+} from "@skill-flow/core-engine/services/skill-collection-materializer";
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
+
+export type SkillFlowAppOptions = {
+  agentsOriginReader?: AgentsOriginReader;
+};
 
 type SkillFlowAddOptions = AddSourceOptions &
   AddSourceDraftOptions & {
@@ -285,7 +298,7 @@ export class SkillFlowApp {
   private importSourceRefreshesByKey = new Map<string, Promise<UnifiedSourceSnapshot>>();
   private importRecommendationRefreshesByFeed = new Map<ImportRecommendationFeedId, Promise<ImportRecommendationFeed>>();
 
-  constructor() {
+  constructor(options: SkillFlowAppOptions = {}) {
     this.store = new RuntimeStore();
     this.stateStoreV2 = new StateStoreV2(this.store.rootPath);
     this.importPreparationCacheStore = new ImportPreparationCacheStore(this.store.rootPath);
@@ -308,10 +321,12 @@ export class SkillFlowApp {
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
     this.recentProjectService = new RecentProjectService();
-    this.workspaceBootstrapService = new WorkspaceBootstrapService({ stateRoot: this.stateStoreV2.rootPath });
+    this.workspaceBootstrapService = new WorkspaceBootstrapService({
+      stateRoot: this.stateStoreV2.rootPath,
+      ...(options.agentsOriginReader ? { agentsOriginReader: options.agentsOriginReader } : {}),
+    });
     this.configCoordinator = new ConfigCoordinator({
       store: {
-        readManifest: async () => (await this.readRuntimeAuthorityView()).manifest,
         readPreferences: async () => (await this.readRuntimeAuthorityView()).preferences,
         readCollections: () => this.readCollectionsForRuntime(),
         writePreferences: async (preferences) => {
@@ -394,18 +409,19 @@ export class SkillFlowApp {
     preferences: SharedPreferences,
     previous: PreferencesFileV2,
   ): PreferencesFileV2 {
+    const normalizedPreferences = normalizeSharedPreferences(preferences);
     return {
       schemaVersion: 2,
       migrationGeneration: previous.migrationGeneration,
-      pinnedSourceIds: [...preferences.pinnedSourceIds],
-      selectedProjectScope: { ...preferences.selectedProjectScope },
-      recentProjects: preferences.recentProjects.map((project) => ({
+      pinnedSourceIds: [...normalizedPreferences.pinnedSourceIds],
+      selectedProjectScope: { ...normalizedPreferences.selectedProjectScope },
+      recentProjects: normalizedPreferences.recentProjects.map((project) => ({
         ...project,
         ...(project.tools ? { tools: [...project.tools] } : {}),
       })),
-      projectSourceDrafts: this.projectSourceDraftsV2FromView(preferences.projectDrafts),
-      customTargets: preferences.customTargets.map((target) => ({ ...target })),
-      agentDisplayOrder: [...preferences.agentDisplayOrder],
+      projectSourceDrafts: this.projectSourceDraftsV2FromView(normalizedPreferences.projectDrafts),
+      customTargets: normalizedPreferences.customTargets.map((target) => ({ ...target })),
+      agentDisplayOrder: this.preserveExplicitAgentDisplayOrder(preferences.agentDisplayOrder),
       ...(previous.localImportChoices ? { localImportChoices: previous.localImportChoices.map((choice) => ({
         ...choice,
         selectedSkills: choice.selectedSkills.map((skill) => ({
@@ -428,6 +444,19 @@ export class SkillFlowApp {
         enabledTargets: [...choice.enabledTargets],
       })) } : {}),
     };
+  }
+
+  private preserveExplicitAgentDisplayOrder(agentDisplayOrder: string[]): DeploymentTargetId[] {
+    const seen = new Set<string>();
+    const normalized: DeploymentTargetId[] = [];
+    for (const targetId of agentDisplayOrder) {
+      if (!targetId || seen.has(targetId)) {
+        continue;
+      }
+      seen.add(targetId);
+      normalized.push(targetId);
+    }
+    return normalized;
   }
 
   private projectSourceDraftsV2FromView(
@@ -1137,7 +1166,7 @@ export class SkillFlowApp {
       "import-source",
       {
         preparationId,
-        selectedSkillIds: draft?.selectedSkillIds ?? [],
+        selectedSkillIds: draft?.selectedSkillIds ?? draft?.selectedSkills?.map((skill) => skill.uiId) ?? [],
         enabledTargets: draft?.enabledTargets ?? [],
       },
       () => this.commitPreparedImportSourceImpl(preparationId, draft),
@@ -1152,7 +1181,7 @@ export class SkillFlowApp {
       "import-source",
       {
         locator,
-        selectedSkillIds: draft?.selectedSkillIds ?? [],
+        selectedSkillIds: draft?.selectedSkillIds ?? draft?.selectedSkills?.map((skill) => skill.uiId) ?? [],
         enabledTargets: draft?.enabledTargets ?? [],
       },
       () => this.importSourceImpl(locator, draft),
@@ -1164,9 +1193,35 @@ export class SkillFlowApp {
   }
 
   migrateState(options: StateMigrationOptions): Promise<StateMigrationResult> {
-    return this.runSerializedMutation(() =>
-      new StateMigrationService({ stateRoot: this.store.rootPath }).migrate(options),
+    return this.runSerializedTask(async () => {
+      const result = await new StateMigrationService({ stateRoot: this.store.rootPath }).migrate(options);
+      if (result.status === "migrated") {
+        await this.warmRebuildableCacheAfterMigration();
+      }
+      return result;
+    });
+  }
+
+  private async warmRebuildableCacheAfterMigration(): Promise<void> {
+    await this.refreshImportRecommendationFeedTracked("seed").catch(() => undefined);
+    for (const feedId of ["official", "trending", "hot", "audits"] as const) {
+      this.refreshImportRecommendationFeedInBackground(feedId);
+    }
+
+    const state = await this.stateStoreV2.readState().catch(() => undefined);
+    if (!state) {
+      return;
+    }
+    const view = projectStateV2ToView(state);
+    const summaries = this.workflowService.getSummaries(
+      view.manifest,
+      view.lockFile,
+      undefined,
+      state.collections,
     );
+    for (const summary of summaries) {
+      this.refreshSourceMetadataInBackground(summary.source, summary.lock);
+    }
   }
 
   async listWorkflows(): Promise<
@@ -1229,6 +1284,12 @@ export class SkillFlowApp {
     }>
   > {
     return this.inspectSourceEnrichmentImpl(sourceId);
+  }
+
+  async inspectCollection(
+    collectionId: string,
+  ): Promise<Result<{ collection: SkillCollectionRecordV2; diagnostics: DiagnosticV2[] }>> {
+    return this.runSerializedMutation(() => this.inspectCollectionImpl(collectionId));
   }
 
   private async inspectSourceImpl(
@@ -1331,6 +1392,71 @@ export class SkillFlowApp {
     ]);
 
     return ok({ sourceMetadata, ...(sourceSnapshot ? { sourceSnapshot } : {}) });
+  }
+
+  private async inspectCollectionImpl(
+    collectionId: string,
+  ): Promise<Result<{ collection: SkillCollectionRecordV2; diagnostics: DiagnosticV2[] }>> {
+    const state = await this.stateStoreV2.readState();
+    const collection = state.collections.collections[collectionId];
+    if (!collection) {
+      return fail({
+        code: "COLLECTION_NOT_FOUND",
+        message: `Collection '${collectionId}' is not registered.`,
+      });
+    }
+
+    const diagnostics: DiagnosticV2[] = [];
+    for (const member of collection.members) {
+      const originLeaf = state.lockFile.leafInventory.find((leaf) =>
+        leaf.sourceId === member.origin.sourceId && leaf.id === member.origin.leafId
+      );
+      if (!originLeaf) {
+        diagnostics.push({
+          code: "COLLECTION_ORIGIN_MISSING",
+          message: `Collection origin '${member.origin.sourceId}:${member.origin.leafId}' is missing.`,
+          retryable: false,
+          details: {
+            sourceId: member.origin.sourceId,
+            leafId: member.origin.leafId,
+            repoPath: member.origin.repoPath,
+          },
+        });
+        continue;
+      }
+
+      const currentHash = await hashDirectory(originLeaf.absolutePath).catch(() => undefined);
+      if (!currentHash) {
+        diagnostics.push({
+          code: "COLLECTION_ORIGIN_UNAVAILABLE",
+          message: `Collection origin '${member.origin.sourceId}:${member.origin.leafId}' is unavailable.`,
+          retryable: true,
+          details: {
+            sourceId: member.origin.sourceId,
+            leafId: member.origin.leafId,
+            repoPath: member.origin.repoPath,
+          },
+        });
+        continue;
+      }
+
+      if (currentHash !== member.origin.contentHashAtCapture) {
+        diagnostics.push({
+          code: "COLLECTION_ORIGIN_HASH_CHANGED",
+          message: `Collection origin '${member.origin.sourceId}:${member.origin.leafId}' changed after capture.`,
+          retryable: false,
+          details: {
+            sourceId: member.origin.sourceId,
+            leafId: member.origin.leafId,
+            repoPath: member.origin.repoPath,
+            capturedHash: member.origin.contentHashAtCapture,
+            currentHash,
+          },
+        });
+      }
+    }
+
+    return ok({ collection, diagnostics });
   }
 
   private async listRecommendedImportGroupsImpl(): Promise<Result<{ groups: ImportGroupCandidate[] }>> {
@@ -2351,6 +2477,7 @@ export class SkillFlowApp {
       }
       return ok({
         status: "ready",
+        version: 2,
         locator: githubLocator.locator,
         canonicalRepo,
         snapshot,
@@ -2951,21 +3078,40 @@ export class SkillFlowApp {
       };
     }
 
+    const sourceSelectionKey = `${canonicalRepo}#${options.requestedPath ?? "."}`;
+    const provider = this.importPreviewOriginProvider(locator, canonicalRepo);
     const skills = leafs.map((leaf) => {
       const id = leaf.relativePath === "." ? leaf.name : leaf.relativePath;
+      const selector = normalizeImportRepoPathSelector(leaf.relativePath);
+      const selectorPath = selector.path;
       return {
         id,
+        legacyId: id,
+        uiId: this.importPreviewUiId(sourceSelectionKey, selectorPath),
         title: leaf.title,
         summary: leaf.description,
         selectedByDefault: true,
+        selector,
+        origin: {
+          provider,
+          providerSkillId: id,
+          repoPath: selectorPath,
+        },
+        diagnostics: [],
+        legacyAliases: [...new Set([id, leaf.name, leaf.relativePath])],
       };
     });
 
     return {
       status: "ready",
+      version: 2,
       locator,
       canonicalRepo,
       selectedSkillIds: skills.map((skill) => skill.id),
+      selectedSkills: skills.map((skill) => ({
+        uiId: skill.uiId,
+        selector: skill.selector,
+      })),
       enabledTargets: [],
       skills,
       targets: availableTargets.map((target) => ({
@@ -2973,6 +3119,31 @@ export class SkillFlowApp {
         selectedByDefault: false,
       })),
     };
+  }
+
+  private importPreviewUiId(sourceSelectionKey: string, selectorPath: string): string {
+    const digest = crypto
+      .createHash("sha256")
+      .update(`${sourceSelectionKey}\0repoPath\0${selectorPath}`)
+      .digest("base64url")
+      .slice(0, 16);
+    return `skill_${digest}`;
+  }
+
+  private importPreviewOriginProvider(
+    locator: string,
+    canonicalRepo: string,
+  ): "github" | "git" | "local" | "archive" {
+    if (path.isAbsolute(locator) || locator.startsWith(".")) {
+      return "local";
+    }
+    if (
+      /^https:\/\/github\.com\//i.test(locator) ||
+      /^[^:/\s]+\/[^:/\s]+$/.test(canonicalRepo)
+    ) {
+      return "github";
+    }
+    return "git";
   }
 
   private parseGitHubImportLocator(locator: string): GitHubImportLocator | undefined {
@@ -3615,6 +3786,7 @@ export class SkillFlowApp {
       customTargets: SharedPreferences["customTargets"];
       agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
+      capabilities: { importDraftV2: true };
     }>
   > {
     return this.runAuditedMutation(
@@ -3642,6 +3814,7 @@ export class SkillFlowApp {
       customTargets: SharedPreferences["customTargets"];
       agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
+      capabilities: { importDraftV2: true };
     }>
   > {
     const boot = await this.configCoordinator.bootstrapWorkspaceState(onEvent);
@@ -3669,6 +3842,7 @@ export class SkillFlowApp {
       customTargets: preferences.customTargets,
       agentDisplayOrder: preferences.agentDisplayOrder,
       groupCardEnrichmentBySourceId,
+      capabilities: { importDraftV2: true },
     });
   }
 
@@ -4067,6 +4241,29 @@ export class SkillFlowApp {
         [...prepared.warnings, ...plan.warnings, ...applyResult.warnings],
       );
     }
+    const cleanupWarnings: Warning[] = [];
+    const importedTargets = lockFile.sources[sourceId]?.importedFromTargets ?? [];
+    const disabledImportedTargets = importedTargets.filter(
+      (target) => !prepared.data.draft.enabledTargets.includes(target),
+    );
+    const cleanupView = projectStateV2ToView({
+      ...state,
+      manifest: prepared.data.manifest,
+      lockFile,
+    });
+    if (disabledImportedTargets.length > 0) {
+      cleanupWarnings.push(
+        ...await this.cleanupImportedTargetPaths(
+          cleanupView.manifest,
+          cleanupView.lockFile,
+          [sourceId],
+          disabledImportedTargets,
+        ),
+      );
+    }
+    cleanupWarnings.push(
+      ...await this.cleanupDetachedTargetSymlinksForSources(cleanupView.lockFile, [sourceId]),
+    );
 
     await this.stateStoreV2.writeState({
       ...state,
@@ -4086,6 +4283,7 @@ export class SkillFlowApp {
         ...prepared.warnings,
         ...plan.warnings,
         ...applyResult.warnings,
+        ...cleanupWarnings,
       ],
     );
   }
@@ -4168,21 +4366,74 @@ export class SkillFlowApp {
     if (!pruned.ok) {
       return fail(pruned.errors, pruned.warnings);
     }
+    const preReconcileState = await this.stateStoreV2.readState();
+    const preReconcileBrokenSymlinks = await this.detectBrokenSymlinkIssuesV2(preReconcileState);
     const reconciled = await this.sourceAuthorityServiceV2.reconcileInventory();
     if (!reconciled.ok) {
       return fail(reconciled.errors, reconciled.warnings);
     }
     const state = await this.stateStoreV2.readState();
     const view = projectStateV2ToView(state);
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(view.manifest, view.lockFile);
     const doctor = await this.doctorService.run(view.manifest, view.lockFile, view.preferences);
     if (!doctor.ok) {
       return doctor;
     }
-    return ok(doctor.data, [...pruned.warnings, ...reconciled.warnings, ...doctor.warnings]);
+    return ok(
+      {
+        ...doctor.data,
+        issues: [...preReconcileBrokenSymlinks, ...doctor.data.issues],
+      },
+      [...pruned.warnings, ...reconciled.warnings, ...orphanWarnings, ...doctor.warnings],
+    );
+  }
+
+  private async detectBrokenSymlinkIssuesV2(state: {
+    manifest: ManifestFileV2;
+    lockFile: LockFileV2;
+  }): Promise<DoctorIssue[]> {
+    const issues: DoctorIssue[] = [];
+    for (const projection of state.lockFile.projections) {
+      if (projection.status !== "active" || projection.strategy !== "symlink") {
+        continue;
+      }
+      const stats = await fs.lstat(projection.targetPath).catch(() => undefined);
+      if (!stats?.isSymbolicLink()) {
+        continue;
+      }
+      const broken = await fs.stat(projection.targetPath).then(
+        () => false,
+        () => true,
+      );
+      if (!broken) {
+        continue;
+      }
+      const source = state.manifest.sources.find((item) => item.id === projection.sourceId);
+      const leaf = state.lockFile.leafInventory.find((item) => item.id === projection.leafId);
+      issues.push({
+        severity: "error",
+        sourceId: projection.sourceId,
+        ...(source ? { sourceLabel: source.displayName } : {}),
+        target: projection.target,
+        leafId: projection.leafId,
+        ...(leaf ? { leafLabel: leaf.linkName } : {}),
+        code: "BROKEN_SYMLINK",
+        message: "Projected symlink is broken.",
+      });
+    }
+    return issues;
   }
 
   async repairTargets(sourceIds?: string[]): Promise<Result<{ actions: DeploymentAction[] }>> {
     return this.runSerializedMutation(() => this.repairTargetsImpl(sourceIds));
+  }
+
+  async applyTargets(sourceIds?: string[]): Promise<Result<{ actions: DeploymentAction[] }>> {
+    return this.runSerializedMutation(() => this.repairTargetsImpl(sourceIds));
+  }
+
+  async inspectTargetStatus(sourceIds?: string[]): Promise<Result<{ diagnostics: DiagnosticV2[] }>> {
+    return this.runSerializedMutation(() => this.inspectTargetStatusImpl(sourceIds));
   }
 
   private async repairTargetsImpl(
@@ -4192,6 +4443,7 @@ export class SkillFlowApp {
     const manifest = this.cloneManifestV2(state.manifest);
     const lockFile = this.cloneLockFileV2(state.lockFile);
     const preferences = projectStateV2ToView(state).preferences;
+    const adapters = this.createAdaptersForPreferences(preferences);
     const warnings: Warning[] = [];
 
     const requestedIds = sourceIds?.length
@@ -4205,19 +4457,51 @@ export class SkillFlowApp {
         });
       }
     }
+    for (const sourceId of requestedIds) {
+      const sourceLock = lockFile.sources[sourceId];
+      if (
+        sourceLock?.importMode === "bootstrap-detected" &&
+        !this.hasActiveTargetsV2(manifest, sourceId) &&
+        !lockFile.projections.some((projection) =>
+          projection.sourceId === sourceId && projection.status === "active"
+        )
+      ) {
+        warnings.push({
+          code: "REPAIR_TARGETS_SKIPPED_BOOTSTRAP_IMPORTED",
+          message: `Skipped imported-only bootstrap source '${sourceId}' because it has no managed projection to repair.`,
+        });
+      }
+    }
+    const unknownTargetActions = this.blockUnknownTargetProjections(lockFile, requestedIds, adapters);
+    const unknownTargetKeys = new Set(
+      unknownTargetActions.map((action) =>
+        this.projectionKey(action.sourceId, action.leafId, action.target)
+      ),
+    );
+    lockFile.projections = lockFile.projections.map((projection) =>
+      unknownTargetKeys.has(this.projectionKey(projection.sourceId, projection.leafId, projection.target))
+        ? {
+            ...projection,
+            status: "blocked" as const,
+            updatedAt: new Date().toISOString(),
+          }
+        : projection,
+    );
 
     const planSourceIds = requestedIds.filter(
       (sourceId) =>
         this.hasActiveTargetsV2(manifest, sourceId) ||
         lockFile.projections.some((projection) =>
-          projection.sourceId === sourceId && projection.status === "active"
+          projection.sourceId === sourceId &&
+          projection.status === "active" &&
+          !unknownTargetKeys.has(this.projectionKey(projection.sourceId, projection.leafId, projection.target))
         ),
     );
-    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences);
+    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences, adapters);
     if (!planned.ok) {
       return fail(planned.errors, [...warnings, ...planned.warnings]);
     }
-    const applier = new DeploymentApplierV2(this.createAdaptersForPreferences(preferences));
+    const applier = new DeploymentApplierV2(adapters);
     const applied = await applier.applyPlan(lockFile, planned.data.actions);
     if (!applied.ok) {
       return fail(applied.errors, [...warnings, ...planned.warnings, ...applied.warnings]);
@@ -4228,7 +4512,115 @@ export class SkillFlowApp {
       manifest,
       lockFile,
     });
-    return ok({ actions: planned.data.actions }, [...warnings, ...planned.warnings, ...applied.warnings]);
+    return ok(
+      { actions: [...planned.data.actions, ...unknownTargetActions] },
+      [...warnings, ...planned.warnings, ...applied.warnings],
+    );
+  }
+
+  private async inspectTargetStatusImpl(
+    sourceIds?: string[],
+  ): Promise<Result<{ diagnostics: DiagnosticV2[] }>> {
+    const state = await this.stateStoreV2.readState();
+    const manifest = this.cloneManifestV2(state.manifest);
+    const lockFile = this.cloneLockFileV2(state.lockFile);
+    const preferences = projectStateV2ToView(state).preferences;
+    const adapters = this.createAdaptersForPreferences(preferences);
+    const requestedIds = sourceIds?.length
+      ? sourceIds
+      : manifest.sources.map((source) => source.id);
+    for (const sourceId of requestedIds) {
+      if (!manifest.sources.some((source) => source.id === sourceId)) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+    }
+
+    const unknownTargetActions = this.blockUnknownTargetProjections(lockFile, requestedIds, adapters);
+    const planSourceIds = requestedIds.filter((sourceId) =>
+      this.hasActiveTargetsV2(manifest, sourceId) ||
+      lockFile.projections.some((projection) =>
+        projection.sourceId === sourceId && projection.status === "active"
+      )
+    );
+    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences, adapters);
+    if (!planned.ok) {
+      return fail(planned.errors, planned.warnings);
+    }
+
+    const diagnostics: DiagnosticV2[] = [
+      ...this.deploymentActionDiagnostics(unknownTargetActions),
+      ...planned.data.actions
+        .filter((action) => action.kind !== "noop")
+        .map((action) => ({
+          code: "TARGET_PROJECTION_DRIFT",
+          message: `Projection for '${action.sourceId}:${action.leafId}' on '${action.target}' needs ${action.kind}.`,
+          retryable: true,
+          details: {
+            sourceId: action.sourceId,
+            leafId: action.leafId,
+            target: action.target,
+            action: action.kind,
+            targetPath: action.targetPath,
+            ...(action.previousTargetPath ? { previousTargetPath: action.previousTargetPath } : {}),
+          },
+        })),
+    ];
+    return ok({ diagnostics }, planned.warnings);
+  }
+
+  private blockUnknownTargetProjections(
+    lockFile: LockFileV2,
+    sourceIds: string[],
+    adapters: ChannelAdapter[],
+  ): DeploymentAction[] {
+    const knownTargets = new Set(adapters.map((adapter) => adapter.target));
+    const requested = new Set(sourceIds);
+    return lockFile.projections
+      .filter((projection) =>
+        projection.status === "active" &&
+        requested.has(projection.sourceId) &&
+        !knownTargets.has(projection.target)
+      )
+      .map((projection) => {
+        const leaf = lockFile.leafInventory.find((item) => item.id === projection.leafId);
+        return {
+          kind: "blocked" as const,
+          sourceId: projection.sourceId,
+          leafId: projection.leafId,
+          target: projection.target,
+          strategy: projection.strategy,
+          sourcePath: leaf?.absolutePath ?? "",
+          targetPath: projection.targetPath,
+          ...(projection.targetRootPath ? { targetRootPath: projection.targetRootPath } : {}),
+          reason: `Target '${projection.target}' is not configured.`,
+          contentHash: leaf?.contentHash ?? projection.contentHash,
+          diagnostics: [{
+            code: "TARGET_UNKNOWN",
+            message: `Target '${projection.target}' is not configured.`,
+            retryable: false,
+            details: {
+              sourceId: projection.sourceId,
+              leafId: projection.leafId,
+              target: projection.target,
+              targetPath: projection.targetPath,
+            },
+          }],
+        };
+      });
+  }
+
+  private deploymentActionDiagnostics(actions: DeploymentAction[]): DiagnosticV2[] {
+    return actions.flatMap((action) => {
+      const diagnostics = (action as DeploymentAction & { diagnostics?: DiagnosticV2[] }).diagnostics;
+      return diagnostics ?? [];
+    });
+  }
+
+  private projectionKey(sourceId: string, leafId: string, target: DeploymentTargetId): string {
+    return `${sourceId}\0${leafId}\0${target}`;
   }
 
   async repairSource(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
@@ -4354,6 +4746,12 @@ export class SkillFlowApp {
         locator: source.locator,
         displayName: source.displayName,
       }));
+    const uninstallView = projectStateV2ToView(state);
+    const importedCleanupWarnings = await this.cleanupImportedTargetPaths(
+      uninstallView.manifest,
+      uninstallView.lockFile,
+      sourceIds,
+    );
 
     for (const sourceId of sourceIds) {
       const projections = state.lockFile.projections.filter(
@@ -4415,7 +4813,10 @@ export class SkillFlowApp {
       return fail(removed.errors, removed.warnings);
     }
 
-    return ok({ removed: removed.data.removed, removedRefs, warnings });
+    return ok(
+      { removed: removed.data.removed, removedRefs, warnings },
+      [...importedCleanupWarnings, ...removed.warnings],
+    );
   }
 
   bindingFromDraft(draft: DraftBinding): SourceBinding {
@@ -4640,88 +5041,55 @@ export class SkillFlowApp {
     now: string,
   ): Promise<Result<{
     collectionRoot: string;
-    members: SkillCollectionMemberV2[];
+    members: SkillCollectionRecordV2["members"];
     leafs: LeafRecordV2[];
   }>> {
-    const collectionRoot = path.join(this.stateStoreV2.rootPath, "source", "collection", collectionId);
-
     try {
-      await fs.rm(collectionRoot, { recursive: true, force: true });
-      await fs.mkdir(collectionRoot, { recursive: true });
+      const materialized = await materializeSkillCollectionMembers({
+        stateRoot: this.stateStoreV2.rootPath,
+        collectionId,
+        refs: skills,
+        migrationGeneration,
+        capturedAt: now,
+        resolveOrigin: async (ref, index) => {
+          const originSource = manifest.sources.find((source) => source.id === ref.sourceId);
+          const originLock = lockFile.sources[ref.sourceId];
+          const originLeaf = lockFile.leafInventory.find(
+            (leaf) => leaf.id === ref.leafId && leaf.sourceId === ref.sourceId,
+          );
+          if (!originSource || !originLock || !originLeaf) {
+            throw new SkillCollectionMemberOriginMissingError(collectionId, ref);
+          }
 
-      const members: SkillCollectionMemberV2[] = [];
-      const leafs: LeafRecordV2[] = [];
-
-      for (const [index, ref] of skills.entries()) {
-        const originSource = manifest.sources.find((source) => source.id === ref.sourceId);
-        const originLock = lockFile.sources[ref.sourceId];
-        const originLeaf = lockFile.leafInventory.find(
-          (leaf) => leaf.id === ref.leafId && leaf.sourceId === ref.sourceId,
-        );
-        if (!originSource || !originLock || !originLeaf) {
-          return fail({
-            code: "COLLECTION_MEMBER_ORIGIN_MISSING",
-            message: `Skill leaf '${ref.leafId}' is not available for collection '${collectionId}'.`,
-          });
-        }
-
-        const memberId = `member-${index + 1}`;
-        const leafId = `${collectionId}:${memberId}`;
-        const memberPath = path.join(collectionRoot, memberId);
-        await fs.cp(originLeaf.absolutePath, memberPath, { recursive: true, force: true });
-        const actualHash = await hashDirectory(memberPath);
-        const skillFilePath = path.join(memberPath, "SKILL.md");
-
-        leafs.push({
-          id: leafId,
-          sourceId: collectionId,
-          relativePath: memberId,
-          linkName: memberId,
-          title: originLeaf.title || originLeaf.displayName || originLeaf.linkName || memberId,
-          description: originLeaf.description ?? "",
-          absolutePath: memberPath,
-          skillFilePath,
-          displayName: originLeaf.displayName || originLeaf.title || originLeaf.linkName || memberId,
-          contentHash: actualHash,
-          selectors: {
-            legacyAliases: [originLeaf.id, originLeaf.relativePath],
-          },
-          valid: true,
-          diagnostics: [],
-        });
-        members.push({
-          id: memberId,
-          origin: {
+          const label = originLeaf.title || originLeaf.displayName || originLeaf.linkName || `member-${index + 1}`;
+          return {
             sourceId: ref.sourceId,
             leafId: ref.leafId,
             sourceLocator: originSource.locator,
             canonicalLocator: originLock.canonicalLocator,
             repoPath: originLeaf.relativePath,
             contentHashAtCapture: originLeaf.contentHash,
-            capturedAt: now,
-          },
-          snapshot: {
-            leafId,
-            materializedPath: memberId,
-            skillFilePath: path.join(memberId, "SKILL.md"),
-            relativePath: memberId,
-            contentHash: actualHash,
-          },
-          updatePolicy: "frozen",
-        });
-      }
-
-      await writeJsonFile(path.join(collectionRoot, ".skillflow-generation.json"), {
-        schemaVersion: 2,
-        migrationGeneration,
-        collectionId,
-        createdAt: now,
-        diagnostics: [],
+            sourcePath: originLeaf.absolutePath,
+            title: label,
+            description: originLeaf.description ?? "",
+            displayName: originLeaf.displayName || originLeaf.title || originLeaf.linkName || label,
+            legacyAliases: [originLeaf.id, originLeaf.relativePath],
+          };
+        },
       });
 
-      return ok({ collectionRoot, members, leafs });
+      return ok({
+        collectionRoot: materialized.collectionRoot,
+        members: materialized.members,
+        leafs: materialized.leafs,
+      });
     } catch (error) {
-      await fs.rm(collectionRoot, { recursive: true, force: true });
+      if (error instanceof SkillCollectionMemberOriginMissingError) {
+        return fail({
+          code: "COLLECTION_MEMBER_ORIGIN_MISSING",
+          message: `Skill leaf '${error.ref.leafId}' is not available for collection '${collectionId}'.`,
+        });
+      }
       return fail({
         code: "COLLECTION_MATERIALIZATION_FAILED",
         message: `Unable to materialize collection '${collectionId}': ${String(error)}`,
@@ -4855,6 +5223,16 @@ export class SkillFlowApp {
             revision: { ...source.revision },
             localPath: source.localPath,
             leafIds: [...source.leafIds],
+            ...(source.packageSlug ? { packageSlug: source.packageSlug } : {}),
+            ...(source.resolvedVersion ? { resolvedVersion: source.resolvedVersion } : {}),
+            ...(source.contentHash ? { contentHash: source.contentHash } : {}),
+            ...(source.versionMode ? { versionMode: source.versionMode } : {}),
+            ...(source.originBranch ? { originBranch: source.originBranch } : {}),
+            ...(source.importedFromTargets ? { importedFromTargets: [...source.importedFromTargets] } : {}),
+            ...(source.observedTargets
+              ? { observedTargets: source.observedTargets.map((target) => ({ ...target })) }
+              : {}),
+            ...(source.importMode ? { importMode: source.importMode } : {}),
           },
         ]),
       ),
@@ -4885,6 +5263,14 @@ export class SkillFlowApp {
         code: "SOURCE_CHECKOUT_MISSING",
         message: `Removed ${source.displayName} because checkout is missing at ${lock.localPath}.`,
       });
+      const pruneView = projectStateV2ToView(state);
+      warnings.push(
+        ...await this.cleanupImportedTargetPaths(
+          pruneView.manifest,
+          pruneView.lockFile,
+          [source.id],
+        ),
+      );
 
       const projections = state.lockFile.projections.filter(
         (projection) => projection.sourceId === source.id,
@@ -5486,10 +5872,11 @@ export class SkillFlowApp {
   }
 
   private async runSerializedMutation<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.mutationQueue.then(
-      () => this.stateStoreV2.withMutationLock(task),
-      () => this.stateStoreV2.withMutationLock(task),
-    );
+    return this.runSerializedTask(() => this.stateStoreV2.withMutationLock(task));
+  }
+
+  private async runSerializedTask<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.mutationQueue.then(task, task);
     this.mutationQueue = run.then(
       () => undefined,
       () => undefined,
@@ -5772,10 +6159,12 @@ export class SkillFlowApp {
       });
     }
 
-    const selectedLeafIdsResult = canonicalRepo
+    const selectedLeafIdsResult = draft.selectedSkills
+      ? this.resolveImportLeafIdsForSelectors(sourceLeafs, draft.selectedSkills)
+      : canonicalRepo
       ? this.resolveImportLeafIdsForGitHubSource(
           sourceLeafs,
-          draft.selectedSkillIds,
+          draft.selectedSkillIds ?? [],
           canonicalRepo,
         )
       : this.resolveSelectedLeafIds(
@@ -5852,6 +6241,51 @@ export class SkillFlowApp {
     }
 
     return ok([...new Set(matchedLeafIds)], warnings);
+  }
+
+  private resolveImportLeafIdsForSelectors(
+    sourceLeafs: LeafRecord[],
+    selectedSkills: NonNullable<ImportDraft["selectedSkills"]>,
+  ): Result<string[]> {
+    const matchedLeafIds: string[] = [];
+
+    for (const selected of selectedSkills) {
+      if (selected.selector.kind !== "repoPath") {
+        return fail({
+          code: "IMPORT_SELECTOR_INVALID",
+          message: `Unsupported import selector kind '${selected.selector.kind}'.`,
+        });
+      }
+
+      let selectorPath: string;
+      try {
+        selectorPath = normalizeImportRepoPathSelector(selected.selector.path).path;
+      } catch {
+        return fail({
+          code: "IMPORT_SELECTOR_INVALID",
+          message: `Import selector '${selected.selector.path}' is invalid.`,
+        });
+      }
+
+      const matches = sourceLeafs.filter((leaf) => leaf.relativePath === selectorPath);
+      if (matches.length === 1) {
+        matchedLeafIds.push(matches[0]!.id);
+        continue;
+      }
+      if (matches.length > 1) {
+        return fail({
+          code: "IMPORT_SELECTOR_AMBIGUOUS",
+          message: `Import selector '${selectorPath}' matched multiple skills.`,
+        });
+      }
+
+      return fail({
+        code: "IMPORT_SELECTOR_NOT_FOUND",
+        message: `Import selector '${selectorPath}' was not found in the prepared source.`,
+      });
+    }
+
+    return ok([...new Set(matchedLeafIds)]);
   }
 
   private resolveSelectedLeafIds(
@@ -6046,7 +6480,15 @@ export class SkillFlowApp {
     }
 
     const enabledTargets = [...new Set(draft.enabledTargets)];
-    const selectedLeafIds = [...new Set(draft.selectedLeafIds)];
+    const requestedLeafIds = [...new Set(draft.selectedLeafIds)];
+    const conflictingLeafIds = this.findExactDuplicateLeafSelectionsV2(
+      manifest,
+      lockFile,
+      sourceId,
+      requestedLeafIds,
+      enabledTargets,
+    );
+    const selectedLeafIds = requestedLeafIds.filter((leafId) => !conflictingLeafIds.has(leafId));
     const normalizedDraft: DraftBinding = {
       enabledTargets,
       selectedLeafIds,
@@ -6062,7 +6504,56 @@ export class SkillFlowApp {
       enabledTargets,
     };
 
-    return ok({ manifest, draft: normalizedDraft, warnings: [] });
+    const warnings = [...conflictingLeafIds].map((leafId) => ({
+      code: "DUPLICATE_LEAF_SELECTION_SKIPPED",
+      message: `${lockFile.leafInventory.find((leaf) => leaf.id === leafId)?.linkName ?? leafId} skipped because an identical skill is already selected in another skills group.`,
+    }));
+
+    return ok({ manifest, draft: normalizedDraft, warnings });
+  }
+
+  private findExactDuplicateLeafSelectionsV2(
+    manifest: ManifestFileV2,
+    lockFile: LockFileV2,
+    currentSourceId: string,
+    requestedLeafIds: string[],
+    enabledTargets: DeploymentTargetId[],
+  ): Set<string> {
+    const conflictingKeys = new Set<string>();
+
+    for (const source of manifest.sources) {
+      if (source.id === currentSourceId) {
+        continue;
+      }
+      const binding = manifest.bindings[source.id];
+      const sourceLock = lockFile.sources[source.id];
+      if (!binding || !sourceLock) {
+        continue;
+      }
+      const leafIds = binding.selectionMode === "all"
+        ? sourceLock.leafIds
+        : binding.selectedLeafIds;
+      for (const target of enabledTargets) {
+        if (!binding.enabledTargets.includes(target)) {
+          continue;
+        }
+        for (const leafId of leafIds) {
+          const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
+          if (leaf) {
+            conflictingKeys.add(this.getExactDuplicateKey(leaf));
+          }
+        }
+      }
+    }
+
+    const conflicts = new Set<string>();
+    for (const leafId of requestedLeafIds) {
+      const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
+      if (leaf && conflictingKeys.has(this.getExactDuplicateKey(leaf))) {
+        conflicts.add(leafId);
+      }
+    }
+    return conflicts;
   }
 
   private findExactDuplicateLeafSelections(
@@ -6107,8 +6598,9 @@ export class SkillFlowApp {
     );
   }
 
-  private getExactDuplicateKey(leaf: LeafRecord): string {
-    return `${leaf.linkName}\n${leaf.name}\n${leaf.description}`;
+  private getExactDuplicateKey(leaf: LeafRecord | LeafRecordV2): string {
+    const name = "name" in leaf ? leaf.name : leaf.title;
+    return `${leaf.linkName}\n${name}\n${leaf.description}`;
   }
 
   private async planForAffectedSourcesV2(
@@ -6132,7 +6624,10 @@ export class SkillFlowApp {
     adapters?: ChannelAdapter[],
   ): Promise<Result<DeploymentPlan>> {
     const uniqueSourceIds = [...new Set(sourceIds)];
-    const planner = new DeploymentPlannerV2(adapters ?? this.createAdaptersForPreferences(preferences));
+    const planner = new DeploymentPlannerV2(
+      adapters ?? this.createAdaptersForPreferences(preferences),
+      this.buildProjectedLinkNameMapsV2(manifest, lockFile),
+    );
 
     const actions: DeploymentAction[] = [];
     const warnings: Warning[] = [];
@@ -6152,6 +6647,46 @@ export class SkillFlowApp {
       warnings,
       blocked: actions.filter((action) => action.kind === "blocked"),
     }, warnings);
+  }
+
+  private buildProjectedLinkNameMapsV2(
+    manifest: ManifestFileV2,
+    lockFile: LockFileV2,
+  ): Map<DeploymentTargetId, Map<string, string>> {
+    const maps = new Map<DeploymentTargetId, Map<string, string>>();
+    const targets = new Set<DeploymentTargetId>(
+      Object.values(manifest.bindings).flatMap((binding) => binding.enabledTargets),
+    );
+
+    for (const target of targets) {
+      maps.set(
+        target,
+        resolveProjectedSkillNames(
+          manifest.sources.flatMap((source) => {
+            const binding = manifest.bindings[source.id];
+            const sourceLock = lockFile.sources[source.id];
+            if (!binding?.enabledTargets.includes(target) || !sourceLock) {
+              return [];
+            }
+            const leafIds = binding.selectionMode === "all"
+              ? sourceLock.leafIds
+              : binding.selectedLeafIds;
+            return leafIds
+              .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
+              .filter((leaf): leaf is LeafRecordV2 => Boolean(leaf))
+              .map((leaf) => ({
+                leafId: leaf.id,
+                groupId: source.id,
+                groupName: source.displayName,
+                groupAuthor: getHostedGitOwner(source.locator),
+                skillName: leaf.linkName,
+              }));
+          }),
+        ),
+      );
+    }
+
+    return maps;
   }
 
   // Project-local path application happens here: scope resolves to concrete target roots

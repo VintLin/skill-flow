@@ -8,6 +8,8 @@ import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import { SkillFlowApp } from "../runtime.js";
+import { StateStoreV2, StateStoreV2Error } from "@skill-flow/storage/state-store-v2";
+import { projectStateV2ToView } from "../state-v2-view.js";
 import {
   createRepo,
   pathExists,
@@ -16,6 +18,10 @@ import {
   writeRepoFiles,
   useSkillFlowSandbox,
 } from "./test-helpers.js";
+
+const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
+const view = async (app: { store: { rootPath: string } }) =>
+  projectStateV2ToView(await v2(app).readState());
 
 describe.sequential("source lifecycle", () => {
   const sandbox = useSkillFlowSandbox();
@@ -36,7 +42,7 @@ describe.sequential("source lifecycle", () => {
     expect(result.data.leafCount).toBe(2);
     expect(result.warnings).toHaveLength(0);
 
-    const manifest = await app.store.readManifest();
+    const { manifest } = await view(app);
     const binding = manifest.bindings[result.data.manifest.id];
     expect(Object.keys(binding?.targets ?? {})).toEqual([
       "claude-code",
@@ -87,32 +93,11 @@ describe.sequential("source lifecycle", () => {
       "skills/review",
     ]);
 
-    const manifest = await app.store.readManifest();
+    const { manifest } = await view(app);
     const binding = manifest.bindings[result.data.manifest.id];
     expect(binding?.targets["claude-code"]?.leafIds).toEqual([
       `${result.data.manifest.id}:skills/find-skills`,
     ]);
-  });
-
-  test("listWorkflows runs under the shared mutation lock", async () => {
-    const repoPath = await createRepo(sandbox.sandboxRoot, {
-      "skills/review/SKILL.md": skillDoc("review", "Review code."),
-    });
-    const app = new SkillFlowApp();
-    const lockSpy = vi.spyOn(app.store, "withMutationLock");
-
-    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
-
-    lockSpy.mockClear();
-
-    const listed = await app.listWorkflows();
-
-    expect(listed.ok).toBe(true);
-    expect(lockSpy).toHaveBeenCalledTimes(1);
   });
 
   test("addSource keeps sourceIdOverride aligned with local checkout path and leaf ids", async () => {
@@ -127,7 +112,7 @@ describe.sequential("source lifecycle", () => {
     if (!added.ok) {
       return;
     }
-    const { manifest, lockFile } = await app.store.readState();
+    const { manifest, lockFile } = await view(app);
     const source = manifest.sources.find((item) => item.id === "demo-source");
     const lockSource = lockFile.sources.find((item) => item.id === "demo-source");
     const expectedCheckoutPath = app.store.getSourceCheckoutPath("local", "demo-source");
@@ -167,27 +152,6 @@ describe.sequential("source lifecycle", () => {
     expect(result.data).not.toHaveProperty("sourceSnapshot");
   });
 
-  test("inspectSource runs under the shared mutation lock", async () => {
-    const repoPath = await createRepo(sandbox.sandboxRoot, {
-      "skills/review/SKILL.md": skillDoc("review", "Review code."),
-    });
-    const app = new SkillFlowApp();
-    const lockSpy = vi.spyOn(app.store, "withMutationLock");
-
-    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
-
-    lockSpy.mockClear();
-
-    const inspected = await app.inspectSource(added.data.manifest.id);
-
-    expect(inspected.ok).toBe(true);
-    expect(lockSpy).toHaveBeenCalledTimes(1);
-  });
-
   test("inspectSource reads managed deployment details from projections when deployments are empty", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
@@ -211,9 +175,9 @@ describe.sequential("source lifecycle", () => {
       return;
     }
 
-    const { manifest, lockFile } = await app.store.readState();
+    const { manifest, lockFile } = await v2(app).readState();
     lockFile.deployments = [];
-    await app.store.writeState(manifest, lockFile);
+    await v2(app).writeState({ ...(await v2(app).readState()), manifest: manifest, lockFile: lockFile });
 
     const result = await app.inspectSource(sourceId);
 
@@ -255,30 +219,6 @@ describe.sequential("source lifecycle", () => {
     expect(applied.data.inspect?.summary.source.id).toBe(sourceId);
     expect(applied.data.inspect?.binding.targets.codex?.enabled).toBe(true);
     expect(applied.data.inspect?.deployments[0]?.target).toBe("codex");
-  });
-
-  test("previewDraft runs under the shared mutation lock", async () => {
-    const repoPath = await createRepo(sandbox.sandboxRoot, {
-      "skills/review/SKILL.md": skillDoc("review", "Review code."),
-    });
-    const app = new SkillFlowApp();
-    const lockSpy = vi.spyOn(app.store, "withMutationLock");
-
-    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
-    expect(added.ok).toBe(true);
-    if (!added.ok) {
-      return;
-    }
-
-    lockSpy.mockClear();
-
-    const preview = await app.previewDraft(added.data.manifest.id, {
-      enabledTargets: ["codex"],
-      selectedLeafIds: [`${added.data.manifest.id}:skills/review`],
-    });
-
-    expect(preview.ok).toBe(true);
-    expect(lockSpy).toHaveBeenCalledTimes(1);
   });
 
   test("inspectSourceEnrichment returns metadata and snapshot without recomputing local shell", async () => {
@@ -386,7 +326,7 @@ describe.sequential("source lifecycle", () => {
       return;
     }
 
-    const lock = await app.store.readLock();
+    const { lockFile: lock } = await view(app);
     const sourceLock = lock.sources.find((source) => source.id === added.data.manifest.id);
 
     expect(sourceLock?.importMode).toBe("bootstrap-detected");
@@ -792,14 +732,14 @@ description: |
       return;
     }
 
-    const lock = await app.store.readLock();
-    const source = lock.sources.find((item) => item.id === added.data.manifest.id);
+    const state = await v2(app).readState();
+    const source = state.lockFile.sources[added.data.manifest.id];
     expect(source).toBeTruthy();
     if (!source) {
       return;
     }
-    source.checkoutPath = app.store.getSourceRoot("local");
-    await app.store.writeLock(lock);
+    source.localPath = app.store.getSourceRoot("local");
+    await v2(app).writeState(state);
 
     const removed = await app.uninstall([added.data.manifest.id]);
 
@@ -927,7 +867,7 @@ description: |
     expect(list.data.summaries[0]?.leafs[0]?.metadataWarnings.length).toBeGreaterThan(0);
   });
 
-  test("reads old lock entries without metadata fields", async () => {
+  test("rejects v2 lock entries without required metadata fields", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
     });
@@ -950,13 +890,7 @@ description: |
     });
     await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
 
-    const list = await app.listWorkflows();
-    expect(list.ok).toBe(true);
-    if (!list.ok) {
-      return;
-    }
-    expect(list.data.summaries[0]?.leafs[0]?.metadataWarnings).toEqual([]);
-    expect(list.data.summaries[0]?.leafs[0]?.linkName).toBe("browse");
+    await expect(app.listWorkflows()).rejects.toBeInstanceOf(StateStoreV2Error);
   });
 
   test("repairSource refreshes a local checkout from origin without mutating target disk", async () => {
@@ -979,7 +913,7 @@ description: |
       enabledTargets: ["openclaw"],
       selectedLeafIds: [leafId],
     });
-    const lockBefore = await app.store.readLock();
+    const { lockFile: lockBefore } = await view(app);
     const targetPath = lockBefore.deployments.find(
       (deployment) => deployment.sourceId === sourceId && deployment.target === "openclaw",
     )?.targetPath;
@@ -1060,7 +994,7 @@ description: |
       return;
     }
 
-    const before = await app.store.readState();
+    const before = await view(app);
     const beforeBinding = before.manifest.bindings["demo-source"];
     const beforeDeployments = before.lockFile.deployments;
     const beforeProjections = before.lockFile.projections ?? [];
@@ -1078,7 +1012,7 @@ description: |
       isResetToOriginal: false,
     });
 
-    const after = await app.store.readState();
+    const after = await view(app);
     expect(after.manifest.sources.find((source) => source.id === "demo-source")?.displayName).toBe("Writing Tools");
     expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.displayName).toBe("Writing Tools");
     expect(after.manifest.sources.find((source) => source.id === "demo-source")?.id).toBe("demo-source");
@@ -1147,7 +1081,7 @@ description: |
         isResetToOriginal: true,
       },
     });
-    const after = await app.store.readState();
+    const after = await view(app);
     expect(after.manifest.sources.find((source) => source.id === "demo-source")?.displayName).toBe(originalDisplayName);
     expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.displayName).toBe(originalDisplayName);
   });

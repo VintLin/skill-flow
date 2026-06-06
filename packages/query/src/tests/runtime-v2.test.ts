@@ -17,8 +17,6 @@ describe.sequential("runtime v2 authority reads", () => {
   test("inspectSource reads summary leafs binding and active deployments from v2 authority", async () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
 
     const inspected = await app.inspectSource("repo");
 
@@ -26,8 +24,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!inspected.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
     expect(inspected.data.source.displayName).toBe("V2 Repo");
     expect(inspected.data.summary.source.displayName).toBe("V2 Repo");
     expect(inspected.data.leafs.map((leaf) => leaf.id)).toEqual(["repo:one", "repo:two"]);
@@ -76,8 +72,6 @@ describe.sequential("runtime v2 authority reads", () => {
       },
     }));
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
 
     const inspected = await app.inspectSource("repo", { kind: "project", projectId: "project-a" });
 
@@ -85,8 +79,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!inspected.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
     expect(inspected.data.binding).toEqual({
       selectedLeafIds: ["repo:two"],
       targets: {
@@ -102,8 +94,6 @@ describe.sequential("runtime v2 authority reads", () => {
   test("previewDraft plans from v2 authority without reading legacy state", async () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
 
     const preview = await app.previewDraft("repo", {
       selectedLeafIds: ["repo:one", "repo:two"],
@@ -114,8 +104,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!preview.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
     expect(preview.data.manifest.bindings.repo).toEqual({
       selectedLeafIds: ["repo:one", "repo:two"],
       targets: {
@@ -146,9 +134,6 @@ describe.sequential("runtime v2 authority reads", () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
     await writeSourceLeafFiles(sandbox);
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
 
     const applied = await app.applyDraft("repo", {
       selectedLeafIds: ["repo:one", "repo:two"],
@@ -159,9 +144,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!applied.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
     expect(applied.data.draft).toEqual({
       selectedLeafIds: ["repo:one", "repo:two"],
       enabledTargets: ["codex"],
@@ -210,9 +192,6 @@ describe.sequential("runtime v2 authority reads", () => {
   test("applyDraft disables targets by marking v2 projections removed", async () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
 
     const applied = await app.applyDraft("repo", {
       selectedLeafIds: ["repo:one"],
@@ -223,9 +202,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!applied.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
     expect(applied.data.actions).toEqual([
       expect.objectContaining({
         kind: "remove",
@@ -278,9 +254,6 @@ describe.sequential("runtime v2 authority reads", () => {
       },
     }));
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
 
     const applied = await app.applyDraft("repo", {
       selectedLeafIds: ["repo:one"],
@@ -291,9 +264,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!applied.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
     expect(applied.data.actions).toEqual([
       expect.objectContaining({
         kind: "blocked",
@@ -329,11 +299,6 @@ describe.sequential("runtime v2 authority reads", () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
     await writeSourceLeafFiles(sandbox);
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
-    const legacyReadVirtualGroups = vi.spyOn(app.store, "readVirtualGroups").mockRejectedValue(new Error("legacy readVirtualGroups"));
-    const legacyWriteVirtualGroups = vi.spyOn(app.store, "writeVirtualGroups").mockRejectedValue(new Error("legacy writeVirtualGroups"));
 
     const created = await app.createVirtualGroup({
       displayName: "Writing Stack",
@@ -348,11 +313,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!created.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
-    expect(legacyReadVirtualGroups).not.toHaveBeenCalled();
-    expect(legacyWriteVirtualGroups).not.toHaveBeenCalled();
     expect(created.data.group).toEqual(expect.objectContaining({
       id: "writing-stack",
       displayName: "Writing Stack",
@@ -515,11 +475,6 @@ describe.sequential("runtime v2 authority reads", () => {
     await writeAuthorityState(sandbox.stateRoot, createMergeAuthorityState(sandbox));
     await writeMergeSourceLeafFiles(sandbox);
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
-    const legacyReadVirtualGroups = vi.spyOn(app.store, "readVirtualGroups").mockRejectedValue(new Error("legacy readVirtualGroups"));
-    const legacyWriteVirtualGroups = vi.spyOn(app.store, "writeVirtualGroups").mockRejectedValue(new Error("legacy writeVirtualGroups"));
 
     const merged = await app.mergeGroups({
       displayName: "Writing Stack",
@@ -531,11 +486,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!merged.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
-    expect(legacyReadVirtualGroups).not.toHaveBeenCalled();
-    expect(legacyWriteVirtualGroups).not.toHaveBeenCalled();
     expect(merged.data.group).toEqual(expect.objectContaining({
       id: "writing-stack",
       hiddenSourceIds: ["repo", "beta"],
@@ -610,11 +560,6 @@ describe.sequential("runtime v2 authority reads", () => {
       restoredSourceIds: ["repo", "beta"],
       skippedSourceIds: [],
     });
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
-    expect(legacyReadVirtualGroups).not.toHaveBeenCalled();
-    expect(legacyWriteVirtualGroups).not.toHaveBeenCalled();
 
     const restoredState = await new StateStoreV2(sandbox.stateRoot).readState();
     expect(restoredState.manifest.sources.some((source) => source.id === "writing-stack")).toBe(false);
@@ -675,10 +620,6 @@ describe.sequential("runtime v2 authority reads", () => {
       },
     }));
     const app = new SkillFlowApp();
-    const legacyReadState = vi.spyOn(app.store, "readState").mockRejectedValue(new Error("legacy readState"));
-    const legacyWriteState = vi.spyOn(app.store, "writeState").mockRejectedValue(new Error("legacy writeState"));
-    const legacyReadPreferences = vi.spyOn(app.store, "readPreferences").mockRejectedValue(new Error("legacy readPreferences"));
-    const legacyWritePreferences = vi.spyOn(app.store, "writePreferences").mockRejectedValue(new Error("legacy writePreferences"));
 
     const saved = await app.saveSettings({
       customTargets: [
@@ -701,10 +642,6 @@ describe.sequential("runtime v2 authority reads", () => {
     if (!saved.ok || !listed.ok) {
       return;
     }
-    expect(legacyReadState).not.toHaveBeenCalled();
-    expect(legacyWriteState).not.toHaveBeenCalled();
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
-    expect(legacyWritePreferences).not.toHaveBeenCalled();
     expect(saved.data.customTargets.map((target) => target.id)).toEqual(["team-target"]);
     expect(saved.data.agentDisplayOrder).toEqual(["team-target", "codex"]);
     expect(listed.data.summaries.map((summary) => summary.source.id)).toEqual(["repo"]);

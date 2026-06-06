@@ -15,6 +15,21 @@ describe.sequential("state migration runtime", () => {
 
     expect(status.status).toBe("migration-required");
   });
+
+  test("runtime warms seed import recommendations after migration", async () => {
+    await seedV1BasicState(sandbox.stateRoot);
+    const app = new SkillFlowApp();
+
+    const result = await app.migrateState({ to: 2, backup: false });
+
+    expect(result.status).toBe("migrated");
+    const cache = await app.store.readImportDataCache();
+    expect(cache.recommendations.seed?.groups).toEqual([
+      "anthropics/skills",
+      "garrytan/gstack",
+      "vercel-labs/agent-skills",
+    ]);
+  });
 });
 
 async function seedV1BasicState(stateRoot: string) {

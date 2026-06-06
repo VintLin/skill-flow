@@ -49,13 +49,6 @@ describe.sequential("project scoped drafts", () => {
         }],
       },
     });
-    const legacyReadPreferences = vi
-      .spyOn(app.store, "readPreferences")
-      .mockRejectedValue(new Error("legacy readPreferences"));
-    const legacyWritePreferences = vi
-      .spyOn(app.store, "writePreferences")
-      .mockRejectedValue(new Error("legacy writePreferences"));
-
     const applied = await app.applyDraft(
       "alpha",
       {
@@ -69,8 +62,6 @@ describe.sequential("project scoped drafts", () => {
     if (!applied.ok) {
       return;
     }
-    expect(legacyReadPreferences).not.toHaveBeenCalled();
-    expect(legacyWritePreferences).not.toHaveBeenCalled();
     const nextState = await store.readState();
     expect(nextState.preferences.projectSourceDrafts["repo-a"]?.alpha).toEqual(
       expect.objectContaining({

@@ -5,6 +5,7 @@ import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import * as gitUtils from "@skill-flow/integration/utils/git";
 import { ok } from "@skill-flow/integration/utils/result";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
+import { createLegacyAgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
 import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
 import { SkillFlowApp } from "../runtime.js";
@@ -356,9 +357,26 @@ describe.sequential("import page flow", () => {
     }
 
     expect(preview.data.canonicalRepo).toBe("paramchoudhary/resumeskills");
+    expect(preview.data.version).toBe(2);
     expect(preview.data.locator).toBe("https://github.com/paramchoudhary/resumeskills.git");
     expect(preview.data.selectedSkillIds).toEqual(["skills/resume-bullet-writer"]);
     expect(preview.data.skills.map((skill) => skill.id)).toEqual(["skills/resume-bullet-writer"]);
+    expect(preview.data.skills[0]).toMatchObject({
+      legacyId: "skills/resume-bullet-writer",
+      selector: { kind: "repoPath", path: "skills/resume-bullet-writer" },
+      origin: {
+        provider: "github",
+        repoPath: "skills/resume-bullet-writer",
+      },
+    });
+    expect(preview.data.skills[0]?.uiId).toMatch(/^skill_/);
+    expect(preview.data.skills[0]?.uiId).not.toContain("skills-main");
+    expect(preview.data.selectedSkills).toEqual([
+      {
+        uiId: preview.data.skills[0]?.uiId,
+        selector: { kind: "repoPath", path: "skills/resume-bullet-writer" },
+      },
+    ]);
   });
 
   test("previewImportSource supports GitHub shorthand subpaths", async () => {
@@ -852,7 +870,9 @@ describe.sequential("import page flow", () => {
       });
       stubGitHubPreview(originRepo);
 
-      const app = new SkillFlowApp();
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       const result = await app.scanLocalImportGroups();
 
       expect(result.ok).toBe(true);
@@ -907,7 +927,9 @@ describe.sequential("import page flow", () => {
       });
       stubGitHubPreview(originRepo);
 
-      const app = new SkillFlowApp();
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       const result = await app.scanLocalImportGroups();
 
       expect(result.ok).toBe(true);
@@ -965,7 +987,9 @@ describe.sequential("import page flow", () => {
       });
       stubGitHubPreview(originRepo);
 
-      const app = new SkillFlowApp();
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       const result = await app.scanLocalImportGroups();
 
       expect(result.ok).toBe(true);
@@ -1042,7 +1066,9 @@ describe.sequential("import page flow", () => {
       });
       stubGitHubPreview(originRepo);
 
-      const app = new SkillFlowApp();
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       const added = await app.addSource(originRepo, {
         skillNames: ["skills/managed-skill"],
         originLocator: "paramchoudhary/resumeskills",
@@ -1123,7 +1149,9 @@ describe.sequential("import page flow", () => {
       });
       stubGitHubPreview(originRepo);
 
-      const app = new SkillFlowApp();
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       const result = await app.scanLocalImportGroups(localPath);
 
       expect(result.ok).toBe(true);
@@ -1170,7 +1198,9 @@ describe.sequential("import page flow", () => {
       });
       stubGitHubPreview(originRepo);
 
-      const app = new SkillFlowApp();
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       const result = await app.scanLocalImportGroups();
 
       expect(result.ok).toBe(true);
@@ -1224,7 +1254,9 @@ describe.sequential("import page flow", () => {
       });
       stubGitHubPreview(originRepo);
 
-      const app = new SkillFlowApp();
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       const result = await app.scanLocalImportGroups();
 
       expect(result.ok).toBe(true);
@@ -1277,7 +1309,9 @@ describe.sequential("import page flow", () => {
         "Missing origin.",
       );
 
-      const app = new SkillFlowApp();
+      const app = new SkillFlowApp({
+        agentsOriginReader: createLegacyAgentsOriginReader(),
+      });
       const result = await app.scanLocalImportGroups();
 
       expect(result.ok).toBe(true);
@@ -1394,7 +1428,9 @@ describe.sequential("import page flow", () => {
     });
     const homeRelativePath = `~/${path.relative(homeRoot, repoPath)}`;
 
-    const app = new SkillFlowApp();
+    const app = new SkillFlowApp({
+      agentsOriginReader: createLegacyAgentsOriginReader(),
+    });
     const preview = await app.previewImportSource(homeRelativePath);
 
     expect(preview.ok).toBe(true);
@@ -1427,7 +1463,9 @@ describe.sequential("import page flow", () => {
       }),
     );
 
-    const app = new SkillFlowApp();
+    const app = new SkillFlowApp({
+      agentsOriginReader: createLegacyAgentsOriginReader(),
+    });
     const search = await app.searchImportGroups("clawhub:find-skills-skill");
     const preview = await app.previewImportSource("clawhub:find-skills-skill");
 
@@ -1594,6 +1632,31 @@ describe.sequential("import page flow", () => {
       `${imported.data.sourceId}:skills/pdf_analysis`,
       `${imported.data.sourceId}:skills/pdf-analysis`,
     ]);
+  });
+
+  test("importSource selectedSkills selector does not fall back to legacy selectedSkillIds", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review things."),
+    });
+
+    const app = new SkillFlowApp();
+    const imported = await app.importSource(repoPath, {
+      selectedSkillIds: ["skills/review"],
+      selectedSkills: [
+        { uiId: "skill_missing", selector: { kind: "repoPath", path: "skills/missing" } },
+      ],
+      enabledTargets: [],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.data).toMatchObject({
+      status: "failed",
+      reasonCode: "IMPORT_SELECTOR_NOT_FOUND",
+      retryable: true,
+    });
   });
 
   test("importSource accepts prefixed skills.sh skill ids and resolves them against the GitHub checkout", async () => {
@@ -1896,7 +1959,9 @@ async function scanOneOriginValidationCase(
     const originRepo = await createRepo(sandboxRoot, options.originFiles);
     stubGitHubPreview(originRepo);
 
-    const app = new SkillFlowApp();
+    const app = new SkillFlowApp({
+      agentsOriginReader: createLegacyAgentsOriginReader(),
+    });
     const result = await app.scanLocalImportGroups();
     expect(result.ok).toBe(true);
     if (!result.ok) {

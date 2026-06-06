@@ -152,6 +152,8 @@ export function projectSourceKindV2ToView(kind: SourceKindV2): SourceKind {
       return "git";
     case "collection":
       return "virtual";
+    case "clawhub":
+      return "clawhub";
     case "git":
     case "local":
       return kind;
@@ -166,6 +168,8 @@ function projectSourceManifestV2ToView(source: ManifestFileV2["sources"][number]
     displayName: source.displayName,
     originalDisplayName: source.displayName,
     addedAt: source.createdAt,
+    ...(source.requestedPath ? { requestedPath: source.requestedPath } : {}),
+    ...(source.originRequestedPath ? { originRequestedPath: source.originRequestedPath } : {}),
     ...(source.canonicalLocator !== source.locator ? { originLocator: source.canonicalLocator } : {}),
   };
 }
@@ -195,6 +199,16 @@ function projectSourceLockV2ToView(
     leafIds: [...source.leafIds],
     invalidLeafs,
     ...(source.revision.commit ? { commitSha: source.revision.commit } : {}),
+    ...(source.packageSlug ? { packageSlug: source.packageSlug } : {}),
+    ...(source.resolvedVersion ? { resolvedVersion: source.resolvedVersion } : {}),
+    ...(source.contentHash ? { contentHash: source.contentHash } : {}),
+    ...(source.versionMode ? { versionMode: source.versionMode } : {}),
+    ...(source.originBranch ? { originBranch: source.originBranch } : {}),
+    ...(source.importedFromTargets ? { importedFromTargets: [...source.importedFromTargets] } : {}),
+    ...(source.observedTargets
+      ? { observedTargets: source.observedTargets.map((target) => ({ ...target })) }
+      : {}),
+    ...(source.importMode ? { importMode: source.importMode } : {}),
   };
 }
 
