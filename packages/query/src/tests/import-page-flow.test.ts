@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import * as gitUtils from "@skill-flow/integration/utils/git";
-import { ok } from "@skill-flow/integration/utils/result";
+import { fail, ok } from "@skill-flow/integration/utils/result";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import { createLegacyAgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
@@ -1320,6 +1320,12 @@ describe.sequential("import page flow", () => {
         "missing-origin",
         "missing-origin",
         "Missing origin.",
+      );
+      vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockResolvedValue(
+        fail({
+          code: "SOURCE_PREVIEW_FAILED",
+          message: "Expected preview failure for origin-unavailable coverage.",
+        }),
       );
 
       const app = new SkillFlowApp({

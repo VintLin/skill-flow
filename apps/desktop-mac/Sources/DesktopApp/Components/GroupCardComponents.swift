@@ -1471,7 +1471,10 @@ extension SharedGroupCard {
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
-        displayMode.showsMetaLine && (
+        if displayMode == .menuComfortable {
+            return true
+        }
+        return displayMode.showsMetaLine && (
             card.headerMetaLine?.isEmpty == false
                 || !visibleHeaderStatKinds(stats: card.stats).isEmpty
                 || (displayMode.showsLoadingStatPlaceholders && (card.skillsLoading || card.targetsLoading))
