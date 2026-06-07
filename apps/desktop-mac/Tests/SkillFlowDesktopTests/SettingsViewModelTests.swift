@@ -493,18 +493,18 @@ final class SettingsViewModelTests: XCTestCase {
     @MainActor
     func testCheckForUpdatesComparesPatchVersionsNumerically() async {
         let defaults = UserDefaults(suiteName: suiteName)!
-        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.11")!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.4.0")!
         let viewModel = SettingsViewModel(
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
-            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.11", releaseURL: releaseURL))),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.4.0", releaseURL: releaseURL))),
             currentVersionProvider: { "1.3.6" }
         )
 
         await viewModel.checkForUpdates()
 
         XCTAssertEqual(viewModel.updateStatus, .updateAvailable)
-        XCTAssertEqual(viewModel.latestVersion, "1.3.11")
+        XCTAssertEqual(viewModel.latestVersion, "1.4.0")
     }
 
     @MainActor

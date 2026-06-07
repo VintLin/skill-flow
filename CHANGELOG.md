@@ -2,6 +2,30 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.0 - 2026-06-08
+
+### Added
+
+- Added the `migrate-state --to v2` CLI flow, migration status inspection, and state authority rebuild coverage so existing Skill Flow installs can move into the v2 state layout explicitly.
+- Added a dedicated import-preparation cache and stale-preparation recovery flow across query runtime, CLI bridge, and desktop bridge paths.
+- Added curated recommendation metadata, localized recommendation copy, and recommendation ordering tests for the macOS import screen.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.3.11` to `1.4.0`.
+- Replaced the old `*-v2` state authority/service surface with the current `state-store`, `state-schema`, projection, and source-authority modules as the single runtime path.
+- Changed desktop import behavior so group import always operates on the full group, while skill and agent choices only control post-import selection state.
+- Changed the macOS import screen to use one grid layout for recommendations, search results, and local scan results, with clearer import button states and localized local-scan metadata.
+- Changed recommended groups to expose only one preset tag by default, so import-page badges and imported local group tags stay aligned.
+
+### Fixed
+
+- Fixed import-page auto preview and local preview paths so entering the import screen no longer eagerly prepares downloads or creates `catalog/import-preparations` cache entries.
+- Fixed stale import preparation handling so desktop import retries can recover from missing or expired prepared sources instead of failing silently.
+- Fixed import cards that stayed stuck in `Loading skills...` when preview state was idle or when legacy `previewState` fields leaked through candidate payloads.
+- Fixed local-scan import cards so source agents stay visible and locked appropriately, local-scan subtitles are localized, and empty header spacing no longer appears between summary lines and the divider.
+- Fixed recommended-group import tagging so imported local groups no longer receive hidden secondary recommendation tags that the UI does not show.
+
 ## v1.3.11 - 2026-06-03
 
 ### Added

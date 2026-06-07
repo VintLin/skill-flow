@@ -14,7 +14,7 @@ const AUTHORITY_FILES = [
   "preferences.json",
   "collections.json",
 ] as const;
-export const CURRENT_MIGRATION_MARKER_VERSION = "1.3.11";
+export const CURRENT_MIGRATION_MARKER_VERSION = "1.4.0";
 
 type AuthorityFileName = typeof AUTHORITY_FILES[number];
 
