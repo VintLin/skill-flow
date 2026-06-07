@@ -174,10 +174,94 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(
             secondContainer.draft(for: card),
             ImportDraftState(
-                selectedSkillIds: [],
+                selectedSkills: [],
                 enabledTargetIds: ["claude-code"]
             )
         )
+    }
+
+    func testDraftDefaultsRespectSelectedByDefaultTargets() {
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let card = ImportViewModel.Card(
+            id: "local-scan",
+            title: "Local Scan",
+            locator: "file:///Users/Vint/skills",
+            canonicalRepo: "local-scan",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "Local scan",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [
+                .init(id: "claude-code", selectedByDefault: true, isLocked: true),
+                .init(id: "cursor", selectedByDefault: false),
+            ]
+        )
+
+        XCTAssertEqual(container.draft(for: card).enabledTargetIds, ["claude-code"])
+    }
+
+    func testLockedSourceTargetShowsToastAndDoesNotToggle() {
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let card = ImportViewModel.Card(
+            id: "local-scan",
+            title: "Local Scan",
+            locator: "file:///Users/Vint/skills",
+            canonicalRepo: "local-scan",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "Local scan",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [
+                .init(id: "claude-code", selectedByDefault: true, isLocked: true),
+                .init(id: "cursor", selectedByDefault: false),
+            ]
+        )
+
+        container.handleTargetToggle("claude-code", enabled: false, for: card)
+
+        XCTAssertEqual(container.draft(for: card).enabledTargetIds, ["claude-code"])
+        XCTAssertEqual(model.toast?.style, .neutral)
+        XCTAssertEqual(
+            model.toast?.text.resolve(locale: Locale(identifier: "en")),
+            "This skill comes from the Claude Code agent path and cannot be deselected."
+        )
+    }
+
+    func testImportSuccessMarksGroupInstalledImmediately() async {
+        let commands = RecordingImportCommandFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkills: [.repoPath("browse")],
+            enabledTargets: []
+        )
+
+        XCTAssertEqual(model.recommendedImportGroups.first?.isInstalledLocally, true)
+        XCTAssertNil(model.importingImportGroupId)
     }
 
     func testSelectedLocalChoiceOverridesImportLocatorAndSelectedSkills() async {
@@ -212,13 +296,13 @@ final class ImportScreenContainerTests: XCTestCase {
                     id: "choice-a",
                     label: "All",
                     locator: "file:///Users/Vint/skills",
-                    selectedSkillIds: ["browse", "review"]
+                    selectedSkills: [.repoPath("browse"), .repoPath("review")]
                 ),
                 MainViewModel.LocalImportChoice(
                     id: "choice-b",
                     label: "Browse only",
                     locator: "file:///Users/Vint/skills/browse",
-                    selectedSkillIds: ["browse"]
+                    selectedSkills: [.repoPath("browse")]
                 ),
             ]
         )
@@ -233,8 +317,9 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(commands.importCalls, [
             .init(
                 locator: "file:///Users/Vint/skills/browse",
-                selectedSkillIds: ["browse"],
-                enabledTargets: ["claude-code"]
+                selectedSkills: [.repoPath("browse")],
+                enabledTargets: ["claude-code"],
+                skillSelectionMode: .selected
             )
         ])
     }
@@ -270,13 +355,13 @@ final class ImportScreenContainerTests: XCTestCase {
                     id: "choice-a",
                     label: "All",
                     locator: "file:///Users/Vint/skills",
-                    selectedSkillIds: ["browse", "review"]
+                    selectedSkills: [.repoPath("browse"), .repoPath("review")]
                 ),
                 MainViewModel.LocalImportChoice(
                     id: "choice-b",
                     label: "Browse only",
                     locator: "file:///Users/Vint/skills/browse",
-                    selectedSkillIds: ["browse"]
+                    selectedSkills: [.repoPath("browse")]
                 ),
             ]
         )
@@ -287,8 +372,9 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(commands.importCalls, [
             .init(
                 locator: "file:///Users/Vint/skills/browse",
-                selectedSkillIds: ["browse"],
-                enabledTargets: []
+                selectedSkills: [.repoPath("browse")],
+                enabledTargets: [],
+                skillSelectionMode: .selected
             )
         ])
     }
@@ -325,12 +411,12 @@ final class ImportScreenContainerTests: XCTestCase {
                     id: "origin",
                     label: "Origin",
                     locator: "https://github.com/paramchoudhary/resumeskills.git",
-                    selectedSkillIds: ["skills/browse", "skills/review"]
+                    selectedSkills: [.repoPath("skills/browse"), .repoPath("skills/review")]
                 ),
             ]
         )
 
-        XCTAssertEqual(container.draft(for: card).selectedSkillIds, ["skills/browse", "skills/review"])
+        XCTAssertEqual(container.draft(for: card).selectedSkills.map(\.uiId), ["skills/browse", "skills/review", "skills/managed"])
 
         container.setSkill("skills/review", enabled: false, for: card)
         await container.importGroup(card)
@@ -338,13 +424,13 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(commands.importCalls, [
             .init(
                 locator: "https://github.com/paramchoudhary/resumeskills.git",
-                selectedSkillIds: ["skills/browse"],
+                selectedSkills: [.repoPath("skills/browse")],
                 enabledTargets: []
             )
         ])
     }
 
-    func testImportSkipsCardsWithLoadedSkillsButNoSelection() async {
+    func testImportAllowsExplicitEmptySkillSelection() async {
         let state = DesktopAppState()
         let commands = RecordingImportCommandFacade()
         let model = MainViewModel(
@@ -373,21 +459,89 @@ final class ImportScreenContainerTests: XCTestCase {
                     id: "local",
                     label: "Local",
                     locator: "file:///Users/Vint/skills/changed",
-                    selectedSkillIds: ["changed"]
+                    selectedSkills: [.repoPath("changed")]
                 ),
             ]
         )
+        XCTAssertEqual(container.skillSelectionModeForImport(for: card), .all)
+        container.toggleAllSkills(for: card)
         let draft = container.draft(for: card)
 
-        XCTAssertEqual(draft.selectedSkillIds, [])
-        XCTAssertTrue(ImportScreen.importActionIsDisabled(for: card, draft: draft))
+        XCTAssertEqual(container.skillSelectionModeForImport(for: card), .selected)
+        XCTAssertEqual(draft.selectedSkills, [])
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card, draft: draft))
 
         await container.importGroup(card)
 
-        XCTAssertEqual(commands.importCalls, [])
+        XCTAssertEqual(commands.importCalls, [
+            .init(
+                locator: "file:///Users/Vint/skills/changed",
+                selectedSkills: [],
+                enabledTargets: []
+            )
+        ])
     }
 
-    func testImportDisablesWhenChoiceIntersectionHasNoSelectedSkills() async {
+    func testSelectingLocalChoiceMarksImportAsSelectedMode() async {
+        let state = DesktopAppState()
+        let commands = RecordingImportCommandFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let card = ImportViewModel.Card(
+            id: "local-skills",
+            title: "Local Skills",
+            locator: "file:///Users/Vint/skills",
+            canonicalRepo: "local-skills",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @local",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [
+                .init(id: "browse", title: "Browse", summary: "", selectedByDefault: true),
+                .init(id: "review", title: "Review", summary: "", selectedByDefault: true),
+            ],
+            targets: [],
+            localChoices: [
+                MainViewModel.LocalImportChoice(
+                    id: "all",
+                    label: "All",
+                    locator: "file:///Users/Vint/skills",
+                    selectedSkills: [.repoPath("browse"), .repoPath("review")]
+                ),
+                MainViewModel.LocalImportChoice(
+                    id: "browse-only",
+                    label: "Browse only",
+                    locator: "file:///Users/Vint/skills/browse",
+                    selectedSkills: [.repoPath("browse")]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(container.skillSelectionModeForImport(for: card), .all)
+
+        container.setLocalChoice("browse-only", for: card)
+
+        XCTAssertEqual(container.skillSelectionModeForImport(for: card), .selected)
+
+        await container.importGroup(card)
+
+        XCTAssertEqual(commands.importCalls, [
+            .init(
+                locator: "file:///Users/Vint/skills/browse",
+                selectedSkills: [.repoPath("browse")],
+                enabledTargets: [],
+                skillSelectionMode: .selected
+            )
+        ])
+    }
+
+    func testImportAllowsChoiceIntersectionWithNoSelectedSkills() async {
         let state = DesktopAppState()
         let commands = RecordingImportCommandFacade()
         let model = MainViewModel(
@@ -418,7 +572,7 @@ final class ImportScreenContainerTests: XCTestCase {
                     id: "origin",
                     label: "Origin",
                     locator: "https://github.com/paramchoudhary/resumeskills.git",
-                    selectedSkillIds: ["skills/new"]
+                    selectedSkills: [.repoPath("skills/new")]
                 ),
             ]
         )
@@ -426,16 +580,19 @@ final class ImportScreenContainerTests: XCTestCase {
         container.setSkill("skills/new", enabled: false, for: card)
         container.setSkill("skills/managed", enabled: true, for: card)
 
-        XCTAssertEqual(container.draft(for: card).selectedSkillIds, ["skills/managed"])
-        XCTAssertEqual(container.selectedSkillIdsForImport(for: card), [])
-        XCTAssertTrue(ImportScreen.importActionIsDisabled(
-            for: card,
-            selectedSkillIds: container.selectedSkillIdsForImport(for: card)
-        ))
+        XCTAssertEqual(container.draft(for: card).selectedSkills.map(\.uiId), ["skills/managed"])
+        XCTAssertEqual(container.selectedSkillsForImport(for: card), [])
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card))
 
         await container.importGroup(card)
 
-        XCTAssertEqual(commands.importCalls, [])
+        XCTAssertEqual(commands.importCalls, [
+            .init(
+                locator: "https://github.com/paramchoudhary/resumeskills.git",
+                selectedSkills: [],
+                enabledTargets: []
+            )
+        ])
     }
 
     func testChangedLocalChoiceFallsBackToFirstChoiceAndKeepsImportEnabled() {
@@ -465,7 +622,7 @@ final class ImportScreenContainerTests: XCTestCase {
                     id: "local",
                     label: "Local",
                     locator: "file:///Users/Vint/skills/writer",
-                    selectedSkillIds: ["writer"]
+                    selectedSkills: [.repoPath("writer")]
                 ),
             ],
             requiresLocalVariantSelection: false
@@ -508,10 +665,7 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(recommended?.submittedQuery, "")
         XCTAssertEqual(recommended?.searchPhase, .idle)
-        guard case .recommended(let sections) = recommended?.content else {
-            return XCTFail("expected recommended content")
-        }
-        XCTAssertEqual(sections.flatMap(\.cards).map(\.id), ["recommended"])
+        XCTAssertEqual(recommended?.content.map(\.id), ["recommended"])
 
         model.importSubmittedQuery = "openai"
         model.importSearchPhase = .loading
@@ -521,10 +675,7 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(searched?.submittedQuery, "openai")
         XCTAssertEqual(searched?.searchPhase, .loading)
-        guard case .searchResults(let cards) = searched?.content else {
-            return XCTFail("expected search content")
-        }
-        XCTAssertEqual(cards.map(\.id), ["search"])
+        XCTAssertEqual(searched?.content.map(\.id), ["search"])
         XCTAssertEqual(searched?.importingGroupId, "search")
     }
 
@@ -563,13 +714,114 @@ final class ImportScreenContainerTests: XCTestCase {
                 targets: []
             )
         ]
-        let container = ImportScreenContainer(state: state, mainViewModel: model, recommendationsProvider: { [] })
+        let container = ImportScreenContainer(
+            state: state,
+            mainViewModel: model,
+            recommendationsProvider: {
+                [
+                    ImportRecommendationEntry(
+                        canonicalRepo: "owner/recommended",
+                        locator: "owner/recommended",
+                        categoryId: "general",
+                        primaryTagId: "general",
+                        secondaryTagIds: [],
+                        descriptionKey: "import.recommendation.description.anthropics_skills",
+                        sortOrder: 10
+                    )
+                ]
+            }
+        )
 
         container.setImportPageMode(.recommended)
-        XCTAssertEqual(container.snapshot(locale: Locale(identifier: "en"))?.cards.map(\.id), ["recommended"])
+        XCTAssertEqual(container.snapshot(locale: Locale(identifier: "en"))?.content.map(\.id), ["recommended"])
 
         container.setImportPageMode(.localScan)
-        XCTAssertEqual(container.snapshot(locale: Locale(identifier: "en"))?.cards.map(\.id), ["local"])
+        XCTAssertEqual(container.snapshot(locale: Locale(identifier: "en"))?.content.map(\.id), ["local"])
+    }
+
+    func testImportScreenOnlyPrefetchesRemoteCardsMissingSkills() {
+        let cards = [
+            ImportViewModel.Card(
+                id: "remote-loading",
+                title: "Remote Loading",
+                locator: "owner/remote-loading",
+                canonicalRepo: "owner/remote-loading",
+                preparationId: nil,
+                preparationStatus: nil,
+                isInstalledLocally: false,
+                aliases: [],
+                summary: "",
+                subtitle: "by @owner",
+                stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+                skillsLoading: false,
+                targetsLoading: false,
+                skills: [],
+                targets: [],
+                recommendationBadgeItems: [],
+                recommendationDescription: nil,
+                provider: "skills",
+                localValidationStatus: nil,
+                selectedLocalChoiceId: nil,
+                localChoices: [],
+                requiresLocalVariantSelection: false
+            ),
+            ImportViewModel.Card(
+                id: "remote-ready",
+                title: "Remote Ready",
+                locator: "owner/remote-ready",
+                canonicalRepo: "owner/remote-ready",
+                preparationId: nil,
+                preparationStatus: nil,
+                isInstalledLocally: false,
+                aliases: [],
+                summary: "",
+                subtitle: "by @owner",
+                stats: .init(skillCount: 1, downloadCount: nil, starCount: nil, githubURL: nil),
+                skillsLoading: false,
+                targetsLoading: false,
+                skills: [
+                    .init(id: "browse", title: "Browse", summary: "", selectedByDefault: true)
+                ],
+                targets: [],
+                recommendationBadgeItems: [],
+                recommendationDescription: nil,
+                provider: "skills",
+                localValidationStatus: nil,
+                selectedLocalChoiceId: nil,
+                localChoices: [],
+                requiresLocalVariantSelection: false
+            ),
+            ImportViewModel.Card(
+                id: "local-loading",
+                title: "Local Loading",
+                locator: "/Users/me/local",
+                canonicalRepo: "local-loading",
+                preparationId: nil,
+                preparationStatus: nil,
+                isInstalledLocally: false,
+                aliases: [],
+                summary: "",
+                subtitle: "Local",
+                stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+                skillsLoading: false,
+                targetsLoading: false,
+                skills: [],
+                targets: [],
+                recommendationBadgeItems: [],
+                recommendationDescription: nil,
+                provider: "local",
+                localValidationStatus: "local-only",
+                selectedLocalChoiceId: nil,
+                localChoices: [],
+                requiresLocalVariantSelection: false
+            ),
+        ]
+
+        XCTAssertEqual(ImportScreen.groupIDsNeedingSkillDetails(for: cards), ["remote-loading"])
+        XCTAssertEqual(
+            ImportScreen.skillDetailsPrefetchTaskKey(cards: cards, submittedQuery: "browse"),
+            "browse|remote-loading"
+        )
     }
 
     func testImportHeaderUsesTwoModesAndOneLocalImportAction() throws {
@@ -667,13 +919,12 @@ final class ImportScreenContainerTests: XCTestCase {
         ])
 
         let snapshot = container.snapshot(locale: Locale(identifier: "en"))
-        guard case .recommended(let sections) = snapshot?.content else {
-            return XCTFail("expected recommended content")
-        }
-
-        XCTAssertEqual(sections.map { $0.categoryId }, ["general", "development"])
-        XCTAssertEqual(sections[0].cards.map { $0.canonicalRepo }, ["anthropics/skills"])
-        XCTAssertEqual(sections[1].cards.map { $0.canonicalRepo }, ["obra/superpowers"])
+        XCTAssertEqual(snapshot?.content.map(\.canonicalRepo), [
+            "anthropics/skills",
+            "obra/superpowers",
+        ])
+        XCTAssertEqual(snapshot?.content.first?.recommendationBadgeItems.map(\.id), ["general"])
+        XCTAssertEqual(snapshot?.content.last?.recommendationBadgeItems.map(\.id), ["development"])
     }
 
     func testLoadImportPageIfNeededScansLocalImportGroupsOnlyOnce() async {
@@ -711,7 +962,15 @@ final class ImportScreenContainerTests: XCTestCase {
                             "id": "local",
                             "label": "Local",
                             "locator": "file:///Users/Vint/skills",
-                            "selectedSkillIds": ["browse"],
+                            "selectedSkills": [
+                                [
+                                    "uiId": "browse",
+                                    "selector": [
+                                        "kind": "repoPath",
+                                        "path": "browse",
+                                    ],
+                                ],
+                            ],
                         ],
                     ],
                 ],
@@ -730,12 +989,8 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(container.importPageMode, .localScan)
 
         let snapshot = container.snapshot(locale: Locale(identifier: "en"))
-        guard case .recommended(let sections) = snapshot?.content else {
-            return XCTFail("expected recommended content")
-        }
-
-        XCTAssertEqual(sections.first?.categoryId, "local")
-        XCTAssertEqual(sections.first?.cards.map(\.id), ["local-skills"])
+        XCTAssertEqual(snapshot?.content.map(\.id), ["local-skills"])
+        XCTAssertEqual(snapshot?.content.first?.provider, "local")
     }
 
     func testImportLocalDirectoryProjectsVersionConflictLocalScanGroupsInSnapshot() async throws {
@@ -810,13 +1065,14 @@ final class ImportScreenContainerTests: XCTestCase {
         await container.importLocalDirectory("/Users/me/.codex/skills/resume-review")
 
         let snapshot = try XCTUnwrap(container.snapshot(locale: Locale(identifier: "en")))
-        let card = try XCTUnwrap(snapshot.cards.first)
+        let card = try XCTUnwrap(snapshot.content.first)
 
         XCTAssertEqual(card.localValidationStatus, "version-conflict")
-        XCTAssertEqual(card.localSourcePaths.map(\.path), [
-            "/Users/me/.codex/skills/resume-review",
-            "/Users/me/.cursor/skills/resume-review",
-        ])
+        XCTAssertEqual(card.subtitle, "Local scan")
+        XCTAssertEqual(card.headerMetaLine, "Source: 2 agent paths")
+        XCTAssertEqual(card.targets.map(\.id), model.importPageTargetIds)
+        XCTAssertEqual(card.targets.filter(\.selectedByDefault).map(\.id), ["codex", "cursor"])
+        XCTAssertEqual(card.targets.filter(\.isLocked).map(\.id), ["codex", "cursor"])
         XCTAssertTrue(card.requiresLocalVariantSelection)
         XCTAssertTrue(ImportScreen.importActionIsDisabled(for: card))
         XCTAssertEqual(
@@ -896,6 +1152,93 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(model.importingImportGroupId, nil)
         XCTAssertEqual(model.toast?.style, .neutral)
         XCTAssertEqual(model.toast?.message, "This group is already available locally.")
+    }
+
+    func testHandleImportActionShowsToastForEveryBlockedImportState() async {
+        struct Case {
+            let card: ImportViewModel.Card
+            let importingGroupId: String?
+            let expectedMessage: String
+        }
+        func card(
+            id: String,
+            locator: String,
+            preparationStatus: String? = nil,
+            requiresLocalVariantSelection: Bool = false
+        ) -> ImportViewModel.Card {
+            ImportViewModel.Card(
+                id: id,
+                title: id,
+                locator: locator,
+                canonicalRepo: locator,
+                preparationStatus: preparationStatus,
+                isInstalledLocally: false,
+                aliases: [],
+                summary: "",
+                subtitle: "by @test",
+                stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+                skillsLoading: false,
+                targetsLoading: false,
+                skills: [],
+                targets: [],
+                requiresLocalVariantSelection: requiresLocalVariantSelection
+            )
+        }
+
+        let cases = [
+            Case(
+                card: card(
+                    id: "local-conflict",
+                    locator: "file:///Users/me/skills",
+                    requiresLocalVariantSelection: true
+                ),
+                importingGroupId: nil,
+                expectedMessage: "Choose which local version to import first."
+            ),
+            Case(
+                card: card(
+                    id: "preparing",
+                    locator: "owner/preparing",
+                    preparationStatus: "preparing"
+                ),
+                importingGroupId: nil,
+                expectedMessage: "Preparing this group for import."
+            ),
+            Case(
+                card: card(
+                    id: "current",
+                    locator: "owner/current"
+                ),
+                importingGroupId: "current",
+                expectedMessage: "This group is already being imported."
+            ),
+            Case(
+                card: card(
+                    id: "other",
+                    locator: "owner/other"
+                ),
+                importingGroupId: "current",
+                expectedMessage: "Another import is already running."
+            ),
+        ]
+
+        for testCase in cases {
+            let state = DesktopAppState()
+            let commands = RecordingImportCommandFacade()
+            let model = MainViewModel(
+                bridgeClient: BridgeClient(),
+                commandFacade: commands
+            )
+            model.importingImportGroupId = testCase.importingGroupId
+            let container = ImportScreenContainer(state: state, mainViewModel: model)
+
+            await container.handleImportAction(for: testCase.card)
+
+            XCTAssertEqual(model.toast?.style, .neutral)
+            XCTAssertEqual(model.toast?.message, testCase.expectedMessage)
+            XCTAssertEqual(commands.importCalls, [])
+            XCTAssertEqual(commands.commitCalls, [])
+        }
     }
 
     func testImportActionIsDisabledWhenCardIsAlreadyInstalledLocally() {
@@ -1152,77 +1495,25 @@ final class ImportScreenContainerTests: XCTestCase {
             submittedQuery: "recommended"
         )
 
-        XCTAssertEqual(viewModel.cards.first?.targets.map(\.id), ["claude-code", "cursor"])
-        XCTAssertFalse(viewModel.cards.first?.targetsLoading ?? true)
+        XCTAssertEqual(viewModel.content.first?.targets.map(\.id), ["claude-code", "cursor"])
+        XCTAssertFalse(viewModel.content.first?.targetsLoading ?? true)
     }
 
-    func testImportScreenPreviewsEveryRenderedCardInsteadOfFirstFourOnly() {
-        let cards = (0..<6).map { index in
-            ImportViewModel.Card(
-                id: "card-\(index)",
-                title: "Card \(index)",
-                locator: "owner/repo-\(index)",
-                canonicalRepo: "owner/repo-\(index)",
-                isInstalledLocally: false,
-                aliases: [],
-                summary: "",
-                subtitle: "by @owner",
-                stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
-                skillsLoading: true,
-                targetsLoading: false,
-                skills: [],
-                targets: []
-            )
-        }
-
-        XCTAssertEqual(ImportScreen.previewGroupIDs(for: cards), cards.map(\.id))
-        XCTAssertEqual(
-            ImportScreen.autoPreviewTaskKey(cards: cards, submittedQuery: "browse"),
-            "browse|card-0|card-1|card-2|card-3|card-4|card-5"
+    func testImportScreenUsesUnifiedGridForRecommendationsSearchAndLocalScan() throws {
+        let source = try String(
+            contentsOfFile: sourceRoot()
+                .appendingPathComponent("Sources/DesktopApp/Screens/Import/ImportScreen.swift")
+                .path,
+            encoding: .utf8
         )
-    }
 
-    func testImportScreenOnlyPreviewsCardsStillLoadingSkills() {
-        let cards = [
-            ImportViewModel.Card(
-                id: "ready-card",
-                title: "Ready",
-                locator: "owner/ready",
-                canonicalRepo: "owner/ready",
-                isInstalledLocally: false,
-                aliases: [],
-                summary: "",
-                subtitle: "by @owner",
-                stats: .init(skillCount: 2, downloadCount: nil, starCount: nil, githubURL: nil),
-                skillsLoading: false,
-                targetsLoading: false,
-                skills: [
-                    .init(id: "browse", title: "Browse", summary: "", selectedByDefault: true)
-                ],
-                targets: []
-            ),
-            ImportViewModel.Card(
-                id: "loading-card",
-                title: "Loading",
-                locator: "owner/loading",
-                canonicalRepo: "owner/loading",
-                isInstalledLocally: false,
-                aliases: [],
-                summary: "",
-                subtitle: "by @owner",
-                stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
-                skillsLoading: true,
-                targetsLoading: false,
-                skills: [],
-                targets: []
-            )
-        ]
-
-        XCTAssertEqual(ImportScreen.previewGroupIDs(for: cards), ["loading-card"])
-        XCTAssertEqual(
-            ImportScreen.autoPreviewTaskKey(cards: cards, submittedQuery: "browse"),
-            "browse|loading-card"
-        )
+        XCTAssertTrue(source.contains("private func contentBody("))
+        XCTAssertTrue(source.contains("cards: [ImportViewModel.Card]"))
+        XCTAssertTrue(source.contains("LazyVGrid(columns: gridColumns, spacing: 12)"))
+        XCTAssertFalse(source.contains("recommendedContent("))
+        XCTAssertFalse(source.contains("sectionTitle("))
+        XCTAssertFalse(source.contains("ScrollView(.horizontal, showsIndicators: false)"))
+        XCTAssertFalse(source.contains("LazyHStack"))
     }
 
     func testImportScreenUsesSpinnerForInitialLoadingInsteadOfSkeletonCards() {
@@ -1408,33 +1699,7 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(ImportScreen.showsResultsHeader(searchPhase: .loading, cardCount: 0))
     }
 
-    func testPreviewGroupsIfNeededBoundsConcurrentPreviews() async {
-        let state = DesktopAppState()
-        let query = RecordingPreviewQueryFacade()
-        let model = MainViewModel(
-            bridgeClient: BridgeClient(),
-            queryFacade: query
-        )
-        let container = ImportScreenContainer(state: state, mainViewModel: model)
-        model.recommendedImportGroups = (0..<4).map { index in
-            makeItem(id: "group-\(index)", title: "Group \(index)", locator: "owner/repo-\(index)")
-        }
-
-        await container.previewGroupsIfNeeded(model.recommendedImportGroups.map(\.id))
-
-        let previewLocators = await query.recordedPreviewLocators().sorted()
-        let maxConcurrentPreviewCount = await query.recordedMaxConcurrentPreviewCount()
-
-        XCTAssertEqual(previewLocators, [
-            "owner/repo-0",
-            "owner/repo-1",
-            "owner/repo-2",
-            "owner/repo-3",
-        ])
-        XCTAssertLessThanOrEqual(maxConcurrentPreviewCount, 2)
-    }
-
-    func testPreviewReturnsBeforeBackgroundPreparationFinishes() async {
+    func testPreviewDoesNotStartBackgroundPreparation() async {
         let query = RecordingPreviewQueryFacade(blockPrepareUntilReleased: true)
         let model = MainViewModel(
             bridgeClient: BridgeClient(),
@@ -1454,18 +1719,44 @@ final class ImportScreenContainerTests: XCTestCase {
 
         let previewed = model.recommendedImportGroups.first
         XCTAssertEqual(previewed?.skills.map(\.id), ["browse"])
-        XCTAssertEqual(previewed?.preparationStatus, "preparing")
+        XCTAssertNil(previewed?.preparationStatus)
         XCTAssertNil(previewed?.preparationId)
         let prepareLocators = await query.recordedPrepareLocators()
-        XCTAssertEqual(prepareLocators, ["owner/repo"])
-
-        await query.releasePrepare()
+        XCTAssertEqual(prepareLocators, [])
         await previewTask.value
+    }
 
-        await waitForCondition(timeoutNanoseconds: 500_000_000) {
-            model.recommendedImportGroups.first?.preparationStatus == "ready"
-        }
-        XCTAssertEqual(model.recommendedImportGroups.first?.preparationId, "prep-owner-repo")
+    func testPrefetchGroupSkillDetailsLimitsPreviewConcurrency() async {
+        let query = RecordingPreviewQueryFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        let container = ImportScreenContainer(state: DesktopAppState(), mainViewModel: model)
+        model.recommendedImportGroups = [
+            makeItem(id: "owner/repo-0", title: "Repo 0", locator: "owner/repo-0"),
+            makeItem(id: "owner/repo-1", title: "Repo 1", locator: "owner/repo-1"),
+            makeItem(id: "owner/repo-2", title: "Repo 2", locator: "owner/repo-2"),
+            makeItem(id: "owner/repo-3", title: "Repo 3", locator: "owner/repo-3"),
+        ]
+
+        await container.prefetchGroupSkillDetailsIfNeeded([
+            "owner/repo-0",
+            "owner/repo-1",
+            "owner/repo-2",
+            "owner/repo-3",
+        ])
+
+        let previewLocators = await query.recordedPreviewLocators().sorted()
+        let maxConcurrentPreviewCount = await query.recordedMaxConcurrentPreviewCount()
+
+        XCTAssertEqual(previewLocators, [
+            "owner/repo-0",
+            "owner/repo-1",
+            "owner/repo-2",
+            "owner/repo-3",
+        ])
+        XCTAssertLessThanOrEqual(maxConcurrentPreviewCount, 2)
     }
 
     func testImportActionShowsPreparationStatus() {
@@ -1538,7 +1829,7 @@ final class ImportScreenContainerTests: XCTestCase {
         await model.importImportGroup(
             groupId: "owner-repo",
             locator: "owner/repo",
-            selectedSkillIds: ["browse"],
+            selectedSkills: [.repoPath("browse")],
             enabledTargets: []
         )
 
@@ -1546,6 +1837,42 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(prepareLocators, ["owner/repo"])
         XCTAssertEqual(commands.importCalls, [])
         XCTAssertEqual(model.toast?.style, .error)
+    }
+
+    func testStalePreparedImportRepreparesAndCommitsAgain() async {
+        let commands = RecordingImportCommandFacade()
+        commands.commitPayloads = [
+            ["status": "failed", "reasonCode": "IMPORT_PREPARATION_STALE", "retryable": true],
+            ["status": "ready", "sourceId": "owner-repo"],
+        ]
+        let query = RecordingPreviewQueryFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo",
+                preparationId: "prep-old",
+                preparationStatus: "ready"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkills: [.repoPath("browse")],
+            enabledTargets: []
+        )
+
+        let prepareLocators = await query.recordedPrepareLocators()
+        XCTAssertEqual(prepareLocators, ["owner/repo"])
+        XCTAssertEqual(commands.commitCalls.map(\.preparationId), ["prep-old", "prep-owner-repo"])
+        XCTAssertEqual(commands.importCalls, [])
+        XCTAssertEqual(model.toast?.style, .success)
     }
 
     func testImportEmptyAndLoadingStatesUsePlainCenteredPresentation() {
@@ -1561,6 +1888,7 @@ final class ImportScreenContainerTests: XCTestCase {
         id: String,
         title: String,
         locator: String,
+        preparationId: String? = nil,
         preparationStatus: String? = nil
     ) -> MainViewModel.ImportGroupItem {
         MainViewModel.ImportGroupItem(
@@ -1568,6 +1896,7 @@ final class ImportScreenContainerTests: XCTestCase {
             title: title,
             locator: locator,
             canonicalRepo: locator,
+            preparationId: preparationId,
             preparationStatus: preparationStatus,
             isInstalledLocally: false,
             aliases: [],
@@ -1624,12 +1953,33 @@ final class ImportScreenContainerTests: XCTestCase {
 
 private struct RecordedImportCall: Equatable {
     let locator: String
-    let selectedSkillIds: [String]
+    let selectedSkills: [ImportSkillSelection]
+    let enabledTargets: [String]
+    let skillSelectionMode: ImportSkillSelectionMode
+
+    init(
+        locator: String,
+        selectedSkills: [ImportSkillSelection],
+        enabledTargets: [String],
+        skillSelectionMode: ImportSkillSelectionMode = .selected
+    ) {
+        self.locator = locator
+        self.selectedSkills = selectedSkills
+        self.enabledTargets = enabledTargets
+        self.skillSelectionMode = skillSelectionMode
+    }
+}
+
+private struct RecordedCommitCall: Equatable {
+    let preparationId: String
+    let selectedSkills: [ImportSkillSelection]
     let enabledTargets: [String]
 }
 
 private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked Sendable {
     private(set) var importCalls: [RecordedImportCall] = []
+    private(set) var commitCalls: [RecordedCommitCall] = []
+    var commitPayloads: [[String: Any]] = [["status": "ready", "sourceId": "local-skills"]]
 
     func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
         fatalError("unused")
@@ -1643,12 +1993,27 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
         fatalError("unused")
     }
 
-    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await importSource(
+            locator: locator,
+            selectedSkills: selectedSkills,
+            enabledTargets: enabledTargets,
+            skillSelectionMode: .selected
+        )
+    }
+
+    func importSource(
+        locator: String,
+        selectedSkills: [ImportSkillSelection],
+        enabledTargets: [String],
+        skillSelectionMode: ImportSkillSelectionMode
+    ) async throws -> BridgeResponse {
         importCalls.append(
             RecordedImportCall(
                 locator: locator,
-                selectedSkillIds: selectedSkillIds,
-                enabledTargets: enabledTargets
+                selectedSkills: selectedSkills,
+                enabledTargets: enabledTargets,
+                skillSelectionMode: skillSelectionMode
             )
         )
         return BridgeResponse(
@@ -1662,7 +2027,29 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
         )
     }
 
-    func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
+    func commitImportSource(preparationId: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
+        commitCalls.append(
+            RecordedCommitCall(
+                preparationId: preparationId,
+                selectedSkills: selectedSkills,
+                enabledTargets: enabledTargets
+            )
+        )
+        let payload = commitPayloads.isEmpty
+            ? ["status": "ready", "sourceId": "local-skills"]
+            : commitPayloads.removeFirst()
+        return BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .commitImportSource,
+            ok: true,
+            data: AnyCodable(payload),
+            warnings: [],
+            errors: []
+        )
+    }
+
+    func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
         fatalError("unused")
     }
 
@@ -1670,7 +2057,7 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
         fatalError("unused")
     }
 
-    func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse {
+    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse {
         fatalError("unused")
     }
 
@@ -1687,7 +2074,15 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
     }
 
     func doctor() async throws -> BridgeResponse {
-        fatalError("unused")
+        BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .doctor,
+            ok: true,
+            data: AnyCodable(["issues": []]),
+            warnings: [],
+            errors: []
+        )
     }
 }
 
@@ -1722,7 +2117,18 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
     }
 
     func list() async throws -> BridgeResponse {
-        fatalError("unused")
+        BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .list,
+            ok: true,
+            data: AnyCodable([
+                "summaries": [],
+                "pinnedSourceIds": [],
+            ]),
+            warnings: [],
+            errors: []
+        )
     }
 
     func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
@@ -1781,7 +2187,15 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
                     ],
                 ],
                 "targets": [],
-                "selectedSkillIds": ["browse"],
+                "selectedSkills": [
+                    [
+                        "uiId": "browse",
+                        "selector": [
+                            "kind": "repoPath",
+                            "path": "browse",
+                        ],
+                    ],
+                ],
                 "enabledTargets": [],
             ]),
             warnings: [],

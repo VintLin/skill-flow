@@ -2,8 +2,8 @@ import type {
   DeploymentPlan,
   DeploymentTargetId,
   DraftBinding,
-  LeafRecord,
-  SourceManifestRecord,
+  LeafSummaryRecord,
+  SourceSummaryRecord,
 } from "@skill-flow/domain/types";
 import { getMergedTargetDefinitionById } from "@skill-flow/integration/utils/constants";
 import { countActions, formatActionSummary, formatTargetName } from "@skill-flow/integration/utils/format";
@@ -29,8 +29,8 @@ export const ALL_SKILLS_CHOICE_ID = "__all_skills__";
 export const ALL_AGENTS_CHOICE_ID = "__all_agents__";
 
 export type AddFlowPrepared = {
-  source: SourceManifestRecord;
-  leafs: LeafRecord[];
+  source: SourceSummaryRecord;
+  leafs: LeafSummaryRecord[];
   availableTargets: DeploymentTargetId[];
   draft: DraftBinding;
   importWarnings: string[];
@@ -47,7 +47,7 @@ export function normalizeRequestedPath(requestedPath?: string): string | undefin
 }
 
 export function buildDefaultSelectedLeafIds(
-  leafs: LeafRecord[],
+  leafs: LeafSummaryRecord[],
   requestedPath?: string,
 ): string[] {
   const normalizedPath = normalizeRequestedPath(requestedPath);
@@ -64,7 +64,7 @@ export function buildDefaultSelectedLeafIds(
     .map((leaf) => leaf.id);
 }
 
-export function buildLeafChoices(leafs: LeafRecord[]): AddChoice[] {
+export function buildLeafChoices(leafs: LeafSummaryRecord[]): AddChoice[] {
   return leafs.map((leaf) => ({
     id: leaf.id,
     label: leaf.linkName,
@@ -107,7 +107,7 @@ export function filterChoices(choices: AddChoice[], query: string): AddChoice[] 
 }
 
 export function resolveRequestedLeafIds(
-  leafs: LeafRecord[],
+  leafs: LeafSummaryRecord[],
   requestedSkills: string[],
 ): { ok: true; value: string[] } | { ok: false; message: string } {
   const resolvedIds: string[] = [];
@@ -157,7 +157,7 @@ export function resolveRequestedTargets(
 }
 
 export function buildInitialDraft(
-  leafs: LeafRecord[],
+  leafs: LeafSummaryRecord[],
   availableTargets: DeploymentTargetId[],
   options: {
     requestedPath?: string;
@@ -200,9 +200,9 @@ export function buildInitialDraft(
 }
 
 export function buildAddCompletionMessage(
-  source: SourceManifestRecord,
+  source: SourceSummaryRecord,
   draft: DraftBinding,
-  leafs: LeafRecord[],
+  leafs: LeafSummaryRecord[],
 ): string {
   const selectedCount = draft.selectedLeafIds.length;
   const targetCount = draft.enabledTargets.length;
@@ -267,7 +267,7 @@ export function buildSummaryLines(
 }
 
 function resolveLeafToken(
-  leafs: LeafRecord[],
+  leafs: LeafSummaryRecord[],
   requestedSkill: string,
 ): { ok: true; value: string } | { ok: false; message: string } {
   const normalized = normalizeSearch(requestedSkill);

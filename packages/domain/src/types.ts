@@ -12,7 +12,9 @@ export type Result<T> =
   | { ok: true; data: T; warnings: Warning[]; errors: [] }
   | { ok: false; data?: T; warnings: Warning[]; errors: Failure[] };
 
-export type SourceKind = "local" | "git" | "clawhub" | "virtual";
+export const SOURCE_KINDS = ["git", "local", "clawhub", "collection"] as const;
+
+export type SourceKind = typeof SOURCE_KINDS[number];
 
 export type DeploymentTargetName =
   | "claude-code"
@@ -37,7 +39,7 @@ export type DeploymentStrategy = "symlink" | "copy";
 
 export type CustomTargetDefinition = {
   id: string;
-  name: string;
+  name?: string;
   globalPath: string;
   projectPathTemplate: string;
   strategy: DeploymentStrategy;
@@ -69,52 +71,9 @@ export type HealthStatus =
   | "UP TO DATE"
   | "DRIFT DETECTED";
 
-export type SourceManifestRecord = {
-  id: string;
-  locator: string;
-  kind: SourceKind;
-  displayName: string;
-  originalDisplayName: string;
-  addedAt: string;
-  requestedPath?: string;
-  selectionMode?: "all" | "partial";
-  originLocator?: string;
-  originRequestedPath?: string;
-};
-
-export type TargetBinding = {
-  enabled: boolean;
-  leafIds: string[];
-};
-
-export type SourceBinding = {
-  selectedLeafIds?: string[];
-  targets: Partial<Record<DeploymentTargetId, TargetBinding>>;
-};
-
 export type DraftBinding = {
   enabledTargets: DeploymentTargetId[];
   selectedLeafIds: string[];
-};
-
-export type AddSourceDraftOptions = {
-  skillNames?: string[];
-  agentTargets?: DeploymentTargetId[];
-  draft?: DraftBinding;
-  skipTargetDetection?: boolean;
-};
-
-export type AddSourcePreparation = {
-  sourceId: string;
-  availableTargets: DeploymentTargetId[];
-  draft: DraftBinding;
-  leafs: LeafRecord[];
-};
-
-export type Manifest = {
-  schemaVersion: 1;
-  sources: SourceManifestRecord[];
-  bindings: Record<string, SourceBinding>;
 };
 
 export type ProjectScope =
@@ -131,39 +90,24 @@ export type RecentProject = {
 
 export type ScopedSourceDrafts = Record<string, Record<string, DraftBinding>>;
 
-export type SharedPreferences = {
-  schemaVersion: 1;
-  pinnedSourceIds: string[];
-  selectedProjectScope: ProjectScope;
-  recentProjects: RecentProject[];
-  projectDrafts: ScopedSourceDrafts;
-  customTargets: CustomTargetDefinition[];
-  agentDisplayOrder: string[];
-};
-
-export type VirtualGroupSkillRef = {
+export type CollectionSkillRef = {
   sourceId: string;
   leafId: string;
 };
 
-export type VirtualGroupRestoreSnapshot = {
+export type CollectionRestoreSnapshot = {
   selectedLeafIds: string[];
   enabledTargets: DeploymentTargetId[];
 };
 
-export type VirtualGroupRecord = {
+export type CollectionViewRecord = {
   id: string;
   displayName: string;
-  includedSkills: VirtualGroupSkillRef[];
+  includedSkills: CollectionSkillRef[];
   hiddenSourceIds: string[];
-  restoreSnapshots: Record<string, VirtualGroupRestoreSnapshot>;
+  restoreSnapshots: Record<string, CollectionRestoreSnapshot>;
   createdAt: string;
   updatedAt: string;
-};
-
-export type VirtualGroupsState = {
-  schemaVersion: 1;
-  groups: Record<string, VirtualGroupRecord>;
 };
 
 export type InvalidLeafRecord = {
@@ -176,72 +120,7 @@ export type DuplicateLeafRecord = {
   keptPath: string;
 };
 
-export type SourceLockRecord = {
-  id: string;
-  locator: string;
-  kind: SourceKind;
-  displayName: string;
-  originalDisplayName: string;
-  checkoutPath: string;
-  updatedAt: string;
-  leafIds: string[];
-  invalidLeafs: InvalidLeafRecord[];
-  commitSha?: string;
-  packageSlug?: string;
-  resolvedVersion?: string;
-  contentHash?: string;
-  versionMode?: "pinned" | "floating";
-  originBranch?: string;
-  importedFromTargets?: DeploymentTargetId[];
-  observedTargets?: Array<{
-    target: DeploymentTargetId;
-    rootPath: string;
-    targetPath: string;
-  }>;
-  importMode?: "explicit-add" | "bootstrap-detected";
-};
-
-export type LeafRecord = {
-  id: string;
-  sourceId: string;
-  name: string;
-  linkName: string;
-  title: string;
-  description: string;
-  relativePath: string;
-  absolutePath: string;
-  skillFilePath: string;
-  contentHash: string;
-  metadataWarnings: string[];
-  sourceTitle?: string;
-  valid: true;
-};
-
-export type DeploymentRecord = {
-  sourceId: string;
-  leafId: string;
-  target: DeploymentTargetId;
-  targetPath: string;
-  targetRootPath?: string;
-  strategy: DeploymentStrategy;
-  status: "active" | "drifted" | "blocked" | "removed";
-  contentHash: string;
-  appliedAt: string;
-};
-
 export type ProjectionMode = "managed" | "bootstrap-imported";
-
-export type ProjectionRecord = DeploymentRecord & {
-  mode: ProjectionMode;
-};
-
-export type LockFile = {
-  schemaVersion: 1;
-  sources: SourceLockRecord[];
-  leafInventory: LeafRecord[];
-  projections?: ProjectionRecord[];
-  deployments: DeploymentRecord[];
-};
 
 export type SourceUpdateDiffKind =
   | "added"
@@ -249,33 +128,6 @@ export type SourceUpdateDiffKind =
   | "moved"
   | "invalidated"
   | "changed";
-
-export type SourceUpdateDiff = {
-  kind: SourceUpdateDiffKind;
-  sourceId: string;
-  leafId: string;
-  relativePath: string;
-  contentHash: string;
-  requestedPath?: string;
-  previousLeafId?: string;
-  previousRelativePath?: string;
-  previousContentHash?: string;
-};
-
-export type SourceUpdateResultItem = {
-  sourceId: string;
-  changed: boolean;
-  requestedPath?: string;
-  selectionMode?: "all" | "partial";
-  addedLeafIds: string[];
-  removedLeafIds: string[];
-  invalidatedLeafIds: string[];
-  diffs: SourceUpdateDiff[];
-};
-
-export type SourceUpdateResult = {
-  updated: SourceUpdateResultItem[];
-};
 
 export type ChannelDetection = {
   target: DeploymentTargetId;
@@ -305,7 +157,7 @@ export type DeploymentAction = {
   previousTargetRootPath?: string;
   relocateExternalToTargetPath?: string;
   reason?: string;
-  diagnostics?: DiagnosticV2[];
+  diagnostics?: Diagnostic[];
   contentHash: string;
 };
 
@@ -344,11 +196,86 @@ export type ConfigBootStatus = {
   failedSources: ConfigBootFailure[];
 };
 
+export type SourceSummaryRecord = {
+  id: SourceId;
+  locator: string;
+  kind: SourceKind;
+  displayName: string;
+  originalDisplayName: string;
+  addedAt: string;
+  requestedPath?: string;
+  originRequestedPath?: string;
+  originLocator?: string;
+};
+
+export type SourceLockSummaryRecord = {
+  id: SourceId;
+  locator: string;
+  kind: SourceKind;
+  displayName: string;
+  originalDisplayName: string;
+  checkoutPath: string;
+  updatedAt: string;
+  leafIds: SkillLeafId[];
+  invalidLeafs: InvalidLeafRecord[];
+  commitSha?: string;
+  packageSlug?: string;
+  resolvedVersion?: string;
+  contentHash?: string;
+  versionMode?: "pinned" | "floating";
+  originBranch?: string;
+  importedFromTargets?: DeploymentTargetId[];
+  observedTargets?: Array<{
+    target: DeploymentTargetId;
+    rootPath: string;
+    targetPath: string;
+  }>;
+  importMode?: "explicit-add" | "bootstrap-detected";
+};
+
+export type LeafSummaryRecord = {
+  id: SkillLeafId;
+  sourceId: SourceId;
+  name: string;
+  linkName: string;
+  title: string;
+  description: string;
+  relativePath: RepoPath;
+  absolutePath: string;
+  skillFilePath: string;
+  contentHash: string;
+  metadataWarnings: string[];
+  sourceTitle?: string;
+  valid: boolean;
+};
+
+export type SourceTargetBindingSummary = {
+  enabled: boolean;
+  leafIds: SkillLeafId[];
+};
+
+export type SourceBindingSummary = {
+  selectedLeafIds: SkillLeafId[];
+  targets: Partial<Record<DeploymentTargetId, SourceTargetBindingSummary>>;
+};
+
+export type DeploymentSummaryRecord = {
+  sourceId: SourceId;
+  leafId: SkillLeafId;
+  target: DeploymentTargetId;
+  targetPath: string;
+  targetRootPath?: string;
+  strategy: DeploymentStrategy;
+  status: "active" | "removed" | "blocked";
+  contentHash: string;
+  appliedAt: string;
+};
+
 export type WorkflowSummary = {
-  source: SourceManifestRecord;
-  lock: SourceLockRecord | undefined;
-  leafs: LeafRecord[];
-  bindings: SourceBinding;
+  source: SourceSummaryRecord;
+  lock: SourceLockSummaryRecord | undefined;
+  leafs: LeafSummaryRecord[];
+  bindings: SourceBindingSummary;
   activeTargetCount: number;
   health: HealthStatus;
   issueCounts?: { warning: number; error: number };
@@ -607,13 +534,6 @@ export type LocalImportValidationStatus =
 
 export type LocalImportChoiceId = "origin" | "local";
 
-export type LocalImportChoice = {
-  id: LocalImportChoiceId;
-  label: string;
-  locator: string;
-  selectedSkillIds: string[];
-};
-
 export type LocalImportDetectedSkill = {
   id: string;
   title: string;
@@ -673,14 +593,6 @@ export type LocalScanOrigin = {
   previewStatus: "ready" | "failed";
 };
 
-export type LocalScanImportChoice = {
-  id: string;
-  label: string;
-  locator: string;
-  selectedSkillIds: string[];
-  enabled: boolean;
-};
-
 export type LocalScanGroup = {
   id: string;
   title: string;
@@ -713,32 +625,12 @@ export type ImportGroupCandidate = {
   }>;
   snapshot?: UnifiedSourceSnapshot;
   enrichState: ImportAsyncState;
-  previewState: ImportAsyncState;
   localImport?: LocalImportCandidateInfo;
-};
-
-export type ImportPreviewSkill = {
-  id: string;
-  legacyId?: string;
-  uiId?: string;
-  title: string;
-  summary: string;
-  selectedByDefault: boolean;
-  selector?: ImportSkillSelectorV2;
-  origin?: ImportPreviewSkillV2["origin"];
-  diagnostics?: DiagnosticV2[];
-  legacyAliases?: string[];
 };
 
 export type ImportPreviewTarget = {
   id: DeploymentTargetId;
   selectedByDefault: boolean;
-};
-
-export type ImportDraft = {
-  selectedSkillIds?: string[];
-  selectedSkills?: ImportSkillSelectionV2[];
-  enabledTargets: DeploymentTargetId[];
 };
 
 export type ImportPreparationStatus =
@@ -748,35 +640,8 @@ export type ImportPreparationStatus =
   | "failed"
   | "stale";
 
-export type ImportPreparationRecord = {
-  schemaVersion?: 2;
-  id: string;
-  cacheKey?: string;
-  locator: string;
-  canonicalRepo: string;
-  sourceSelectionKey?: string;
-  sourceKind: SourceKind;
-  checkoutPath: string;
-  sourceId: string;
-  displayName: string;
-  requestedPath?: string;
-  status: ImportPreparationStatus;
-  preparedAt: string;
-  expiresAt: string;
-  commitSha?: string;
-  skillIds: string[];
-  skillRefs?: PreparedSkillRefV2[];
-  availableTargets: DeploymentTargetId[];
-  failure?: {
-    reasonCode: string;
-    retryable: boolean;
-    message: string;
-  };
-};
-
 export type ImportPreparationCache = {
   records: Record<string, ImportPreparationRecord>;
-  locatorIndex: Record<string, string>;
 };
 
 export type ImportPreparationResult =
@@ -810,8 +675,7 @@ export type ImportPreviewResult =
       preparedAt?: string;
       expiresAt?: string;
       snapshot?: UnifiedSourceSnapshot;
-      selectedSkillIds: string[];
-      selectedSkills?: ImportSkillSelectionV2[];
+      selectedSkills: ImportSkillSelection[];
       enabledTargets: DeploymentTargetId[];
       skills: ImportPreviewSkill[];
       targets: ImportPreviewTarget[];
@@ -836,13 +700,13 @@ export type ImportSourceResult =
       retryable: boolean;
     };
 
-export type SchemaVersionV2 = 2;
-export type MigrationGenerationV2 = `mg_${string}`;
-export type SourceIdV2 = string;
-export type SkillLeafIdV2 = string;
-export type RepoPathV2 = string;
+export type SchemaVersion = 2;
+export type MigrationGeneration = `mg_${string}`;
+export type SourceId = string;
+export type SkillLeafId = string;
+export type RepoPath = string;
 
-export type DiagnosticV2 = {
+export type Diagnostic = {
   code: string;
   message: string;
   path?: string;
@@ -851,11 +715,9 @@ export type DiagnosticV2 = {
   details?: Record<string, unknown>;
 };
 
-export type SourceKindV2 = "git" | "github" | "local" | "clawhub" | "collection";
-
-export type SourceManifestRecordV2 = {
-  id: SourceIdV2;
-  kind: SourceKindV2;
+export type SourceManifestRecord = {
+  id: SourceId;
+  kind: SourceKind;
   locator: string;
   canonicalLocator: string;
   displayName: string;
@@ -866,53 +728,63 @@ export type SourceManifestRecordV2 = {
   originRequestedPath?: string;
 };
 
-export type SourceBindingV2 = {
-  sourceId: SourceIdV2;
+export type SourceBinding = {
+  sourceId: SourceId;
   selectionMode: "all" | "selected";
-  selectedLeafIds: SkillLeafIdV2[];
+  selectedLeafIds: SkillLeafId[];
   enabledTargets: DeploymentTargetId[];
 };
 
-export type ManifestFileV2 = {
-  schemaVersion: SchemaVersionV2;
-  migrationGeneration: MigrationGenerationV2;
-  sources: SourceManifestRecordV2[];
-  bindings: Record<SourceIdV2, SourceBindingV2>;
+export type ManifestFile = {
+  schemaVersion: SchemaVersion;
+  migrationGeneration: MigrationGeneration;
+  sources: SourceManifestRecord[];
+  bindings: Record<SourceId, SourceBinding>;
 };
 
-export type SourceRevisionV2 = {
-  provider: "git" | "github" | "local" | "clawhub" | "collection";
-  ref?: string;
-  commit?: string;
-  archiveEtag?: string;
-  capturedAt: string;
-};
+export type SourceRevision =
+  | {
+      provider: "git" | "clawhub";
+      ref?: string;
+      commit?: string;
+      capturedAt: string;
+    }
+  | {
+      provider: "local";
+      contentHash?: string;
+      capturedAt: string;
+    }
+  | {
+      provider: "collection";
+      capturedAt: string;
+    };
 
-export type LeafSelectorIndexV2 = {
+export type LeafSelectorIndex = {
   providerSkillId?: string;
-  legacyAliases: string[];
+  aliases: string[];
 };
 
-export type LeafRecordV2 = {
-  id: SkillLeafIdV2;
-  sourceId: SourceIdV2;
-  relativePath: RepoPathV2;
+export type LeafRecord = {
+  id: SkillLeafId;
+  sourceId: SourceId;
+  name?: string;
+  relativePath: RepoPath;
   linkName: string;
   title: string;
   description: string;
   absolutePath: string;
   skillFilePath: string;
-  displayName: string;
   contentHash: string;
-  selectors: LeafSelectorIndexV2;
+  selectors?: LeafSelectorIndex;
   valid: boolean;
-  diagnostics: DiagnosticV2[];
+  sourceTitle?: string;
+  diagnostics?: Diagnostic[];
 };
 
-export type ProjectionRecordV2 = {
+export type ProjectionRecord = {
   target: DeploymentTargetId;
-  sourceId: SourceIdV2;
-  leafId: SkillLeafIdV2;
+  sourceId: SourceId;
+  leafId: SkillLeafId;
   targetPath: string;
   targetRootPath?: string;
   strategy: DeploymentStrategy;
@@ -921,12 +793,12 @@ export type ProjectionRecordV2 = {
   updatedAt: string;
 };
 
-export type SourceLockRecordV2 = {
-  sourceId: SourceIdV2;
+export type SourceLockRecord = {
+  sourceId: SourceId;
   canonicalLocator: string;
-  revision: SourceRevisionV2;
+  revision: SourceRevision;
   localPath: string;
-  leafIds: SkillLeafIdV2[];
+  leafIds: SkillLeafId[];
   packageSlug?: string;
   resolvedVersion?: string;
   contentHash?: string;
@@ -941,296 +813,276 @@ export type SourceLockRecordV2 = {
   importMode?: "explicit-add" | "bootstrap-detected";
 };
 
-export type LockFileV2 = {
-  schemaVersion: SchemaVersionV2;
-  migrationGeneration: MigrationGenerationV2;
-  sources: Record<SourceIdV2, SourceLockRecordV2>;
-  leafInventory: LeafRecordV2[];
-  projections: ProjectionRecordV2[];
-};
+export interface LockFile {
+  schemaVersion: SchemaVersion;
+  migrationGeneration: MigrationGeneration;
+  sources: Record<SourceId, SourceLockRecord>;
+  leafInventory: LeafRecord[];
+  projections: ProjectionRecord[];
+}
 
-export type ProjectSourceDraftV2 = {
-  sourceId: SourceIdV2;
-  selectedLeafIds: SkillLeafIdV2[];
+export type ProjectSourceDraft = {
+  sourceId: SourceId;
+  selectedLeafIds: SkillLeafId[];
   enabledTargets: DeploymentTargetId[];
   updatedAt: string;
 };
 
-export type ImportSkillSelectorV2 = { kind: "repoPath"; path: RepoPathV2 };
+export type ImportSkillSelector = { kind: "repoPath"; path: RepoPath };
 
-export type ImportSkillSelectionV2 = {
+export type ImportSkillSelection = {
   uiId: string;
-  selector: ImportSkillSelectorV2;
+  selector: ImportSkillSelector;
 };
 
-export type LocalImportChoiceV2 = {
+export type LocalImportChoice = {
   sourceChoiceId: string;
-  legacyChoiceId?: string;
+  sourceChoiceAlias?: string;
   label: string;
   locator: string;
   detectedSourcePath: string;
-  detectedSkillPath?: RepoPathV2;
+  detectedSkillPath?: RepoPath;
   variant: "single-skill" | "multi-skill" | "source-root";
-  selectedSkills: ImportSkillSelectionV2[];
+  selectedSkills: ImportSkillSelection[];
   enabledTargets: DeploymentTargetId[];
 };
 
-export type LocalScanDetectedSkillV2 = {
-  leafId: SkillLeafIdV2;
-  existingSourceIdHint?: SourceIdV2;
+export type LocalScanDetectedSkill = {
+  leafId: SkillLeafId;
+  existingSourceIdHint?: SourceId;
   sourcePath: string;
   skillFilePath: string;
-  relativePath: RepoPathV2;
+  relativePath: RepoPath;
   displayName: string;
   contentHash: string;
-  selector: ImportSkillSelectorV2;
-  diagnostics: DiagnosticV2[];
+  selector: ImportSkillSelector;
+  diagnostics?: Diagnostic[];
 };
 
-export type LocalScanImportChoiceV2 = {
+export type LocalScanImportChoice = {
   scanId: string;
   sourceChoiceId: string;
   rootPath: string;
   sourcePath: string;
   variant: "single-source" | "multi-source" | "mixed";
-  detectedSkills: LocalScanDetectedSkillV2[];
-  selectedSkills: ImportSkillSelectionV2[];
+  detectedSkills: LocalScanDetectedSkill[];
+  selectedSkills: ImportSkillSelection[];
   enabledTargets: DeploymentTargetId[];
 };
 
-export type PreferencesFileV2 = {
-  schemaVersion: SchemaVersionV2;
-  migrationGeneration: MigrationGenerationV2;
-  pinnedSourceIds: SourceIdV2[];
+export type PreferencesFile = {
+  schemaVersion: SchemaVersion;
+  migrationGeneration: MigrationGeneration;
+  pinnedSourceIds: SourceId[];
   selectedProjectScope: ProjectScope;
   recentProjects: RecentProject[];
-  projectSourceDrafts: Record<string, Record<SourceIdV2, ProjectSourceDraftV2>>;
+  projectSourceDrafts: Record<string, Record<SourceId, ProjectSourceDraft>>;
   customTargets: CustomTargetDefinition[];
   agentDisplayOrder: DeploymentTargetId[];
-  localImportChoices?: LocalImportChoiceV2[];
-  localScanImportChoices?: LocalScanImportChoiceV2[];
+  localImportChoices?: LocalImportChoice[];
+  localScanImportChoices?: LocalScanImportChoice[];
 };
 
-export type SkillCollectionMemberOriginV2 = {
-  sourceId: SourceIdV2;
-  leafId: SkillLeafIdV2;
+export type SkillCollectionMemberOrigin = {
+  sourceId: SourceId;
+  leafId: SkillLeafId;
   sourceLocator: string;
   canonicalLocator: string;
-  repoPath: RepoPathV2;
+  repoPath: RepoPath;
   contentHashAtCapture: string;
   capturedAt: string;
 };
 
-export type MaterializedSkillSnapshotV2 = {
-  leafId: SkillLeafIdV2;
+export type MaterializedSkillSnapshot = {
+  leafId: SkillLeafId;
   materializedPath: string;
   skillFilePath: string;
   relativePath: string;
   contentHash: string;
 };
 
-export type SkillCollectionMemberV2 = {
+export type SkillCollectionMember = {
   id: string;
-  origin: SkillCollectionMemberOriginV2;
-  snapshot: MaterializedSkillSnapshotV2;
+  origin: SkillCollectionMemberOrigin;
+  snapshot: MaterializedSkillSnapshot;
   updatePolicy: "frozen";
 };
 
-export type SkillCollectionRestoreSelectionV2 = {
-  sourceId: SourceIdV2;
-  selectedLeafIds: SkillLeafIdV2[];
+export type SkillCollectionRestoreSelection = {
+  sourceId: SourceId;
+  selectedLeafIds: SkillLeafId[];
   enabledTargets: DeploymentTargetId[];
   bestEffort: boolean;
-  diagnostics: DiagnosticV2[];
+  diagnostics?: Diagnostic[];
 };
 
-export type SkillCollectionRecordV2 = {
-  id: SourceIdV2;
+export type SkillCollectionRecord = {
+  id: SourceId;
   displayName: string;
-  materializedSourceId: SourceIdV2;
-  members: SkillCollectionMemberV2[];
-  hiddenSourceIds: SourceIdV2[];
-  restoreSelections: Record<SourceIdV2, SkillCollectionRestoreSelectionV2>;
+  materializedSourceId: SourceId;
+  members: SkillCollectionMember[];
+  hiddenSourceIds: SourceId[];
+  restoreSelections: Record<SourceId, SkillCollectionRestoreSelection>;
   createdAt: string;
   updatedAt: string;
 };
 
-export type CollectionsFileV2 = {
-  schemaVersion: SchemaVersionV2;
-  migrationGeneration: MigrationGenerationV2;
-  collections: Record<SourceIdV2, SkillCollectionRecordV2>;
+export type CollectionsFile = {
+  schemaVersion: SchemaVersion;
+  migrationGeneration: MigrationGeneration;
+  collections: Record<SourceId, SkillCollectionRecord>;
 };
 
-export type MigrationMarkerFileV2 = {
-  schemaVersion: SchemaVersionV2;
+export type MigrationMarkerFile = {
+  schemaVersion: SchemaVersion;
   version: string;
-  migrationGeneration: MigrationGenerationV2;
+  migrationGeneration: MigrationGeneration;
   status: "running" | "failed";
   startedAt: string;
   stagingRoot: string;
   backupPath?: string;
-  diagnostics: DiagnosticV2[];
+  diagnostics?: Diagnostic[];
 };
 
-export type CollectionGenerationMarkerV2 = {
-  schemaVersion: SchemaVersionV2;
-  migrationGeneration: MigrationGenerationV2;
-  collectionId: SourceIdV2;
+export type CollectionGenerationMarker = {
+  schemaVersion: SchemaVersion;
+  migrationGeneration: MigrationGeneration;
+  collectionId: SourceId;
   createdAt: string;
-  diagnostics: DiagnosticV2[];
+  diagnostics?: Diagnostic[];
 };
 
-export type ImportPreviewSkillV2 = {
-  legacyId: string;
+export type ImportPreviewSkill = {
+  providerSkillId: string;
   uiId: string;
   title: string;
-  selector: ImportSkillSelectorV2;
+  contentHash?: string;
+  selector: ImportSkillSelector;
   origin: {
     provider: "github" | "git" | "local" | "archive";
     providerSkillId?: string;
     providerPath?: string;
     archivePath?: string;
-    repoPath?: RepoPathV2;
+    repoPath?: RepoPath;
   };
-  diagnostics: DiagnosticV2[];
-  legacyAliases: string[];
+  diagnostics?: Diagnostic[];
+  selectorAliases: string[];
 };
 
-export type ImportDraftV2 = {
-  selectedSkills: ImportSkillSelectionV2[];
+export type ImportDraft = {
+  skillSelectionMode?: "all" | "selected";
+  selectedSkills: ImportSkillSelection[];
   enabledTargets: DeploymentTargetId[];
 };
 
-export type PreparedSkillRefV2 = {
+export type PreparedSkillRef = {
   uiId: string;
-  selector: ImportSkillSelectorV2;
-  leafId: SkillLeafIdV2;
-  repoPath: RepoPathV2;
+  selector: ImportSkillSelector;
+  leafId: SkillLeafId;
+  repoPath: RepoPath;
   contentHash: string;
-  legacyAliases: string[];
+  selectorAliases: string[];
 };
 
-export type ImportPreparationRecordV2 = {
-  schemaVersion: SchemaVersionV2;
-  preparationId: string;
-  status: "ready" | "committing" | "committed" | "failed" | "expired";
-  sourceLocator: string;
-  canonicalLocator: string;
+export type ImportPreparationRecord = {
+  schemaVersion?: SchemaVersion;
+  id: string;
+  preparationId?: string;
+  cacheKey?: string;
+  locator: string;
+  canonicalRepo: string;
+  sourceLocator?: string;
+  canonicalLocator?: string;
   requestedPath?: string;
-  sourceSelectionKey: string;
-  existingSourceIdHint?: SourceIdV2;
-  sourceKind: SourceKindV2;
+  sourceSelectionKey?: string;
+  existingSourceIdHint?: SourceId;
+  sourceKind: SourceKind;
   checkoutPath: string;
-  sourceRevision: SourceRevisionV2;
+  sourceId: string;
+  displayName: string;
+  sourceRevision?: SourceRevision;
   availableTargets: DeploymentTargetId[];
-  skillRefs: PreparedSkillRefV2[];
+  commitSha?: string;
+  skillIds: string[];
+  skillRefs?: PreparedSkillRef[];
   currentAttempt?: {
     attemptId: string;
     commitStartedAt?: string;
   };
-  lease: {
-    token: string;
-    expiresAt: string;
-    state: "ready" | "committing" | "committed" | "expired";
-  };
+  status: ImportPreparationStatus | "committed" | "expired";
   failure?: {
     reasonCode: string;
     retryable: boolean;
     message: string;
-    diagnostics: DiagnosticV2[];
+    diagnostics?: Diagnostic[];
   };
-  diagnostics: DiagnosticV2[];
+  diagnostics?: Diagnostic[];
   preparedAt: string;
   expiresAt: string;
-  createdAt: string;
+  createdAt?: string;
 };
 
-export type SourceUpdateDiffV2 = {
+export type SourceUpdateDiff = {
   kind: "moved" | "changed" | "added" | "removed" | "invalidated";
-  sourceId: SourceIdV2;
-  leafId: SkillLeafIdV2;
-  previous?: Partial<LeafRecordV2>;
-  current?: Partial<LeafRecordV2>;
-  diagnostics: DiagnosticV2[];
+  sourceId: SourceId;
+  leafId: SkillLeafId;
+  relativePath?: string;
+  contentHash?: string;
+  requestedPath?: string;
+  previousLeafId?: string;
+  previousRelativePath?: string;
+  previousContentHash?: string;
+  previous?: Partial<LeafRecord>;
+  current?: Partial<LeafRecord>;
+  diagnostics?: Diagnostic[];
 };
 
-export type SourceUpdateResultV2 = {
-  sourceId: SourceIdV2;
-  status: "updated" | "unchanged" | "failed";
-  diffs: SourceUpdateDiffV2[];
-  diagnostics: DiagnosticV2[];
+export type SourceUpdateResultItem = {
+  sourceId: SourceId;
+  changed: boolean;
+  requestedPath?: string;
+  selectionMode?: "all" | "partial";
+  addedLeafIds: string[];
+  removedLeafIds: string[];
+  invalidatedLeafIds: string[];
+  diffs: SourceUpdateDiff[];
 };
 
-export type RepairTargetsResultV2 = {
+export type SourceUpdateResult = {
+  sourceId?: SourceId;
+  status?: "updated" | "unchanged" | "failed";
+  updated: SourceUpdateResultItem[];
+  diffs?: SourceUpdateDiff[];
+  diagnostics?: Diagnostic[];
+};
+
+export type RepairTargetsResult = {
   actions: Array<{
     kind: "relink" | "remove" | "block" | "noop";
     target: DeploymentTargetId;
-    sourceId?: SourceIdV2;
-    leafId?: SkillLeafIdV2;
-    previous?: Partial<ProjectionRecordV2>;
-    current?: Partial<ProjectionRecordV2>;
-    diagnostics: DiagnosticV2[];
+    sourceId?: SourceId;
+    leafId?: SkillLeafId;
+    previous?: Partial<ProjectionRecord>;
+    current?: Partial<ProjectionRecord>;
+    diagnostics: Diagnostic[];
   }>;
-  diagnostics: DiagnosticV2[];
+  diagnostics: Diagnostic[];
 };
 
-export type AddSourceDraftOptionsV2 = {
-  locator: string;
-  skillNames?: string[];
-  selectedSkills?: ImportSkillSelectionV2[];
-  enabledTargets?: DeploymentTargetId[];
-  skipTargetDetection?: boolean;
-};
-
-export type TargetDetectionV2 = {
-  target: DeploymentTargetId;
-  available: boolean;
-  rootPath: string;
-  reasonCode?: string;
-  diagnostics: DiagnosticV2[];
-};
-
-export type AddSourcePreparationV2 = {
-  sourceId: SourceIdV2;
-  selectors: ImportSkillSelectorV2[];
-  leafIds: SkillLeafIdV2[];
-  detectedTargets: TargetDetectionV2[];
-  diagnostics: DiagnosticV2[];
-};
-
-export type SourceMetadataCacheEntryV2 = {
-  cacheKey: string;
-  canonicalLocator: string;
-  provider: RepoMetadataProvider;
-  status: "ready" | "failed" | "unsupported";
-  checkedAt: string;
-  expiresAt: string;
-  providerMetadata?: SourceStats;
-  diagnostics: DiagnosticV2[];
-};
-
-export type SourceMetadataCacheV2 = Record<string, SourceMetadataCacheEntryV2>;
-
-export type ImportDataCacheV2 = {
-  searches: Record<string, ImportSearchSnapshot>;
-  repos: Record<string, RepoMetadataCacheEntry>;
-  recommendations: Record<string, ImportRecommendationFeed>;
-};
-
-export type ImportDiscoveryCandidateV2 = {
+export type ImportDiscoveryCandidate = {
   uiId: string;
-  legacyId: string;
+  providerSkillId: string;
   title: string;
-  selector: ImportSkillSelectorV2;
-  origin: ImportPreviewSkillV2["origin"];
-  diagnostics: DiagnosticV2[];
+  selector: ImportSkillSelector;
+  origin: ImportPreviewSkill["origin"];
+  diagnostics: Diagnostic[];
 };
 
-export type ImportDiscoveryGroupCandidateV2 = {
+export type ImportDiscoveryGroupCandidate = {
   groupId: string;
   canonicalLocator: string;
   title: string;
-  candidates: ImportDiscoveryCandidateV2[];
+  candidates: ImportDiscoveryCandidate[];
   installed: boolean;
-  diagnostics: DiagnosticV2[];
+  diagnostics: Diagnostic[];
 };

@@ -198,6 +198,33 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: localCard, displayMode: .homeComfortable))
     }
 
+    func testImportLocalScanCardUsesReservedMetadataRowForSourceSummary() {
+        let localScanCard = MainViewModel.GroupCardModel(
+            id: "local-scan",
+            title: "Local Scan",
+            byline: "本地扫描",
+            headerMetaLine: "来源 2 个代理路径",
+            groupPath: nil,
+            sourceKind: "import-preview",
+            sourceLocator: "file:///tmp/local-scan",
+            isPinned: false,
+            health: "DISCOVER",
+            warningCount: 0,
+            errorCount: 0,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+        )
+
+        XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: localScanCard, displayMode: .importSearch))
+        XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: localScanCard, displayMode: .importSearch))
+    }
+
     func testMenuComfortableCardsKeepMetadataRowButHideHeaderDivider() {
         let menuCard = MainViewModel.GroupCardModel(
             id: "menu",

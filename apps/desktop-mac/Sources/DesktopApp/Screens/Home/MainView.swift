@@ -98,10 +98,10 @@ struct MainView: View {
     @State private var isGroupEditorPresented = false
     @State private var groupEditorTab: GroupEditorTab = .create
     @State private var groupEditorName = ""
-    @State private var groupEditorSelectedSkills = Set<VirtualGroupSkillRef>()
+    @State private var groupEditorSelectedSkills = Set<CollectionSkillRef>()
     @State private var groupEditorSelectedSourceIds = Set<String>()
     @State private var groupEditorValidationKey: String?
-    @State private var groupEditorOptions: MainViewModel.VirtualGroupEditorOptions?
+    @State private var groupEditorOptions: MainViewModel.CollectionEditorOptions?
     @State private var groupEditorOptionsTask: Task<Void, Never>?
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
@@ -221,7 +221,7 @@ struct MainView: View {
                             onResetSelections: { resetGroupEditorSelections(clearName: false) },
                             onRestore: { sourceId in
                                 closeGroupEditor()
-                                Task { await viewModel.restoreMergedGroups(virtualGroupId: sourceId) }
+                                Task { await viewModel.restoreCollectionSources(collectionId: sourceId) }
                             }
                         )
                         .frame(maxWidth: 640)
@@ -766,7 +766,7 @@ struct MainView: View {
             isFocused: focusedSearchField == .importPage,
             query: importScreenState.searchText,
             searchPhase: snapshot?.searchPhase ?? .idle,
-            resultCount: snapshot?.cards.count ?? 0,
+            resultCount: snapshot?.content.count ?? 0,
             submittedQuery: snapshot?.submittedQuery ?? ""
         )
     }
@@ -827,9 +827,9 @@ struct MainView: View {
         isEditCustomAgentPresented = true
     }
 
-    private var orderedGroupEditorSelectedSkills: [VirtualGroupSkillRef] {
+    private var orderedGroupEditorSelectedSkills: [CollectionSkillRef] {
         (groupEditorOptions?.skillOptions ?? [])
-            .map { VirtualGroupSkillRef(sourceId: $0.sourceId, leafId: $0.leafId) }
+            .map { CollectionSkillRef(sourceId: $0.sourceId, leafId: $0.leafId) }
             .filter { groupEditorSelectedSkills.contains($0) }
     }
 
@@ -853,7 +853,7 @@ struct MainView: View {
         groupEditorOptionsTask = Task { @MainActor in
             await Task.yield()
             guard !Task.isCancelled else { return }
-            groupEditorOptions = viewModel.virtualGroupEditorOptions()
+            groupEditorOptions = viewModel.collectionEditorOptions()
         }
     }
 
@@ -878,12 +878,12 @@ struct MainView: View {
         switch groupEditorTab {
         case .create:
             let skills = orderedGroupEditorSelectedSkills
-            switch viewModel.validateVirtualGroupCreate(displayName: groupEditorName, selectedSkills: skills) {
+            switch viewModel.validateCollectionCreate(displayName: groupEditorName, selectedSkills: skills) {
             case .valid:
                 let displayName = groupEditorName
                 closeGroupEditor()
                 Task {
-                    await viewModel.createVirtualGroup(
+                    await viewModel.createCollection(
                         displayName: displayName,
                         skills: skills,
                         enabledTargets: []
@@ -898,7 +898,7 @@ struct MainView: View {
             }
         case .merge:
             let sourceIds = orderedGroupEditorSelectedSourceIds
-            switch viewModel.validateVirtualGroupMerge(displayName: groupEditorName, sourceIds: sourceIds) {
+            switch viewModel.validateCollectionMerge(displayName: groupEditorName, sourceIds: sourceIds) {
             case .valid:
                 let displayName = groupEditorName
                 closeGroupEditor()
@@ -1161,7 +1161,7 @@ struct MainView: View {
                                 onTogglePinned: {
                                     Task { await viewModel.togglePinned(sourceId: card.id) }
                                 },
-                                canDelete: !MainViewModel.isVirtualHomeSource(card),
+                                canDelete: !MainViewModel.isCollectionHomeSource(card),
                                 onDelete: {
                                     Task { await viewModel.deleteSource(sourceId: card.id) }
                                 },
@@ -1487,8 +1487,8 @@ struct MainView: View {
                 title = t("home.sidebar.local")
             case "remote":
                 title = t("home.sidebar.remote")
-            case "virtual":
-                title = t("home.sidebar.virtual")
+            case "collection":
+                title = t("home.sidebar.collection")
             default:
                 title = t("home.sidebar.all")
             }
@@ -2180,14 +2180,14 @@ private struct GroupEditorSheet: View {
 
     @Binding var selectedTab: GroupEditorTab
     @Binding var name: String
-    @Binding var selectedSkills: Set<VirtualGroupSkillRef>
+    @Binding var selectedSkills: Set<CollectionSkillRef>
     @Binding var selectedSourceIds: Set<String>
     @Binding var validationKey: String?
 
     let isLoading: Bool
-    let skillOptions: [MainViewModel.VirtualGroupSkillOption]
-    let sourceOptions: [MainViewModel.VirtualGroupSourceOption]
-    let restoreOptions: [MainViewModel.VirtualGroupSourceOption]
+    let skillOptions: [MainViewModel.CollectionSkillOption]
+    let sourceOptions: [MainViewModel.CollectionSourceOption]
+    let restoreOptions: [MainViewModel.CollectionSourceOption]
     let title: String
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
@@ -2503,11 +2503,11 @@ private struct GroupEditorSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func skillRef(for option: MainViewModel.VirtualGroupSkillOption) -> VirtualGroupSkillRef {
-        VirtualGroupSkillRef(sourceId: option.sourceId, leafId: option.leafId)
+    private func skillRef(for option: MainViewModel.CollectionSkillOption) -> CollectionSkillRef {
+        CollectionSkillRef(sourceId: option.sourceId, leafId: option.leafId)
     }
 
-    private var filteredSkillOptions: [MainViewModel.VirtualGroupSkillOption] {
+    private var filteredSkillOptions: [MainViewModel.CollectionSkillOption] {
         let query = normalizedSkillSearchQuery
         guard !query.isEmpty else {
             return skillOptions
@@ -2520,7 +2520,7 @@ private struct GroupEditorSheet: View {
         }
     }
 
-    private var filteredSourceOptions: [MainViewModel.VirtualGroupSourceOption] {
+    private var filteredSourceOptions: [MainViewModel.CollectionSourceOption] {
         let query = normalizedSkillSearchQuery
         guard !query.isEmpty else {
             return sourceOptions
@@ -2539,11 +2539,11 @@ private struct GroupEditorSheet: View {
         }
     }
 
-    private func mergeSourceSubtitle(for option: MainViewModel.VirtualGroupSourceOption) -> String {
+    private func mergeSourceSubtitle(for option: MainViewModel.CollectionSourceOption) -> String {
         "\(option.sourceSubtitle) · \(option.skillCount)"
     }
 
-    private var skillsBySourceId: [String: [MainViewModel.VirtualGroupSkillOption]] {
+    private var skillsBySourceId: [String: [MainViewModel.CollectionSkillOption]] {
         Dictionary(grouping: skillOptions, by: \.sourceId)
     }
 
@@ -2559,7 +2559,7 @@ private struct GroupEditorSheet: View {
         }
     }
 
-    private func toggleSkill(_ option: MainViewModel.VirtualGroupSkillOption) {
+    private func toggleSkill(_ option: MainViewModel.CollectionSkillOption) {
         let ref = skillRef(for: option)
         if selectedSkills.contains(ref) {
             selectedSkills.remove(ref)

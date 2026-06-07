@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { DeploymentTargetName, LockFile, Manifest } from "@skill-flow/domain/types";
-import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
+import type {
+  DeploymentTargetName,
+  ProjectionRecord,
+  LockFile,
+  ManifestFile,
+} from "@skill-flow/domain/types";
 import { getTargetScanRoots, TARGET_DEFINITIONS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
 import { hashDirectory, pathExists } from "@skill-flow/integration/utils/fs";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
@@ -9,6 +13,7 @@ import {
   type AgentsOrigin,
   type AgentsOriginReader,
 } from "./legacy-agents-lock.js";
+import { parseSkillFrontmatter } from "./skill-frontmatter.js";
 
 export type BootstrapEvent = {
   phase:
@@ -62,7 +67,7 @@ export class WorkspaceBootstrapService {
   }
 
   async detectUnmanagedExternalSkills(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
     onEvent?: (event: BootstrapEvent) => void,
   ): Promise<DetectedExternalSkill[]> {
@@ -72,10 +77,10 @@ export class WorkspaceBootstrapService {
         .map((source) => path.resolve(source.locator)),
     );
     const managedCheckouts = new Set(
-      lockFile.sources.map((source) => path.resolve(source.checkoutPath)),
+      sourceLocks(lockFile).map((source) => path.resolve(source.localPath)),
     );
     const managedTargetPaths = new Set(
-      getManagedDeployments(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
+      activeProjections(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
     );
     const agentsOrigins = await this.agentsOriginReader.readAgentsLockOrigins();
     const grouped = new Map<
@@ -189,7 +194,7 @@ export class WorkspaceBootstrapService {
   }
 
   async scanUnmanagedLocalSkills(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
     onEvent?: (event: BootstrapEvent) => void,
   ): Promise<LocalSkillScanResult[]> {
@@ -250,16 +255,21 @@ export class WorkspaceBootstrapService {
       /\r\n?/g,
       "\n",
     );
-    const frontmatter = content.match(/^---\n([\s\S]*?)\n---/);
-    const body = frontmatter?.[1] ?? "";
-    const nameMatch = body.match(/^name:\s*(.+)$/m);
-    const descriptionBlock = body.match(/^description:\s*\|\s*\n((?:\s+.+\n?)*)/m);
-    const descriptionLine = body.match(/^description:\s*(.+)$/m);
-    const title = nameMatch?.[1]?.trim() || fallbackName;
-    const description = descriptionBlock?.[1]
-      ? descriptionBlock[1].split("\n").map((line) => line.trim()).filter(Boolean).join(" ")
-      : descriptionLine?.[1]?.trim() ?? "";
+    const frontmatter = parseSkillFrontmatter(content);
+    const title = frontmatter?.data.name?.trim() || fallbackName;
+    const description = frontmatter?.data.description?.trim() ?? "";
 
     return { title, description };
   }
+}
+
+function sourceLocks(lockFile: LockFile): Array<{ sourceId: string; localPath: string }> {
+  return Object.values(lockFile.sources).map((source) => ({
+    sourceId: source.sourceId,
+    localPath: source.localPath,
+  }));
+}
+
+function activeProjections(lockFile: LockFile): ProjectionRecord[] {
+  return lockFile.projections.filter((projection) => projection.status === "active");
 }

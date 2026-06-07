@@ -13,23 +13,15 @@ enum ImportSkillSelector: Equatable, Sendable {
         }
     }
 
-    var legacySkillId: String {
-        switch self {
-        case .repoPath(let path):
-            return path
-        }
-    }
 }
 
 struct ImportSkillSelection: Equatable, Sendable {
     let uiId: String
     let selector: ImportSkillSelector
-    let importDraftV2Compatible: Bool
 
-    init(uiId: String, selector: ImportSkillSelector, importDraftV2Compatible: Bool = true) {
+    init(uiId: String, selector: ImportSkillSelector) {
         self.uiId = uiId
         self.selector = selector
-        self.importDraftV2Compatible = importDraftV2Compatible
     }
 
     var bridgePayload: [String: Any] {
@@ -40,22 +32,18 @@ struct ImportSkillSelection: Equatable, Sendable {
     }
 
     static func repoPath(_ path: String) -> ImportSkillSelection {
-        ImportSkillSelection(uiId: path, selector: .repoPath(path), importDraftV2Compatible: false)
+        ImportSkillSelection(uiId: path, selector: .repoPath(path))
     }
+}
+
+enum ImportSkillSelectionMode: String, Equatable, Sendable {
+    case all
+    case selected
 }
 
 struct ImportDraftState: Equatable {
     let selectedSkills: [ImportSkillSelection]
     let enabledTargetIds: [String]
-
-    var selectedSkillIds: [String] {
-        selectedSkills.map(\.selector.legacySkillId)
-    }
-
-    init(selectedSkillIds: [String], enabledTargetIds: [String]) {
-        self.selectedSkills = selectedSkillIds.map(ImportSkillSelection.repoPath)
-        self.enabledTargetIds = enabledTargetIds
-    }
 
     init(selectedSkills: [ImportSkillSelection], enabledTargetIds: [String]) {
         self.selectedSkills = selectedSkills

@@ -28,8 +28,7 @@ struct ImportScreen: View {
 
     var body: some View {
         let snapshot = container.snapshot(locale: locale)
-        let content = snapshot?.content ?? .recommended([])
-        let displayedCards = Self.displayedCards(for: content)
+        let displayedCards = snapshot?.content ?? []
         let submittedQuery = snapshot?.submittedQuery ?? ""
         let searchPhase = snapshot?.searchPhase ?? .idle
         let importingGroupId = snapshot?.importingGroupId
@@ -42,11 +41,12 @@ struct ImportScreen: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        contentBody(content: content, importingGroupId: importingGroupId)
+                        contentBody(cards: displayedCards, importingGroupId: importingGroupId)
                     }
-                    .task(id: Self.autoPreviewTaskKey(cards: displayedCards, submittedQuery: submittedQuery)) {
-                        let previewIds = Self.previewGroupIDs(for: displayedCards)
-                        await container.previewGroupsIfNeeded(previewIds)
+                    .task(id: Self.skillDetailsPrefetchTaskKey(cards: displayedCards, submittedQuery: submittedQuery)) {
+                        await container.prefetchGroupSkillDetailsIfNeeded(
+                            Self.groupIDsNeedingSkillDetails(for: displayedCards)
+                        )
                     }
                     .padding(16)
                 }
@@ -93,18 +93,6 @@ struct ImportScreen: View {
 
     @ViewBuilder
     private func contentBody(
-        content: ImportViewModel.Content,
-        importingGroupId: String?
-    ) -> some View {
-        switch content {
-        case .recommended(let sections):
-            recommendedContent(sections: sections, importingGroupId: importingGroupId)
-        case .searchResults(let cards):
-            searchResultsContent(cards: cards, importingGroupId: importingGroupId)
-        }
-    }
-
-    private func searchResultsContent(
         cards: [ImportViewModel.Card],
         importingGroupId: String?
     ) -> some View {
@@ -112,7 +100,7 @@ struct ImportScreen: View {
             Spacer(minLength: 0)
             LazyVGrid(columns: gridColumns, spacing: 12) {
                 ForEach(cards) { card in
-                    importCard(card, importingGroupId: importingGroupId, displayMode: .importSearch)
+                    importCard(card, importingGroupId: importingGroupId)
                 }
             }
             .frame(maxWidth: gridFrameWidth, alignment: .center)
@@ -120,32 +108,9 @@ struct ImportScreen: View {
         }
     }
 
-    private func recommendedContent(
-        sections: [ImportViewModel.RecommendedCategorySection],
-        importingGroupId: String?
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            ForEach(sections) { section in
-                VStack(alignment: .leading, spacing: 10) {
-                    sectionTitle(section)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(alignment: .top, spacing: 14) {
-                            ForEach(section.cards) { card in
-                                importCard(card, importingGroupId: importingGroupId, displayMode: .importRecommendation)
-                                    .frame(width: 304)
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    }
-                }
-            }
-        }
-    }
-
     private func importCard(
         _ card: ImportViewModel.Card,
-        importingGroupId: String?,
-        displayMode: GroupCardDisplayMode
+        importingGroupId: String?
     ) -> some View {
         let isAnotherImportRunning = importingGroupId != nil && importingGroupId != card.id
 
@@ -154,7 +119,7 @@ struct ImportScreen: View {
                 card: importCardModel(for: card),
                 theme: theme,
                 accent: accent,
-                displayMode: displayMode,
+                displayMode: displayMode(for: card),
                 clickPolicy: .importSearch,
                 skillsCollapsed: false,
                 isUpdating: importingGroupId == card.id,
@@ -169,7 +134,7 @@ struct ImportScreen: View {
                     container.toggleAllSkills(for: card)
                 },
                 onToggleTarget: { targetId, enabled, _ in
-                    container.setTarget(targetId, enabled: enabled, for: card)
+                    container.handleTargetToggle(targetId, enabled: enabled, for: card)
                 },
                 onToggleAllTargets: {
                     container.toggleAllTargets(for: card)
@@ -185,7 +150,6 @@ struct ImportScreen: View {
                 actionButtonIcon: ActionIcon.import,
                 isActionButtonDisabled: Self.importActionIsDisabled(
                     for: card,
-                    selectedSkillIds: container.selectedSkillIdsForImport(for: card),
                     isAnotherImportRunning: isAnotherImportRunning
                 ),
                 onActionButton: {
@@ -206,10 +170,6 @@ struct ImportScreen: View {
 
             if card.localValidationStatus != nil, !card.localChoices.isEmpty {
                 localChoiceControl(for: card)
-            }
-
-            if !card.localSourcePaths.isEmpty {
-                localSourcePathsView(for: card)
             }
         }
     }
@@ -232,32 +192,6 @@ struct ImportScreen: View {
         .padding(.horizontal, 2)
     }
 
-    private func localSourcePathsView(for card: ImportViewModel.Card) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(t("import.local.sources.title"))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-            ForEach(card.localSourcePaths.prefix(3)) { sourcePath in
-                HStack(spacing: 6) {
-                    Text(sourcePath.targetLabel ?? t("import.local.source.manual"))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                    Text(sourcePath.path)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            if card.localSourcePaths.count > 3 {
-                Text(t("import.local.sources.more", card.localSourcePaths.count - 3))
-                    .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-            }
-        }
-        .padding(.horizontal, 2)
-    }
-
     private func localChoiceSelection(for card: ImportViewModel.Card) -> Binding<String> {
         Binding(
             get: {
@@ -269,27 +203,23 @@ struct ImportScreen: View {
         )
     }
 
-    private func sectionTitle(_ section: ImportViewModel.RecommendedCategorySection) -> some View {
-        let badgeAccent = SharedGroupCard.recommendationBadgeAccent(tagId: section.categoryId)
-
-        return Text("# \(section.title)")
-            .font(.system(size: 13, weight: .regular))
-            .foregroundStyle(AppTheme.brand(for: badgeAccent, in: theme))
-            .padding(.horizontal, 10)
-            .frame(height: 28)
-            .background(AppTheme.brand(for: badgeAccent, in: theme).opacity(theme == .dark ? 0.22 : 0.14))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+    private func displayMode(for card: ImportViewModel.Card) -> GroupCardDisplayMode {
+        if !card.recommendationBadgeItems.isEmpty || card.recommendationDescription != nil {
+            return .importRecommendation
+        }
+        return .importSearch
     }
 
     private func importCardModel(for card: ImportViewModel.Card) -> MainViewModel.GroupCardModel {
         let draft = container.draft(for: card)
-        let selectedSkillIds = Set(draft.selectedSkillIds)
+        let selectedSkillIds = Set(draft.selectedSkills.map(\.uiId))
         let enabledTargetIds = Set(draft.enabledTargetIds)
 
         return MainViewModel.GroupCardModel(
             id: card.id,
             title: card.title,
             byline: card.subtitle,
+            headerMetaLine: card.headerMetaLine,
             groupPath: nil,
             sourceKind: "import-preview",
             sourceLocator: card.locator,
@@ -297,7 +227,7 @@ struct ImportScreen: View {
             health: "DISCOVER",
             warningCount: 0,
             errorCount: 0,
-            skillSelection: importSelectionState(allIds: card.skills.map(\.id), selectedIds: draft.selectedSkillIds),
+            skillSelection: importSelectionState(allIds: card.skills.map(\.id), selectedIds: draft.selectedSkills.map(\.uiId)),
             targetSelection: importSelectionState(allIds: card.targets.map(\.id), selectedIds: draft.enabledTargetIds),
             stats: MainViewModel.GroupCardStats(
                 skillCount: card.stats.skillCount,
@@ -347,14 +277,12 @@ struct ImportScreen: View {
     static func importActionIsDisabled(
         for card: ImportViewModel.Card,
         draft: ImportDraftState? = nil,
-        selectedSkillIds: [String]? = nil,
         isAnotherImportRunning: Bool = false
     ) -> Bool {
         card.isInstalledLocally
             || card.requiresLocalVariantSelection
             || card.preparationStatus == "preparing"
             || isAnotherImportRunning
-            || ((selectedSkillIds ?? draft?.selectedSkillIds)?.isEmpty == true && !card.skills.isEmpty)
     }
 
     static func importActionTitle(
@@ -453,21 +381,17 @@ extension ImportScreen {
         case spinner
     }
 
-    static func previewGroupIDs(for cards: [ImportViewModel.Card]) -> [String] {
-        cards.filter(\.skillsLoading).map(\.id)
-    }
-
-    static func displayedCards(for content: ImportViewModel.Content) -> [ImportViewModel.Card] {
-        switch content {
-        case .recommended(let sections):
-            return sections.flatMap(\.cards)
-        case .searchResults(let cards):
-            return cards
+    static func groupIDsNeedingSkillDetails(for cards: [ImportViewModel.Card]) -> [String] {
+        cards.compactMap { card in
+            guard card.provider != "local", card.skills.isEmpty else {
+                return nil
+            }
+            return card.id
         }
     }
 
-    static func autoPreviewTaskKey(cards: [ImportViewModel.Card], submittedQuery: String) -> String {
-        ([submittedQuery] + previewGroupIDs(for: cards)).joined(separator: "|")
+    static func skillDetailsPrefetchTaskKey(cards: [ImportViewModel.Card], submittedQuery: String) -> String {
+        ([submittedQuery] + groupIDsNeedingSkillDetails(for: cards)).joined(separator: "|")
     }
 
     static func loadingPresentationStyle(

@@ -1,111 +1,21 @@
 [
   {
-    "canonicalRepo": "anthropics/skills",
-    "locator": "anthropics/skills",
-    "categoryId": "general",
-    "primaryTagId": "general",
-    "secondaryTagIds": ["development", "design"],
-    "descriptionKey": "import.recommendation.description.anthropics_skills",
+    "canonicalRepo": "dontbesilent2025/dbskill",
+    "locator": "dontbesilent2025/dbskill",
+    "categoryId": "creation",
+    "primaryTagId": "creation",
+    "secondaryTagIds": ["research"],
+    "descriptionKey": "import.recommendation.description.dontbesilent2025_dbskill",
     "sortOrder": 10
   },
   {
-    "canonicalRepo": "vercel-labs/agent-skills",
-    "locator": "vercel-labs/agent-skills",
-    "categoryId": "development",
-    "primaryTagId": "development",
-    "secondaryTagIds": ["design"],
-    "descriptionKey": "import.recommendation.description.vercel_labs_agent_skills",
-    "sortOrder": 20
-  },
-  {
-    "canonicalRepo": "supabase/agent-skills",
-    "locator": "supabase/agent-skills",
-    "categoryId": "development",
-    "primaryTagId": "development",
-    "secondaryTagIds": ["general"],
-    "descriptionKey": "import.recommendation.description.supabase_agent_skills",
-    "sortOrder": 30
-  },
-  {
-    "canonicalRepo": "shadcn-ui/ui",
-    "locator": "shadcn-ui/ui",
-    "categoryId": "development",
-    "primaryTagId": "development",
-    "secondaryTagIds": ["design"],
-    "descriptionKey": "import.recommendation.description.shadcn_ui_ui",
-    "sortOrder": 40
-  },
-  {
-    "canonicalRepo": "obra/superpowers",
-    "locator": "obra/superpowers",
-    "categoryId": "development",
-    "primaryTagId": "development",
-    "secondaryTagIds": ["teamwork", "automation"],
-    "descriptionKey": "import.recommendation.description.obra_superpowers",
-    "sortOrder": 50
-  },
-  {
-    "canonicalRepo": "garrytan/gstack",
-    "locator": "garrytan/gstack",
-    "categoryId": "development",
-    "primaryTagId": "development",
-    "secondaryTagIds": ["teamwork"],
-    "descriptionKey": "import.recommendation.description.garrytan_gstack",
-    "sortOrder": 60
-  },
-  {
-    "canonicalRepo": "zarazhangrui/codebase-to-course",
-    "locator": "zarazhangrui/codebase-to-course",
-    "categoryId": "development",
-    "primaryTagId": "development",
-    "secondaryTagIds": ["creation", "research"],
-    "descriptionKey": "import.recommendation.description.zarazhangrui_codebase_to_course",
-    "sortOrder": 70
-  },
-  {
-    "canonicalRepo": "jakubkrehel/make-interfaces-feel-better",
-    "locator": "jakubkrehel/make-interfaces-feel-better",
-    "categoryId": "design",
-    "primaryTagId": "design",
-    "secondaryTagIds": ["development"],
-    "descriptionKey": "import.recommendation.description.jakubkrehel_make_interfaces_feel_better",
-    "sortOrder": 80
-  },
-  {
-    "canonicalRepo": "pbakaus/impeccable",
-    "locator": "pbakaus/impeccable",
-    "categoryId": "design",
-    "primaryTagId": "design",
-    "secondaryTagIds": ["development"],
-    "descriptionKey": "import.recommendation.description.pbakaus_impeccable",
-    "sortOrder": 90
-  },
-  {
-    "canonicalRepo": "nextlevelbuilder/ui-ux-pro-max-skill",
-    "locator": "nextlevelbuilder/ui-ux-pro-max-skill",
-    "categoryId": "design",
-    "primaryTagId": "design",
-    "secondaryTagIds": ["development"],
-    "descriptionKey": "import.recommendation.description.nextlevelbuilder_ui_ux_pro_max_skill",
-    "sortOrder": 100
-  },
-  {
-    "canonicalRepo": "zanwei/design-dna",
-    "locator": "zanwei/design-dna",
-    "categoryId": "design",
-    "primaryTagId": "design",
-    "secondaryTagIds": ["creation"],
-    "descriptionKey": "import.recommendation.description.zanwei_design_dna",
-    "sortOrder": 110
-  },
-  {
-    "canonicalRepo": "remotion-dev/skills",
-    "locator": "remotion-dev/skills",
+    "canonicalRepo": "lijigang/ljg-skills",
+    "locator": "lijigang/ljg-skills",
     "categoryId": "creation",
     "primaryTagId": "creation",
-    "secondaryTagIds": ["development"],
-    "descriptionKey": "import.recommendation.description.remotion_dev_skills",
-    "sortOrder": 120
+    "secondaryTagIds": ["research"],
+    "descriptionKey": "import.recommendation.description.lijigang_ljg_skills",
+    "sortOrder": 20
   },
   {
     "canonicalRepo": "jimliu/baoyu-skills",
@@ -114,61 +24,79 @@
     "primaryTagId": "creation",
     "secondaryTagIds": ["marketing"],
     "descriptionKey": "import.recommendation.description.jimliu_baoyu_skills",
-    "sortOrder": 130
+    "sortOrder": 30
   },
   {
-    "canonicalRepo": "zarazhangrui/frontend-slides",
-    "locator": "zarazhangrui/frontend-slides",
+    "canonicalRepo": "op7418/humanizer-zh",
+    "locator": "op7418/humanizer-zh",
     "categoryId": "creation",
     "primaryTagId": "creation",
-    "secondaryTagIds": ["design"],
-    "descriptionKey": "import.recommendation.description.zarazhangrui_frontend_slides",
-    "sortOrder": 140
+    "secondaryTagIds": ["writing"],
+    "descriptionKey": "import.recommendation.description.op7418_humanizer_zh",
+    "sortOrder": 40
   },
   {
-    "canonicalRepo": "coreyhaines31/marketingskills",
-    "locator": "coreyhaines31/marketingskills",
-    "categoryId": "marketing",
-    "primaryTagId": "marketing",
-    "secondaryTagIds": ["creation", "research"],
-    "descriptionKey": "import.recommendation.description.coreyhaines31_marketingskills",
-    "sortOrder": 150
+    "canonicalRepo": "op7418/guizang-ppt-skill",
+    "locator": "op7418/guizang-ppt-skill",
+    "categoryId": "creation",
+    "primaryTagId": "creation",
+    "secondaryTagIds": ["design", "content"],
+    "descriptionKey": "import.recommendation.description.op7418_guizang_ppt_skill",
+    "sortOrder": 50
   },
   {
-    "canonicalRepo": "dontbesilent2025/dbskill",
-    "locator": "dontbesilent2025/dbskill",
-    "categoryId": "marketing",
-    "primaryTagId": "marketing",
-    "secondaryTagIds": ["research"],
-    "descriptionKey": "import.recommendation.description.dontbesilent2025_dbskill",
-    "sortOrder": 160
+    "canonicalRepo": "obra/superpowers",
+    "locator": "obra/superpowers",
+    "categoryId": "development",
+    "primaryTagId": "development",
+    "secondaryTagIds": ["teamwork", "automation"],
+    "descriptionKey": "import.recommendation.description.obra_superpowers",
+    "sortOrder": 60
   },
   {
-    "canonicalRepo": "mvanhorn/last30days-skill",
-    "locator": "mvanhorn/last30days-skill",
+    "canonicalRepo": "garrytan/gstack",
+    "locator": "garrytan/gstack",
+    "categoryId": "development",
+    "primaryTagId": "development",
+    "secondaryTagIds": ["teamwork"],
+    "descriptionKey": "import.recommendation.description.garrytan_gstack",
+    "sortOrder": 70
+  },
+  {
+    "canonicalRepo": "pbakaus/impeccable",
+    "locator": "pbakaus/impeccable",
+    "categoryId": "design",
+    "primaryTagId": "design",
+    "secondaryTagIds": ["development"],
+    "descriptionKey": "import.recommendation.description.pbakaus_impeccable",
+    "sortOrder": 80
+  },
+  {
+    "canonicalRepo": "leonxlnx/taste-skill",
+    "locator": "leonxlnx/taste-skill",
+    "categoryId": "design",
+    "primaryTagId": "design",
+    "secondaryTagIds": ["frontend"],
+    "descriptionKey": "import.recommendation.description.leonxlnx_taste_skill",
+    "sortOrder": 90
+  },
+  {
+    "canonicalRepo": "anysearch-ai/anysearch-skill",
+    "locator": "anysearch-ai/anysearch-skill",
     "categoryId": "research",
     "primaryTagId": "research",
-    "secondaryTagIds": ["marketing"],
-    "descriptionKey": "import.recommendation.description.mvanhorn_last30days_skill",
-    "sortOrder": 170
+    "secondaryTagIds": ["automation"],
+    "descriptionKey": "import.recommendation.description.anysearch_ai_anysearch_skill",
+    "sortOrder": 100
   },
   {
-    "canonicalRepo": "lijigang/ljg-skills",
-    "locator": "lijigang/ljg-skills",
+    "canonicalRepo": "199-biotechnologies/claude-deep-research-skill",
+    "locator": "199-biotechnologies/claude-deep-research-skill",
     "categoryId": "research",
     "primaryTagId": "research",
-    "secondaryTagIds": ["creation"],
-    "descriptionKey": "import.recommendation.description.lijigang_ljg_skills",
-    "sortOrder": 180
-  },
-  {
-    "canonicalRepo": "kepano/obsidian-skills",
-    "locator": "kepano/obsidian-skills",
-    "categoryId": "research",
-    "primaryTagId": "research",
-    "secondaryTagIds": ["general"],
-    "descriptionKey": "import.recommendation.description.kepano_obsidian_skills",
-    "sortOrder": 190
+    "secondaryTagIds": ["automation"],
+    "descriptionKey": "import.recommendation.description.199_biotechnologies_claude_deep_research_skill",
+    "sortOrder": 110
   },
   {
     "canonicalRepo": "vercel-labs/agent-browser",
@@ -177,7 +105,7 @@
     "primaryTagId": "automation",
     "secondaryTagIds": ["development"],
     "descriptionKey": "import.recommendation.description.vercel_labs_agent_browser",
-    "sortOrder": 200
+    "sortOrder": 120
   },
   {
     "canonicalRepo": "joeseesun/opencli-skill",
@@ -186,6 +114,42 @@
     "primaryTagId": "automation",
     "secondaryTagIds": ["creation", "marketing"],
     "descriptionKey": "import.recommendation.description.joeseesun_opencli_skill",
-    "sortOrder": 210
+    "sortOrder": 130
+  },
+  {
+    "canonicalRepo": "anthropics/skills",
+    "locator": "anthropics/skills",
+    "categoryId": "general",
+    "primaryTagId": "general",
+    "secondaryTagIds": ["development", "design"],
+    "descriptionKey": "import.recommendation.description.anthropics_skills",
+    "sortOrder": 140
+  },
+  {
+    "canonicalRepo": "vercel-labs/agent-skills",
+    "locator": "vercel-labs/agent-skills",
+    "categoryId": "general",
+    "primaryTagId": "general",
+    "secondaryTagIds": ["frontend"],
+    "descriptionKey": "import.recommendation.description.vercel_labs_agent_skills",
+    "sortOrder": 150
+  },
+  {
+    "canonicalRepo": "kepano/obsidian-skills",
+    "locator": "kepano/obsidian-skills",
+    "categoryId": "general",
+    "primaryTagId": "general",
+    "secondaryTagIds": ["knowledge"],
+    "descriptionKey": "import.recommendation.description.kepano_obsidian_skills",
+    "sortOrder": 160
+  },
+  {
+    "canonicalRepo": "vibeforge1111/keep-codex-fast",
+    "locator": "vibeforge1111/keep-codex-fast",
+    "categoryId": "general",
+    "primaryTagId": "general",
+    "secondaryTagIds": ["development", "workflow"],
+    "descriptionKey": "import.recommendation.description.vibeforge1111_keep_codex_fast",
+    "sortOrder": 170
   }
 ]

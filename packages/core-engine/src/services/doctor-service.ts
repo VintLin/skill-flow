@@ -6,20 +6,21 @@ import type {
   DoctorIssue,
   DoctorReport,
   LockFile,
-  Manifest,
+  ManifestFile,
+  PreferencesFile,
+  ProjectionRecord,
+  SourceBinding,
   Result,
-  SharedPreferences,
 } from "@skill-flow/domain/types";
-import { getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { hashDirectory, isBrokenSymlink, pathExists } from "@skill-flow/integration/utils/fs";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
 import { ok } from "@skill-flow/integration/utils/result";
 
 export class DoctorService {
   async run(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
-    preferences: SharedPreferences,
+    preferences: PreferencesFile,
   ): Promise<Result<DoctorReport>> {
     const issues: DoctorIssue[] = [];
     const adapters = createChannelAdapters(
@@ -27,15 +28,14 @@ export class DoctorService {
     );
 
     for (const source of manifest.sources) {
-      const binding = manifest.bindings[source.id] ?? { targets: {} };
-      const sourceLock = lockFile.sources.find((item) => item.id === source.id);
+      const binding = summaryBinding(manifest.bindings[source.id], source.id, lockFile);
+      const sourceLock = sourceLockById(lockFile, source.id);
       const invalidLeafPaths = new Set(
-        sourceLock?.invalidLeafs.map((leaf) => leaf.path) ?? [],
+        sourceLock?.invalidLeafPaths ?? [],
       );
 
       for (const adapter of adapters) {
-        const configured = binding.targets[adapter.target];
-        if (!configured?.enabled) {
+        if (!binding.enabledTargets.includes(adapter.target)) {
           continue;
         }
 
@@ -52,7 +52,7 @@ export class DoctorService {
           continue;
         }
 
-        for (const leafId of configured.leafIds) {
+        for (const leafId of binding.selectedLeafIds) {
           const selectedPath = this.getLeafPath(source.id, leafId);
           if (selectedPath && invalidLeafPaths.has(selectedPath)) {
             issues.push({
@@ -68,8 +68,8 @@ export class DoctorService {
             continue;
           }
 
-          const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
-          const deployment = getManagedDeployments(lockFile).find(
+          const leaf = lockFile.leafInventory.find((item) => item.id === leafId && item.valid !== false);
+          const deployment = activeProjections(lockFile).find(
             (item) =>
               item.sourceId === source.id &&
               item.leafId === leafId &&
@@ -170,7 +170,7 @@ export class DoctorService {
 
     await this.reportUnmanagedExternalSkills(lockFile, issues, adapters);
 
-    for (const deployment of getManagedDeployments(lockFile)) {
+    for (const deployment of activeProjections(lockFile)) {
       const sourceStillExists = manifest.sources.some(
         (source) => source.id === deployment.sourceId,
       );
@@ -211,7 +211,7 @@ export class DoctorService {
     adapters = createChannelAdapters(),
   ): Promise<void> {
     const managedTargetPaths = new Set(
-      getManagedDeployments(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
+      activeProjections(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
     );
     const seenPaths = new Set<string>();
 
@@ -254,4 +254,54 @@ export class DoctorService {
       }
     }
   }
+}
+
+function sourceLockById(
+  lockFile: LockFile,
+  sourceId: string,
+): { invalidLeafPaths: string[] } | undefined {
+  const source = lockFile.sources[sourceId];
+  return source
+    ? {
+      invalidLeafPaths: lockFile.leafInventory
+        .filter((leaf) => leaf.sourceId === source.sourceId && leaf.valid === false)
+        .map((leaf) => leaf.relativePath),
+    }
+    : undefined;
+}
+
+function summaryBinding(
+  binding: SourceBinding | undefined,
+  sourceId: string,
+  lockFile: LockFile,
+): SourceBinding {
+  if (
+    !binding ||
+    !Array.isArray((binding as Partial<SourceBinding>).enabledTargets) ||
+    !Array.isArray((binding as Partial<SourceBinding>).selectedLeafIds)
+  ) {
+    return {
+      sourceId,
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    };
+  }
+  const selectedLeafIds = binding.selectionMode === "all"
+    ? sourceLeafIds(lockFile, sourceId)
+    : binding.selectedLeafIds;
+  return {
+    sourceId,
+    selectionMode: binding.selectionMode,
+    selectedLeafIds,
+    enabledTargets: [...binding.enabledTargets],
+  };
+}
+
+function sourceLeafIds(lockFile: LockFile, sourceId: string): string[] {
+  return lockFile.sources[sourceId]?.leafIds ?? [];
+}
+
+function activeProjections(lockFile: LockFile): ProjectionRecord[] {
+  return lockFile.projections.filter((projection) => projection.status === "active");
 }

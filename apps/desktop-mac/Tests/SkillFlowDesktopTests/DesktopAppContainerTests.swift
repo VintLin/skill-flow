@@ -141,10 +141,10 @@ private struct StubCommandFacade: DesktopCommanding {
     func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse { fatalError("unused") }
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
     func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse { fatalError("unused") }
-    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
+    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
+    func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
     func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse { fatalError("unused") }
+    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse { fatalError("unused") }
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse { fatalError("unused") }
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse { fatalError("unused") }
     func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }

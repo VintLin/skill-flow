@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import type {
-  CollectionsFileV2,
-  LockFileV2,
-  ManifestFileV2,
-  PreferencesFileV2,
+  CollectionsFile,
+  LockFile,
+  ManifestFile,
+  PreferencesFile,
 } from "@skill-flow/domain/types";
-import { StateStoreV2, StateStoreV2Error } from "@skill-flow/storage/state-store-v2";
+import { StateStore, StateStoreError } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
 import { pathExists, useSkillFlowSandbox } from "./test-helpers.js";
 
@@ -105,14 +105,12 @@ describe.sequential("runtime v2 authority reads", () => {
       return;
     }
     expect(preview.data.manifest.bindings.repo).toEqual({
-      selectedLeafIds: ["repo:one", "repo:two"],
-      targets: {
-        codex: {
-          enabled: true,
-          leafIds: ["repo:one", "repo:two"],
-        },
-      },
+      sourceId: "repo",
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets: ["codex"],
     });
+    expect(preview.data.lockFile.sources.repo?.leafIds).toEqual(["repo:one", "repo:two"]);
     expect(preview.data.plan.actions).toEqual([
       expect.objectContaining({
         kind: "update",
@@ -163,7 +161,7 @@ describe.sequential("runtime v2 authority reads", () => {
       }),
     ]);
 
-    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    const state = await new StateStore(sandbox.stateRoot).readState();
     expect(state.manifest.bindings.repo).toEqual({
       sourceId: "repo",
       selectionMode: "all",
@@ -211,7 +209,7 @@ describe.sequential("runtime v2 authority reads", () => {
       }),
     ]);
 
-    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    const state = await new StateStore(sandbox.stateRoot).readState();
     expect(state.manifest.bindings.repo).toEqual({
       sourceId: "repo",
       selectionMode: "selected",
@@ -228,7 +226,7 @@ describe.sequential("runtime v2 authority reads", () => {
         }),
       ]),
     );
-    expect((state.lockFile as LockFileV2 & { deployments?: unknown }).deployments).toBeUndefined();
+    expect((state.lockFile as LockFile & { deployments?: unknown }).deployments).toBeUndefined();
     await expectRawLockToBeV2Only(sandbox.stateRoot);
   });
 
@@ -275,7 +273,7 @@ describe.sequential("runtime v2 authority reads", () => {
       }),
     ]);
 
-    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    const state = await new StateStore(sandbox.stateRoot).readState();
     expect(state.manifest.bindings.repo).toEqual({
       sourceId: "repo",
       selectionMode: "selected",
@@ -295,12 +293,12 @@ describe.sequential("runtime v2 authority reads", () => {
     await expectRawLockToBeV2Only(sandbox.stateRoot);
   });
 
-  test("createVirtualGroup materializes a v2 collection without legacy state writes", async () => {
+  test("createCollection materializes a v2 collection without legacy state writes", async () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox));
     await writeSourceLeafFiles(sandbox);
     const app = new SkillFlowApp();
 
-    const created = await app.createVirtualGroup({
+    const created = await app.createCollection({
       displayName: "Writing Stack",
       skills: [
         { sourceId: "repo", leafId: "repo:one" },
@@ -324,7 +322,7 @@ describe.sequential("runtime v2 authority reads", () => {
     }));
     expect(created.data.source).toEqual(expect.objectContaining({
       id: "writing-stack",
-      kind: "virtual",
+      kind: "collection",
       locator: "collection:writing-stack",
       displayName: "Writing Stack",
     }));
@@ -338,7 +336,7 @@ describe.sequential("runtime v2 authority reads", () => {
       },
     });
 
-    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    const state = await new StateStore(sandbox.stateRoot).readState();
     expect(state.manifest.sources).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -471,7 +469,7 @@ describe.sequential("runtime v2 authority reads", () => {
     await expectRawLockToBeV2Only(sandbox.stateRoot);
   });
 
-  test("mergeGroups and restoreMergedGroups use v2 collection state only", async () => {
+  test("mergeGroups and restoreCollectionSources use v2 collection state only", async () => {
     await writeAuthorityState(sandbox.stateRoot, createMergeAuthorityState(sandbox));
     await writeMergeSourceLeafFiles(sandbox);
     const app = new SkillFlowApp();
@@ -496,7 +494,7 @@ describe.sequential("runtime v2 authority reads", () => {
       ],
     }));
 
-    const mergedState = await new StateStoreV2(sandbox.stateRoot).readState();
+    const mergedState = await new StateStore(sandbox.stateRoot).readState();
     expect(mergedState.manifest.bindings.repo).toEqual({
       sourceId: "repo",
       selectionMode: "selected",
@@ -549,19 +547,19 @@ describe.sequential("runtime v2 authority reads", () => {
         }),
       ]);
 
-    const restored = await app.restoreMergedGroups("writing-stack");
+    const restored = await app.restoreCollectionSources("writing-stack");
 
     expect(restored.ok).toBe(true);
     if (!restored.ok) {
       return;
     }
     expect(restored.data).toEqual({
-      virtualGroupId: "writing-stack",
+      collectionId: "writing-stack",
       restoredSourceIds: ["repo", "beta"],
       skippedSourceIds: [],
     });
 
-    const restoredState = await new StateStoreV2(sandbox.stateRoot).readState();
+    const restoredState = await new StateStore(sandbox.stateRoot).readState();
     expect(restoredState.manifest.sources.some((source) => source.id === "writing-stack")).toBe(false);
     expect(restoredState.manifest.bindings["writing-stack"]).toBeUndefined();
     expect(restoredState.lockFile.sources["writing-stack"]).toBeUndefined();
@@ -648,7 +646,7 @@ describe.sequential("runtime v2 authority reads", () => {
     expect(listed.data.pinnedSourceIds).toEqual(["repo"]);
     expect(listed.data.customTargets.map((target) => target.id)).toEqual(["team-target"]);
 
-    const state = await new StateStoreV2(sandbox.stateRoot).readState();
+    const state = await new StateStore(sandbox.stateRoot).readState();
     expect(state.preferences.schemaVersion).toBe(2);
     expect(state.preferences.pinnedSourceIds).toEqual(["repo"]);
     expect(state.preferences.projectSourceDrafts).toEqual({
@@ -667,23 +665,23 @@ describe.sequential("runtime v2 authority reads", () => {
     await writeV1AuthorityFiles(sandbox.stateRoot);
     const app = new SkillFlowApp();
 
-    await expect(app.inspectSource("repo")).rejects.toBeInstanceOf(StateStoreV2Error);
+    await expect(app.inspectSource("repo")).rejects.toBeInstanceOf(StateStoreError);
   });
 });
 
 type AuthorityOverrides = {
-  lockFile?: Partial<LockFileV2>;
-  preferences?: Partial<PreferencesFileV2>;
+  lockFile?: Partial<LockFile>;
+  preferences?: Partial<PreferencesFile>;
 };
 
 function createAuthorityState(
   sandbox: ReturnType<typeof useSkillFlowSandbox>,
   overrides: AuthorityOverrides = {},
 ): {
-  manifest: ManifestFileV2;
-  lockFile: LockFileV2;
-  preferences: PreferencesFileV2;
-  collections: CollectionsFileV2;
+  manifest: ManifestFile;
+  lockFile: LockFile;
+  preferences: PreferencesFile;
+  collections: CollectionsFile;
 } {
   const migrationGeneration = "mg_runtime_v2";
   const sourceRoot = path.join(sandbox.sandboxRoot, "sources", "repo");
@@ -694,7 +692,7 @@ function createAuthorityState(
       sources: [
         {
           id: "repo",
-          kind: "github",
+          kind: "git",
           locator: "https://github.com/acme/repo",
           canonicalLocator: "github:acme/repo",
           displayName: "V2 Repo",
@@ -720,7 +718,7 @@ function createAuthorityState(
           sourceId: "repo",
           canonicalLocator: "github:acme/repo",
           revision: {
-            provider: "github",
+            provider: "git",
             commit: "abc123",
             capturedAt: "2026-06-04T00:00:00.000Z",
           },
@@ -795,7 +793,7 @@ function createMergeAuthorityState(
   const betaRoot = path.join(sandbox.sandboxRoot, "sources", "beta");
   state.manifest.sources.push({
     id: "beta",
-    kind: "github",
+    kind: "git",
     locator: "https://github.com/acme/beta",
     canonicalLocator: "github:acme/beta",
     displayName: "Beta Repo",
@@ -813,7 +811,7 @@ function createMergeAuthorityState(
     sourceId: "beta",
     canonicalLocator: "github:acme/beta",
     revision: {
-      provider: "github",
+      provider: "git",
       commit: "def456",
       capturedAt: "2026-06-04T00:00:00.000Z",
     },
@@ -854,7 +852,7 @@ function createLeaf(
   linkName: string,
   sourceRoot: string,
   sourceId = "repo",
-): LockFileV2["leafInventory"][number] {
+): LockFile["leafInventory"][number] {
   return {
     id,
     sourceId,
@@ -866,7 +864,7 @@ function createLeaf(
     skillFilePath: path.join(sourceRoot, linkName, "SKILL.md"),
     displayName: linkName,
     contentHash: `hash-${linkName}`,
-    selectors: { legacyAliases: [] },
+    selectors: { aliases: [] },
     valid: true,
     diagnostics: [],
   };
@@ -875,13 +873,13 @@ function createLeaf(
 async function writeAuthorityState(
   stateRoot: string,
   state: {
-    manifest: ManifestFileV2;
-    lockFile: LockFileV2;
-    preferences: PreferencesFileV2;
-    collections: CollectionsFileV2;
+    manifest: ManifestFile;
+    lockFile: LockFile;
+    preferences: PreferencesFile;
+    collections: CollectionsFile;
   },
 ): Promise<void> {
-  await new StateStoreV2(stateRoot).writeState(state);
+  await new StateStore(stateRoot).writeState(state);
 }
 
 async function writeSourceLeafFiles(sandbox: ReturnType<typeof useSkillFlowSandbox>): Promise<void> {

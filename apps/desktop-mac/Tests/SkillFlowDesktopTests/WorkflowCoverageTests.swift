@@ -11,7 +11,7 @@ final class WorkflowCoverageTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: "desktop.pinnedSourceIds")
-        UserDefaults.standard.removeObject(forKey: "desktop.pinnedSourceIds.migratedToSharedPreferences")
+        UserDefaults.standard.removeObject(forKey: "desktop.pinnedSourceIds.migratedToRuntimePreferences")
         UserDefaults.standard.set(DesktopLanguage.en.rawValue, forKey: DesktopLanguage.storageKey)
     }
 
@@ -70,7 +70,7 @@ final class WorkflowCoverageTests: XCTestCase {
 
         let migrated = try await fixture.makeModel()
         XCTAssertEqual(migrated.pinnedSourceIds, ["beta"])
-        XCTAssertTrue(UserDefaults.standard.bool(forKey: "desktop.pinnedSourceIds.migratedToSharedPreferences"))
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: "desktop.pinnedSourceIds.migratedToRuntimePreferences"))
         XCTAssertNil(UserDefaults.standard.stringArray(forKey: "desktop.pinnedSourceIds"))
 
         UserDefaults.standard.set(["alpha"], forKey: "desktop.pinnedSourceIds")
@@ -146,7 +146,7 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(model.sourceIds, ["alpha", "beta"])
 
         let commands = fixture.loggedRequests().map(\.command)
-        XCTAssertEqual(commands.first, "bootstrap")
+        XCTAssertEqual(Array(commands.prefix(2)), ["migrate-state", "bootstrap"])
         XCTAssertFalse(commands.contains("list"))
         XCTAssertFalse(commands.contains("doctor"))
     }
@@ -324,18 +324,12 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(previewed?.snapshot?.trust?.labels, ["Official", "Trending"])
         XCTAssertEqual(previewed?.matchedSkills, [])
         XCTAssertNil(previewed?.preparationId)
-        XCTAssertEqual(previewed?.preparationStatus, "preparing")
-
-        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
-            let prepared = model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" })
-            return prepared?.preparationId == "prep-anthropics-skills"
-                && prepared?.preparationStatus == "ready"
-        }
+        XCTAssertNil(previewed?.preparationStatus)
 
         let requests = fixture.loggedRequests().map(\.command)
         XCTAssertFalse(requests.contains("search-import-groups"))
         XCTAssertTrue(requests.contains("preview-import-source"))
-        XCTAssertTrue(requests.contains("prepare-import-source"))
+        XCTAssertFalse(requests.contains("prepare-import-source"))
     }
 
     func testImportPageShowsCachedSnapshotSkillsBeforePreviewRuns() async throws {
@@ -351,6 +345,26 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(cached?.skills.map(\.id), [])
         XCTAssertEqual(cached?.previewPhase, .idle)
         XCTAssertFalse(fixture.loggedRequests().contains(where: { $0.command == "preview-import-source" }))
+    }
+
+    func testImportPageContainerSnapshotUsesFlatCardContentForRecommendations() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let runtime = DesktopRuntime()
+        let container = DesktopAppContainer(runtime: runtime)
+        runtime.state.view.currentRoute = .importPage
+
+        await container.mainViewModel.loadImportPageIfNeeded()
+
+        let expectedRecommendationIds = ImportRecommendationLoader.load().map { entry in
+            entry.canonicalRepo.replacingOccurrences(of: "/", with: "-")
+        }
+
+        XCTAssertEqual(
+            container.importContainer.snapshot(locale: Locale(identifier: "en"))?.content.map(\.id),
+            expectedRecommendationIds
+        )
     }
 
     func testImportPageMarksRecommendationAsInstalledWhenExistingSourceUsesGitHubLocator() async throws {
@@ -453,9 +467,6 @@ final class WorkflowCoverageTests: XCTestCase {
         runtime.state.view.currentRoute = .importPage
         await model.loadImportPageIfNeeded()
         await model.previewImportGroupIfNeeded("anthropics-skills")
-        await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
-            model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" })?.preparationStatus == "ready"
-        }
 
         let card = try XCTUnwrap(model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" }))
         XCTAssertEqual(card.locator, "anthropics/skills")
@@ -463,7 +474,7 @@ final class WorkflowCoverageTests: XCTestCase {
         await model.importImportGroup(
             groupId: "anthropics-skills",
             locator: card.locator,
-            selectedSkillIds: ["research"],
+            selectedSkills: [.repoPath("research")],
             enabledTargets: ["cursor"]
         )
         await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
@@ -483,13 +494,17 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(model.toast?.message, "Imported source.")
 
         let importRequests = fixture.loggedRequests().filter { $0.command == "import-source" }
-        XCTAssertEqual(importRequests.count, 0)
+        XCTAssertEqual(importRequests.count, 1)
         let commitRequests = fixture.loggedRequests().filter { $0.command == "commit-import-source" }
-        XCTAssertEqual(commitRequests.count, 1)
-        XCTAssertEqual(commitRequests.first?.payload?["preparationId"]?.value as? String, "prep-anthropics-skills")
-        let draft = commitRequests.first?.payload?["draft"]?.value as? [String: Any]
-        XCTAssertEqual(draft?["selectedSkillIds"] as? [String], ["research"])
-        XCTAssertNil(draft?["selectedSkills"])
+        XCTAssertEqual(commitRequests.count, 0)
+        XCTAssertEqual(importRequests.first?.payload?["locator"]?.value as? String, "anthropics/skills")
+        let draft = importRequests.first?.payload?["draft"]?.value as? [String: Any]
+        XCTAssertEqual(draft?["skillSelectionMode"] as? String, "selected")
+        let selectedSkills = draft?["selectedSkills"] as? [[String: Any]]
+        XCTAssertEqual(selectedSkills?.first?["uiId"] as? String, "research")
+        XCTAssertEqual((selectedSkills?.first?["selector"] as? [String: Any])?["kind"] as? String, "repoPath")
+        XCTAssertEqual((selectedSkills?.first?["selector"] as? [String: Any])?["path"] as? String, "research")
+        XCTAssertNil(draft?["selectedSkillIds"])
         XCTAssertEqual(draft?["enabledTargets"] as? [String], ["cursor"])
     }
 
@@ -507,7 +522,7 @@ final class WorkflowCoverageTests: XCTestCase {
         await model.importImportGroup(
             groupId: group.id,
             locator: group.locator,
-            selectedSkillIds: ["research"],
+            selectedSkills: [.repoPath("research")],
             enabledTargets: []
         )
         await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
@@ -534,7 +549,7 @@ final class WorkflowCoverageTests: XCTestCase {
         await model.importImportGroup(
             groupId: "anthropics-skills",
             locator: "anthropic/skills",
-            selectedSkillIds: ["research"],
+            selectedSkills: [.repoPath("research")],
             enabledTargets: []
         )
 
@@ -557,7 +572,7 @@ final class WorkflowCoverageTests: XCTestCase {
         await model.importImportGroup(
             groupId: "anthropics-skills",
             locator: "anthropics/skills",
-            selectedSkillIds: ["skills-main/skills/frontend-design"],
+            selectedSkills: [.repoPath("skills-main/skills/frontend-design")],
             enabledTargets: []
         )
 
@@ -1448,7 +1463,6 @@ private struct TestFixture {
             summary: skill.summary || ''
           })),
           targets: (group.targets || []).map((target) => ({ id: target })),
-          selectedSkillIds: (group.skills || []).map((skill) => skill.id),
           selectedSkills: (group.skills || []).map((skill) => ({
             uiId: skill.id,
             selector: { kind: 'repoPath', path: skill.id }
@@ -1513,10 +1527,8 @@ private struct TestFixture {
 
         const draft = request.payload && request.payload.draft ? request.payload.draft : {};
         const selectedSkills = Array.isArray(draft.selectedSkills) ? draft.selectedSkills : [];
-        const selectedSkillIds = selectedSkills.length > 0
+        const selectedRepoPaths = draft.skillSelectionMode === 'selected'
           ? selectedSkills.map((skill) => skill && skill.selector && skill.selector.path).filter(Boolean)
-          : Array.isArray(draft.selectedSkillIds) && draft.selectedSkillIds.length > 0
-          ? draft.selectedSkillIds
           : (group.skills || []).map((skill) => skill.id);
         const enabledTargets = Array.isArray(draft.enabledTargets) ? draft.enabledTargets : [];
 
@@ -1529,7 +1541,7 @@ private struct TestFixture {
           kind: 'git',
           canonicalRepo: group.canonicalRepo,
           leafIds: (group.skills || []).map((skill) => `${group.id}:${skill.id}`),
-          selectedLeafIds: selectedSkillIds.map((skillId) => `${group.id}:${skillId}`),
+          selectedLeafIds: selectedRepoPaths.map((skillId) => `${group.id}:${skillId}`),
           enabledTargets
         };
         writeState(state);
@@ -1555,10 +1567,8 @@ private struct TestFixture {
 
         const draft = request.payload && request.payload.draft ? request.payload.draft : {};
         const selectedSkills = Array.isArray(draft.selectedSkills) ? draft.selectedSkills : [];
-        const selectedSkillIds = selectedSkills.length > 0
+        const selectedRepoPaths = draft.skillSelectionMode === 'selected'
           ? selectedSkills.map((skill) => skill && skill.selector && skill.selector.path).filter(Boolean)
-          : Array.isArray(draft.selectedSkillIds) && draft.selectedSkillIds.length > 0
-          ? draft.selectedSkillIds
           : (group.skills || []).map((skill) => skill.id);
         const enabledTargets = Array.isArray(draft.enabledTargets) ? draft.enabledTargets : [];
 
@@ -1571,7 +1581,7 @@ private struct TestFixture {
           kind: 'git',
           canonicalRepo: group.canonicalRepo,
           leafIds: (group.skills || []).map((skill) => skill.id),
-          selectedLeafIds: selectedSkillIds,
+          selectedLeafIds: selectedRepoPaths,
           enabledTargets
         };
         writeState(state);

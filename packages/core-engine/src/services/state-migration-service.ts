@@ -2,15 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   DeploymentStrategy,
-  DiagnosticV2,
-  LeafRecordV2,
+  Diagnostic,
+  LeafRecord,
   ProjectScope,
 } from "@skill-flow/domain/types";
 import {
   CURRENT_MIGRATION_MARKER_VERSION,
   inspectStateMigrationStatus,
   type StateMigrationStatus,
-} from "@skill-flow/storage/state-schema-v2";
+} from "@skill-flow/storage/state-schema";
 import {
   hasLegacyVirtualGroups,
   legacyVirtualGroupsPath,
@@ -18,7 +18,10 @@ import {
   readLegacyVirtualGroups,
   validateLegacyVirtualGroupsJson,
 } from "./legacy-virtual-group.js";
+import { parseSkillFrontmatterScalar } from "./skill-frontmatter.js";
 import { materializeSkillCollectionMembers } from "./skill-collection-materializer.js";
+
+const AUTHORITY_FILE_NAMES = ["manifest.json", "lock.json", "preferences.json", "collections.json"] as const;
 
 export type StateMigrationAction =
   | {
@@ -28,6 +31,11 @@ export type StateMigrationAction =
   | {
       action: "materialize-collection";
       path: string;
+    }
+  | {
+      action: "move";
+      path: string;
+      to: string;
     }
   | {
       action: "prune";
@@ -58,6 +66,7 @@ export type StateMigrationOptions = {
   to: 2;
   dryRun?: boolean;
   backup?: boolean;
+  tolerateOrphanSources?: boolean;
 };
 
 export type StateMigrationServiceOptions = {
@@ -66,11 +75,11 @@ export type StateMigrationServiceOptions = {
 
 export class StateMigrationError extends Error {
   readonly reasonCode: string;
-  readonly diagnostics: DiagnosticV2[];
+  readonly diagnostics: Diagnostic[];
 
   constructor(input: {
     reasonCode: string;
-    diagnostics: DiagnosticV2[];
+    diagnostics: Diagnostic[];
   }) {
     super(input.reasonCode);
     this.name = "StateMigrationError";
@@ -136,6 +145,14 @@ export class StateMigrationService {
       });
     }
 
+    if (await pathExists(path.join(this.stateRoot, "source", "github"))) {
+      actions.push({
+        action: "move",
+        path: path.join(this.stateRoot, "source", "github"),
+        to: path.join(this.stateRoot, "source", "git"),
+      });
+    }
+
     actions.push(
       { action: "prune", path: path.join(this.stateRoot, "catalog", "import-data.json") },
       { action: "prune", path: path.join(this.stateRoot, "catalog", "source-metadata.json") },
@@ -175,11 +192,13 @@ export class StateMigrationService {
       await validateLegacyMigrationInputs(this.stateRoot);
       await fs.cp(this.stateRoot, stagingRoot, { recursive: true, force: false });
       await fs.rm(path.join(stagingRoot, ".skillflow-migration.json"), { force: true });
-      await rewriteAuthorityFiles(stagingRoot, migrationGeneration);
+      const authorityGeneration = await rewriteAuthorityFiles(stagingRoot, migrationGeneration, {
+        tolerateOrphanSources: options.tolerateOrphanSources === true,
+      });
+      await migrateGithubSourceCheckouts(stagingRoot);
       await requireCurrentState(stagingRoot, "STATE_MIGRATION_VALIDATION_FAILED");
 
-      await replaceAuthorityFiles(this.stateRoot, stagingRoot);
-      await replaceCollectionSource(this.stateRoot, stagingRoot);
+      await replaceMigratedState(this.stateRoot, stagingRoot);
       await fs.rm(markerPath, { force: true });
       await pruneRebuildableCache(this.stateRoot);
       await requireCurrentState(this.stateRoot, "STATE_MIGRATION_VALIDATION_FAILED");
@@ -188,7 +207,7 @@ export class StateMigrationService {
         status: "migrated",
         stateRoot: this.stateRoot,
         actions,
-        migrationGeneration,
+        migrationGeneration: authorityGeneration,
       };
       if (backupPath) {
         result.backupPath = backupPath;
@@ -240,13 +259,48 @@ async function validateLegacyMigrationInputs(stateRoot: string): Promise<void> {
   }
 }
 
+async function migrateGithubSourceCheckouts(stateRoot: string): Promise<void> {
+  const githubRoot = path.join(stateRoot, "source", "github");
+  if (!(await pathExists(githubRoot))) {
+    return;
+  }
+
+  const gitRoot = path.join(stateRoot, "source", "git");
+  await fs.mkdir(gitRoot, { recursive: true });
+  const entries = await fs.readdir(githubRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    const from = path.join(githubRoot, entry.name);
+    const to = path.join(gitRoot, entry.name);
+    if (await pathExists(to)) {
+      throw new StateMigrationError({
+        reasonCode: "STATE_MIGRATION_GITHUB_CHECKOUT_CONFLICT",
+        diagnostics: [
+          {
+            code: "STATE_MIGRATION_GITHUB_CHECKOUT_CONFLICT",
+            message: `Cannot migrate GitHub checkout because target already exists: ${to}`,
+            path: from,
+            retryable: false,
+          },
+        ],
+      });
+    }
+    await fs.rename(from, to);
+  }
+  await fs.rm(githubRoot, { recursive: true, force: true });
+}
+
 async function rewriteAuthorityFiles(
   stateRoot: string,
   migrationGeneration: string,
-): Promise<void> {
+  options: { tolerateOrphanSources?: boolean } = {},
+): Promise<string> {
   const manifest = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "manifest.json"), {});
   const lock = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "lock.json"), {});
-  const materialized = await materializeLegacyCollections(stateRoot, manifest, lock, migrationGeneration);
+  if (manifest.schemaVersion === 2) {
+    return rewriteCurrentAuthorityFiles(stateRoot, manifest, lock);
+  }
+
+  const materialized = await materializeLegacyCollections(stateRoot, manifest, lock, migrationGeneration, options);
 
   await writeJsonFile(path.join(stateRoot, "manifest.json"), {
     schemaVersion: 2,
@@ -292,6 +346,94 @@ async function rewriteAuthorityFiles(
     migrationGeneration,
     collections: materialized.collections,
   });
+  return migrationGeneration;
+}
+
+async function rewriteCurrentAuthorityFiles(
+  stateRoot: string,
+  manifest: Record<string, unknown>,
+  lock: Record<string, unknown>,
+): Promise<string> {
+  const migrationGeneration = typeof manifest.migrationGeneration === "string"
+    ? manifest.migrationGeneration
+    : createMigrationGeneration();
+  const sources = Array.isArray(manifest.sources)
+    ? manifest.sources.map((source) => isRecord(source)
+        ? {
+            ...source,
+            ...(source.kind === "github" ? { kind: "git" } : {}),
+          }
+        : source)
+    : [];
+  const lockSources = isRecord(lock.sources)
+    ? Object.fromEntries(Object.entries(lock.sources).map(([sourceId, source]) => {
+        if (!isRecord(source)) {
+          return [sourceId, source];
+        }
+        const revision = isRecord(source.revision)
+          ? {
+              ...source.revision,
+              ...(source.revision.provider === "github" ? { provider: "git" } : {}),
+            }
+          : source.revision;
+        return [sourceId, {
+          ...source,
+          revision,
+          ...(typeof source.localPath === "string"
+            ? { localPath: mapCheckoutPath(source.localPath) }
+            : {}),
+        }];
+      }))
+    : {};
+  const leafInventory = Array.isArray(lock.leafInventory)
+    ? lock.leafInventory.map((leaf) => isRecord(leaf)
+        ? {
+            ...leaf,
+            ...(typeof leaf.absolutePath === "string"
+              ? { absolutePath: mapCheckoutPath(leaf.absolutePath) }
+              : {}),
+            ...(typeof leaf.skillFilePath === "string"
+              ? { skillFilePath: mapCheckoutPath(leaf.skillFilePath) }
+              : {}),
+          }
+        : leaf)
+    : [];
+
+  await writeJsonFile(path.join(stateRoot, "manifest.json"), {
+    ...manifest,
+    schemaVersion: 2,
+    migrationGeneration,
+    sources,
+  });
+  await writeJsonFile(path.join(stateRoot, "lock.json"), {
+    ...lock,
+    schemaVersion: 2,
+    migrationGeneration,
+    sources: lockSources,
+    leafInventory,
+  });
+
+  const preferences = await readJsonFile<Record<string, unknown>>(
+    path.join(stateRoot, "preferences.json"),
+    {},
+  );
+  await writeJsonFile(path.join(stateRoot, "preferences.json"), {
+    ...preferences,
+    schemaVersion: 2,
+    migrationGeneration,
+  });
+
+  const collections = await readJsonFile<Record<string, unknown>>(
+    path.join(stateRoot, "collections.json"),
+    {},
+  );
+  await writeJsonFile(path.join(stateRoot, "collections.json"), {
+    ...collections,
+    schemaVersion: 2,
+    migrationGeneration,
+  });
+
+  return migrationGeneration;
 }
 
 function migrateProjectSourceDrafts(
@@ -429,6 +571,7 @@ type LegacyLeaf = {
   absolutePath: string | undefined;
   skillFilePath: string | undefined;
   contentHash: string;
+  valid: boolean | undefined;
   metadataWarnings: string[] | undefined;
 };
 
@@ -457,6 +600,7 @@ async function materializeLegacyCollections(
   manifest: Record<string, unknown>,
   lock: Record<string, unknown>,
   migrationGeneration: string,
+  options: { tolerateOrphanSources?: boolean } = {},
 ): Promise<MaterializedCollections> {
   const legacySources = readLegacySources(manifest.sources);
   const legacyBindings = isRecord(manifest.bindings) ? manifest.bindings : {};
@@ -464,8 +608,12 @@ async function materializeLegacyCollections(
   const legacyLockSourceById = new Map(legacyLockSources.map((source) => [source.id, source]));
   const legacyLeafs = readLegacyLeafs(lock.leafInventory);
   const virtualGroups = await readLegacyVirtualGroups(stateRoot);
+  const orphanedVirtualSource = legacySources.find((source) => source.kind === "virtual" && !virtualGroups[source.id]);
+  if (orphanedVirtualSource && options.tolerateOrphanSources !== true) {
+    throw legacySourceOrphaned(stateRoot, orphanedVirtualSource);
+  }
   const memberLeafIdByLegacyRef = new Map<string, string>();
-  const collectionLeafs: LeafRecordV2[] = [];
+  const collectionLeafs: LeafRecord[] = [];
   const collectionLockSources: Record<string, Record<string, unknown>> = {};
   const collections: Record<string, Record<string, unknown>> = {};
   const now = new Date().toISOString();
@@ -500,7 +648,7 @@ async function materializeLegacyCollections(
           title: label,
           description: originLeaf.description ?? "",
           displayName: label,
-          legacyAliases: [originLeaf.id, originLeaf.relativePath],
+          selectorAliases: [originLeaf.id, originLeaf.relativePath],
         };
       },
       onContentHashMismatch: ({ collectionRoot, expectedHash, actualHash }) => {
@@ -552,7 +700,7 @@ async function materializeLegacyCollections(
     bindings: rewriteBindings(legacySources, legacyBindings, virtualGroups, memberLeafIdByLegacyRef),
     lockSources,
     leafInventory: [
-      ...legacyLeafs.map((leaf) => toLeafRecordV2(leaf, legacyLockSourceById.get(leaf.sourceId))),
+      ...legacyLeafs.map((leaf) => toLeafRecord(leaf, legacyLockSourceById.get(leaf.sourceId))),
       ...collectionLeafs,
     ],
     projections: rewriteProjections(lock, memberLeafIdByLegacyRef),
@@ -620,23 +768,46 @@ function readLegacyLeafs(input: unknown): LegacyLeaf[] {
         ) {
           return [];
         }
+        const name = normalizeLegacyMetadataScalar(leaf.name);
+        const linkName = normalizeLegacyMetadataScalar(leaf.linkName);
+        const title = normalizeLegacyMetadataScalar(leaf.title);
+        const description = normalizeLegacyMetadataScalar(leaf.description);
         return [{
           id: leaf.id,
           sourceId: leaf.sourceId,
-          name: typeof leaf.name === "string" ? leaf.name : undefined,
-          linkName: typeof leaf.linkName === "string" ? leaf.linkName : undefined,
-          title: typeof leaf.title === "string" ? leaf.title : undefined,
-          description: typeof leaf.description === "string" ? leaf.description : undefined,
+          name,
+          linkName,
+          title,
+          description,
           relativePath: leaf.relativePath,
           absolutePath: typeof leaf.absolutePath === "string" ? leaf.absolutePath : undefined,
           skillFilePath: typeof leaf.skillFilePath === "string" ? leaf.skillFilePath : undefined,
           contentHash: leaf.contentHash,
+          valid: typeof leaf.valid === "boolean" ? leaf.valid : undefined,
           metadataWarnings: Array.isArray(leaf.metadataWarnings)
-            ? leaf.metadataWarnings.filter((value): value is string => typeof value === "string")
+            ? filterLegacyMetadataWarnings(
+                leaf.metadataWarnings.filter((value): value is string => typeof value === "string"),
+                { name, linkName, relativePath: leaf.relativePath },
+              )
             : undefined,
         }];
       })
     : [];
+}
+
+function normalizeLegacyMetadataScalar(value: unknown): string | undefined {
+  return typeof value === "string" ? parseSkillFrontmatterScalar(value) : undefined;
+}
+
+function filterLegacyMetadataWarnings(
+  warnings: string[],
+  leaf: { name: string | undefined; linkName: string | undefined; relativePath: string },
+): string[] {
+  const expectedName = leaf.linkName ?? path.basename(leaf.relativePath);
+  if (!leaf.name || leaf.name !== expectedName) {
+    return warnings;
+  }
+  return warnings.filter((warning) => !warning.startsWith("name should match parent directory name "));
 }
 
 async function resolveLegacySkillPath(
@@ -695,27 +866,30 @@ function toManifestSourceV2(
 }
 
 function toLockSourceV2(source: LegacySourceLock): Record<string, unknown> {
+  const sourceKind = mapSourceKind(source.kind);
+  const checkoutPath = mapCheckoutPath(source.checkoutPath);
   return {
     sourceId: source.id,
     canonicalLocator: source.locator,
     revision: {
-      provider: mapSourceKind(source.kind),
+      provider: sourceKind,
       commit: source.commitSha,
       capturedAt: source.updatedAt ?? new Date(0).toISOString(),
     },
-    localPath: source.checkoutPath,
+    localPath: checkoutPath,
     leafIds: source.leafIds ?? [],
   };
 }
 
-function toLeafRecordV2(
+function toLeafRecord(
   leaf: LegacyLeaf,
   lockSource: LegacySourceLock | undefined,
 ): Record<string, unknown> {
   const linkName = leaf.linkName ?? leaf.name ?? path.basename(leaf.relativePath);
   const title = leaf.title ?? leaf.name ?? linkName;
-  const absolutePath = leaf.absolutePath ?? (lockSource
-    ? path.join(lockSource.checkoutPath, leaf.relativePath)
+  const checkoutPath = lockSource ? mapCheckoutPath(lockSource.checkoutPath) : undefined;
+  const absolutePath = leaf.absolutePath ? mapCheckoutPath(leaf.absolutePath) : (checkoutPath
+    ? path.join(checkoutPath, leaf.relativePath)
     : path.resolve(leaf.relativePath));
 
   return {
@@ -726,19 +900,26 @@ function toLeafRecordV2(
     title,
     description: leaf.description ?? "",
     absolutePath,
-    skillFilePath: leaf.skillFilePath ?? path.join(leaf.relativePath, "SKILL.md"),
+    skillFilePath: leaf.skillFilePath
+      ? mapCheckoutPath(leaf.skillFilePath)
+      : path.join(leaf.relativePath, "SKILL.md"),
     displayName: title,
     contentHash: leaf.contentHash,
     selectors: {
-      legacyAliases: [leaf.id, leaf.relativePath],
+      aliases: [leaf.id, leaf.relativePath],
     },
-    valid: true,
+    valid: leaf.valid ?? true,
     diagnostics: (leaf.metadataWarnings ?? []).map((warning) => ({
       code: "LEGACY_METADATA_WARNING",
       message: warning,
       retryable: false,
     })),
   };
+}
+
+function mapCheckoutPath(filePath: string): string {
+  return filePath.split(`${path.sep}source${path.sep}github${path.sep}`)
+    .join(`${path.sep}source${path.sep}git${path.sep}`);
 }
 
 function rewriteBindings(
@@ -799,7 +980,7 @@ function rewriteProjections(
           : undefined,
       strategy: readDeploymentStrategy(projection.strategy),
       contentHash: projection.contentHash,
-      status: projection.status,
+      status: readProjectionStatus(projection.status),
       updatedAt: typeof projection.appliedAt === "string"
         ? projection.appliedAt
         : typeof projection.updatedAt === "string"
@@ -807,6 +988,10 @@ function rewriteProjections(
           : new Date(0).toISOString(),
     };
   });
+}
+
+function readProjectionStatus(value: unknown): string {
+  return value === "active" || value === "removed" || value === "blocked" ? value : "active";
 }
 
 function buildRestoreSelections(
@@ -819,7 +1004,7 @@ function buildRestoreSelections(
       legacyLeafs.filter((leaf) => leaf.sourceId === sourceId).map((leaf) => leaf.id),
     );
     const selectedLeafIds: string[] = [];
-    const diagnostics: DiagnosticV2[] = [];
+    const diagnostics: Diagnostic[] = [];
     for (const leafId of snapshot.selectedLeafIds) {
       if (sourceLeafIds.has(leafId)) {
         selectedLeafIds.push(leafId);
@@ -844,7 +1029,10 @@ function buildRestoreSelections(
 }
 
 function mapSourceKind(kind: string): string {
-  if (kind === "git" || kind === "github" || kind === "local" || kind === "clawhub" || kind === "collection") {
+  if (kind === "github") {
+    return "git";
+  }
+  if (kind === "git" || kind === "local" || kind === "clawhub" || kind === "collection") {
     return kind;
   }
   return "local";
@@ -866,6 +1054,27 @@ function virtualMemberOriginMissing(
         message: "Legacy virtual group member origin could not be resolved.",
         path: legacyVirtualGroupsPath(stateRoot),
         details: ref,
+        retryable: false,
+      },
+    ],
+  });
+}
+
+function legacySourceOrphaned(
+  stateRoot: string,
+  source: LegacySource,
+): StateMigrationError {
+  return new StateMigrationError({
+    reasonCode: "STATE_MIGRATION_LEGACY_SOURCE_ORPHANED",
+    diagnostics: [
+      {
+        code: "STATE_MIGRATION_LEGACY_SOURCE_ORPHANED",
+        message: "Legacy virtual source has no matching virtual group definition.",
+        path: path.join(stateRoot, "manifest.json"),
+        details: {
+          sourceId: source.id,
+          kind: source.kind,
+        },
         retryable: false,
       },
     ],
@@ -894,9 +1103,43 @@ function collectionHashMismatch(
   });
 }
 
+async function replaceMigratedState(stateRoot: string, stagingRoot: string): Promise<void> {
+  const rollbackRoot = path.join(stateRoot, `.skillflow-authority-rollback-${process.pid}-${Date.now()}`);
+  await backupAuthorityFiles(stateRoot, rollbackRoot);
+
+  try {
+    await replaceAuthorityFiles(stateRoot, stagingRoot);
+    await migrateGithubSourceCheckouts(stateRoot);
+    await replaceCollectionSource(stateRoot, stagingRoot);
+  } catch (error) {
+    await restoreAuthorityBackup(stateRoot, rollbackRoot);
+    throw error;
+  } finally {
+    await fs.rm(rollbackRoot, { recursive: true, force: true });
+  }
+}
+
 async function replaceAuthorityFiles(stateRoot: string, stagingRoot: string): Promise<void> {
-  for (const fileName of ["manifest.json", "lock.json", "preferences.json", "collections.json"]) {
-    await fs.copyFile(path.join(stagingRoot, fileName), path.join(stateRoot, fileName));
+  const transactionRoot = path.join(stateRoot, `.skillflow-authority-replace-${process.pid}-${Date.now()}`);
+  const backupRoot = path.join(transactionRoot, "backup");
+  const incomingRoot = path.join(transactionRoot, "incoming");
+
+  await fs.mkdir(backupRoot, { recursive: true });
+  await fs.mkdir(incomingRoot, { recursive: true });
+
+  try {
+    for (const fileName of AUTHORITY_FILE_NAMES) {
+      await fs.copyFile(path.join(stateRoot, fileName), path.join(backupRoot, fileName));
+      await fs.copyFile(path.join(stagingRoot, fileName), path.join(incomingRoot, fileName));
+    }
+    for (const fileName of AUTHORITY_FILE_NAMES) {
+      await fs.copyFile(path.join(incomingRoot, fileName), path.join(stateRoot, fileName));
+    }
+  } catch (error) {
+    await restoreAuthorityBackup(stateRoot, backupRoot);
+    throw error;
+  } finally {
+    await fs.rm(transactionRoot, { recursive: true, force: true });
   }
 }
 
@@ -907,9 +1150,45 @@ async function replaceCollectionSource(stateRoot: string, stagingRoot: string): 
   }
 
   const targetCollectionRoot = path.join(stateRoot, "source", "collection");
-  await fs.rm(targetCollectionRoot, { recursive: true, force: true });
   await fs.mkdir(path.dirname(targetCollectionRoot), { recursive: true });
-  await fs.cp(stagingCollectionRoot, targetCollectionRoot, { recursive: true, force: true });
+  const transactionSuffix = `${process.pid}-${Date.now()}`;
+  const incomingRoot = path.join(stateRoot, `.skillflow-collection-replace-${transactionSuffix}`);
+  const backupRoot = path.join(stateRoot, `.skillflow-collection-backup-${transactionSuffix}`);
+
+  try {
+    await fs.rm(incomingRoot, { recursive: true, force: true });
+    await fs.cp(stagingCollectionRoot, incomingRoot, { recursive: true, force: false });
+    if (await pathExists(targetCollectionRoot)) {
+      await fs.rename(targetCollectionRoot, backupRoot);
+    }
+    await fs.rename(incomingRoot, targetCollectionRoot);
+    await fs.rm(backupRoot, { recursive: true, force: true });
+  } catch (error) {
+    await fs.rm(incomingRoot, { recursive: true, force: true });
+    if (!(await pathExists(targetCollectionRoot)) && await pathExists(backupRoot)) {
+      await fs.rename(backupRoot, targetCollectionRoot);
+    }
+    throw error;
+  } finally {
+    await fs.rm(incomingRoot, { recursive: true, force: true });
+    await fs.rm(backupRoot, { recursive: true, force: true });
+  }
+}
+
+async function restoreAuthorityBackup(stateRoot: string, backupRoot: string): Promise<void> {
+  for (const fileName of AUTHORITY_FILE_NAMES) {
+    const backupPath = path.join(backupRoot, fileName);
+    if (await pathExists(backupPath)) {
+      await fs.copyFile(backupPath, path.join(stateRoot, fileName));
+    }
+  }
+}
+
+async function backupAuthorityFiles(stateRoot: string, backupRoot: string): Promise<void> {
+  await fs.mkdir(backupRoot, { recursive: true });
+  for (const fileName of AUTHORITY_FILE_NAMES) {
+    await fs.copyFile(path.join(stateRoot, fileName), path.join(backupRoot, fileName));
+  }
 }
 
 async function pruneRebuildableCache(stateRoot: string): Promise<void> {

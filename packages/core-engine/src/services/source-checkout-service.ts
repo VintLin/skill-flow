@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type {
+  DeploymentTargetId,
+  InvalidLeafRecord,
   LockFile,
   Result,
   SourceKind,
@@ -29,9 +31,9 @@ import { InventoryService } from "./inventory-service.js";
 
 const execFileAsync = promisify(execFile);
 
-export type SourceCheckoutKind = Exclude<SourceKind, "virtual">;
+export type SourceCheckoutKind = Extract<SourceKind, "local" | "git" | "clawhub">;
 
-export type PreparedSourceCheckoutV2 = {
+export type PreparedSourceCheckout = {
   locator: string;
   originLocator?: string;
   displayName: string;
@@ -40,19 +42,35 @@ export type PreparedSourceCheckoutV2 = {
   sourceId: string;
   checkoutPath: string;
   leafs: LockFile["leafInventory"];
-  invalidLeafs: SourceLockRecord["invalidLeafs"];
+  invalidLeafs: InvalidLeafRecord[];
   commitSha?: string;
   contentHash?: string;
   resolvedVersion?: string;
   packageSlug?: string;
   originBranch?: string;
-  importedFromTargets?: SourceLockRecord["importedFromTargets"];
-  observedTargets?: SourceLockRecord["observedTargets"];
+  importedFromTargets?: DeploymentTargetId[];
+  observedTargets?: Array<{
+    target: DeploymentTargetId;
+    rootPath: string;
+    targetPath: string;
+  }>;
   importMode?: SourceLockRecord["importMode"];
   versionMode?: SourceLockRecord["versionMode"];
 };
 
-export type SourcePreviewCheckoutV2 = {
+type SourceCheckoutLock = SourceLockRecord & {
+  id: string;
+  locator: string;
+  kind: SourceCheckoutKind;
+  displayName: string;
+  originalDisplayName: string;
+  checkoutPath: string;
+  updatedAt: string;
+  invalidLeafs: InvalidLeafRecord[];
+  commitSha?: string;
+};
+
+export type SourcePreviewCheckout = {
   locator: string;
   displayName: string;
   requestedPath?: string;
@@ -87,7 +105,7 @@ export class SourceCheckoutService {
   async previewSource(
     locator: string,
     options: AddSourceOptions = {},
-  ): Promise<Result<SourcePreviewCheckoutV2>> {
+  ): Promise<Result<SourcePreviewCheckout>> {
     const resolved = await this.resolveSource(locator, options);
     const tempCheckoutPath = path.join(
       this.getSourceRoot(resolved.kind),
@@ -135,7 +153,7 @@ export class SourceCheckoutService {
       suffix?: string;
       allowEmptyLeafs?: boolean;
     } = {},
-  ): Promise<Result<PreparedSourceCheckoutV2>> {
+  ): Promise<Result<PreparedSourceCheckout>> {
     const options = input.options ?? {};
     const resolved = this.resolveUniqueLocalSource(
       await this.resolveSource(locator, options),
@@ -204,7 +222,7 @@ export class SourceCheckoutService {
     requestedPath?: string;
   }): Promise<Result<{
     leafs: LockFile["leafInventory"];
-    invalidLeafs: SourceLockRecord["invalidLeafs"];
+    invalidLeafs: InvalidLeafRecord[];
     commitSha?: string;
     contentHash?: string;
     resolvedVersion?: string;
@@ -282,7 +300,7 @@ export class SourceCheckoutService {
         options.path,
       );
       return {
-        kind: "git",
+        kind: this.sourceKindForGitLocator(treeLocator.repoLocator),
         locator: treeLocator.repoLocator,
         gitLocator: await this.normalizeLocator(treeLocator.repoLocator),
         displayName: options.displayNameOverride ?? deriveDisplayName(treeLocator.repoLocator),
@@ -328,10 +346,11 @@ export class SourceCheckoutService {
     }
 
     const requestedPath = this.normalizeRequestedPath(options.path);
+    const gitLocator = await this.normalizeLocator(locator);
     return {
-      kind: "git",
+      kind: this.sourceKindForGitLocator(gitLocator),
       locator,
-      gitLocator: await this.normalizeLocator(locator),
+      gitLocator,
       displayName: options.displayNameOverride ?? deriveDisplayName(locator),
       sourceId: options.sourceIdOverride ?? deriveSourceId(locator),
       ...(requestedPath ? { requestedPath } : {}),
@@ -476,7 +495,7 @@ export class SourceCheckoutService {
     maybeOptions: { allowEmptyLeafs?: boolean } = {},
   ): Promise<
     Result<{
-      lock: SourceLockRecord;
+      lock: SourceCheckoutLock;
       leafs: LockFile["leafInventory"];
     }>
   > {
@@ -496,9 +515,9 @@ export class SourceCheckoutService {
     );
     const requestedMatches = this.findRequestedLeafs(scanned.leafs, requestedPath);
     const metadataWarnings = scanned.leafs.flatMap((leaf) =>
-      leaf.metadataWarnings.map((message) => ({
+      (leaf.diagnostics ?? []).map((diagnostic) => ({
         code: "SKILL_METADATA_WARNING",
-        message: `${leaf.relativePath}: ${message}`,
+        message: `${leaf.relativePath}: ${diagnostic.message}`,
       })),
     );
 
@@ -527,16 +546,23 @@ export class SourceCheckoutService {
     return ok(
       {
         lock: {
+          ...sourceMetadata,
           id: sourceId,
+          sourceId,
           locator,
           kind,
           displayName,
           originalDisplayName: displayName,
+          canonicalLocator: locator,
+          revision: {
+            provider: kind,
+            capturedAt: new Date().toISOString(),
+          },
+          localPath: checkoutPath,
           checkoutPath,
           updatedAt: new Date().toISOString(),
           leafIds: scanned.leafs.map((leaf) => leaf.id),
           invalidLeafs: scanned.invalidLeafs,
-          ...sourceMetadata,
           ...(addOptions.originBranch ? { originBranch: addOptions.originBranch } : {}),
           ...(addOptions.importedFromTargets
             ? { importedFromTargets: addOptions.importedFromTargets }
@@ -570,7 +596,9 @@ export class SourceCheckoutService {
   private async readSourceSnapshot(
     kind: SourceCheckoutKind,
     checkoutPath: string,
-  ): Promise<Partial<SourceLockRecord>> {
+  ): Promise<Partial<Pick<SourceLockRecord, "packageSlug" | "resolvedVersion" | "contentHash">> & {
+    commitSha?: string;
+  }> {
     if (kind === "local") {
       return {
         contentHash: await hashDirectory(checkoutPath),
@@ -637,6 +665,10 @@ export class SourceCheckoutService {
     }
 
     return locator;
+  }
+
+  private sourceKindForGitLocator(_locator: string): Extract<SourceCheckoutKind, "git"> {
+    return "git";
   }
 
   private parseTreeLocator(

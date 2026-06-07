@@ -3,7 +3,7 @@ import type {
   ImportPreparationCache,
   ImportPreparationRecord,
   ImportPreparationStatus,
-  PreparedSkillRefV2,
+  PreparedSkillRef,
   SourceKind,
 } from "@skill-flow/domain/types";
 
@@ -15,12 +15,12 @@ const PREPARATION_STATUSES = new Set<ImportPreparationStatus>([
   "stale",
 ]);
 
-const SOURCE_KINDS = new Set<SourceKind>(["local", "git", "clawhub"]);
+const SOURCE_KINDS = new Set<SourceKind>(["local", "git", "clawhub", "collection"]);
+const COMMITTING_PREPARATION_STALE_MS = 5 * 60 * 1000;
 
 export function createEmptyImportPreparationCache(): ImportPreparationCache {
   return {
     records: {},
-    locatorIndex: {},
   };
 }
 
@@ -32,7 +32,6 @@ export function normalizeImportPreparationCache(value: unknown): ImportPreparati
   const records = normalizeRecords(value.records);
   return {
     records,
-    locatorIndex: normalizeLocatorIndex(value.locatorIndex, records),
   };
 }
 
@@ -51,17 +50,24 @@ export function pruneImportPreparationCache(
   const now = options.now ?? new Date();
   const maxRecords = options.maxRecords ?? 12;
   const retained = Object.values(cache.records)
-    .filter((record) => record.status === "committing" || !isImportPreparationExpired(record, now))
+    .filter((record) => record.status === "committing"
+      ? !isImportPreparationCommittingAbandoned(record, now)
+      : !isImportPreparationExpired(record, now))
     .sort((left, right) => Date.parse(right.preparedAt) - Date.parse(left.preparedAt))
     .slice(0, maxRecords);
   const records = Object.fromEntries(retained.map((record) => [record.id, record]));
 
   return {
     records,
-    locatorIndex: Object.fromEntries(
-      Object.entries(cache.locatorIndex).filter(([, id]) => Boolean(records[id])),
-    ),
   };
+}
+
+function isImportPreparationCommittingAbandoned(
+  entry: Pick<ImportPreparationRecord, "preparedAt">,
+  now: Date,
+): boolean {
+  const preparedAt = Date.parse(entry.preparedAt);
+  return !Number.isFinite(preparedAt) || now.getTime() - preparedAt >= COMMITTING_PREPARATION_STALE_MS;
 }
 
 function normalizeRecords(value: unknown): Record<string, ImportPreparationRecord> {
@@ -131,7 +137,7 @@ function normalizeRecord(id: string, value: unknown): ImportPreparationRecord | 
   };
 }
 
-function normalizeSkillRefs(value: unknown): PreparedSkillRefV2[] {
+function normalizeSkillRefs(value: unknown): PreparedSkillRef[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -155,24 +161,9 @@ function normalizeSkillRefs(value: unknown): PreparedSkillRefV2[] {
       leafId: item.leafId,
       repoPath: item.repoPath,
       contentHash: item.contentHash,
-      legacyAliases: stringArray(item.legacyAliases),
+      selectorAliases: stringArray(item.selectorAliases),
     }];
   });
-}
-
-function normalizeLocatorIndex(
-  value: unknown,
-  records: Record<string, ImportPreparationRecord>,
-): Record<string, string> {
-  if (!isRecord(value)) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).filter(([locator, id]) =>
-      typeof locator === "string" && typeof id === "string" && Boolean(records[id]),
-    ) as Array<[string, string]>,
-  );
 }
 
 function normalizeFailure(value: unknown): ImportPreparationRecord["failure"] | undefined {

@@ -187,7 +187,7 @@ final class MainViewModelSelectionTests: XCTestCase {
                 MainViewModel.HomeSidebarFilterOption(id: "all", count: 2),
                 MainViewModel.HomeSidebarFilterOption(id: "local", count: 1),
                 MainViewModel.HomeSidebarFilterOption(id: "remote", count: 1),
-                MainViewModel.HomeSidebarFilterOption(id: "virtual", count: 0),
+                MainViewModel.HomeSidebarFilterOption(id: "collection", count: 0),
             ]
         )
     }
@@ -248,8 +248,8 @@ final class MainViewModelSelectionTests: XCTestCase {
     func testSelectedStatusAndSourceTypeFiltersIntersectWithAgentFilter() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
-        state.sources["alpha"]?.kind = "virtual"
-        state.sources["alpha"]?.locator = "virtual:alpha"
+        state.sources["alpha"]?.kind = "collection"
+        state.sources["alpha"]?.locator = "collection:alpha"
         state.sources["alpha"]?.enabledTargets = ["claude-code"]
         state.sources["beta"]?.kind = "local"
         state.sources["beta"]?.locator = "~/skills/beta"
@@ -275,7 +275,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), ["beta"])
 
         model.setSelectedHomeStatusFilter("all")
-        model.setSelectedHomeSourceTypeFilter("virtual")
+        model.setSelectedHomeSourceTypeFilter("collection")
         XCTAssertEqual(model.filteredHomeGroupCards(locale: Locale(identifier: "zh-Hans")).map(\.id), [])
 
         model.setSelectedHomeAgentFilter("claude-code")

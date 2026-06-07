@@ -23,7 +23,7 @@
 "home.sidebar.pinned" = "固定";
 "home.sidebar.local" = "ローカル";
 "home.sidebar.remote" = "オンライン";
-"home.sidebar.virtual" = "仮想";
+"home.sidebar.collection" = "組み合わせ";
 "home.sidebar.expand" = "セクションを展開";
 "home.sidebar.collapse" = "セクションを折りたたむ";
 "home.sidebar.all_agents" = "すべて";
@@ -104,6 +104,12 @@
 "import.recommendation.description.kepano_obsidian_skills" = "Obsidian ユーザー向けの Skill 集で、メモ、知識管理、Markdown ワークフロー、Obsidian プラグイン関連の作業に向いています。";
 "import.recommendation.description.vercel_labs_agent_browser" = "AI が人のようにブラウザを操作できるようにし、Web テスト、自動フォーム入力、Web コンテンツ取得、自動化チェックに向いています。";
 "import.recommendation.description.joeseesun_opencli_skill" = "AI が Bilibili、Zhihu、X、YouTube などのサイトを直接操作できる Skill で、コンテンツ制作者やマルチプラットフォーム運用に向いています。";
+"import.recommendation.description.199_biotechnologies_claude_deep_research_skill" = "Claude Code 向けの深い調査 Skill で、複数ソースの検索、引用検証、信頼度評価を重視しており、根拠ある調査や意思決定分析に向いています。";
+"import.recommendation.description.anysearch_ai_anysearch_skill" = "Web 検索、縦型検索、並列バッチ検索、全文抽出をまとめたリアルタイム検索 Skill で、新しい情報源に依存する調査作業に向いています。";
+"import.recommendation.description.leonxlnx_taste_skill" = "AI が作るフロントエンドの見た目を改善するデザイン Skill で、レイアウト、タイポグラフィ、動き、余白を強化し、テンプレート感を減らしたい場面に向いています。";
+"import.recommendation.description.op7418_guizang_ppt_skill" = "デッキ、カバー、ビジュアル素材に強い制作 Skill で、単一ファイルの HTML スライドやプレゼン用ビジュアル作成に向いており、見せ方を整えた発表物づくりに使えます。";
+"import.recommendation.description.op7418_humanizer_zh" = "中国語の AI ライティング去痕 Skill で、AI の初稿をより自然な人間らしい文章へ整えたり、AI っぽい文体の兆候を見直したりする用途に向いています。";
+"import.recommendation.description.vibeforge1111_keep_codex_fast" = "Codex を重く使う人向けのメンテナンス Skill で、ローカル状態の点検、古いセッションの整理、worktree の管理を助け、長期利用時の安全な掃除と性能確認に向いています。";
 "import.loading.subtitle" = "インポートデータを取得中...";
 "import.failed.title" = "インポート検索に失敗しました";
 "import.empty.recommended" = "インポートできるおすすめグループはありません。";
@@ -228,7 +234,12 @@
 "toast.import.failed.reason_code" = "インポートに失敗しました: %@。";
 "toast.import.failed.generic" = "インポートに失敗しました。後でもう一度試してください。";
 "toast.import.exists" = "この Group はすでにローカルに存在します。";
+"toast.import.choose_local_variant" = "先にインポートするローカル版を選択してください。";
+"toast.import.preparing" = "この Group のインポートを準備中です。";
+"toast.import.in_progress" = "この Group はインポート中です。";
+"toast.import.another_running" = "別のインポートが実行中です。";
 "toast.import.success" = "ソースをインポートしました。";
+"toast.import.local_source_target_locked" = "この Skill は %@ の Agent パス由来のため、解除できません。";
 "toast.import.local_scan_failed" = "ローカルスキャンに失敗しました：%@";
 "toast.import.local_already_scanned" = "このローカル Skill はすでにスキャン一覧にあります。";
 "toast.project_scope.switched" = "%@ に切り替えました。";
@@ -306,7 +317,7 @@
 "source.metadata.owner_with_name" = "所有者: %@ (%@)";
 "source.metadata.repo_url" = "リポジトリ URL: %@";
 "source.author.local" = "ローカル";
-"source.author.virtual" = "組み合わせ";
+"source.author.collection" = "組み合わせ";
 "source.snapshot.owner_sources" = "作成者ソース数: %@";
 "source.snapshot.owner_skills" = "作成者スキル数: %@";
 "source.snapshot.owner_installs" = "作成者インストール数: %@";
@@ -341,6 +352,8 @@
 "import.card.facts.source_loading" = "ソースを読み込み中...";
 "import.card.subtitle.by_owner" = "@%@ 作成";
 "import.card.subtitle.recommended" = "おすすめ";
+"import.card.subtitle.local_scan" = "ローカルスキャン";
+"import.card.meta.local_scan_sources" = "%d 個の Agent パスがソース";
 "detail.save.no_detail" = "詳細なし";
 "detail.save.saved" = "保存済み";
 "detail.save.failed" = "保存に失敗しました";
@@ -373,8 +386,8 @@
 "settings.custom_agents.project_path_hint" = "プロジェクトルートからの相対パスです。例: .my-agent/skills";
 "group_editor.title" = "グループエディタ";
 "group_editor.name" = "グループ名";
-"group_editor.summary.create" = "複数のグループのスキルを組み合わせて、新しい仮想グループを作成します。";
-"group_editor.summary.merge" = "選択したグループを1つの仮想グループに結合し、元のグループを非表示にします。";
+"group_editor.summary.create" = "複数のグループのスキルを組み合わせて、新しい組み合わせグループを作成します。";
+"group_editor.summary.merge" = "選択したグループを1つの組み合わせグループに結合し、元のグループを非表示にします。";
 "group_editor.section.skill_groups" = "スキルグループ";
 "group_editor.loading" = "グループを読み込み中...";
 "group_editor.search.placeholder" = "作者、グループ、スキルを検索";
@@ -388,7 +401,7 @@
 "group_editor.validation.name_required" = "名前を入力してください。";
 "group_editor.validation.skills_required" = "スキルを1つ以上選択してください。";
 "group_editor.validation.groups_required" = "グループを2つ以上選択してください。";
-"group_editor.impact.create_virtual_group" = "仮想グループを作成します。";
+"group_editor.impact.create_collection" = "組み合わせグループを作成します。";
 "group_editor.impact.hide_groups" = "選択したグループを非表示にします。";
 "group_editor.impact.clear_bindings" = "既存のバインドを消去します。";
 "group_editor.impact.save_restore_snapshot" = "復元スナップショットを保存します。";

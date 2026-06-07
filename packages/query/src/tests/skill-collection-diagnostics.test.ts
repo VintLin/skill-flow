@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { StateStore } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
 import { createRepo, pathExists, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
@@ -10,7 +10,7 @@ describe.sequential("skill collection diagnostics", () => {
 
   test("collection reports origin hash changed without mutating snapshot", async () => {
     const app = await seedCollection();
-    const store = new StateStoreV2(app.store.rootPath);
+    const store = new StateStore(app.store.rootPath);
     const before = await store.readState();
     const originLeaf = before.lockFile.leafInventory.find((leaf) =>
       leaf.id === "writing-source:skills/frontend-design"
@@ -48,7 +48,7 @@ describe.sequential("skill collection diagnostics", () => {
 
   test("collection projection hash comes from materialized snapshot after origin changes", async () => {
     const app = await seedCollection();
-    const store = new StateStoreV2(app.store.rootPath);
+    const store = new StateStore(app.store.rootPath);
     const before = await store.readState();
     const originLeaf = before.lockFile.leafInventory.find((leaf) =>
       leaf.id === "writing-source:skills/frontend-design"
@@ -113,7 +113,7 @@ describe.sequential("skill collection diagnostics", () => {
     });
     expect(writing.ok).toBe(true);
     expect(editing.ok).toBe(true);
-    const created = await app.createVirtualGroup({
+    const created = await app.createCollection({
       displayName: "Writing Stack",
       skills: [
         { sourceId: "writing-source", leafId: "writing-source:skills/frontend-design" },

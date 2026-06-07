@@ -47,9 +47,25 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.data).toHaveProperty("customTargets");
     expect(response.data).toHaveProperty("agentDisplayOrder");
     expect(response.data).toHaveProperty("capabilities", { importDraftV2: true });
+    expect(response.data).toMatchObject({
+      manifest: {
+        schemaVersion: 2,
+        bindings: {
+          [added.data.manifest.id]: expect.objectContaining({
+            sourceId: added.data.manifest.id,
+            enabledTargets: expect.any(Array),
+          }),
+        },
+      },
+      lockFile: {
+        schemaVersion: 2,
+        projections: expect.any(Array),
+      },
+    });
+    expect((response.data as any).lockFile.deployments).toBeUndefined();
   });
 
-  test("save-settings writes normalized custom targets to shared preferences", async () => {
+  test("save-settings preserves custom target path strings in runtime preferences", async () => {
     const app = new SkillFlowApp();
 
     const response = await executeBridgeRequest(app, {
@@ -74,7 +90,54 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.ok).toBe(true);
     expect(response.data).toHaveProperty("customTargets");
     expect(response.data).toHaveProperty("agentDisplayOrder");
-    expect((response.data as any).customTargets[0].projectPathTemplate).toBe(".my-agent/skills");
+    expect((response.data as any).customTargets[0].projectPathTemplate).toBe("./.my-agent/skills");
+  });
+
+  test("inspect-state-migration returns runtime status", async () => {
+    const app = {
+      inspectStateMigration: vi.fn(async () => ({ status: "migration-required" })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "inspect-state-migration",
+    });
+
+    expect(app.inspectStateMigration).toHaveBeenCalled();
+    expect(response.ok).toBe(true);
+    expect(response.data).toEqual({ status: "migration-required" });
+  });
+
+  test("migrate-state forwards state schema v2 migration options", async () => {
+    const app = {
+      migrateState: vi.fn(async () => ({
+        status: "migrated",
+        actions: [{ kind: "manifest.json", action: "rewrite" }],
+        backupPath: "/tmp/skillflow-backup",
+      })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "migrate-state",
+      payload: {
+        to: 2,
+        backup: true,
+        tolerateOrphanSources: true,
+      },
+    });
+
+    expect(app.migrateState).toHaveBeenCalledWith({
+      to: 2,
+      backup: true,
+      tolerateOrphanSources: true,
+    });
+    expect(response.ok).toBe(true);
+    expect(response.data).toEqual({
+      status: "migrated",
+      actions: [{ kind: "manifest.json", action: "rewrite" }],
+      backupPath: "/tmp/skillflow-backup",
+    });
   });
 
   test("rejects invalid apply payload", async () => {
@@ -326,9 +389,9 @@ describe.sequential("bridge command dispatcher", () => {
     });
   });
 
-  test("dispatches virtual group create-virtual-group bridge command", async () => {
+  test("dispatches collection create-collection bridge command", async () => {
     const app = {
-      createVirtualGroup: vi.fn(async (draft: {
+      createCollection: vi.fn(async (draft: {
         displayName: string;
         skills: Array<{ sourceId: string; leafId: string; skillPath?: string }>;
         enabledTargets: string[];
@@ -342,7 +405,7 @@ describe.sequential("bridge command dispatcher", () => {
 
     const response = await executeBridgeRequest(app, {
       protocolVersion: PROTOCOL_VERSION,
-      command: "create-virtual-group",
+      command: "create-collection",
       payload: {
         displayName: "Writing Stack",
         skills: [
@@ -356,7 +419,7 @@ describe.sequential("bridge command dispatcher", () => {
       },
     });
 
-    expect(app.createVirtualGroup).toHaveBeenCalledWith({
+    expect(app.createCollection).toHaveBeenCalledWith({
       displayName: "Writing Stack",
       skills: [
         {
@@ -376,7 +439,7 @@ describe.sequential("bridge command dispatcher", () => {
     });
   });
 
-  test("dispatches virtual group merge-groups bridge command", async () => {
+  test("dispatches collection merge-groups bridge command", async () => {
     const app = {
       mergeGroups: vi.fn(async (draft: {
         displayName: string;
@@ -416,22 +479,22 @@ describe.sequential("bridge command dispatcher", () => {
     });
   });
 
-  test("dispatches virtual group restore-merged-groups bridge command", async () => {
+  test("dispatches collection restore-collection-sources bridge command", async () => {
     const app = {
-      restoreMergedGroups: vi.fn(async (virtualGroupId: string) => ok({
-        restoredGroupId: virtualGroupId,
+      restoreCollectionSources: vi.fn(async (collectionId: string) => ok({
+        restoredGroupId: collectionId,
       })),
     } as unknown as SkillFlowApp;
 
     const response = await executeBridgeRequest(app, {
       protocolVersion: PROTOCOL_VERSION,
-      command: "restore-merged-groups",
+      command: "restore-collection-sources",
       payload: {
-        virtualGroupId: "writing-stack",
+        collectionId: "writing-stack",
       },
     });
 
-    expect(app.restoreMergedGroups).toHaveBeenCalledWith("writing-stack");
+    expect(app.restoreCollectionSources).toHaveBeenCalledWith("writing-stack");
     expect(response.ok).toBe(true);
     expect(response.data).toEqual({
       restoredGroupId: "writing-stack",
@@ -459,14 +522,14 @@ describe.sequential("bridge command dispatcher", () => {
       label: "empty skills",
       skills: [],
     },
-  ])("rejects virtual group payload with $label", async ({ skills }) => {
+  ])("rejects collection payload with $label", async ({ skills }) => {
     const app = {
-      createVirtualGroup: vi.fn(),
+      createCollection: vi.fn(),
     } as unknown as SkillFlowApp;
 
     const response = await executeBridgeRequest(app, {
       protocolVersion: PROTOCOL_VERSION,
-      command: "create-virtual-group",
+      command: "create-collection",
       payload: {
         displayName: "Writing Stack",
         skills,
@@ -476,7 +539,7 @@ describe.sequential("bridge command dispatcher", () => {
 
     expect(response.ok).toBe(false);
     expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
-    expect(app.createVirtualGroup).not.toHaveBeenCalled();
+    expect(app.createCollection).not.toHaveBeenCalled();
   });
 
   test("accepts valid apply payload with empty skill selection", async () => {
@@ -728,7 +791,7 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.data).toHaveProperty("preparationId");
   });
 
-  test("accepts valid commit-import-source payload", async () => {
+  test("rejects commit-import-source legacy selectedSkillIds payload", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "review/SKILL.md": skillDoc("review", "Review code."),
     });
@@ -755,9 +818,9 @@ describe.sequential("bridge command dispatcher", () => {
       },
     });
 
-    expect(response.ok).toBe(true);
-    expect(response.data).toHaveProperty("status", "ready");
-    expect(response.data).toHaveProperty("usedPreparation", true);
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+    expect(response.errors[0]?.message).toContain("draft.selectedSkills");
   });
 
   test("accepts commit-import-source selectedSkills payload", async () => {
@@ -794,7 +857,7 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.data).toHaveProperty("usedPreparation", true);
   });
 
-  test("accepts valid import-source payload", async () => {
+  test("rejects import-source legacy selectedSkillIds payload", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
@@ -812,8 +875,32 @@ describe.sequential("bridge command dispatcher", () => {
       },
     });
 
-    expect(response.ok).toBe(true);
-    expect(response.data).toHaveProperty("status", "ready");
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+    expect(response.errors[0]?.message).toContain("draft.selectedSkills");
+  });
+
+  test("rejects import-source legacy path-array payload", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "import-source",
+      payload: {
+        locator: repoPath,
+        draft: {
+          ["selectedSkill" + "Paths"]: ["skills/review"],
+          enabledTargets: ["cursor"],
+        },
+      },
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+    expect(response.errors[0]?.message).toContain("draft.selectedSkills");
   });
 
   test("accepts import-source selectedSkills payload", async () => {
@@ -831,6 +918,28 @@ describe.sequential("bridge command dispatcher", () => {
           selectedSkills: [
             { uiId: "skill_review", selector: { kind: "repoPath", path: "skills/review" } },
           ],
+          enabledTargets: [],
+        },
+      },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("status", "ready");
+  });
+
+  test("accepts import-source all skill selection mode without selectedSkills", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "import-source",
+      payload: {
+        locator: repoPath,
+        draft: {
+          skillSelectionMode: "all",
           enabledTargets: [],
         },
       },

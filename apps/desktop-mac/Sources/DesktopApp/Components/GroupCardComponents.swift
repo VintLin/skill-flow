@@ -524,7 +524,6 @@ struct SharedGroupCard: View {
             accent: accent,
             isEnabled: clickPolicy.allowsWholeCardTap && onOpen != nil && !isBusy
         )
-        .allowsHitTesting(!isBusy)
         .contentShape(RoundedRectangle(cornerRadius: scale.cornerRadius))
         .gesture(
             TapGesture().onEnded {
@@ -568,6 +567,7 @@ struct SharedGroupCard: View {
                             y: 6
                         )
                     }
+                    .allowsHitTesting(false)
             }
         }
     }
@@ -621,7 +621,8 @@ struct SharedGroupCard: View {
                     Text(byline)
                         .font(.system(size: scale.metaSize, weight: .regular))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -635,46 +636,55 @@ struct SharedGroupCard: View {
 
     @ViewBuilder
     private var headerStatsRow: some View {
-        HStack(spacing: 10) {
-            if let downloadCount = card.stats.downloadCount {
-                statItem(icon: .downloads, text: countText(downloadCount))
-            } else if showsLoadingStatPlaceholders {
-                statPlaceholder(width: 42)
-            }
-            if let starCount = card.stats.starCount {
-                statItem(icon: .star, text: countText(starCount))
-            } else if showsLoadingStatPlaceholders {
-                statPlaceholder(width: 38)
-            }
-            if let githubURL = card.stats.githubURL {
-                Button {
-                    if let url = URL(string: githubURL) {
-                        NSWorkspace.shared.open(url)
+        if let headerMetaLine = card.headerMetaLine, !headerMetaLine.isEmpty {
+            Text(headerMetaLine)
+                .font(.system(size: scale.metaSize, weight: .regular))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: scale.metaSize + 4, alignment: .leading)
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .lineLimit(1)
+        } else {
+            HStack(spacing: 10) {
+                if let downloadCount = card.stats.downloadCount {
+                    statItem(icon: .downloads, text: countText(downloadCount))
+                } else if showsLoadingStatPlaceholders {
+                    statPlaceholder(width: 42)
+                }
+                if let starCount = card.stats.starCount {
+                    statItem(icon: .star, text: countText(starCount))
+                } else if showsLoadingStatPlaceholders {
+                    statPlaceholder(width: 38)
+                }
+                if let githubURL = card.stats.githubURL {
+                    Button {
+                        if let url = URL(string: githubURL) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        statIcon(.github)
                     }
-                } label: {
-                    statIcon(.github)
+                    .buttonStyle(.plain)
+                    .help(githubURL)
+                } else if showsLoadingStatPlaceholders {
+                    statPlaceholder(width: 16)
                 }
-                .buttonStyle(.plain)
-                .help(githubURL)
-            } else if showsLoadingStatPlaceholders {
-                statPlaceholder(width: 16)
-            }
-            if let groupPath = card.groupPath ?? card.stats.localPath {
-                Button {
-                    openPath(groupPath)
-                } label: {
-                    statIcon(.localFile)
+                if let groupPath = card.groupPath ?? card.stats.localPath {
+                    Button {
+                        openPath(groupPath)
+                    } label: {
+                        statIcon(.localFile)
+                    }
+                    .buttonStyle(.plain)
+                    .help(groupPath)
+                } else if showsLoadingStatPlaceholders {
+                    statPlaceholder(width: 16)
                 }
-                .buttonStyle(.plain)
-                .help(groupPath)
-            } else if showsLoadingStatPlaceholders {
-                statPlaceholder(width: 16)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .frame(height: scale.metaSize + 4, alignment: .leading)
+            .foregroundStyle(AppTheme.textMuted(for: theme))
+            .lineLimit(1)
         }
-        .frame(height: scale.metaSize + 4, alignment: .leading)
-        .foregroundStyle(AppTheme.textMuted(for: theme))
-        .lineLimit(1)
     }
 
     private var pinButton: some View {
@@ -814,7 +824,6 @@ struct SharedGroupCard: View {
             : AppTheme.brand(for: accent, in: theme)
 
         return Button {
-            guard !isDisabled else { return }
             onActionButton?()
         } label: {
             if displayMode.usesPlainPrimaryActionIcon {
@@ -854,7 +863,6 @@ struct SharedGroupCard: View {
             accent: accent,
             isEnabled: !isDisabled
         )
-        .disabled(isDisabled)
         .help(actionButtonHelpText ?? buttonTitle)
     }
 
@@ -1463,7 +1471,11 @@ extension SharedGroupCard {
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
-        displayMode.showsMetaLine
+        displayMode.showsMetaLine && (
+            card.headerMetaLine?.isEmpty == false
+                || !visibleHeaderStatKinds(stats: card.stats).isEmpty
+                || (displayMode.showsLoadingStatPlaceholders && (card.skillsLoading || card.targetsLoading))
+        )
     }
 
     static func showsHeaderDivider(

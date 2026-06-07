@@ -285,7 +285,7 @@ export function getMergedTargetDefinitions(
     ...customTargets.map<MergedTargetDefinition>((target) => {
       const mergedDefinition: MergedTargetDefinition = {
         id: target.id,
-        label: target.name,
+        label: target.name ?? target.id,
         strategy: target.strategy,
         kind: "custom",
         isMutable: true,

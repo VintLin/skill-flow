@@ -3,6 +3,8 @@ export const PROTOCOL_VERSION = "1.0" as const;
 export type BridgeCommandName =
   | "bootstrap"
   | "list"
+  | "inspect-state-migration"
+  | "migrate-state"
   | "inspect"
   | "inspect-enrichment"
   | "search-import-groups"
@@ -13,9 +15,9 @@ export type BridgeCommandName =
   | "import-source"
   | "toggle-pin"
   | "rename-source"
-  | "create-virtual-group"
+  | "create-collection"
   | "merge-groups"
-  | "restore-merged-groups"
+  | "restore-collection-sources"
   | "doctor"
   | "add"
   | "apply"
@@ -68,7 +70,7 @@ export function parseBridgeRequest(input: unknown): BridgeRequest {
 
   if (!isBridgeCommandName(command)) {
     throw new Error(
-      "Bridge request 'command' must be one of: bootstrap, list, inspect, inspect-enrichment, search-import-groups, scan-local-import-groups, prepare-import-source, preview-import-source, commit-import-source, import-source, toggle-pin, rename-source, create-virtual-group, merge-groups, restore-merged-groups, doctor, add, apply, update, uninstall, save-settings.",
+      "Bridge request 'command' must be one of: bootstrap, list, inspect-state-migration, migrate-state, inspect, inspect-enrichment, search-import-groups, scan-local-import-groups, prepare-import-source, preview-import-source, commit-import-source, import-source, toggle-pin, rename-source, create-collection, merge-groups, restore-collection-sources, doctor, add, apply, update, uninstall, save-settings.",
     );
   }
 
@@ -133,6 +135,8 @@ export function isBridgeCommandName(value: unknown): value is BridgeCommandName 
   return (
     value === "bootstrap" ||
     value === "list" ||
+    value === "inspect-state-migration" ||
+    value === "migrate-state" ||
     value === "inspect" ||
     value === "inspect-enrichment" ||
     value === "search-import-groups" ||
@@ -143,9 +147,9 @@ export function isBridgeCommandName(value: unknown): value is BridgeCommandName 
     value === "import-source" ||
     value === "toggle-pin" ||
     value === "rename-source" ||
-    value === "create-virtual-group" ||
+    value === "create-collection" ||
     value === "merge-groups" ||
-    value === "restore-merged-groups" ||
+    value === "restore-collection-sources" ||
     value === "doctor" ||
     value === "add" ||
     value === "apply" ||

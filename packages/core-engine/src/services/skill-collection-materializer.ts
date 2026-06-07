@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
-  LeafRecordV2,
-  SkillCollectionMemberV2,
+  LeafRecord,
+  SkillCollectionMember,
 } from "@skill-flow/domain/types";
 import {
   hashDirectory,
@@ -24,14 +24,13 @@ export type SkillCollectionMemberOriginInput = {
   sourcePath: string;
   title: string;
   description: string;
-  displayName: string;
-  legacyAliases: string[];
+  selectorAliases: string[];
 };
 
 export type SkillCollectionMaterializeResult = {
   collectionRoot: string;
-  members: SkillCollectionMemberV2[];
-  leafs: LeafRecordV2[];
+  members: SkillCollectionMember[];
+  leafs: LeafRecord[];
   leafIds: string[];
 };
 
@@ -73,8 +72,8 @@ export async function materializeSkillCollectionMembers(
     await fs.rm(collectionRoot, { recursive: true, force: true });
     await fs.mkdir(collectionRoot, { recursive: true });
 
-    const members: SkillCollectionMemberV2[] = [];
-    const leafs: LeafRecordV2[] = [];
+    const members: SkillCollectionMember[] = [];
+    const leafs: LeafRecord[] = [];
     const leafIds: string[] = [];
 
     for (const [index, ref] of options.refs.entries()) {
@@ -103,10 +102,9 @@ export async function materializeSkillCollectionMembers(
         description: origin.description,
         absolutePath: memberPath,
         skillFilePath: path.join(memberPath, "SKILL.md"),
-        displayName: origin.displayName,
         contentHash: actualHash,
         selectors: {
-          legacyAliases: [...origin.legacyAliases],
+          aliases: [...origin.selectorAliases],
         },
         valid: true,
         diagnostics: [],
@@ -140,6 +138,7 @@ export async function materializeSkillCollectionMembers(
       createdAt: options.capturedAt,
       diagnostics: [],
     });
+    await fs.writeFile(path.join(collectionRoot, ".skillflow-complete"), "", "utf8");
 
     return { collectionRoot, members, leafs, leafIds };
   } catch (error) {

@@ -27,19 +27,19 @@ final class ImportToastDiagnosticsFormatterTests: XCTestCase {
         XCTAssertTrue(message.contains("BRIDGE_REQUEST_INVALID"))
     }
 
-    func testImportToastFormatterIncludesUnsupportedV2BridgeCode() {
+    func testImportToastFormatterIncludesBridgeErrorCode() {
         let message = ImportToastDiagnosticsFormatter.message(
-            reasonCode: "BRIDGE_UNSUPPORTED_IMPORT_DRAFT_V2",
+            reasonCode: "BRIDGE_IMPORT_DRAFT_REJECTED",
             diagnostics: [
                 BridgeDiagnostic(
-                    code: "BRIDGE_UNSUPPORTED_IMPORT_DRAFT_V2",
+                    code: "BRIDGE_IMPORT_DRAFT_REJECTED",
                     message: "Import draft v2 is unsupported",
-                    details: ["bridgeCode": "BRIDGE_UNSUPPORTED_IMPORT_DRAFT_V2"]
+                    details: ["bridgeCode": "BRIDGE_IMPORT_DRAFT_REJECTED"]
                 ),
             ]
         )
 
-        XCTAssertTrue(message.contains("BRIDGE_UNSUPPORTED_IMPORT_DRAFT_V2"))
+        XCTAssertTrue(message.contains("BRIDGE_IMPORT_DRAFT_REJECTED"))
     }
 
     func testImportToastFormatterIncludesUnavailableTarget() {

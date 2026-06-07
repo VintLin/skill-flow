@@ -6,7 +6,7 @@ import XCTest
 final class ImportViewModelTests: XCTestCase {
     private let locale = Locale(identifier: "en")
 
-    func testRecommendedContentGroupsCardsByCategoryAndAttachesRecommendationMetadata() {
+    func testContentResolvesToFlatOrderedCardsAndAttachesRecommendationMetadata() {
         let viewModel = ImportViewModel(
             items: [
                 makeItem(
@@ -47,31 +47,89 @@ final class ImportViewModelTests: XCTestCase {
             ]
         )
 
-        guard case .recommended(let sections) = viewModel.content else {
-            return XCTFail("expected recommended content")
-        }
-
-        XCTAssertEqual(sections.map(\.categoryId), ["general", "development"])
-        XCTAssertEqual(sections.map(\.title), ["General", "Development"])
-        XCTAssertEqual(sections[0].cards.map(\.id), ["anthropics-skills"])
-        XCTAssertEqual(sections[1].cards.map(\.id), ["obra-superpowers"])
+        XCTAssertEqual(viewModel.content.map(\.id), ["anthropics-skills", "obra-superpowers"])
         XCTAssertEqual(
-            sections[1].cards[0].recommendationBadgeItems.map(\.id),
-            ["development", "teamwork", "automation"]
+            viewModel.content[1].recommendationBadgeItems.map(\.id),
+            ["development"]
         )
         XCTAssertEqual(
-            sections[1].cards[0].recommendationBadgeItems.map(\.title),
-            ["Development", "Teamwork", "Automation"]
+            viewModel.content[1].recommendationBadgeItems.map(\.title),
+            ["Development"]
         )
         XCTAssertEqual(
-            sections[1].cards[0].recommendationDescription,
+            viewModel.content[1].recommendationDescription,
             "A development workflow centered on thinking clearly before writing, suited for people who get pulled off track by AI, redo too much work, or feel projects slipping out of control."
         )
     }
 
-    func testSearchResultsContentDoesNotAttachRecommendationMetadata() {
+    func testContentOrdersRecommendedCardsByRecommendationSortOrder() {
         let viewModel = ImportViewModel(
             items: [
+                makeItem(
+                    id: "obra-superpowers",
+                    title: "Superpowers",
+                    locator: "obra/superpowers",
+                    canonicalRepo: "obra/superpowers"
+                ),
+                makeItem(
+                    id: "anthropics-skills",
+                    title: "Anthropic Skills",
+                    locator: "anthropics/skills",
+                    canonicalRepo: "anthropics/skills"
+                ),
+                makeItem(
+                    id: "openai-skills",
+                    title: "OpenAI Skills",
+                    locator: "openai/skills",
+                    canonicalRepo: "openai/skills"
+                )
+            ],
+            locale: locale,
+            fallbackTargetIds: [],
+            submittedQuery: "",
+            recommendations: [
+                .init(
+                    canonicalRepo: "openai/skills",
+                    locator: "openai/skills",
+                    categoryId: "automation",
+                    primaryTagId: "automation",
+                    secondaryTagIds: [],
+                    descriptionKey: "import.recommendation.description.openai_skills",
+                    sortOrder: 30
+                ),
+                .init(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: ["design"],
+                    descriptionKey: "import.recommendation.description.anthropics_skills",
+                    sortOrder: 10
+                ),
+                .init(
+                    canonicalRepo: "obra/superpowers",
+                    locator: "obra/superpowers",
+                    categoryId: "development",
+                    primaryTagId: "development",
+                    secondaryTagIds: [],
+                    descriptionKey: "import.recommendation.description.obra_superpowers",
+                    sortOrder: 20
+                )
+            ]
+        )
+
+        XCTAssertEqual(viewModel.content.map(\.id), ["anthropics-skills", "obra-superpowers", "openai-skills"])
+    }
+
+    func testContentKeepsSearchSourceOrderWithoutRecommendationMetadata() {
+        let viewModel = ImportViewModel(
+            items: [
+                makeItem(
+                    id: "obra-superpowers",
+                    title: "Superpowers",
+                    locator: "obra/superpowers",
+                    canonicalRepo: "obra/superpowers"
+                ),
                 makeItem(
                     id: "anthropics-skills",
                     title: "Anthropic Skills",
@@ -81,7 +139,7 @@ final class ImportViewModelTests: XCTestCase {
             ],
             locale: locale,
             fallbackTargetIds: [],
-            submittedQuery: "anthropic",
+            submittedQuery: "skill",
             recommendations: [
                 .init(
                     canonicalRepo: "anthropics/skills",
@@ -91,20 +149,25 @@ final class ImportViewModelTests: XCTestCase {
                     secondaryTagIds: ["design"],
                     descriptionKey: "import.recommendation.description.anthropics_skills",
                     sortOrder: 10
+                ),
+                .init(
+                    canonicalRepo: "obra/superpowers",
+                    locator: "obra/superpowers",
+                    categoryId: "development",
+                    primaryTagId: "development",
+                    secondaryTagIds: [],
+                    descriptionKey: "import.recommendation.description.obra_superpowers",
+                    sortOrder: 1
                 )
             ]
         )
 
-        guard case .searchResults(let cards) = viewModel.content else {
-            return XCTFail("expected search content")
-        }
-
-        XCTAssertEqual(cards.map(\.id), ["anthropics-skills"])
-        XCTAssertTrue(cards[0].recommendationBadgeItems.isEmpty)
-        XCTAssertNil(cards[0].recommendationDescription)
+        XCTAssertEqual(viewModel.content.map(\.id), ["obra-superpowers", "anthropics-skills"])
+        XCTAssertTrue(viewModel.content[0].recommendationBadgeItems.isEmpty)
+        XCTAssertNil(viewModel.content[0].recommendationDescription)
     }
 
-    func testRecommendedContentSkipsItemsWithoutLocalRecommendationConfig() {
+    func testContentSkipsItemsWithoutRecommendationConfigWhenShowingRecommendations() {
         let viewModel = ImportViewModel(
             items: [
                 makeItem(
@@ -136,17 +199,32 @@ final class ImportViewModelTests: XCTestCase {
             ]
         )
 
-        guard case .recommended(let sections) = viewModel.content else {
-            return XCTFail("expected recommended content")
-        }
-
-        XCTAssertEqual(sections.count, 1)
-        XCTAssertEqual(sections[0].cards.map(\.id), ["anthropics-skills"])
+        XCTAssertEqual(viewModel.content.map(\.id), ["anthropics-skills"])
     }
 
-    func testRecommendedContentPlacesLocalImportSectionBeforeRemoteRecommendations() {
+    func testContentPlacesLocalImportCardsBeforeRemoteRecommendationsAndPreservesLocalSourceOrder() {
         let viewModel = ImportViewModel(
             items: [
+                makeItem(
+                    id: "local-skill-b",
+                    title: "Local Skill B",
+                    locator: "file:///Users/Vint/skills-b",
+                    canonicalRepo: "local-skill-b",
+                    provider: "local",
+                    localImport: MainViewModel.LocalImportInfo(
+                        validationStatus: "valid",
+                        selectedChoiceId: "local-choice-b",
+                        choices: [
+                            MainViewModel.LocalImportChoice(
+                                id: "local-choice-b",
+                                label: "Local choice B",
+                                locator: "file:///Users/Vint/skills-b",
+                                selectedSkills: [.repoPath("browse-b")]
+                            )
+                        ],
+                        detectedSkills: []
+                    )
+                ),
                 makeItem(
                     id: "local-skill",
                     title: "Local Skill",
@@ -161,7 +239,7 @@ final class ImportViewModelTests: XCTestCase {
                                 id: "local-choice",
                                 label: "Local choice",
                                 locator: "file:///Users/Vint/skills",
-                                selectedSkillIds: ["browse"]
+                                selectedSkills: [.repoPath("browse")]
                             )
                         ],
                         detectedSkills: []
@@ -190,19 +268,16 @@ final class ImportViewModelTests: XCTestCase {
             ]
         )
 
-        guard case .recommended(let sections) = viewModel.content else {
-            return XCTFail("expected recommended content")
-        }
-
-        XCTAssertEqual(sections.map(\.categoryId), ["local", "general"])
-        XCTAssertEqual(sections[0].title, L10n.string("import.local.detected.title", locale: locale))
-        XCTAssertEqual(sections[0].cards.map(\.id), ["local-skill"])
-        XCTAssertEqual(sections[0].cards[0].provider, "local")
-        XCTAssertEqual(sections[0].cards[0].localValidationStatus, "valid")
-        XCTAssertEqual(sections[0].cards[0].localChoices.map(\.id), ["local-choice"])
+        XCTAssertEqual(viewModel.content.map(\.id), ["local-skill-b", "local-skill", "anthropics-skills"])
+        XCTAssertEqual(viewModel.content[0].provider, "local")
+        XCTAssertEqual(viewModel.content[0].localValidationStatus, "valid")
+        XCTAssertEqual(viewModel.content[0].localChoices.map(\.id), ["local-choice-b"])
+        XCTAssertEqual(viewModel.content[1].provider, "local")
+        XCTAssertEqual(viewModel.content[1].localValidationStatus, "valid")
+        XCTAssertEqual(viewModel.content[1].localChoices.map(\.id), ["local-choice"])
     }
 
-    func testLocalScanCardExposesSourcePathsAndVersionConflict() {
+    func testLocalScanCardShowsLocalScanSubtitleAndLocksSourceTargets() {
         let item = makeItem(
             id: "local-conflict",
             title: "Local Conflict",
@@ -237,10 +312,11 @@ final class ImportViewModelTests: XCTestCase {
         let card = ImportViewModel.card(from: item, locale: locale)
 
         XCTAssertEqual(card.localValidationStatus, "version-conflict")
-        XCTAssertEqual(card.localSourcePaths.map(\.path), [
-            "/Users/me/skills/conflict-a",
-            "/Users/me/skills/conflict-b",
-        ])
+        XCTAssertEqual(card.subtitle, "Local scan")
+        XCTAssertEqual(card.headerMetaLine, "Source: 2 agent paths")
+        XCTAssertEqual(card.targets.map(\.id), ["codex", "cursor"])
+        XCTAssertEqual(card.targets.filter(\.selectedByDefault).map(\.id), ["codex", "cursor"])
+        XCTAssertEqual(card.targets.filter(\.isLocked).map(\.id), ["codex", "cursor"])
         XCTAssertTrue(card.requiresLocalVariantSelection)
     }
 
@@ -259,7 +335,7 @@ final class ImportViewModelTests: XCTestCase {
                         id: "local",
                         label: "Local",
                         locator: "file:///Users/me/skills/writer",
-                        selectedSkillIds: ["writer"]
+                        selectedSkills: [.repoPath("writer")]
                     ),
                 ],
                 detectedSkills: [
@@ -283,7 +359,7 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card))
     }
 
-    func testRecommendedContentToleratesDuplicateLocalAndRemoteRecommendationKeys() {
+    func testContentToleratesDuplicateLocalAndRemoteRecommendationKeys() {
         let viewModel = ImportViewModel(
             items: [
                 makeItem(
@@ -322,16 +398,10 @@ final class ImportViewModelTests: XCTestCase {
             ]
         )
 
-        guard case .recommended(let sections) = viewModel.content else {
-            return XCTFail("expected recommended content")
-        }
-
-        XCTAssertEqual(sections.map(\.categoryId), ["local", "general"])
-        XCTAssertEqual(sections[0].cards.map(\.id), ["local-anthropics-skills"])
-        XCTAssertEqual(sections[1].cards.map(\.id), ["anthropics-skills"])
+        XCTAssertEqual(viewModel.content.map(\.id), ["local-anthropics-skills", "anthropics-skills"])
     }
 
-    func testRecommendedContentPreservesInstalledStateForLocalRecommendations() {
+    func testContentPreservesInstalledStateForRecommendedCards() {
         let viewModel = ImportViewModel(
             items: [
                 makeItem(
@@ -358,11 +428,7 @@ final class ImportViewModelTests: XCTestCase {
             ]
         )
 
-        guard case .recommended(let sections) = viewModel.content else {
-            return XCTFail("expected recommended content")
-        }
-
-        XCTAssertEqual(sections.first?.cards.first?.isInstalledLocally, true)
+        XCTAssertEqual(viewModel.content.first?.isInstalledLocally, true)
     }
 
     func testSummaryPrefersExplicitSummaryThenSnapshotThenMatchesThenFallbackStates() {
@@ -448,6 +514,10 @@ final class ImportViewModelTests: XCTestCase {
         let loadingCard = ImportViewModel.card(from: loading, locale: locale)
         XCTAssertTrue(loadingCard.skillsLoading)
         XCTAssertFalse(loadingCard.targetsLoading)
+
+        let idle = makeItem(previewPhase: .idle, skills: [], targets: [])
+        let idleCard = ImportViewModel.card(from: idle, locale: locale)
+        XCTAssertFalse(idleCard.skillsLoading)
 
         let ready = makeItem(
             previewPhase: .ready,

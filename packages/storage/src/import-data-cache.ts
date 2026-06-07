@@ -14,7 +14,6 @@ import type {
   UnifiedSourceSkill,
   UnifiedSourceSkillInstalledOn,
   UnifiedSourceSnapshot,
-  UnifiedSourceSnapshotCacheEntry,
   UnifiedSourceTrust,
 } from "@skill-flow/domain/types";
 
@@ -34,7 +33,7 @@ export function normalizeImportDataCache(value: unknown): ImportDataCache {
   const candidate = value as Record<string, unknown>;
   return {
     searches: normalizeSearchSnapshots(candidate.searches),
-    repos: normalizeRepoSnapshots(candidate.repos, candidate.sources),
+    repos: normalizeRepoSnapshots(candidate.repos),
     recommendations: normalizeRecommendationFeeds(candidate.recommendations),
   };
 }
@@ -63,11 +62,8 @@ function normalizeSearchSnapshots(value: unknown): Record<string, ImportSearchSn
   );
 }
 
-function normalizeRepoSnapshots(
-  value: unknown,
-  legacySources: unknown,
-): Record<string, RepoMetadataCacheEntry> {
-  const repos = typeof value === "object" && value !== null && !Array.isArray(value)
+function normalizeRepoSnapshots(value: unknown): Record<string, RepoMetadataCacheEntry> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
     ? Object.fromEntries(
       Object.entries(value).flatMap(([canonicalRepo, entry]) => {
         const normalized = normalizeRepoSnapshotEntry(canonicalRepo, entry);
@@ -75,20 +71,6 @@ function normalizeRepoSnapshots(
       }),
     )
     : {};
-
-  const legacy = typeof legacySources === "object" && legacySources !== null && !Array.isArray(legacySources)
-    ? Object.fromEntries(
-      Object.entries(legacySources).flatMap(([canonicalRepo, entry]) => {
-        const normalized = normalizeSourceSnapshotEntry(canonicalRepo, entry);
-        return normalized ? [[canonicalRepo, legacyRepoEntryFromSourceSnapshot(normalized)] as const] : [];
-      }),
-    )
-    : {};
-
-  return {
-    ...legacy,
-    ...repos,
-  };
 }
 
 function normalizeRecommendationFeeds(value: unknown): Record<string, ImportRecommendationFeed> {
@@ -125,30 +107,6 @@ function normalizeSearchSnapshot(
     expiresAt,
     hits: normalizeSearchHits(candidate.hits),
     groups: normalizeStringArray(candidate.groups),
-  };
-}
-
-function normalizeSourceSnapshotEntry(
-  canonicalRepo: string,
-  value: unknown,
-): UnifiedSourceSnapshotCacheEntry | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  const checkedAt = normalizeString(candidate.checkedAt);
-  const expiresAt = normalizeString(candidate.expiresAt);
-  const data = normalizeUnifiedSourceSnapshot(candidate.data);
-  if (!checkedAt || !expiresAt || !data) {
-    return undefined;
-  }
-
-  return {
-    canonicalRepo,
-    checkedAt,
-    expiresAt,
-    data,
   };
 }
 
@@ -288,51 +246,6 @@ function normalizeUnifiedSourceSnapshot(value: unknown): UnifiedSourceSnapshot |
     owner,
     skills: normalizeSourceSkills(candidate.skills),
     ...(normalizeSourceTrust(candidate.trust) ? { trust: normalizeSourceTrust(candidate.trust)! } : {}),
-  };
-}
-
-function legacyRepoEntryFromSourceSnapshot(
-  sourceEntry: UnifiedSourceSnapshotCacheEntry,
-): RepoMetadataCacheEntry {
-  const snapshot = sourceEntry.data;
-  return {
-    canonicalRepo: sourceEntry.canonicalRepo,
-    checkedAt: sourceEntry.checkedAt,
-    expiresAt: sourceEntry.expiresAt,
-    identity: {
-      canonicalRepo: sourceEntry.canonicalRepo,
-      aliases: snapshot.aliases,
-      origins: ["skills"],
-    },
-    providers: {
-      skills: {
-        provider: "skills",
-        status: "ready",
-        checkedAt: sourceEntry.checkedAt,
-        expiresAt: sourceEntry.expiresAt,
-        snapshot,
-      },
-    },
-    resolved: {
-      ...(snapshot.title ? { title: snapshot.title } : {}),
-      ...(snapshot.owner.slug ? { author: snapshot.owner.slug } : {}),
-      ...(snapshot.description ? { summary: snapshot.description } : {}),
-      ...(snapshot.repoUrl ? { githubUrl: snapshot.repoUrl } : {}),
-      ...(snapshot.sourceUrl ? { sourceUrl: snapshot.sourceUrl } : {}),
-      ...(snapshot.skillCount !== undefined ? { skillCount: snapshot.skillCount } : {}),
-      ...(snapshot.totalInstalls !== undefined ? { downloadCount: snapshot.totalInstalls } : {}),
-      ...(snapshot.repoStars !== undefined ? { starCount: snapshot.repoStars } : {}),
-      fieldSources: buildFieldSources({
-        title: snapshot.title,
-        author: snapshot.owner.slug,
-        summary: snapshot.description,
-        githubUrl: snapshot.repoUrl,
-        sourceUrl: snapshot.sourceUrl,
-        skillCount: snapshot.skillCount,
-        downloadCount: snapshot.totalInstalls,
-        starCount: snapshot.repoStars,
-      }, "skills"),
-    },
   };
 }
 

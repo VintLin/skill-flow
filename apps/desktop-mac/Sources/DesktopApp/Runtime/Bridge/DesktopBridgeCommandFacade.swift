@@ -15,32 +15,32 @@ struct DesktopBridgeCommandFacade<Transport: DesktopBridgeTransporting>: Desktop
         try await bridgeClient.updateSources(sourceIds)
     }
 
-    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        try await bridgeClient.importSource(locator: locator, selectedSkillIds: selectedSkillIds, enabledTargets: enabledTargets)
-    }
-
     func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
         try await bridgeClient.importSource(locator: locator, selectedSkills: selectedSkills, enabledTargets: enabledTargets)
     }
 
-    func commitImportSource(preparationId: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        try await bridgeClient.commitImportSource(preparationId: preparationId, selectedSkillIds: selectedSkillIds, enabledTargets: enabledTargets)
+    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String], skillSelectionMode: ImportSkillSelectionMode) async throws -> BridgeResponse {
+        try await bridgeClient.importSource(locator: locator, selectedSkills: selectedSkills, enabledTargets: enabledTargets, skillSelectionMode: skillSelectionMode)
     }
 
     func commitImportSource(preparationId: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
         try await bridgeClient.commitImportSource(preparationId: preparationId, selectedSkills: selectedSkills, enabledTargets: enabledTargets)
     }
 
-    func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
-        try await bridgeClient.createVirtualGroup(displayName: displayName, skills: skills, enabledTargets: enabledTargets)
+    func commitImportSource(preparationId: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String], skillSelectionMode: ImportSkillSelectionMode) async throws -> BridgeResponse {
+        try await bridgeClient.commitImportSource(preparationId: preparationId, selectedSkills: selectedSkills, enabledTargets: enabledTargets, skillSelectionMode: skillSelectionMode)
+    }
+
+    func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
+        try await bridgeClient.createCollection(displayName: displayName, skills: skills, enabledTargets: enabledTargets)
     }
 
     func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         try await bridgeClient.mergeGroups(displayName: displayName, sourceIds: sourceIds, enabledTargets: enabledTargets)
     }
 
-    func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse {
-        try await bridgeClient.restoreMergedGroups(virtualGroupId: virtualGroupId)
+    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse {
+        try await bridgeClient.restoreCollectionSources(collectionId: collectionId)
     }
 
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {

@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { StateStore } from "@skill-flow/storage/state-store";
 
-const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
+const v2 = (app: { store: { rootPath: string } }): StateStore => new StateStore(app.store.rootPath);
 
 describe.sequential("add prepare flow", () => {
   const sandbox = useSkillFlowSandbox();

@@ -1,16 +1,16 @@
 import type {
-  CollectionsFileV2,
+  CollectionsFile,
   ConfigBootStatus,
   DeploymentTargetId,
   DoctorReport,
   DraftBinding,
   LockFile,
-  Manifest,
+  ManifestFile,
+  PreferencesFile,
   ProjectScope,
   RecentProject,
   Result,
   ScopedSourceDrafts,
-  SharedPreferences,
   SourceUpdateResult,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
@@ -20,38 +20,38 @@ import type { BootstrapEvent } from "@skill-flow/core-engine/services/workspace-
 
 type ConfigCoordinatorDeps = {
   store: {
-    readPreferences(): Promise<SharedPreferences>;
-    readCollections(): Promise<CollectionsFileV2>;
-    writePreferences(preferences: SharedPreferences): Promise<void>;
+    readPreferences(): Promise<PreferencesFile>;
+    readCollections(): Promise<CollectionsFile>;
+    writePreferences(preferences: PreferencesFile): Promise<void>;
   };
   recentProjectService: {
     listRecentProjects(): Promise<RecentProject[]>;
   };
   doctorService: {
     run(
-      manifest: Manifest,
+      manifest: ManifestFile,
       lockFile: LockFile,
-      preferences: SharedPreferences,
+      preferences: PreferencesFile,
     ): Promise<Result<DoctorReport>>;
   };
   workflowService: {
     getSummaries(
-      manifest: Manifest,
+      manifest: ManifestFile,
       lockFile: LockFile,
       audit: DoctorReport | undefined,
-      collections: CollectionsFileV2,
+      collections: CollectionsFile,
     ): WorkflowSummary[];
   };
   getAvailableTargets(): Promise<DeploymentTargetId[]>;
   pruneMissingCheckouts(): Promise<Result<{ removedSourceIds: string[] }>>;
   getConfigData(): Promise<
-    Result<{ manifest: Manifest; lockFile: LockFile; summaries: WorkflowSummary[] }>
+    Result<{ manifest: ManifestFile; lockFile: LockFile; summaries: WorkflowSummary[] }>
   >;
 };
 
 export type ConfigBootstrapData = {
   availableTargets: DeploymentTargetId[];
-  manifest: Manifest;
+  manifest: ManifestFile;
   lockFile: LockFile;
   summaries: WorkflowSummary[];
   initialDrafts: Record<string, DraftBinding>;
@@ -155,7 +155,7 @@ export class ConfigCoordinator {
       bootStatus,
       recentProjects: reconciledPreferences.recentProjects,
       selectedProjectScope: reconciledPreferences.selectedProjectScope,
-      projectDrafts: reconciledPreferences.projectDrafts,
+      projectDrafts: projectDraftsFromPreferences(reconciledPreferences),
     });
   }
 }
@@ -166,14 +166,25 @@ function buildInitialDrafts(summaries: WorkflowSummary[]): Record<string, DraftB
       const enabledTargets = Object.entries(summary.bindings.targets)
         .filter(([, value]) => value?.enabled)
         .map(([target]) => target) as DraftBinding["enabledTargets"];
-      const selectedLeafIds = [
-        ...new Set(
-          (summary.bindings.selectedLeafIds && summary.bindings.selectedLeafIds.length > 0
-            ? summary.bindings.selectedLeafIds
-            : enabledTargets.flatMap((target) => summary.bindings.targets[target]?.leafIds ?? [])),
-        ),
-      ];
+      const selectedLeafIds = [...new Set(summary.bindings.selectedLeafIds)];
       return [summary.source.id, { enabledTargets, selectedLeafIds }];
     }),
+  );
+}
+
+function projectDraftsFromPreferences(preferences: PreferencesFile): ScopedSourceDrafts {
+  return Object.fromEntries(
+    Object.entries(preferences.projectSourceDrafts).map(([projectId, drafts]) => [
+      projectId,
+      Object.fromEntries(
+        Object.entries(drafts).map(([sourceId, draft]) => [
+          sourceId,
+          {
+            selectedLeafIds: [...draft.selectedLeafIds],
+            enabledTargets: [...draft.enabledTargets],
+          },
+        ]),
+      ),
+    ]),
   );
 }

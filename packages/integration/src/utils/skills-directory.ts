@@ -3,7 +3,7 @@ import type {
   ImportGroupCandidate,
   ImportRecommendationFeedId,
   ImportSearchHit,
-  ImportSkillSelectorV2,
+  ImportSkillSelector,
   SourceStats,
   UnifiedSourceOwner,
   UnifiedSourceSkill,
@@ -104,7 +104,7 @@ export function normalizeImportCanonicalRepo(input: string): string | undefined 
 export function normalizeImportRepoPathSelector(
   input: string,
   options: { archiveRoot?: string } = {},
-): ImportSkillSelectorV2 {
+): ImportSkillSelector {
   const normalized = normalizeImportRepoPath(input, options.archiveRoot);
   return { kind: "repoPath", path: normalized };
 }
@@ -427,7 +427,6 @@ export function buildImportGroupCandidate(
     ...(matchedSkills?.length ? { matchedSkills } : {}),
     ...(snapshot ? { snapshot } : {}),
     enrichState: { status: "ready" },
-    previewState: { status: "idle" },
   };
 }
 

@@ -23,7 +23,7 @@ final class GroupTagControllerTests: XCTestCase {
 
         let tags = controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "en"))
 
-        XCTAssertEqual(tags.map(\.title), ["General", "Development"])
+        XCTAssertEqual(tags.map(\.title), ["General"])
     }
 
     func testAddCustomTagPersistsTrimmedTitle() {

@@ -21,16 +21,16 @@ type BridgeResult<T> = {
   errors: Array<{ code: string; message: string }>;
 };
 
-type VirtualSkillRef = {
+type CollectionSkillRef = {
   sourceId: string;
   leafId: string;
   skillPath?: string;
 };
 
-type VirtualGroupBridgeApp = {
-  createVirtualGroup(args: {
+type CollectionBridgeApp = {
+  createCollection(args: {
     displayName: string;
-    skills: VirtualSkillRef[];
+    skills: CollectionSkillRef[];
     enabledTargets: string[];
   }): Promise<BridgeResult<unknown>>;
   mergeGroups(args: {
@@ -38,7 +38,7 @@ type VirtualGroupBridgeApp = {
     sourceIds: string[];
     enabledTargets: string[];
   }): Promise<BridgeResult<unknown>>;
-  restoreMergedGroups(groupId: string): Promise<BridgeResult<unknown>>;
+  restoreCollectionSources(collectionId: string): Promise<BridgeResult<unknown>>;
 };
 
 export async function executeBridgeRequest(
@@ -78,6 +78,36 @@ export async function executeBridgeRequest(
             code: warning.code,
             message: warning.message,
           })),
+        });
+      }
+      case "inspect-state-migration": {
+        const result = await app.inspectStateMigration();
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result),
+        });
+      }
+      case "migrate-state": {
+        const payload = expectObjectPayload(request.payload, "migrate-state");
+        const to = expectMigrationTarget(payload.to);
+        const dryRun = expectOptionalBoolean(payload.dryRun, "dryRun", "migrate-state");
+        const backup = expectOptionalBoolean(payload.backup, "backup", "migrate-state");
+        const tolerateOrphanSources = expectOptionalBoolean(
+          payload.tolerateOrphanSources,
+          "tolerateOrphanSources",
+          "migrate-state",
+        );
+        const result = await app.migrateState({
+          to,
+          ...(dryRun !== undefined ? { dryRun } : {}),
+          ...(backup !== undefined ? { backup } : {}),
+          ...(tolerateOrphanSources !== undefined ? { tolerateOrphanSources } : {}),
+        });
+        return buildResponseWithRequest({
+          request,
+          ok: true,
+          data: sanitizeForJson(result),
         });
       }
       case "inspect": {
@@ -254,15 +284,15 @@ export async function executeBridgeRequest(
           })),
         });
       }
-      case "create-virtual-group": {
-        const payload = expectObjectPayload(request.payload, "create-virtual-group");
-        const displayName = expectString(payload.displayName, "displayName", "create-virtual-group");
-        const skills = parseVirtualSkillRefs(payload.skills, "create-virtual-group");
+      case "create-collection": {
+        const payload = expectObjectPayload(request.payload, "create-collection");
+        const displayName = expectString(payload.displayName, "displayName", "create-collection");
+        const skills = parseCollectionSkillRefs(payload.skills, "create-collection");
         const enabledTargets = parseOptionalStringArray(
           payload.enabledTargets,
-          "create-virtual-group.enabledTargets",
+          "create-collection.enabledTargets",
         ) ?? [];
-        const result = await (app as SkillFlowApp & VirtualGroupBridgeApp).createVirtualGroup({
+        const result = await (app as SkillFlowApp & CollectionBridgeApp).createCollection({
           displayName,
           skills,
           enabledTargets,
@@ -288,7 +318,7 @@ export async function executeBridgeRequest(
           payload.enabledTargets,
           "merge-groups.enabledTargets",
         ) ?? [];
-        const result = await (app as SkillFlowApp & VirtualGroupBridgeApp).mergeGroups({
+        const result = await (app as SkillFlowApp & CollectionBridgeApp).mergeGroups({
           displayName,
           sourceIds,
           enabledTargets,
@@ -306,14 +336,14 @@ export async function executeBridgeRequest(
           })),
         });
       }
-      case "restore-merged-groups": {
-        const payload = expectObjectPayload(request.payload, "restore-merged-groups");
-        const virtualGroupId = expectString(
-          payload.virtualGroupId,
-          "virtualGroupId",
-          "restore-merged-groups",
+      case "restore-collection-sources": {
+        const payload = expectObjectPayload(request.payload, "restore-collection-sources");
+        const collectionId = expectString(
+          payload.collectionId,
+          "collectionId",
+          "restore-collection-sources",
         );
-        const result = await (app as SkillFlowApp & VirtualGroupBridgeApp).restoreMergedGroups(virtualGroupId);
+        const result = await (app as SkillFlowApp & CollectionBridgeApp).restoreCollectionSources(collectionId);
         if (!result.ok) {
           return toFailureResponse(request, result.errors, result.warnings);
         }
@@ -539,6 +569,27 @@ function expectOptionalString(
   return value;
 }
 
+function expectOptionalBoolean(
+  value: JsonValue | undefined,
+  field: string,
+  command: string,
+): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "boolean") {
+    throw new Error(`Bridge command '${command}' requires boolean field '${field}' when provided.`);
+  }
+  return value;
+}
+
+function expectMigrationTarget(value: JsonValue | undefined): 2 {
+  if (value !== 2) {
+    throw new Error("Bridge command 'migrate-state' requires numeric field 'to' to be 2.");
+  }
+  return 2;
+}
+
 function parseRequiredStringArray(value: JsonValue | undefined, field: string): string[] {
   const parsed = parseOptionalStringArray(value, field);
   if (!parsed || parsed.length === 0) {
@@ -557,7 +608,7 @@ function parseOptionalStringArray(value: JsonValue | undefined, field: string): 
   return value as string[];
 }
 
-function parseVirtualSkillRefs(value: JsonValue | undefined, command: string): VirtualSkillRef[] {
+function parseCollectionSkillRefs(value: JsonValue | undefined, command: string): CollectionSkillRef[] {
   if (!Array.isArray(value)) {
     throw new Error(`Bridge command '${command}' requires array field 'skills'.`);
   }
@@ -602,19 +653,29 @@ function expectOptionalImportDraft(value: JsonValue | undefined): ImportDraft | 
     throw new Error("Field 'draft' must be a JSON object when provided.");
   }
 
-  const selectedSkillIds = parseOptionalStringArray(value.selectedSkillIds, "draft.selectedSkillIds");
+  const skillSelectionMode = parseOptionalSkillSelectionMode(value.skillSelectionMode);
   const selectedSkills = parseOptionalImportSkillSelections(value.selectedSkills);
-  if (!selectedSkillIds && !selectedSkills) {
-    throw new Error("Field 'draft.selectedSkills' or 'draft.selectedSkillIds' must be provided.");
+  if (skillSelectionMode !== "all" && !selectedSkills) {
+    throw new Error("Field 'draft.selectedSkills' must be provided.");
   }
 
   const enabledTargets = parseOptionalStringArray(value.enabledTargets, "draft.enabledTargets") ?? [];
 
   return {
-    ...(selectedSkillIds ? { selectedSkillIds } : {}),
-    ...(selectedSkills ? { selectedSkills } : {}),
+    ...(skillSelectionMode ? { skillSelectionMode } : {}),
+    selectedSkills: selectedSkills ?? [],
     enabledTargets: enabledTargets as ImportDraft["enabledTargets"],
   };
+}
+
+function parseOptionalSkillSelectionMode(value: JsonValue | undefined): ImportDraft["skillSelectionMode"] {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value !== "all" && value !== "selected") {
+    throw new Error("Field 'draft.skillSelectionMode' must be 'all' or 'selected'.");
+  }
+  return value;
 }
 
 function parseOptionalImportSkillSelections(value: JsonValue | undefined): ImportDraft["selectedSkills"] | undefined {

@@ -137,14 +137,14 @@ final class MainViewModel {
         let count: Int
     }
 
-    enum VirtualGroupValidationResult: Equatable {
+    enum CollectionValidationResult: Equatable {
         case valid
         case nameRequired
         case skillsRequired
         case groupsRequired
     }
 
-    struct VirtualGroupSkillOption: Identifiable, Equatable {
+    struct CollectionSkillOption: Identifiable, Equatable {
         let id: String
         let sourceId: String
         let sourceTitle: String
@@ -154,18 +154,18 @@ final class MainViewModel {
         let isEnabled: Bool
     }
 
-    struct VirtualGroupSourceOption: Identifiable, Equatable {
+    struct CollectionSourceOption: Identifiable, Equatable {
         let id: String
         let title: String
         let sourceSubtitle: String
         let skillCount: Int
-        let isVirtual: Bool
+        let isCollection: Bool
     }
 
-    struct VirtualGroupEditorOptions: Equatable {
-        let skillOptions: [VirtualGroupSkillOption]
-        let mergeSourceOptions: [VirtualGroupSourceOption]
-        let restoreSourceOptions: [VirtualGroupSourceOption]
+    struct CollectionEditorOptions: Equatable {
+        let skillOptions: [CollectionSkillOption]
+        let mergeSourceOptions: [CollectionSourceOption]
+        let restoreSourceOptions: [CollectionSourceOption]
     }
 
     struct SourceRow: Identifiable {
@@ -225,6 +225,7 @@ final class MainViewModel {
         let title: String
         let originalDisplayName: String?
         let byline: String?
+        let headerMetaLine: String?
         let groupPath: String?
         let sourceKind: String
         let sourceLocator: String
@@ -246,6 +247,7 @@ final class MainViewModel {
             title: String,
             originalDisplayName: String? = nil,
             byline: String?,
+            headerMetaLine: String? = nil,
             groupPath: String?,
             sourceKind: String,
             sourceLocator: String,
@@ -266,6 +268,7 @@ final class MainViewModel {
             self.title = title
             self.originalDisplayName = originalDisplayName
             self.byline = byline
+            self.headerMetaLine = headerMetaLine
             self.groupPath = groupPath
             self.sourceKind = sourceKind
             self.sourceLocator = sourceLocator
@@ -610,7 +613,7 @@ final class MainViewModel {
         let id: String
         let label: String
         let locator: String
-        let selectedSkillIds: [String]
+        let selectedSkills: [ImportSkillSelection]
     }
 
     struct LocalImportDetectedSkill: Identifiable, Equatable {
@@ -877,7 +880,7 @@ final class MainViewModel {
     private static var minimumSaveLoadingDuration: Duration { .milliseconds(200) }
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
-    private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToSharedPreferences"
+    private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToRuntimePreferences"
     private let recommendationsProvider: () -> [ImportRecommendationEntry]
     private var workingDrafts: [ScopedSourceKey: DraftState] = [:]
     private var detectedTargets: Set<String> = []
@@ -905,9 +908,9 @@ final class MainViewModel {
     private var importSearchTokensByQuery: [String: UInt64] = [:]
     private var importSearchTokenSeed: UInt64 = 0
     @ObservationIgnored private var importPreviewTasksByGroupId: [String: Task<BridgeResponse, Error>] = [:]
+    @ObservationIgnored private var importPreviewPrefetchTasksByGroupId: [String: Task<Void, Never>] = [:]
     private var importPreviewTokensByGroupId: [String: UInt64] = [:]
     private var importPreviewTokenSeed: UInt64 = 0
-    @ObservationIgnored private var importPreparationTasksByGroupId: [String: Task<Void, Never>] = [:]
     private var importPreparationTokensByGroupId: [String: UInt64] = [:]
     private var importPreparationTokenSeed: UInt64 = 0
     @ObservationIgnored private var saveStateResetTasksBySourceId: [ScopedSourceKey: Task<Void, Never>] = [:]
@@ -1123,6 +1126,17 @@ final class MainViewModel {
         }
     }
 
+    var importPageTargetIds: [String] {
+        AgentDisplayCatalog.normalize(
+            routeState?.settings.agentDisplayPreferences ?? [],
+            customAgents: routeState?.settings.customAgents ?? []
+        ).map(\.targetId)
+    }
+
+    func importTargetLabel(for targetId: String) -> String {
+        AgentDisplayCatalog.label(for: targetId, customAgents: routeState?.settings.customAgents ?? [])
+    }
+
     var homeAgentFilterOptions: [HomeAgentFilterOption] {
         let cards = groupCards
         let enabledGroupCountsByTargetId = Dictionary(
@@ -1159,7 +1173,7 @@ final class MainViewModel {
             HomeSidebarFilterOption(id: "all", count: cards.count),
             HomeSidebarFilterOption(id: "local", count: cards.filter(Self.isLocalHomeSource).count),
             HomeSidebarFilterOption(id: "remote", count: cards.filter(Self.isRemoteHomeSource).count),
-            HomeSidebarFilterOption(id: "virtual", count: cards.filter(Self.isVirtualHomeSource).count),
+            HomeSidebarFilterOption(id: "collection", count: cards.filter(Self.isCollectionHomeSource).count),
         ]
     }
 
@@ -1217,45 +1231,45 @@ final class MainViewModel {
         groupCards(matching: searchQuery)
     }
 
-    var virtualGroupSourceOptions: [VirtualGroupSourceOption] {
-        groupCards.map { virtualGroupSourceOption(for: $0) }
+    var collectionSourceOptions: [CollectionSourceOption] {
+        groupCards.map { collectionSourceOption(for: $0) }
     }
 
-    func virtualGroupSkillOptions(for sourceId: String) -> [VirtualGroupSkillOption] {
+    func collectionSkillOptions(for sourceId: String) -> [CollectionSkillOption] {
         guard let card = groupCards.first(where: { $0.id == sourceId }) else {
             return []
         }
 
-        return virtualGroupSkillOptions(for: card)
+        return collectionSkillOptions(for: card)
     }
 
-    func virtualGroupEditorOptions() -> VirtualGroupEditorOptions {
+    func collectionEditorOptions() -> CollectionEditorOptions {
         let cards = groupCards
-        let sourceOptions = cards.map { virtualGroupSourceOption(for: $0) }
-        let mergeSourceIds = Set(sourceOptions.filter { !$0.isVirtual }.map(\.id))
-        return VirtualGroupEditorOptions(
+        let sourceOptions = cards.map { collectionSourceOption(for: $0) }
+        let mergeSourceIds = Set(sourceOptions.filter { !$0.isCollection }.map(\.id))
+        return CollectionEditorOptions(
             skillOptions: cards
                 .filter { mergeSourceIds.contains($0.id) }
-                .flatMap { virtualGroupSkillOptions(for: $0) },
-            mergeSourceOptions: sourceOptions.filter { !$0.isVirtual },
-            restoreSourceOptions: sourceOptions.filter(\.isVirtual)
+                .flatMap { collectionSkillOptions(for: $0) },
+            mergeSourceOptions: sourceOptions.filter { !$0.isCollection },
+            restoreSourceOptions: sourceOptions.filter(\.isCollection)
         )
     }
 
-    private func virtualGroupSourceOption(for card: GroupCardModel) -> VirtualGroupSourceOption {
-        VirtualGroupSourceOption(
+    private func collectionSourceOption(for card: GroupCardModel) -> CollectionSourceOption {
+        CollectionSourceOption(
             id: card.id,
             title: card.title,
-            sourceSubtitle: virtualGroupSkillSourceSubtitle(for: card),
+            sourceSubtitle: collectionSkillSourceSubtitle(for: card),
             skillCount: card.skills.count,
-            isVirtual: card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "virtual"
+            isCollection: card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "collection"
         )
     }
 
-    private func virtualGroupSkillOptions(for card: GroupCardModel) -> [VirtualGroupSkillOption] {
-        let sourceSubtitle = virtualGroupSkillSourceSubtitle(for: card)
+    private func collectionSkillOptions(for card: GroupCardModel) -> [CollectionSkillOption] {
+        let sourceSubtitle = collectionSkillSourceSubtitle(for: card)
         return card.skills.map { skill in
-            VirtualGroupSkillOption(
+            CollectionSkillOption(
                 id: "\(card.id):\(skill.id)",
                 sourceId: card.id,
                 sourceTitle: card.title,
@@ -1267,15 +1281,15 @@ final class MainViewModel {
         }
     }
 
-    private func virtualGroupSkillSourceSubtitle(for card: GroupCardModel) -> String {
-        let author = Self.normalizedVirtualGroupAuthor(from: card.byline)
+    private func collectionSkillSourceSubtitle(for card: GroupCardModel) -> String {
+        let author = Self.normalizedCollectionAuthor(from: card.byline)
         if let author {
             return "\(author) · \(card.title)"
         }
         return card.title
     }
 
-    nonisolated private static func normalizedVirtualGroupAuthor(from byline: String?) -> String? {
+    nonisolated private static func normalizedCollectionAuthor(from byline: String?) -> String? {
         let trimmed = byline?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else {
             return nil
@@ -1287,10 +1301,10 @@ final class MainViewModel {
         return trimmed
     }
 
-    func validateVirtualGroupCreate(
+    func validateCollectionCreate(
         displayName: String,
-        selectedSkills: [VirtualGroupSkillRef]
-    ) -> VirtualGroupValidationResult {
+        selectedSkills: [CollectionSkillRef]
+    ) -> CollectionValidationResult {
         if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .nameRequired
         }
@@ -1300,10 +1314,10 @@ final class MainViewModel {
         return .valid
     }
 
-    func validateVirtualGroupMerge(
+    func validateCollectionMerge(
         displayName: String,
         sourceIds: [String]
-    ) -> VirtualGroupValidationResult {
+    ) -> CollectionValidationResult {
         if displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .nameRequired
         }
@@ -1322,7 +1336,7 @@ final class MainViewModel {
     }
 
     func setSelectedHomeSourceTypeFilter(_ filterId: String) {
-        selectedHomeSourceTypeFilterId = ["all", "local", "remote", "virtual"].contains(filterId) ? filterId : "all"
+        selectedHomeSourceTypeFilterId = ["all", "local", "remote", "collection"].contains(filterId) ? filterId : "all"
     }
 
     func reconcileHomeAgentFilter() {
@@ -1351,7 +1365,7 @@ final class MainViewModel {
         if selectedHomeSourceTypeFilterId == "remote", !Self.isRemoteHomeSource(card) {
             return false
         }
-        if selectedHomeSourceTypeFilterId == "virtual", !Self.isVirtualHomeSource(card) {
+        if selectedHomeSourceTypeFilterId == "collection", !Self.isCollectionHomeSource(card) {
             return false
         }
         guard let selectedHomeAgentFilterId = effectiveSelectedHomeAgentFilterId else {
@@ -1370,17 +1384,17 @@ final class MainViewModel {
         homeSourceType(for: card) == "remote"
     }
 
-    static func isVirtualHomeSource(_ card: GroupCardModel) -> Bool {
-        homeSourceType(for: card) == "virtual"
+    static func isCollectionHomeSource(_ card: GroupCardModel) -> Bool {
+        homeSourceType(for: card) == "collection"
     }
 
     private static func homeSourceType(for card: GroupCardModel) -> String {
         let kind = card.sourceKind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let locator = card.sourceLocator.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if kind == "virtual" {
-            return "virtual"
+        if kind == "collection" {
+            return "collection"
         }
-        if ["local", "path", "filesystem"].contains(kind) {
+        if kind == "local" {
             return "local"
         }
         if ["git", "clawhub"].contains(kind) {
@@ -1524,18 +1538,18 @@ final class MainViewModel {
         }
     }
 
-    func createVirtualGroup(
+    func createCollection(
         displayName: String,
-        skills: [VirtualGroupSkillRef],
+        skills: [CollectionSkillRef],
         enabledTargets: [String]
     ) async {
         let normalizedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard validateVirtualGroupCreate(displayName: normalizedDisplayName, selectedSkills: skills) == .valid else {
+        guard validateCollectionCreate(displayName: normalizedDisplayName, selectedSkills: skills) == .valid else {
             return
         }
 
         do {
-            let response = try await commandFacade.createVirtualGroup(
+            let response = try await commandFacade.createCollection(
                 displayName: normalizedDisplayName,
                 skills: skills,
                 enabledTargets: enabledTargets
@@ -1557,7 +1571,7 @@ final class MainViewModel {
     ) async {
         let normalizedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedSourceIds = normalizedUniqueValues(sourceIds)
-        guard validateVirtualGroupMerge(displayName: normalizedDisplayName, sourceIds: normalizedSourceIds) == .valid else {
+        guard validateCollectionMerge(displayName: normalizedDisplayName, sourceIds: normalizedSourceIds) == .valid else {
             return
         }
 
@@ -1577,14 +1591,14 @@ final class MainViewModel {
         }
     }
 
-    func restoreMergedGroups(virtualGroupId: String) async {
-        let normalizedVirtualGroupId = virtualGroupId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedVirtualGroupId.isEmpty else {
+    func restoreCollectionSources(collectionId: String) async {
+        let normalizedCollectionId = collectionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedCollectionId.isEmpty else {
             return
         }
 
         do {
-            let response = try await commandFacade.restoreMergedGroups(virtualGroupId: normalizedVirtualGroupId)
+            let response = try await commandFacade.restoreCollectionSources(collectionId: normalizedCollectionId)
             guard response.ok else {
                 showBridgeCommandFailure(response)
                 return
@@ -1616,11 +1630,11 @@ final class MainViewModel {
 
     private func authorName(locator: String, kind: String) -> String {
         let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ["local", "path", "filesystem"].contains(normalizedKind) {
+        if normalizedKind == "local" {
             return localized("source.author.local")
         }
-        if normalizedKind == "virtual" {
-            return localized("source.author.virtual")
+        if normalizedKind == "collection" {
+            return localized("source.author.collection")
         }
         if let handle = Self.authorHandle(from: locator) {
             return handle
@@ -2277,36 +2291,63 @@ final class MainViewModel {
             let response = try await fetchImportPreviewResponse(groupId: groupId, locator: item.locator)
             let payload = response.data?.value as? [String: Any] ?? [:]
             applyImportPreviewPayload(payload, for: groupId, fallbackLocator: item.locator)
-            startImportPreparationIfNeeded(
-                groupId: groupId,
-                locator: importGroupItem(id: groupId)?.locator ?? item.locator
-            )
         } catch {
             setPreviewPhase(.failed(.plain(error.localizedDescription)), for: groupId)
+        }
+    }
+
+    func prefetchImportGroupDetailsIfNeeded(_ groupIds: [String]) {
+        guard currentRoute == .importPage else {
+            return
+        }
+
+        for groupId in groupIds {
+            guard currentRoute == .importPage else {
+                return
+            }
+            guard let item = importGroupItem(id: groupId),
+                  item.provider != "local",
+                  item.skills.isEmpty,
+                  item.previewPhase == .idle
+            else {
+                continue
+            }
+            guard importPreviewPrefetchTasksByGroupId[groupId] == nil else {
+                continue
+            }
+
+            let task = Task { @MainActor [weak self] in
+                guard let self else {
+                    return
+                }
+                defer {
+                    self.importPreviewPrefetchTasksByGroupId.removeValue(forKey: groupId)
+                }
+                await self.previewImportGroupIfNeeded(groupId)
+            }
+            importPreviewPrefetchTasksByGroupId[groupId] = task
         }
     }
 
     func importImportGroup(
         groupId: String,
         locator: String,
-        selectedSkillIds: [String],
-        selectedSkills: [ImportSkillSelection]? = nil,
+        selectedSkills: [ImportSkillSelection],
+        skillSelectionMode: ImportSkillSelectionMode = .selected,
         enabledTargets: [String]
     ) async {
         guard importingImportGroupId == nil else { return }
         importingImportGroupId = groupId
         defer { importingImportGroupId = nil }
 
-        var finalSelectedSkillIds = selectedSkillIds
-        var finalSelectedSkills = selectedSkills ?? selectedSkillIds.map(ImportSkillSelection.repoPath)
+        var finalSelectedSkills = selectedSkills
         var finalEnabledTargets = enabledTargets
 
-        if finalSelectedSkillIds.isEmpty,
+        if finalSelectedSkills.isEmpty,
            let item = importGroupItem(id: groupId),
            item.skills.isEmpty {
             await previewImportGroupIfNeeded(groupId)
             if let refreshed = importGroupItem(id: groupId) {
-                finalSelectedSkillIds = refreshed.skills.filter(\.selectedByDefault).map(\.id)
                 finalSelectedSkills = refreshed.skills.filter(\.selectedByDefault).map(\.selection)
                 finalEnabledTargets = refreshed.targets.filter(\.selectedByDefault).map(\.id)
             }
@@ -2335,41 +2376,95 @@ final class MainViewModel {
                 response = try await commandFacade.commitImportSource(
                     preparationId: preparationId,
                     selectedSkills: finalSelectedSkills,
-                    enabledTargets: finalEnabledTargets
+                    enabledTargets: finalEnabledTargets,
+                    skillSelectionMode: skillSelectionMode
                 )
             } else {
                 response = try await commandFacade.importSource(
                     locator: locator,
                     selectedSkills: finalSelectedSkills,
-                    enabledTargets: finalEnabledTargets
+                    enabledTargets: finalEnabledTargets,
+                    skillSelectionMode: skillSelectionMode
                 )
             }
-            guard let payload = response.data?.value as? [String: Any],
-                  let status = payload["status"] as? String
+            guard var payload = response.data?.value as? [String: Any],
+                  var status = payload["status"] as? String
             else {
                 showToast(style: .error, text: localizedText("toast.import.invalid_response"))
                 return
             }
 
             if status != "ready" {
-                let reasonCode = payload["reasonCode"] as? String ?? "unknown"
-                let diagnostics = parseBridgeDiagnostics(payload["diagnostics"])
-                if diagnostics.isEmpty {
-                    showToast(style: .error, text: importFailureToastText(reasonCode: reasonCode))
-                } else {
-                    let baseMessage = importFailureToastText(reasonCode: reasonCode)
-                        .resolve(locale: Self.presentationLocale)
-                    let diagnosticMessage = ImportToastDiagnosticsFormatter.message(
-                        reasonCode: reasonCode,
-                        diagnostics: diagnostics
-                    )
-                    showToast(style: .error, message: "\(baseMessage) (\(diagnosticMessage))")
+                var reasonCode = payload["reasonCode"] as? String ?? "unknown"
+                if reasonCode == "IMPORT_PREPARATION_STALE" || reasonCode == "IMPORT_PREPARATION_MISSING" {
+                    await prepareImportGroup(groupId: groupId, locator: locator)
+                    if let refreshed = importGroupItem(id: groupId),
+                       let preparationId = refreshed.preparationId,
+                       refreshed.preparationStatus == "ready",
+                       refreshed.locator == locator {
+                        let retryResponse = try await commandFacade.commitImportSource(
+                            preparationId: preparationId,
+                            selectedSkills: finalSelectedSkills,
+                            enabledTargets: finalEnabledTargets,
+                            skillSelectionMode: skillSelectionMode
+                        )
+                        guard let retryPayload = retryResponse.data?.value as? [String: Any],
+                              let retryStatus = retryPayload["status"] as? String
+                        else {
+                            showToast(style: .error, text: localizedText("toast.import.invalid_response"))
+                            return
+                        }
+                        payload = retryPayload
+                        status = retryStatus
+                        reasonCode = retryPayload["reasonCode"] as? String ?? "unknown"
+                    }
                 }
-                return
+                if status != "ready" {
+                    let diagnostics = parseBridgeDiagnostics(payload["diagnostics"])
+                    if diagnostics.isEmpty {
+                        showToast(style: .error, text: importFailureToastText(reasonCode: reasonCode))
+                    } else {
+                        let baseMessage = importFailureToastText(reasonCode: reasonCode)
+                            .resolve(locale: Self.presentationLocale)
+                        let diagnosticMessage = ImportToastDiagnosticsFormatter.message(
+                            reasonCode: reasonCode,
+                            diagnostics: diagnostics
+                        )
+                        showToast(style: .error, message: "\(baseMessage) (\(diagnosticMessage))")
+                    }
+                    return
+                }
             }
 
             let sourceId = payload["sourceId"] as? String ?? ""
             cancelDeferredDraftSync()
+            mutateImportGroup(groupId) { item in
+                ImportGroupItem(
+                    id: item.id,
+                    title: item.title,
+                    locator: item.locator,
+                    canonicalRepo: item.canonicalRepo,
+                    preparationId: item.preparationId,
+                    preparationStatus: item.preparationStatus,
+                    preparedAt: item.preparedAt,
+                    expiresAt: item.expiresAt,
+                    isInstalledLocally: true,
+                    aliases: item.aliases,
+                    summary: item.summary,
+                    starCount: item.starCount,
+                    totalInstalls: item.totalInstalls,
+                    skillCount: item.skillCount,
+                    matchedSkillNames: item.matchedSkillNames,
+                    matchedSkills: item.matchedSkills,
+                    provider: item.provider,
+                    localImport: item.localImport,
+                    snapshot: item.snapshot,
+                    enrichPhase: item.enrichPhase,
+                    previewPhase: item.previewPhase,
+                    skills: item.skills,
+                    targets: item.targets
+                )
+            }
             importingImportGroupId = nil
             Task { [weak self] in
                 guard let self else { return }
@@ -2385,30 +2480,6 @@ final class MainViewModel {
         } catch {
             showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
         }
-    }
-
-    private func startImportPreparationIfNeeded(groupId: String, locator: String) {
-        guard let item = importGroupItem(id: groupId) else { return }
-        guard item.locator == locator else { return }
-        guard item.preparationId == nil || item.preparationStatus == "failed" || item.preparationStatus == "stale" else { return }
-        guard importPreparationTasksByGroupId[groupId] == nil else { return }
-
-        importPreparationTokenSeed &+= 1
-        let token = importPreparationTokenSeed
-        setImportPreparation(
-            groupId: groupId,
-            preparationId: item.preparationId,
-            preparationStatus: "preparing",
-            preparedAt: item.preparedAt,
-            expiresAt: item.expiresAt
-        )
-
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.prepareImportGroup(groupId: groupId, locator: locator, token: token)
-        }
-        importPreparationTasksByGroupId[groupId] = task
-        importPreparationTokensByGroupId[groupId] = token
     }
 
     private func prepareImportGroup(groupId: String, locator: String, token: UInt64? = nil) async {
@@ -2455,13 +2526,32 @@ final class MainViewModel {
         }
 
         if importPreparationTokensByGroupId[groupId] == activeToken {
-            importPreparationTasksByGroupId.removeValue(forKey: groupId)
             importPreparationTokensByGroupId.removeValue(forKey: groupId)
         }
     }
 
     func showImportAlreadyExistsToast() {
         showToast(style: .neutral, text: localizedText("toast.import.exists"))
+    }
+
+    func showImportLocalVariantRequiredToast() {
+        showToast(style: .neutral, text: localizedText("toast.import.choose_local_variant"))
+    }
+
+    func showImportPreparationInProgressToast() {
+        showToast(style: .neutral, text: localizedText("toast.import.preparing"))
+    }
+
+    func showImportInProgressToast() {
+        showToast(style: .neutral, text: localizedText("toast.import.in_progress"))
+    }
+
+    func showImportAnotherRunningToast() {
+        showToast(style: .neutral, text: localizedText("toast.import.another_running"))
+    }
+
+    func showImportLocalSourceTargetLockedToast(targetId: String) {
+        showToast(style: .neutral, text: localizedText("toast.import.local_source_target_locked", importTargetLabel(for: targetId)))
     }
 
     private func parseLocalScanGroupsPayload(payload: [String: Any]) -> [ImportGroupItem] {
@@ -2546,7 +2636,7 @@ final class MainViewModel {
                 id: id,
                 label: label,
                 locator: locator,
-                selectedSkillIds: choice["selectedSkillIds"] as? [String] ?? []
+                selectedSkills: parseImportSkillSelections(choice["selectedSkills"] as? [[String: Any]])
             )
         }
     }
@@ -2671,9 +2761,7 @@ final class MainViewModel {
                     selectedByDefault: true
                 )
             } ?? []
-            let previewPhase: ImportLoadPhase = skills.isEmpty
-                ? parseImportLoadPhase(group["previewState"] as? [String: Any])
-                : .ready
+            let previewPhase: ImportLoadPhase = skills.isEmpty ? .idle : .ready
 
             return ImportGroupItem(
                 id: id,
@@ -2729,7 +2817,7 @@ final class MainViewModel {
                 id: id,
                 label: label,
                 locator: locator,
-                selectedSkillIds: choice["selectedSkillIds"] as? [String] ?? []
+                selectedSkills: parseImportSkillSelections(choice["selectedSkills"] as? [[String: Any]])
             )
         }
     }
@@ -3034,10 +3122,6 @@ final class MainViewModel {
 
         let skillsPayload = payload["skills"] as? [[String: Any]] ?? []
         let targetsPayload = payload["targets"] as? [[String: Any]] ?? []
-        let previewVersion = (payload["version"] as? Int)
-            ?? (payload["version"] as? Double).map(Int.init)
-        let isImportDraftV2Preview = previewVersion == 2
-        let selectedSkillIds = Set(payload["selectedSkillIds"] as? [String] ?? [])
         let selectedSkillUiIds = Set((payload["selectedSkills"] as? [[String: Any]] ?? [])
             .compactMap { ($0["uiId"] as? String)?.nonEmpty })
         let enabledTargets = Set(payload["enabledTargets"] as? [String] ?? [])
@@ -3053,12 +3137,10 @@ final class MainViewModel {
                 id: id,
                 title: title,
                 summary: (skill["summary"] as? String) ?? "",
-                selectedByDefault: selectedSkillIds.contains(id)
-                    || selectedSkillUiIds.contains((skill["uiId"] as? String) ?? ""),
+                selectedByDefault: selectedSkillUiIds.contains((skill["uiId"] as? String) ?? ""),
                 selection: parseImportSkillSelection(
                     skill,
-                    fallbackId: id,
-                    isImportDraftV2Preview: isImportDraftV2Preview
+                    fallbackId: id
                 )
             )
         }
@@ -3104,11 +3186,9 @@ final class MainViewModel {
 
     private func parseImportSkillSelection(
         _ payload: [String: Any],
-        fallbackId: String,
-        isImportDraftV2Preview: Bool
+        fallbackId: String
     ) -> ImportSkillSelection {
-        guard isImportDraftV2Preview,
-              let uiId = (payload["uiId"] as? String)?.nonEmpty,
+        guard let uiId = (payload["uiId"] as? String)?.nonEmpty,
               let selector = payload["selector"] as? [String: Any],
               (selector["kind"] as? String) == "repoPath",
               let selectorPath = (selector["path"] as? String)?.nonEmpty else {
@@ -3116,6 +3196,18 @@ final class MainViewModel {
         }
 
         return ImportSkillSelection(uiId: uiId, selector: .repoPath(selectorPath))
+    }
+
+    private func parseImportSkillSelections(_ payload: [[String: Any]]?) -> [ImportSkillSelection] {
+        (payload ?? []).compactMap { item in
+            guard let uiId = (item["uiId"] as? String)?.nonEmpty,
+                  let selector = item["selector"] as? [String: Any],
+                  (selector["kind"] as? String) == "repoPath",
+                  let selectorPath = (selector["path"] as? String)?.nonEmpty else {
+                return nil
+            }
+            return ImportSkillSelection(uiId: uiId, selector: .repoPath(selectorPath))
+        }
     }
 
     private func setPreviewPhase(_ phase: ImportLoadPhase, for groupId: String) {
@@ -6445,11 +6537,11 @@ final class MainViewModel {
         let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let trimmedDisplayName = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedOriginalDisplayName = originalDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if normalizedKind == "virtual",
-           trimmedDisplayName?.lowercased().hasPrefix("virtual:") == true,
+        if normalizedKind == "collection",
+           trimmedDisplayName?.lowercased().hasPrefix("collection:") == true,
            let original = trimmedOriginalDisplayName,
            !original.isEmpty,
-           !original.lowercased().hasPrefix("virtual:")
+           !original.lowercased().hasPrefix("collection:")
         {
             return original
         }

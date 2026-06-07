@@ -17,7 +17,15 @@ describe("bridge protocol", () => {
         command: "import-source",
         payload: {
           locator: "owner/repo",
-          selectedSkillIds: ["browse"],
+          draft: {
+            selectedSkills: [
+              {
+                uiId: "browse",
+                selector: { kind: "repoPath", path: "browse" },
+              },
+            ],
+            enabledTargets: [],
+          },
           options: {
             dryRun: false,
           },
@@ -29,7 +37,15 @@ describe("bridge protocol", () => {
       command: "import-source",
       payload: {
         locator: "owner/repo",
-        selectedSkillIds: ["browse"],
+        draft: {
+          selectedSkills: [
+            {
+              uiId: "browse",
+              selector: { kind: "repoPath", path: "browse" },
+            },
+          ],
+          enabledTargets: [],
+        },
         options: {
           dryRun: false,
         },
@@ -109,6 +125,8 @@ describe("bridge protocol", () => {
 
   test("recognizes supported commands and valid json values", () => {
     expect(isBridgeCommandName("bootstrap")).toBe(true);
+    expect(isBridgeCommandName("inspect-state-migration")).toBe(true);
+    expect(isBridgeCommandName("migrate-state")).toBe(true);
     expect(isBridgeCommandName("inspect-enrichment")).toBe(true);
     expect(isBridgeCommandName("prepare-import-source")).toBe(true);
     expect(isBridgeCommandName("commit-import-source")).toBe(true);
@@ -124,6 +142,43 @@ describe("bridge protocol", () => {
       }),
     ).toBe(true);
     expect(isJsonValue({ bad: () => "nope" })).toBe(false);
+  });
+
+  test("builds and parses state migration bridge messages", () => {
+    expect(
+      parseBridgeRequest({
+        protocolVersion: PROTOCOL_VERSION,
+        requestId: "req-migrate",
+        command: "migrate-state",
+        payload: {
+          to: 2,
+          backup: true,
+        },
+      }),
+    ).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: "req-migrate",
+      command: "migrate-state",
+      payload: {
+        to: 2,
+        backup: true,
+      },
+    });
+
+    expect(
+      buildBridgeResponse({
+        command: "inspect-state-migration",
+        ok: true,
+        data: { status: "current" },
+      }),
+    ).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      command: "inspect-state-migration",
+      ok: true,
+      data: { status: "current" },
+      warnings: [],
+      errors: [],
+    });
   });
 
   test("builds and parses inspect-enrichment bridge messages", () => {
@@ -217,18 +272,18 @@ describe("bridge protocol", () => {
     expect(request.payload).toEqual({ path: "/tmp/local-skill" });
   });
 
-  test("recognizes virtual group bridge commands", () => {
-    expect(isBridgeCommandName("create-virtual-group")).toBe(true);
+  test("recognizes collection bridge commands", () => {
+    expect(isBridgeCommandName("create-collection")).toBe(true);
     expect(isBridgeCommandName("merge-groups")).toBe(true);
-    expect(isBridgeCommandName("restore-merged-groups")).toBe(true);
+    expect(isBridgeCommandName("restore-collection-sources")).toBe(true);
   });
 
-  test("parses virtual group create-virtual-group bridge request", () => {
+  test("parses create-collection bridge request", () => {
     expect(
       parseBridgeRequest({
         protocolVersion: PROTOCOL_VERSION,
-        requestId: "req-virtual",
-        command: "create-virtual-group",
+        requestId: "req-collection",
+        command: "create-collection",
         payload: {
           displayName: "Writing Stack",
           skills: [
@@ -243,8 +298,8 @@ describe("bridge protocol", () => {
       }),
     ).toEqual({
       protocolVersion: PROTOCOL_VERSION,
-      requestId: "req-virtual",
-      command: "create-virtual-group",
+      requestId: "req-collection",
+      command: "create-collection",
       payload: {
         displayName: "Writing Stack",
         skills: [

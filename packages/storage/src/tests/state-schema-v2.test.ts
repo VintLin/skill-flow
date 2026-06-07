@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
-  writeLockV2,
-  writeManifestV2,
-} from "../state-schema-v2.js";
+  writeLock,
+  writeManifest,
+} from "../state-schema.js";
 
 async function readJsonFile<T>(filePath: string): Promise<T> {
   return JSON.parse(await fs.readFile(filePath, "utf8")) as T;
@@ -25,13 +25,13 @@ describe("state schema v2", () => {
   });
 
   test("writes schemaVersion 2 and migrationGeneration to authority files", async () => {
-    await writeManifestV2(stateRoot, {
+    await writeManifest(stateRoot, {
       schemaVersion: 2,
       migrationGeneration: "mg_test",
       sources: [],
       bindings: {},
     });
-    await writeLockV2(stateRoot, {
+    await writeLock(stateRoot, {
       schemaVersion: 2,
       migrationGeneration: "mg_test",
       sources: {},

@@ -1,10 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import type { SharedPreferences } from "@skill-flow/domain/types";
+import type { PreferencesFile } from "@skill-flow/domain/types";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
-import { projectStateV2ToView } from "@skill-flow/query";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { StateStore } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import {
   createBareRemote,
@@ -16,17 +15,17 @@ import {
   writeRepoFiles,
 } from "./test-helpers.js";
 
-const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
-const v2View = async (app: { store: { rootPath: string } }) =>
-  projectStateV2ToView(await v2(app).readState());
+const v2 = (app: { store: { rootPath: string } }): StateStore => new StateStore(app.store.rootPath);
+const v2State = async (app: { store: { rootPath: string } }) =>
+  v2(app).readState();
 
 describe.sequential("skill-flow", () => {
   const sandbox = useSkillFlowSandbox();
 
   async function installCustomTarget(
     app: SkillFlowApp,
-    customTarget: SharedPreferences["customTargets"][number],
-    recentProjects: SharedPreferences["recentProjects"] = [],
+    customTarget: PreferencesFile["customTargets"][number],
+    recentProjects: PreferencesFile["recentProjects"] = [],
   ) {
     const preferences = await v2(app).readPreferences();
     await v2(app).writeState({ ...(await v2(app).readState()), preferences: {
@@ -69,8 +68,8 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lock = (await v2View(app)).lockFile;
-    const deployment = lock.deployments.find(
+    const lock = (await v2State(app)).lockFile;
+    const deployment = lock.projections.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "my-agent",
     );
     expect(deployment?.targetRootPath).toBe(customRoot);
@@ -148,8 +147,8 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lock = (await v2View(app)).lockFile;
-    const deployment = lock.deployments.find(
+    const lock = (await v2State(app)).lockFile;
+    const deployment = lock.projections.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );
     expect(deployment).toBeTruthy();
@@ -220,7 +219,7 @@ describe.sequential("skill-flow", () => {
     expect(removed.errors[0]?.code).toBe("GROUP_DELETE_INCOMPLETE");
     expect(await pathExists(externalPath)).toBe(true);
 
-    const manifest = (await v2View(app)).manifest;
+    const manifest = (await v2State(app)).manifest;
     expect(manifest.sources.some((source) => source.id === sourceId)).toBe(true);
   });
 
@@ -301,8 +300,8 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lockBefore = (await v2View(app)).lockFile;
-    const deployment = lockBefore.deployments.find(
+    const lockBefore = (await v2State(app)).lockFile;
+    const deployment = lockBefore.projections.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );
     expect(deployment).toBeTruthy();
@@ -347,8 +346,8 @@ describe.sequential("skill-flow", () => {
     });
     expect(applied.ok).toBe(true);
 
-    const lockBefore = (await v2View(app)).lockFile;
-    const deployment = lockBefore.deployments.find(
+    const lockBefore = (await v2State(app)).lockFile;
+    const deployment = lockBefore.projections.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "codex",
     );
     expect(deployment).toBeTruthy();
@@ -626,9 +625,9 @@ describe.sequential("skill-flow", () => {
     expect(doctor.ok).toBe(true);
     expect(await pathExists(targetPath)).toBe(false);
 
-    const { manifest, lockFile: lock } = await v2View(app);
+    const { manifest, lockFile: lock } = await v2State(app);
     expect(manifest.sources.some((source) => source.id === sourceId)).toBe(false);
-    expect(lock.sources.some((source) => source.id === sourceId)).toBe(false);
+    expect(lock.sources[sourceId]).toBeUndefined();
   });
 
   test("repairTargets explicitly warns when asked to repair an imported-only bootstrap source", async () => {
@@ -815,8 +814,8 @@ describe.sequential("skill-flow", () => {
       (stats: { isSymbolicLink(): boolean }) => !stats.isSymbolicLink(),
     );
 
-    const lock = (await v2View(app)).lockFile;
-    const deployment = lock.deployments.find(
+    const lock = (await v2State(app)).lockFile;
+    const deployment = lock.projections.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "claude-code",
     );
     expect(deployment).toBeTruthy();
@@ -860,9 +859,9 @@ describe.sequential("skill-flow", () => {
 
     expect(repaired.data.removedDeploymentCount).toBe(0);
 
-    const nextLock = (await v2View(app)).lockFile;
+    const nextLock = (await v2State(app)).lockFile;
     expect(
-      nextLock.deployments.some(
+      nextLock.projections.some(
         (deployment) =>
           deployment.sourceId === sourceId &&
           deployment.leafId === leafId &&
@@ -980,7 +979,7 @@ describe.sequential("skill-flow", () => {
     }
 
     const sourceId = added.data.manifest.id;
-    const stateStore = new StateStoreV2(app.store.rootPath);
+    const stateStore = new StateStore(app.store.rootPath);
     const state = await stateStore.readState();
     state.manifest.bindings[sourceId] = {
       sourceId,
@@ -1010,7 +1009,7 @@ describe.sequential("skill-flow", () => {
     });
     await stateStore.writeState(state);
 
-    const view = projectStateV2ToView(await stateStore.readState());
+    const view = await stateStore.readState();
     const doctor = await new DoctorService().run(
       view.manifest,
       view.lockFile,
@@ -1190,15 +1189,17 @@ describe.sequential("skill-flow", () => {
     const repaired = await app.repairState();
 
     expect(repaired.ok).toBe(true);
-    const lockAfter = (await v2View(app)).lockFile;
+    const lockAfter = (await v2State(app)).lockFile;
     expect(lockAfter.leafInventory.map((leaf) => leaf.id)).not.toContain(
       `${sourceId}:extra`,
     );
     expect(
-      lockAfter.deployments.some((deployment) => deployment.leafId === `${sourceId}:ghost`),
+      lockAfter.projections.some(
+        (deployment) => deployment.leafId === `${sourceId}:ghost` && deployment.status === "active",
+      ),
     ).toBe(false);
     expect(
-      lockAfter.deployments.some(
+      lockAfter.projections.some(
         (deployment) =>
           deployment.sourceId === sourceId &&
           deployment.leafId === `${sourceId}:browse` &&
@@ -1704,8 +1705,8 @@ description: |
       selectedLeafIds: [leafId],
     });
 
-    const lock = (await v2View(app)).lockFile;
-    const deployment = lock.deployments.find(
+    const lock = (await v2State(app)).lockFile;
+    const deployment = lock.projections.find(
       (item) => item.sourceId === sourceId && item.leafId === leafId && item.target === "openclaw",
     );
     if (!deployment) {

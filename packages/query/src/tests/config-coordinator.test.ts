@@ -1,52 +1,114 @@
 import { describe, expect, test, vi } from "vitest";
 import type {
-  CollectionsFileV2,
+  CollectionsFile,
   DoctorReport,
   DraftBinding,
   LockFile,
-  Manifest,
+  ManifestFile,
+  PreferencesFile,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
 import { ConfigCoordinator } from "../config-coordinator.js";
 
-const manifest: Manifest = {
-  schemaVersion: 1,
+const manifest: ManifestFile = {
+  schemaVersion: 2,
+  migrationGeneration: "mg_test",
   sources: [
     {
       id: "alpha",
       locator: "/tmp/alpha",
+      canonicalLocator: "/tmp/alpha",
       kind: "local",
       displayName: "alpha",
-      addedAt: "2026-03-23T00:00:00.000Z",
+      enabled: true,
+      createdAt: "2026-03-23T00:00:00.000Z",
+      updatedAt: "2026-03-23T00:00:00.000Z",
     },
     {
       id: "beta",
       locator: "/tmp/beta",
+      canonicalLocator: "/tmp/beta",
       kind: "local",
       displayName: "beta",
-      addedAt: "2026-03-23T00:00:00.000Z",
+      enabled: true,
+      createdAt: "2026-03-23T00:00:00.000Z",
+      updatedAt: "2026-03-23T00:00:00.000Z",
     },
   ],
   bindings: {
     alpha: {
-      targets: {
-        codex: {
-          enabled: true,
-          leafIds: ["alpha:browse"],
-        },
-      },
+      sourceId: "alpha",
+      selectionMode: "selected",
+      selectedLeafIds: ["alpha:browse"],
+      enabledTargets: ["codex"],
     },
     beta: {
-      targets: {},
+      sourceId: "beta",
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
     },
   },
 };
 
 const lockFile: LockFile = {
-  schemaVersion: 1,
-  sources: [],
+  schemaVersion: 2,
+  migrationGeneration: "mg_test",
+  sources: {
+    alpha: {
+      sourceId: "alpha",
+      canonicalLocator: "/tmp/alpha",
+      revision: {
+        provider: "local",
+        capturedAt: "2026-03-23T00:00:00.000Z",
+      },
+      localPath: "/tmp/alpha",
+      leafIds: ["alpha:browse"],
+    },
+  },
   leafInventory: [
     {
+      id: "alpha:browse",
+      sourceId: "alpha",
+      displayName: "browse",
+      linkName: "browse",
+      title: "browse",
+      description: "Browse things.",
+      relativePath: "browse",
+      absolutePath: "/tmp/alpha/browse",
+      skillFilePath: "/tmp/alpha/browse/SKILL.md",
+      contentHash: "hash-alpha",
+      selectors: { aliases: [] },
+      diagnostics: [],
+      valid: true,
+    },
+  ],
+  projections: [],
+};
+
+const audit: DoctorReport = {
+  status: "HEALTHY",
+  issues: [],
+};
+
+const emptyCollections: CollectionsFile = {
+  schemaVersion: 2,
+  migrationGeneration: "mg_test",
+  collections: {},
+};
+
+const summaries: WorkflowSummary[] = [
+  {
+    source: {
+      id: "alpha",
+      locator: "/tmp/alpha",
+      kind: "local",
+      displayName: "alpha",
+      originalDisplayName: "alpha",
+      addedAt: "2026-03-23T00:00:00.000Z",
+    },
+    lock: undefined,
+    leafs: [{
       id: "alpha:browse",
       sourceId: "alpha",
       name: "browse",
@@ -59,54 +121,56 @@ const lockFile: LockFile = {
       contentHash: "hash-alpha",
       metadataWarnings: [],
       valid: true,
+    }],
+    bindings: {
+      selectedLeafIds: ["alpha:browse"],
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: ["alpha:browse"],
+        },
+      },
     },
-  ],
-  deployments: [],
-};
-
-const audit: DoctorReport = {
-  status: "HEALTHY",
-  issues: [],
-};
-
-const emptyCollections: CollectionsFileV2 = {
-  schemaVersion: 2,
-  migrationGeneration: "mg_test",
-  collections: {},
-};
-
-const summaries: WorkflowSummary[] = [
-  {
-    source: manifest.sources[0]!,
-    lock: undefined,
-    leafs: [lockFile.leafInventory[0]!],
-    bindings: manifest.bindings.alpha!,
     activeTargetCount: 1,
     health: "ACTIVE",
     issueCounts: { warning: 0, error: 0 },
   },
   {
-    source: manifest.sources[1]!,
+    source: {
+      id: "beta",
+      locator: "/tmp/beta",
+      kind: "local",
+      displayName: "beta",
+      originalDisplayName: "beta",
+      addedAt: "2026-03-23T00:00:00.000Z",
+    },
     lock: undefined,
     leafs: [],
-    bindings: manifest.bindings.beta!,
+    bindings: { selectedLeafIds: [], targets: {} },
     activeTargetCount: 0,
     health: "INACTIVE",
     issueCounts: { warning: 0, error: 0 },
   },
 ];
 
+function createPreferences(overrides: Partial<PreferencesFile> = {}): PreferencesFile {
+  return {
+    schemaVersion: 2,
+    migrationGeneration: "mg_test",
+    pinnedSourceIds: [],
+    selectedProjectScope: { kind: "global" },
+    recentProjects: [],
+    projectSourceDrafts: {},
+    customTargets: [],
+    agentDisplayOrder: [],
+    ...overrides,
+  };
+}
+
 describe("ConfigCoordinator", () => {
   test("boots config and derives initial drafts from normalized summaries", async () => {
-    const initialPreferences = {
-      schemaVersion: 1,
-      pinnedSourceIds: [],
-      selectedProjectScope: { kind: "global" as const },
-      recentProjects: [],
-      projectDrafts: {},
-    };
-    const refreshedPreferences = {
-      ...initialPreferences,
+    const initialPreferences = createPreferences();
+    const refreshedPreferences = createPreferences({
       recentProjects: [
         {
           projectId: "acme/skill-flow",
@@ -115,7 +179,7 @@ describe("ConfigCoordinator", () => {
           tools: ["codex"],
         },
       ],
-    };
+    });
 
     const getSummaries = vi.fn().mockReturnValue(summaries);
     const coordinator = new ConfigCoordinator({
@@ -180,13 +244,7 @@ describe("ConfigCoordinator", () => {
 
   test("keeps config boot usable when prune removes missing groups", async () => {
     const onEvent = vi.fn();
-    const preferences = {
-      schemaVersion: 1,
-      pinnedSourceIds: [],
-      selectedProjectScope: { kind: "global" as const },
-      recentProjects: [],
-      projectDrafts: {},
-    };
+    const preferences = createPreferences();
     const coordinator = new ConfigCoordinator({
       store: {
         readPreferences: vi.fn().mockResolvedValue(preferences),
@@ -248,13 +306,7 @@ describe("ConfigCoordinator", () => {
       },
     ];
 
-    const preferences = {
-      schemaVersion: 1,
-      pinnedSourceIds: [],
-      selectedProjectScope: { kind: "global" as const },
-      recentProjects: [],
-      projectDrafts: {},
-    };
+    const preferences = createPreferences();
     const coordinator = new ConfigCoordinator({
       store: {
         readPreferences: vi.fn().mockResolvedValue(preferences),

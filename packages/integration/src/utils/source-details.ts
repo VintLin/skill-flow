@@ -239,9 +239,8 @@ function resolveGitHubLocatorForMetadata(source: SourceManifestRecord): string |
     return source.locator;
   }
 
-  const originLocator = source.originLocator?.trim();
-  if (originLocator && parseGitHubRepo(originLocator)) {
-    return originLocator;
+  if (source.canonicalLocator !== source.locator && parseGitHubRepo(source.canonicalLocator)) {
+    return source.canonicalLocator;
   }
 
   return undefined;

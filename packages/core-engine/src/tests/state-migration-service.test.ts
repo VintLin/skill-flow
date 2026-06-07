@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { hashDirectory } from "@skill-flow/integration/utils/fs";
 import {
   CURRENT_MIGRATION_MARKER_VERSION,
   inspectStateMigrationStatus,
-} from "@skill-flow/storage/state-schema-v2";
+} from "@skill-flow/storage/state-schema";
 import { StateMigrationService } from "../services/state-migration-service.js";
 
 describe("state migration service", () => {
@@ -17,6 +17,7 @@ describe("state migration service", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     if (stateRoot) {
       await fs.rm(stateRoot, { recursive: true, force: true });
     }
@@ -173,6 +174,205 @@ describe("state migration service", () => {
     expect(preferences.agentDisplayOrder).toEqual(["codex", "custom-target"]);
   });
 
+  test("migrates legacy github source kind and checkout directory to git", async () => {
+    await seedV1BasicState();
+    const now = "2026-06-04T00:00:00.000Z";
+    const sourceId = "github-source";
+    const oldCheckoutRoot = path.join(stateRoot, "source", "github", sourceId);
+    const newCheckoutRoot = path.join(stateRoot, "source", "git", sourceId);
+    const skillDir = path.join(oldCheckoutRoot, "skills", "review");
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "# Review\n", "utf8");
+
+    const manifestPath = path.join(stateRoot, "manifest.json");
+    const lockPath = path.join(stateRoot, "lock.json");
+    const legacyManifest = await readJsonFile<Record<string, unknown>>(manifestPath, {});
+    const legacyLock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    await writeJsonFile(manifestPath, {
+      ...legacyManifest,
+      sources: [
+        {
+          id: sourceId,
+          locator: "https://github.com/acme/skills.git",
+          kind: "github",
+          displayName: "GitHub Source",
+          addedAt: now,
+        },
+      ],
+      bindings: {},
+    });
+    await writeJsonFile(lockPath, {
+      ...legacyLock,
+      sources: [
+        {
+          id: sourceId,
+          locator: "https://github.com/acme/skills.git",
+          kind: "github",
+          displayName: "GitHub Source",
+          checkoutPath: oldCheckoutRoot,
+          updatedAt: now,
+          leafIds: [`${sourceId}:skills/review`],
+          commitSha: "abc123",
+        },
+      ],
+      leafInventory: [
+        {
+          id: `${sourceId}:skills/review`,
+          sourceId,
+          name: "review",
+          linkName: "review",
+          title: "Review",
+          description: "",
+          relativePath: "skills/review",
+          absolutePath: skillDir,
+          skillFilePath: path.join(skillDir, "SKILL.md"),
+          contentHash: "hash-review",
+          metadataWarnings: [],
+        },
+      ],
+      deployments: [],
+    });
+
+    const service = new StateMigrationService({ stateRoot });
+    const result = await service.migrate({ to: 2, backup: false });
+
+    expect(result.actions).toContainEqual({
+      action: "move",
+      path: path.join(stateRoot, "source", "github"),
+      to: path.join(stateRoot, "source", "git"),
+    });
+    expect(await pathExists(oldCheckoutRoot)).toBe(false);
+    expect(await pathExists(path.join(newCheckoutRoot, "skills", "review", "SKILL.md"))).toBe(true);
+    const manifest = await readJsonFile<Record<string, unknown>>(manifestPath, {});
+    const lock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const [source] = manifest.sources as Array<Record<string, unknown>>;
+    const migratedLock = (lock.sources as Record<string, Record<string, unknown>>)[sourceId];
+    const [leaf] = lock.leafInventory as Array<Record<string, unknown>>;
+    expect(source).toMatchObject({
+      id: sourceId,
+      kind: "git",
+      locator: "https://github.com/acme/skills.git",
+    });
+    expect(migratedLock).toMatchObject({
+      sourceId,
+      revision: {
+        provider: "git",
+        commit: "abc123",
+        capturedAt: now,
+      },
+      localPath: newCheckoutRoot,
+    });
+    expect(leaf).toMatchObject({
+      id: `${sourceId}:skills/review`,
+      absolutePath: path.join(newCheckoutRoot, "skills", "review"),
+      skillFilePath: path.join(newCheckoutRoot, "skills", "review", "SKILL.md"),
+    });
+  });
+
+  test("normalizes deprecated github source kind in existing v2 authority", async () => {
+    const migrationGeneration = "mg_existing";
+    const sourceId = "github-source";
+    const oldCheckoutRoot = path.join(stateRoot, "source", "github", sourceId);
+    const newCheckoutRoot = path.join(stateRoot, "source", "git", sourceId);
+    const skillDir = path.join(oldCheckoutRoot, "skills", "review");
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "# Review\n", "utf8");
+    await writeJsonFile(path.join(stateRoot, "manifest.json"), {
+      schemaVersion: 2,
+      migrationGeneration,
+      sources: [
+        {
+          id: sourceId,
+          kind: "github",
+          locator: "https://github.com/acme/skills.git",
+          canonicalLocator: "https://github.com/acme/skills.git",
+          displayName: "GitHub Source",
+          enabled: true,
+          createdAt: "2026-06-07T00:00:00.000Z",
+          updatedAt: "2026-06-07T00:00:00.000Z",
+        },
+      ],
+      bindings: {},
+    });
+    await writeJsonFile(path.join(stateRoot, "lock.json"), {
+      schemaVersion: 2,
+      migrationGeneration,
+      sources: {
+        [sourceId]: {
+          sourceId,
+          canonicalLocator: "https://github.com/acme/skills.git",
+          revision: {
+            provider: "github",
+            commit: "abc123",
+            capturedAt: "2026-06-07T00:00:00.000Z",
+          },
+          localPath: oldCheckoutRoot,
+          leafIds: [`${sourceId}:skills/review`],
+        },
+      },
+      leafInventory: [
+        {
+          id: `${sourceId}:skills/review`,
+          sourceId,
+          relativePath: "skills/review",
+          linkName: "review",
+          title: "Review",
+          description: "",
+          absolutePath: skillDir,
+          skillFilePath: path.join(skillDir, "SKILL.md"),
+          contentHash: "hash-review",
+          selectors: { aliases: [] },
+          valid: true,
+          diagnostics: [],
+        },
+      ],
+      projections: [],
+    });
+    await writeJsonFile(path.join(stateRoot, "preferences.json"), {
+      schemaVersion: 2,
+      migrationGeneration,
+      pinnedSourceIds: [],
+      selectedProjectScope: { kind: "global" },
+      recentProjects: [],
+      projectSourceDrafts: {},
+      customTargets: [],
+      agentDisplayOrder: [],
+    });
+    await writeJsonFile(path.join(stateRoot, "collections.json"), {
+      schemaVersion: 2,
+      migrationGeneration,
+      collections: {},
+    });
+    const service = new StateMigrationService({ stateRoot });
+    await expect(service.inspect()).resolves.toMatchObject({
+      status: "migration-required",
+      fromVersion: 2,
+    });
+
+    const result = await service.migrate({ to: 2, backup: false });
+
+    expect(result.status).toBe("migrated");
+    if (result.status !== "migrated") {
+      throw new Error(`Expected migrated status, received ${result.status}`);
+    }
+    expect(result.migrationGeneration).toBe(migrationGeneration);
+    expect(await pathExists(oldCheckoutRoot)).toBe(false);
+    expect(await pathExists(path.join(newCheckoutRoot, "skills", "review", "SKILL.md"))).toBe(true);
+    const manifest = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "manifest.json"), {});
+    const lock = await readJsonFile<Record<string, unknown>>(path.join(stateRoot, "lock.json"), {});
+    const [source] = manifest.sources as Array<Record<string, unknown>>;
+    const migratedLock = (lock.sources as Record<string, Record<string, unknown>>)[sourceId];
+    const [leaf] = lock.leafInventory as Array<Record<string, unknown>>;
+    expect(source?.kind).toBe("git");
+    expect(migratedLock?.revision).toMatchObject({ provider: "git" });
+    expect(migratedLock?.localPath).toBe(newCheckoutRoot);
+    expect(leaf?.absolutePath).toBe(path.join(newCheckoutRoot, "skills", "review"));
+    expect(leaf?.skillFilePath).toBe(path.join(newCheckoutRoot, "skills", "review", "SKILL.md"));
+    await expect(service.inspect()).resolves.toMatchObject({
+      status: "current",
+    });
+  });
+
   test("falls back to legacy deployments when legacy projections has no managed entries", async () => {
     await seedV1BasicState();
     const lockPath = path.join(stateRoot, "lock.json");
@@ -199,6 +399,173 @@ describe("state migration service", () => {
         status: "active",
       }),
     ]);
+  });
+
+  test("defaults missing legacy projection status to active", async () => {
+    await seedV1BasicState();
+    const lockPath = path.join(stateRoot, "lock.json");
+    const legacyLock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const deployments = legacyLock.deployments as Array<Record<string, unknown>>;
+    delete deployments[0]?.status;
+    await writeJsonFile(lockPath, {
+      ...legacyLock,
+      deployments,
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await service.migrate({ to: 2, backup: true });
+
+    const lock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const [projection] = lock.projections as Array<Record<string, unknown>>;
+    expect(projection).toMatchObject({
+      sourceId: "source-a",
+      leafId: "leaf-a",
+      status: "active",
+    });
+  });
+
+  test("normalizes unsupported legacy projection status to active", async () => {
+    await seedV1BasicState();
+    const lockPath = path.join(stateRoot, "lock.json");
+    const legacyLock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const deployments = legacyLock.deployments as Array<Record<string, unknown>>;
+    deployments[0] = {
+      ...deployments[0],
+      status: "PENDING",
+    };
+    await writeJsonFile(lockPath, {
+      ...legacyLock,
+      deployments,
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await service.migrate({ to: 2, backup: true });
+
+    const lock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const [projection] = lock.projections as Array<Record<string, unknown>>;
+    expect(projection).toMatchObject({
+      sourceId: "source-a",
+      leafId: "leaf-a",
+      status: "active",
+    });
+  });
+
+  test("preserves legacy leaf valid false during migration", async () => {
+    await seedV1BasicState();
+    const lockPath = path.join(stateRoot, "lock.json");
+    const legacyLock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const leafInventory = legacyLock.leafInventory as Array<Record<string, unknown>>;
+    leafInventory[0] = {
+      ...leafInventory[0],
+      valid: false,
+    };
+    await writeJsonFile(lockPath, {
+      ...legacyLock,
+      leafInventory,
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await service.migrate({ to: 2, backup: true });
+
+    const lock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const [leaf] = lock.leafInventory as Array<Record<string, unknown>>;
+    expect(leaf).toMatchObject({
+      id: "leaf-a",
+      valid: false,
+    });
+  });
+
+  test("blocks orphaned legacy virtual sources without a virtual group", async () => {
+    await seedV1BasicState();
+    const manifestPath = path.join(stateRoot, "manifest.json");
+    const legacyManifest = await readJsonFile<Record<string, unknown>>(manifestPath, {});
+    const sources = legacyManifest.sources as Array<Record<string, unknown>>;
+    await writeJsonFile(manifestPath, {
+      ...legacyManifest,
+      sources: [
+        ...sources,
+        {
+          id: "orphan-virtual",
+          locator: "virtual:orphan-virtual",
+          kind: "virtual",
+          displayName: "Orphan Virtual",
+          addedAt: "2026-06-04T00:00:00.000Z",
+        },
+      ],
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await expect(service.migrate({ to: 2, backup: true })).rejects.toMatchObject({
+      reasonCode: "STATE_MIGRATION_LEGACY_SOURCE_ORPHANED",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          code: "STATE_MIGRATION_LEGACY_SOURCE_ORPHANED",
+          path: expect.stringContaining("manifest.json"),
+          details: expect.objectContaining({ sourceId: "orphan-virtual", kind: "virtual" }),
+        }),
+      ]),
+    });
+  });
+
+  test("can drop orphaned legacy virtual sources when explicitly tolerated", async () => {
+    await seedV1BasicState();
+    const manifestPath = path.join(stateRoot, "manifest.json");
+    const legacyManifest = await readJsonFile<Record<string, unknown>>(manifestPath, {});
+    const sources = legacyManifest.sources as Array<Record<string, unknown>>;
+    await writeJsonFile(manifestPath, {
+      ...legacyManifest,
+      sources: [
+        ...sources,
+        {
+          id: "orphan-virtual",
+          locator: "virtual:orphan-virtual",
+          kind: "virtual",
+          displayName: "Orphan Virtual",
+          addedAt: "2026-06-04T00:00:00.000Z",
+        },
+      ],
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await service.migrate({ to: 2, backup: true, tolerateOrphanSources: true });
+
+    const manifest = await readJsonFile<Record<string, unknown>>(manifestPath, {});
+    expect((manifest.sources as Array<Record<string, unknown>>).map((source) => source.id))
+      .not.toContain("orphan-virtual");
+  });
+
+  test("normalizes quoted legacy leaf metadata during migration", async () => {
+    await seedV1BasicState();
+    const lockPath = path.join(stateRoot, "lock.json");
+    const legacyLock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const leafInventory = legacyLock.leafInventory as Array<Record<string, unknown>>;
+    leafInventory[0] = {
+      ...leafInventory[0],
+      name: "\"keep-codex-fast\"",
+      linkName: "keep-codex-fast",
+      title: "\"keep-codex-fast\"",
+      description: "\"Safe Codex local-state maintenance\"",
+      metadataWarnings: ["name should match parent directory name 'keep-codex-fast'"],
+    };
+    await writeJsonFile(lockPath, {
+      ...legacyLock,
+      leafInventory,
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await service.migrate({ to: 2, backup: false });
+
+    const lock = await readJsonFile<Record<string, unknown>>(lockPath, {});
+    const [leaf] = lock.leafInventory as Array<Record<string, unknown>>;
+    if (!leaf) {
+      throw new Error("Expected migrated leaf");
+    }
+    expect(leaf).toMatchObject({
+      title: "keep-codex-fast",
+      displayName: "keep-codex-fast",
+      description: "Safe Codex local-state maintenance",
+    });
+    expect(leaf.diagnostics).toEqual([]);
   });
 
   test("prunes rebuildable cache only after authority state is current", async () => {
@@ -233,6 +600,75 @@ describe("state migration service", () => {
 
     expect(await readJsonFile(path.join(stateRoot, "manifest.json"), {})).toEqual(beforeManifest);
     expect(await pathExists(path.join(stateRoot, "catalog/import-data.json"))).toBe(beforeCacheExists);
+  });
+
+  test("rolls back authority files when authority replace fails", async () => {
+    await seedV1BasicState();
+    const beforeManifest = await readJsonFile(path.join(stateRoot, "manifest.json"), {});
+    const beforeLock = await readJsonFile(path.join(stateRoot, "lock.json"), {});
+    const beforePreferences = await readJsonFile(path.join(stateRoot, "preferences.json"), {});
+    const beforeCollections = await readJsonFile(path.join(stateRoot, "collections.json"), {});
+    const realCopyFile = fs.copyFile.bind(fs);
+    vi.spyOn(fs, "copyFile").mockImplementation(async (...args: Parameters<typeof fs.copyFile>) => {
+      const [source, destination] = args;
+      if (
+        String(source).includes(".skillflow-authority-replace") &&
+        String(destination) === path.join(stateRoot, "preferences.json")
+      ) {
+        throw new Error("simulated authority replace failure");
+      }
+      return realCopyFile(...args);
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await expect(service.migrate({ to: 2, backup: false })).rejects.toMatchObject({
+      reasonCode: "STATE_MIGRATION_VALIDATION_FAILED",
+    });
+
+    expect(await readJsonFile(path.join(stateRoot, "manifest.json"), {})).toEqual(beforeManifest);
+    expect(await readJsonFile(path.join(stateRoot, "lock.json"), {})).toEqual(beforeLock);
+    expect(await readJsonFile(path.join(stateRoot, "preferences.json"), {})).toEqual(beforePreferences);
+    expect(await readJsonFile(path.join(stateRoot, "collections.json"), {})).toEqual(beforeCollections);
+    await expect(service.inspect()).resolves.toMatchObject({
+      status: "migration-required",
+    });
+  });
+
+  test("rolls back authority and collection source when collection replace fails", async () => {
+    await seedLegacyVirtualGroupState({
+      groupId: "group-1",
+      sourceId: "source-a",
+      leafId: "leaf-a",
+      skillPath: "skills/frontend-design",
+      skillContent: "# Frontend Design\n",
+    });
+    const existingCollectionFile = path.join(stateRoot, "source", "collection", "legacy", "SKILL.md");
+    await fs.mkdir(path.dirname(existingCollectionFile), { recursive: true });
+    await fs.writeFile(existingCollectionFile, "# Existing\n", "utf8");
+    const beforeManifest = await readJsonFile(path.join(stateRoot, "manifest.json"), {});
+    const realRename = fs.rename.bind(fs);
+    vi.spyOn(fs, "rename").mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+      const [source, destination] = args;
+      if (
+        String(source).includes(".skillflow-collection-replace") &&
+        String(destination) === path.join(stateRoot, "source", "collection")
+      ) {
+        throw new Error("simulated collection replace failure");
+      }
+      return realRename(...args);
+    });
+    const service = new StateMigrationService({ stateRoot });
+
+    await expect(service.migrate({ to: 2, backup: false })).rejects.toMatchObject({
+      reasonCode: "STATE_MIGRATION_VALIDATION_FAILED",
+    });
+
+    expect(await readJsonFile(path.join(stateRoot, "manifest.json"), {})).toEqual(beforeManifest);
+    expect(await pathExists(existingCollectionFile)).toBe(true);
+    expect(await pathExists(path.join(stateRoot, "source", "collection", "group-1"))).toBe(false);
+    await expect(service.inspect()).resolves.toMatchObject({
+      status: "migration-required",
+    });
   });
 
   test("reports incomplete when migration marker remains", async () => {
@@ -311,6 +747,7 @@ describe("state migration service", () => {
     }
     expect(collection.materializedSourceId).toBe("group-1");
     expect(generation.migrationGeneration).toBe(manifest.migrationGeneration);
+    expect(await pathExists(path.join(stateRoot, "source/collection/group-1/.skillflow-complete"))).toBe(true);
     expect(collection.members[0]).toMatchObject({
       origin: {
         sourceId: "source-a",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { LeafRecord } from "@skill-flow/domain/types";
+import type { LeafSummaryRecord } from "@skill-flow/domain/types";
 import {
   ALL_AGENTS_CHOICE_ID,
   ALL_SKILLS_CHOICE_ID,
@@ -17,7 +17,7 @@ function createLeaf(params: {
   name: string;
   linkName?: string;
   relativePath: string;
-}): LeafRecord {
+}): LeafSummaryRecord {
   return {
     id: params.id,
     sourceId: "demo-source",

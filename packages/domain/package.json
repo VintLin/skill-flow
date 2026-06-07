@@ -6,8 +6,7 @@
   "main": "dist/index.js",
   "exports": {
     ".": "./dist/index.js",
-    "./types": "./dist/types.js",
-    "./projection-compat": "./dist/projection-compat.js"
+    "./types": "./dist/types.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -2,20 +2,20 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
-import type { PreferencesFileV2 } from "@skill-flow/domain/types";
+import type { PreferencesFile } from "@skill-flow/domain/types";
 import { resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { StateStore } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
 import { createRepo, pathExists, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("project scoped drafts", () => {
   const sandbox = useSkillFlowSandbox();
 
-  async function updatePreferencesV2(
+  async function updatePreferences(
     app: SkillFlowApp,
-    update: (preferences: PreferencesFileV2) => PreferencesFileV2,
+    update: (preferences: PreferencesFile) => PreferencesFile,
   ) {
-    const store = new StateStoreV2(app.store.rootPath);
+    const store = new StateStore(app.store.rootPath);
     const state = await store.readState();
     await store.writeState({
       ...state,
@@ -33,7 +33,7 @@ describe.sequential("project scoped drafts", () => {
       project: false,
     });
     expect(added.ok).toBe(true);
-    const store = new StateStoreV2(sandbox.stateRoot);
+    const store = new StateStore(sandbox.stateRoot);
     const state = await store.readState();
     await store.writeState({
       ...state,
@@ -111,7 +111,7 @@ describe.sequential("project scoped drafts", () => {
     });
     const app = new SkillFlowApp();
 
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       selectedProjectScope: { kind: "project", projectId: "missing-repo" },
     }));
@@ -134,7 +134,7 @@ describe.sequential("project scoped drafts", () => {
     ]);
     expect(result.data.selectedProjectScope).toEqual({ kind: "global" });
 
-    const preferences = (await new StateStoreV2(app.store.rootPath).readState()).preferences;
+    const preferences = (await new StateStore(app.store.rootPath).readState()).preferences;
     expect(preferences.selectedProjectScope).toEqual({ kind: "global" });
     expect(preferences.recentProjects.map((project) => project.projectId)).toEqual([
       "acme/skill-flow",
@@ -149,7 +149,7 @@ describe.sequential("project scoped drafts", () => {
     });
     const app = new SkillFlowApp();
 
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       selectedProjectScope: { kind: "project", projectId: "repo-a" },
       recentProjects: [{
@@ -197,7 +197,7 @@ describe.sequential("project scoped drafts", () => {
       },
     ]);
     const app = new SkillFlowApp();
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       recentProjects: [{
         projectId: "repo-a",
@@ -250,7 +250,7 @@ describe.sequential("project scoped drafts", () => {
     expect(projectInspect.data.binding.selectedLeafIds).toEqual([]);
     expect(projectInspect.data.binding.targets).toEqual({});
 
-    const preferences = (await new StateStoreV2(app.store.rootPath).readState()).preferences;
+    const preferences = (await new StateStore(app.store.rootPath).readState()).preferences;
     expect(preferences.projectSourceDrafts["repo-a"]?.[sourceId]).toEqual(
       expect.objectContaining({
         sourceId,
@@ -274,7 +274,7 @@ describe.sequential("project scoped drafts", () => {
       },
     ]);
     const app = new SkillFlowApp();
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       recentProjects: [{
         projectId: "repo-a",
@@ -324,7 +324,7 @@ describe.sequential("project scoped drafts", () => {
       },
     ]);
     const app = new SkillFlowApp();
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       recentProjects: [{
         projectId: "repo-a",
@@ -393,7 +393,7 @@ describe.sequential("project scoped drafts", () => {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
     const app = new SkillFlowApp();
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       recentProjects: [{
         projectId: "repo-a",
@@ -432,7 +432,7 @@ describe.sequential("project scoped drafts", () => {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
     const app = new SkillFlowApp();
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       recentProjects: [{
         projectId: "repo-a",
@@ -449,7 +449,7 @@ describe.sequential("project scoped drafts", () => {
       return;
     }
 
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       projectSourceDrafts: {
         ...preferences.projectSourceDrafts,
@@ -487,7 +487,7 @@ describe.sequential("project scoped drafts", () => {
       return;
     }
 
-    const preferences = (await new StateStoreV2(app.store.rootPath).readState()).preferences;
+    const preferences = (await new StateStore(app.store.rootPath).readState()).preferences;
     expect(preferences.projectSourceDrafts["repo-a"]?.[added.data.manifest.id]).toEqual(
       expect.objectContaining({
         sourceId: added.data.manifest.id,
@@ -502,7 +502,7 @@ describe.sequential("project scoped drafts", () => {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
     const app = new SkillFlowApp();
-    await updatePreferencesV2(app, (preferences) => ({
+    await updatePreferences(app, (preferences) => ({
       ...preferences,
       selectedProjectScope: { kind: "project", projectId: "repo-a" },
       recentProjects: [{
@@ -547,7 +547,7 @@ describe.sequential("project scoped drafts", () => {
       return;
     }
 
-    const preferences = (await new StateStoreV2(app.store.rootPath).readState()).preferences;
+    const preferences = (await new StateStore(app.store.rootPath).readState()).preferences;
     expect(preferences.selectedProjectScope).toEqual({ kind: "global" });
     expect(preferences.recentProjects).toEqual([]);
     expect(preferences.projectSourceDrafts["repo-a"]).toBeUndefined();

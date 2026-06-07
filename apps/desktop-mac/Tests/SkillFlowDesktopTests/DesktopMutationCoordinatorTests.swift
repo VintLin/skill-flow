@@ -78,11 +78,11 @@ private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked
         return .success(command: .update)
     }
 
-    func importSource(locator: String, selectedSkillIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
+    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
         fatalError("unused")
     }
 
-    func createVirtualGroup(displayName: String, skills: [VirtualGroupSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
+    func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
         fatalError("unused")
     }
 
@@ -90,7 +90,7 @@ private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked
         fatalError("unused")
     }
 
-    func restoreMergedGroups(virtualGroupId: String) async throws -> BridgeResponse {
+    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse {
         fatalError("unused")
     }
 

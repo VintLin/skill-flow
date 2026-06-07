@@ -323,7 +323,33 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(payload["locator"] as? String, "anthropics/skills")
     }
 
-    func testCommitImportSourceSendsLegacyPayloadUntilImportDraftV2CapabilityIsKnown() async throws {
+    func testMigrateStateToV2SendsExpectedPayload() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.migrateStateToV2()
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "migrate-state")
+        XCTAssertEqual(payload["to"] as? Int, 2)
+        XCTAssertEqual(payload["backup"] as? Bool, true)
+    }
+
+    func testBootstrapRunsStateMigrationBeforeLoadingWorkspace() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.bootstrap()
+
+        let commands = try fixture.loggedCommands()
+        XCTAssertEqual(commands, ["migrate-state", "bootstrap"])
+    }
+
+    func testCommitImportSourceAlwaysSendsSelectedSkillsPayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
@@ -331,7 +357,9 @@ final class BridgeClientExecutionTests: XCTestCase {
 
         _ = try await bridge.commitImportSource(
             preparationId: "prep-1",
-            selectedSkillIds: ["review"],
+            selectedSkills: [
+                ImportSkillSelection(uiId: "skill_review", selector: .repoPath("review")),
+            ],
             enabledTargets: ["codex"]
         )
 
@@ -339,12 +367,17 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(try fixture.lastCommand(), "commit-import-source")
         XCTAssertEqual(payload["preparationId"] as? String, "prep-1")
         let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
-        XCTAssertEqual(draft["selectedSkillIds"] as? [String], ["review"])
-        XCTAssertNil(draft["selectedSkills"])
+        XCTAssertEqual(draft["skillSelectionMode"] as? String, "selected")
+        let selectedSkills = try XCTUnwrap(draft["selectedSkills"] as? [[String: Any]])
+        XCTAssertEqual(selectedSkills.first?["uiId"] as? String, "skill_review")
+        let selector = try XCTUnwrap(selectedSkills.first?["selector"] as? [String: Any])
+        XCTAssertEqual(selector["kind"] as? String, "repoPath")
+        XCTAssertEqual(selector["path"] as? String, "review")
+        XCTAssertNil(draft["selectedSkillIds"])
         XCTAssertEqual(draft["enabledTargets"] as? [String], ["codex"])
     }
 
-    func testCommitImportSourceSendsSelectedSkillsPayloadAfterImportDraftV2Capability() async throws {
+    func testCommitImportSourceSendsSelectedSkillsPayloadAfterImportDraftCapability() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
@@ -363,6 +396,7 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(try fixture.lastCommand(), "commit-import-source")
         XCTAssertEqual(payload["preparationId"] as? String, "prep-1")
         let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
+        XCTAssertEqual(draft["skillSelectionMode"] as? String, "selected")
         let selectedSkills = try XCTUnwrap(draft["selectedSkills"] as? [[String: Any]])
         XCTAssertEqual(selectedSkills.first?["uiId"] as? String, "skill_review")
         let selector = try XCTUnwrap(selectedSkills.first?["selector"] as? [String: Any])
@@ -372,7 +406,7 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(draft["enabledTargets"] as? [String], ["codex"])
     }
 
-    func testCommitImportSourceKeepsLegacySelectionAfterCapabilityWhenSelectionIsNotV2Compatible() async throws {
+    func testCommitImportSourceRepoPathSelectionStillUsesSelectedSkillsPayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
@@ -390,11 +424,15 @@ final class BridgeClientExecutionTests: XCTestCase {
         let payload = try fixture.lastPayload()
         XCTAssertEqual(try fixture.lastCommand(), "commit-import-source")
         let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
-        XCTAssertEqual(draft["selectedSkillIds"] as? [String], ["skills/review"])
-        XCTAssertNil(draft["selectedSkills"])
+        XCTAssertEqual(draft["skillSelectionMode"] as? String, "selected")
+        let selectedSkills = try XCTUnwrap(draft["selectedSkills"] as? [[String: Any]])
+        XCTAssertEqual(selectedSkills.first?["uiId"] as? String, "skills/review")
+        let selector = try XCTUnwrap(selectedSkills.first?["selector"] as? [String: Any])
+        XCTAssertEqual(selector["path"] as? String, "skills/review")
+        XCTAssertNil(draft["selectedSkillIds"])
     }
 
-    func testImportSourceSendsLegacyPayloadUntilImportDraftV2CapabilityIsKnown() async throws {
+    func testImportSourceAlwaysSendsSelectedSkillsPayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
@@ -412,37 +450,63 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(try fixture.lastCommand(), "import-source")
         XCTAssertEqual(payload["locator"] as? String, "anthropics/skills")
         let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
-        XCTAssertEqual(draft["selectedSkillIds"] as? [String], ["skills/review"])
-        XCTAssertNil(draft["selectedSkills"])
+        XCTAssertEqual(draft["skillSelectionMode"] as? String, "selected")
+        let selectedSkills = try XCTUnwrap(draft["selectedSkills"] as? [[String: Any]])
+        XCTAssertEqual(selectedSkills.first?["uiId"] as? String, "skill_review")
+        let selector = try XCTUnwrap(selectedSkills.first?["selector"] as? [String: Any])
+        XCTAssertEqual(selector["path"] as? String, "skills/review")
+        XCTAssertNil(draft["selectedSkillIds"])
     }
 
-    func testCommitImportSourceRetriesLegacyDraftOnlyWhenV2Unsupported() async throws {
+    func testImportSourceCanSendAllSkillSelectionMode() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient() }
+
+        _ = try await bridge.importSource(
+            locator: "anthropics/skills",
+            selectedSkills: [],
+            enabledTargets: [],
+            skillSelectionMode: .all
+        )
+
+        let payload = try fixture.lastPayload()
+        XCTAssertEqual(try fixture.lastCommand(), "import-source")
+        let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
+        XCTAssertEqual(draft["skillSelectionMode"] as? String, "all")
+        XCTAssertEqual((draft["selectedSkills"] as? [[String: Any]])?.count, 0)
+    }
+
+    func testCommitImportSourceDoesNotRetryLegacyDraftWhenBridgeRejectsV2Draft() async throws {
         let fixture = try ImportDraftRetryBridgeFixture.install()
         importDraftRetryFixture = fixture
 
         let bridge = await MainActor.run { BridgeClient() }
         _ = try await bridge.bootstrap()
 
-        _ = try await bridge.commitImportSource(
-            preparationId: "prep-1",
-            selectedSkills: [
-                ImportSkillSelection(uiId: "skill_review", selector: .repoPath("review")),
-            ],
-            enabledTargets: ["codex"]
-        )
+        do {
+            _ = try await bridge.commitImportSource(
+                preparationId: "prep-1",
+                selectedSkills: [
+                    ImportSkillSelection(uiId: "skill_review", selector: .repoPath("review")),
+                ],
+                enabledTargets: ["codex"]
+            )
+            XCTFail("Expected commitImportSource to throw when selectedSkills is unsupported.")
+        } catch BridgeClientError.commandFailed(let message, let response) {
+            XCTAssertEqual(message, "selectedSkills is not supported")
+            XCTAssertEqual(response?.errors.first?.code, "BRIDGE_IMPORT_DRAFT_REJECTED")
+        }
 
         let requests = try fixture.loggedRequests()
         let mutationRequests = requests.filter { ($0["command"] as? String) == "commit-import-source" }
-        XCTAssertEqual(mutationRequests.count, 2)
+        XCTAssertEqual(mutationRequests.count, 1)
         let firstPayload = try XCTUnwrap(mutationRequests[0]["payload"] as? [String: Any])
         let firstDraft = try XCTUnwrap(firstPayload["draft"] as? [String: Any])
+        XCTAssertEqual(firstDraft["skillSelectionMode"] as? String, "selected")
         XCTAssertNotNil(firstDraft["selectedSkills"])
         XCTAssertNil(firstDraft["selectedSkillIds"])
-
-        let secondPayload = try XCTUnwrap(mutationRequests[1]["payload"] as? [String: Any])
-        let secondDraft = try XCTUnwrap(secondPayload["draft"] as? [String: Any])
-        XCTAssertEqual(secondDraft["selectedSkillIds"] as? [String], ["review"])
-        XCTAssertNil(secondDraft["selectedSkills"])
     }
 
     func testRenameSourceEncodesPayload() async throws {
@@ -459,23 +523,23 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(try fixture.lastCommand(), "rename-source")
     }
 
-    func testCreateVirtualGroupSendsExpectedPayload() async throws {
+    func testCreateCollectionSendsExpectedPayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
         let bridge = await MainActor.run { BridgeClient() }
 
-        _ = try await bridge.createVirtualGroup(
+        _ = try await bridge.createCollection(
             displayName: "Writing Stack",
             skills: [
-                VirtualGroupSkillRef(sourceId: "source-a", leafId: "skill-a"),
-                VirtualGroupSkillRef(sourceId: "source-b", leafId: "skill-b"),
+                CollectionSkillRef(sourceId: "source-a", leafId: "skill-a"),
+                CollectionSkillRef(sourceId: "source-b", leafId: "skill-b"),
             ],
             enabledTargets: ["codex", "claude"]
         )
 
         let payload = try fixture.lastPayload()
-        XCTAssertEqual(try fixture.lastCommand(), "create-virtual-group")
+        XCTAssertEqual(try fixture.lastCommand(), "create-collection")
         XCTAssertEqual(payload["displayName"] as? String, "Writing Stack")
         XCTAssertEqual(payload["enabledTargets"] as? [String], ["codex", "claude"])
 
@@ -506,17 +570,17 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertEqual(payload["enabledTargets"] as? [String], ["codex"])
     }
 
-    func testRestoreMergedGroupsSendsExpectedPayload() async throws {
+    func testRestoreCollectionSourcesSendsExpectedPayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
         let bridge = await MainActor.run { BridgeClient() }
 
-        _ = try await bridge.restoreMergedGroups(virtualGroupId: "virtual-group-1")
+        _ = try await bridge.restoreCollectionSources(collectionId: "collection-1")
 
         let payload = try fixture.lastPayload()
-        XCTAssertEqual(try fixture.lastCommand(), "restore-merged-groups")
-        XCTAssertEqual(payload["virtualGroupId"] as? String, "virtual-group-1")
+        XCTAssertEqual(try fixture.lastCommand(), "restore-collection-sources")
+        XCTAssertEqual(payload["collectionId"] as? String, "collection-1")
     }
 
     private func sourceText() throws -> String {
@@ -679,11 +743,13 @@ private final class StubbornBridgeFixture {
 private final class RecordingBridgeFixture {
     private let rootURL: URL
     private let payloadURL: URL
+    private let logURL: URL
     private let savedHelperOverride: String?
 
-    private init(rootURL: URL, payloadURL: URL, savedHelperOverride: String?) {
+    private init(rootURL: URL, payloadURL: URL, logURL: URL, savedHelperOverride: String?) {
         self.rootURL = rootURL
         self.payloadURL = payloadURL
+        self.logURL = logURL
         self.savedHelperOverride = savedHelperOverride
     }
 
@@ -693,13 +759,14 @@ private final class RecordingBridgeFixture {
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
         let payloadURL = rootURL.appendingPathComponent("payload.json")
+        let logURL = rootURL.appendingPathComponent("requests.jsonl")
         let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
-        try recordingHelperScript(payloadPath: payloadURL.path).write(to: helperURL, atomically: true, encoding: .utf8)
+        try recordingHelperScript(payloadPath: payloadURL.path, logPath: logURL.path).write(to: helperURL, atomically: true, encoding: .utf8)
 
         let savedHelperOverride = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_HELPER_OVERRIDE"]
         setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
 
-        return RecordingBridgeFixture(rootURL: rootURL, payloadURL: payloadURL, savedHelperOverride: savedHelperOverride)
+        return RecordingBridgeFixture(rootURL: rootURL, payloadURL: payloadURL, logURL: logURL, savedHelperOverride: savedHelperOverride)
     }
 
     func lastPayload() throws -> [String: Any] {
@@ -716,6 +783,18 @@ private final class RecordingBridgeFixture {
         return try XCTUnwrap(root["command"] as? String)
     }
 
+    func loggedCommands() throws -> [String] {
+        let text = try String(contentsOf: logURL, encoding: .utf8)
+        return try text
+            .split(separator: "\n")
+            .map { line in
+                let data = Data(line.utf8)
+                let object = try JSONSerialization.jsonObject(with: data)
+                let root = try XCTUnwrap(object as? [String: Any])
+                return try XCTUnwrap(root["command"] as? String)
+            }
+    }
+
     func tearDown() throws {
         if let savedHelperOverride {
             setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", savedHelperOverride, 1)
@@ -728,7 +807,7 @@ private final class RecordingBridgeFixture {
         }
     }
 
-    private static func recordingHelperScript(payloadPath: String) -> String {
+    private static func recordingHelperScript(payloadPath: String, logPath: String) -> String {
         """
         const fs = require("node:fs");
         const input = [];
@@ -737,6 +816,7 @@ private final class RecordingBridgeFixture {
         process.stdin.on("end", () => {
           const request = JSON.parse(input.join("") || "{}");
           fs.writeFileSync(\(String(reflecting: payloadPath)), JSON.stringify(request), "utf8");
+          fs.appendFileSync(\(String(reflecting: logPath)), JSON.stringify(request) + "\\n", "utf8");
           const data = request.command === "bootstrap"
             ? { command: request.command ?? "list", capabilities: { importDraftV2: true } }
             : { command: request.command ?? "list" };
@@ -821,7 +901,7 @@ private final class ImportDraftRetryBridgeFixture {
               data: null,
               warnings: [],
               errors: [{
-                code: "BRIDGE_UNSUPPORTED_IMPORT_DRAFT_V2",
+                code: "BRIDGE_IMPORT_DRAFT_REJECTED",
                 message: "selectedSkills is not supported"
               }]
             }));

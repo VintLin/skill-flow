@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
 import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { StateStore } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
@@ -39,7 +39,7 @@ describe.sequential("state schema v2 provider e2e", () => {
     }
     const skill = preview.data.skills.find((candidate) => candidate.selector?.path === repoPath);
     expect(skill).toEqual(expect.objectContaining({
-      legacyId: repoPath,
+      providerSkillId: repoPath,
       selector: { kind: "repoPath", path: repoPath },
       origin: expect.objectContaining({
         repoPath,
@@ -75,7 +75,7 @@ describe.sequential("state schema v2 provider e2e", () => {
     if (!committed.ok || committed.data.status !== "ready") {
       return;
     }
-    const state = await new StateStoreV2(app.store.rootPath).readState();
+    const state = await new StateStore(app.store.rootPath).readState();
     const binding = state.manifest.bindings[committed.data.sourceId];
     expect(binding?.selectionMode).toBe("selected");
     const selectedLeaf = state.lockFile.leafInventory.find((leaf) =>

@@ -165,14 +165,21 @@ program
   .option("--dry-run", "Print planned migration actions without modifying state")
   .option("--state-root <path>", "Override the skill-flow state root for this command")
   .option("--no-backup", "Do not create a backup before migration")
+  .option("--tolerate-orphans", "Drop legacy virtual sources that have no virtual group definition")
   .action(async (options: {
     to: string;
     dryRun?: boolean;
     stateRoot?: string;
     backup?: boolean;
+    tolerateOrphans?: boolean;
   }) => {
     const runtime = options.stateRoot ? createAppForStateRoot(options.stateRoot) : app;
-    process.exitCode = await runMigrateStateCli(runtime, options);
+    process.exitCode = await runMigrateStateCli(runtime, {
+      ...options,
+      ...(options.tolerateOrphans !== undefined
+        ? { tolerateOrphanSources: options.tolerateOrphans }
+        : {}),
+    });
   });
 
 program

@@ -36,7 +36,7 @@ export class RuntimeStore {
   }
 
   get sourceRoot(): string {
-    return this.getSourceRoot("git");
+    return path.join(this.rootPath, "source");
   }
 
   getSourceRoot(kind: SourceKind): string {
@@ -201,6 +201,7 @@ export class RuntimeStore {
       ensureDir(this.getSourceRoot("local")),
       ensureDir(this.getSourceRoot("git")),
       ensureDir(this.getSourceRoot("clawhub")),
+      ensureDir(this.getSourceRoot("collection")),
       ensureDir(this.catalogRoot),
     ]);
   }

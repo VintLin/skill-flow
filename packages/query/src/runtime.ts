@@ -4,15 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { createChannelAdapters, type ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
 import type {
-  AddSourceDraftOptions,
-  AddSourcePreparation,
-  CollectionsFileV2,
+  CollectionsFile,
   DeploymentTargetId,
-  DiagnosticV2,
+  Diagnostic,
   DraftBinding,
   DeploymentAction,
   DeploymentPlan,
   DeploymentTargetName,
+  DeploymentSummaryRecord,
   DoctorIssue,
   DoctorReport,
   ImportDraft,
@@ -28,43 +27,41 @@ import type {
   ImportPreparationResult,
   ImportReasonCode,
   ImportSourceResult,
-  LeafRecordV2,
   LeafRecord,
   LockFile,
   LocalImportChoice,
-  Manifest,
   LocalScanGroup,
   LocalScanGroupStatus,
   LocalScanImportChoice,
   LocalScanSkillVariant,
-  LockFileV2,
-  ManifestFileV2,
-  PreferencesFileV2,
+  LeafSummaryRecord,
+  ManifestFile,
+  PreferencesFile,
   ProjectScope,
   ProjectionRecord,
   RecentProject,
   Result,
-  SharedPreferences,
-  SkillCollectionRecordV2,
+  ScopedSourceDrafts,
+  SkillCollectionRecord,
   SkillCandidate,
+  SourceBindingSummary,
+  SourceLockSummaryRecord,
+  SourceManifestRecord,
   SourceMetadataResult,
+  SourceSummaryRecord,
   SourceStats,
   SourceBinding,
   SourceUpdateResult,
   SourceUpdateResultItem,
-  TargetBinding,
   UnifiedSourceSnapshot,
   UnifiedSourceTrust,
-  VirtualGroupRecord,
-  VirtualGroupSkillRef,
-  VirtualGroupsState,
+  CollectionViewRecord,
+  CollectionSkillRef,
   Warning,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
-import { getBootstrapImportedTargets, getManagedDeployments } from "@skill-flow/domain/projection-compat";
 import { RuntimeStore } from "@skill-flow/storage/runtime-store";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
-import { normalizeSharedPreferences } from "@skill-flow/storage/preferences-store";
+import { StateStore } from "@skill-flow/storage/state-store";
 import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
 import {
   isImportDataCacheExpired,
@@ -125,9 +122,9 @@ import {
 import { ConfigCoordinator } from "./config-coordinator.js";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
-import { ImportPreparationServiceV2 } from "@skill-flow/core-engine/services/import-preparation-service-v2";
+import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
-import { SourceAuthorityServiceV2 } from "@skill-flow/core-engine/services/source-authority-service-v2";
+import { SourceAuthorityService } from "@skill-flow/core-engine/services/source-authority-service";
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
 import {
   StateMigrationService,
@@ -135,22 +132,21 @@ import {
   type StateMigrationResult,
 } from "@skill-flow/core-engine/services/state-migration-service";
 import { WorkflowService } from "./workflow-service.js";
-import type { StateMigrationStatus } from "@skill-flow/storage/state-schema-v2";
-import type { StateStoreV2State } from "@skill-flow/storage/state-store-v2";
-import { projectStateV2ToView, type StateV2AuthorityView } from "./state-v2-view.js";
+import type { StateMigrationStatus } from "@skill-flow/storage/state-schema";
+import type { StateStoreState } from "@skill-flow/storage/state-store";
 import type {
   AddSourceOptions,
   SourcePreview,
-  SourceSnapshot,
 } from "@skill-flow/core-engine/services/source-types";
 import {
   WorkspaceBootstrapService,
   type BootstrapEvent,
   type LocalSkillScanResult,
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
+import { parseSkillFrontmatter } from "./skill-frontmatter.js";
 import type { AgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
-import { DeploymentPlannerV2 } from "@skill-flow/core-engine/services/deployment-planner-v2";
-import { DeploymentApplierV2 } from "@skill-flow/core-engine/services/deployment-applier-v2";
+import { DeploymentPlanner } from "@skill-flow/core-engine/services/deployment-planner";
+import { DeploymentApplier } from "@skill-flow/core-engine/services/deployment-applier";
 import {
   SkillCollectionMemberOriginMissingError,
   materializeSkillCollectionMembers,
@@ -162,12 +158,42 @@ export type SkillFlowAppOptions = {
   agentsOriginReader?: AgentsOriginReader;
 };
 
+type AddSourceDraftOptions = {
+  draft?: DraftBinding;
+  skillNames?: string[];
+  agentTargets?: DeploymentTargetId[];
+  skipTargetDetection?: boolean;
+};
+type AddSourcePreparation = {
+  sourceId: string;
+  availableTargets: DeploymentTargetId[];
+  draft: DraftBinding;
+  leafs: LeafSummaryRecord[];
+};
+type RuntimeSourceSnapshot = {
+  manifest: RuntimeManifestSourceView;
+  lock: SourceLockSummaryRecord;
+  leafCount: number;
+  invalidLeafCount: number;
+};
 type SkillFlowAddOptions = AddSourceOptions &
   AddSourceDraftOptions & {
     project?: boolean;
   };
 
-type AddSourceResult = SourceSnapshot & AddSourcePreparation & { projected: boolean };
+type AddSourceResult = RuntimeSourceSnapshot & AddSourcePreparation & { projected: boolean };
+type RuntimeManifestSourceView = SourceSummaryRecord & {
+  selectionMode?: "all" | "partial";
+};
+type RuntimeManifestView = {
+  schemaVersion: ManifestFile["schemaVersion"];
+  sources: RuntimeManifestSourceView[];
+  bindings: Record<string, SourceBindingSummary>;
+};
+type RuntimeLockView = Omit<LockFile, "sources"> & {
+  sources: Record<string, SourceLockSummaryRecord>;
+  deployments: DeploymentSummaryRecord[];
+};
 type RenameSourceResult = {
   sourceId: string;
   displayName: string;
@@ -182,15 +208,15 @@ type GitHubImportLocator = {
   requestedPath?: string;
   skillSelector?: string;
 };
-export type CreateVirtualGroupOptions = {
+export type CreateCollectionOptions = {
   displayName: string;
-  skills: VirtualGroupSkillRef[];
+  skills: CollectionSkillRef[];
   enabledTargets?: DeploymentTargetId[];
 };
-export type CreateVirtualGroupResult = {
-  group: VirtualGroupRecord;
-  source: Manifest["sources"][number];
-  binding: SourceBinding;
+export type CreateCollectionResult = {
+  group: CollectionViewRecord;
+  source: RuntimeManifestSourceView;
+  binding: SourceBindingSummary;
 };
 export type MergeGroupsOptions = {
   displayName: string;
@@ -198,7 +224,7 @@ export type MergeGroupsOptions = {
   enabledTargets: DeploymentTargetId[];
 };
 export type RestoreMergedGroupsResult = {
-  virtualGroupId: string;
+  collectionId: string;
   restoredSourceIds: string[];
   skippedSourceIds: string[];
 };
@@ -209,23 +235,30 @@ type ApplyDraftResult = {
   summary?: WorkflowSummary;
   inspect?: {
     summary: WorkflowSummary;
-    source: Manifest["sources"][number];
-    binding: SourceBinding;
-    leafs: LeafRecord[];
-    deployments: LockFile["deployments"];
+    source: RuntimeManifestSourceView;
+    binding: SourceBindingSummary;
+    leafs: LeafSummaryRecord[];
+    deployments: DeploymentSummaryRecord[];
   };
   recentProjects?: RecentProject[];
   selectedProjectScope?: ProjectScope;
-  projectDrafts?: SharedPreferences["projectDrafts"];
+  projectDrafts?: PreferencesFile["projectSourceDrafts"];
 };
-type RuntimeAuthoritySnapshot = StateV2AuthorityView & {
-  state: StateStoreV2State;
-  collections: CollectionsFileV2;
+type RuntimeAuthoritySnapshot = {
+  manifest: ManifestFile;
+  lockFile: LockFile;
+  preferences: PreferencesFile;
+  state: StateStoreState;
+  collections: CollectionsFile;
 };
 type GroupCardEnrichmentSnapshot = {
   sourceMetadata?: SourceMetadataResult;
   sourceSnapshot?: UnifiedSourceSnapshot;
   groupPath?: string;
+};
+type RuntimeImportSkillSelection = NonNullable<ImportDraft["selectedSkills"]>[number];
+type SelectableLeaf = Pick<LeafRecord, "id" | "relativePath" | "linkName" | "title"> & {
+  name?: string;
 };
 type LocalScanResolvedSkill = {
   scan: LocalSkillScanResult;
@@ -275,18 +308,103 @@ async function resolveUsableProjectPath(projectPath: string | undefined): Promis
   }
 }
 
+function normalizePreferencesFile(preferences: PreferencesFile): PreferencesFile {
+  const recentProjects = normalizeRecentProjects(preferences.recentProjects);
+  return {
+    ...preferences,
+    schemaVersion: 2,
+    pinnedSourceIds: uniqueNonEmptyStrings(preferences.pinnedSourceIds),
+    selectedProjectScope: normalizeSelectedProjectScope(preferences.selectedProjectScope, recentProjects),
+    recentProjects,
+    projectSourceDrafts: normalizeProjectSourceDrafts(preferences.projectSourceDrafts),
+    customTargets: preferences.customTargets.map((target) => ({ ...target })),
+    agentDisplayOrder: [...preferences.agentDisplayOrder],
+  };
+}
+
+function normalizeRecentProjects(value: PreferencesFile["recentProjects"]): RecentProject[] {
+  return value.flatMap((project) => {
+    if (
+      !project.projectId ||
+      typeof project.title !== "string" ||
+      typeof project.lastActivityAt !== "string"
+    ) {
+      return [];
+    }
+    return [{
+      projectId: project.projectId,
+      title: project.title,
+      lastActivityAt: project.lastActivityAt,
+      ...(project.projectPath ? { projectPath: project.projectPath } : {}),
+      ...(project.tools ? { tools: uniqueNonEmptyStrings(project.tools) } : {}),
+    }];
+  });
+}
+
+function normalizeSelectedProjectScope(
+  scope: PreferencesFile["selectedProjectScope"],
+  recentProjects: RecentProject[],
+): ProjectScope {
+  if (scope.kind === "project" && recentProjects.some((project) => project.projectId === scope.projectId)) {
+    return { kind: "project", projectId: scope.projectId };
+  }
+  return { kind: "global" };
+}
+
+function normalizeProjectSourceDrafts(
+  projectSourceDrafts: PreferencesFile["projectSourceDrafts"],
+): PreferencesFile["projectSourceDrafts"] {
+  const normalized: PreferencesFile["projectSourceDrafts"] = {};
+  const now = new Date().toISOString();
+  for (const [projectId, drafts] of Object.entries(projectSourceDrafts)) {
+    if (!projectId) {
+      continue;
+    }
+    const normalizedDrafts = Object.fromEntries(
+      Object.entries(drafts).flatMap(([sourceId, draft]) => {
+        if (!sourceId) {
+          return [];
+        }
+        return [[sourceId, {
+          sourceId,
+          enabledTargets: uniqueNonEmptyStrings(draft.enabledTargets),
+          selectedLeafIds: uniqueNonEmptyStrings(draft.selectedLeafIds),
+          updatedAt: draft.updatedAt || now,
+        } satisfies PreferencesFile["projectSourceDrafts"][string][string]]];
+      }),
+    );
+    if (Object.keys(normalizedDrafts).length > 0) {
+      normalized[projectId] = normalizedDrafts;
+    }
+  }
+  return normalized;
+}
+
+function uniqueNonEmptyStrings<T extends string>(values: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const normalized: T[] = [];
+  for (const value of values) {
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
 export class SkillFlowApp {
   private static readonly importGroupResolveConcurrency = 3;
   private static readonly importPreviewPrewarmLimit = 4;
 
   readonly store: RuntimeStore;
-  private readonly stateStoreV2: StateStoreV2;
+  private readonly stateStore: StateStore;
   private readonly importPreparationCacheStore: ImportPreparationCacheStore;
   adapters: ChannelAdapter[];
   readonly inventoryService: InventoryService;
   readonly sourceCheckoutService: SourceCheckoutService;
-  readonly sourceAuthorityServiceV2: SourceAuthorityServiceV2;
-  readonly importPreparationServiceV2: ImportPreparationServiceV2;
+  readonly sourceAuthorityService: SourceAuthorityService;
+  readonly importPreparationService: ImportPreparationService;
   readonly doctorService: DoctorService;
   readonly workflowService: WorkflowService;
   readonly recentProjectService: RecentProjectService;
@@ -300,29 +418,29 @@ export class SkillFlowApp {
 
   constructor(options: SkillFlowAppOptions = {}) {
     this.store = new RuntimeStore();
-    this.stateStoreV2 = new StateStoreV2(this.store.rootPath);
+    this.stateStore = new StateStore(this.store.rootPath);
     this.importPreparationCacheStore = new ImportPreparationCacheStore(this.store.rootPath);
     const adapters = createChannelAdapters();
     this.adapters = adapters;
     this.inventoryService = new InventoryService();
     this.sourceCheckoutService = new SourceCheckoutService({
-      sourceRoot: path.join(this.stateStoreV2.rootPath, "source"),
+      sourceRoot: path.join(this.stateStore.rootPath, "source"),
       inventoryService: this.inventoryService,
     });
-    this.sourceAuthorityServiceV2 = new SourceAuthorityServiceV2({
-      stateStore: this.stateStoreV2,
+    this.sourceAuthorityService = new SourceAuthorityService({
+      stateStore: this.stateStore,
       checkoutService: this.sourceCheckoutService,
     });
-    this.importPreparationServiceV2 = new ImportPreparationServiceV2({
+    this.importPreparationService = new ImportPreparationService({
       cacheStore: this.importPreparationCacheStore,
-      sourceAuthority: this.sourceAuthorityServiceV2,
+      sourceAuthority: this.sourceAuthorityService,
       checkoutService: this.sourceCheckoutService,
     });
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
     this.recentProjectService = new RecentProjectService();
     this.workspaceBootstrapService = new WorkspaceBootstrapService({
-      stateRoot: this.stateStoreV2.rootPath,
+      stateRoot: this.stateStore.rootPath,
       ...(options.agentsOriginReader ? { agentsOriginReader: options.agentsOriginReader } : {}),
     });
     this.configCoordinator = new ConfigCoordinator({
@@ -330,7 +448,7 @@ export class SkillFlowApp {
         readPreferences: async () => (await this.readRuntimeAuthorityView()).preferences,
         readCollections: () => this.readCollectionsForRuntime(),
         writePreferences: async (preferences) => {
-          await this.writePreferencesV2FromView(preferences);
+          await this.writePreferences(preferences);
         },
       },
       recentProjectService: this.recentProjectService,
@@ -338,45 +456,56 @@ export class SkillFlowApp {
       workflowService: this.workflowService,
       getAvailableTargets: () => this.getAvailableTargets(),
       pruneMissingCheckouts: () => this.pruneMissingCheckoutsImpl(),
-      getConfigData: () => this.getConfigDataImpl(),
+      getConfigData: async () => {
+        const result = await this.getConfigDataImpl();
+        if (!result.ok) {
+          return fail(result.errors, result.warnings);
+        }
+        return result;
+      },
     });
   }
 
-  private readCollectionsForRuntime(): Promise<CollectionsFileV2> {
-    return this.stateStoreV2.readCollections();
+  private readCollectionsForRuntime(): Promise<CollectionsFile> {
+    return this.stateStore.readCollections();
   }
 
   private async readRuntimeAuthorityView(): Promise<RuntimeAuthoritySnapshot> {
-    const state = await this.stateStoreV2.readState();
-    const view = projectStateV2ToView(state);
+    const state = await this.stateStore.readState();
 
     return {
-      ...view,
+      manifest: state.manifest,
+      lockFile: state.lockFile,
+      preferences: state.preferences,
       state,
       collections: state.collections,
     };
   }
 
-  private async writePreferencesV2FromView(preferences: SharedPreferences): Promise<SharedPreferences> {
-    const state = await this.stateStoreV2.readState();
-    const nextPreferences = this.preferencesV2FromView(preferences, state.preferences);
-    await this.stateStoreV2.writeState({
+  private async writePreferences(preferences: PreferencesFile): Promise<PreferencesFile> {
+    const state = await this.stateStore.readState();
+    const nextPreferences = normalizePreferencesFile({
+      ...preferences,
+      migrationGeneration: state.preferences.migrationGeneration,
+      ...(state.preferences.localImportChoices ? { localImportChoices: state.preferences.localImportChoices } : {}),
+      ...(state.preferences.localScanImportChoices
+        ? { localScanImportChoices: state.preferences.localScanImportChoices }
+        : {}),
+    });
+    await this.stateStore.writeState({
       ...state,
       preferences: nextPreferences,
     });
-    return projectStateV2ToView({
-      ...state,
-      preferences: nextPreferences,
-    }).preferences;
+    return nextPreferences;
   }
 
-  private async pruneMissingSourceIdsV2(preferences?: SharedPreferences): Promise<SharedPreferences> {
-    const state = await this.stateStoreV2.readState();
+  private async pruneMissingSourceIds(preferences?: PreferencesFile): Promise<PreferencesFile> {
+    const state = await this.stateStore.readState();
     const sourceIds = new Set(state.manifest.sources.map((source) => source.id));
-    const currentPreferences = preferences ?? projectStateV2ToView(state).preferences;
+    const currentPreferences = preferences ?? state.preferences;
     const projectIds = new Set(currentPreferences.recentProjects.map((project) => project.projectId));
-    const projectDrafts = Object.fromEntries(
-      Object.entries(currentPreferences.projectDrafts)
+    const projectSourceDrafts = Object.fromEntries(
+      Object.entries(currentPreferences.projectSourceDrafts)
         .map(([projectId, drafts]) => [
           projectId,
           Object.fromEntries(
@@ -389,99 +518,118 @@ export class SkillFlowApp {
         !projectIds.has(currentPreferences.selectedProjectScope.projectId)
         ? { kind: "global" as const }
         : currentPreferences.selectedProjectScope;
-    const nextPreferences = this.preferencesV2FromView({
+    const nextPreferences = normalizePreferencesFile({
       ...currentPreferences,
       pinnedSourceIds: currentPreferences.pinnedSourceIds.filter((sourceId) => sourceIds.has(sourceId)),
       selectedProjectScope,
-      projectDrafts,
-    }, state.preferences);
-    await this.stateStoreV2.writeState({
+      projectSourceDrafts,
+    });
+    await this.stateStore.writeState({
       ...state,
       preferences: nextPreferences,
     });
-    return projectStateV2ToView({
-      ...state,
-      preferences: nextPreferences,
-    }).preferences;
+    return nextPreferences;
   }
 
-  private preferencesV2FromView(
-    preferences: SharedPreferences,
-    previous: PreferencesFileV2,
-  ): PreferencesFileV2 {
-    const normalizedPreferences = normalizeSharedPreferences(preferences);
+  private manifestSourceToView(source: ManifestFile["sources"][number]): RuntimeManifestSourceView {
     return {
-      schemaVersion: 2,
-      migrationGeneration: previous.migrationGeneration,
-      pinnedSourceIds: [...normalizedPreferences.pinnedSourceIds],
-      selectedProjectScope: { ...normalizedPreferences.selectedProjectScope },
-      recentProjects: normalizedPreferences.recentProjects.map((project) => ({
-        ...project,
-        ...(project.tools ? { tools: [...project.tools] } : {}),
-      })),
-      projectSourceDrafts: this.projectSourceDraftsV2FromView(normalizedPreferences.projectDrafts),
-      customTargets: normalizedPreferences.customTargets.map((target) => ({ ...target })),
-      agentDisplayOrder: this.preserveExplicitAgentDisplayOrder(preferences.agentDisplayOrder),
-      ...(previous.localImportChoices ? { localImportChoices: previous.localImportChoices.map((choice) => ({
-        ...choice,
-        selectedSkills: choice.selectedSkills.map((skill) => ({
-          ...skill,
-          selector: { ...skill.selector },
-        })),
-        enabledTargets: [...choice.enabledTargets],
-      })) } : {}),
-      ...(previous.localScanImportChoices ? { localScanImportChoices: previous.localScanImportChoices.map((choice) => ({
-        ...choice,
-        detectedSkills: choice.detectedSkills.map((skill) => ({
-          ...skill,
-          selector: { ...skill.selector },
-          diagnostics: skill.diagnostics.map((diagnostic) => ({ ...diagnostic })),
-        })),
-        selectedSkills: choice.selectedSkills.map((skill) => ({
-          ...skill,
-          selector: { ...skill.selector },
-        })),
-        enabledTargets: [...choice.enabledTargets],
-      })) } : {}),
+      id: source.id,
+      locator: source.locator,
+      kind: source.kind,
+      displayName: source.displayName,
+      originalDisplayName: source.displayName,
+      addedAt: source.createdAt,
+      ...(source.requestedPath ? { requestedPath: source.requestedPath } : {}),
+      ...(source.originRequestedPath ? { originRequestedPath: source.originRequestedPath } : {}),
+      ...(source.canonicalLocator !== source.locator ? { originLocator: source.canonicalLocator } : {}),
     };
   }
 
-  private preserveExplicitAgentDisplayOrder(agentDisplayOrder: string[]): DeploymentTargetId[] {
-    const seen = new Set<string>();
-    const normalized: DeploymentTargetId[] = [];
-    for (const targetId of agentDisplayOrder) {
-      if (!targetId || seen.has(targetId)) {
-        continue;
-      }
-      seen.add(targetId);
-      normalized.push(targetId);
+  private lockSourceToView(
+    source: LockFile["sources"][string],
+    manifestSource: ManifestFile["sources"][number] | undefined,
+    lockFile: LockFile,
+  ): SourceLockSummaryRecord {
+    return {
+      id: source.sourceId,
+      locator: source.canonicalLocator,
+      kind: source.revision.provider,
+      displayName: manifestSource?.displayName ?? source.sourceId,
+      originalDisplayName: manifestSource?.displayName ?? source.sourceId,
+      checkoutPath: source.localPath,
+      updatedAt: source.revision.capturedAt,
+      leafIds: [...source.leafIds],
+      invalidLeafs: lockFile.leafInventory
+        .filter((leaf) => leaf.sourceId === source.sourceId && !leaf.valid)
+        .map((leaf) => ({
+          path: leaf.relativePath,
+          reason: (leaf.diagnostics ?? []).map((diagnostic) => diagnostic.message).join("; ") || "Leaf is invalid.",
+        })),
+      ...("commit" in source.revision && source.revision.commit ? { commitSha: source.revision.commit } : {}),
+      ...(source.packageSlug ? { packageSlug: source.packageSlug } : {}),
+      ...(source.resolvedVersion ? { resolvedVersion: source.resolvedVersion } : {}),
+      ...(source.contentHash ? { contentHash: source.contentHash } : {}),
+      ...(source.versionMode ? { versionMode: source.versionMode } : {}),
+      ...(source.originBranch ? { originBranch: source.originBranch } : {}),
+      ...(source.importedFromTargets ? { importedFromTargets: [...source.importedFromTargets] } : {}),
+      ...(source.observedTargets ? { observedTargets: source.observedTargets.map((target) => ({ ...target })) } : {}),
+      ...(source.importMode ? { importMode: source.importMode } : {}),
+    };
+  }
+
+  private bindingToSummary(
+    binding: ManifestFile["bindings"][string] | undefined,
+    leafIds: string[],
+  ): SourceBindingSummary {
+    if (!binding) {
+      return { selectedLeafIds: [], targets: {} };
     }
-    return normalized;
+    const selectedLeafIds = binding.selectionMode === "all" ? [...leafIds] : [...binding.selectedLeafIds];
+    return {
+      selectedLeafIds,
+      targets: Object.fromEntries(
+        binding.enabledTargets.map((target) => [
+          target,
+          { enabled: true, leafIds: [...selectedLeafIds] },
+        ]),
+      ),
+    };
   }
 
-  private projectSourceDraftsV2FromView(
-    projectDrafts: SharedPreferences["projectDrafts"],
-  ): PreferencesFileV2["projectSourceDrafts"] {
-    const updatedAt = new Date().toISOString();
-    return Object.fromEntries(
-      Object.entries(projectDrafts).map(([projectId, drafts]) => [
-        projectId,
-        Object.fromEntries(
-          Object.entries(drafts).map(([sourceId, draft]) => [
-            sourceId,
-            {
-              sourceId,
-              selectedLeafIds: [...draft.selectedLeafIds],
-              enabledTargets: [...draft.enabledTargets],
-              updatedAt,
-            },
-          ]),
-        ),
-      ]),
-    );
+  private leafToSummary(leaf: LeafRecord): LeafSummaryRecord {
+    return {
+      id: leaf.id,
+      sourceId: leaf.sourceId,
+      name: leaf.title ?? leaf.name ?? leaf.linkName,
+      linkName: leaf.linkName,
+      title: leaf.title,
+      description: leaf.description,
+      relativePath: leaf.relativePath,
+      absolutePath: leaf.absolutePath,
+      skillFilePath: leaf.skillFilePath,
+      contentHash: leaf.contentHash,
+      metadataWarnings: (leaf.diagnostics ?? []).map((diagnostic) => diagnostic.message),
+      valid: true,
+    };
   }
 
-  private createAdaptersForPreferences(preferences: SharedPreferences): ChannelAdapter[] {
+  private deploymentSummaryFromProjection(projection: LockFile["projections"][number]): DeploymentSummaryRecord {
+    return {
+      sourceId: projection.sourceId,
+      leafId: projection.leafId,
+      target: projection.target,
+      targetPath: projection.targetPath,
+      ...(projection.targetRootPath ? { targetRootPath: projection.targetRootPath } : {}),
+      strategy: projection.strategy,
+      status: projection.status,
+      contentHash: projection.contentHash,
+      appliedAt: projection.updatedAt,
+    };
+  }
+
+  private createAdaptersForPreferences(
+    preferences: Pick<PreferencesFile, "customTargets" | "agentDisplayOrder">,
+  ): ChannelAdapter[] {
     return createChannelAdapters(
       getMergedTargetDefinitions(
         preferences.customTargets,
@@ -558,14 +706,13 @@ export class SkillFlowApp {
     options?: SkillFlowAddOptions,
   ): Promise<Result<AddSourceResult>> {
     const addOptions = options ?? {};
-    const result = await this.sourceAuthorityServiceV2.addSource(locator, addOptions);
+    const result = await this.sourceAuthorityService.addSource(locator, addOptions);
     if (!result.ok) {
       return fail(result.errors, result.warnings);
     }
 
-    const state = await this.stateStoreV2.readState();
-    const view = projectStateV2ToView(state);
-    const { manifest, lockFile } = view;
+    const state = await this.stateStore.readState();
+    const { manifest, lockFile } = state;
     const source = manifest.sources.find((item) => item.id === result.data.manifest.id);
     if (!source) {
       return fail({
@@ -606,26 +753,29 @@ export class SkillFlowApp {
       });
     }
 
+    const lockSource = lockFile.sources[source.id];
     return ok(
       {
-        manifest: source,
-        lock: lockFile.sources.find((item) => item.id === source.id) ?? {
+        manifest: this.manifestSourceToView(source),
+        lock: lockSource
+          ? this.lockSourceToView(lockSource, source, lockFile)
+          : {
           id: source.id,
           locator: source.locator,
           kind: source.kind,
           displayName: source.displayName,
-          originalDisplayName: source.originalDisplayName,
+          originalDisplayName: source.displayName,
           checkoutPath: result.data.lock.localPath,
           updatedAt: new Date().toISOString(),
           leafIds: result.data.lock.leafIds,
           invalidLeafs: [],
-        },
+          },
         leafCount: result.data.leafCount,
         invalidLeafCount: result.data.invalidLeafCount,
         sourceId: source.id,
         availableTargets,
         draft: preparedDraft.data,
-        leafs: sourceLeafs,
+        leafs: sourceLeafs.filter((leaf) => leaf.valid).map((leaf) => this.leafToSummary(leaf)),
         projected: false,
       },
       warnings,
@@ -636,45 +786,45 @@ export class SkillFlowApp {
     return this.runSerializedMutation(() => this.rollbackPreparedSourceInternal(sourceId));
   }
 
-  async createVirtualGroup(
-    options: CreateVirtualGroupOptions,
-  ): Promise<Result<CreateVirtualGroupResult>> {
-    return this.runSerializedMutation(() => this.createVirtualGroupImpl(options));
+  async createCollection(
+    options: CreateCollectionOptions,
+  ): Promise<Result<CreateCollectionResult>> {
+    return this.runSerializedMutation(() => this.createCollectionImpl(options));
   }
 
   async mergeGroups(
     options: MergeGroupsOptions,
-  ): Promise<Result<CreateVirtualGroupResult>> {
+  ): Promise<Result<CreateCollectionResult>> {
     return this.runSerializedMutation(() => this.mergeGroupsImpl(options));
   }
 
-  async restoreMergedGroups(
-    virtualGroupId: string,
+  async restoreCollectionSources(
+    collectionId: string,
   ): Promise<Result<RestoreMergedGroupsResult>> {
-    return this.runSerializedMutation(() => this.restoreMergedGroupsImpl(virtualGroupId));
+    return this.runSerializedMutation(() => this.restoreCollectionSourcesImpl(collectionId));
   }
 
-  private async createVirtualGroupImpl(
-    options: CreateVirtualGroupOptions,
-  ): Promise<Result<CreateVirtualGroupResult>> {
+  private async createCollectionImpl(
+    options: CreateCollectionOptions,
+  ): Promise<Result<CreateCollectionResult>> {
     const displayName = options.displayName.trim();
     if (!displayName) {
       return fail({
-        code: "VIRTUAL_GROUP_NAME_EMPTY",
-        message: "Virtual group name cannot be empty.",
+        code: "COLLECTION_NAME_EMPTY",
+        message: "Collection name cannot be empty.",
       });
     }
     if (options.skills.length === 0) {
       return fail({
-        code: "VIRTUAL_GROUP_SKILLS_EMPTY",
-        message: "Virtual group must include at least one skill.",
+        code: "COLLECTION_SKILLS_EMPTY",
+        message: "Collection must include at least one skill.",
       });
     }
 
-    const state = await this.stateStoreV2.readState();
-    const manifest = this.cloneManifestV2(state.manifest);
-    const lockFile = this.cloneLockFileV2(state.lockFile);
-    const collections: CollectionsFileV2 = {
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const collections: CollectionsFile = {
       ...state.collections,
       collections: { ...state.collections.collections },
     };
@@ -684,8 +834,8 @@ export class SkillFlowApp {
     }
     if (includedSkills.data.length === 0) {
       return fail({
-        code: "VIRTUAL_GROUP_SKILLS_EMPTY",
-        message: "Virtual group must include at least one skill.",
+        code: "COLLECTION_SKILLS_EMPTY",
+        message: "Collection must include at least one skill.",
       });
     }
     const conflict = this.findCollectionSkillNameConflict(includedSkills.data, lockFile);
@@ -707,7 +857,7 @@ export class SkillFlowApp {
     if (!materialized.ok) {
       return fail(materialized.errors, materialized.warnings);
     }
-    const source: ManifestFileV2["sources"][number] = {
+    const source: ManifestFile["sources"][number] = {
       id,
       kind: "collection",
       locator: `collection:${id}`,
@@ -717,7 +867,7 @@ export class SkillFlowApp {
       createdAt: now,
       updatedAt: now,
     };
-    const collection: SkillCollectionRecordV2 = {
+    const collection: SkillCollectionRecord = {
       id,
       displayName,
       materializedSourceId: id,
@@ -748,47 +898,57 @@ export class SkillFlowApp {
     lockFile.leafInventory = [...lockFile.leafInventory, ...materialized.data.leafs];
     collections.collections[id] = collection;
 
-    const preferences = projectStateV2ToView({ ...state, manifest, lockFile }).preferences;
-    const plan = await this.planForSourcesV2(manifest, lockFile, [id], preferences);
+    const preferences = state.preferences;
+    const plan = await this.planForSources(manifest, lockFile, [id], preferences);
     if (!plan.ok) {
       return fail(plan.errors, plan.warnings);
     }
-    const applyResult = await new DeploymentApplierV2(this.createAdaptersForPreferences(preferences))
+    const applyResult = await new DeploymentApplier(this.createAdaptersForPreferences(preferences))
       .applyPlan(lockFile, plan.data.actions);
     if (!applyResult.ok) {
       return fail(applyResult.errors, [...plan.warnings, ...applyResult.warnings]);
     }
 
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest,
       lockFile,
       collections,
     });
 
-    const view = projectStateV2ToView({ ...state, manifest, lockFile });
-    const group: VirtualGroupRecord = this.collectionToVirtualGroupView(collection);
-    const viewSource = view.manifest.sources.find((item) => item.id === id) ?? {
+    const group: CollectionViewRecord = this.collectionToViewRecord(collection);
+    const viewSource = manifest.sources.find((item) => item.id === id) ?? {
       id,
       locator: `collection:${id}`,
-      kind: "virtual" as const,
+      kind: "collection" as const,
       displayName,
-      originalDisplayName: displayName,
-      addedAt: now,
+      canonicalLocator: `collection:${id}`,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
     };
-    const binding = view.manifest.bindings[id] ?? { selectedLeafIds: [], targets: {} };
+    const binding = manifest.bindings[id] ?? {
+      sourceId: id,
+      selectionMode: "selected" as const,
+      selectedLeafIds: [],
+      enabledTargets: [],
+    };
 
-    return ok({ group, source: viewSource, binding }, [...plan.warnings, ...applyResult.warnings]);
+    return ok({
+      group,
+      source: this.manifestSourceToView(viewSource),
+      binding: this.bindingToSummary(binding, lockFile.sources[id]?.leafIds ?? []),
+    }, [...plan.warnings, ...applyResult.warnings]);
   }
 
   private async mergeGroupsImpl(
     options: MergeGroupsOptions,
-  ): Promise<Result<CreateVirtualGroupResult>> {
+  ): Promise<Result<CreateCollectionResult>> {
     const displayName = options.displayName.trim();
     if (!displayName) {
       return fail({
-        code: "VIRTUAL_GROUP_NAME_EMPTY",
-        message: "Virtual group name cannot be empty.",
+        code: "COLLECTION_NAME_EMPTY",
+        message: "Collection name cannot be empty.",
       });
     }
 
@@ -802,10 +962,10 @@ export class SkillFlowApp {
       });
     }
 
-    const state = await this.stateStoreV2.readState();
-    const manifest = this.cloneManifestV2(state.manifest);
-    const lockFile = this.cloneLockFileV2(state.lockFile);
-    const collections: CollectionsFileV2 = {
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const collections: CollectionsFile = {
       ...state.collections,
       collections: { ...state.collections.collections },
     };
@@ -827,8 +987,8 @@ export class SkillFlowApp {
     );
     if (includedSkills.length === 0) {
       return fail({
-        code: "VIRTUAL_GROUP_SKILLS_EMPTY",
-        message: "Virtual group must include at least one skill.",
+        code: "COLLECTION_SKILLS_EMPTY",
+        message: "Collection must include at least one skill.",
       });
     }
     const validSkills = this.validateCollectionSkillRefs(includedSkills, manifest, lockFile);
@@ -855,7 +1015,7 @@ export class SkillFlowApp {
       return fail(materialized.errors, materialized.warnings);
     }
 
-    const source: ManifestFileV2["sources"][number] = {
+    const source: ManifestFile["sources"][number] = {
       id,
       kind: "collection",
       locator: `collection:${id}`,
@@ -865,7 +1025,7 @@ export class SkillFlowApp {
       createdAt: now,
       updatedAt: now,
     };
-    const restoreSelections: SkillCollectionRecordV2["restoreSelections"] = {};
+    const restoreSelections: SkillCollectionRecord["restoreSelections"] = {};
     for (const sourceId of sourceIds) {
       const sourceLock = lockFile.sources[sourceId];
       const binding = manifest.bindings[sourceId];
@@ -883,7 +1043,7 @@ export class SkillFlowApp {
       };
     }
 
-    const collection: SkillCollectionRecordV2 = {
+    const collection: SkillCollectionRecord = {
       id,
       displayName,
       materializedSourceId: id,
@@ -921,60 +1081,70 @@ export class SkillFlowApp {
         enabledTargets: [],
       };
     }
-    const preferences = projectStateV2ToView({ ...state, manifest, lockFile }).preferences;
-    const plan = await this.planForSourcesV2(manifest, lockFile, [id, ...sourceIds], preferences);
+    const preferences = state.preferences;
+    const plan = await this.planForSources(manifest, lockFile, [id, ...sourceIds], preferences);
     if (!plan.ok) {
       return fail(plan.errors, plan.warnings);
     }
-    const applyResult = await new DeploymentApplierV2(this.createAdaptersForPreferences(preferences))
+    const applyResult = await new DeploymentApplier(this.createAdaptersForPreferences(preferences))
       .applyPlan(lockFile, plan.data.actions);
     if (!applyResult.ok) {
       return fail(applyResult.errors, [...plan.warnings, ...applyResult.warnings]);
     }
 
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest,
       lockFile,
       collections,
     });
 
-    const view = projectStateV2ToView({ ...state, manifest, lockFile });
-    const group = this.collectionToVirtualGroupView(collection);
-    const viewSource = view.manifest.sources.find((item) => item.id === id) ?? {
+    const group = this.collectionToViewRecord(collection);
+    const viewSource = manifest.sources.find((item) => item.id === id) ?? {
       id,
       locator: `collection:${id}`,
-      kind: "virtual" as const,
+      kind: "collection" as const,
       displayName,
-      originalDisplayName: displayName,
-      addedAt: now,
+      canonicalLocator: `collection:${id}`,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
     };
-    const binding = view.manifest.bindings[id] ?? { selectedLeafIds: [], targets: {} };
+    const binding = manifest.bindings[id] ?? {
+      sourceId: id,
+      selectionMode: "selected" as const,
+      selectedLeafIds: [],
+      enabledTargets: [],
+    };
 
-    return ok({ group, source: viewSource, binding }, [...plan.warnings, ...applyResult.warnings]);
+    return ok({
+      group,
+      source: this.manifestSourceToView(viewSource),
+      binding: this.bindingToSummary(binding, lockFile.sources[id]?.leafIds ?? []),
+    }, [...plan.warnings, ...applyResult.warnings]);
   }
 
-  private async restoreMergedGroupsImpl(
-    virtualGroupId: string,
+  private async restoreCollectionSourcesImpl(
+    collectionId: string,
   ): Promise<Result<RestoreMergedGroupsResult>> {
-    const state = await this.stateStoreV2.readState();
-    const manifest = this.cloneManifestV2(state.manifest);
-    const lockFile = this.cloneLockFileV2(state.lockFile);
-    const collections: CollectionsFileV2 = {
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const collections: CollectionsFile = {
       ...state.collections,
       collections: { ...state.collections.collections },
     };
-    const collection = collections.collections[virtualGroupId];
+    const collection = collections.collections[collectionId];
     if (!collection) {
       return fail({
-        code: "VIRTUAL_GROUP_NOT_FOUND",
-        message: `Virtual group id '${virtualGroupId}' is not registered.`,
+        code: "COLLECTION_NOT_FOUND",
+        message: `Collection id '${collectionId}' is not registered.`,
       });
     }
     if (collection.hiddenSourceIds.length === 0) {
       return fail({
-        code: "VIRTUAL_GROUP_RESTORE_UNAVAILABLE",
-        message: `Virtual group '${virtualGroupId}' does not have hidden source groups to restore.`,
+        code: "COLLECTION_RESTORE_UNAVAILABLE",
+        message: `Collection '${collectionId}' does not have hidden source groups to restore.`,
       });
     }
 
@@ -988,38 +1158,38 @@ export class SkillFlowApp {
         skippedSourceIds.push(sourceId);
         continue;
       }
-      manifest.bindings[sourceId] = this.bindingV2FromRestoreSelection(selection, sourceLock.leafIds);
+      manifest.bindings[sourceId] = this.bindingFromRestoreSelection(selection, sourceLock.leafIds);
       restoredSourceIds.push(sourceId);
     }
 
-    manifest.bindings[virtualGroupId] = {
-      sourceId: virtualGroupId,
+    manifest.bindings[collectionId] = {
+      sourceId: collectionId,
       selectionMode: "selected",
       selectedLeafIds: [],
       enabledTargets: [],
     };
-    const preferences = projectStateV2ToView({ ...state, manifest, lockFile }).preferences;
-    const plan = await this.planForSourcesV2(manifest, lockFile, [
-      virtualGroupId,
+    const preferences = state.preferences;
+    const plan = await this.planForSources(manifest, lockFile, [
+      collectionId,
       ...restoredSourceIds,
     ], preferences);
     if (!plan.ok) {
       return fail(plan.errors, plan.warnings);
     }
-    const applyResult = await new DeploymentApplierV2(this.createAdaptersForPreferences(preferences))
+    const applyResult = await new DeploymentApplier(this.createAdaptersForPreferences(preferences))
       .applyPlan(lockFile, plan.data.actions);
     if (!applyResult.ok) {
       return fail(applyResult.errors, [...plan.warnings, ...applyResult.warnings]);
     }
-    manifest.sources = manifest.sources.filter((source) => source.id !== virtualGroupId);
-    delete manifest.bindings[virtualGroupId];
-    const collectionSource = lockFile.sources[virtualGroupId];
-    delete lockFile.sources[virtualGroupId];
-    lockFile.leafInventory = lockFile.leafInventory.filter((leaf) => leaf.sourceId !== virtualGroupId);
-    lockFile.projections = lockFile.projections.filter((projection) => projection.sourceId !== virtualGroupId);
-    delete collections.collections[virtualGroupId];
+    manifest.sources = manifest.sources.filter((source) => source.id !== collectionId);
+    delete manifest.bindings[collectionId];
+    const collectionSource = lockFile.sources[collectionId];
+    delete lockFile.sources[collectionId];
+    lockFile.leafInventory = lockFile.leafInventory.filter((leaf) => leaf.sourceId !== collectionId);
+    lockFile.projections = lockFile.projections.filter((projection) => projection.sourceId !== collectionId);
+    delete collections.collections[collectionId];
 
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest,
       lockFile,
@@ -1030,7 +1200,7 @@ export class SkillFlowApp {
     }
 
     return ok(
-      { virtualGroupId, restoredSourceIds, skippedSourceIds },
+      { collectionId, restoredSourceIds, skippedSourceIds },
       [...plan.warnings, ...applyResult.warnings],
     );
   }
@@ -1166,7 +1336,7 @@ export class SkillFlowApp {
       "import-source",
       {
         preparationId,
-        selectedSkillIds: draft?.selectedSkillIds ?? draft?.selectedSkills?.map((skill) => skill.uiId) ?? [],
+        selectedSkillUiIds: draft?.selectedSkills?.map((skill) => skill.uiId) ?? [],
         enabledTargets: draft?.enabledTargets ?? [],
       },
       () => this.commitPreparedImportSourceImpl(preparationId, draft),
@@ -1181,7 +1351,7 @@ export class SkillFlowApp {
       "import-source",
       {
         locator,
-        selectedSkillIds: draft?.selectedSkillIds ?? draft?.selectedSkills?.map((skill) => skill.uiId) ?? [],
+        selectedSkillUiIds: draft?.selectedSkills?.map((skill) => skill.uiId) ?? [],
         enabledTargets: draft?.enabledTargets ?? [],
       },
       () => this.importSourceImpl(locator, draft),
@@ -1208,14 +1378,13 @@ export class SkillFlowApp {
       this.refreshImportRecommendationFeedInBackground(feedId);
     }
 
-    const state = await this.stateStoreV2.readState().catch(() => undefined);
+    const state = await this.stateStore.readState().catch(() => undefined);
     if (!state) {
       return;
     }
-    const view = projectStateV2ToView(state);
     const summaries = this.workflowService.getSummaries(
-      view.manifest,
-      view.lockFile,
+      state.manifest,
+      state.lockFile,
       undefined,
       state.collections,
     );
@@ -1230,8 +1399,8 @@ export class SkillFlowApp {
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
       selectedProjectScope: ProjectScope;
-      customTargets: SharedPreferences["customTargets"];
-      agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
+      customTargets: PreferencesFile["customTargets"];
+      agentDisplayOrder: PreferencesFile["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
@@ -1239,15 +1408,15 @@ export class SkillFlowApp {
   }
 
   async saveSettings(input: {
-    customTargets: SharedPreferences["customTargets"];
-    agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
+    customTargets: PreferencesFile["customTargets"];
+    agentDisplayOrder: PreferencesFile["agentDisplayOrder"];
   }): Promise<Result<{
-    customTargets: SharedPreferences["customTargets"];
-    agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
+    customTargets: PreferencesFile["customTargets"];
+    agentDisplayOrder: PreferencesFile["agentDisplayOrder"];
   }>> {
     return this.runSerializedMutation(async () => {
       const preferences = (await this.readRuntimeAuthorityView()).preferences;
-      const saved = await this.writePreferencesV2FromView({
+      const saved = await this.writePreferences({
         ...preferences,
         customTargets: input.customTargets,
         agentDisplayOrder: input.agentDisplayOrder,
@@ -1266,10 +1435,10 @@ export class SkillFlowApp {
   ): Promise<
     Result<{
       summary: WorkflowSummary;
-      source: Manifest["sources"][number];
-      binding: SourceBinding;
-      leafs: LeafRecord[];
-      deployments: LockFile["deployments"];
+      source: RuntimeManifestSourceView;
+      binding: SourceBindingSummary;
+      leafs: LeafSummaryRecord[];
+      deployments: DeploymentSummaryRecord[];
     }>
   > {
     return this.runSerializedMutation(() => this.inspectSourceImpl(sourceId, scope));
@@ -1288,7 +1457,7 @@ export class SkillFlowApp {
 
   async inspectCollection(
     collectionId: string,
-  ): Promise<Result<{ collection: SkillCollectionRecordV2; diagnostics: DiagnosticV2[] }>> {
+  ): Promise<Result<{ collection: SkillCollectionRecord; diagnostics: Diagnostic[] }>> {
     return this.runSerializedMutation(() => this.inspectCollectionImpl(collectionId));
   }
 
@@ -1298,15 +1467,14 @@ export class SkillFlowApp {
   ): Promise<
     Result<{
       summary: WorkflowSummary;
-      source: Manifest["sources"][number];
-      binding: SourceBinding;
-      leafs: LeafRecord[];
-      deployments: LockFile["deployments"];
+      source: RuntimeManifestSourceView;
+      binding: SourceBindingSummary;
+      leafs: LeafSummaryRecord[];
+      deployments: DeploymentSummaryRecord[];
     }>
   > {
     const runtimeView = await this.readRuntimeAuthorityView();
     const { manifest, lockFile, preferences, collections } = runtimeView;
-    this.normalizeBindings(manifest, lockFile, collections);
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
       return fail({
@@ -1323,33 +1491,38 @@ export class SkillFlowApp {
       });
     }
 
-    const binding = manifest.bindings[sourceId] ?? { selectedLeafIds: [], targets: {} };
-    const leafs = this.getSourceLeafsForBinding(source, binding, lockFile, collections);
-    const deployments = lockFile.deployments.filter(
-      (deployment) => deployment.sourceId === sourceId,
-    );
+    const binding = this.bindingToSummary(manifest.bindings[sourceId], lockFile.sources[sourceId]?.leafIds ?? []);
+    const leafs = summary.leafs;
+    const deployments = lockFile.projections
+      .filter((deployment) => deployment.sourceId === sourceId && deployment.status === "active")
+      .map((deployment) => this.deploymentSummaryFromProjection(deployment));
 
     if (scope.kind === "global") {
-      return ok({ summary, source, binding, leafs, deployments });
+      return ok({ summary, source: this.manifestSourceToView(source), binding, leafs, deployments });
     }
 
     const initialDrafts: Record<string, DraftBinding> = {
-      [sourceId]: this.draftFromSourceBinding(source, binding, lockFile, collections),
+      [sourceId]: this.draftFromBinding(sourceId, binding, lockFile),
     };
     const scopedDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
 
-    const scopedManifest = this.cloneManifest(manifest);
-    this.normalizeBindings(scopedManifest, lockFile, collections);
-    const prepared = this.prepareManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
-    const scopedSource = prepared.manifest.sources.find((item) => item.id === sourceId) ?? source;
+    const scopedManifest = this.cloneAuthorityManifest(manifest);
+    const prepared = this.prepareAuthorityManifestForDraft(scopedManifest, lockFile, sourceId, scopedDraft);
+    if (!prepared.ok) {
+      return fail(prepared.errors, prepared.warnings);
+    }
+    const scopedSource = prepared.data.manifest.sources.find((item) => item.id === sourceId) ?? source;
     const scopedSummary =
-      this.workflowService.getSummaries(prepared.manifest, lockFile, undefined, collections).find((item) => item.source.id === sourceId)
+      this.workflowService.getSummaries(prepared.data.manifest, lockFile, undefined, collections).find((item) => item.source.id === sourceId)
       ?? summary;
-    const scopedBinding = prepared.manifest.bindings[sourceId] ?? binding;
+    const scopedBinding = this.bindingToSummary(
+      prepared.data.manifest.bindings[sourceId],
+      lockFile.sources[sourceId]?.leafIds ?? [],
+    );
     const scopedDeployments = scopedDraft.enabledTargets.length === 0
       ? []
       : await this.resolveScopedInspectDeployments(
-        prepared.manifest,
+        prepared.data.manifest,
         lockFile,
         sourceId,
         scope,
@@ -1359,7 +1532,7 @@ export class SkillFlowApp {
 
     return ok({
       summary: scopedSummary,
-      source: scopedSource,
+      source: this.manifestSourceToView(scopedSource),
       binding: scopedBinding,
       leafs,
       deployments: scopedDeployments,
@@ -1396,8 +1569,8 @@ export class SkillFlowApp {
 
   private async inspectCollectionImpl(
     collectionId: string,
-  ): Promise<Result<{ collection: SkillCollectionRecordV2; diagnostics: DiagnosticV2[] }>> {
-    const state = await this.stateStoreV2.readState();
+  ): Promise<Result<{ collection: SkillCollectionRecord; diagnostics: Diagnostic[] }>> {
+    const state = await this.stateStore.readState();
     const collection = state.collections.collections[collectionId];
     if (!collection) {
       return fail({
@@ -1406,7 +1579,7 @@ export class SkillFlowApp {
       });
     }
 
-    const diagnostics: DiagnosticV2[] = [];
+    const diagnostics: Diagnostic[] = [];
     for (const member of collection.members) {
       const originLeaf = state.lockFile.leafInventory.find((leaf) =>
         leaf.sourceId === member.origin.sourceId && leaf.id === member.origin.leafId
@@ -1484,7 +1657,10 @@ export class SkillFlowApp {
       const { manifest, lockFile } = await this.readRuntimeAuthorityView();
       const scanned = localPath
         ? await this.scanSingleLocalImportSkill(localPath, manifest, lockFile)
-        : await this.workspaceBootstrapService.scanUnmanagedLocalSkills(manifest, lockFile);
+        : await this.workspaceBootstrapService.scanUnmanagedLocalSkills(
+          manifest,
+          lockFile,
+        );
       const installedRepos = this.installedCanonicalRepos(manifest);
       const groupsByKey = new Map<string, LocalSkillScanResult[]>();
 
@@ -1531,7 +1707,7 @@ export class SkillFlowApp {
 
   private async scanSingleLocalImportSkill(
     localPath: string,
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): Promise<LocalSkillScanResult[]> {
     const resolvedPath = await this.resolveLocalImportSkillPath(localPath);
@@ -1605,15 +1781,9 @@ export class SkillFlowApp {
     skillFilePath: string,
   ): Promise<{ title: string; description: string }> {
     const content = (await fs.readFile(skillFilePath, "utf8")).replace(/\r\n?/g, "\n");
-    const frontmatter = content.match(/^---\n([\s\S]*?)\n---/);
-    const body = frontmatter?.[1] ?? "";
-    const nameMatch = body.match(/^name:\s*(.+)$/m);
-    const descriptionBlock = body.match(/^description:\s*\|\s*\n((?:\s+.+\n?)*)/m);
-    const descriptionLine = body.match(/^description:\s*(.+)$/m);
-    const title = nameMatch?.[1]?.trim() ?? "";
-    const description = descriptionBlock?.[1]
-      ? descriptionBlock[1].split("\n").map((line) => line.trim()).filter(Boolean).join(" ")
-      : descriptionLine?.[1]?.trim() ?? "";
+    const frontmatter = parseSkillFrontmatter(content);
+    const title = frontmatter?.data.name?.trim() ?? "";
+    const description = frontmatter?.data.description?.trim() ?? "";
     return { title, description };
   }
 
@@ -1621,7 +1791,7 @@ export class SkillFlowApp {
     canonicalRepo: string,
     localSkills: LocalSkillScanResult[],
     installedRepos: Set<string>,
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): Promise<ImportGroupCandidate[]> {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
@@ -1658,10 +1828,14 @@ export class SkillFlowApp {
     }));
     const originLocalImportChoices: LocalImportChoice[] = validationStatus === "matched" && importableOriginSkillIds.length > 0
       ? [{
-          id: "origin",
+          sourceChoiceId: "origin",
+          sourceChoiceAlias: "Origin",
           label: "Origin",
           locator: originLocator,
-          selectedSkillIds: importableOriginSkillIds,
+          detectedSourcePath: localSkills[0]?.path ?? originLocator,
+          variant: localSkills.length === 1 ? "single-skill" : "multi-skill",
+          selectedSkills: this.importSkillSelectionsForRepoPaths(importableOriginSkillIds),
+          enabledTargets: [],
         }]
       : [];
     const installed = originLocalImportChoices.length > 0
@@ -1682,9 +1856,6 @@ export class SkillFlowApp {
       matchedSkillNames: localSkills.map((skill) => skill.title),
       matchedSkills,
       enrichState: { status: readyPreview ? "ready" : "idle" },
-      previewState: readyPreview
-        ? { status: "ready" }
-        : { status: "failed", reasonCode: "provider_data_unavailable", retryable: true },
       localImport: {
         validationStatus,
         selectedChoiceId,
@@ -1839,20 +2010,26 @@ export class SkillFlowApp {
     }
     if (options.status === "matched" && options.canonicalRepo && options.originLocator) {
       return [{
-        id: "origin",
-        label: "Origin",
-        locator: options.originLocator,
-        selectedSkillIds: options.skillIds,
-        enabled: true,
+        scanId: options.canonicalRepo,
+        sourceChoiceId: "origin",
+        rootPath: options.originLocator,
+        sourcePath: options.originLocator,
+        variant: options.localSkills.length > 1 ? "multi-source" : "single-source",
+        detectedSkills: options.localSkills.map((skill) => this.localScanDetectedSkill(skill)),
+        selectedSkills: this.importSkillSelectionsForRepoPaths(options.skillIds),
+        enabledTargets: [],
       }];
     }
     const localSkill = options.localSkills[0];
     return [{
-      id: "local",
-      label: "Local",
-      locator: localSkill?.path ?? "",
-      selectedSkillIds: options.localSkills.map((skill) => skill.displayName),
-      enabled: true,
+      scanId: localSkill?.sourceId ?? "local",
+      sourceChoiceId: "local",
+      rootPath: localSkill?.path ?? "",
+      sourcePath: localSkill?.path ?? "",
+      variant: options.localSkills.length > 1 ? "multi-source" : "single-source",
+      detectedSkills: options.localSkills.map((skill) => this.localScanDetectedSkill(skill)),
+      selectedSkills: this.importSkillSelectionsForRepoPaths(options.localSkills.map((skill) => skill.displayName)),
+      enabledTargets: [],
     }];
   }
 
@@ -1861,7 +2038,7 @@ export class SkillFlowApp {
     const importableSkillIds = skillGroups
       .filter((group) =>
         group.status === "matched" &&
-        group.importChoices.some((choice) => choice.id === "origin" && choice.enabled),
+        group.importChoices.some((choice) => choice.sourceChoiceId === "origin"),
       )
       .flatMap((group) => group.skills.map((skill) => skill.originSkillId ?? skill.id));
     if (
@@ -1873,17 +2050,35 @@ export class SkillFlowApp {
           group.status === "already-managed" ||
           (
             group.status === "matched" &&
-            group.importChoices.some((choice) => choice.id === "origin" && choice.enabled)
+            group.importChoices.some((choice) => choice.sourceChoiceId === "origin")
           )
         ),
       )
     ) {
       return [{
-        id: "origin",
-        label: "Origin",
-        locator: firstOrigin.locator,
-        selectedSkillIds: importableSkillIds,
-        enabled: true,
+        scanId: firstOrigin.canonicalRepo,
+        sourceChoiceId: "origin",
+        rootPath: firstOrigin.locator,
+        sourcePath: firstOrigin.locator,
+        variant: "multi-source",
+        detectedSkills: skillGroups.flatMap((group) =>
+          group.skills.flatMap((skill) =>
+            skill.variants.map((variant) => ({
+              leafId: skill.originSkillId ?? skill.id,
+              sourcePath: variant.path,
+              skillFilePath: path.join(variant.path, "SKILL.md"),
+              relativePath: skill.originSkillId ?? skill.id,
+              displayName: skill.title,
+              contentHash: variant.contentHash,
+              selector: {
+                kind: "repoPath" as const,
+                path: skill.originSkillId ?? skill.id,
+              },
+            })),
+          ),
+        ),
+        selectedSkills: this.importSkillSelectionsForRepoPaths(importableSkillIds),
+        enabledTargets: [],
       }];
     }
 
@@ -1892,7 +2087,7 @@ export class SkillFlowApp {
 
   private async buildLocalScanGroups(
     scanned: LocalSkillScanResult[],
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): Promise<LocalScanGroup[]> {
     const resolved = await this.mapConcurrent(
@@ -1996,7 +2191,7 @@ export class SkillFlowApp {
 
   private isLocalScanAlreadyManaged(
     item: LocalScanResolvedSkill,
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): boolean {
     const resolvedSkillPath = path.resolve(item.scan.path);
@@ -2007,7 +2202,7 @@ export class SkillFlowApp {
       }
 
       const sourceRepo = normalizeImportCanonicalRepo(source.locator)
-        ?? (source.originLocator ? normalizeImportCanonicalRepo(source.originLocator) : undefined);
+        ?? normalizeImportCanonicalRepo(source.canonicalLocator);
       if (!sourceRepo || !item.canonicalRepo || sourceRepo !== item.canonicalRepo) {
         return false;
       }
@@ -2026,12 +2221,12 @@ export class SkillFlowApp {
     localSkill: LocalSkillScanResult,
     detectedSkill: LocalImportDetectedSkill,
     canonicalRepo: string,
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): boolean {
     return manifest.sources.some((source) => {
       const sourceRepo = normalizeImportCanonicalRepo(source.locator)
-        ?? (source.originLocator ? normalizeImportCanonicalRepo(source.originLocator) : undefined);
+        ?? normalizeImportCanonicalRepo(source.canonicalLocator);
       if (!sourceRepo || sourceRepo !== canonicalRepo) {
         return false;
       }
@@ -2049,14 +2244,17 @@ export class SkillFlowApp {
     sourceId: string,
     localSkill: LocalSkillScanResult,
     detectedSkill: LocalImportDetectedSkill,
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): boolean {
     const source = manifest.sources.find((record) => record.id === sourceId);
     const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
-    const selectedLeafIds = manifest.bindings[sourceId]?.selectedLeafIds ?? [];
+    const binding = manifest.bindings[sourceId];
+    const selectedLeafIds = binding?.selectionMode === "all"
+      ? lockFile.sources[sourceId]?.leafIds ?? []
+      : binding?.selectedLeafIds ?? [];
     if (
-      source?.selectionMode === "all" ||
+      binding?.selectionMode === "all" ||
       (sourceLeafs.length > 0 && selectedLeafIds.length >= sourceLeafs.length)
     ) {
       return true;
@@ -2066,7 +2264,7 @@ export class SkillFlowApp {
     const candidates = this.localScanManagedSkillCandidates(localSkill, detectedSkill);
     return selectedLeafs.some((leaf) =>
       candidates.has(leaf.relativePath) ||
-      candidates.has(leaf.name) ||
+      candidates.has(leaf.title) ||
       candidates.has(leaf.linkName) ||
       candidates.has(path.posix.basename(leaf.relativePath)),
     );
@@ -2126,7 +2324,6 @@ export class SkillFlowApp {
       matchedSkillNames: [skill.title || skill.displayName],
       matchedSkills: [{ skillId: skill.displayName, title: skill.title || skill.displayName }],
       enrichState: { status: "idle" },
-      previewState: { status: "idle" },
       localImport: {
         validationStatus: fallbackDetectedSkill.validationStatus,
         selectedChoiceId: "local",
@@ -2136,13 +2333,43 @@ export class SkillFlowApp {
     };
   }
 
-  private buildLocalImportChoice(localSkills: LocalSkillScanResult[]) {
+  private buildLocalImportChoice(localSkills: LocalSkillScanResult[]): LocalImportChoice {
+    const localPath = localSkills[0]?.path ?? "";
     return {
-      id: "local" as const,
+      sourceChoiceId: "local" as const,
+      sourceChoiceAlias: "Local",
       label: "Local",
-      locator: localSkills[0]?.path ?? "",
-      selectedSkillIds: localSkills.map((skill) => skill.displayName),
+      locator: localPath,
+      detectedSourcePath: localPath,
+      variant: localSkills.length > 1 ? "multi-skill" : "single-skill",
+      selectedSkills: this.importSkillSelectionsForRepoPaths(localSkills.map((skill) => skill.displayName)),
+      enabledTargets: [],
     };
+  }
+
+  private localScanDetectedSkill(skill: LocalSkillScanResult) {
+    return {
+      leafId: skill.sourceId,
+      sourcePath: skill.path,
+      skillFilePath: path.join(skill.path, "SKILL.md"),
+      relativePath: skill.displayName,
+      displayName: skill.title || skill.displayName,
+      contentHash: skill.contentHash,
+      selector: {
+        kind: "repoPath" as const,
+        path: skill.displayName,
+      },
+    };
+  }
+
+  private importSkillSelectionsForRepoPaths(paths: string[]): RuntimeImportSkillSelection[] {
+    return [...new Set(paths)].map((path) => ({
+      uiId: path,
+      selector: {
+        kind: "repoPath" as const,
+        path,
+      },
+    }));
   }
 
   private buildUnavailableLocalImportSkill(skill: LocalSkillScanResult): LocalImportDetectedSkill {
@@ -2187,7 +2414,7 @@ export class SkillFlowApp {
       localPath: skill.path,
       discoveredTargets: skill.importedFromTargets,
       validationStatus,
-      originSkillId: match.id,
+      originSkillId: match.providerSkillId,
     };
   }
 
@@ -2197,7 +2424,11 @@ export class SkillFlowApp {
   ): ImportPreviewSkillCandidate[] {
     const originRequestedPath = skill.originRequestedPath?.trim();
     if (originRequestedPath) {
-      const matches = originSkills.filter((originSkill) => originSkill.id === originRequestedPath);
+      const matches = originSkills.filter((originSkill) =>
+        originSkill.providerSkillId === originRequestedPath ||
+        originSkill.selector.path === originRequestedPath ||
+        originSkill.selectorAliases.includes(originRequestedPath)
+      );
       if (matches.length > 0) {
         return matches;
       }
@@ -2205,8 +2436,12 @@ export class SkillFlowApp {
 
     const localDirectoryName = path.basename(skill.path);
     const leafMatches = originSkills.filter((originSkill) => {
-      const id = originSkill.id;
-      return id === localDirectoryName || id.endsWith(`/${localDirectoryName}`);
+      const ids = [
+        originSkill.providerSkillId,
+        originSkill.selector.path,
+        ...originSkill.selectorAliases,
+      ];
+      return ids.some((id) => id === localDirectoryName || id.endsWith(`/${localDirectoryName}`));
     });
     if (leafMatches.length > 0) {
       return leafMatches;
@@ -2222,16 +2457,22 @@ export class SkillFlowApp {
       }
     }
 
-    return originSkills.filter((originSkill) => originSkill.id === skill.displayName);
+    return originSkills.filter((originSkill) =>
+      originSkill.providerSkillId === skill.displayName ||
+      originSkill.selector.path === skill.displayName ||
+      originSkill.selectorAliases.includes(skill.displayName)
+    );
   }
 
   private localImportSkillChanged(
     skill: LocalSkillScanResult,
     originSkill: ImportPreviewSkillCandidate,
   ): boolean {
-    const localDescription = skill.description.trim();
-    const originSummary = originSkill.summary.trim();
-    return Boolean(localDescription && originSummary && localDescription !== originSummary);
+    if (originSkill.contentHash && skill.contentHash !== originSkill.contentHash) {
+      return true;
+    }
+    const localTitle = skill.title.trim();
+    return Boolean(localTitle && originSkill.title.trim() && localTitle !== originSkill.title.trim());
   }
 
   private aggregateLocalImportValidationStatus(
@@ -2303,7 +2544,6 @@ export class SkillFlowApp {
                 ...(details.totalInstalls !== undefined ? { totalInstalls: details.totalInstalls } : {}),
                 ...(matchedSkillNames.length ? { matchedSkillNames } : {}),
                 enrichState: { status: "ready" as const },
-                previewState: { status: "idle" as const },
               },
             ],
             exact: true,
@@ -2378,14 +2618,14 @@ export class SkillFlowApp {
   private async prepareImportSourceImpl(locator: string): Promise<Result<ImportPreparationResult>> {
     const githubLocator = this.parseGitHubImportLocator(locator);
     if (githubLocator) {
-      return this.importPreparationServiceV2.prepareImportSource(githubLocator.locator, {
+      return this.importPreparationService.prepareImportSource(githubLocator.locator, {
         project: false,
         ...(githubLocator.requestedPath ? { path: githubLocator.requestedPath } : {}),
       });
     }
 
     const directLocator = await this.resolveDirectImportLocator(locator);
-    return this.importPreparationServiceV2.prepareImportSource(directLocator ?? locator.trim(), {
+    return this.importPreparationService.prepareImportSource(directLocator ?? locator.trim(), {
       project: false,
     });
   }
@@ -2395,7 +2635,7 @@ export class SkillFlowApp {
     draft?: ImportDraft,
     canonicalRepo?: string,
   ): Promise<Result<ImportSourceResult>> {
-    const committed = await this.importPreparationServiceV2.commitPreparedImportSource(preparationId);
+    const committed = await this.importPreparationService.commitPreparedImportSource(preparationId);
     if (!committed.ok) {
       return committed;
     }
@@ -2436,7 +2676,7 @@ export class SkillFlowApp {
   }
 
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
-    await this.stateStoreV2.init();
+    await this.stateStore.init();
     const githubLocator = this.parseGitHubImportLocator(locator);
     const canonicalRepo = githubLocator?.canonicalRepo;
     if (!canonicalRepo) {
@@ -2475,20 +2715,38 @@ export class SkillFlowApp {
           return githubPreview;
         }
       }
+      const sourceSelectionKey = `${canonicalRepo}#.`;
+      const selectedSkills = snapshotSkills.map((skill) => {
+        const selector = normalizeImportRepoPathSelector(skill.skillId);
+        return {
+          uiId: this.importPreviewUiId(sourceSelectionKey, selector.path),
+          selector,
+        };
+      });
       return ok({
         status: "ready",
         version: 2,
         locator: githubLocator.locator,
         canonicalRepo,
         snapshot,
-        selectedSkillIds: snapshotSkills.map((skill) => skill.skillId),
+        selectedSkills,
         enabledTargets: [],
-        skills: snapshotSkills.map((skill) => ({
-          id: skill.skillId,
-          title: skill.title,
-          summary: skill.summary ?? "",
-          selectedByDefault: true,
-        })),
+        skills: snapshotSkills.map((skill, index) => {
+          const selection = selectedSkills[index]!;
+          return {
+            providerSkillId: skill.skillId,
+            uiId: selection.uiId,
+            title: skill.title,
+            selector: selection.selector,
+            origin: {
+              provider: "github" as const,
+              providerSkillId: skill.skillId,
+              repoPath: selection.selector.path,
+            },
+            diagnostics: [],
+            selectorAliases: [...new Set([skill.skillId, selection.selector.path])],
+          };
+        }),
         targets: availableTargets.map((target) => ({
           id: target,
           selectedByDefault: false,
@@ -2516,12 +2774,21 @@ export class SkillFlowApp {
   ): Promise<Result<ImportSourceResult>> {
     const githubLocator = this.parseGitHubImportLocator(locator);
     const normalizedLocator = githubLocator?.locator ?? locator.trim();
-    const preparation = await this.importPreparationServiceV2.prepareImportSource(normalizedLocator, {
+    const preparation = await this.importPreparationService.prepareImportSource(normalizedLocator, {
       project: false,
       ...(githubLocator?.requestedPath ? { path: githubLocator.requestedPath } : {}),
     });
     const importDraft = draft ?? (githubLocator?.skillSelector
-      ? { selectedSkillIds: [githubLocator.skillSelector], enabledTargets: [] }
+      ? {
+          selectedSkills: [{
+            uiId: this.importPreviewUiId(
+              `${githubLocator.canonicalRepo}#${githubLocator.requestedPath ?? "."}`,
+              normalizeImportRepoPathSelector(githubLocator.skillSelector).path,
+            ),
+            selector: normalizeImportRepoPathSelector(githubLocator.skillSelector),
+          }],
+          enabledTargets: [],
+        }
       : undefined);
     const canonicalRepo = githubLocator?.canonicalRepo ?? normalizeImportCanonicalRepo(normalizedLocator);
     if (preparation.ok && preparation.data.status === "ready") {
@@ -2576,44 +2843,8 @@ export class SkillFlowApp {
     }, [...finalDraft.warnings, ...applied.warnings]);
   }
 
-  private withImportPreparation(
-    preview: Result<ImportPreviewResult>,
-    preparation: Result<ImportPreparationResult>,
-  ): Result<ImportPreviewResult> {
-    if (!preview.ok || preview.data.status !== "ready") {
-      return preview;
-    }
-
-    return ok({
-      ...preview.data,
-      ...this.importPreparationPreviewFields(preparation),
-    }, preview.warnings);
-  }
-
-  private importPreparationPreviewFields(
-    preparation: Result<ImportPreparationResult>,
-  ): Partial<Extract<ImportPreviewResult, { status: "ready" }>> {
-    if (!preparation.ok) {
-      return {};
-    }
-
-    if (preparation.data.status === "failed") {
-      return {
-        ...(preparation.data.preparationId ? { preparationId: preparation.data.preparationId } : {}),
-        preparationStatus: "failed",
-      };
-    }
-
-    return {
-      preparationId: preparation.data.preparationId,
-      preparationStatus: preparation.data.status,
-      ...(preparation.data.preparedAt ? { preparedAt: preparation.data.preparedAt } : {}),
-      ...(preparation.data.expiresAt ? { expiresAt: preparation.data.expiresAt } : {}),
-    };
-  }
-
   private async resolveSourceMetadata(
-    source: Manifest["sources"][number],
+    source: RuntimeManifestView["sources"][number],
     lock: WorkflowSummary["lock"],
   ): Promise<SourceMetadataResult> {
     const cachedEntry = (await this.store.readSourceMetadataCache())[source.id];
@@ -2626,11 +2857,12 @@ export class SkillFlowApp {
       return sourceMetadataCacheEntryToResult(cachedEntry);
     }
 
-    return this.refreshSourceMetadata(source, lock, inferSourceMetadataProvider(source));
+    const metadataSource = this.sourceSummaryToMetadataSource(source);
+    return this.refreshSourceMetadata(metadataSource, lock, inferSourceMetadataProvider(metadataSource));
   }
 
   private refreshSourceMetadataInBackground(
-    source: Manifest["sources"][number],
+    source: RuntimeManifestView["sources"][number],
     lock: WorkflowSummary["lock"],
     providerHint?: SourceMetadataResult["provider"],
   ): void {
@@ -2638,7 +2870,7 @@ export class SkillFlowApp {
       return;
     }
 
-    const refresh = this.refreshSourceMetadata(source, lock, providerHint)
+    const refresh = this.refreshSourceMetadata(this.sourceSummaryToMetadataSource(source), lock, providerHint)
       .then(() => undefined)
       .catch(() => undefined)
       .finally(() => {
@@ -2649,7 +2881,7 @@ export class SkillFlowApp {
   }
 
   private async refreshSourceMetadata(
-    source: Manifest["sources"][number],
+    source: SourceManifestRecord,
     lock: WorkflowSummary["lock"],
     providerHint?: SourceMetadataResult["provider"],
   ): Promise<SourceMetadataResult> {
@@ -2678,6 +2910,21 @@ export class SkillFlowApp {
     }
   }
 
+  private sourceSummaryToMetadataSource(source: SourceSummaryRecord): SourceManifestRecord {
+    return {
+      id: source.id,
+      kind: source.kind,
+      locator: source.locator,
+      canonicalLocator: source.originLocator ?? source.locator,
+      displayName: source.displayName,
+      enabled: true,
+      createdAt: source.addedAt,
+      updatedAt: source.addedAt,
+      ...(source.requestedPath ? { requestedPath: source.requestedPath } : {}),
+      ...(source.originRequestedPath ? { originRequestedPath: source.originRequestedPath } : {}),
+    };
+  }
+
   private importRecommendationSeedRepos(): string[] {
     return [
       "anthropics/skills",
@@ -2686,11 +2933,15 @@ export class SkillFlowApp {
     ];
   }
 
-  private installedCanonicalRepos(manifest: Manifest): Set<string> {
+  private installedCanonicalRepos(manifest: RuntimeManifestView | ManifestFile): Set<string> {
     return new Set(
       manifest.sources.flatMap((source) => {
         const canonicalRepo = normalizeImportCanonicalRepo(source.locator)
-          ?? (source.originLocator ? normalizeImportCanonicalRepo(source.originLocator) : undefined);
+          ?? ("originLocator" in source && source.originLocator
+            ? normalizeImportCanonicalRepo(source.originLocator)
+            : "canonicalLocator" in source
+              ? normalizeImportCanonicalRepo(source.canonicalLocator)
+              : undefined);
         return canonicalRepo ? [canonicalRepo] : [];
       }),
     );
@@ -2739,7 +2990,6 @@ export class SkillFlowApp {
         ...(options.matchedSkills?.length ? { matchedSkillNames: options.matchedSkills.map((skill) => skill.title) } : {}),
         ...(options.matchedSkills?.length ? { matchedSkills: options.matchedSkills } : {}),
         enrichState: { status: "ready" },
-        previewState: { status: "idle" },
       };
     }
 
@@ -2757,7 +3007,6 @@ export class SkillFlowApp {
       ...(options.matchedSkills?.length ? { matchedSkillNames: options.matchedSkills.map((skill) => skill.title) } : {}),
       ...(options.matchedSkills?.length ? { matchedSkills: options.matchedSkills } : {}),
       enrichState: { status: "loading" },
-      previewState: { status: "idle" },
     };
   }
 
@@ -2786,7 +3035,7 @@ export class SkillFlowApp {
 
   private async buildDirectImportGroupCandidate(
     locator: string,
-    manifest: Manifest,
+    manifest: ManifestFile,
   ): Promise<ImportGroupCandidate | null> {
     const resolvedLocator = await this.resolveDirectImportLocator(locator);
     if (!resolvedLocator) {
@@ -2810,11 +3059,10 @@ export class SkillFlowApp {
       installed: this.isDirectImportLocatorInstalled(manifest, resolvedLocator),
       summary: `Import from ${resolvedLocator}`,
       enrichState: { status: "idle" },
-      previewState: { status: "idle" },
     };
   }
 
-  private isDirectImportLocatorInstalled(manifest: Manifest, locator: string): boolean {
+  private isDirectImportLocatorInstalled(manifest: RuntimeManifestView | ManifestFile, locator: string): boolean {
     if (locator.startsWith("clawhub:")) {
       const sourceId = deriveSourceId(locator);
       return manifest.sources.some((source) => source.id === sourceId);
@@ -2995,11 +3243,6 @@ export class SkillFlowApp {
       return null;
     }
 
-    const preparation = await pathExists(resolvedLocator)
-      ? await this.importPreparationServiceV2.prepareImportSource(resolvedLocator, {
-          project: false,
-        })
-      : undefined;
     const preview = await this.sourceCheckoutService.previewSource(resolvedLocator);
     if (!preview.ok) {
       return ok({
@@ -3015,7 +3258,7 @@ export class SkillFlowApp {
       this.buildDirectImportPreviewResult(resolvedLocator, preview.data, availableTargets),
       preview.warnings,
     );
-    return preparation ? this.withImportPreparation(result, preparation) : result;
+    return result;
   }
 
   private async previewGitHubImportSource(
@@ -3081,16 +3324,14 @@ export class SkillFlowApp {
     const sourceSelectionKey = `${canonicalRepo}#${options.requestedPath ?? "."}`;
     const provider = this.importPreviewOriginProvider(locator, canonicalRepo);
     const skills = leafs.map((leaf) => {
-      const id = leaf.relativePath === "." ? leaf.name : leaf.relativePath;
+      const id = leaf.relativePath === "." ? leaf.name ?? leaf.linkName : leaf.relativePath;
       const selector = normalizeImportRepoPathSelector(leaf.relativePath);
       const selectorPath = selector.path;
       return {
-        id,
-        legacyId: id,
+        providerSkillId: id,
         uiId: this.importPreviewUiId(sourceSelectionKey, selectorPath),
         title: leaf.title,
-        summary: leaf.description,
-        selectedByDefault: true,
+        ...(leaf.contentHash ? { contentHash: leaf.contentHash } : {}),
         selector,
         origin: {
           provider,
@@ -3098,7 +3339,7 @@ export class SkillFlowApp {
           repoPath: selectorPath,
         },
         diagnostics: [],
-        legacyAliases: [...new Set([id, leaf.name, leaf.relativePath])],
+        selectorAliases: [...new Set([id, leaf.name, leaf.relativePath].filter((value): value is string => Boolean(value)))],
       };
     });
 
@@ -3107,7 +3348,6 @@ export class SkillFlowApp {
       version: 2,
       locator,
       canonicalRepo,
-      selectedSkillIds: skills.map((skill) => skill.id),
       selectedSkills: skills.map((skill) => ({
         uiId: skill.uiId,
         selector: skill.selector,
@@ -3282,14 +3522,14 @@ export class SkillFlowApp {
     });
   }
 
-  private filterPreviewLeafs(
-    leafs: LeafRecord[],
+  private filterPreviewLeafs<T extends SelectableLeaf>(
+    leafs: T[],
     canonicalRepo: string,
     options: {
       requestedPath?: string;
       skillSelectors?: string[];
     } = {},
-  ): LeafRecord[] | undefined {
+  ): T[] | undefined {
     let filteredLeafs = leafs;
     const requestedPath = this.normalizeRequestedPath(options.requestedPath);
     if (requestedPath) {
@@ -3616,7 +3856,7 @@ export class SkillFlowApp {
     return 3;
   }
 
-  private pickPreferredImportLeafMatch(matches: LeafRecord[]): LeafRecord | undefined {
+  private pickPreferredImportLeafMatch<T extends SelectableLeaf>(matches: T[]): T | undefined {
     if (matches.length === 0) {
       return undefined;
     }
@@ -3716,15 +3956,15 @@ export class SkillFlowApp {
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
       selectedProjectScope: ProjectScope;
-      customTargets: SharedPreferences["customTargets"];
-      agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
+      customTargets: PreferencesFile["customTargets"];
+      agentDisplayOrder: PreferencesFile["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
     }>
   > {
     const runtimeView = await this.readRuntimeAuthorityView();
     const { manifest, lockFile, collections } = runtimeView;
     const recentProjects = await this.recentProjectService.listRecentProjects().catch(() => []);
-    const reconciledPreferences = await this.pruneMissingSourceIdsV2({
+    const reconciledPreferences = await this.pruneMissingSourceIds({
       ...runtimeView.preferences,
       recentProjects,
     });
@@ -3749,13 +3989,13 @@ export class SkillFlowApp {
   }
 
   async getConfigData(): Promise<
-    Result<{ manifest: Manifest; lockFile: LockFile; summaries: WorkflowSummary[] }>
+    Result<{ manifest: ManifestFile; lockFile: LockFile; summaries: WorkflowSummary[] }>
   > {
     return this.runSerializedMutation(() => this.getConfigDataImpl());
   }
 
   private async getConfigDataImpl(): Promise<
-    Result<{ manifest: Manifest; lockFile: LockFile; summaries: WorkflowSummary[] }>
+    Result<{ manifest: ManifestFile; lockFile: LockFile; summaries: WorkflowSummary[] }>
   > {
     const { manifest, lockFile, collections } = await this.readRuntimeAuthorityView();
     return ok(
@@ -3773,7 +4013,7 @@ export class SkillFlowApp {
   ): Promise<
     Result<{
       availableTargets: DeploymentTargetId[];
-      manifest: Manifest;
+      manifest: ManifestFile;
       lockFile: LockFile;
       summaries: WorkflowSummary[];
       initialDrafts: Record<string, DraftBinding>;
@@ -3782,9 +4022,9 @@ export class SkillFlowApp {
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
       selectedProjectScope: ProjectScope;
-      projectDrafts: SharedPreferences["projectDrafts"];
-      customTargets: SharedPreferences["customTargets"];
-      agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
+      projectDrafts: ScopedSourceDrafts;
+      customTargets: PreferencesFile["customTargets"];
+      agentDisplayOrder: PreferencesFile["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
       capabilities: { importDraftV2: true };
     }>
@@ -3801,7 +4041,7 @@ export class SkillFlowApp {
   ): Promise<
     Result<{
       availableTargets: DeploymentTargetId[];
-      manifest: Manifest;
+      manifest: ManifestFile;
       lockFile: LockFile;
       summaries: WorkflowSummary[];
       initialDrafts: Record<string, DraftBinding>;
@@ -3810,9 +4050,9 @@ export class SkillFlowApp {
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
       selectedProjectScope: ProjectScope;
-      projectDrafts: SharedPreferences["projectDrafts"];
-      customTargets: SharedPreferences["customTargets"];
-      agentDisplayOrder: SharedPreferences["agentDisplayOrder"];
+      projectDrafts: ScopedSourceDrafts;
+      customTargets: PreferencesFile["customTargets"];
+      agentDisplayOrder: PreferencesFile["agentDisplayOrder"];
       groupCardEnrichmentBySourceId: Record<string, GroupCardEnrichmentSnapshot>;
       capabilities: { importDraftV2: true };
     }>
@@ -3821,7 +4061,7 @@ export class SkillFlowApp {
     if (!boot.ok) {
       return fail(boot.errors, boot.warnings);
     }
-    const preferences = await this.pruneMissingSourceIdsV2();
+    const preferences = await this.pruneMissingSourceIds();
     const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(
       boot.data.manifest,
       boot.data.lockFile,
@@ -3838,7 +4078,7 @@ export class SkillFlowApp {
       pinnedSourceIds: preferences.pinnedSourceIds,
       recentProjects: preferences.recentProjects,
       selectedProjectScope: preferences.selectedProjectScope,
-      projectDrafts: preferences.projectDrafts,
+      projectDrafts: this.projectDraftsForPreferences(preferences),
       customTargets: preferences.customTargets,
       agentDisplayOrder: preferences.agentDisplayOrder,
       groupCardEnrichmentBySourceId,
@@ -3847,7 +4087,7 @@ export class SkillFlowApp {
   }
 
   private async readCachedGroupCardEnrichmentBySourceId(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): Promise<Record<string, GroupCardEnrichmentSnapshot>> {
     const [sourceMetadataCache, importDataCache] = await Promise.all([
@@ -3858,14 +4098,21 @@ export class SkillFlowApp {
 
     for (const source of manifest.sources) {
       const entry: GroupCardEnrichmentSnapshot = {};
-      const sourceLock = lockFile.sources.find((item) => item.id === source.id);
+      const sourceLock = lockFile.sources[source.id];
       const cachedMetadata = sourceMetadataCache[source.id];
       if (cachedMetadata) {
         entry.sourceMetadata = sourceMetadataCacheEntryToResult(cachedMetadata);
       }
 
-      const canonicalRepo = normalizeImportCanonicalRepo(source.locator)
-        ?? (source.originLocator ? normalizeImportCanonicalRepo(source.originLocator) : undefined);
+      const canonicalRepo = [
+        source.locator,
+        source.canonicalLocator,
+      ].reduce<string | undefined>((resolved, locator) => {
+        if (resolved || typeof locator !== "string") {
+          return resolved;
+        }
+        return normalizeImportCanonicalRepo(locator);
+      }, undefined);
       const cachedSnapshot = canonicalRepo
         ? importDataCache.repos?.[canonicalRepo]?.providers.skills?.snapshot
         : undefined;
@@ -3873,8 +4120,8 @@ export class SkillFlowApp {
         entry.sourceSnapshot = cachedSnapshot;
       }
 
-      if (sourceLock?.checkoutPath) {
-        entry.groupPath = sourceLock.checkoutPath;
+      if (sourceLock?.localPath) {
+        entry.groupPath = sourceLock.localPath;
       }
 
       if (entry.sourceMetadata || entry.sourceSnapshot || entry.groupPath) {
@@ -3899,7 +4146,7 @@ export class SkillFlowApp {
   private async togglePinnedSourceImpl(
     sourceId: string,
   ): Promise<Result<{ pinnedSourceIds: string[] }>> {
-    const state = await this.stateStoreV2.readState();
+    const state = await this.stateStore.readState();
     if (!state.manifest.sources.some((source) => source.id === sourceId)) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -3910,7 +4157,7 @@ export class SkillFlowApp {
     const pinnedSourceIds = state.preferences.pinnedSourceIds.includes(sourceId)
       ? state.preferences.pinnedSourceIds.filter((pinnedSourceId) => pinnedSourceId !== sourceId)
       : [...state.preferences.pinnedSourceIds, sourceId];
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       preferences: {
         ...state.preferences,
@@ -3925,7 +4172,7 @@ export class SkillFlowApp {
     displayName: string,
   ): Promise<Result<RenameSourceResult>> {
     const trimmedDisplayName = displayName.trim();
-    const state = await this.stateStoreV2.readState();
+    const state = await this.stateStore.readState();
     const manifestSource = state.manifest.sources.find((source) => source.id === sourceId);
     const lockSource = state.lockFile.sources[sourceId];
 
@@ -3939,7 +4186,7 @@ export class SkillFlowApp {
     const originalDisplayName = deriveDisplayName(manifestSource.locator);
     const isResetToOriginal = trimmedDisplayName === "";
     const nextDisplayName = isResetToOriginal ? originalDisplayName : trimmedDisplayName;
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest: {
         ...state.manifest,
@@ -3975,13 +4222,13 @@ export class SkillFlowApp {
   async previewDraft(
     sourceId: string,
     draft: DraftBinding,
-  ): Promise<Result<{ plan: DeploymentPlan; manifest: Manifest; lockFile: LockFile }>> {
+  ): Promise<Result<{ plan: DeploymentPlan; manifest: ManifestFile; lockFile: LockFile }>> {
     // config TUI state flow:
     //   draft -> previewDraft() -> plan only
     //   draft -> applyDraft()   -> plan + filesystem + manifest/lock writes
     const runtimeView = await this.readRuntimeAuthorityView();
-    const prepared = this.prepareManifestV2ForDraft(
-      this.cloneManifestV2(runtimeView.state.manifest),
+    const prepared = this.prepareAuthorityManifestForDraft(
+      this.cloneAuthorityManifest(runtimeView.state.manifest),
       runtimeView.state.lockFile,
       sourceId,
       draft,
@@ -3990,7 +4237,7 @@ export class SkillFlowApp {
       return fail(prepared.errors, prepared.warnings);
     }
 
-    const plan = await this.planForAffectedSourcesV2(
+    const plan = await this.planForAffectedSources(
       prepared.data.manifest,
       runtimeView.state.lockFile,
       sourceId,
@@ -3999,13 +4246,8 @@ export class SkillFlowApp {
     if (!plan.ok) {
       return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
     }
-    const projected = projectStateV2ToView({
-      ...runtimeView.state,
-      manifest: prepared.data.manifest,
-    });
-
     return ok(
-      { plan: plan.data, manifest: projected.manifest, lockFile: projected.lockFile },
+      { plan: plan.data, manifest: prepared.data.manifest, lockFile: runtimeView.state.lockFile },
       [...prepared.warnings, ...plan.warnings],
     );
   }
@@ -4076,9 +4318,9 @@ export class SkillFlowApp {
   ): Promise<Result<ApplyDraftResult>> {
     if (scope.kind === "project") {
       const runtimeView = await this.readRuntimeAuthorityView();
-      const { state, manifest: viewManifest, lockFile: viewLockFile, preferences } = runtimeView;
-      const manifest = this.cloneManifestV2(state.manifest);
-      const lockFile = this.cloneLockFileV2(state.lockFile);
+      const { state, manifest: authorityManifest, lockFile: authorityLockFile, preferences } = runtimeView;
+      const manifest = this.cloneAuthorityManifest(state.manifest);
+      const lockFile = this.cloneLockFile(state.lockFile);
       if (!manifest.sources.some((source) => source.id === sourceId)) {
         return fail({
           code: "SOURCE_NOT_FOUND",
@@ -4089,13 +4331,16 @@ export class SkillFlowApp {
       const initialDrafts: Record<string, DraftBinding> = {
         [sourceId]: this.draftFromBinding(
           sourceId,
-          viewManifest.bindings[sourceId] ?? { targets: {} },
-          viewLockFile,
+          this.bindingToSummary(
+            authorityManifest.bindings[sourceId],
+            authorityLockFile.sources[sourceId]?.leafIds ?? [],
+          ),
+          authorityLockFile,
         ),
       };
       const previousDraft = this.resolveDraftForScope(sourceId, initialDrafts, preferences, scope);
-      const previousPrepared = this.prepareManifestV2ForDraft(
-        this.cloneManifestV2(state.manifest),
+      const previousPrepared = this.prepareAuthorityManifestForDraft(
+        this.cloneAuthorityManifest(state.manifest),
         lockFile,
         sourceId,
         previousDraft,
@@ -4103,7 +4348,7 @@ export class SkillFlowApp {
       if (!previousPrepared.ok) {
         return fail(previousPrepared.errors, previousPrepared.warnings);
       }
-      const prepared = this.prepareManifestV2ForDraft(manifest, lockFile, sourceId, draft);
+      const prepared = this.prepareAuthorityManifestForDraft(manifest, lockFile, sourceId, draft);
       if (!prepared.ok) {
         return fail(prepared.errors, prepared.warnings);
       }
@@ -4123,44 +4368,44 @@ export class SkillFlowApp {
             draft: prepared.data.draft,
             recentProjects: preferencesAfterFailure.recentProjects,
             selectedProjectScope: preferencesAfterFailure.selectedProjectScope,
-            projectDrafts: preferencesAfterFailure.projectDrafts,
+            projectDrafts: preferencesAfterFailure.projectSourceDrafts,
           },
           warnings: [...prepared.warnings, ...targetRootOverrides.warnings],
           errors: targetRootOverrides.errors,
         };
       }
-      const previousView = projectStateV2ToView({
-        ...state,
-        manifest: previousPrepared.data.manifest,
-        lockFile,
-      });
       const scopedDeployments = scopedTargets.length === 0
         ? []
         : await this.findScopedDeploymentsOnDisk(
-          previousView.manifest,
-          previousView.lockFile,
+          previousPrepared.data.manifest,
+          lockFile,
           sourceId,
           targetRootOverrides.data,
           this.createAdaptersForPreferences(preferences),
         );
-      const nextPreferences: SharedPreferences = {
+      const nextPreferences: PreferencesFile = {
         ...preferences,
-        projectDrafts: {
-          ...preferences.projectDrafts,
+        projectSourceDrafts: {
+          ...preferences.projectSourceDrafts,
           [scope.projectId]: {
-            ...(preferences.projectDrafts[scope.projectId] ?? {}),
-            [sourceId]: prepared.data.draft,
+            ...(preferences.projectSourceDrafts[scope.projectId] ?? {}),
+            [sourceId]: {
+              sourceId,
+              selectedLeafIds: [...prepared.data.draft.selectedLeafIds],
+              enabledTargets: [...prepared.data.draft.enabledTargets],
+              updatedAt: new Date().toISOString(),
+            },
           },
         },
       };
 
       if (scopedTargets.length > 0) {
-        const scopedLockFile = this.cloneLockFileV2ForScopedDeployments(lockFile, scopedDeployments);
+        const scopedLockFile = this.cloneLockFileForScopedDeployments(lockFile, scopedDeployments);
         const scopedApply = await this.withScopedTargetRoots<Result<{ actions: DeploymentAction[] }>>(
           targetRootOverrides.data,
           async () => {
           const scopedAdapters = this.adapters;
-          const plan = await this.planForSourcesV2(
+          const plan = await this.planForSources(
             prepared.data.manifest,
             scopedLockFile,
             [sourceId],
@@ -4171,7 +4416,7 @@ export class SkillFlowApp {
             return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
           }
 
-          const applyResult = await new DeploymentApplierV2({
+          const applyResult = await new DeploymentApplier({
             adapters: scopedAdapters,
             trustedTargetRoots: targetRootOverrides.data,
           }).applyPlan(scopedLockFile, plan.data.actions);
@@ -4192,7 +4437,7 @@ export class SkillFlowApp {
           return fail(scopedApply.errors, scopedApply.warnings);
         }
 
-        await this.writePreferencesV2FromView(nextPreferences);
+        await this.writePreferences(nextPreferences);
         const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
         return ok(
           {
@@ -4205,7 +4450,7 @@ export class SkillFlowApp {
         );
       }
 
-      await this.writePreferencesV2FromView(nextPreferences);
+      await this.writePreferences(nextPreferences);
       const freshState = await this.buildApplyDraftFreshState(sourceId, scope);
       return ok(
         {
@@ -4218,21 +4463,21 @@ export class SkillFlowApp {
       );
     }
 
-    const state = await this.stateStoreV2.readState();
-    const manifest = this.cloneManifestV2(state.manifest);
-    const lockFile = this.cloneLockFileV2(state.lockFile);
-    const prepared = this.prepareManifestV2ForDraft(manifest, lockFile, sourceId, draft);
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const prepared = this.prepareAuthorityManifestForDraft(manifest, lockFile, sourceId, draft);
     if (!prepared.ok) {
       return fail(prepared.errors, prepared.warnings);
     }
 
-    const preferences = projectStateV2ToView(state).preferences;
-    const plan = await this.planForAffectedSourcesV2(prepared.data.manifest, lockFile, sourceId, preferences);
+    const preferences = state.preferences;
+    const plan = await this.planForAffectedSources(prepared.data.manifest, lockFile, sourceId, preferences);
     if (!plan.ok) {
       return fail(plan.errors, [...prepared.warnings, ...plan.warnings]);
     }
 
-    const applier = new DeploymentApplierV2(this.createAdaptersForPreferences(preferences));
+    const applier = new DeploymentApplier(this.createAdaptersForPreferences(preferences));
     const applyResult = await applier.applyPlan(lockFile, plan.data.actions);
 
     if (!applyResult.ok) {
@@ -4246,26 +4491,21 @@ export class SkillFlowApp {
     const disabledImportedTargets = importedTargets.filter(
       (target) => !prepared.data.draft.enabledTargets.includes(target),
     );
-    const cleanupView = projectStateV2ToView({
-      ...state,
-      manifest: prepared.data.manifest,
-      lockFile,
-    });
     if (disabledImportedTargets.length > 0) {
       cleanupWarnings.push(
         ...await this.cleanupImportedTargetPaths(
-          cleanupView.manifest,
-          cleanupView.lockFile,
+          prepared.data.manifest,
+          lockFile,
           [sourceId],
           disabledImportedTargets,
         ),
       );
     }
     cleanupWarnings.push(
-      ...await this.cleanupDetachedTargetSymlinksForSources(cleanupView.lockFile, [sourceId]),
+      ...await this.cleanupDetachedTargetSymlinksForSources(lockFile, [sourceId]),
     );
 
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest: prepared.data.manifest,
       lockFile,
@@ -4314,15 +4554,15 @@ export class SkillFlowApp {
   }
 
   private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
-    const updated = await this.sourceAuthorityServiceV2.updateSources(sourceIds);
+    const updated = await this.sourceAuthorityService.updateSources(sourceIds);
     if (!updated.ok) {
       return updated;
     }
 
-    const state = await this.stateStoreV2.readState();
-    const manifest = this.cloneManifestV2(state.manifest);
-    const lockFile = this.cloneLockFileV2(state.lockFile);
-    const preferences = projectStateV2ToView(state).preferences;
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const preferences = state.preferences;
     const updatedSourceIds = new Set(updated.data.updated.map((item) => item.sourceId));
     const projectedSourceIds = new Set(
       lockFile.projections
@@ -4333,19 +4573,19 @@ export class SkillFlowApp {
       .map((source) => source.id)
       .filter((id) =>
         updatedSourceIds.has(id) ||
-        this.hasActiveTargetsV2(manifest, id) ||
+        this.hasActiveTargets(manifest, id) ||
         projectedSourceIds.has(id),
       );
-    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences);
+    const planned = await this.planForSources(manifest, lockFile, planSourceIds, preferences);
     if (!planned.ok) {
       return fail(planned.errors, [...updated.warnings, ...planned.warnings]);
     }
-    const applier = new DeploymentApplierV2(this.createAdaptersForPreferences(preferences));
+    const applier = new DeploymentApplier(this.createAdaptersForPreferences(preferences));
     const applied = await applier.applyPlan(lockFile, planned.data.actions);
     if (!applied.ok) {
       return fail(applied.errors, [...updated.warnings, ...planned.warnings, ...applied.warnings]);
     }
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest,
       lockFile,
@@ -4366,16 +4606,19 @@ export class SkillFlowApp {
     if (!pruned.ok) {
       return fail(pruned.errors, pruned.warnings);
     }
-    const preReconcileState = await this.stateStoreV2.readState();
-    const preReconcileBrokenSymlinks = await this.detectBrokenSymlinkIssuesV2(preReconcileState);
-    const reconciled = await this.sourceAuthorityServiceV2.reconcileInventory();
+    const preReconcileState = await this.stateStore.readState();
+    const preReconcileBrokenSymlinks = await this.detectBrokenSymlinkIssues(preReconcileState);
+    const reconciled = await this.sourceAuthorityService.reconcileInventory();
     if (!reconciled.ok) {
       return fail(reconciled.errors, reconciled.warnings);
     }
-    const state = await this.stateStoreV2.readState();
-    const view = projectStateV2ToView(state);
-    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(view.manifest, view.lockFile);
-    const doctor = await this.doctorService.run(view.manifest, view.lockFile, view.preferences);
+    const state = await this.stateStore.readState();
+    const orphanWarnings = await this.cleanupOrphanTargetSymlinks(state.manifest, state.lockFile);
+    const doctor = await this.doctorService.run(
+      state.manifest,
+      state.lockFile,
+      state.preferences,
+    );
     if (!doctor.ok) {
       return doctor;
     }
@@ -4388,9 +4631,9 @@ export class SkillFlowApp {
     );
   }
 
-  private async detectBrokenSymlinkIssuesV2(state: {
-    manifest: ManifestFileV2;
-    lockFile: LockFileV2;
+  private async detectBrokenSymlinkIssues(state: {
+    manifest: ManifestFile;
+    lockFile: LockFile;
   }): Promise<DoctorIssue[]> {
     const issues: DoctorIssue[] = [];
     for (const projection of state.lockFile.projections) {
@@ -4432,17 +4675,17 @@ export class SkillFlowApp {
     return this.runSerializedMutation(() => this.repairTargetsImpl(sourceIds));
   }
 
-  async inspectTargetStatus(sourceIds?: string[]): Promise<Result<{ diagnostics: DiagnosticV2[] }>> {
+  async inspectTargetStatus(sourceIds?: string[]): Promise<Result<{ diagnostics: Diagnostic[] }>> {
     return this.runSerializedMutation(() => this.inspectTargetStatusImpl(sourceIds));
   }
 
   private async repairTargetsImpl(
     sourceIds?: string[],
   ): Promise<Result<{ actions: DeploymentAction[] }>> {
-    const state = await this.stateStoreV2.readState();
-    const manifest = this.cloneManifestV2(state.manifest);
-    const lockFile = this.cloneLockFileV2(state.lockFile);
-    const preferences = projectStateV2ToView(state).preferences;
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const preferences = state.preferences;
     const adapters = this.createAdaptersForPreferences(preferences);
     const warnings: Warning[] = [];
 
@@ -4461,7 +4704,7 @@ export class SkillFlowApp {
       const sourceLock = lockFile.sources[sourceId];
       if (
         sourceLock?.importMode === "bootstrap-detected" &&
-        !this.hasActiveTargetsV2(manifest, sourceId) &&
+        !this.hasActiveTargets(manifest, sourceId) &&
         !lockFile.projections.some((projection) =>
           projection.sourceId === sourceId && projection.status === "active"
         )
@@ -4490,24 +4733,24 @@ export class SkillFlowApp {
 
     const planSourceIds = requestedIds.filter(
       (sourceId) =>
-        this.hasActiveTargetsV2(manifest, sourceId) ||
+        this.hasActiveTargets(manifest, sourceId) ||
         lockFile.projections.some((projection) =>
           projection.sourceId === sourceId &&
           projection.status === "active" &&
           !unknownTargetKeys.has(this.projectionKey(projection.sourceId, projection.leafId, projection.target))
         ),
     );
-    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences, adapters);
+    const planned = await this.planForSources(manifest, lockFile, planSourceIds, preferences, adapters);
     if (!planned.ok) {
       return fail(planned.errors, [...warnings, ...planned.warnings]);
     }
-    const applier = new DeploymentApplierV2(adapters);
+    const applier = new DeploymentApplier(adapters);
     const applied = await applier.applyPlan(lockFile, planned.data.actions);
     if (!applied.ok) {
       return fail(applied.errors, [...warnings, ...planned.warnings, ...applied.warnings]);
     }
 
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest,
       lockFile,
@@ -4520,11 +4763,11 @@ export class SkillFlowApp {
 
   private async inspectTargetStatusImpl(
     sourceIds?: string[],
-  ): Promise<Result<{ diagnostics: DiagnosticV2[] }>> {
-    const state = await this.stateStoreV2.readState();
-    const manifest = this.cloneManifestV2(state.manifest);
-    const lockFile = this.cloneLockFileV2(state.lockFile);
-    const preferences = projectStateV2ToView(state).preferences;
+  ): Promise<Result<{ diagnostics: Diagnostic[] }>> {
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const preferences = state.preferences;
     const adapters = this.createAdaptersForPreferences(preferences);
     const requestedIds = sourceIds?.length
       ? sourceIds
@@ -4540,17 +4783,17 @@ export class SkillFlowApp {
 
     const unknownTargetActions = this.blockUnknownTargetProjections(lockFile, requestedIds, adapters);
     const planSourceIds = requestedIds.filter((sourceId) =>
-      this.hasActiveTargetsV2(manifest, sourceId) ||
+      this.hasActiveTargets(manifest, sourceId) ||
       lockFile.projections.some((projection) =>
         projection.sourceId === sourceId && projection.status === "active"
       )
     );
-    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences, adapters);
+    const planned = await this.planForSources(manifest, lockFile, planSourceIds, preferences, adapters);
     if (!planned.ok) {
       return fail(planned.errors, planned.warnings);
     }
 
-    const diagnostics: DiagnosticV2[] = [
+    const diagnostics: Diagnostic[] = [
       ...this.deploymentActionDiagnostics(unknownTargetActions),
       ...planned.data.actions
         .filter((action) => action.kind !== "noop")
@@ -4572,7 +4815,7 @@ export class SkillFlowApp {
   }
 
   private blockUnknownTargetProjections(
-    lockFile: LockFileV2,
+    lockFile: LockFile,
     sourceIds: string[],
     adapters: ChannelAdapter[],
   ): DeploymentAction[] {
@@ -4612,9 +4855,9 @@ export class SkillFlowApp {
       });
   }
 
-  private deploymentActionDiagnostics(actions: DeploymentAction[]): DiagnosticV2[] {
+  private deploymentActionDiagnostics(actions: DeploymentAction[]): Diagnostic[] {
     return actions.flatMap((action) => {
-      const diagnostics = (action as DeploymentAction & { diagnostics?: DiagnosticV2[] }).diagnostics;
+      const diagnostics = (action as DeploymentAction & { diagnostics?: Diagnostic[] }).diagnostics;
       return diagnostics ?? [];
     });
   }
@@ -4628,7 +4871,7 @@ export class SkillFlowApp {
   }
 
   private async repairSourceImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
-    return this.sourceAuthorityServiceV2.updateSources(sourceIds);
+    return this.sourceAuthorityService.updateSources(sourceIds);
   }
 
   async repairState(
@@ -4655,17 +4898,17 @@ export class SkillFlowApp {
       );
     }
 
-    const reconciled = await this.sourceAuthorityServiceV2.reconcileInventory(requestedIds, {
+    const reconciled = await this.sourceAuthorityService.reconcileInventory(requestedIds, {
       force: true,
     });
     if (!reconciled.ok) {
       return fail(reconciled.errors, [...pruned.warnings, ...reconciled.warnings]);
     }
 
-    const state = await this.stateStoreV2.readState();
-    const manifest = this.cloneManifestV2(state.manifest);
-    const lockFile = this.cloneLockFileV2(state.lockFile);
-    const preferences = projectStateV2ToView(state).preferences;
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const preferences = state.preferences;
     const planSourceIds = requestedIds?.length
       ? requestedIds
       : manifest.sources.map((source) => source.id);
@@ -4674,7 +4917,7 @@ export class SkillFlowApp {
       projection.status === "active" && requestedSet.has(projection.sourceId)
     ).length;
 
-    const planned = await this.planForSourcesV2(manifest, lockFile, planSourceIds, preferences);
+    const planned = await this.planForSources(manifest, lockFile, planSourceIds, preferences);
     if (!planned.ok) {
       return fail(planned.errors, [
         ...pruned.warnings,
@@ -4682,7 +4925,7 @@ export class SkillFlowApp {
         ...planned.warnings,
       ]);
     }
-    const applier = new DeploymentApplierV2(this.createAdaptersForPreferences(preferences));
+    const applier = new DeploymentApplier(this.createAdaptersForPreferences(preferences));
     const applied = await applier.applyPlan(lockFile, planned.data.actions);
     if (!applied.ok) {
       return fail(applied.errors, [
@@ -4696,7 +4939,7 @@ export class SkillFlowApp {
     const nextActiveProjectionCount = lockFile.projections.filter((projection) =>
       projection.status === "active" && requestedSet.has(projection.sourceId)
     ).length;
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest,
       lockFile,
@@ -4736,20 +4979,19 @@ export class SkillFlowApp {
       warnings: string[];
     }>
   > {
-    const state = await this.stateStoreV2.readState();
+    const state = await this.stateStore.readState();
     const warnings: string[] = [];
     const removedRefs = sourceIds
       .map((sourceId) => state.manifest.sources.find((source) => source.id === sourceId))
-      .filter((source): source is ManifestFileV2["sources"][number] => Boolean(source))
+      .filter((source): source is ManifestFile["sources"][number] => Boolean(source))
       .map((source) => ({
         id: source.id,
         locator: source.locator,
         displayName: source.displayName,
       }));
-    const uninstallView = projectStateV2ToView(state);
     const importedCleanupWarnings = await this.cleanupImportedTargetPaths(
-      uninstallView.manifest,
-      uninstallView.lockFile,
+      state.manifest,
+      state.lockFile,
       sourceIds,
     );
 
@@ -4802,7 +5044,7 @@ export class SkillFlowApp {
 
     let removed;
     try {
-      removed = await this.sourceAuthorityServiceV2.removeSource(sourceIds);
+      removed = await this.sourceAuthorityService.removeSource(sourceIds);
     } catch (error) {
       return fail({
         code: "GROUP_DELETE_INCOMPLETE",
@@ -4819,8 +5061,8 @@ export class SkillFlowApp {
     );
   }
 
-  bindingFromDraft(draft: DraftBinding): SourceBinding {
-    const targets: Partial<Record<DeploymentTargetId, TargetBinding>> = {};
+  bindingFromDraft(draft: DraftBinding): SourceBindingSummary {
+    const targets: SourceBindingSummary["targets"] = {};
     for (const target of draft.enabledTargets) {
       targets[target] = {
         enabled: true,
@@ -4833,15 +5075,16 @@ export class SkillFlowApp {
     };
   }
 
-  private uniqueVirtualSourceId(
+  private uniqueCollectionSourceId(
     displayName: string,
-    manifest: Manifest,
-    virtualGroups: VirtualGroupsState,
+    manifest: ManifestFile,
+    collections: CollectionsFile,
   ): string {
-    const baseId = deriveSourceId(displayName) || "virtual-group";
+    const baseId = deriveSourceId(displayName) || "skill-collection";
     const usedIds = new Set([
       ...manifest.sources.map((source) => source.id),
-      ...Object.keys(virtualGroups.groups),
+      ...Object.keys(manifest.bindings),
+      ...Object.keys(collections.collections),
     ]);
     let candidate = baseId;
     let suffix = 2;
@@ -4852,12 +5095,12 @@ export class SkillFlowApp {
     return candidate;
   }
 
-  private validateVirtualSkillRefs(
-    skills: VirtualGroupSkillRef[],
-    manifest: Manifest,
+  private validateCollectionSkillRefs(
+    skills: CollectionSkillRef[],
+    manifest: ManifestFile,
     lockFile: LockFile,
-  ): Result<VirtualGroupSkillRef[]> {
-    const includedSkills: VirtualGroupSkillRef[] = [];
+  ): Result<CollectionSkillRef[]> {
+    const includedSkills: CollectionSkillRef[] = [];
     const seen = new Set<string>();
 
     for (const skill of skills) {
@@ -4871,8 +5114,16 @@ export class SkillFlowApp {
         });
       }
 
+      const sourceLock = lockFile.sources[sourceId];
+      if (!sourceLock) {
+        return fail({
+          code: "SOURCE_LOCK_MISSING",
+          message: `${sourceId} is missing from authority lock sources.`,
+        });
+      }
+
       const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
-      if (!leaf || leaf.sourceId !== sourceId) {
+      if (!leaf || leaf.sourceId !== sourceId || !sourceLock.leafIds.includes(leafId)) {
         return fail({
           code: "LEAF_NOT_FOUND",
           message: `Skill leaf '${leafId}' is not registered in skills group '${sourceId}'.`,
@@ -4890,8 +5141,8 @@ export class SkillFlowApp {
     return ok(includedSkills);
   }
 
-  private findVirtualSkillNameConflict(
-    skills: VirtualGroupSkillRef[],
+  private findCollectionSkillNameConflict(
+    skills: CollectionSkillRef[],
     lockFile: LockFile,
   ): { code: string; message: string } | undefined {
     const refsByName = new Map<string, Array<{ sourceId: string; leaf: LeafRecord }>>();
@@ -4917,112 +5168,8 @@ export class SkillFlowApp {
     }
 
     return {
-      code: "VIRTUAL_GROUP_SKILL_NAME_CONFLICT",
-      message: `Virtual group contains duplicate projected skill names: ${
-        duplicates
-          .map(([name, refs]) =>
-            `${name} (${refs.map((ref) => `${ref.sourceId}:${ref.leaf.relativePath}`).join(", ")})`
-          )
-          .join("; ")
-      }.`,
-    };
-  }
-
-  private uniqueCollectionSourceId(
-    displayName: string,
-    manifest: ManifestFileV2,
-    collections: CollectionsFileV2,
-  ): string {
-    const baseId = deriveSourceId(displayName) || "skill-collection";
-    const usedIds = new Set([
-      ...manifest.sources.map((source) => source.id),
-      ...Object.keys(manifest.bindings),
-      ...Object.keys(collections.collections),
-    ]);
-    let candidate = baseId;
-    let suffix = 2;
-    while (usedIds.has(candidate)) {
-      candidate = `${baseId}-${suffix}`;
-      suffix += 1;
-    }
-    return candidate;
-  }
-
-  private validateCollectionSkillRefs(
-    skills: VirtualGroupSkillRef[],
-    manifest: ManifestFileV2,
-    lockFile: LockFileV2,
-  ): Result<VirtualGroupSkillRef[]> {
-    const includedSkills: VirtualGroupSkillRef[] = [];
-    const seen = new Set<string>();
-
-    for (const skill of skills) {
-      const sourceId = skill.sourceId.trim();
-      const leafId = skill.leafId.trim();
-      const source = manifest.sources.find((item) => item.id === sourceId);
-      if (!source) {
-        return fail({
-          code: "SOURCE_NOT_FOUND",
-          message: `Skills group id '${sourceId}' is not registered.`,
-        });
-      }
-
-      const sourceLock = lockFile.sources[sourceId];
-      if (!sourceLock) {
-        return fail({
-          code: "SOURCE_LOCK_MISSING",
-          message: `${sourceId} is missing from V2 lock sources.`,
-        });
-      }
-
-      const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
-      if (!leaf || leaf.sourceId !== sourceId || !sourceLock.leafIds.includes(leafId)) {
-        return fail({
-          code: "LEAF_NOT_FOUND",
-          message: `Skill leaf '${leafId}' is not registered in skills group '${sourceId}'.`,
-        });
-      }
-
-      const key = `${sourceId}\0${leafId}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      includedSkills.push({ sourceId, leafId });
-    }
-
-    return ok(includedSkills);
-  }
-
-  private findCollectionSkillNameConflict(
-    skills: VirtualGroupSkillRef[],
-    lockFile: LockFileV2,
-  ): { code: string; message: string } | undefined {
-    const refsByName = new Map<string, Array<{ sourceId: string; leaf: LeafRecordV2 }>>();
-
-    for (const skill of skills) {
-      const leaf = lockFile.leafInventory.find((item) => item.id === skill.leafId);
-      if (!leaf) {
-        continue;
-      }
-      const projectedName = leaf.linkName.trim();
-      if (!projectedName) {
-        continue;
-      }
-      refsByName.set(projectedName, [
-        ...(refsByName.get(projectedName) ?? []),
-        { sourceId: skill.sourceId, leaf },
-      ]);
-    }
-
-    const duplicates = [...refsByName.entries()].filter(([, refs]) => refs.length > 1);
-    if (duplicates.length === 0) {
-      return undefined;
-    }
-
-    return {
-      code: "VIRTUAL_GROUP_SKILL_NAME_CONFLICT",
-      message: `Virtual group contains duplicate projected skill names: ${
+      code: "COLLECTION_SKILL_NAME_CONFLICT",
+      message: `Collection contains duplicate projected skill names: ${
         duplicates
           .map(([name, refs]) =>
             `${name} (${refs.map((ref) => `${ref.sourceId}:${ref.leaf.relativePath}`).join(", ")})`
@@ -5034,19 +5181,19 @@ export class SkillFlowApp {
 
   private async materializeCollectionMembers(
     collectionId: string,
-    skills: VirtualGroupSkillRef[],
-    manifest: ManifestFileV2,
-    lockFile: LockFileV2,
-    migrationGeneration: ManifestFileV2["migrationGeneration"],
+    skills: CollectionSkillRef[],
+    manifest: ManifestFile,
+    lockFile: LockFile,
+    migrationGeneration: ManifestFile["migrationGeneration"],
     now: string,
   ): Promise<Result<{
     collectionRoot: string;
-    members: SkillCollectionRecordV2["members"];
-    leafs: LeafRecordV2[];
+    members: SkillCollectionRecord["members"];
+    leafs: LeafRecord[];
   }>> {
     try {
       const materialized = await materializeSkillCollectionMembers({
-        stateRoot: this.stateStoreV2.rootPath,
+        stateRoot: this.stateStore.rootPath,
         collectionId,
         refs: skills,
         migrationGeneration,
@@ -5061,7 +5208,7 @@ export class SkillFlowApp {
             throw new SkillCollectionMemberOriginMissingError(collectionId, ref);
           }
 
-          const label = originLeaf.title || originLeaf.displayName || originLeaf.linkName || `member-${index + 1}`;
+          const label = originLeaf.title || originLeaf.linkName || `member-${index + 1}`;
           return {
             sourceId: ref.sourceId,
             leafId: ref.leafId,
@@ -5072,8 +5219,7 @@ export class SkillFlowApp {
             sourcePath: originLeaf.absolutePath,
             title: label,
             description: originLeaf.description ?? "",
-            displayName: originLeaf.displayName || originLeaf.title || originLeaf.linkName || label,
-            legacyAliases: [originLeaf.id, originLeaf.relativePath],
+            selectorAliases: [originLeaf.id, originLeaf.relativePath],
           };
         },
       });
@@ -5097,7 +5243,7 @@ export class SkillFlowApp {
     }
   }
 
-  private collectionToVirtualGroupView(collection: SkillCollectionRecordV2): VirtualGroupRecord {
+  private collectionToViewRecord(collection: SkillCollectionRecord): CollectionViewRecord {
     return {
       id: collection.id,
       displayName: collection.displayName,
@@ -5120,10 +5266,10 @@ export class SkillFlowApp {
     };
   }
 
-  private bindingV2FromRestoreSelection(
-    selection: SkillCollectionRecordV2["restoreSelections"][string],
+  private bindingFromRestoreSelection(
+    selection: SkillCollectionRecord["restoreSelections"][string],
     sourceLeafIds: string[],
-  ): ManifestFileV2["bindings"][string] {
+  ): ManifestFile["bindings"][string] {
     const sourceLeafIdSet = new Set(sourceLeafIds);
     const selectedLeafIds = [...new Set(selection.selectedLeafIds)]
       .filter((leafId) => sourceLeafIdSet.has(leafId));
@@ -5140,7 +5286,7 @@ export class SkillFlowApp {
     };
   }
 
-  private hiddenSourceIdsFromCollections(collections: CollectionsFileV2): Set<string> {
+  private hiddenSourceIdsFromCollections(collections: CollectionsFile): Set<string> {
     return new Set(
       Object.values(collections.collections).flatMap((collection) => collection.hiddenSourceIds),
     );
@@ -5149,7 +5295,7 @@ export class SkillFlowApp {
   private resolveDraftForScope(
     sourceId: string,
     initialDrafts: Record<string, DraftBinding>,
-    preferences: SharedPreferences,
+    preferences: PreferencesFile,
     scope: ProjectScope,
   ): DraftBinding {
     if (scope.kind === "global") {
@@ -5157,17 +5303,36 @@ export class SkillFlowApp {
     }
 
     return (
-      preferences.projectDrafts[scope.projectId]?.[sourceId] ??
+      this.projectDraftsForPreferences(preferences)[scope.projectId]?.[sourceId] ??
       initialDrafts[sourceId] ??
       EMPTY_DRAFT
     );
   }
 
-  private cloneManifest(manifest: Manifest): Manifest {
-    const bindings: Record<string, SourceBinding> = {};
+  private projectDraftsForPreferences(
+    preferences: PreferencesFile,
+  ): ScopedSourceDrafts {
+    return Object.fromEntries(
+      Object.entries(preferences.projectSourceDrafts).map(([projectId, drafts]) => [
+        projectId,
+        Object.fromEntries(
+          Object.entries(drafts).map(([sourceId, draft]) => [
+            sourceId,
+            {
+              selectedLeafIds: [...draft.selectedLeafIds],
+              enabledTargets: [...draft.enabledTargets],
+            },
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  private cloneManifest(manifest: RuntimeManifestView): RuntimeManifestView {
+    const bindings: Record<string, SourceBindingSummary> = {};
 
     for (const [sourceId, binding] of Object.entries(manifest.bindings)) {
-      const targets: SourceBinding["targets"] = {};
+      const targets: SourceBindingSummary["targets"] = {};
       for (const [target, targetBinding] of Object.entries(binding.targets)) {
         if (!targetBinding) {
           continue;
@@ -5179,7 +5344,7 @@ export class SkillFlowApp {
       }
 
       bindings[sourceId] = {
-        ...(binding.selectedLeafIds ? { selectedLeafIds: [...binding.selectedLeafIds] } : {}),
+        selectedLeafIds: [...binding.selectedLeafIds],
         targets,
       };
     }
@@ -5191,7 +5356,7 @@ export class SkillFlowApp {
     };
   }
 
-  private cloneManifestV2(manifest: ManifestFileV2): ManifestFileV2 {
+  private cloneAuthorityManifest(manifest: ManifestFile): ManifestFile {
     return {
       schemaVersion: manifest.schemaVersion,
       migrationGeneration: manifest.migrationGeneration,
@@ -5210,7 +5375,7 @@ export class SkillFlowApp {
     };
   }
 
-  private cloneLockFileV2(lockFile: LockFileV2): LockFileV2 {
+  private cloneLockFile(lockFile: LockFile): LockFile {
     return {
       schemaVersion: lockFile.schemaVersion,
       migrationGeneration: lockFile.migrationGeneration,
@@ -5238,17 +5403,18 @@ export class SkillFlowApp {
       ),
       leafInventory: lockFile.leafInventory.map((leaf) => ({
         ...leaf,
-        selectors: {
-          legacyAliases: [...leaf.selectors.legacyAliases],
-        },
-        diagnostics: leaf.diagnostics.map((diagnostic) => ({ ...diagnostic })),
+        ...(leaf.selectors ? { selectors: {
+          ...leaf.selectors,
+          aliases: [...leaf.selectors.aliases],
+        } } : {}),
+        ...(leaf.diagnostics ? { diagnostics: leaf.diagnostics.map((diagnostic) => ({ ...diagnostic })) } : {}),
       })),
       projections: lockFile.projections.map((projection) => ({ ...projection })),
     };
   }
 
   private async pruneMissingCheckoutsImpl(): Promise<Result<{ removedSourceIds: string[] }>> {
-    const state = await this.stateStoreV2.readState();
+    const state = await this.stateStore.readState();
     const removedSourceIds: string[] = [];
     const warnings: Warning[] = [];
 
@@ -5263,11 +5429,10 @@ export class SkillFlowApp {
         code: "SOURCE_CHECKOUT_MISSING",
         message: `Removed ${source.displayName} because checkout is missing at ${lock.localPath}.`,
       });
-      const pruneView = projectStateV2ToView(state);
       warnings.push(
         ...await this.cleanupImportedTargetPaths(
-          pruneView.manifest,
-          pruneView.lockFile,
+          state.manifest,
+          state.lockFile,
           [source.id],
         ),
       );
@@ -5323,7 +5488,7 @@ export class SkillFlowApp {
       delete nextLockSources[sourceId];
     }
 
-    await this.stateStoreV2.writeState({
+    await this.stateStore.writeState({
       ...state,
       manifest: {
         ...state.manifest,
@@ -5346,7 +5511,7 @@ export class SkillFlowApp {
   }
 
   private async cleanupOrphanTargetSymlinks(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): Promise<Warning[]> {
     const warnings: Warning[] = [];
@@ -5383,7 +5548,7 @@ export class SkillFlowApp {
           continue;
         }
 
-        const matchingProjections = (lockFile.projections ?? []).filter(
+        const matchingProjections = lockFile.projections.filter(
           (projection) => path.resolve(projection.targetPath) === resolvedTargetPath,
         );
         const hasResolvableProjection = matchingProjections.some((projection) =>
@@ -5394,7 +5559,7 @@ export class SkillFlowApp {
         }
 
         await removePath(targetPath);
-        lockFile.projections = (lockFile.projections ?? []).filter(
+        lockFile.projections = lockFile.projections.filter(
           (projection) => path.resolve(projection.targetPath) !== resolvedTargetPath,
         );
         warnings.push({
@@ -5414,11 +5579,11 @@ export class SkillFlowApp {
     const warnings: Warning[] = [];
     const adapters = await this.refreshAdapters();
     const checkoutRoots = new Map<string, string>();
-    for (const source of lockFile.sources.filter((item) => sourceIds.includes(item.id))) {
-      const resolvedCheckoutPath = await fs.realpath(source.checkoutPath).catch(() =>
-        path.resolve(source.checkoutPath),
+    for (const source of Object.values(lockFile.sources).filter((item) => sourceIds.includes(item.sourceId))) {
+      const resolvedCheckoutPath = await fs.realpath(source.localPath).catch(() =>
+        path.resolve(source.localPath),
       );
-      checkoutRoots.set(source.id, resolvedCheckoutPath);
+      checkoutRoots.set(source.sourceId, resolvedCheckoutPath);
     }
     if (checkoutRoots.size === 0) {
       return warnings;
@@ -5473,21 +5638,28 @@ export class SkillFlowApp {
   }
 
   private isProjectionStillResolvable(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
-    projection: ProjectionRecord,
+    projection: LockFile["projections"][number],
   ): boolean {
     const source = manifest.sources.find((item) => item.id === projection.sourceId);
     if (!source) {
       return false;
     }
 
-    if (projection.mode === "managed") {
-      const binding = manifest.bindings[source.id] ?? { targets: {} };
-      return Boolean(this.findLeafForSourceBinding(source, binding, lockFile, projection.leafId));
+    const sourceLock = lockFile.sources[projection.sourceId];
+    if (sourceLock?.importMode === "bootstrap-detected") {
+      return projection.status === "active";
     }
 
-    return true;
+    const binding = manifest.bindings[source.id];
+    if (!binding) {
+      return false;
+    }
+    const selectedLeafIds = binding.selectionMode === "all"
+      ? sourceLock?.leafIds ?? []
+      : binding.selectedLeafIds;
+    return selectedLeafIds.includes(projection.leafId);
   }
 
   private async getTargetRootMap(): Promise<Map<DeploymentTargetId, string>> {
@@ -5503,12 +5675,15 @@ export class SkillFlowApp {
   }
 
   private getEnabledTargetsForSource(
-    manifest: Manifest,
+    manifest: RuntimeManifestView | ManifestFile,
     sourceId: string,
   ): DeploymentTargetId[] {
     const binding = manifest.bindings[sourceId];
     if (!binding) {
       return [];
+    }
+    if ("enabledTargets" in binding) {
+      return [...binding.enabledTargets];
     }
 
     return Object.entries(binding.targets)
@@ -5528,16 +5703,17 @@ export class SkillFlowApp {
   }
 
   private async cleanupImportedTargetPaths(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
     sourceIds: string[],
     restrictedTargets?: DeploymentTargetId[],
   ): Promise<Warning[]> {
     const warnings: Warning[] = [];
     await this.ensureProjectionLedger(manifest, lockFile);
-    const projections = (lockFile.projections ?? []).filter(
+    const projections = lockFile.projections.filter(
       (projection) =>
-        projection.mode === "bootstrap-imported" &&
+        projection.status === "active" &&
+        lockFile.sources[projection.sourceId]?.importMode === "bootstrap-detected" &&
         sourceIds.includes(projection.sourceId) &&
         (restrictedTargets ? restrictedTargets.includes(projection.target) : true),
     );
@@ -5568,13 +5744,13 @@ export class SkillFlowApp {
         }
       }
 
-      lockFile.projections = (lockFile.projections ?? []).filter(
+      lockFile.projections = lockFile.projections.filter(
         (candidate) =>
           !(
-            candidate.mode === "bootstrap-imported" &&
             candidate.sourceId === projection.sourceId &&
             candidate.leafId === projection.leafId &&
-            candidate.target === projection.target
+            candidate.target === projection.target &&
+            candidate.targetPath === projection.targetPath
           ),
       );
     }
@@ -5583,7 +5759,7 @@ export class SkillFlowApp {
   }
 
   private buildImportedTargetPathsForSource(
-    manifest: Manifest,
+    manifest: RuntimeManifestView,
     lockFile: LockFile,
     sourceId: string,
     target: DeploymentTargetId,
@@ -5617,27 +5793,26 @@ export class SkillFlowApp {
   }
 
   private async ensureProjectionLedger(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): Promise<void> {
     const targetRoots = await this.getTargetRootMap();
     const projectedNameCache = new Map<DeploymentTargetId, Map<string, string>>();
-    const managed: ProjectionRecord[] = getManagedDeployments(lockFile).map((deployment) => ({
-      ...deployment,
-      mode: "managed",
-    }));
-    const previousBootstrap = (lockFile.projections ?? []).filter(
-      (projection) => projection.mode === "bootstrap-imported",
+    const managed = this.activeRuntimeProjections(lockFile)
+      .filter((projection) => lockFile.sources[projection.sourceId]?.importMode !== "bootstrap-detected");
+    const previousBootstrap = this.activeRuntimeProjections(lockFile).filter(
+      (projection) =>
+        lockFile.sources[projection.sourceId]?.importMode === "bootstrap-detected",
     );
-    const bootstrap: ProjectionRecord[] = [];
+    const bootstrap: LockFile["projections"] = [];
 
-    for (const sourceLock of lockFile.sources) {
-      const bootstrapTargets = getBootstrapImportedTargets(lockFile, sourceLock);
+    for (const sourceLock of Object.values(lockFile.sources)) {
+      const bootstrapTargets = this.bootstrapImportedTargets(lockFile, sourceLock);
       if (sourceLock.importMode !== "bootstrap-detected" || bootstrapTargets.length === 0) {
         continue;
       }
 
-      const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceLock.id);
+      const leafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceLock.sourceId && leaf.valid);
       const observedByTarget = new Map<DeploymentTargetId, {
         target: DeploymentTargetId;
         rootPath: string;
@@ -5661,14 +5836,14 @@ export class SkillFlowApp {
 
         let projectedLinkNames = projectedNameCache.get(target);
         if (!projectedLinkNames) {
-          projectedLinkNames = this.buildProjectedLinkNameMap(manifest, lockFile, target);
+          projectedLinkNames = this.buildProjectedLinkNameMaps(manifest, lockFile).get(target) ?? new Map();
           projectedNameCache.set(target, projectedLinkNames);
         }
 
         for (const leaf of leafs) {
           const previous = previousBootstrap.find(
             (projection) =>
-              projection.sourceId === sourceLock.id &&
+              projection.sourceId === sourceLock.sourceId &&
               projection.leafId === leaf.id &&
               projection.target === target,
           );
@@ -5686,7 +5861,7 @@ export class SkillFlowApp {
             continue;
           }
           bootstrap.push({
-            sourceId: sourceLock.id,
+            sourceId: sourceLock.sourceId,
             leafId: leaf.id,
             target,
             targetPath,
@@ -5694,8 +5869,7 @@ export class SkillFlowApp {
             strategy: "symlink",
             status: "active",
             contentHash: leaf.contentHash,
-            appliedAt: sourceLock.updatedAt,
-            mode: "bootstrap-imported",
+            updatedAt: sourceLock.revision.capturedAt,
           });
         }
       }
@@ -5704,10 +5878,29 @@ export class SkillFlowApp {
     lockFile.projections = [...managed, ...bootstrap];
   }
 
+  private activeRuntimeProjections(lockFile: LockFile): LockFile["projections"] {
+    return lockFile.projections.filter((projection) => projection.status === "active");
+  }
+
+  private bootstrapImportedTargets(
+    lockFile: LockFile,
+    sourceLock: LockFile["sources"][string],
+  ): DeploymentTargetId[] {
+    return [
+      ...new Set([
+        ...this.activeRuntimeProjections(lockFile)
+          .filter((projection) => projection.sourceId === sourceLock.sourceId)
+          .map((projection) => projection.target),
+        ...(sourceLock.observedTargets?.map((item) => item.target) ?? []),
+        ...(sourceLock.importedFromTargets ?? []),
+      ]),
+    ];
+  }
+
   private async resolveBootstrapProjectionTargetPath(
-    manifest: Manifest,
+    manifest: ManifestFile,
     _lockFile: LockFile,
-    sourceLock: LockFile["sources"][number],
+    sourceLock: LockFile["sources"][string],
     leaf: LeafRecord,
     rootPath: string,
     projectedLinkNames: Map<string, string>,
@@ -5730,15 +5923,15 @@ export class SkillFlowApp {
       return scannedObservedTargetPath;
     }
 
-    const source = manifest.sources.find((item) => item.id === sourceLock.id);
+    const source = manifest.sources.find((item) => item.id === sourceLock.sourceId);
     const groupAuthor =
       getHostedGitOwner(source?.locator ?? "")
-      ?? (source?.originLocator ? getHostedGitOwner(source.originLocator) : undefined);
+      ?? (source?.canonicalLocator ? getHostedGitOwner(source.canonicalLocator) : undefined);
     const projectedLinkName = projectedLinkNames.get(leaf.id) ?? leaf.linkName;
     const candidates = buildProjectedSkillNameCandidates({
       preferredName: projectedLinkName,
-      groupId: sourceLock.id,
-      groupName: source?.displayName ?? sourceLock.id,
+      groupId: sourceLock.sourceId,
+      groupName: source?.displayName ?? sourceLock.sourceId,
       groupAuthor,
       skillName: leaf.linkName,
     }).map((name) => path.join(rootPath, name));
@@ -5753,20 +5946,15 @@ export class SkillFlowApp {
   }
 
   private async findObservedBootstrapTargetPath(
-    sourceLock: LockFile["sources"][number],
+    sourceLock: LockFile["sources"][string],
     rootPath: string,
   ): Promise<string | undefined> {
     if (!(await pathExists(rootPath))) {
       return undefined;
     }
 
-    const displayNamePath = path.join(rootPath, sourceLock.displayName);
-    if (await pathExists(displayNamePath)) {
-      return displayNamePath;
-    }
-
     const observedRealpaths = new Set(
-      [sourceLock.locator, sourceLock.checkoutPath]
+      [sourceLock.canonicalLocator, sourceLock.localPath]
         .filter((value): value is string => Boolean(value))
         .map((value) => path.resolve(value)),
     );
@@ -5793,8 +5981,8 @@ export class SkillFlowApp {
   }
 
   private isProjectionPathManaged(
-    lockFile: LockFile,
-    projection: ProjectionRecord,
+    _lockFile: LockFile,
+    projection: LockFile["projections"][number],
   ): boolean {
     return Boolean(
       projection.targetRootPath &&
@@ -5804,25 +5992,25 @@ export class SkillFlowApp {
 
   private hasPersistentProjectionOwnerForPath(
     lockFile: LockFile,
-    projection: ProjectionRecord,
+    projection: LockFile["projections"][number],
   ): boolean {
-    return (lockFile.projections ?? []).some(
+    return lockFile.projections.some(
       (candidate) =>
         candidate.targetPath === projection.targetPath &&
         !(
-          candidate.mode === projection.mode &&
           candidate.sourceId === projection.sourceId &&
           candidate.leafId === projection.leafId &&
-          candidate.target === projection.target
+          candidate.target === projection.target &&
+          candidate.targetPath === projection.targetPath
         ),
     );
   }
 
-  private async readManifestConsistently(): Promise<Manifest> {
+  private async readManifestConsistently(): Promise<ManifestFile> {
     return this.runSerializedMutation(async () => (await this.readRuntimeAuthorityView()).manifest);
   }
 
-  private async readStateConsistently(): Promise<{ manifest: Manifest; lockFile: LockFile }> {
+  private async readStateConsistently(): Promise<{ manifest: ManifestFile; lockFile: LockFile }> {
     return this.runSerializedMutation(async () => {
       const view = await this.readRuntimeAuthorityView();
       return { manifest: view.manifest, lockFile: view.lockFile };
@@ -5830,27 +6018,27 @@ export class SkillFlowApp {
   }
 
   private async captureSourceAuditSnapshot(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
     sourceId: string,
   ): Promise<Record<string, unknown>> {
     const source = manifest.sources.find((item) => item.id === sourceId);
-    const sourceLock = lockFile.sources.find((item) => item.id === sourceId);
+    const sourceLock = lockFile.sources[sourceId];
     const binding = manifest.bindings[sourceId];
-    const projections = (lockFile.projections ?? []).filter(
+    const projections = lockFile.projections.filter(
       (projection) => projection.sourceId === sourceId,
     );
 
     return {
       sourcePresent: Boolean(source),
-      checkoutPath: sourceLock?.checkoutPath,
-      checkoutExists: sourceLock ? await pathExists(sourceLock.checkoutPath) : false,
-      selectedLeafIds: binding?.selectedLeafIds ?? [],
+      checkoutPath: sourceLock?.localPath,
+      checkoutExists: sourceLock ? await pathExists(sourceLock.localPath) : false,
+      selectedLeafIds: binding?.selectionMode === "all" ? sourceLock?.leafIds ?? [] : binding?.selectedLeafIds ?? [],
       enabledTargets: this.getEnabledTargetsForSource(manifest, sourceId),
       projectionCount: projections.length,
       projections: await Promise.all(
         projections.map(async (projection) => ({
-          mode: projection.mode,
+          status: projection.status,
           target: projection.target,
           leafId: projection.leafId,
           targetPath: projection.targetPath,
@@ -5872,7 +6060,7 @@ export class SkillFlowApp {
   }
 
   private async runSerializedMutation<T>(task: () => Promise<T>): Promise<T> {
-    return this.runSerializedTask(() => this.stateStoreV2.withMutationLock(task));
+    return this.runSerializedTask(() => this.stateStore.withMutationLock(task));
   }
 
   private async runSerializedTask<T>(task: () => Promise<T>): Promise<T> {
@@ -5955,14 +6143,14 @@ export class SkillFlowApp {
   }
 
   private normalizeBindings(
-    manifest: Manifest,
+    manifest: RuntimeManifestView,
     lockFile: LockFile,
-    collections?: CollectionsFileV2,
+    collections?: CollectionsFile,
   ): boolean {
     let changed = false;
 
     for (const source of manifest.sources) {
-      const currentBinding = manifest.bindings[source.id] ?? { targets: {} };
+      const currentBinding = manifest.bindings[source.id] ?? { selectedLeafIds: [], targets: {} };
       const normalizedDraft = this.draftFromSourceBinding(source, currentBinding, lockFile, collections);
       const normalizedBinding = this.bindingFromDraft(normalizedDraft);
 
@@ -5978,13 +6166,13 @@ export class SkillFlowApp {
   }
 
   private draftFromSourceBinding(
-    source: Manifest["sources"][number],
-    binding: SourceBinding,
+    source: RuntimeManifestView["sources"][number],
+    binding: SourceBindingSummary,
     lockFile: LockFile,
-    collections?: CollectionsFileV2,
+    collections?: CollectionsFile,
   ): DraftBinding {
-    const leafIds = source.kind === "virtual"
-      ? this.getVirtualSourceAllowedLeafIds(source.id, binding, lockFile, collections)
+    const leafIds = source.kind === "collection"
+      ? this.getCollectionSourceAllowedLeafIds(source.id, binding, lockFile, collections)
       : new Set(
           lockFile.leafInventory
             .filter((leaf) => leaf.sourceId === source.id)
@@ -5996,8 +6184,8 @@ export class SkillFlowApp {
 
   private draftFromBinding(
     sourceId: string,
-    binding: SourceBinding,
-    lockFile: LockFile,
+    binding: SourceBindingSummary,
+    lockFile: Pick<LockFile, "leafInventory">,
   ): DraftBinding {
     const leafIds = new Set(
       lockFile.leafInventory
@@ -6008,7 +6196,7 @@ export class SkillFlowApp {
   }
 
   private draftFromBindingAllowedLeafIds(
-    binding: SourceBinding,
+    binding: SourceBindingSummary,
     leafIds: Set<string>,
   ): DraftBinding {
     const enabledTargets = Object.entries(binding.targets)
@@ -6028,11 +6216,11 @@ export class SkillFlowApp {
     };
   }
 
-  private getVirtualSourceAllowedLeafIds(
+  private getCollectionSourceAllowedLeafIds(
     sourceId: string,
-    binding: SourceBinding,
+    binding: SourceBindingSummary,
     lockFile: LockFile,
-    collections?: CollectionsFileV2,
+    collections?: CollectionsFile,
   ): Set<string> {
     const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
     const collectionLeafIds = collections?.collections[sourceId]?.members
@@ -6052,12 +6240,12 @@ export class SkillFlowApp {
   }
 
   private getSourceLeafsForBinding(
-    source: Manifest["sources"][number],
-    binding: SourceBinding,
+    source: RuntimeManifestView["sources"][number],
+    binding: SourceBindingSummary,
     lockFile: LockFile,
-    collections?: CollectionsFileV2,
+    collections?: CollectionsFile,
   ): LeafRecord[] {
-    if (source.kind !== "virtual") {
+    if (source.kind !== "collection") {
       return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
     }
 
@@ -6080,12 +6268,12 @@ export class SkillFlowApp {
   }
 
   private findLeafForSourceBinding(
-    source: Manifest["sources"][number],
-    binding: SourceBinding,
+    source: RuntimeManifestView["sources"][number],
+    binding: SourceBindingSummary,
     lockFile: LockFile,
     leafId: string,
   ): LeafRecord | undefined {
-    if (source.kind !== "virtual") {
+    if (source.kind !== "collection") {
       return lockFile.leafInventory.find((leaf) => leaf.sourceId === source.id && leaf.id === leafId);
     }
 
@@ -6093,7 +6281,7 @@ export class SkillFlowApp {
   }
 
   private selectLeafIdsForRequestedPath(
-    leafs: LeafRecord[],
+    leafs: SelectableLeaf[],
     requestedPath?: string,
   ): string[] {
     const normalizedPath = this.normalizeRequestedPath(requestedPath);
@@ -6111,7 +6299,7 @@ export class SkillFlowApp {
   }
 
   private buildAddDraft(
-    sourceLeafs: LeafRecord[],
+    sourceLeafs: SelectableLeaf[],
     requestedPath: string | undefined,
     availableTargets: DeploymentTargetId[],
     options: SkillFlowAddOptions,
@@ -6147,7 +6335,7 @@ export class SkillFlowApp {
   }
 
   private resolveImportDraftForPreparedSource(
-    sourceLeafs: LeafRecord[],
+    sourceLeafs: SelectableLeaf[],
     availableTargets: DeploymentTargetId[],
     canonicalRepo: string | undefined,
     draft?: ImportDraft,
@@ -6159,26 +6347,9 @@ export class SkillFlowApp {
       });
     }
 
-    const selectedLeafIdsResult = draft.selectedSkills
-      ? this.resolveImportLeafIdsForSelectors(sourceLeafs, draft.selectedSkills)
-      : canonicalRepo
-      ? this.resolveImportLeafIdsForGitHubSource(
-          sourceLeafs,
-          draft.selectedSkillIds ?? [],
-          canonicalRepo,
-        )
-      : this.resolveSelectedLeafIds(
-          sourceLeafs,
-          undefined,
-          draft.selectedSkillIds,
-          canonicalRepo,
-        );
-    if (!selectedLeafIdsResult.ok) {
-      return fail(selectedLeafIdsResult.errors, selectedLeafIdsResult.warnings);
-    }
-
     const available = new Set(availableTargets);
-    const unsupported = [...new Set(draft.enabledTargets)].filter((target) => !available.has(target));
+    const enabledTargets = [...new Set(draft.enabledTargets)];
+    const unsupported = enabledTargets.filter((target) => !available.has(target));
     if (unsupported.length > 0) {
       return fail({
         code: "ADD_AGENT_NOT_AVAILABLE",
@@ -6186,65 +6357,33 @@ export class SkillFlowApp {
       });
     }
 
+    if (draft.skillSelectionMode === "all") {
+      return ok({
+        selectedLeafIds: sourceLeafs.map((leaf) => leaf.id),
+        enabledTargets,
+      });
+    }
+
+    if (!draft.selectedSkills) {
+      return fail({
+        code: "IMPORT_DRAFT_SELECTED_SKILLS_REQUIRED",
+        message: "Import draft must use selectedSkills selectors.",
+      });
+    }
+
+    const selectedLeafIdsResult = this.resolveImportLeafIdsForSelectors(sourceLeafs, draft.selectedSkills);
+    if (!selectedLeafIdsResult.ok) {
+      return fail(selectedLeafIdsResult.errors, selectedLeafIdsResult.warnings);
+    }
+
     return ok({
       selectedLeafIds: selectedLeafIdsResult.data,
-      enabledTargets: [...new Set(draft.enabledTargets)],
+      enabledTargets,
     }, selectedLeafIdsResult.warnings);
   }
 
-  private resolveImportLeafIdsForGitHubSource(
-    sourceLeafs: LeafRecord[],
-    skillNames: string[],
-    canonicalRepo: string,
-  ): Result<string[]> {
-    const requested = [...new Set(skillNames.map((skillName) => skillName.trim()).filter(Boolean))];
-    const matchedLeafIds: string[] = [];
-    const skippedSkillIds: string[] = [];
-    const warnings: Warning[] = [];
-
-    for (const selector of requested) {
-      const selectedLeafIdsResult = this.resolveSelectedLeafIds(
-        sourceLeafs,
-        undefined,
-        [selector],
-        canonicalRepo,
-      );
-
-      if (selectedLeafIdsResult.ok) {
-        matchedLeafIds.push(...selectedLeafIdsResult.data);
-        continue;
-      }
-
-      const firstError = selectedLeafIdsResult.errors[0];
-      if (firstError?.code !== "ADD_SKILL_NOT_FOUND") {
-        return fail(selectedLeafIdsResult.errors, selectedLeafIdsResult.warnings);
-      }
-
-      skippedSkillIds.push(selector);
-    }
-
-    if (matchedLeafIds.length === 0 && requested.length > 0) {
-      return fail({
-        code: "ADD_SKILL_NOT_FOUND",
-        message: `Unable to preselect skill(s): ${requested.join(", ")}.`,
-      });
-    }
-
-    if (skippedSkillIds.length > 0) {
-      warnings.push({
-        code: "IMPORT_SKILL_SKIPPED",
-        message:
-          `Ignored ${skippedSkillIds.length} skill selector` +
-          `${skippedSkillIds.length === 1 ? "" : "s"} not present in the GitHub repo: ` +
-          skippedSkillIds.join(", "),
-      });
-    }
-
-    return ok([...new Set(matchedLeafIds)], warnings);
-  }
-
   private resolveImportLeafIdsForSelectors(
-    sourceLeafs: LeafRecord[],
+    sourceLeafs: SelectableLeaf[],
     selectedSkills: NonNullable<ImportDraft["selectedSkills"]>,
   ): Result<string[]> {
     const matchedLeafIds: string[] = [];
@@ -6289,7 +6428,7 @@ export class SkillFlowApp {
   }
 
   private resolveSelectedLeafIds(
-    sourceLeafs: LeafRecord[],
+    sourceLeafs: SelectableLeaf[],
     requestedPath: string | undefined,
     skillNames?: string[],
     canonicalRepo?: string,
@@ -6315,7 +6454,7 @@ export class SkillFlowApp {
       }
 
       const fallbackMatches = sourceLeafs.filter((leaf) => {
-        if (leaf.linkName === selector || leaf.name === selector) {
+        if (leaf.linkName === selector || leaf.title === selector || leaf.name === selector) {
           return true;
         }
 
@@ -6330,7 +6469,8 @@ export class SkillFlowApp {
         const selectorVariants = this.buildImportSkillSelectorVariants(selector, canonicalRepo);
         const leafVariants = new Set([
           ...this.buildImportSkillSelectorVariants(leaf.linkName, canonicalRepo),
-          ...this.buildImportSkillSelectorVariants(leaf.name, canonicalRepo),
+          ...this.buildImportSkillSelectorVariants(leaf.title, canonicalRepo),
+          ...(leaf.name ? this.buildImportSkillSelectorVariants(leaf.name, canonicalRepo) : []),
           ...this.buildImportSkillSelectorVariants(path.posix.basename(leaf.relativePath), canonicalRepo),
         ]);
 
@@ -6398,7 +6538,7 @@ export class SkillFlowApp {
   private async rollbackPreparedSourceInternal(
     sourceId: string,
   ): Promise<Result<{ removed: string[] }>> {
-    const state = await this.stateStoreV2.readState();
+    const state = await this.stateStore.readState();
     if (!state.manifest.sources.some((source) => source.id === sourceId)) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -6415,15 +6555,15 @@ export class SkillFlowApp {
       });
     }
 
-    return this.sourceAuthorityServiceV2.removeSource([sourceId]);
+    return this.sourceAuthorityService.removeSource([sourceId]);
   }
 
   private prepareManifestForDraft(
-    manifest: Manifest,
+    manifest: RuntimeManifestView,
     lockFile: LockFile,
     sourceId: string,
     draft: DraftBinding,
-  ): { manifest: Manifest; draft: DraftBinding; warnings: Warning[] } {
+  ): { manifest: RuntimeManifestView; draft: DraftBinding; warnings: Warning[] } {
     manifest.bindings[sourceId] = this.bindingFromDraft(draft);
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (source) {
@@ -6458,12 +6598,12 @@ export class SkillFlowApp {
     };
   }
 
-  private prepareManifestV2ForDraft(
-    manifest: ManifestFileV2,
-    lockFile: LockFileV2,
+  private prepareAuthorityManifestForDraft(
+    manifest: ManifestFile,
+    lockFile: LockFile,
     sourceId: string,
     draft: DraftBinding,
-  ): Result<{ manifest: ManifestFileV2; draft: DraftBinding; warnings: Warning[] }> {
+  ): Result<{ manifest: ManifestFile; draft: DraftBinding; warnings: Warning[] }> {
     if (!manifest.sources.some((source) => source.id === sourceId)) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -6475,13 +6615,13 @@ export class SkillFlowApp {
     if (!sourceLock) {
       return fail({
         code: "SOURCE_LOCK_MISSING",
-        message: `${sourceId} is missing from V2 lock sources.`,
+        message: `${sourceId} is missing from authority lock sources.`,
       });
     }
 
     const enabledTargets = [...new Set(draft.enabledTargets)];
     const requestedLeafIds = [...new Set(draft.selectedLeafIds)];
-    const conflictingLeafIds = this.findExactDuplicateLeafSelectionsV2(
+    const conflictingLeafIds = this.findExactDuplicateAuthorityLeafSelections(
       manifest,
       lockFile,
       sourceId,
@@ -6512,9 +6652,9 @@ export class SkillFlowApp {
     return ok({ manifest, draft: normalizedDraft, warnings });
   }
 
-  private findExactDuplicateLeafSelectionsV2(
-    manifest: ManifestFileV2,
-    lockFile: LockFileV2,
+  private findExactDuplicateAuthorityLeafSelections(
+    manifest: ManifestFile,
+    lockFile: LockFile,
     currentSourceId: string,
     requestedLeafIds: string[],
     enabledTargets: DeploymentTargetId[],
@@ -6557,7 +6697,7 @@ export class SkillFlowApp {
   }
 
   private findExactDuplicateLeafSelections(
-    manifest: Manifest,
+    manifest: RuntimeManifestView,
     lockFile: LockFile,
     currentSourceId: string,
     enabledTargets: DeploymentTargetId[],
@@ -6598,35 +6738,35 @@ export class SkillFlowApp {
     );
   }
 
-  private getExactDuplicateKey(leaf: LeafRecord | LeafRecordV2): string {
+  private getExactDuplicateKey(leaf: LeafRecord | LeafRecord): string {
     const name = "name" in leaf ? leaf.name : leaf.title;
     return `${leaf.linkName}\n${name}\n${leaf.description}`;
   }
 
-  private async planForAffectedSourcesV2(
-    manifest: ManifestFileV2,
-    lockFile: LockFileV2,
+  private async planForAffectedSources(
+    manifest: ManifestFile,
+    lockFile: LockFile,
     primarySourceId: string,
-    preferences: SharedPreferences,
+    preferences: Pick<PreferencesFile, "customTargets" | "agentDisplayOrder">,
   ): Promise<Result<DeploymentPlan>> {
     const sourceIds = manifest.sources
       .map((source) => source.id)
-      .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargetsV2(manifest, sourceId));
+      .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
 
-    return this.planForSourcesV2(manifest, lockFile, sourceIds, preferences);
+    return this.planForSources(manifest, lockFile, sourceIds, preferences);
   }
 
-  private async planForSourcesV2(
-    manifest: ManifestFileV2,
-    lockFile: LockFileV2,
+  private async planForSources(
+    manifest: ManifestFile,
+    lockFile: LockFile,
     sourceIds: string[],
-    preferences: SharedPreferences,
+    preferences: Pick<PreferencesFile, "customTargets" | "agentDisplayOrder">,
     adapters?: ChannelAdapter[],
   ): Promise<Result<DeploymentPlan>> {
     const uniqueSourceIds = [...new Set(sourceIds)];
-    const planner = new DeploymentPlannerV2(
+    const planner = new DeploymentPlanner(
       adapters ?? this.createAdaptersForPreferences(preferences),
-      this.buildProjectedLinkNameMapsV2(manifest, lockFile),
+      this.buildProjectedLinkNameMaps(manifest, lockFile),
     );
 
     const actions: DeploymentAction[] = [];
@@ -6649,9 +6789,9 @@ export class SkillFlowApp {
     }, warnings);
   }
 
-  private buildProjectedLinkNameMapsV2(
-    manifest: ManifestFileV2,
-    lockFile: LockFileV2,
+  private buildProjectedLinkNameMaps(
+    manifest: ManifestFile,
+    lockFile: LockFile,
   ): Map<DeploymentTargetId, Map<string, string>> {
     const maps = new Map<DeploymentTargetId, Map<string, string>>();
     const targets = new Set<DeploymentTargetId>(
@@ -6673,7 +6813,7 @@ export class SkillFlowApp {
               : binding.selectedLeafIds;
             return leafIds
               .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
-              .filter((leaf): leaf is LeafRecordV2 => Boolean(leaf))
+              .filter((leaf): leaf is LeafRecord => Boolean(leaf))
               .map((leaf) => ({
                 leafId: leaf.id,
                 groupId: source.id,
@@ -6707,7 +6847,7 @@ export class SkillFlowApp {
   private async resolveProjectTargetRootOverrides(
     scope: Extract<ProjectScope, { kind: "project" }>,
     targets: DeploymentTargetId[],
-    preferences: SharedPreferences,
+    preferences: Pick<PreferencesFile, "recentProjects" | "customTargets" | "agentDisplayOrder">,
   ): Promise<Result<TargetRootOverrides>> {
     const projectPath = await resolveUsableProjectPath(preferences.recentProjects.find(
       (project) => project.projectId === scope.projectId,
@@ -6745,12 +6885,12 @@ export class SkillFlowApp {
 
   private async removeUnavailableProjectScope(
     projectId: string,
-    preferences?: SharedPreferences,
+    preferences?: PreferencesFile,
   ): Promise<void> {
     const currentPreferences = preferences ?? (await this.readRuntimeAuthorityView()).preferences;
     if (
       !currentPreferences.recentProjects.some((project) => project.projectId === projectId) &&
-      !(projectId in currentPreferences.projectDrafts) &&
+      !(projectId in currentPreferences.projectSourceDrafts) &&
       !(
         currentPreferences.selectedProjectScope.kind === "project" &&
         currentPreferences.selectedProjectScope.projectId === projectId
@@ -6759,8 +6899,8 @@ export class SkillFlowApp {
       return;
     }
 
-    const { [projectId]: _removedDrafts, ...remainingProjectDrafts } = currentPreferences.projectDrafts;
-    await this.writePreferencesV2FromView({
+    const { [projectId]: _removedDrafts, ...remainingProjectDrafts } = currentPreferences.projectSourceDrafts;
+    await this.writePreferences({
       ...currentPreferences,
       selectedProjectScope:
         currentPreferences.selectedProjectScope.kind === "project" &&
@@ -6770,14 +6910,14 @@ export class SkillFlowApp {
       recentProjects: currentPreferences.recentProjects.filter(
         (project) => project.projectId !== projectId,
       ),
-      projectDrafts: remainingProjectDrafts,
+      projectSourceDrafts: remainingProjectDrafts,
     });
   }
 
-  private cloneLockFileV2ForScopedDeployments(
-    lockFile: LockFileV2,
-    deployments: LockFile["deployments"],
-  ): LockFileV2 {
+  private cloneLockFileForScopedDeployments(
+    lockFile: LockFile,
+    deployments: DeploymentSummaryRecord[],
+  ): LockFile {
     return {
       ...lockFile,
       sources: Object.fromEntries(
@@ -6808,13 +6948,13 @@ export class SkillFlowApp {
   }
 
   private async resolveScopedInspectDeployments(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
     sourceId: string,
     scope: Extract<ProjectScope, { kind: "project" }>,
     targets: DeploymentTargetId[],
-    preferences?: SharedPreferences,
-  ): Promise<LockFile["deployments"]> {
+    preferences?: PreferencesFile,
+  ): Promise<DeploymentSummaryRecord[]> {
     const targetRootOverrides = preferences
       ? await this.resolveProjectTargetRootOverrides(scope, targets, preferences)
       : await this.resolveProjectTargetRoots(scope, targets);
@@ -6832,24 +6972,24 @@ export class SkillFlowApp {
   }
 
   private async findScopedDeploymentsOnDisk(
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
     sourceId: string,
     targetRootOverrides: TargetRootOverrides,
     adaptersOverride?: ChannelAdapter[],
-  ): Promise<LockFile["deployments"]> {
+  ): Promise<DeploymentSummaryRecord[]> {
     const source = manifest.sources.find((item) => item.id === sourceId);
     if (!source) {
       return [];
     }
 
-    const binding = manifest.bindings[sourceId] ?? { targets: {} };
-    const scopedDeployments: LockFile["deployments"] = [];
+    const binding = manifest.bindings[sourceId];
+    const scopedDeployments: DeploymentSummaryRecord[] = [];
     const adapters = adaptersOverride ?? await this.refreshAdapters();
+    const projectedLinkNameMaps = this.buildProjectedLinkNameMaps(manifest, lockFile);
 
     for (const [target, rootPath] of Object.entries(targetRootOverrides) as Array<[DeploymentTargetId, string]>) {
-      const targetBinding = binding.targets[target];
-      if (!targetBinding?.enabled) {
+      if (!binding?.enabledTargets.includes(target)) {
         continue;
       }
 
@@ -6858,9 +6998,11 @@ export class SkillFlowApp {
         continue;
       }
 
-      const projectedLinkNames = this.buildProjectedLinkNameMap(manifest, lockFile, target);
-      for (const leafId of targetBinding.leafIds) {
-        const leaf = this.findLeafForSourceBinding(source, binding, lockFile, leafId);
+      const projectedLinkNames = projectedLinkNameMaps.get(target) ?? new Map();
+      const sourceLock = lockFile.sources[sourceId];
+      const leafIds = binding.selectionMode === "all" ? sourceLock?.leafIds ?? [] : binding.selectedLeafIds;
+      for (const leafId of leafIds) {
+        const leaf = lockFile.leafInventory.find((item) => item.id === leafId && item.valid);
         if (!leaf) {
           continue;
         }
@@ -6918,7 +7060,7 @@ export class SkillFlowApp {
   }
 
   private buildProjectedLinkNameMap(
-    manifest: Manifest,
+    manifest: RuntimeManifestView,
     lockFile: LockFile,
     target: DeploymentTargetId,
   ): Map<string, string> {
@@ -6944,14 +7086,14 @@ export class SkillFlowApp {
   }
 
   private async findManagedDeploymentOnDisk(
-    source: Manifest["sources"][number],
-    leaf: LeafRecord,
+    source: RuntimeManifestView["sources"][number] | ManifestFile["sources"][number],
+    leaf: LeafRecord | LeafRecord,
     target: DeploymentTargetId,
     strategy: "symlink" | "copy",
     rootPath: string,
     projectedLinkNames: Map<string, string>,
-    existing?: LockFile["deployments"][number],
-  ): Promise<LockFile["deployments"][number] | undefined> {
+    existing?: DeploymentSummaryRecord[][number],
+  ): Promise<DeploymentSummaryRecord[][number] | undefined> {
     const projectedLinkName = projectedLinkNames.get(leaf.id) ?? leaf.linkName;
     const candidatePaths = buildProjectedSkillNameCandidates({
       preferredName: projectedLinkName,
@@ -6993,7 +7135,7 @@ export class SkillFlowApp {
   private async matchesManagedProjection(
     strategy: "symlink" | "copy",
     targetPath: string,
-    leaf: LeafRecord,
+    leaf: Pick<LeafRecord, "absolutePath" | "contentHash">,
   ): Promise<boolean> {
     try {
       const stats = await fs.lstat(targetPath);
@@ -7016,20 +7158,20 @@ export class SkillFlowApp {
     }
   }
 
-  private hasActiveTargetsV2(manifest: ManifestFileV2, sourceId: string): boolean {
+  private hasActiveTargets(manifest: ManifestFile, sourceId: string): boolean {
     return (manifest.bindings[sourceId]?.enabledTargets.length ?? 0) > 0;
   }
 
   private buildLocalCandidates(
     query: string,
-    manifest: Manifest,
+    manifest: ManifestFile,
     lockFile: LockFile,
   ): SkillCandidate[] {
     return lockFile.leafInventory
       .filter((leaf) => {
         const source = manifest.sources.find((item) => item.id === leaf.sourceId);
         return this.matchesQuery(query, [
-          leaf.name,
+          leaf.title ?? leaf.name ?? leaf.linkName,
           leaf.title,
           leaf.relativePath.split("/").pop() ?? "",
         ]);
@@ -7068,7 +7210,7 @@ export class SkillFlowApp {
         candidates: scanned.leafs
         .filter((leaf) =>
           this.matchesQuery(query, [
-            leaf.name,
+            leaf.name ?? leaf.linkName,
             leaf.relativePath.split("/").pop() ?? "",
           ]),
         )
@@ -7255,10 +7397,10 @@ export class SkillFlowApp {
     return candidate.locator;
   }
 
-  private getCandidateTitle(leaf: LeafRecord): string {
+  private getCandidateTitle(leaf: LeafRecord | LeafRecord): string {
     const title = leaf.title.trim();
     if (title.length === 0 || /^\{[^}]+\}$/.test(title)) {
-      return leaf.linkName || leaf.name;
+      return leaf.linkName || leaf.name || leaf.id;
     }
     return title;
   }
@@ -7284,7 +7426,7 @@ export class SkillFlowApp {
   }
 
   private applySourceUpdateResults(
-    manifest: Manifest,
+    manifest: RuntimeManifestView,
     lockFile: LockFile,
     updates: SourceUpdateResultItem[],
   ) {

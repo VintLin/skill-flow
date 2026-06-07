@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DuplicateLeafRecord, InvalidLeafRecord, LeafRecord } from "@skill-flow/domain/types";
 import { hashDirectory, pathExists, slugify } from "@skill-flow/integration/utils/fs";
+import { parseSkillFrontmatter } from "./skill-frontmatter.js";
 
 type InventoryScan = {
   leafs: LeafRecord[];
@@ -98,7 +99,11 @@ export class InventoryService {
         absolutePath: leafRoot,
         skillFilePath,
         contentHash: await hashDirectory(leafRoot),
-        metadataWarnings: parsed.metadataWarnings,
+        diagnostics: parsed.metadataWarnings.map((message) => ({
+          code: "LEAF_METADATA_WARNING",
+          message,
+          retryable: false,
+        })),
         valid: true,
         dedupeKey: parsed.name,
       });
@@ -226,7 +231,7 @@ export class InventoryService {
     openAiDisplayName?: string,
   ): ParsedSkillFile {
     const lines = raw.split(/\r?\n/);
-    const frontmatter = this.parseFrontmatter(lines);
+    const frontmatter = parseSkillFrontmatter(raw);
     if (!frontmatter) {
       return { valid: false, reason: "SKILL.md must start with YAML frontmatter" };
     }
@@ -329,59 +334,4 @@ export class InventoryService {
     }
   }
 
-  private parseFrontmatter(
-    lines: string[],
-  ): { data: Record<string, string>; bodyStartLine: number } | undefined {
-    if (lines[0]?.trim() !== "---") {
-      return undefined;
-    }
-
-    const data: Record<string, string> = {};
-    let index = 1;
-
-    while (index < lines.length) {
-      const line = lines[index] ?? "";
-      if (line.trim() === "---") {
-        return { data, bodyStartLine: index + 1 };
-      }
-
-      const pair = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-      if (!pair) {
-        index += 1;
-        continue;
-      }
-
-      const key = pair[1];
-      const rest = pair[2];
-      if (!key || rest === undefined) {
-        index += 1;
-        continue;
-      }
-
-      if (rest === "|" || rest === ">") {
-        const blockLines: string[] = [];
-        index += 1;
-        while (index < lines.length) {
-          const blockLine = lines[index] ?? "";
-          if (blockLine.length === 0) {
-            blockLines.push("");
-            index += 1;
-            continue;
-          }
-          if (!blockLine.startsWith("  ")) {
-            break;
-          }
-          blockLines.push(blockLine.slice(2));
-          index += 1;
-        }
-        data[key] = blockLines.join("\n").trim();
-        continue;
-      }
-
-      data[key] = rest.trim();
-      index += 1;
-    }
-
-    return undefined;
-  }
 }

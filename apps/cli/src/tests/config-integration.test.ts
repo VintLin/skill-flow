@@ -3,9 +3,8 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import type { DraftBinding } from "@skill-flow/domain/types";
 import { createLegacyAgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
-import { projectStateV2ToView } from "@skill-flow/query";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { StateStore } from "@skill-flow/storage/state-store";
 import {
   createRepo,
   pathExists,
@@ -14,9 +13,9 @@ import {
   writeRepoFiles,
 } from "./test-helpers.js";
 
-const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
-const v2View = async (app: { store: { rootPath: string } }) =>
-  projectStateV2ToView(await v2(app).readState());
+const v2 = (app: { store: { rootPath: string } }): StateStore => new StateStore(app.store.rootPath);
+const v2State = async (app: { store: { rootPath: string } }) =>
+  v2(app).readState();
 
 describe.sequential("config integration", () => {
   const sandbox = useSkillFlowSandbox();
@@ -57,7 +56,7 @@ describe.sequential("config integration", () => {
     );
 
 
-    const { manifest, lockFile: lock } = await v2View(app);
+    const { manifest, lockFile: lock } = await v2State(app);
     const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
       manifest,
       lock,
@@ -73,8 +72,8 @@ describe.sequential("config integration", () => {
         targetPath: path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "linked-skill"),
       },
     ]);
-    expect((await v2View(app)).manifest).toEqual(manifest);
-    expect((await v2View(app)).lockFile).toEqual(lock);
+    expect((await v2State(app)).manifest).toEqual(manifest);
+    expect((await v2State(app)).lockFile).toEqual(lock);
   });
 
   test("bootstrap ignores target paths already owned by managed projections even without deployments", async () => {
@@ -99,12 +98,12 @@ describe.sequential("config integration", () => {
       return;
     }
 
-    const { manifest, lockFile } = await v2View(app);
-    const lockWithoutDeployments = { ...lockFile, deployments: [] };
+    const { manifest, lockFile } = await v2State(app);
+    const lockWithoutProjections = { ...lockFile, projections: [] };
 
     const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
       manifest,
-      lockWithoutDeployments,
+      lockWithoutProjections,
     );
 
     expect(detected.some((item) => item.sourceId === sourceId)).toBe(false);
@@ -129,7 +128,7 @@ describe.sequential("config integration", () => {
     );
 
 
-    const { manifest, lockFile: lock } = await v2View(app);
+    const { manifest, lockFile: lock } = await v2State(app);
     const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
       manifest,
       lock,
@@ -394,7 +393,19 @@ describe.sequential("config integration", () => {
     });
     expect(
       result.data.summaries.find((summary) => summary.source.id === sourceId)?.bindings,
-    ).toEqual((await v2View(app)).manifest.bindings[sourceId]);
+    ).toEqual({
+      selectedLeafIds: [`${sourceId}:browse`, `${sourceId}:review`],
+      targets: {
+        "claude-code": {
+          enabled: true,
+          leafIds: [`${sourceId}:browse`, `${sourceId}:review`],
+        },
+        codex: {
+          enabled: true,
+          leafIds: [`${sourceId}:browse`, `${sourceId}:review`],
+        },
+      },
+    });
   });
 
   test("preview and apply can run concurrently without corrupting state files", async () => {
@@ -422,11 +433,14 @@ describe.sequential("config integration", () => {
 
     expect(results.every((result) => result.ok)).toBe(true);
 
-    const { manifest, lockFile: lock } = await v2View(app);
-    expect(manifest.bindings[sourceId]?.targets["claude-code"]?.leafIds).toEqual([
-      `${sourceId}:browse`,
-    ]);
-    expect(lock.sources.map((source) => source.id)).toEqual([sourceId]);
+    const { manifest, lockFile: lock } = await v2State(app);
+    expect(manifest.bindings[sourceId]).toEqual({
+      sourceId,
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets: ["claude-code"],
+    });
+    expect(Object.keys(lock.sources)).toEqual([sourceId]);
   });
 
   test("concurrent applyDraft calls are serialized and keep the last draft", async () => {
@@ -457,15 +471,12 @@ describe.sequential("config integration", () => {
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
 
-    const { manifest } = await v2View(app);
+    const { manifest } = await v2State(app);
     expect(manifest.bindings[sourceId]).toEqual({
-      selectedLeafIds: [leafId],
-      targets: {
-        codex: {
-          enabled: true,
-          leafIds: [leafId],
-        },
-      },
+      sourceId,
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets: ["codex"],
     });
   });
 
@@ -504,7 +515,7 @@ describe.sequential("config integration", () => {
     });
 
 
-    const { manifest, lockFile } = await v2View(app);
+    const { manifest, lockFile } = await v2State(app);
     const detected = await app.workspaceBootstrapService.detectUnmanagedExternalSkills(
       manifest,
       lockFile,
@@ -555,7 +566,7 @@ describe.sequential("config integration", () => {
       });
 
 
-      const { manifest, lockFile } = await v2View(app);
+      const { manifest, lockFile } = await v2State(app);
       const scanned = await app.workspaceBootstrapService.scanUnmanagedLocalSkills(
         manifest,
         lockFile,

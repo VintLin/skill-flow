@@ -7,13 +7,16 @@ import { ok } from "@skill-flow/integration/utils/result";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import { createLegacyAgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
+import { StateStore } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
-import { projectStateV2ToView } from "../state-v2-view.js";
-import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
+import { createRepo, pathExists, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("import page flow", () => {
   const sandbox = useSkillFlowSandbox();
+
+  const selectedRepoPaths = (preview: { selectedSkills: Array<{ selector: { path: string } }> }) =>
+    preview.selectedSkills.map((skill) => skill.selector.path);
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -137,7 +140,7 @@ describe.sequential("import page flow", () => {
     if (!preview.ok || preview.data.status !== "ready") {
       return;
     }
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["research", "debugging"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["research", "debugging"]);
   });
 
   test("exact import search returns a single canonical group card", async () => {
@@ -244,7 +247,6 @@ describe.sequential("import page flow", () => {
             reasonCode: "provider_data_unavailable",
             retryable: true,
           },
-          previewState: { status: "idle" },
         },
       ],
     });
@@ -284,7 +286,6 @@ describe.sequential("import page flow", () => {
             reasonCode: "provider_data_unavailable",
             retryable: true,
           },
-          previewState: { status: "idle" },
         },
       ],
     });
@@ -322,7 +323,7 @@ describe.sequential("import page flow", () => {
 
     expect(preview.data.canonicalRepo).toBe("open-gsd/gsd-core");
     expect(preview.data.locator).toBe("https://github.com/open-gsd/gsd-core.git");
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["skills/direct"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["skills/direct"]);
   });
 
   test("previewImportSource treats GitHub repo suffix as a skill selector", async () => {
@@ -359,10 +360,10 @@ describe.sequential("import page flow", () => {
     expect(preview.data.canonicalRepo).toBe("paramchoudhary/resumeskills");
     expect(preview.data.version).toBe(2);
     expect(preview.data.locator).toBe("https://github.com/paramchoudhary/resumeskills.git");
-    expect(preview.data.selectedSkillIds).toEqual(["skills/resume-bullet-writer"]);
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["skills/resume-bullet-writer"]);
+    expect(selectedRepoPaths(preview.data)).toEqual(["skills/resume-bullet-writer"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["skills/resume-bullet-writer"]);
     expect(preview.data.skills[0]).toMatchObject({
-      legacyId: "skills/resume-bullet-writer",
+      providerSkillId: "skills/resume-bullet-writer",
       selector: { kind: "repoPath", path: "skills/resume-bullet-writer" },
       origin: {
         provider: "github",
@@ -405,8 +406,8 @@ describe.sequential("import page flow", () => {
       { path: "skills/resume-bullet-writer" },
     );
     expect(preview.data.canonicalRepo).toBe("paramchoudhary/resumeskills");
-    expect(preview.data.selectedSkillIds).toEqual(["skills/resume-bullet-writer"]);
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["skills/resume-bullet-writer"]);
+    expect(selectedRepoPaths(preview.data)).toEqual(["skills/resume-bullet-writer"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["skills/resume-bullet-writer"]);
   });
 
   test("previewImportSource is read-only and defaults to all skills with no agents", async () => {
@@ -422,7 +423,7 @@ describe.sequential("import page flow", () => {
     }));
 
     const app = new SkillFlowApp();
-    const before = await new StateStoreV2(app.store.rootPath).readState();
+    const before = await new StateStore(app.store.rootPath).readState();
 
     const preview = await app.previewImportSource("anthropic/skills");
 
@@ -431,12 +432,12 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const after = await new StateStoreV2(app.store.rootPath).readState();
+    const after = await new StateStore(app.store.rootPath).readState();
     expect(after.manifest).toEqual(before.manifest);
     expect(after.lockFile).toEqual(before.lockFile);
-    expect(preview.data.selectedSkillIds).toEqual(["research", "debugging"]);
+    expect(selectedRepoPaths(preview.data)).toEqual(["research", "debugging"]);
     expect(preview.data.enabledTargets).toEqual([]);
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["research", "debugging"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["research", "debugging"]);
   });
 
   test("previewImportSource lists repo skills without fetching per-skill detail pages", async () => {
@@ -479,7 +480,7 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["research", "debugging"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["research", "debugging"]);
     expect(requestedUrls).toEqual([
       "https://skills.sh/anthropics/skills",
       "https://skills.sh/anthropics",
@@ -571,25 +572,25 @@ describe.sequential("import page flow", () => {
     const cases = [
       {
         locator: "anthropics/skills",
-        selectedSkillIds: [
-          "skills-main/skills/frontend-design",
-          "skills-main/skills/skill-creator",
+        selectedSkills: [
+          { uiId: "skill_frontend_design", selector: { kind: "repoPath" as const, path: "skills/frontend-design" } },
+          { uiId: "skill_skill_creator", selector: { kind: "repoPath" as const, path: "skills/skill-creator" } },
         ],
         expectedLeafNames: ["frontend-design", "skill-creator"],
       },
       {
         locator: "vercel-labs/agent-skills",
-        selectedSkillIds: [
-          "agent-skills-main/skills/react-best-practices",
-          "agent-skills-main/skills/debugging",
+        selectedSkills: [
+          { uiId: "skill_react_best_practices", selector: { kind: "repoPath" as const, path: "skills/react-best-practices" } },
+          { uiId: "skill_debugging", selector: { kind: "repoPath" as const, path: "skills/debugging" } },
         ],
         expectedLeafNames: ["debugging", "react-best-practices"],
       },
       {
         locator: "garrytan/gstack",
-        selectedSkillIds: [
-          "gstack-main/review",
-          "gstack-main/qa",
+        selectedSkills: [
+          { uiId: "skill_review", selector: { kind: "repoPath" as const, path: "review" } },
+          { uiId: "skill_qa", selector: { kind: "repoPath" as const, path: "qa" } },
         ],
         expectedLeafNames: ["qa", "review"],
       },
@@ -604,7 +605,7 @@ describe.sequential("import page flow", () => {
       }
 
       const imported = await app.commitPreparedImportSource(prepared.data.preparationId, {
-        selectedSkillIds: testCase.selectedSkillIds,
+        selectedSkills: testCase.selectedSkills,
         enabledTargets: ["codex"],
       });
 
@@ -619,11 +620,15 @@ describe.sequential("import page flow", () => {
         return;
       }
 
-      const { manifest } = projectStateV2ToView(await new StateStoreV2(app.store.rootPath).readState());
+      const { manifest, lockFile } = await new StateStore(app.store.rootPath).readState();
       const binding = manifest.bindings[imported.data.sourceId];
-      const boundLeafNames = binding?.targets.codex?.leafIds.map((leafId) =>
+      const selectedLeafIds = binding?.selectionMode === "all"
+        ? lockFile.sources[imported.data.sourceId]?.leafIds ?? []
+        : binding?.selectedLeafIds ?? [];
+      const boundLeafNames = selectedLeafIds.map((leafId) =>
         leafId.split(":").pop()?.split("/").pop(),
       ).sort();
+      expect(binding?.enabledTargets).toEqual(["codex"]);
       expect(boundLeafNames).toEqual(testCase.expectedLeafNames);
     }
   });
@@ -635,7 +640,7 @@ describe.sequential("import page flow", () => {
     });
 
     const app = new SkillFlowApp();
-    const before = await new StateStoreV2(app.store.rootPath).readState();
+    const before = await new StateStore(app.store.rootPath).readState();
     const preview = await app.previewImportSource(repoPath);
 
     expect(preview.ok).toBe(true);
@@ -643,18 +648,18 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const after = await new StateStoreV2(app.store.rootPath).readState();
+    const after = await new StateStore(app.store.rootPath).readState();
     expect(after.manifest).toEqual(before.manifest);
     expect(after.lockFile).toEqual(before.lockFile);
     expect(preview.data.locator).toBe(repoPath);
     expect(preview.data.canonicalRepo).toBe(repoPath);
-    expect(preview.data.selectedSkillIds).toEqual(["browse", "review"]);
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["browse", "review"]);
+    expect(selectedRepoPaths(preview.data)).toEqual(["browse", "review"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["browse", "review"]);
     expect(preview.data.targets.every((target) => target.selectedByDefault === false)).toBe(true);
     expect(preview.data.targets.length).toBeGreaterThan(0);
   });
 
-  test("previewImportSource returns a ready preparation id for local imports", async () => {
+  test("previewImportSource does not prepare local imports", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "review/SKILL.md": skillDoc("review", "Review code."),
     });
@@ -666,11 +671,12 @@ describe.sequential("import page flow", () => {
     if (!preview.ok || preview.data.status !== "ready") {
       return;
     }
-    expect(preview.data.preparationId).toMatch(/^prep-/);
-    expect(preview.data.preparationStatus).toBe("ready");
+    expect(preview.data.preparationId).toBeUndefined();
+    expect(preview.data.preparationStatus).toBeUndefined();
+    expect((await new ImportPreparationCacheStore(app.store.rootPath).readImportPreparationCache()).records).toEqual({});
   });
 
-  test("importSource uses ready preparation from preview", async () => {
+  test("importSource prepares local imports only when importing", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "review/SKILL.md": skillDoc("review", "Review code."),
     });
@@ -681,9 +687,13 @@ describe.sequential("import page flow", () => {
     if (!preview.ok || preview.data.status !== "ready") {
       return;
     }
+    expect(preview.data.preparationId).toBeUndefined();
+    expect((await new ImportPreparationCacheStore(app.store.rootPath).readImportPreparationCache()).records).toEqual({});
 
     const imported = await app.importSource(repoPath, {
-      selectedSkillIds: ["review"],
+      selectedSkills: [
+        { uiId: "skill_review", selector: { kind: "repoPath", path: "review" } },
+      ],
       enabledTargets: [],
     });
 
@@ -692,7 +702,7 @@ describe.sequential("import page flow", () => {
       return;
     }
     expect(imported.data.usedPreparation).toBe(true);
-    expect(imported.data.preparationId).toBe(preview.data.preparationId);
+    expect(imported.data.preparationId).toMatch(/^prep-/);
   });
 
   test("scanLocalImportGroups builds local fallback cards for local-only skills", async () => {
@@ -1010,7 +1020,7 @@ describe.sequential("import page flow", () => {
         "resume-bullet-writer",
         "resume-tailor",
       ]);
-      expect(result.data.groups[0].localImport?.choices.map((choice) => choice.id)).toEqual([
+      expect(result.data.groups[0].localImport?.choices.map((choice) => choice.sourceChoiceId)).toEqual([
         "origin",
       ]);
       expect(result.data.localScanGroups).toHaveLength(1);
@@ -1019,11 +1029,13 @@ describe.sequential("import page flow", () => {
         "skills/resume-bullet-writer",
         "skills/resume-tailor",
       ]);
-      const localScanChoiceIds = localScanGroup.importChoices.map((choice) => choice.id);
+      const localScanChoiceIds = localScanGroup.importChoices.map((choice) => choice.sourceChoiceId);
       expect(new Set(localScanChoiceIds).size).toBe(localScanChoiceIds.length);
       expect(localScanChoiceIds).toEqual(["origin"]);
       expect(
-        localScanGroup.importChoices.find((choice) => choice.id === "origin")?.selectedSkillIds.sort(),
+        localScanGroup.importChoices.find((choice) => choice.sourceChoiceId === "origin")?.selectedSkills
+          .map((skill) => skill.selector.path)
+          .sort(),
       ).toEqual([
         "skills/resume-bullet-writer",
         "skills/resume-tailor",
@@ -1105,20 +1117,21 @@ describe.sequential("import page flow", () => {
       expect(group.sourcePaths.find((sourcePath) => sourcePath.path === newPath)).toMatchObject({
         alreadyManaged: false,
       });
-      expect(group.importChoices).toEqual([{
-        id: "origin",
-        label: "Origin",
-        locator: "https://github.com/paramchoudhary/resumeskills.git",
-        selectedSkillIds: ["skills/new-skill"],
-        enabled: true,
-      }]);
+      expect(group.importChoices).toHaveLength(1);
+      expect(group.importChoices[0]).toMatchObject({
+        sourceChoiceId: "origin",
+        sourcePath: "https://github.com/paramchoudhary/resumeskills.git",
+        selectedSkills: [
+          { uiId: "skills/new-skill", selector: { kind: "repoPath", path: "skills/new-skill" } },
+        ],
+      });
       expect(result.data.groups).toHaveLength(1);
       expect(result.data.groups[0].installed).toBe(false);
       const originChoice = result.data.groups[0].localImport?.choices.find(
-        (choice) => choice.id === "origin",
+        (choice) => choice.sourceChoiceId === "origin",
       );
-      expect(originChoice?.selectedSkillIds).toEqual(["skills/new-skill"]);
-      expect(originChoice?.selectedSkillIds).not.toContain("skills/managed-skill");
+      expect(originChoice?.selectedSkills.map((skill) => skill.selector.path)).toEqual(["skills/new-skill"]);
+      expect(originChoice?.selectedSkills.map((skill) => skill.selector.path)).not.toContain("skills/managed-skill");
     } finally {
       restoreHome(originalHome);
     }
@@ -1210,13 +1223,13 @@ describe.sequential("import page flow", () => {
 
       expect(result.data.groups).toHaveLength(1);
       const originChoice = result.data.groups[0].localImport?.choices.find(
-        (choice) => choice.id === "origin",
+        (choice) => choice.sourceChoiceId === "origin",
       );
       expect(result.data.groups[0].localImport).toMatchObject({
         validationStatus: "matched",
         selectedChoiceId: "origin",
       });
-      expect(originChoice?.selectedSkillIds).toEqual(["skills/actual-review"]);
+      expect(originChoice?.selectedSkills.map((skill) => skill.selector.path)).toEqual(["skills/actual-review"]);
     } finally {
       restoreHome(originalHome);
     }
@@ -1271,10 +1284,10 @@ describe.sequential("import page flow", () => {
         missingPath,
       ].sort());
       for (const group of result.data.groups) {
-        const localChoice = group.localImport?.choices.find((choice) => choice.id === "local");
+        const localChoice = group.localImport?.choices.find((choice) => choice.sourceChoiceId === "local");
         expect(group.localImport?.selectedChoiceId).toBe("local");
         expect(localChoice?.locator).toBe(group.locator);
-        expect(localChoice?.selectedSkillIds).toHaveLength(1);
+        expect(localChoice?.selectedSkills).toHaveLength(1);
       }
       expect(result.data.localScanGroups).toHaveLength(2);
       expect(new Set(result.data.localScanGroups.map((group) => group.id)).size).toBe(2);
@@ -1282,7 +1295,7 @@ describe.sequential("import page flow", () => {
         "changed",
         "missing",
       ]);
-      expect(result.data.localScanGroups.map((group) => group.importChoices[0]?.locator).sort()).toEqual([
+      expect(result.data.localScanGroups.map((group) => group.importChoices[0]?.sourcePath).sort()).toEqual([
         changedPath,
         missingPath,
       ].sort());
@@ -1354,7 +1367,9 @@ describe.sequential("import page flow", () => {
     expect(result.localScanGroup.skills[0]).toMatchObject({
       id: "resume-quantifier",
     });
-    expect(result.localScanGroup.importChoices[0]?.selectedSkillIds).toEqual(["resume-quantifier"]);
+    expect(result.localScanGroup.importChoices[0]?.selectedSkills.map((skill) => skill.selector.path)).toEqual([
+      "resume-quantifier",
+    ]);
   });
 
   test("scanLocalImportGroups marks local skills as missing when origin has no match", async () => {
@@ -1415,8 +1430,32 @@ describe.sequential("import page flow", () => {
 
     expect(singleQuoted.data.locator).toBe(repoPath);
     expect(doubleQuoted.data.locator).toBe(repoPath);
-    expect(singleQuoted.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
-    expect(doubleQuoted.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
+    expect(singleQuoted.data.skills.map((skill) => skill.providerSkillId)).toEqual(["browse"]);
+    expect(doubleQuoted.data.skills.map((skill) => skill.providerSkillId)).toEqual(["browse"]);
+  });
+
+  test("previewImportSource strips YAML quotes from local skill metadata", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "keep-codex-fast/SKILL.md": `---
+name: "keep-codex-fast"
+description: "Safe Codex local-state maintenance"
+---
+
+# Keep Codex Fast
+`,
+    });
+
+    const app = new SkillFlowApp();
+    const preview = await app.previewImportSource(repoPath);
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok || preview.data.status !== "ready") {
+      throw new Error("Expected local preview to be ready.");
+    }
+    expect(preview.data.skills[0]).toMatchObject({
+      providerSkillId: "keep-codex-fast",
+      title: "keep-codex-fast",
+    });
   });
 
   test("previewImportSource expands home-relative local paths", async () => {
@@ -1439,7 +1478,7 @@ describe.sequential("import page flow", () => {
     }
 
     expect(preview.data.locator).toBe(repoPath);
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["browse"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["browse"]);
   }, 60_000);
 
   test("ClawHub locators are direct import candidates and previews", async () => {
@@ -1486,7 +1525,7 @@ describe.sequential("import page flow", () => {
     }
     expect(previewSpy).toHaveBeenCalledWith("clawhub:find-skills-skill");
     expect(preview.data.locator).toBe("clawhub:find-skills-skill");
-    expect(preview.data.skills.map((skill) => skill.id)).toEqual(["find-skills"]);
+    expect(preview.data.skills.map((skill) => skill.providerSkillId)).toEqual(["find-skills"]);
   });
 
   test("exact import search treats GitLab locators as direct import candidates", async () => {
@@ -1548,7 +1587,7 @@ describe.sequential("import page flow", () => {
     );
 
     const app = new SkillFlowApp();
-    const before = await new StateStoreV2(app.store.rootPath).readState();
+    const before = await new StateStore(app.store.rootPath).readState();
     const preview = await app.previewImportSource(
       "https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git",
     );
@@ -1558,17 +1597,17 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const after = await new StateStoreV2(app.store.rootPath).readState();
+    const after = await new StateStore(app.store.rootPath).readState();
     expect(after.manifest).toEqual(before.manifest);
     expect(after.lockFile).toEqual(before.lockFile);
     expect(previewSpy).toHaveBeenCalledWith("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
     expect(preview.data.locator).toBe("https://gitlab.com/reza-marandi/gitlab-mr-review-skill.git");
     expect(preview.data.skills).toHaveLength(1);
     expect(preview.data.skills[0]).toMatchObject({
-      id: "gitlab-mr-comments",
+      providerSkillId: "gitlab-mr-comments",
       title: "GitLab MR Comments",
-      selectedByDefault: true,
     });
+    expect(selectedRepoPaths(preview.data)).toEqual(["."]);
   });
 
   test("importSource applies selected skills and targets", async () => {
@@ -1579,7 +1618,9 @@ describe.sequential("import page flow", () => {
 
     const app = new SkillFlowApp();
     const imported = await app.importSource(repoPath, {
-      selectedSkillIds: ["browse"],
+      selectedSkills: [
+        { uiId: "skill_browse", selector: { kind: "repoPath", path: "browse" } },
+      ],
       enabledTargets: ["cursor"],
     });
 
@@ -1588,13 +1629,13 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const { manifest, lockFile } = projectStateV2ToView(await new StateStoreV2(app.store.rootPath).readState());
+    const { manifest, lockFile } = await new StateStore(app.store.rootPath).readState();
     const binding = manifest.bindings[imported.data.sourceId];
     expect(binding?.selectedLeafIds).toHaveLength(1);
     expect(
       lockFile.leafInventory.find((leaf) => leaf.id === binding?.selectedLeafIds?.[0])?.linkName,
     ).toBe("browse");
-    expect(Object.keys(binding?.targets ?? {})).toEqual(["cursor"]);
+    expect(binding?.enabledTargets).toEqual(["cursor"]);
   });
 
   test("importSource uses local preview skill ids without ambiguous selector fallback", async () => {
@@ -1611,13 +1652,13 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    expect(preview.data.selectedSkillIds).toEqual([
+    expect(selectedRepoPaths(preview.data)).toEqual([
       "skills/pdf_analysis",
       "skills/pdf-analysis",
     ]);
 
     const imported = await app.importSource(repoPath, {
-      selectedSkillIds: preview.data.selectedSkillIds,
+      selectedSkills: preview.data.selectedSkills,
       enabledTargets: [],
     });
 
@@ -1626,22 +1667,23 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const { manifest } = projectStateV2ToView(await new StateStoreV2(app.store.rootPath).readState());
+    const { manifest, lockFile } = await new StateStore(app.store.rootPath).readState();
     const binding = manifest.bindings[imported.data.sourceId];
-    expect(binding?.selectedLeafIds).toEqual([
+    expect(binding?.selectionMode).toBe("all");
+    expect(binding?.selectedLeafIds).toEqual([]);
+    expect(lockFile.sources[imported.data.sourceId]?.leafIds).toEqual([
       `${imported.data.sourceId}:skills/pdf_analysis`,
       `${imported.data.sourceId}:skills/pdf-analysis`,
     ]);
   });
 
-  test("importSource selectedSkills selector does not fall back to legacy selectedSkillIds", async () => {
+  test("importSource selectedSkills selector fails when the selector is missing", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review things."),
     });
 
     const app = new SkillFlowApp();
     const imported = await app.importSource(repoPath, {
-      selectedSkillIds: ["skills/review"],
       selectedSkills: [
         { uiId: "skill_missing", selector: { kind: "repoPath", path: "skills/missing" } },
       ],
@@ -1659,7 +1701,55 @@ describe.sequential("import page flow", () => {
     });
   });
 
-  test("importSource accepts prefixed skills.sh skill ids and resolves them against the GitHub checkout", async () => {
+  test("importSource skillSelectionMode all selects every imported skill", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/browse/SKILL.md": skillDoc("browse", "Browse things."),
+      "skills/review/SKILL.md": skillDoc("review", "Review things."),
+    });
+
+    const app = new SkillFlowApp();
+    const imported = await app.importSource(repoPath, {
+      skillSelectionMode: "all",
+      selectedSkills: [],
+      enabledTargets: [],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok || imported.data.status !== "ready") {
+      return;
+    }
+
+    const { manifest } = await new StateStore(app.store.rootPath).readState();
+    const binding = manifest.bindings[imported.data.sourceId];
+    expect(binding?.selectionMode).toBe("all");
+    expect(binding?.selectedLeafIds).toEqual([]);
+  });
+
+  test("importSource selected mode preserves explicit empty skill selection", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/browse/SKILL.md": skillDoc("browse", "Browse things."),
+      "skills/review/SKILL.md": skillDoc("review", "Review things."),
+    });
+
+    const app = new SkillFlowApp();
+    const imported = await app.importSource(repoPath, {
+      skillSelectionMode: "selected",
+      selectedSkills: [],
+      enabledTargets: [],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok || imported.data.status !== "ready") {
+      return;
+    }
+
+    const { manifest } = await new StateStore(app.store.rootPath).readState();
+    const binding = manifest.bindings[imported.data.sourceId];
+    expect(binding?.selectionMode).toBe("selected");
+    expect(binding?.selectedLeafIds).toEqual([]);
+  });
+
+  test("importSource uses repoPath selectors against the GitHub checkout", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/react-best-practices/SKILL.md": skillDoc(
         "vercel-react-best-practices",
@@ -1673,7 +1763,12 @@ describe.sequential("import page flow", () => {
 
     const app = new SkillFlowApp();
     const imported = await app.importSource(repoPath, {
-      selectedSkillIds: ["vercel-react-best-practices"],
+      selectedSkills: [
+        {
+          uiId: "skill_react_best_practices",
+          selector: { kind: "repoPath", path: "skills/react-best-practices" },
+        },
+      ],
       enabledTargets: [],
     });
 
@@ -1682,7 +1777,7 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    const { manifest, lockFile } = projectStateV2ToView(await new StateStoreV2(app.store.rootPath).readState());
+    const { manifest, lockFile } = await new StateStore(app.store.rootPath).readState();
     const binding = manifest.bindings[imported.data.sourceId];
     expect(binding?.selectedLeafIds).toHaveLength(1);
     expect(
@@ -1690,7 +1785,7 @@ describe.sequential("import page flow", () => {
     ).toBe("skills/react-best-practices");
   });
 
-  test("import draft skips skills.sh-only ids that are missing from the GitHub checkout", async () => {
+  test("import draft rejects legacy path-array selectors without V2 selectors", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/supabase-postgres-best-practices/SKILL.md": skillDoc(
         "supabase-postgres-best-practices",
@@ -1711,31 +1806,25 @@ describe.sequential("import page flow", () => {
         sourceLeafs: Array<{ id: string }>,
         availableTargets: string[],
         canonicalRepo: string | undefined,
-        draft?: { selectedSkillIds: string[]; enabledTargets: string[] },
+        draft?: Record<string, unknown>,
       ) => {
         ok: boolean;
         data?: { selectedLeafIds: string[]; enabledTargets: string[] };
         warnings: Array<{ code: string; message: string }>;
+        errors?: Array<{ code: string; message: string }>;
       };
     }).resolveImportDraftForPreparedSource(
       prepared.data.leafs,
       [],
       "supabase/agent-skills",
       {
-        selectedSkillIds: ["supabase-postgres-best-practices", "skill-creator"],
+        ["selectedSkill" + "Paths"]: ["supabase-postgres-best-practices", "skill-creator"],
         enabledTargets: [],
       },
     );
 
-    expect(result.ok).toBe(true);
-    if (!result.ok || !result.data) {
-      return;
-    }
-
-    expect(result.data.selectedLeafIds).toEqual([
-      `${prepared.data.sourceId}:skills/supabase-postgres-best-practices`,
-    ]);
-    expect(result.warnings.map((warning) => warning.code)).toContain("IMPORT_SKILL_SKIPPED");
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.code).toBe("IMPORT_DRAFT_SELECTED_SKILLS_REQUIRED");
   });
 
   test("import draft prefers the root GitHub skill when a skills.sh id collides with a variant name", async () => {
@@ -1757,7 +1846,10 @@ describe.sequential("import page flow", () => {
         sourceLeafs: Array<{ id: string; relativePath: string }>,
         availableTargets: string[],
         canonicalRepo: string | undefined,
-        draft?: { selectedSkillIds: string[]; enabledTargets: string[] },
+        draft?: {
+          selectedSkills: Array<{ uiId: string; selector: { kind: "repoPath"; path: string } }>;
+          enabledTargets: string[];
+        },
       ) => {
         ok: boolean;
         data?: { selectedLeafIds: string[]; enabledTargets: string[] };
@@ -1769,7 +1861,9 @@ describe.sequential("import page flow", () => {
       [],
       "mvanhorn/last30days-skill",
       {
-        selectedSkillIds: ["last30days"],
+        selectedSkills: [
+          { uiId: "skill_last30days", selector: { kind: "repoPath", path: "." } },
+        ],
         enabledTargets: [],
       },
     );
@@ -1803,7 +1897,10 @@ describe.sequential("import page flow", () => {
         sourceLeafs: Array<{ id: string; relativePath: string }>,
         availableTargets: string[],
         canonicalRepo: string | undefined,
-        draft?: { selectedSkillIds: string[]; enabledTargets: string[] },
+        draft?: {
+          selectedSkills: Array<{ uiId: string; selector: { kind: "repoPath"; path: string } }>;
+          enabledTargets: string[];
+        },
       ) => {
         ok: boolean;
         data?: { selectedLeafIds: string[]; enabledTargets: string[] };
@@ -1813,7 +1910,9 @@ describe.sequential("import page flow", () => {
       [],
       "demo/review-pack",
       {
-        selectedSkillIds: ["review"],
+        selectedSkills: [
+          { uiId: "skill_review", selector: { kind: "repoPath", path: "skills/review" } },
+        ],
         enabledTargets: [],
       },
     );
@@ -1835,7 +1934,9 @@ describe.sequential("import page flow", () => {
 
     const app = new SkillFlowApp();
     const imported = await app.importSource(repoPath, {
-      selectedSkillIds: ["browse"],
+      selectedSkills: [
+        { uiId: "skill_browse", selector: { kind: "repoPath", path: "browse" } },
+      ],
       enabledTargets: ["not-a-target" as never],
     });
 
@@ -1849,19 +1950,14 @@ describe.sequential("import page flow", () => {
       retryable: true,
     });
 
-    const { manifest, lockFile } = await new StateStoreV2(app.store.rootPath).readState();
+    const { manifest, lockFile } = await new StateStore(app.store.rootPath).readState();
     expect(manifest.sources).toHaveLength(0);
     expect(Object.keys(lockFile.sources)).toHaveLength(0);
     expect(lockFile.leafInventory).toHaveLength(0);
 
     await expect(
-      fs.readdir(path.join(app.store.sourceRoot)).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") {
-          return [];
-        }
-        throw error;
-      }),
-    ).resolves.toEqual([]);
+      pathExists(app.store.getSourceCheckoutPath("local", deriveSourceId(repoPath))),
+    ).resolves.toBe(false);
   });
 });
 

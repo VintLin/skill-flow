@@ -102,6 +102,26 @@ describe.sequential("inventory discovery precedence", () => {
     expect(scanned.leafs[0]?.linkName).toBe("audio-text-compare");
   });
 
+  test("strips YAML quotes from SKILL.md frontmatter scalar fields", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "keep-codex-fast/SKILL.md": `---
+name: "keep-codex-fast"
+description: "Safe Codex local-state maintenance"
+---
+
+# Keep Codex Fast
+`,
+    });
+    const inventory = new InventoryService();
+
+    const scanned = await inventory.scanSource("demo-source", repoPath, "demo");
+
+    expect(scanned.leafs[0]?.name).toBe("keep-codex-fast");
+    expect(scanned.leafs[0]?.title).toBe("keep-codex-fast");
+    expect(scanned.leafs[0]?.description).toBe("Safe Codex local-state maintenance");
+    expect(scanned.leafs[0]?.diagnostics).toEqual([]);
+  });
+
   test("falls back to folder name before OpenAI display name and markdown heading", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "puma-code-checker/SKILL.md": `---

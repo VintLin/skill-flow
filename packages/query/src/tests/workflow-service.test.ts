@@ -1,80 +1,84 @@
 import { describe, expect, test } from "vitest";
-import type { CollectionsFileV2, LockFile, Manifest } from "@skill-flow/domain/types";
+import type { CollectionsFile, LockFile, ManifestFile } from "@skill-flow/domain/types";
 import { WorkflowService } from "../workflow-service.js";
 
 const addedAt = "2026-06-04T00:00:00.000Z";
 
-const collectionManifest: Manifest = {
-  schemaVersion: 1,
+const collectionManifest: ManifestFile = {
+  schemaVersion: 2,
+  migrationGeneration: "mg_test",
   sources: [
     {
       id: "alpha",
       locator: "/repos/alpha",
+      canonicalLocator: "/repos/alpha",
       kind: "local",
       displayName: "Alpha Source",
-      originalDisplayName: "Alpha Source",
-      addedAt,
+      enabled: true,
+      createdAt: addedAt,
+      updatedAt: addedAt,
     },
     {
       id: "beta",
       locator: "/repos/beta",
+      canonicalLocator: "/repos/beta",
       kind: "local",
       displayName: "Beta Source",
-      originalDisplayName: "Beta Source",
-      addedAt,
+      enabled: true,
+      createdAt: addedAt,
+      updatedAt: addedAt,
     },
     {
       id: "collection-mixed",
       locator: "collection://mixed",
-      kind: "virtual",
+      canonicalLocator: "collection://mixed",
+      kind: "collection",
       displayName: "Stale Manifest Collection",
-      originalDisplayName: "Stale Manifest Collection",
-      addedAt,
+      enabled: true,
+      createdAt: addedAt,
+      updatedAt: addedAt,
     },
   ],
   bindings: {
     "collection-mixed": {
-      targets: {
-        codex: {
-          enabled: true,
-          leafIds: ["collection-mixed:beta", "collection-mixed:alpha"],
-        },
-      },
+      sourceId: "collection-mixed",
+      selectionMode: "selected",
+      selectedLeafIds: ["collection-mixed:beta", "collection-mixed:alpha"],
+      enabledTargets: ["codex"],
     },
   },
 };
 
 const collectionLockFile: LockFile = {
-  schemaVersion: 1,
-  sources: [
-    {
-      id: "alpha",
-      locator: "/repos/alpha",
-      kind: "local",
-      displayName: "Alpha Source",
-      originalDisplayName: "Alpha Source",
-      checkoutPath: "/repos/alpha",
-      updatedAt: addedAt,
+  schemaVersion: 2,
+  migrationGeneration: "mg_test",
+  sources: {
+    alpha: {
+      sourceId: "alpha",
+      canonicalLocator: "/repos/alpha",
+      revision: {
+        provider: "local",
+        capturedAt: addedAt,
+      },
+      localPath: "/repos/alpha",
       leafIds: ["alpha:one"],
-      invalidLeafs: [],
     },
-    {
-      id: "beta",
-      locator: "/repos/beta",
-      kind: "local",
-      displayName: "Beta Source",
-      originalDisplayName: "Beta Source",
-      checkoutPath: "/repos/beta",
-      updatedAt: addedAt,
+    beta: {
+      sourceId: "beta",
+      canonicalLocator: "/repos/beta",
+      revision: {
+        provider: "local",
+        capturedAt: addedAt,
+      },
+      localPath: "/repos/beta",
       leafIds: ["beta:two"],
-      invalidLeafs: [],
     },
-  ],
+  },
   leafInventory: [
     {
       id: "collection-mixed:alpha",
       sourceId: "collection-mixed",
-      name: "alpha-one",
+      displayName: "alpha-one",
       linkName: "alpha-one",
       title: "Alpha One",
       description: "Alpha skill.",
@@ -82,13 +86,14 @@ const collectionLockFile: LockFile = {
       absolutePath: "/state/source/collection/collection-mixed/alpha-one",
       skillFilePath: "/state/source/collection/collection-mixed/alpha-one/SKILL.md",
       contentHash: "hash-alpha",
-      metadataWarnings: [],
+      selectors: { aliases: [] },
+      diagnostics: [],
       valid: true,
     },
     {
       id: "collection-mixed:beta",
       sourceId: "collection-mixed",
-      name: "beta-two",
+      displayName: "beta-two",
       linkName: "beta-two",
       title: "Beta Two",
       description: "Beta skill.",
@@ -96,14 +101,15 @@ const collectionLockFile: LockFile = {
       absolutePath: "/state/source/collection/collection-mixed/beta-two",
       skillFilePath: "/state/source/collection/collection-mixed/beta-two/SKILL.md",
       contentHash: "hash-beta",
-      metadataWarnings: [],
+      selectors: { aliases: [] },
+      diagnostics: [],
       valid: true,
     },
   ],
-  deployments: [],
+  projections: [],
 };
 
-const collections: CollectionsFileV2 = {
+const collections: CollectionsFile = {
   schemaVersion: 2,
   migrationGeneration: "mg_test",
   collections: {
@@ -195,5 +201,189 @@ describe("WorkflowService", () => {
 
     expect(collectionSummary?.lock).toBeUndefined();
     expect(collectionSummary?.health).toBe("ACTIVE");
+  });
+
+  test("ignores legacy targets on v2 bindings without enabledTargets", () => {
+    const manifest: ManifestFile = {
+      ...collectionManifest,
+      sources: [collectionManifest.sources[0]!],
+      bindings: {
+        alpha: {
+          sourceId: "alpha",
+          selectionMode: "selected",
+          selectedLeafIds: [],
+          targets: {
+            codex: {
+              enabled: true,
+              leafIds: ["alpha:one"],
+            },
+          },
+        } as unknown as ManifestFile["bindings"][string],
+      },
+    };
+    const lockFile: LockFile = {
+      ...collectionLockFile,
+      leafInventory: [
+        {
+          id: "alpha:one",
+          sourceId: "alpha",
+          displayName: "one",
+          linkName: "one",
+          title: "One",
+          description: "One skill.",
+          relativePath: "one",
+          absolutePath: "/repos/alpha/one",
+          skillFilePath: "/repos/alpha/one/SKILL.md",
+          contentHash: "hash-one",
+          selectors: { aliases: [] },
+          diagnostics: [],
+          valid: true,
+        },
+      ],
+      projections: [],
+    };
+
+    const summaries = new WorkflowService().getSummaries(
+      manifest,
+      lockFile,
+      undefined,
+      { ...collections, collections: {} },
+    );
+
+    expect(summaries[0]?.bindings).toEqual({
+      selectedLeafIds: [],
+      targets: {},
+    });
+    expect(summaries[0]?.activeTargetCount).toBe(0);
+    expect(summaries[0]?.health).toBe("INACTIVE");
+  });
+
+  test("preserves selected leaf ids when v2 binding has no enabled targets", () => {
+    const manifest: ManifestFile = {
+      ...collectionManifest,
+      sources: [collectionManifest.sources[0]!],
+      bindings: {
+        alpha: {
+          sourceId: "alpha",
+          selectionMode: "selected",
+          selectedLeafIds: ["alpha:one"],
+          enabledTargets: [],
+        },
+      },
+    };
+    const lockFile: LockFile = {
+      ...collectionLockFile,
+      sources: {
+        alpha: {
+          sourceId: "alpha",
+          canonicalLocator: "/repos/alpha",
+          revision: {
+            provider: "local",
+            capturedAt: addedAt,
+          },
+          localPath: "/repos/alpha",
+          leafIds: ["alpha:one"],
+        },
+      },
+      leafInventory: [
+        {
+          id: "alpha:one",
+          sourceId: "alpha",
+          displayName: "one",
+          linkName: "one",
+          title: "One",
+          description: "One skill.",
+          relativePath: "one",
+          absolutePath: "/repos/alpha/one",
+          skillFilePath: "/repos/alpha/one/SKILL.md",
+          contentHash: "hash-one",
+          selectors: { aliases: [] },
+          diagnostics: [],
+          valid: true,
+        },
+      ],
+      projections: [],
+    };
+
+    const summaries = new WorkflowService().getSummaries(
+      manifest,
+      lockFile,
+      undefined,
+      { ...collections, collections: {} },
+    );
+
+    expect(summaries[0]?.bindings).toEqual({
+      selectedLeafIds: ["alpha:one"],
+      targets: {},
+    });
+    expect(summaries[0]?.activeTargetCount).toBe(0);
+  });
+
+  test("derives summary warnings from current diagnostics only", () => {
+    const manifest: ManifestFile = {
+      ...collectionManifest,
+      sources: [collectionManifest.sources[0]!],
+      bindings: {},
+    };
+    const lockFile: LockFile = {
+      ...collectionLockFile,
+      sources: {
+        alpha: {
+          sourceId: "alpha",
+          canonicalLocator: "/repos/alpha",
+          revision: {
+            provider: "local",
+            capturedAt: addedAt,
+          },
+          localPath: "/repos/alpha",
+          leafIds: ["alpha:one", "alpha:two"],
+        },
+      },
+      leafInventory: [
+        {
+          id: "alpha:one",
+          sourceId: "alpha",
+          displayName: "one",
+          linkName: "one",
+          title: "One",
+          description: "One skill.",
+          relativePath: "one",
+          absolutePath: "/repos/alpha/one",
+          skillFilePath: "/repos/alpha/one/SKILL.md",
+          contentHash: "hash-one",
+          selectors: { aliases: [] },
+          diagnostics: [{ code: "LEAF_METADATA_WARNING", message: "current warning", retryable: false }],
+          valid: true,
+        },
+        {
+          id: "alpha:two",
+          sourceId: "alpha",
+          displayName: "two",
+          linkName: "two",
+          title: "Two",
+          description: "Two skill.",
+          relativePath: "two",
+          absolutePath: "/repos/alpha/two",
+          skillFilePath: "/repos/alpha/two/SKILL.md",
+          contentHash: "hash-two",
+          selectors: { aliases: [] },
+          metadataWarnings: ["legacy warning"],
+          valid: true,
+        } as unknown as LockFile["leafInventory"][number],
+      ],
+      projections: [],
+    };
+
+    const summaries = new WorkflowService().getSummaries(
+      manifest,
+      lockFile,
+      undefined,
+      { ...collections, collections: {} },
+    );
+
+    expect(summaries[0]?.leafs.map((leaf) => leaf.metadataWarnings)).toEqual([
+      ["current warning"],
+      [],
+    ]);
   });
 });

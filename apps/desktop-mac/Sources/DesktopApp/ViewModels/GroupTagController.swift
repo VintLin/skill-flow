@@ -305,14 +305,14 @@ final class GroupTagController {
             return nil
         }
 
-        let tagIds = [recommendation.primaryTagId] + Array(recommendation.secondaryTagIds.prefix(2))
-        return tagIds.map { tagId in
+        let tagId = recommendation.primaryTagId
+        return [
             GroupTagPreference(
                 title: L10n.string("import.recommendation.tag.\(tagId)", locale: locale),
                 accentRawValue: SharedGroupCard.recommendationBadgeAccent(tagId: tagId).rawValue,
                 tagId: tagId
             )
-        }
+        ]
     }
 
     private func matchingRecommendation(canonicalRepo: String?, locator: String?) -> ImportRecommendationEntry? {

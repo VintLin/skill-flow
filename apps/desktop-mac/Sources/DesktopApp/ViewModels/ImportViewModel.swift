@@ -7,18 +7,6 @@ struct ImportViewModel: Equatable {
         let isPrimary: Bool
     }
 
-    struct RecommendedCategorySection: Identifiable, Equatable {
-        let id: String
-        let categoryId: String
-        let title: String
-        let cards: [Card]
-    }
-
-    enum Content: Equatable {
-        case recommended([RecommendedCategorySection])
-        case searchResults([Card])
-    }
-
     struct Stats: Equatable {
         let skillCount: Int?
         let downloadCount: Int?
@@ -54,13 +42,17 @@ struct ImportViewModel: Equatable {
     struct Target: Identifiable, Equatable {
         let id: String
         let selectedByDefault: Bool
-    }
+        let isLocked: Bool
 
-    struct LocalSourcePath: Identifiable, Equatable {
-        let id: String
-        let path: String
-        let targetLabel: String?
-        let isManual: Bool
+        init(
+            id: String,
+            selectedByDefault: Bool,
+            isLocked: Bool = false
+        ) {
+            self.id = id
+            self.selectedByDefault = selectedByDefault
+            self.isLocked = isLocked
+        }
     }
 
     struct Card: Identifiable, Equatable {
@@ -74,6 +66,7 @@ struct ImportViewModel: Equatable {
         let aliases: [String]
         let summary: String
         let subtitle: String
+        let headerMetaLine: String?
         let stats: Stats
         let skillsLoading: Bool
         let targetsLoading: Bool
@@ -85,7 +78,6 @@ struct ImportViewModel: Equatable {
         let localValidationStatus: String?
         let selectedLocalChoiceId: String?
         let localChoices: [MainViewModel.LocalImportChoice]
-        let localSourcePaths: [LocalSourcePath]
         let requiresLocalVariantSelection: Bool
 
         init(
@@ -99,6 +91,7 @@ struct ImportViewModel: Equatable {
             aliases: [String],
             summary: String,
             subtitle: String,
+            headerMetaLine: String? = nil,
             stats: Stats,
             skillsLoading: Bool,
             targetsLoading: Bool,
@@ -110,7 +103,6 @@ struct ImportViewModel: Equatable {
             localValidationStatus: String? = nil,
             selectedLocalChoiceId: String? = nil,
             localChoices: [MainViewModel.LocalImportChoice] = [],
-            localSourcePaths: [LocalSourcePath] = [],
             requiresLocalVariantSelection: Bool = false
         ) {
             self.id = id
@@ -123,6 +115,7 @@ struct ImportViewModel: Equatable {
             self.aliases = aliases
             self.summary = summary
             self.subtitle = subtitle
+            self.headerMetaLine = headerMetaLine
             self.stats = stats
             self.skillsLoading = skillsLoading
             self.targetsLoading = targetsLoading
@@ -134,13 +127,11 @@ struct ImportViewModel: Equatable {
             self.localValidationStatus = localValidationStatus
             self.selectedLocalChoiceId = selectedLocalChoiceId
             self.localChoices = localChoices
-            self.localSourcePaths = localSourcePaths
             self.requiresLocalVariantSelection = requiresLocalVariantSelection
         }
     }
 
-    let cards: [Card]
-    let content: Content
+    let content: [Card]
 
     init(
         items: [MainViewModel.ImportGroupItem],
@@ -152,13 +143,11 @@ struct ImportViewModel: Equatable {
         let baseCards = items.map {
             Self.card(from: $0, locale: locale, fallbackTargetIds: fallbackTargetIds, submittedQuery: submittedQuery)
         }
-        self.cards = baseCards
 
         if submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let sections = Self.recommendedSections(cards: baseCards, recommendations: recommendations, locale: locale)
-            self.content = .recommended(sections)
+            self.content = Self.recommendedCards(cards: baseCards, recommendations: recommendations, locale: locale)
         } else {
-            self.content = .searchResults(baseCards)
+            self.content = baseCards
         }
     }
 
@@ -179,7 +168,8 @@ struct ImportViewModel: Equatable {
             isInstalledLocally: item.isInstalledLocally,
             aliases: item.aliases,
             summary: summary(for: item, locale: locale),
-            subtitle: subtitle(for: item.locator, locale: locale),
+            subtitle: subtitle(for: item, locale: locale),
+            headerMetaLine: headerMetaLine(for: item, locale: locale),
             stats: stats(for: item),
             skillsLoading: shouldShowSkillLoadingState(for: item),
             targetsLoading: false,
@@ -187,7 +177,8 @@ struct ImportViewModel: Equatable {
             targets: resolvedTargets(for: item, fallbackTargetIds: fallbackTargetIds).map {
                 Target(
                     id: $0.id,
-                    selectedByDefault: $0.selectedByDefault
+                    selectedByDefault: $0.selectedByDefault,
+                    isLocked: $0.isLocked
                 )
             },
             recommendationBadgeItems: [],
@@ -196,92 +187,66 @@ struct ImportViewModel: Equatable {
             localValidationStatus: item.localImport?.validationStatus,
             selectedLocalChoiceId: item.localImport?.selectedChoiceId,
             localChoices: item.localImport?.choices ?? [],
-            localSourcePaths: localSourcePaths(for: item),
             requiresLocalVariantSelection: item.localImport?.validationStatus == "version-conflict"
         )
     }
 
-    private static func recommendedSections(
+    private static func recommendedCards(
         cards: [Card],
         recommendations: [ImportRecommendationEntry],
         locale: Locale
-    ) -> [RecommendedCategorySection] {
+    ) -> [Card] {
         let localCards = cards.filter { $0.provider == "local" || $0.localValidationStatus != nil }
         let remoteCards = cards.filter { card in
             !localCards.contains(where: { $0.id == card.id })
         }
         let cardsByCanonicalRepo = cardsByRecommendationKey(remoteCards, key: \.canonicalRepo)
         let cardsByLocator = cardsByRecommendationKey(remoteCards, key: \.locator)
-        var sectionsByCategoryId: [String: [(entry: ImportRecommendationEntry, card: Card)]] = [:]
-
-        for entry in recommendations.sorted(by: recommendationSort) {
-            let key = normalizedRecommendationKey(entry.canonicalRepo)
-            let locatorKey = normalizedRecommendationKey(entry.locator)
-            guard let baseCard = cardsByCanonicalRepo[key] ?? cardsByLocator[locatorKey] else {
-                continue
-            }
-
-            let decoratedCard = Card(
-                id: baseCard.id,
-                title: baseCard.title,
-                locator: baseCard.locator,
-                canonicalRepo: baseCard.canonicalRepo,
-                preparationId: baseCard.preparationId,
-                preparationStatus: baseCard.preparationStatus,
-                isInstalledLocally: baseCard.isInstalledLocally,
-                aliases: baseCard.aliases,
-                summary: baseCard.summary,
-                subtitle: baseCard.subtitle,
-                stats: baseCard.stats,
-                skillsLoading: baseCard.skillsLoading,
-                targetsLoading: baseCard.targetsLoading,
-                skills: baseCard.skills,
-                targets: baseCard.targets,
-                recommendationBadgeItems: recommendationBadgeItems(for: entry, locale: locale),
-                recommendationDescription: localized(entry.descriptionKey, locale: locale),
-                provider: baseCard.provider,
-                localValidationStatus: baseCard.localValidationStatus,
-                selectedLocalChoiceId: baseCard.selectedLocalChoiceId,
-                localChoices: baseCard.localChoices,
-                localSourcePaths: baseCard.localSourcePaths,
-                requiresLocalVariantSelection: baseCard.requiresLocalVariantSelection
-            )
-
-            sectionsByCategoryId[entry.categoryId, default: []].append((entry: entry, card: decoratedCard))
-        }
-
-        let remoteSections = sectionsByCategoryId
-            .map { categoryId, entries in
-                return RecommendedCategorySection(
-                    id: categoryId,
-                    categoryId: categoryId,
-                    title: localized("import.recommendation.category.\(categoryId)", locale: locale),
-                    cards: entries.sorted(by: { recommendationSort($0.entry, $1.entry) }).map(\.card)
-                )
-            }
-            .sorted { lhs, rhs in
-                guard let lhsOrder = sectionsByCategoryId[lhs.categoryId]?.map(\.entry.sortOrder).min(),
-                      let rhsOrder = sectionsByCategoryId[rhs.categoryId]?.map(\.entry.sortOrder).min() else {
-                    return lhs.categoryId < rhs.categoryId
+        let recommendedRemoteCards = recommendations
+            .sorted(by: recommendationSort)
+            .compactMap { entry -> Card? in
+                let key = normalizedRecommendationKey(entry.canonicalRepo)
+                let locatorKey = normalizedRecommendationKey(entry.locator)
+                guard let baseCard = cardsByCanonicalRepo[key] ?? cardsByLocator[locatorKey] else {
+                    return nil
                 }
-                if lhsOrder != rhsOrder {
-                    return lhsOrder < rhsOrder
-                }
-                return lhs.categoryId < rhs.categoryId
+
+                return decoratedRecommendationCard(from: baseCard, entry: entry, locale: locale)
             }
 
-        guard !localCards.isEmpty else {
-            return remoteSections
-        }
+        return localCards + recommendedRemoteCards
+    }
 
-        return [
-            RecommendedCategorySection(
-                id: "local",
-                categoryId: "local",
-                title: localized("import.local.detected.title", locale: locale),
-                cards: localCards
-            )
-        ] + remoteSections
+    private static func decoratedRecommendationCard(
+        from baseCard: Card,
+        entry: ImportRecommendationEntry,
+        locale: Locale
+    ) -> Card {
+        Card(
+            id: baseCard.id,
+            title: baseCard.title,
+            locator: baseCard.locator,
+            canonicalRepo: baseCard.canonicalRepo,
+            preparationId: baseCard.preparationId,
+            preparationStatus: baseCard.preparationStatus,
+            isInstalledLocally: baseCard.isInstalledLocally,
+            aliases: baseCard.aliases,
+            summary: baseCard.summary,
+            subtitle: baseCard.subtitle,
+            headerMetaLine: baseCard.headerMetaLine,
+            stats: baseCard.stats,
+            skillsLoading: baseCard.skillsLoading,
+            targetsLoading: baseCard.targetsLoading,
+            skills: baseCard.skills,
+            targets: baseCard.targets,
+            recommendationBadgeItems: recommendationBadgeItems(for: entry, locale: locale),
+            recommendationDescription: localized(entry.descriptionKey, locale: locale),
+            provider: baseCard.provider,
+            localValidationStatus: baseCard.localValidationStatus,
+            selectedLocalChoiceId: baseCard.selectedLocalChoiceId,
+            localChoices: baseCard.localChoices,
+            requiresLocalVariantSelection: baseCard.requiresLocalVariantSelection
+        )
     }
 
     private static func cardsByRecommendationKey(_ cards: [Card], key: KeyPath<Card, String>) -> [String: Card] {
@@ -300,16 +265,13 @@ struct ImportViewModel: Equatable {
         for entry: ImportRecommendationEntry,
         locale: Locale
     ) -> [RecommendationBadgeItem] {
-        let secondaryTagIds = Array(entry.secondaryTagIds.prefix(2))
-        let tagIds = [entry.primaryTagId] + secondaryTagIds
-
-        return tagIds.enumerated().map { index, tagId in
+        [
             RecommendationBadgeItem(
-                id: tagId,
-                title: localized("import.recommendation.tag.\(tagId)", locale: locale),
-                isPrimary: index == 0
+                id: entry.primaryTagId,
+                title: localized("import.recommendation.tag.\(entry.primaryTagId)", locale: locale),
+                isPrimary: true
             )
-        }
+        ]
     }
 
     private static func recommendationSort(_ lhs: ImportRecommendationEntry, _ rhs: ImportRecommendationEntry) -> Bool {
@@ -346,7 +308,7 @@ struct ImportViewModel: Equatable {
         case .loading:
             return item.skills.isEmpty
         case .idle:
-            return item.skills.isEmpty
+            return false
         case .ready, .failed:
             return false
         }
@@ -411,33 +373,49 @@ struct ImportViewModel: Equatable {
             .map(\.skill)
     }
 
+    private struct ResolvedTarget {
+        let id: String
+        let selectedByDefault: Bool
+        let isLocked: Bool
+    }
+
     private static func resolvedTargets(
         for item: MainViewModel.ImportGroupItem,
         fallbackTargetIds: [String]
-    ) -> [MainViewModel.ImportGroupTarget] {
-        if !item.targets.isEmpty {
-            return item.targets
+    ) -> [ResolvedTarget] {
+        let sourceTargetIds = localSourceTargetIds(for: item)
+        let explicitTargetsById = Dictionary(uniqueKeysWithValues: item.targets.map { ($0.id, $0) })
+        var orderedTargetIds: [String] = []
+
+        for targetId in item.targets.map(\.id) + fallbackTargetIds + sourceTargetIds {
+            guard !orderedTargetIds.contains(targetId) else {
+                continue
+            }
+            orderedTargetIds.append(targetId)
         }
 
-        return fallbackTargetIds.map { targetId in
-            MainViewModel.ImportGroupTarget(id: targetId, selectedByDefault: false)
+        return orderedTargetIds.map { targetId in
+            ResolvedTarget(
+                id: targetId,
+                selectedByDefault: explicitTargetsById[targetId]?.selectedByDefault ?? sourceTargetIds.contains(targetId),
+                isLocked: sourceTargetIds.contains(targetId)
+            )
         }
     }
 
-    private static func localSourcePaths(for item: MainViewModel.ImportGroupItem) -> [LocalSourcePath] {
-        let detectedSkills = item.localImport?.detectedSkills ?? []
-        let uniquePaths = Array(Set(detectedSkills.map(\.localPath))).sorted()
-        return uniquePaths.map { localPath in
-            let targets = detectedSkills
-                .filter { $0.localPath == localPath }
-                .flatMap(\.discoveredTargets)
-            return LocalSourcePath(
-                id: localPath,
-                path: localPath,
-                targetLabel: targets.sorted().first,
-                isManual: targets.isEmpty
-            )
+    private static func localSourceTargetIds(for item: MainViewModel.ImportGroupItem) -> [String] {
+        var targetIds: [String] = []
+
+        for detectedSkill in item.localImport?.detectedSkills ?? [] {
+            for targetId in detectedSkill.discoveredTargets {
+                guard !targetIds.contains(targetId) else {
+                    continue
+                }
+                targetIds.append(targetId)
+            }
         }
+
+        return targetIds
     }
 
     private static func summary(for item: MainViewModel.ImportGroupItem, locale: Locale) -> String {
@@ -468,7 +446,12 @@ struct ImportViewModel: Equatable {
         }
     }
 
-    private static func subtitle(for locator: String, locale: Locale) -> String {
+    private static func subtitle(for item: MainViewModel.ImportGroupItem, locale: Locale) -> String {
+        if item.provider == "local" || item.localImport != nil {
+            return localized("import.card.subtitle.local_scan", locale: locale)
+        }
+
+        let locator = item.locator
         let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
         let patterns = [
             #"github\.com/([^/\s]+)/"#,
@@ -490,6 +473,17 @@ struct ImportViewModel: Equatable {
         }
 
         return localized("import.card.subtitle.recommended", locale: locale)
+    }
+
+    private static func headerMetaLine(for item: MainViewModel.ImportGroupItem, locale: Locale) -> String? {
+        guard item.provider == "local" || item.localImport != nil else {
+            return nil
+        }
+        let sourcePathCount = Set((item.localImport?.detectedSkills ?? []).map(\.localPath)).count
+        guard sourcePathCount > 0 else {
+            return nil
+        }
+        return localized("import.card.meta.local_scan_sources", locale: locale, sourcePathCount)
     }
 
     private static func formattedCount(_ value: Int) -> String {

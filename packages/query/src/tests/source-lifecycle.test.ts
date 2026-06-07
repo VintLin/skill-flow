@@ -8,8 +8,7 @@ import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import { SkillFlowApp } from "../runtime.js";
-import { StateStoreV2, StateStoreV2Error } from "@skill-flow/storage/state-store-v2";
-import { projectStateV2ToView } from "../state-v2-view.js";
+import { StateStore, StateStoreError } from "@skill-flow/storage/state-store";
 import {
   createRepo,
   pathExists,
@@ -19,9 +18,9 @@ import {
   useSkillFlowSandbox,
 } from "./test-helpers.js";
 
-const v2 = (app: { store: { rootPath: string } }): StateStoreV2 => new StateStoreV2(app.store.rootPath);
+const v2 = (app: { store: { rootPath: string } }): StateStore => new StateStore(app.store.rootPath);
 const view = async (app: { store: { rootPath: string } }) =>
-  projectStateV2ToView(await v2(app).readState());
+  v2(app).readState();
 
 describe.sequential("source lifecycle", () => {
   const sandbox = useSkillFlowSandbox();
@@ -42,9 +41,11 @@ describe.sequential("source lifecycle", () => {
     expect(result.data.leafCount).toBe(2);
     expect(result.warnings).toHaveLength(0);
 
-    const { manifest } = await view(app);
+    const { manifest, lockFile } = await view(app);
     const binding = manifest.bindings[result.data.manifest.id];
-    expect(Object.keys(binding?.targets ?? {})).toEqual([
+    expect(binding?.selectionMode).toBe("all");
+    expect(binding?.selectedLeafIds).toEqual([]);
+    expect(binding?.enabledTargets).toEqual([
       "claude-code",
       "codex",
       "cursor",
@@ -60,7 +61,7 @@ describe.sequential("source lifecycle", () => {
       "amp",
       "kiro",
     ]);
-    expect(binding?.targets["claude-code"]?.leafIds).toEqual([
+    expect(lockFile.sources[result.data.manifest.id]?.leafIds).toEqual([
       `${result.data.manifest.id}:frontend`,
       `${result.data.manifest.id}:ops`,
     ]);
@@ -95,7 +96,8 @@ describe.sequential("source lifecycle", () => {
 
     const { manifest } = await view(app);
     const binding = manifest.bindings[result.data.manifest.id];
-    expect(binding?.targets["claude-code"]?.leafIds).toEqual([
+    expect(binding?.selectionMode).toBe("selected");
+    expect(binding?.selectedLeafIds).toEqual([
       `${result.data.manifest.id}:skills/find-skills`,
     ]);
   });
@@ -114,13 +116,13 @@ describe.sequential("source lifecycle", () => {
     }
     const { manifest, lockFile } = await view(app);
     const source = manifest.sources.find((item) => item.id === "demo-source");
-    const lockSource = lockFile.sources.find((item) => item.id === "demo-source");
+    const lockSource = lockFile.sources["demo-source"];
     const expectedCheckoutPath = app.store.getSourceCheckoutPath("local", "demo-source");
 
     expect(added.data.manifest.id).toBe("demo-source");
     expect(source?.id).toBe("demo-source");
-    expect(lockSource?.checkoutPath).toBe(expectedCheckoutPath);
-    expect(path.basename(lockSource?.checkoutPath ?? "")).toBe("demo-source");
+    expect(lockSource?.localPath).toBe(expectedCheckoutPath);
+    expect(path.basename(lockSource?.localPath ?? "")).toBe("demo-source");
     expect(lockSource?.leafIds).toEqual(["demo-source:skills/review"]);
     expect(lockFile.leafInventory.map((leaf) => leaf.id)).toEqual(["demo-source:skills/review"]);
     expect(lockFile.leafInventory.map((leaf) => leaf.sourceId)).toEqual(["demo-source"]);
@@ -152,7 +154,7 @@ describe.sequential("source lifecycle", () => {
     expect(result.data).not.toHaveProperty("sourceSnapshot");
   });
 
-  test("inspectSource reads managed deployment details from projections when deployments are empty", async () => {
+  test("inspectSource reads managed deployment details from projections", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
@@ -174,10 +176,6 @@ describe.sequential("source lifecycle", () => {
     if (!applied.ok) {
       return;
     }
-
-    const { manifest, lockFile } = await v2(app).readState();
-    lockFile.deployments = [];
-    await v2(app).writeState({ ...(await v2(app).readState()), manifest: manifest, lockFile: lockFile });
 
     const result = await app.inspectSource(sourceId);
 
@@ -219,6 +217,49 @@ describe.sequential("source lifecycle", () => {
     expect(applied.data.inspect?.summary.source.id).toBe(sourceId);
     expect(applied.data.inspect?.binding.targets.codex?.enabled).toBe(true);
     expect(applied.data.inspect?.deployments[0]?.target).toBe("codex");
+  });
+
+  test("doctor removes orphan target symlinks after mode-free active projection state", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const stateStore = v2(app);
+    const state = await stateStore.readState();
+    const sourceLock = state.lockFile.sources["demo-source"];
+    expect(sourceLock).toBeDefined();
+    if (!sourceLock) {
+      return;
+    }
+    expect(state.lockFile.projections).toEqual(
+      state.lockFile.projections.map(() =>
+        expect.not.objectContaining({ mode: expect.anything() }),
+      ),
+    );
+    const targetPath = path.join(sandbox.targetsRoot, "codex", "orphan-review");
+    await fs.symlink(path.join(sourceLock.localPath, "skills", "review"), targetPath, "junction");
+
+    const result = await app.doctor();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.warnings.some((warning) => warning.code === "ORPHAN_TARGET_SYMLINK_REMOVED"))
+      .toBe(true);
+    await expect(pathExists(targetPath)).resolves.toBe(false);
+    const repaired = await stateStore.readState();
+    expect(repaired.lockFile.projections).toEqual(
+      repaired.lockFile.projections.map(() =>
+        expect.not.objectContaining({ mode: expect.anything() }),
+      ),
+    );
   });
 
   test("inspectSourceEnrichment returns metadata and snapshot without recomputing local shell", async () => {
@@ -327,7 +368,7 @@ describe.sequential("source lifecycle", () => {
     }
 
     const { lockFile: lock } = await view(app);
-    const sourceLock = lock.sources.find((source) => source.id === added.data.manifest.id);
+    const sourceLock = lock.sources[added.data.manifest.id];
 
     expect(sourceLock?.importMode).toBe("bootstrap-detected");
     expect(sourceLock?.observedTargets).toEqual(observedTargets);
@@ -380,6 +421,14 @@ describe.sequential("source lifecycle", () => {
 
     expect(result.data.manifest.id).toBe("vercel-labs-skills");
     expect(result.data.manifest.requestedPath).toBe("skills/find-skills");
+    const state = await v2(app).readState();
+    const source = state.manifest.sources.find((item) => item.id === result.data.manifest.id);
+    const lock = state.lockFile.sources[result.data.manifest.id];
+    expect(source?.kind).toBe("git");
+    expect(lock?.revision.provider).toBe("git");
+    expect(lock?.localPath).toBe(
+      app.store.getSourceCheckoutPath("git", result.data.manifest.id),
+    );
   }, 30000);
 
   test("combines GitHub tree paths with --path relative to the tree location", async () => {
@@ -890,7 +939,7 @@ description: |
     });
     await fs.writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
 
-    await expect(app.listWorkflows()).rejects.toBeInstanceOf(StateStoreV2Error);
+    await expect(app.listWorkflows()).rejects.toBeInstanceOf(StateStoreError);
   });
 
   test("repairSource refreshes a local checkout from origin without mutating target disk", async () => {
@@ -914,7 +963,7 @@ description: |
       selectedLeafIds: [leafId],
     });
     const { lockFile: lockBefore } = await view(app);
-    const targetPath = lockBefore.deployments.find(
+    const targetPath = lockBefore.projections.find(
       (deployment) => deployment.sourceId === sourceId && deployment.target === "openclaw",
     )?.targetPath;
     expect(targetPath).toBeTruthy();
@@ -982,7 +1031,7 @@ description: |
     expect(lastEvent?.details).toHaveProperty("stateTransition.after.projections");
   });
 
-  test("renameSource updates manifest and lock display names without changing ids or bindings", async () => {
+  test("renameSource updates manifest display names without changing ids bindings or projections", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
     });
@@ -996,7 +1045,6 @@ description: |
 
     const before = await view(app);
     const beforeBinding = before.manifest.bindings["demo-source"];
-    const beforeDeployments = before.lockFile.deployments;
     const beforeProjections = before.lockFile.projections ?? [];
     const renamed = await app.renameSource("demo-source", "  Writing Tools  ");
 
@@ -1014,25 +1062,13 @@ description: |
 
     const after = await view(app);
     expect(after.manifest.sources.find((source) => source.id === "demo-source")?.displayName).toBe("Writing Tools");
-    expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.displayName).toBe("Writing Tools");
     expect(after.manifest.sources.find((source) => source.id === "demo-source")?.id).toBe("demo-source");
+    expect(after.lockFile.sources["demo-source"]?.sourceId).toBe("demo-source");
     expect(after.manifest.bindings["demo-source"]).toEqual(beforeBinding);
-    expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.checkoutPath).toBe(
-      before.lockFile.sources.find((source) => source.id === "demo-source")?.checkoutPath,
+    expect(after.lockFile.sources["demo-source"]?.localPath).toBe(
+      before.lockFile.sources["demo-source"]?.localPath,
     );
-    expect(after.lockFile.deployments).toHaveLength(beforeDeployments.length);
     expect(after.lockFile.projections ?? []).toHaveLength(beforeProjections.length);
-    expect(after.lockFile.deployments.map((deployment) => ({
-      sourceId: deployment.sourceId,
-      leafId: deployment.leafId,
-      target: deployment.target,
-      targetPath: deployment.targetPath,
-    }))).toEqual(beforeDeployments.map((deployment) => ({
-      sourceId: deployment.sourceId,
-      leafId: deployment.leafId,
-      target: deployment.target,
-      targetPath: deployment.targetPath,
-    })));
     expect((after.lockFile.projections ?? []).map((projection) => ({
       sourceId: projection.sourceId,
       leafId: projection.leafId,
@@ -1083,6 +1119,6 @@ description: |
     });
     const after = await view(app);
     expect(after.manifest.sources.find((source) => source.id === "demo-source")?.displayName).toBe(originalDisplayName);
-    expect(after.lockFile.sources.find((source) => source.id === "demo-source")?.displayName).toBe(originalDisplayName);
+    expect(after.lockFile.sources["demo-source"]?.sourceId).toBe("demo-source");
   });
 });

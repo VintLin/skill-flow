@@ -14,8 +14,7 @@ final class ImportScreenContainer {
     struct Snapshot {
         let searchPhase: MainViewModel.ImportLoadPhase
         let submittedQuery: String
-        let cards: [ImportViewModel.Card]
-        let content: ImportViewModel.Content
+        let content: [ImportViewModel.Card]
         let importingGroupId: String?
     }
 
@@ -57,14 +56,13 @@ final class ImportScreenContainer {
         let viewModel = ImportViewModel(
             items: mainViewModel.importDisplayGroups,
             locale: locale,
-            fallbackTargetIds: mainViewModel.visibleTargets.map(\.id),
+            fallbackTargetIds: mainViewModel.importPageTargetIds,
             submittedQuery: mainViewModel.importSubmittedQuery,
             recommendations: recommendationsProvider()
         )
         return Snapshot(
             searchPhase: mainViewModel.importSearchPhase,
             submittedQuery: mainViewModel.importSubmittedQuery,
-            cards: viewModel.cards,
             content: viewModel.content,
             importingGroupId: mainViewModel.importingImportGroupId
         )
@@ -79,13 +77,7 @@ final class ImportScreenContainer {
         await mainViewModel.submitImportSearch(locator)
     }
 
-    func importLocalDirectory(_ path: String) async {
-        screenState.searchText = path
-        await mainViewModel.loadLocalImportGroups(path: path)
-        mainViewModel.importPageMode = .localScan
-    }
-
-    func previewGroupsIfNeeded(_ groupIds: [String]) async {
+    func prefetchGroupSkillDetailsIfNeeded(_ groupIds: [String]) async {
         let maxConcurrentPreviews = 2
         var iterator = groupIds.makeIterator()
         await withTaskGroup(of: Void.self) { group in
@@ -105,28 +97,50 @@ final class ImportScreenContainer {
         }
     }
 
+    func importLocalDirectory(_ path: String) async {
+        screenState.searchText = path
+        await mainViewModel.loadLocalImportGroups(path: path)
+        mainViewModel.importPageMode = .localScan
+    }
+
     func importGroup(_ card: ImportViewModel.Card) async {
         let choice = selectedLocalChoice(for: card)
         let locator = choice?.locator ?? card.locator
-        let selectedSkillIds = selectedSkillIdsForImport(for: card)
         let selectedSkills = selectedSkillsForImport(for: card)
-        guard !selectedSkillIds.isEmpty || card.skills.isEmpty else {
-            return
-        }
+        let skillSelectionMode = skillSelectionModeForImport(for: card)
         let draft = draft(for: card)
 
         await mainViewModel.importImportGroup(
             groupId: card.id,
             locator: locator,
-            selectedSkillIds: selectedSkillIds,
             selectedSkills: selectedSkills,
+            skillSelectionMode: skillSelectionMode,
             enabledTargets: draft.enabledTargetIds
         )
     }
 
     func handleImportAction(for card: ImportViewModel.Card) async {
+        if let importingGroupId = mainViewModel.importingImportGroupId {
+            if importingGroupId == card.id {
+                mainViewModel.showImportInProgressToast()
+            } else {
+                mainViewModel.showImportAnotherRunningToast()
+            }
+            return
+        }
+
         if card.isInstalledLocally {
             mainViewModel.showImportAlreadyExistsToast()
+            return
+        }
+
+        if card.requiresLocalVariantSelection {
+            mainViewModel.showImportLocalVariantRequiredToast()
+            return
+        }
+
+        if card.preparationStatus == "preparing" {
+            mainViewModel.showImportPreparationInProgressToast()
             return
         }
 
@@ -134,39 +148,39 @@ final class ImportScreenContainer {
     }
 
     func targetLabel(for targetId: String) -> String {
-        mainViewModel.visibleTargets.first(where: { $0.id == targetId })?.label ?? targetId
+        mainViewModel.importTargetLabel(for: targetId)
     }
 
     func draft(for card: ImportViewModel.Card) -> ImportDraftState {
         state.importState.draftsByItemId[card.id]
             ?? ImportDraftState(
-                selectedSkills: card.skills.filter(\.selectedByDefault).map(\.selection),
-                enabledTargetIds: []
+                selectedSkills: card.skills.map(\.selection),
+                enabledTargetIds: card.targets.filter(\.selectedByDefault).map(\.id)
             )
-    }
-
-    func selectedSkillIdsForImport(for card: ImportViewModel.Card) -> [String] {
-        let draft = draft(for: card)
-        guard let choice = selectedLocalChoice(for: card),
-              !choice.selectedSkillIds.isEmpty else {
-            return draft.selectedSkillIds
-        }
-
-        let draftSelected = Set(draft.selectedSkillIds)
-        return choice.selectedSkillIds.filter { draftSelected.contains($0) }
     }
 
     func selectedSkillsForImport(for card: ImportViewModel.Card) -> [ImportSkillSelection] {
         let draft = draft(for: card)
         guard let choice = selectedLocalChoice(for: card),
-              !choice.selectedSkillIds.isEmpty else {
+              !choice.selectedSkills.isEmpty else {
             return draft.selectedSkills
         }
 
-        let draftSelected = Set(draft.selectedSkillIds)
-        return choice.selectedSkillIds
-            .filter { draftSelected.contains($0) }
-            .map(ImportSkillSelection.repoPath)
+        let draftSelected = Set(draft.selectedSkills.map(\.uiId))
+        return choice.selectedSkills.filter { draftSelected.contains($0.uiId) }
+    }
+
+    func skillSelectionModeForImport(for card: ImportViewModel.Card) -> ImportSkillSelectionMode {
+        if state.importState.draftsByItemId[card.id] != nil {
+            return .selected
+        }
+        if card.selectedLocalChoiceId != nil {
+            return .selected
+        }
+        if screenState.localChoiceByItemId[card.id] != nil {
+            return .selected
+        }
+        return .all
     }
 
     func selectedLocalChoice(for card: ImportViewModel.Card) -> MainViewModel.LocalImportChoice? {
@@ -181,7 +195,7 @@ final class ImportScreenContainer {
 
     func setSkill(_ skillId: String, enabled: Bool, for card: ImportViewModel.Card) {
         let current = draft(for: card)
-        let selectedIds = Set(current.selectedSkillIds)
+        let selectedIds = Set(current.selectedSkills.map(\.uiId))
         let nextSelectedIds: [String]
 
         if enabled {
@@ -198,7 +212,7 @@ final class ImportScreenContainer {
 
     func toggleAllSkills(for card: ImportViewModel.Card) {
         let current = draft(for: card)
-        let nextSelectedIds = current.selectedSkillIds.count == card.skills.count ? [] : card.skills.map(\.id)
+        let nextSelectedIds = current.selectedSkills.count == card.skills.count ? [] : card.skills.map(\.id)
 
         state.importState.draftsByItemId[card.id] = ImportDraftState(
             selectedSkills: card.skills.filter { nextSelectedIds.contains($0.id) }.map(\.selection),
@@ -207,6 +221,9 @@ final class ImportScreenContainer {
     }
 
     func setTarget(_ targetId: String, enabled: Bool, for card: ImportViewModel.Card) {
+        guard !isLockedTarget(targetId, for: card) else {
+            return
+        }
         let current = draft(for: card)
         let enabledTargetIds = Set(current.enabledTargetIds)
         let nextTargetIds: [String]
@@ -225,11 +242,30 @@ final class ImportScreenContainer {
 
     func toggleAllTargets(for card: ImportViewModel.Card) {
         let current = draft(for: card)
-        let nextTargetIds = current.enabledTargetIds.count == card.targets.count ? [] : card.targets.map(\.id)
+        let lockedTargetIds = Set(card.targets.filter(\.isLocked).map(\.id))
+        let editableTargetIds = card.targets.map(\.id).filter { !lockedTargetIds.contains($0) }
+        let selectedTargetIds = Set(current.enabledTargetIds)
+        let editableSelectedCount = editableTargetIds.filter { selectedTargetIds.contains($0) }.count
+        let nextEditableTargetIds = editableSelectedCount == editableTargetIds.count ? [] : editableTargetIds
+        let nextTargetIds = card.targets.map(\.id).filter {
+            lockedTargetIds.contains($0) || nextEditableTargetIds.contains($0)
+        }
 
         state.importState.draftsByItemId[card.id] = ImportDraftState(
             selectedSkills: current.selectedSkills,
             enabledTargetIds: nextTargetIds
         )
+    }
+
+    func handleTargetToggle(_ targetId: String, enabled: Bool, for card: ImportViewModel.Card) {
+        if isLockedTarget(targetId, for: card) {
+            mainViewModel.showImportLocalSourceTargetLockedToast(targetId: targetId)
+            return
+        }
+        setTarget(targetId, enabled: enabled, for: card)
+    }
+
+    private func isLockedTarget(_ targetId: String, for card: ImportViewModel.Card) -> Bool {
+        card.targets.first(where: { $0.id == targetId })?.isLocked ?? false
     }
 }

@@ -3,6 +3,8 @@ import Foundation
 enum BridgeCommand: String, Codable, Sendable {
     case bootstrap
     case list
+    case inspectStateMigration = "inspect-state-migration"
+    case migrateState = "migrate-state"
     case inspect
     case inspectEnrichment = "inspect-enrichment"
     case searchImportGroups = "search-import-groups"
@@ -11,9 +13,9 @@ enum BridgeCommand: String, Codable, Sendable {
     case previewImportSource = "preview-import-source"
     case commitImportSource = "commit-import-source"
     case importSource = "import-source"
-    case createVirtualGroup = "create-virtual-group"
+    case createCollection = "create-collection"
     case mergeGroups = "merge-groups"
-    case restoreMergedGroups = "restore-merged-groups"
+    case restoreCollectionSources = "restore-collection-sources"
     case renameSource = "rename-source"
     case togglePin = "toggle-pin"
     case doctor
@@ -96,7 +98,7 @@ enum ProjectScopeSelection: Hashable, Codable, Sendable {
     }
 }
 
-struct VirtualGroupSkillRef: Hashable, Sendable {
+struct CollectionSkillRef: Hashable, Sendable {
     let sourceId: String
     let leafId: String
 }

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { StateStoreV2 } from "@skill-flow/storage/state-store-v2";
+import { StateStore } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
 import { createRepo, pathExists, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
@@ -12,7 +12,7 @@ describe.sequential("state schema v2 target repair", () => {
     const previousRoot = process.env.SKILL_FLOW_TARGET_CODEX!;
     const currentRoot = path.join(sandbox.targetsRoot, "codex-current");
     const app = await seedProjectedSource();
-    const store = new StateStoreV2(app.store.rootPath);
+    const store = new StateStore(app.store.rootPath);
     const state = await store.readState();
     state.lockFile.projections = state.lockFile.projections.map((projection) =>
       projection.sourceId === "repair-source" && projection.leafId === "repair-source:skills/review"
@@ -55,7 +55,7 @@ describe.sequential("state schema v2 target repair", () => {
 
   test("repair blocks unknown target without writing stale path", async () => {
     const app = await seedProjectedSource();
-    const store = new StateStoreV2(app.store.rootPath);
+    const store = new StateStore(app.store.rootPath);
     const state = await store.readState();
     const staleRoot = path.join(sandbox.targetsRoot, "old-agent");
     const stalePath = path.join(staleRoot, "review");
@@ -104,7 +104,7 @@ describe.sequential("state schema v2 target repair", () => {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
       "skills/write/SKILL.md": skillDoc("write", "Write docs."),
     }, ["repair-source:skills/review", "repair-source:skills/write"]);
-    const store = new StateStoreV2(app.store.rootPath);
+    const store = new StateStore(app.store.rootPath);
     const state = await store.readState();
     state.manifest.bindings["repair-source"] = {
       sourceId: "repair-source",

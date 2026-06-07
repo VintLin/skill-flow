@@ -53,6 +53,27 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("detail.updated.unavailable", locale: Locale(identifier: "ja")), "更新時刻を取得できません")
     }
 
+    func testSourceTypeCollectionLabelUsesCombinedCopy() {
+        XCTAssertEqual(L10n.string("home.sidebar.collection", locale: Locale(identifier: "zh-Hans")), "组合")
+        XCTAssertEqual(L10n.string("home.sidebar.collection", locale: Locale(identifier: "en")), "Combined")
+        XCTAssertEqual(L10n.string("home.sidebar.collection", locale: Locale(identifier: "ja")), "組み合わせ")
+    }
+
+    func testGroupEditorUsesCombinedGroupCopy() {
+        XCTAssertEqual(
+            L10n.string("group_editor.summary.create", locale: Locale(identifier: "zh-Hans")),
+            "自由组合不同分组的技能，创建新的组合分组。"
+        )
+        XCTAssertEqual(
+            L10n.string("group_editor.summary.merge", locale: Locale(identifier: "en")),
+            "Combine selected groups into one combined group and hide the source groups."
+        )
+        XCTAssertEqual(
+            L10n.string("group_editor.impact.create_collection", locale: Locale(identifier: "ja")),
+            "組み合わせグループを作成します。"
+        )
+    }
+
     func testSkillManagementFilterAndRenameKeysExistInAllSupportedLocales() {
         let requiredKeys = [
             "home.sidebar.status",
@@ -65,7 +86,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "home.sidebar.pinned",
             "home.sidebar.local",
             "home.sidebar.remote",
-            "home.sidebar.virtual",
+            "home.sidebar.collection",
             "home.sidebar.expand",
             "home.sidebar.collapse",
             "group_card.action.rename",
@@ -113,7 +134,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "group_editor.section.skill_groups",
             "group_editor.loading",
             "source.author.local",
-            "source.author.virtual",
+            "source.author.collection",
             "group_editor.search.placeholder",
             "group_editor.search.empty",
             "group_editor.action.save",
@@ -121,7 +142,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "group_editor.validation.name_required",
             "group_editor.validation.skills_required",
             "group_editor.validation.groups_required",
-            "group_editor.impact.create_virtual_group",
+            "group_editor.impact.create_collection",
             "group_editor.impact.hide_groups",
             "group_editor.impact.clear_bindings",
             "group_editor.impact.save_restore_snapshot",
@@ -199,6 +220,9 @@ final class DesktopLocalizationTests: XCTestCase {
             "import.local.status.origin_unavailable",
             "import.local.status.local_only",
             "import.local.action.choose_version",
+            "toast.import.local_source_target_locked",
+            "import.card.subtitle.local_scan",
+            "import.card.meta.local_scan_sources",
             "import.error.scan_local",
         ]
         let locales = [
@@ -222,7 +246,32 @@ final class DesktopLocalizationTests: XCTestCase {
             let morePathsValue = L10n.string(morePathsKey, locale: locale, arguments: [2])
             XCTAssertNotEqual(morePathsValue, morePathsKey, "Missing localization for \(morePathsKey) in \(locale.identifier)")
             XCTAssertTrue(morePathsValue.contains("2"), "Missing source path count in \(locale.identifier)")
+
+            let lockedTargetToastValue = L10n.string(
+                "toast.import.local_source_target_locked",
+                locale: locale,
+                arguments: ["Claude Code"]
+            )
+            XCTAssertTrue(lockedTargetToastValue.contains("Claude Code"), "Missing locked target argument in \(locale.identifier)")
+
+            let subtitleValue = L10n.string("import.card.meta.local_scan_sources", locale: locale, arguments: [2])
+            XCTAssertTrue(subtitleValue.contains("2"), "Missing local scan subtitle count in \(locale.identifier)")
         }
+    }
+
+    func testChineseImportStringsUseZuInsteadOfEnglishGroup() {
+        XCTAssertEqual(
+            L10n.string("toast.import.exists", locale: Locale(identifier: "zh-Hans")),
+            "该组已存在于本地。"
+        )
+        XCTAssertEqual(
+            L10n.string("toast.import.preparing", locale: Locale(identifier: "zh-Hans")),
+            "正在准备该组的导入。"
+        )
+        XCTAssertEqual(
+            L10n.string("toast.import.in_progress", locale: Locale(identifier: "zh-Hans")),
+            "该组正在导入。"
+        )
     }
 
     func testChinesePinnedStatusUsesPinnedWording() {

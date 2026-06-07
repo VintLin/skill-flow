@@ -5,7 +5,7 @@ export type MigrateStateRuntime = {
     rootPath: string;
   };
   inspectStateMigration(): Promise<{ status: string }>;
-  migrateState(options: { to: 2; dryRun?: boolean; backup?: boolean }): Promise<
+  migrateState(options: { to: 2; dryRun?: boolean; backup?: boolean; tolerateOrphanSources?: boolean }): Promise<
     | {
         status: "current";
         actions: Array<{ action: string; path: string }>;
@@ -26,6 +26,7 @@ export type MigrateStateCliOptions = {
   to: string;
   dryRun?: boolean;
   backup?: boolean;
+  tolerateOrphanSources?: boolean;
 };
 
 export type MigrateStateCliIo = {
@@ -54,12 +55,15 @@ export async function runMigrateStateCli(
       io.stdout("State schema is current.");
     }
 
-    const migrateOptions: { to: 2; dryRun?: boolean; backup?: boolean } = { to: 2 };
+    const migrateOptions: { to: 2; dryRun?: boolean; backup?: boolean; tolerateOrphanSources?: boolean } = { to: 2 };
     if (options.dryRun !== undefined) {
       migrateOptions.dryRun = options.dryRun;
     }
     if (options.backup !== undefined) {
       migrateOptions.backup = options.backup;
+    }
+    if (options.tolerateOrphanSources !== undefined) {
+      migrateOptions.tolerateOrphanSources = options.tolerateOrphanSources;
     }
     const result = await runtime.migrateState(migrateOptions);
     if (result.status === "dry-run") {
