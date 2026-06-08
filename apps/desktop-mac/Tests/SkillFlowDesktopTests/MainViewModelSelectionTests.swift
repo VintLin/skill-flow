@@ -50,7 +50,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
     }
 
-    func testRefreshListRebuildsDraftWithAllSelectionModeUsingAllSummaryLeafIds() async throws {
+    func testBootstrapRebuildsDraftWithAllSelectionModeUsingAllSummaryLeafIds() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
         state.sources["alpha"]?.selectionMode = "all"
@@ -60,14 +60,12 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let model = try await fixture.makeModel()
 
-        await model.refreshList()
-
         XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
         XCTAssertTrue(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
         XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
     }
 
-    func testRefreshListRebuildsDraftWithSelectedSelectionModeUsingExplicitSelectedLeafIds() async throws {
+    func testBootstrapRebuildsDraftWithSelectedSelectionModeUsingExplicitSelectedLeafIds() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
         state.sources["alpha"]?.selectionMode = "selected"
@@ -76,8 +74,6 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: state)
 
         let model = try await fixture.makeModel()
-
-        await model.refreshList()
 
         XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .partial)
         XCTAssertFalse(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
@@ -2049,9 +2045,12 @@ private struct TestFixture {
           initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => {
             const enabledTargets = source.enabledTargets || [];
             const targetLeafIdsByTarget = source.targetLeafIdsByTarget || {};
-            const selectedLeafIds = (source.selectedLeafIds && source.selectedLeafIds.length > 0)
-              ? source.selectedLeafIds
-              : enabledTargets.flatMap((target) => targetLeafIdsByTarget[target] || []);
+            const allLeafIds = (source.leafs || []).map((leaf) => leaf.id);
+            const selectedLeafIds = source.selectionMode === 'all'
+              ? allLeafIds
+              : ((source.selectedLeafIds && source.selectedLeafIds.length > 0)
+                  ? source.selectedLeafIds
+                  : enabledTargets.flatMap((target) => targetLeafIdsByTarget[target] || []));
             return [sourceId, {
               selectedLeafIds,
               enabledTargets

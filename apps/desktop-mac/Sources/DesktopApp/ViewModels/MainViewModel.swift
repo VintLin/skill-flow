@@ -3460,10 +3460,12 @@ final class MainViewModel {
         if let initialDrafts = data["initialDrafts"] as? [String: Any] {
             for (sourceId, rawDraft) in initialDrafts {
                 guard let draftObject = rawDraft as? [String: Any] else { continue }
+                let key = ScopedSourceKey(scope: .global, sourceId: sourceId)
+                guard workingDrafts[key] == nil else { continue }
                 let selectedLeafIds = uniqueSorted(draftObject["selectedLeafIds"] as? [String] ?? [])
                 let enabledTargets = normalizedTargets(draftObject["enabledTargets"] as? [String] ?? [])
                 let draft = DraftState(selectedLeafIds: selectedLeafIds, enabledTargets: enabledTargets)
-                workingDrafts[ScopedSourceKey(scope: .global, sourceId: sourceId)] = draft
+                workingDrafts[key] = draft
             }
         }
 
