@@ -577,6 +577,37 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
     }
 
+    func testUpdateSourceProjectsRecentlyUpdatedIndicatorOntoGroupCards() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        var updatedAlpha = try XCTUnwrap(state.sources["alpha"])
+        updatedAlpha.updatedAt = "2026-03-31T00:00:00Z"
+        state.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: true,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: updatedAlpha
+            )
+        ]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.recentlyUpdatedIndicatorDuration = .seconds(5)
+
+        await model.updateSource("alpha")
+
+        let alphaCard = try XCTUnwrap(model.groupCards.first(where: { $0.id == "alpha" }))
+        let betaCard = try XCTUnwrap(model.groupCards.first(where: { $0.id == "beta" }))
+
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+        XCTAssertTrue(alphaCard.showsRecentlyUpdatedIndicator)
+        XCTAssertFalse(betaCard.showsRecentlyUpdatedIndicator)
+    }
+
     func testUpdatingSameSourceBeforeTimeoutResetsRecentlyUpdatedClearTask() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline

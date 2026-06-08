@@ -501,15 +501,17 @@ final class MenuBarIconTests: XCTestCase {
         )
 
         let successColor = NSColor(AppTheme.statusSuccess(for: .light))
+        let baselineRegion = headerTitlePixelRegion(for: baselineSnapshot.size)
+        let updatedRegion = headerTitlePixelRegion(for: updatedSnapshot.size)
         let baselineGreenPixels = matchingPixelCount(
             in: baselineSnapshot.bitmap,
             color: successColor,
-            region: CGRect(origin: .zero, size: baselineSnapshot.size)
+            region: baselineRegion
         )
         let updatedGreenPixels = matchingPixelCount(
             in: updatedSnapshot.bitmap,
             color: successColor,
-            region: CGRect(origin: .zero, size: updatedSnapshot.size)
+            region: updatedRegion
         )
 
         XCTAssertLessThan(baselineGreenPixels, 8)
@@ -542,8 +544,8 @@ final class MenuBarIconTests: XCTestCase {
         let warningColor = NSColor(AppTheme.statusWarning(for: .light))
         let errorColor = NSColor(AppTheme.statusError(for: .light))
         let successColor = NSColor(AppTheme.statusSuccess(for: .light))
-        let baselineRegion = CGRect(origin: .zero, size: baselineSnapshot.size)
-        let updatedRegion = CGRect(origin: .zero, size: updatedSnapshot.size)
+        let baselineRegion = headerTitlePixelRegion(for: baselineSnapshot.size)
+        let updatedRegion = headerTitlePixelRegion(for: updatedSnapshot.size)
 
         let baselineWarningPixels = matchingPixelCount(in: baselineSnapshot.bitmap, color: warningColor, region: baselineRegion)
         let updatedWarningPixels = matchingPixelCount(in: updatedSnapshot.bitmap, color: warningColor, region: updatedRegion)
@@ -777,5 +779,18 @@ final class MenuBarIconTests: XCTestCase {
         }
 
         return matches
+    }
+
+    private func headerTitlePixelRegion(for size: CGSize) -> CGRect {
+        let horizontalInset: CGFloat = 10
+        let topInset: CGFloat = 8
+        let regionHeight: CGFloat = 64
+        let regionWidth = max(1, min(size.width - (horizontalInset * 2), 264))
+        return CGRect(
+            x: horizontalInset,
+            y: topInset,
+            width: regionWidth,
+            height: min(regionHeight, size.height)
+        )
     }
 }
