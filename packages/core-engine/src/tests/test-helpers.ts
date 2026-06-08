@@ -32,6 +32,7 @@ export function useSkillFlowSandbox() {
     process.env.SKILL_FLOW_TARGET_OPENCODE = path.join(context.targetsRoot, "opencode");
     process.env.SKILL_FLOW_TARGET_OPENCLAW = path.join(context.targetsRoot, "openclaw");
     process.env.SKILL_FLOW_TARGET_HERMES_AGENT = path.join(context.targetsRoot, "hermes-agent");
+    process.env.SKILL_FLOW_TARGET_MINIMAX_CODE = path.join(context.targetsRoot, "minimax-code");
     process.env.SKILL_FLOW_TARGET_PI = path.join(context.targetsRoot, "pi");
     process.env.SKILL_FLOW_TARGET_WINDSURF = path.join(context.targetsRoot, "windsurf");
     process.env.SKILL_FLOW_TARGET_ROO_CODE = path.join(context.targetsRoot, "roo-code");
@@ -48,6 +49,7 @@ export function useSkillFlowSandbox() {
       fs.mkdir(process.env.SKILL_FLOW_TARGET_OPENCODE!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_OPENCLAW!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_HERMES_AGENT!, { recursive: true }),
+      fs.mkdir(process.env.SKILL_FLOW_TARGET_MINIMAX_CODE!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_PI!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_WINDSURF!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_ROO_CODE!, { recursive: true }),
@@ -68,6 +70,7 @@ export function useSkillFlowSandbox() {
     delete process.env.SKILL_FLOW_TARGET_OPENCODE;
     delete process.env.SKILL_FLOW_TARGET_OPENCLAW;
     delete process.env.SKILL_FLOW_TARGET_HERMES_AGENT;
+    delete process.env.SKILL_FLOW_TARGET_MINIMAX_CODE;
     delete process.env.SKILL_FLOW_TARGET_PI;
     delete process.env.SKILL_FLOW_TARGET_WINDSURF;
     delete process.env.SKILL_FLOW_TARGET_ROO_CODE;

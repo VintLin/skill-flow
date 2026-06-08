@@ -1769,6 +1769,7 @@ description: |
         "github-copilot",
         "gemini-cli",
         "hermes-agent",
+        "minimax-code",
         "windsurf",
         "roo-code",
         "cline",
@@ -1787,6 +1788,9 @@ description: |
     ).toBe(true);
     expect(
       await pathExists(path.join(process.env.SKILL_FLOW_TARGET_HERMES_AGENT!, "browse")),
+    ).toBe(true);
+    expect(
+      await pathExists(path.join(process.env.SKILL_FLOW_TARGET_MINIMAX_CODE!, "browse")),
     ).toBe(true);
     expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_WINDSURF!, "browse"))).toBe(
       true,
@@ -1819,6 +1823,7 @@ description: |
       "opencode",
       "openclaw",
       "hermes-agent",
+      "minimax-code",
       "pi",
       "windsurf",
       "roo-code",
@@ -1838,6 +1843,7 @@ description: |
       opencode: process.env.SKILL_FLOW_TARGET_OPENCODE,
       openclaw: process.env.SKILL_FLOW_TARGET_OPENCLAW,
       hermesAgent: process.env.SKILL_FLOW_TARGET_HERMES_AGENT,
+      minimaxCode: process.env.SKILL_FLOW_TARGET_MINIMAX_CODE,
       pi: process.env.SKILL_FLOW_TARGET_PI,
       windsurf: process.env.SKILL_FLOW_TARGET_WINDSURF,
       rooCode: process.env.SKILL_FLOW_TARGET_ROO_CODE,
@@ -1855,6 +1861,7 @@ description: |
       delete process.env.SKILL_FLOW_TARGET_OPENCODE;
       delete process.env.SKILL_FLOW_TARGET_OPENCLAW;
       delete process.env.SKILL_FLOW_TARGET_HERMES_AGENT;
+      delete process.env.SKILL_FLOW_TARGET_MINIMAX_CODE;
       delete process.env.SKILL_FLOW_TARGET_PI;
       delete process.env.SKILL_FLOW_TARGET_WINDSURF;
       delete process.env.SKILL_FLOW_TARGET_ROO_CODE;
@@ -1877,6 +1884,7 @@ description: |
       process.env.SKILL_FLOW_TARGET_OPENCODE = previousTargets.opencode;
       process.env.SKILL_FLOW_TARGET_OPENCLAW = previousTargets.openclaw;
       process.env.SKILL_FLOW_TARGET_HERMES_AGENT = previousTargets.hermesAgent;
+      process.env.SKILL_FLOW_TARGET_MINIMAX_CODE = previousTargets.minimaxCode;
       process.env.SKILL_FLOW_TARGET_PI = previousTargets.pi;
       process.env.SKILL_FLOW_TARGET_WINDSURF = previousTargets.windsurf;
       process.env.SKILL_FLOW_TARGET_ROO_CODE = previousTargets.rooCode;

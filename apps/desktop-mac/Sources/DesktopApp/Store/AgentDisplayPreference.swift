@@ -18,6 +18,7 @@ enum AgentDisplayCatalog {
         "opencode",
         "openclaw",
         "hermes-agent",
+        "minimax-code",
         "pi",
         "trae",
         "windsurf",
@@ -36,6 +37,7 @@ enum AgentDisplayCatalog {
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
         "hermes-agent": "Hermes Agent",
+        "minimax-code": "MiniMax Code",
         "pi": "Pi",
         "trae": "Trae",
         "windsurf": "Windsurf",
@@ -54,6 +56,7 @@ enum AgentDisplayCatalog {
         "opencode": "OP",
         "openclaw": "OC",
         "hermes-agent": "HA",
+        "minimax-code": "MX",
         "pi": "PI",
         "trae": "TR",
         "windsurf": "WS",
@@ -132,6 +135,8 @@ enum AgentDisplayCatalog {
             return homeDirectory.appendingPathComponent(".openclaw/skills", isDirectory: true).path
         case "hermes-agent":
             return homeDirectory.appendingPathComponent(".hermes/skills", isDirectory: true).path
+        case "minimax-code":
+            return homeDirectory.appendingPathComponent(".minimax/skills", isDirectory: true).path
         case "pi":
             return homeDirectory.appendingPathComponent(".pi/agent/skills", isDirectory: true).path
         case "trae":
@@ -165,6 +170,8 @@ enum AgentDisplayCatalog {
             return "skills"
         case "hermes-agent":
             return ".hermes/skills"
+        case "minimax-code":
+            return ".mavis/skills"
         case "pi":
             return ".pi/skills"
         case "trae":

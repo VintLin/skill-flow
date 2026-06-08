@@ -25,6 +25,7 @@ export type DeploymentTargetName =
   | "opencode"
   | "openclaw"
   | "hermes-agent"
+  | "minimax-code"
   | "pi"
   | "trae"
   | "windsurf"

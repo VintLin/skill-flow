@@ -54,6 +54,7 @@ describe.sequential("source lifecycle", () => {
       "opencode",
       "openclaw",
       "hermes-agent",
+      "minimax-code",
       "pi",
       "windsurf",
       "roo-code",

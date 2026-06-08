@@ -51,6 +51,9 @@ describe("target definitions", () => {
     expect(TARGET_PATH_CANDIDATES["hermes-agent"]).toContain(
       path.join(os.homedir(), ".hermes", "skills"),
     );
+    expect(TARGET_PATH_CANDIDATES["minimax-code"]).toContain(
+      path.join(os.homedir(), ".minimax", "skills"),
+    );
     expect(TARGET_PATH_CANDIDATES.trae).toContain(
       path.join(os.homedir(), ".trae", "skills"),
     );
@@ -101,6 +104,7 @@ describe("target definitions", () => {
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.codex).toBe(".agents/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.openclaw).toBe("skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS["hermes-agent"]).toBe(".hermes/skills/");
+    expect(TARGET_DOCUMENTED_PROJECT_PATHS["minimax-code"]).toBe(".mavis/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.pi).toBe(".pi/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.trae).toBe(".trae/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.windsurf).toBe(".windsurf/skills/");
@@ -110,6 +114,7 @@ describe("target definitions", () => {
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["github-copilot"]).toBe("~/.copilot/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["roo-code"]).toBe("~/.roo/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["hermes-agent"]).toBe("~/.hermes/skills/");
+    expect(TARGET_DOCUMENTED_GLOBAL_PATHS["minimax-code"]).toBe("~/.minimax/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.kiro).toBe("~/.kiro/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.trae).toBe("~/.trae/skills/");
   });
@@ -127,6 +132,9 @@ describe("target definitions", () => {
     expect(resolveDocumentedProjectSkillPath("hermes-agent", "/Users/test/src/repo-a")).toBe(
       "/Users/test/src/repo-a/.hermes/skills",
     );
+    expect(resolveDocumentedProjectSkillPath("minimax-code", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.mavis/skills",
+    );
     expect(resolveDocumentedProjectSkillPath("codex", "   ")).toBeNull();
   });
 
@@ -135,10 +143,12 @@ describe("target definitions", () => {
     expect(TARGET_ICON_ASSET_NAMES["github-copilot"]).toBe("copilot.svg");
     expect(TARGET_ICON_ASSET_NAMES.openclaw).toBe("clawdbot.svg");
     expect(TARGET_ICON_ASSET_NAMES["hermes-agent"]).toBe("hermesagent.svg");
+    expect(TARGET_ICON_ASSET_NAMES["minimax-code"]).toBe("minimax.svg");
     expect(TARGET_ICON_ASSET_NAMES.trae).toBe("trae.svg");
     expect(TARGET_ICON_ASSET_NAMES.pi).toBeUndefined();
     expect(TARGET_DEFINITIONS["roo-code"].documentedAgentIds).toEqual(["roo"]);
     expect(TARGET_DEFINITIONS["hermes-agent"].documentedAgentIds).toEqual(["hermes"]);
+    expect(TARGET_DEFINITIONS["minimax-code"].documentedAgentIds).toEqual(["minimax"]);
     expect(TARGET_DEFINITIONS.kiro.documentedAgentIds).toEqual(["kiro-cli"]);
   });
 

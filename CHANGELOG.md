@@ -6,6 +6,7 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ### Added
 
+- Added built-in MiniMax Code target support for deploying selected skills to `~/.minimax/skills/`, displaying `.mavis/skills/` as its project path, and discovering `.mavis/skills` source layouts.
 - Added the `migrate-state --to v2` CLI flow, migration status inspection, and state authority rebuild coverage so existing Skill Flow installs can move into the v2 state layout explicitly.
 - Added a dedicated import-preparation cache and stale-preparation recovery flow across query runtime, CLI bridge, and desktop bridge paths.
 - Added curated recommendation metadata, localized recommendation copy, and recommendation ordering tests for the macOS import screen.

@@ -17,6 +17,7 @@ enum AgentIconLibrary {
         "opencode": "opencode.svg",
         "openclaw": "clawdbot.svg",
         "hermes-agent": "hermesagent.svg",
+        "minimax-code": "minimax.svg",
         "windsurf": "windsurf.svg",
         "trae": "trae.svg",
         "roo-code": "roo.svg",
@@ -133,16 +134,16 @@ enum AgentIconLibrary {
     }
 
     private static func loadImage(from url: URL, targetId: String) -> NSImage? {
-        if targetId == "hermes-agent",
+        if (targetId == "hermes-agent" || targetId == "minimax-code"),
            url.pathExtension.lowercased() == "svg",
-           let image = loadHermesSVG(from: url) {
+           let image = loadCurrentColorSVG(from: url) {
             return image
         }
 
         return NSImage(contentsOf: url)
     }
 
-    private static func loadHermesSVG(from url: URL) -> NSImage? {
+    private static func loadCurrentColorSVG(from url: URL) -> NSImage? {
         guard
             let data = try? Data(contentsOf: url),
             let svg = String(data: data, encoding: .utf8)
@@ -209,7 +210,7 @@ enum AgentIconLibrary {
 
     private static func symbolAlphaMode(for targetId: String) -> SymbolAlphaMode {
         switch targetId {
-        case "hermes-agent":
+        case "hermes-agent", "minimax-code":
             return .darkForeground
         default:
             return .brightForeground

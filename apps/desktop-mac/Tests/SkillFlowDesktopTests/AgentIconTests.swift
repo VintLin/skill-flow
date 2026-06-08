@@ -47,6 +47,7 @@ final class AgentIconTests: XCTestCase {
         XCTAssertEqual(AgentIconLibrary.fileName(for: "github-copilot"), "copilot.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "roo-code"), "roo.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "hermes-agent"), "hermesagent.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "minimax-code"), "minimax.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "kiro"), "kiro-cli.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "trae"), "trae.svg")
         XCTAssertNil(AgentIconLibrary.fileName(for: "pi"))
@@ -57,6 +58,7 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.image(for: "claude-code"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "github-copilot"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "hermes-agent"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "minimax-code"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "trae"))
     }
 
@@ -78,6 +80,19 @@ final class AgentIconTests: XCTestCase {
         }
 
         XCTAssertTrue(hasVisiblePixels(cgImage), "Hermes Agent symbol image should not be fully transparent after recoloring")
+    }
+
+    func testMiniMaxSymbolIconRetainsVisiblePixelsAfterRecoloring() {
+        let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
+
+        guard
+            let image = AgentIconLibrary.symbolImage(for: "minimax-code", foreground: foreground),
+            let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else {
+            return XCTFail("Expected MiniMax Code symbol image to load")
+        }
+
+        XCTAssertTrue(hasVisiblePixels(cgImage), "MiniMax Code symbol image should not be fully transparent after recoloring")
     }
 
     func testGroupMetadataIconLoaderFindsBundledSvgAssets() {

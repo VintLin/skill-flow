@@ -1171,7 +1171,7 @@ struct SharedGroupCard: View {
             if let image = AgentIconLibrary.symbolImage(
                 for: targetId,
                 foreground: targetForegroundColor(isOn: isOn),
-                cropToVisibleBounds: targetId == "hermes-agent"
+                cropToVisibleBounds: targetId == "hermes-agent" || targetId == "minimax-code"
             ) {
                 targetIcon(image: image, targetId: targetId, isOn: isOn)
             } else {
@@ -1192,7 +1192,7 @@ struct SharedGroupCard: View {
             .resizable()
             .interpolation(.high)
             .scaledToFit()
-            .padding(targetId == "hermes-agent" ? 9 : 0)
+            .padding(targetId == "hermes-agent" || targetId == "minimax-code" ? 9 : 0)
     }
 
     private func targetBackgroundFill(isOn: Bool) -> Color {
