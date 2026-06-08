@@ -45,6 +45,7 @@ export class InventoryService {
     ".junie/skills",
     ".kilocode/skills",
     ".kiro/skills",
+    ".mavis/skills",
     ".mux/skills",
     ".neovate/skills",
     ".opencode/skills",

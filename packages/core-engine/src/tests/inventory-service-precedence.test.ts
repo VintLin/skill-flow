@@ -51,13 +51,17 @@ describe.sequential("inventory discovery precedence", () => {
   test("discovers hidden host directories from the standard bucket list", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       ".agents/skills/gstack-browse/SKILL.md": skillDoc("gstack-browse", "Host directory skill."),
+      ".mavis/skills/minimax-helper/SKILL.md": skillDoc("minimax-helper", "MiniMax project skill."),
     });
     const inventory = new InventoryService();
 
     const scanned = await inventory.scanSource("demo-source", repoPath, "demo");
 
-    expect(scanned.leafs).toHaveLength(1);
-    expect(scanned.leafs[0]?.relativePath).toBe(".agents/skills/gstack-browse");
+    expect(scanned.leafs).toHaveLength(2);
+    expect(scanned.leafs.map((leaf) => leaf.relativePath)).toEqual([
+      ".agents/skills/gstack-browse",
+      ".mavis/skills/minimax-helper",
+    ]);
   });
 
   test("does not recursively pull duplicate source layouts when a supported host bucket already matched", async () => {

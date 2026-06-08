@@ -375,6 +375,8 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "codex"), "\(homePath)/.codex/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "amp"), "\(homePath)/.config/agents/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "hermes-agent"), "\(homePath)/.hermes/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "minimax-code"), "\(homePath)/.minimax/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "minimax-code"), ".mavis/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "trae"), "\(homePath)/.trae/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "unknown"), "unknown")
     }
