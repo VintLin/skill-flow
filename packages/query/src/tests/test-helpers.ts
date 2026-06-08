@@ -19,6 +19,7 @@ export function useSkillFlowSandbox() {
     stateRoot: "",
     targetsRoot: "",
   } satisfies SandboxContext;
+  let originalHome: string | undefined;
 
   beforeEach(async () => {
     context.sandboxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-test-"));
@@ -42,6 +43,8 @@ export function useSkillFlowSandbox() {
     process.env.SKILL_FLOW_TARGET_CLINE = path.join(context.targetsRoot, "cline");
     process.env.SKILL_FLOW_TARGET_AMP = path.join(context.targetsRoot, "amp");
     process.env.SKILL_FLOW_TARGET_KIRO = path.join(context.targetsRoot, "kiro");
+    originalHome = process.env.HOME;
+    process.env.HOME = context.sandboxRoot;
 
     await Promise.all([
       fs.mkdir(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, { recursive: true }),
@@ -80,6 +83,11 @@ export function useSkillFlowSandbox() {
     delete process.env.SKILL_FLOW_TARGET_CLINE;
     delete process.env.SKILL_FLOW_TARGET_AMP;
     delete process.env.SKILL_FLOW_TARGET_KIRO;
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
     if (context.sandboxRoot) {
       await fs.rm(context.sandboxRoot, { recursive: true, force: true });
     }
