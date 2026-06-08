@@ -480,6 +480,155 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.enabledTargetCount, 0)
     }
 
+    func testUpdateAllGroupsFromHomeMarksOnlySourcesWithActualUpdateChanges() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        var updatedAlpha = try XCTUnwrap(state.sources["alpha"])
+        updatedAlpha.updatedAt = "2026-03-27T00:00:00Z"
+        updatedAlpha.leafs.append(
+            TestFixture.LeafState(
+                id: "alpha-c",
+                linkName: "audit",
+                name: "audit",
+                description: "Audit things.",
+                metadataWarnings: []
+            )
+        )
+        state.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: false,
+                    addedLeafIds: ["alpha-c"],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: updatedAlpha
+            ),
+            "beta": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: false,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: nil
+            ),
+        ]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.recentlyUpdatedIndicatorDuration = .milliseconds(80)
+
+        await model.updateAllGroupsFromHome()
+
+        XCTAssertEqual(model.recentlyUpdatedSourceIds, ["alpha"])
+    }
+
+    func testUpdateSourceDoesNotMarkRecentlyUpdatedWhenPayloadIsUnchanged() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: false,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: nil
+            )
+        ]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.recentlyUpdatedIndicatorDuration = .milliseconds(80)
+
+        await model.updateSource("alpha")
+
+        XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
+    }
+
+    func testUpdateCurrentGroupAutoClearsRecentlyUpdatedAfterTimeout() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        var updatedAlpha = try XCTUnwrap(state.sources["alpha"])
+        updatedAlpha.updatedAt = "2026-03-28T00:00:00Z"
+        state.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: false,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: ["alpha-b"]
+                ),
+                nextSource: updatedAlpha
+            )
+        ]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.recentlyUpdatedIndicatorDuration = .milliseconds(60)
+
+        await model.updateCurrentGroup()
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        try await Task.sleep(for: .milliseconds(120))
+
+        XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
+    }
+
+    func testUpdatingSameSourceBeforeTimeoutResetsRecentlyUpdatedClearTask() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        var firstUpdatedAlpha = try XCTUnwrap(state.sources["alpha"])
+        firstUpdatedAlpha.updatedAt = "2026-03-27T00:00:00Z"
+        state.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: true,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: firstUpdatedAlpha
+            )
+        ]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.recentlyUpdatedIndicatorDuration = .milliseconds(90)
+
+        await model.updateSource("alpha")
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        try await Task.sleep(for: .milliseconds(45))
+
+        var secondState = try fixture.readState()
+        var secondUpdatedAlpha = try XCTUnwrap(secondState.sources["alpha"])
+        secondUpdatedAlpha.updatedAt = "2026-03-29T00:00:00Z"
+        secondState.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: true,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: secondUpdatedAlpha
+            )
+        ]
+        try fixture.reset(state: secondState)
+
+        await model.updateSource("alpha")
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        try await Task.sleep(for: .milliseconds(55))
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
+    }
+
     func testSetTargetEnabledIgnoresStaleRenderedState() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -1419,12 +1568,25 @@ private struct TestFixture {
     }
 
     struct State: Codable, Equatable {
+        struct UpdateResultState: Codable, Equatable {
+            var changed: Bool
+            var addedLeafIds: [String]
+            var removedLeafIds: [String]
+            var invalidatedLeafIds: [String]
+        }
+
+        struct PendingUpdateState: Codable, Equatable {
+            var result: UpdateResultState
+            var nextSource: SourceState?
+        }
+
         var availableTargets: [String]
         var sources: [String: SourceState]
         var pinnedSourceIds: [String]
         var listDelayMilliseconds: Int? = nil
         var inspectDelayMilliseconds: Int? = nil
         var inspectEnrichmentDelayMilliseconds: Int? = nil
+        var pendingUpdatesBySourceId: [String: PendingUpdateState] = [:]
 
         static let baseline = State(
             availableTargets: ["cursor", "claude-code"],
@@ -2204,8 +2366,37 @@ private struct TestFixture {
       }
 
       if (request.command === 'update') {
+        const requestedSourceIds = Array.isArray(request.payload?.sourceIds) && request.payload.sourceIds.length > 0
+          ? request.payload.sourceIds
+          : Object.keys(state.sources || {});
+        const updated = requestedSourceIds.map((sourceId) => {
+          const pendingUpdate = state.pendingUpdatesBySourceId?.[sourceId];
+          if (pendingUpdate?.nextSource) {
+            state.sources[sourceId] = pendingUpdate.nextSource;
+          }
+          if (state.pendingUpdatesBySourceId) {
+            delete state.pendingUpdatesBySourceId[sourceId];
+          }
+          if (!pendingUpdate) {
+            return {
+              sourceId,
+              changed: false,
+              addedLeafIds: [],
+              removedLeafIds: [],
+              invalidatedLeafIds: []
+            };
+          }
+          return {
+            sourceId,
+            changed: Boolean(pendingUpdate.result?.changed),
+            addedLeafIds: pendingUpdate.result?.addedLeafIds || [],
+            removedLeafIds: pendingUpdate.result?.removedLeafIds || [],
+            invalidatedLeafIds: pendingUpdate.result?.invalidatedLeafIds || []
+          };
+        });
+        writeState(state);
         process.stdout.write(JSON.stringify(responseFor(request, true, {
-          updated: []
+          updated
         }, [], [])));
         return;
       }

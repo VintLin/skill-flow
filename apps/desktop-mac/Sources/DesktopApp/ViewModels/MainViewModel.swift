@@ -885,6 +885,7 @@ final class MainViewModel {
 
     private static var targetOrder: [String] { AgentDisplayCatalog.defaultTargetOrder }
     private static var minimumSaveLoadingDuration: Duration { .milliseconds(200) }
+    private static var defaultRecentlyUpdatedIndicatorDuration: Duration { .seconds(2) }
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToRuntimePreferences"
@@ -921,6 +922,7 @@ final class MainViewModel {
     private var importPreparationTokensByGroupId: [String: UInt64] = [:]
     private var importPreparationTokenSeed: UInt64 = 0
     @ObservationIgnored private var saveStateResetTasksBySourceId: [ScopedSourceKey: Task<Void, Never>] = [:]
+    @ObservationIgnored private var recentlyUpdatedClearTasksBySourceId: [String: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -956,6 +958,7 @@ final class MainViewModel {
 
     var isRefreshing: Bool = false
     var updatingSourceIds: Set<String> = []
+    var recentlyUpdatedSourceIds: Set<String> = []
     private var saveStateBySourceId: [ScopedSourceKey: SaveState] = [:]
     var toast: ToastState?
     var pendingDetailRename: PendingDetailRename?
@@ -970,6 +973,7 @@ final class MainViewModel {
     private var cachedSelectedProjectScope: ProjectScopeSelection = .global
     private var cachedRecentProjectScopes: [RecentProjectScopeItem] = []
     @ObservationIgnored var detailWarmupDelay: Duration = .milliseconds(40)
+    @ObservationIgnored var recentlyUpdatedIndicatorDuration: Duration = MainViewModel.defaultRecentlyUpdatedIndicatorDuration
 
     init(
         bridgeClient: BridgeClient,
@@ -2117,6 +2121,7 @@ final class MainViewModel {
             cancelDeferredDraftSync()
             let response = try await bridgeClient.updateAll()
             await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
+            registerRecentlyUpdatedSources(from: response.data?.value)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count)))
         } catch {
             showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
@@ -2140,6 +2145,7 @@ final class MainViewModel {
             cancelDeferredDraftSync()
             let response = try await bridgeClient.updateSources(sourceIds)
             await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
+            registerRecentlyUpdatedSources(from: response.data?.value)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count)))
         } catch {
             showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
@@ -2183,6 +2189,7 @@ final class MainViewModel {
                 refreshDoctor: true,
                 inspectSourceId: shouldInspect ? submittedSourceId : nil
             )
+            registerRecentlyUpdatedSources(from: response.data?.value)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: 1)))
         } catch {
             showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
@@ -4949,6 +4956,50 @@ final class MainViewModel {
                 saveStateBySourceId[key] = SaveState(phase: .idle, detail: nil)
             }
             saveStateResetTasksBySourceId.removeValue(forKey: key)
+        }
+    }
+
+    private func registerRecentlyUpdatedSources(from value: Any?) {
+        guard
+            let payload = value as? [String: Any],
+            let items = payload["updated"] as? [[String: Any]]
+        else {
+            return
+        }
+
+        for item in items {
+            guard
+                let sourceId = (item["sourceId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !sourceId.isEmpty,
+                updateItemHasActualChange(item)
+            else {
+                continue
+            }
+
+            recentlyUpdatedSourceIds.insert(sourceId)
+            scheduleRecentlyUpdatedIndicatorClear(for: sourceId)
+        }
+    }
+
+    private func updateItemHasActualChange(_ item: [String: Any]) -> Bool {
+        let changed = item["changed"] as? Bool ?? false
+        let addedLeafIds = item["addedLeafIds"] as? [String] ?? []
+        let removedLeafIds = item["removedLeafIds"] as? [String] ?? []
+        let invalidatedLeafIds = item["invalidatedLeafIds"] as? [String] ?? []
+        return changed
+            || !addedLeafIds.isEmpty
+            || !removedLeafIds.isEmpty
+            || !invalidatedLeafIds.isEmpty
+    }
+
+    private func scheduleRecentlyUpdatedIndicatorClear(for sourceId: String) {
+        recentlyUpdatedClearTasksBySourceId[sourceId]?.cancel()
+        let delay = recentlyUpdatedIndicatorDuration
+        recentlyUpdatedClearTasksBySourceId[sourceId] = Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            recentlyUpdatedSourceIds.remove(sourceId)
+            recentlyUpdatedClearTasksBySourceId.removeValue(forKey: sourceId)
         }
     }
 
