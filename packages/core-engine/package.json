@@ -1,6 +1,6 @@
 {
   "name": "@skill-flow/core-engine",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "type": "module",
   "private": true,
   "main": "dist/index.js",
@@ -14,9 +14,9 @@
     "test:watch": "vitest --passWithNoTests"
   },
   "dependencies": {
-    "@skill-flow/domain": "1.4.0",
-    "@skill-flow/integration": "1.4.0",
-    "@skill-flow/storage": "1.4.0",
+    "@skill-flow/domain": "1.4.1",
+    "@skill-flow/integration": "1.4.1",
+    "@skill-flow/storage": "1.4.1",
     "commander": "^14.0.3"
   },
   "devDependencies": {

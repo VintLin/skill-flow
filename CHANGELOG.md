@@ -2,6 +2,18 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.1 - 2026-06-08
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.0` to `1.4.1`.
+
+### Fixed
+
+- Fixed macOS Skill group tags so default recommendation tags are persisted as normal editable tags instead of being recalculated on refresh.
+- Fixed group tag storage to use stable GitHub repository, locator, or source keys so refreshed group data no longer makes tags disappear or change unexpectedly.
+- Fixed imported recommendation identity matching for GitHub HTTPS, SSH, shorthand, and trailing-slash locator forms.
+
 ## v1.4.0 - 2026-06-08
 
 ### Added
