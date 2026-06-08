@@ -11,6 +11,37 @@ final class MainViewModel {
         let sourceId: String
     }
 
+    private struct ParsedUpdateItem {
+        let sourceId: String?
+        let changed: Bool
+        let addedLeafIds: [String]
+        let removedLeafIds: [String]
+        let invalidatedLeafIds: [String]
+
+        var hasActualChange: Bool {
+            changed
+                || !addedLeafIds.isEmpty
+                || !removedLeafIds.isEmpty
+                || !invalidatedLeafIds.isEmpty
+        }
+
+        var summaryBucket: UpdateSummaryBucket {
+            if !invalidatedLeafIds.isEmpty {
+                return .needsReview
+            }
+            if changed || !addedLeafIds.isEmpty || !removedLeafIds.isEmpty {
+                return .updated
+            }
+            return .upToDate
+        }
+    }
+
+    private enum UpdateSummaryBucket {
+        case updated
+        case upToDate
+        case needsReview
+    }
+
     enum Page: Equatable {
         case home
         case importPage
@@ -922,7 +953,7 @@ final class MainViewModel {
     private var importPreparationTokensByGroupId: [String: UInt64] = [:]
     private var importPreparationTokenSeed: UInt64 = 0
     @ObservationIgnored private var saveStateResetTasksBySourceId: [ScopedSourceKey: Task<Void, Never>] = [:]
-    @ObservationIgnored private var recentlyUpdatedClearTasksBySourceId: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var recentlyUpdatedClearTasksBySourceId: [ScopedSourceKey: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -958,7 +989,7 @@ final class MainViewModel {
 
     var isRefreshing: Bool = false
     var updatingSourceIds: Set<String> = []
-    var recentlyUpdatedSourceIds: Set<String> = []
+    private var recentlyUpdatedSourceKeys: Set<ScopedSourceKey> = []
     private var saveStateBySourceId: [ScopedSourceKey: SaveState] = [:]
     var toast: ToastState?
     var pendingDetailRename: PendingDetailRename?
@@ -1074,6 +1105,15 @@ final class MainViewModel {
 
     var selectedGroupId: String? {
         selectedSourceId
+    }
+
+    var recentlyUpdatedSourceIds: Set<String> {
+        let currentScope = currentProjectScope()
+        return Set(
+            recentlyUpdatedSourceKeys
+                .filter { $0.scope == currentScope }
+                .map(\.sourceId)
+        )
     }
 
     var selectedHomeAgentFilterId: String? {
@@ -4960,56 +5000,54 @@ final class MainViewModel {
     }
 
     private func registerRecentlyUpdatedSources(from value: Any?) {
-        guard
-            let payload = value as? [String: Any],
-            let items = payload["updated"] as? [[String: Any]]
-        else {
-            return
-        }
-
-        for item in items {
+        for item in parsedUpdateItems(from: value) {
             guard
-                let sourceId = (item["sourceId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                !sourceId.isEmpty,
-                updateItemHasActualChange(item)
+                item.hasActualChange,
+                let sourceId = item.sourceId,
+                let key = scopedSourceKey(sourceId: sourceId)
             else {
                 continue
             }
 
-            recentlyUpdatedSourceIds.insert(sourceId)
-            scheduleRecentlyUpdatedIndicatorClear(for: sourceId)
+            recentlyUpdatedSourceKeys.insert(key)
+            scheduleRecentlyUpdatedIndicatorClear(for: key)
         }
     }
 
-    private func updateItemHasActualChange(_ item: [String: Any]) -> Bool {
-        let changed = item["changed"] as? Bool ?? false
-        let addedLeafIds = item["addedLeafIds"] as? [String] ?? []
-        let removedLeafIds = item["removedLeafIds"] as? [String] ?? []
-        let invalidatedLeafIds = item["invalidatedLeafIds"] as? [String] ?? []
-        return changed
-            || !addedLeafIds.isEmpty
-            || !removedLeafIds.isEmpty
-            || !invalidatedLeafIds.isEmpty
+    private func parsedUpdateItems(from value: Any?) -> [ParsedUpdateItem] {
+        guard
+            let payload = value as? [String: Any],
+            let items = payload["updated"] as? [[String: Any]]
+        else {
+            return []
+        }
+
+        return items.map { item in
+            let sourceId = (item["sourceId"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return ParsedUpdateItem(
+                sourceId: sourceId?.isEmpty == false ? sourceId : nil,
+                changed: item["changed"] as? Bool ?? false,
+                addedLeafIds: item["addedLeafIds"] as? [String] ?? [],
+                removedLeafIds: item["removedLeafIds"] as? [String] ?? [],
+                invalidatedLeafIds: item["invalidatedLeafIds"] as? [String] ?? []
+            )
+        }
     }
 
-    private func scheduleRecentlyUpdatedIndicatorClear(for sourceId: String) {
-        recentlyUpdatedClearTasksBySourceId[sourceId]?.cancel()
+    private func scheduleRecentlyUpdatedIndicatorClear(for key: ScopedSourceKey) {
+        recentlyUpdatedClearTasksBySourceId[key]?.cancel()
         let delay = recentlyUpdatedIndicatorDuration
-        recentlyUpdatedClearTasksBySourceId[sourceId] = Task { @MainActor in
+        recentlyUpdatedClearTasksBySourceId[key] = Task { @MainActor in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
-            recentlyUpdatedSourceIds.remove(sourceId)
-            recentlyUpdatedClearTasksBySourceId.removeValue(forKey: sourceId)
+            recentlyUpdatedSourceKeys.remove(key)
+            recentlyUpdatedClearTasksBySourceId.removeValue(forKey: key)
         }
     }
 
     private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {
-        guard let payload = value as? [String: Any] else {
-            return fallbackCount == 1
-                ? localized("toast.update.summary.single")
-                : localized("toast.update.summary.multiple", String(fallbackCount))
-        }
-        let items = payload["updated"] as? [[String: Any]] ?? []
+        let items = parsedUpdateItems(from: value)
         if items.isEmpty {
             return fallbackCount == 1
                 ? localized("toast.update.summary.single")
@@ -5021,16 +5059,12 @@ final class MainViewModel {
         var reviewCount = 0
 
         for item in items {
-            let changed = item["changed"] as? Bool ?? false
-            let invalidatedLeafCount = (item["invalidatedLeafIds"] as? [String])?.count ?? 0
-            let addedLeafCount = (item["addedLeafIds"] as? [String])?.count ?? 0
-            let removedLeafCount = (item["removedLeafIds"] as? [String])?.count ?? 0
-
-            if invalidatedLeafCount > 0 {
+            switch item.summaryBucket {
+            case .needsReview:
                 reviewCount += 1
-            } else if changed || addedLeafCount > 0 || removedLeafCount > 0 {
+            case .updated:
                 changedCount += 1
-            } else {
+            case .upToDate:
                 upToDateCount += 1
             }
         }

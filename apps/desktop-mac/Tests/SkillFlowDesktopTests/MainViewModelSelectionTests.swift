@@ -629,6 +629,47 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
     }
 
+    func testSwitchingProjectScopeClearsRecentlyUpdatedMarkersBeforeSameSourceIdCanLeakAcrossScopes() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        var updatedAlpha = try XCTUnwrap(state.sources["alpha"])
+        updatedAlpha.updatedAt = "2026-03-30T00:00:00Z"
+        state.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: true,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: updatedAlpha
+            )
+        ]
+        try fixture.reset(state: state)
+
+        let appState = DesktopAppState()
+        appState.settings.recentProjectScopes = [
+            RecentProjectScopeItem(
+                projectId: "repo-a",
+                title: "Repo A",
+                lastActivityAt: "2026-03-30T00:00:00Z",
+                projectPath: "/Users/test/src/repo-a",
+                tools: []
+            )
+        ]
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+        await model.bootstrap()
+        model.recentlyUpdatedIndicatorDuration = .seconds(5)
+
+        await model.updateSource("alpha")
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        await model.selectProjectScope(.project("repo-a"))
+
+        XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
+    }
+
     func testSetTargetEnabledIgnoresStaleRenderedState() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
