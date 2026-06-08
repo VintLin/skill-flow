@@ -9,7 +9,13 @@ import type {
 } from "@skill-flow/domain/types";
 import { StateStore, StateStoreError } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
-import { pathExists, useSkillFlowSandbox } from "./test-helpers.js";
+import {
+  createRepo,
+  pathExists,
+  skillDoc,
+  useSkillFlowSandbox,
+  writeRepoFiles,
+} from "./test-helpers.js";
 
 describe.sequential("runtime v2 authority reads", () => {
   const sandbox = useSkillFlowSandbox();
@@ -45,6 +51,60 @@ describe.sequential("runtime v2 authority reads", () => {
       }),
     ]);
     expect(inspected.data.deployments).toHaveLength(1);
+  });
+
+  test("listWorkflows preserves selectionMode all in summary after updateSources adds a new leaf", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "repo",
+      draft: {
+        selectedLeafIds: ["repo:skills/one"],
+        enabledTargets: ["codex"],
+      },
+    });
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await writeRepoFiles(repoPath, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+
+    const updated = await app.updateSources(["repo"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated).toEqual([
+      expect.objectContaining({
+        sourceId: "repo",
+        changed: true,
+        addedLeafIds: ["repo:skills/two"],
+      }),
+    ]);
+
+    const listed = await app.listWorkflows();
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+
+    const summary = listed.data.summaries.find((item) => item.source.id === "repo");
+    expect(summary).toBeDefined();
+    expect(summary?.source).toEqual(expect.objectContaining({
+      selectionMode: "all",
+    }));
+    expect(summary?.leafs.map((leaf) => leaf.id)).toEqual([
+      "repo:skills/one",
+      "repo:skills/two",
+    ]);
   });
 
   test("inspectSource uses v2 projected project drafts for scoped inspect", async () => {

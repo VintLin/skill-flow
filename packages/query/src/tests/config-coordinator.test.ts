@@ -9,6 +9,7 @@ import type {
   WorkflowSummary,
 } from "@skill-flow/domain/types";
 import { ConfigCoordinator } from "../config-coordinator.js";
+import { WorkflowService } from "../workflow-service.js";
 
 const manifest: ManifestFile = {
   schemaVersion: 2,
@@ -168,6 +169,52 @@ function createPreferences(overrides: Partial<PreferencesFile> = {}): Preference
 }
 
 describe("ConfigCoordinator", () => {
+  test("builds summaries with authoritative selectionMode from workflow service", async () => {
+    const preferences = createPreferences();
+    const workflowService = new WorkflowService();
+    const coordinator = new ConfigCoordinator({
+      store: {
+        readPreferences: vi.fn().mockResolvedValue(preferences),
+        readCollections: vi.fn().mockResolvedValue(emptyCollections),
+        writePreferences: vi.fn().mockResolvedValue(undefined),
+      },
+      recentProjectService: {
+        listRecentProjects: vi.fn().mockResolvedValue([]),
+      },
+      doctorService: {
+        run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
+      },
+      workflowService,
+      getAvailableTargets: vi.fn().mockResolvedValue(["codex"]),
+      pruneMissingCheckouts: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { removedSourceIds: [] },
+        warnings: [],
+        errors: [],
+      }),
+      getConfigData: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { manifest, lockFile, summaries },
+        warnings: [],
+        errors: [],
+      }),
+    });
+
+    const result = await coordinator.bootstrapWorkspaceState();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.summaries.map((summary) => ({
+      sourceId: summary.source.id,
+      selectionMode: summary.source.selectionMode,
+    }))).toEqual([
+      { sourceId: "alpha", selectionMode: "selected" },
+      { sourceId: "beta", selectionMode: "selected" },
+    ]);
+  });
+
   test("boots config and derives initial drafts from normalized summaries", async () => {
     const initialPreferences = createPreferences();
     const refreshedPreferences = createPreferences({

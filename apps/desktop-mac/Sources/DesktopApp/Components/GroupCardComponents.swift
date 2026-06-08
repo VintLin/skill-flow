@@ -612,6 +612,32 @@ struct SharedGroupCard: View {
                     .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                if card.showsRecentlyUpdatedIndicator {
+                    Circle()
+                        .fill(AppTheme.statusSuccess(for: theme))
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
+                if card.warningCount > 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10, weight: .medium))
+                        Text(countText(card.warningCount))
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(AppTheme.statusWarning(for: theme))
+                    .fixedSize()
+                }
+                if card.errorCount > 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 10, weight: .medium))
+                        Text(countText(card.errorCount))
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(AppTheme.statusError(for: theme))
+                    .fixedSize()
+                }
                 if Self.showsOriginalNameIndicator(title: card.title, originalDisplayName: card.originalDisplayName) {
                     OriginalNameInfoIcon(text: originalNameHelpText ?? "", theme: theme)
                 }

@@ -11,6 +11,37 @@ final class MainViewModel {
         let sourceId: String
     }
 
+    private struct ParsedUpdateItem {
+        let sourceId: String?
+        let changed: Bool
+        let addedLeafIds: [String]
+        let removedLeafIds: [String]
+        let invalidatedLeafIds: [String]
+
+        var hasActualChange: Bool {
+            changed
+                || !addedLeafIds.isEmpty
+                || !removedLeafIds.isEmpty
+                || !invalidatedLeafIds.isEmpty
+        }
+
+        var summaryBucket: UpdateSummaryBucket {
+            if !invalidatedLeafIds.isEmpty {
+                return .needsReview
+            }
+            if changed || !addedLeafIds.isEmpty || !removedLeafIds.isEmpty {
+                return .updated
+            }
+            return .upToDate
+        }
+    }
+
+    private enum UpdateSummaryBucket {
+        case updated
+        case upToDate
+        case needsReview
+    }
+
     enum Page: Equatable {
         case home
         case importPage
@@ -223,6 +254,7 @@ final class MainViewModel {
     struct GroupCardModel: Identifiable {
         let id: String
         let title: String
+        let showsRecentlyUpdatedIndicator: Bool
         let originalDisplayName: String?
         let byline: String?
         let headerMetaLine: String?
@@ -245,6 +277,7 @@ final class MainViewModel {
         init(
             id: String,
             title: String,
+            showsRecentlyUpdatedIndicator: Bool = false,
             originalDisplayName: String? = nil,
             byline: String?,
             headerMetaLine: String? = nil,
@@ -266,6 +299,7 @@ final class MainViewModel {
         ) {
             self.id = id
             self.title = title
+            self.showsRecentlyUpdatedIndicator = showsRecentlyUpdatedIndicator
             self.originalDisplayName = originalDisplayName
             self.byline = byline
             self.headerMetaLine = headerMetaLine
@@ -752,12 +786,18 @@ final class MainViewModel {
     }
 
     private struct WorkflowSummary: Sendable {
+        enum SelectionMode: String, Sendable {
+            case all
+            case selected
+        }
+
         let sourceId: String
         let sourceKind: String
         let sourceDisplayName: String
         let sourceOriginalDisplayName: String
         let sourceLocator: String
         let sourceCanonicalRepo: String?
+        let selectionMode: SelectionMode?
         let leafs: [LeafSummary]
         let selectedLeafIds: [String]
         let enabledTargets: [String]
@@ -775,6 +815,7 @@ final class MainViewModel {
                 sourceOriginalDisplayName: originalDisplayName,
                 sourceLocator: sourceLocator,
                 sourceCanonicalRepo: sourceCanonicalRepo,
+                selectionMode: selectionMode,
                 leafs: leafs,
                 selectedLeafIds: selectedLeafIds,
                 enabledTargets: enabledTargets,
@@ -878,6 +919,7 @@ final class MainViewModel {
 
     private static var targetOrder: [String] { AgentDisplayCatalog.defaultTargetOrder }
     private static var minimumSaveLoadingDuration: Duration { .milliseconds(200) }
+    private static var defaultRecentlyUpdatedIndicatorDuration: Duration { .seconds(2) }
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToRuntimePreferences"
@@ -914,6 +956,7 @@ final class MainViewModel {
     private var importPreparationTokensByGroupId: [String: UInt64] = [:]
     private var importPreparationTokenSeed: UInt64 = 0
     @ObservationIgnored private var saveStateResetTasksBySourceId: [ScopedSourceKey: Task<Void, Never>] = [:]
+    @ObservationIgnored private var recentlyUpdatedClearTasksBySourceId: [ScopedSourceKey: Task<Void, Never>] = [:]
 
     private var allSummaries: [WorkflowSummary] = []
 
@@ -949,6 +992,7 @@ final class MainViewModel {
 
     var isRefreshing: Bool = false
     var updatingSourceIds: Set<String> = []
+    private var recentlyUpdatedSourceKeys: Set<ScopedSourceKey> = []
     private var saveStateBySourceId: [ScopedSourceKey: SaveState] = [:]
     var toast: ToastState?
     var pendingDetailRename: PendingDetailRename?
@@ -963,6 +1007,7 @@ final class MainViewModel {
     private var cachedSelectedProjectScope: ProjectScopeSelection = .global
     private var cachedRecentProjectScopes: [RecentProjectScopeItem] = []
     @ObservationIgnored var detailWarmupDelay: Duration = .milliseconds(40)
+    @ObservationIgnored var recentlyUpdatedIndicatorDuration: Duration = MainViewModel.defaultRecentlyUpdatedIndicatorDuration
 
     init(
         bridgeClient: BridgeClient,
@@ -1063,6 +1108,15 @@ final class MainViewModel {
 
     var selectedGroupId: String? {
         selectedSourceId
+    }
+
+    var recentlyUpdatedSourceIds: Set<String> {
+        let currentScope = currentProjectScope()
+        return Set(
+            recentlyUpdatedSourceKeys
+                .filter { $0.scope == currentScope }
+                .map(\.sourceId)
+        )
     }
 
     var selectedHomeAgentFilterId: String? {
@@ -1435,6 +1489,7 @@ final class MainViewModel {
             return GroupCardModel(
                 id: row.id,
                 title: row.displayName,
+                showsRecentlyUpdatedIndicator: recentlyUpdatedSourceIds.contains(row.id),
                 originalDisplayName: summary.sourceOriginalDisplayName,
                 byline: metadata.byline,
                 groupPath: groupPath,
@@ -2110,6 +2165,7 @@ final class MainViewModel {
             cancelDeferredDraftSync()
             let response = try await bridgeClient.updateAll()
             await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
+            registerRecentlyUpdatedSources(from: response.data?.value)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count)))
         } catch {
             showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
@@ -2133,6 +2189,7 @@ final class MainViewModel {
             cancelDeferredDraftSync()
             let response = try await bridgeClient.updateSources(sourceIds)
             await synchronizeState(refreshDoctor: true, inspectSourceId: selectedDetailInspectSourceId)
+            registerRecentlyUpdatedSources(from: response.data?.value)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: sourceIds.count)))
         } catch {
             showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
@@ -2176,6 +2233,7 @@ final class MainViewModel {
                 refreshDoctor: true,
                 inspectSourceId: shouldInspect ? submittedSourceId : nil
             )
+            registerRecentlyUpdatedSources(from: response.data?.value)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: response.data?.value, fallbackCount: 1)))
         } catch {
             showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
@@ -3453,10 +3511,12 @@ final class MainViewModel {
         if let initialDrafts = data["initialDrafts"] as? [String: Any] {
             for (sourceId, rawDraft) in initialDrafts {
                 guard let draftObject = rawDraft as? [String: Any] else { continue }
+                let key = ScopedSourceKey(scope: .global, sourceId: sourceId)
+                guard workingDrafts[key] == nil else { continue }
                 let selectedLeafIds = uniqueSorted(draftObject["selectedLeafIds"] as? [String] ?? [])
                 let enabledTargets = normalizedTargets(draftObject["enabledTargets"] as? [String] ?? [])
                 let draft = DraftState(selectedLeafIds: selectedLeafIds, enabledTargets: enabledTargets)
-                workingDrafts[ScopedSourceKey(scope: .global, sourceId: sourceId)] = draft
+                workingDrafts[key] = draft
             }
         }
 
@@ -3604,6 +3664,8 @@ final class MainViewModel {
             let sourceLocator = source["locator"] as? String ?? ""
             let sourceCanonicalRepo = (source["canonicalRepo"] as? String)?.nonEmpty
                 ?? (source["originLocator"] as? String)?.nonEmpty
+            let selectionMode = (source["selectionMode"] as? String)
+                .flatMap(WorkflowSummary.SelectionMode.init(rawValue:))
 
             let lock = summary["lock"] as? [String: Any]
             let updatedAt = lock?["updatedAt"] as? String ?? "-"
@@ -3654,6 +3716,7 @@ final class MainViewModel {
                 sourceOriginalDisplayName: sourceOriginalDisplayName,
                 sourceLocator: sourceLocator,
                 sourceCanonicalRepo: sourceCanonicalRepo,
+                selectionMode: selectionMode,
                 leafs: leafs,
                 selectedLeafIds: selectedLeafIds,
                 enabledTargets: normalizedTargets(enabledTargets),
@@ -3784,13 +3847,19 @@ final class MainViewModel {
 
     private func buildInitialDraftFromSummary(_ summary: WorkflowSummary) -> DraftState {
         let selectedLeafIds: [String]
-        if !summary.selectedLeafIds.isEmpty {
+        if summary.selectionMode == .all {
+            selectedLeafIds = uniqueSorted(summary.leafs.map(\.id))
+        } else if summary.selectionMode == .selected {
             selectedLeafIds = uniqueSorted(summary.selectedLeafIds)
         } else {
-            let enabledTargetLeafIds = normalizedTargets(summary.enabledTargets).flatMap { target in
-                summary.targetLeafIdsByTarget[target] ?? []
+            if !summary.selectedLeafIds.isEmpty {
+                selectedLeafIds = uniqueSorted(summary.selectedLeafIds)
+            } else {
+                let enabledTargetLeafIds = normalizedTargets(summary.enabledTargets).flatMap { target in
+                    summary.targetLeafIdsByTarget[target] ?? []
+                }
+                selectedLeafIds = uniqueSorted(enabledTargetLeafIds)
             }
-            selectedLeafIds = uniqueSorted(enabledTargetLeafIds)
         }
 
         return DraftState(
@@ -4747,10 +4816,7 @@ final class MainViewModel {
                 continue
             }
 
-            workingDrafts[key] = DraftState(
-                selectedLeafIds: summary.leafs.map(\.id),
-                enabledTargets: []
-            )
+            workingDrafts[key] = buildInitialDraftFromSummary(summary)
             saveStateBySourceId[key] = SaveState(phase: .idle, detail: nil)
             didInitialize = true
         }
@@ -4934,13 +5000,55 @@ final class MainViewModel {
         }
     }
 
-    private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {
-        guard let payload = value as? [String: Any] else {
-            return fallbackCount == 1
-                ? localized("toast.update.summary.single")
-                : localized("toast.update.summary.multiple", String(fallbackCount))
+    private func registerRecentlyUpdatedSources(from value: Any?) {
+        for item in parsedUpdateItems(from: value) {
+            guard
+                item.hasActualChange,
+                let sourceId = item.sourceId,
+                let key = scopedSourceKey(sourceId: sourceId)
+            else {
+                continue
+            }
+
+            recentlyUpdatedSourceKeys.insert(key)
+            scheduleRecentlyUpdatedIndicatorClear(for: key)
         }
-        let items = payload["updated"] as? [[String: Any]] ?? []
+    }
+
+    private func parsedUpdateItems(from value: Any?) -> [ParsedUpdateItem] {
+        guard
+            let payload = value as? [String: Any],
+            let items = payload["updated"] as? [[String: Any]]
+        else {
+            return []
+        }
+
+        return items.map { item in
+            let sourceId = (item["sourceId"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return ParsedUpdateItem(
+                sourceId: sourceId?.isEmpty == false ? sourceId : nil,
+                changed: item["changed"] as? Bool ?? false,
+                addedLeafIds: item["addedLeafIds"] as? [String] ?? [],
+                removedLeafIds: item["removedLeafIds"] as? [String] ?? [],
+                invalidatedLeafIds: item["invalidatedLeafIds"] as? [String] ?? []
+            )
+        }
+    }
+
+    private func scheduleRecentlyUpdatedIndicatorClear(for key: ScopedSourceKey) {
+        recentlyUpdatedClearTasksBySourceId[key]?.cancel()
+        let delay = recentlyUpdatedIndicatorDuration
+        recentlyUpdatedClearTasksBySourceId[key] = Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            recentlyUpdatedSourceKeys.remove(key)
+            recentlyUpdatedClearTasksBySourceId.removeValue(forKey: key)
+        }
+    }
+
+    private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {
+        let items = parsedUpdateItems(from: value)
         if items.isEmpty {
             return fallbackCount == 1
                 ? localized("toast.update.summary.single")
@@ -4952,16 +5060,12 @@ final class MainViewModel {
         var reviewCount = 0
 
         for item in items {
-            let changed = item["changed"] as? Bool ?? false
-            let invalidatedLeafCount = (item["invalidatedLeafIds"] as? [String])?.count ?? 0
-            let addedLeafCount = (item["addedLeafIds"] as? [String])?.count ?? 0
-            let removedLeafCount = (item["removedLeafIds"] as? [String])?.count ?? 0
-
-            if invalidatedLeafCount > 0 {
+            switch item.summaryBucket {
+            case .needsReview:
                 reviewCount += 1
-            } else if changed || addedLeafCount > 0 || removedLeafCount > 0 {
+            case .updated:
                 changedCount += 1
-            } else {
+            case .upToDate:
                 upToDateCount += 1
             }
         }
@@ -6351,6 +6455,19 @@ final class MainViewModel {
     private func pruneStateMaps(allowedSourceIds: Set<String>) {
         workingDrafts = pruneSourceMap(workingDrafts, allowedSourceIds: allowedSourceIds)
         saveStateBySourceId = pruneSourceMap(saveStateBySourceId, allowedSourceIds: allowedSourceIds)
+        let removedRecentlyUpdatedKeys = Set(
+            recentlyUpdatedSourceKeys.filter { !allowedSourceIds.contains($0.sourceId) }
+        )
+        for key in removedRecentlyUpdatedKeys {
+            recentlyUpdatedClearTasksBySourceId[key]?.cancel()
+        }
+        recentlyUpdatedSourceKeys = Set(
+            recentlyUpdatedSourceKeys.filter { allowedSourceIds.contains($0.sourceId) }
+        )
+        recentlyUpdatedClearTasksBySourceId = pruneSourceMap(
+            recentlyUpdatedClearTasksBySourceId,
+            allowedSourceIds: allowedSourceIds
+        )
         renamedSourceDisplayNameOverridesBySourceId = renamedSourceDisplayNameOverridesBySourceId.filter {
             allowedSourceIds.contains($0.key)
         }

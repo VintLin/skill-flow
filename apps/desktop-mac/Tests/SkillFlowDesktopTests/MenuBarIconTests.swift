@@ -473,6 +473,142 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertFalse(SharedGroupCard.showsOriginalNameIndicator(title: "Research Tools", originalDisplayName: "   "))
     }
 
+    func testGroupCardCanExposeRecentlyUpdatedIndicatorState() {
+        let card = makeGroupCard(showsRecentlyUpdatedIndicator: true)
+
+        XCTAssertTrue(card.showsRecentlyUpdatedIndicator)
+    }
+
+    @MainActor
+    func testRecentlyUpdatedIndicatorAddsGreenDotPixelsWhenEnabled() {
+        let baselineSnapshot = renderSnapshot(
+            for: makeGroupCard(
+                title: "Alpha",
+                originalDisplayName: "anthropic-skills",
+                showsRecentlyUpdatedIndicator: false
+            ),
+            width: 280,
+            accent: .blue
+        )
+        let updatedSnapshot = renderSnapshot(
+            for: makeGroupCard(
+                title: "Alpha",
+                originalDisplayName: "anthropic-skills",
+                showsRecentlyUpdatedIndicator: true
+            ),
+            width: 280,
+            accent: .blue
+        )
+
+        let successColor = NSColor(AppTheme.statusSuccess(for: .light))
+        let baselineRegion = headerTitlePixelRegion(for: baselineSnapshot.size)
+        let updatedRegion = headerTitlePixelRegion(for: updatedSnapshot.size)
+        let baselineGreenPixels = matchingPixelCount(
+            in: baselineSnapshot.bitmap,
+            color: successColor,
+            region: baselineRegion
+        )
+        let updatedGreenPixels = matchingPixelCount(
+            in: updatedSnapshot.bitmap,
+            color: successColor,
+            region: updatedRegion
+        )
+
+        XCTAssertLessThan(baselineGreenPixels, 8)
+        XCTAssertGreaterThan(updatedGreenPixels, 18)
+    }
+
+    @MainActor
+    func testRecentlyUpdatedIndicatorKeepsWarningAndErrorAffordancesVisible() {
+        let baselineSnapshot = renderSnapshot(
+            for: makeGroupCard(
+                title: "Alpha",
+                warningCount: 2,
+                errorCount: 1,
+                showsRecentlyUpdatedIndicator: false
+            ),
+            width: 320,
+            accent: .blue
+        )
+        let updatedSnapshot = renderSnapshot(
+            for: makeGroupCard(
+                title: "Alpha",
+                warningCount: 2,
+                errorCount: 1,
+                showsRecentlyUpdatedIndicator: true
+            ),
+            width: 320,
+            accent: .blue
+        )
+
+        let warningColor = NSColor(AppTheme.statusWarning(for: .light))
+        let errorColor = NSColor(AppTheme.statusError(for: .light))
+        let successColor = NSColor(AppTheme.statusSuccess(for: .light))
+        let baselineRegion = headerTitlePixelRegion(for: baselineSnapshot.size)
+        let updatedRegion = headerTitlePixelRegion(for: updatedSnapshot.size)
+
+        let baselineWarningPixels = matchingPixelCount(in: baselineSnapshot.bitmap, color: warningColor, region: baselineRegion)
+        let updatedWarningPixels = matchingPixelCount(in: updatedSnapshot.bitmap, color: warningColor, region: updatedRegion)
+        let baselineErrorPixels = matchingPixelCount(in: baselineSnapshot.bitmap, color: errorColor, region: baselineRegion)
+        let updatedErrorPixels = matchingPixelCount(in: updatedSnapshot.bitmap, color: errorColor, region: updatedRegion)
+        let baselineGreenPixels = matchingPixelCount(in: baselineSnapshot.bitmap, color: successColor, region: baselineRegion)
+        let updatedGreenPixels = matchingPixelCount(in: updatedSnapshot.bitmap, color: successColor, region: updatedRegion)
+
+        XCTAssertGreaterThan(baselineWarningPixels, 12)
+        XCTAssertGreaterThan(updatedWarningPixels, 12)
+        XCTAssertGreaterThan(baselineErrorPixels, 12)
+        XCTAssertGreaterThan(updatedErrorPixels, 12)
+        XCTAssertGreaterThan(updatedGreenPixels, baselineGreenPixels + 12)
+    }
+
+    @MainActor
+    func testRecentlyUpdatedIndicatorKeepsHeaderHeightStableAtFixedWidth() {
+        let baselineCard = makeGroupCard(
+            title: "A Very Long Group Card Title That Should Still Fit In One Header Row",
+            originalDisplayName: "anthropic-skills",
+            warningCount: 2,
+            errorCount: 1,
+            showsRecentlyUpdatedIndicator: false
+        )
+        let updatedCard = makeGroupCard(
+            title: "A Very Long Group Card Title That Should Still Fit In One Header Row",
+            originalDisplayName: "anthropic-skills",
+            warningCount: 2,
+            errorCount: 1,
+            showsRecentlyUpdatedIndicator: true
+        )
+
+        let baselineSize = renderSnapshot(for: baselineCard, width: 280, accent: .blue).size
+        let updatedSize = renderSnapshot(for: updatedCard, width: 280, accent: .blue).size
+
+        XCTAssertEqual(updatedSize.height, baselineSize.height, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(updatedSize.width, 280)
+    }
+
+    func testRecentlyUpdatedIndicatorDoesNotChangeHeaderDividerLogic() {
+        let baselineCard = makeGroupCard(
+            headerMetaLine: "Source: 2 agent paths",
+            warningCount: 1,
+            errorCount: 2,
+            showsRecentlyUpdatedIndicator: false
+        )
+        let updatedCard = makeGroupCard(
+            headerMetaLine: "Source: 2 agent paths",
+            warningCount: 1,
+            errorCount: 2,
+            showsRecentlyUpdatedIndicator: true
+        )
+
+        XCTAssertEqual(
+            SharedGroupCard.reservesHeaderStatsRow(card: updatedCard, displayMode: .homeComfortable),
+            SharedGroupCard.reservesHeaderStatsRow(card: baselineCard, displayMode: .homeComfortable)
+        )
+        XCTAssertEqual(
+            SharedGroupCard.showsHeaderDivider(card: updatedCard, displayMode: .homeComfortable),
+            SharedGroupCard.showsHeaderDivider(card: baselineCard, displayMode: .homeComfortable)
+        )
+    }
+
     func testOriginalNameHelpTextReturnsNilWhenNilOriginalDisplayName() {
         let card = MainViewModel.GroupCardModel(
             id: "test",
@@ -521,5 +657,140 @@ final class MenuBarIconTests: XCTestCase {
 
     private func nsColor(_ color: Color) -> NSColor? {
         NSColor(color).usingColorSpace(.deviceRGB)
+    }
+
+    @MainActor
+    private func renderSnapshot(
+        for card: MainViewModel.GroupCardModel,
+        width: CGFloat,
+        accent: DesktopAccentColor
+    ) -> (size: CGSize, bitmap: NSBitmapImageRep) {
+        let view = SharedGroupCard(
+            card: card,
+            theme: .light,
+            accent: accent,
+            displayMode: .homeComfortable,
+            clickPolicy: .home,
+            skillsCollapsed: false,
+            isUpdating: false,
+            onOpen: {},
+            onUpdate: {},
+            onTogglePinned: {},
+            onDelete: {},
+            onToggleSkill: { _, _ in },
+            onToggleAllSkills: {},
+            onToggleTarget: { _, _, _ in },
+            onToggleAllTargets: {}
+        )
+        .environment(\.locale, Locale(identifier: "en"))
+        .frame(width: width, alignment: .topLeading)
+
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.frame = NSRect(x: 0, y: 0, width: width, height: 1)
+        hostingView.layoutSubtreeIfNeeded()
+        let size = hostingView.fittingSize
+        hostingView.frame = NSRect(origin: .zero, size: size)
+        hostingView.layoutSubtreeIfNeeded()
+
+        guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
+            XCTFail("Expected bitmap snapshot for SharedGroupCard")
+            let fallback = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: max(1, Int(size.width)),
+                pixelsHigh: max(1, Int(size.height)),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )!
+            return (size, fallback)
+        }
+
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        return (size, bitmap)
+    }
+
+    private func makeGroupCard(
+        title: String = "Alpha",
+        originalDisplayName: String? = nil,
+        byline: String? = "by @owner",
+        headerMetaLine: String? = nil,
+        warningCount: Int = 0,
+        errorCount: Int = 0,
+        showsRecentlyUpdatedIndicator: Bool = false
+    ) -> MainViewModel.GroupCardModel {
+        MainViewModel.GroupCardModel(
+            id: "test",
+            title: title,
+            showsRecentlyUpdatedIndicator: showsRecentlyUpdatedIndicator,
+            originalDisplayName: originalDisplayName,
+            byline: byline,
+            headerMetaLine: headerMetaLine,
+            groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "https://github.com/anthropics/skills.git",
+            isPinned: false,
+            health: "valid",
+            warningCount: warningCount,
+            errorCount: errorCount,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: .init(phase: .idle, detail: nil)
+        )
+    }
+
+    private func matchingPixelCount(
+        in bitmap: NSBitmapImageRep,
+        color: NSColor,
+        region: CGRect,
+        tolerance: CGFloat = 0.18,
+        minimumAlpha: CGFloat = 0.18
+    ) -> Int {
+        let expected = color.usingColorSpace(.deviceRGB) ?? color
+        let minX = max(0, Int(region.minX.rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int(region.maxX.rounded(.up)))
+        let minY = max(0, Int(region.minY.rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int(region.maxY.rounded(.up)))
+        var matches = 0
+
+        for x in minX..<maxX {
+            for y in minY..<maxY {
+                guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                guard pixel.alphaComponent >= minimumAlpha else {
+                    continue
+                }
+                let delta = abs(pixel.redComponent - expected.redComponent)
+                    + abs(pixel.greenComponent - expected.greenComponent)
+                    + abs(pixel.blueComponent - expected.blueComponent)
+                if delta <= tolerance {
+                    matches += 1
+                }
+            }
+        }
+
+        return matches
+    }
+
+    private func headerTitlePixelRegion(for size: CGSize) -> CGRect {
+        let horizontalInset: CGFloat = 10
+        let topInset: CGFloat = 8
+        let regionHeight: CGFloat = 64
+        let regionWidth = max(1, min(size.width - (horizontalInset * 2), 264))
+        return CGRect(
+            x: horizontalInset,
+            y: topInset,
+            width: regionWidth,
+            height: min(regionHeight, size.height)
+        )
     }
 }

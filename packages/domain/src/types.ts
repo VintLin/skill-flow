@@ -203,6 +203,7 @@ export type SourceSummaryRecord = {
   displayName: string;
   originalDisplayName: string;
   addedAt: string;
+  selectionMode?: "all" | "selected";
   requestedPath?: string;
   originRequestedPath?: string;
   originLocator?: string;
@@ -1041,7 +1042,7 @@ export type SourceUpdateResultItem = {
   sourceId: SourceId;
   changed: boolean;
   requestedPath?: string;
-  selectionMode?: "all" | "partial";
+  selectionMode?: "all" | "selected";
   addedLeafIds: string[];
   removedLeafIds: string[];
   invalidatedLeafIds: string[];
