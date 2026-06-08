@@ -307,8 +307,8 @@ final class GroupTagController {
     }
 
     private func groupKey(forSourceId sourceId: String) -> String {
-        if let canonicalRepo = Self.normalizedGitHubRepo(sourceCanonicalRepo(sourceId))
-            ?? Self.normalizedGitHubRepo(sourceLocator(sourceId)) {
+        if let canonicalRepo = ImportRepositoryIdentity.normalizedGitHubRepo(sourceCanonicalRepo(sourceId))
+            ?? ImportRepositoryIdentity.normalizedGitHubRepo(sourceLocator(sourceId)) {
             return "repo:\(canonicalRepo)"
         }
 
@@ -335,11 +335,17 @@ final class GroupTagController {
     }
 
     private func matchingRecommendation(canonicalRepo: String?, locator: String?) -> ImportRecommendationEntry? {
-        let sourceRepoAliases = Set([Self.normalizedGitHubRepo(canonicalRepo), Self.normalizedGitHubRepo(locator)].compactMap { $0 })
+        let sourceRepoAliases = Set([
+            ImportRepositoryIdentity.normalizedGitHubRepo(canonicalRepo),
+            ImportRepositoryIdentity.normalizedGitHubRepo(locator),
+        ].compactMap { $0 })
 
         if !sourceRepoAliases.isEmpty,
            let recommendation = recommendationsProvider().first(where: { entry in
-               let entryRepoAliases = Set([Self.normalizedGitHubRepo(entry.canonicalRepo), Self.normalizedGitHubRepo(entry.locator)].compactMap { $0 })
+               let entryRepoAliases = Set([
+                   ImportRepositoryIdentity.normalizedGitHubRepo(entry.canonicalRepo),
+                   ImportRepositoryIdentity.normalizedGitHubRepo(entry.locator),
+               ].compactMap { $0 })
                return !sourceRepoAliases.isDisjoint(with: entryRepoAliases)
            }) {
             return recommendation
@@ -429,45 +435,6 @@ final class GroupTagController {
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             .lowercased()
         return normalized.isEmpty ? nil : normalized
-    }
-
-    static func normalizedGitHubRepo(_ value: String?) -> String? {
-        let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return nil
-        }
-
-        let lowered = trimmed.lowercased()
-        let patterns = [
-            #"^https?://github\.com/([^/\s]+)/([^/\s]+?)(?:\.git)?/?$"#,
-            #"^git@github\.com:([^/\s]+)/([^/\s]+?)(?:\.git)?/?$"#,
-            #"^([^:/\s]+)/([^:/\s]+?)(?:\.git)?/?$"#,
-        ]
-
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-                continue
-            }
-            let range = NSRange(lowered.startIndex..<lowered.endIndex, in: lowered)
-            guard let match = regex.firstMatch(in: lowered, options: [], range: range),
-                  let ownerRange = Range(match.range(at: 1), in: lowered),
-                  let repoRange = Range(match.range(at: 2), in: lowered) else {
-                continue
-            }
-
-            return importRecommendationAlias("\(lowered[ownerRange])/\(lowered[repoRange])")
-        }
-
-        return nil
-    }
-
-    static func importRecommendationAlias(_ repo: String) -> String {
-        switch repo {
-        case "anthropic/skills":
-            return "anthropics/skills"
-        default:
-            return repo
-        }
     }
 
     private static func tagKey(for preference: GroupTagPreference) -> String {

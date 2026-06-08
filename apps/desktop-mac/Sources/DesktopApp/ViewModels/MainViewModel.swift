@@ -2963,7 +2963,7 @@ final class MainViewModel {
     }
 
     private static func normalizedImportRecommendationKey(_ value: String) -> String {
-        if let normalizedRepo = GroupTagController.normalizedGitHubRepo(value) {
+        if let normalizedRepo = ImportRepositoryIdentity.normalizedGitHubRepo(value) {
             return normalizedRepo
         }
 
@@ -2992,10 +2992,10 @@ final class MainViewModel {
                 continue
             }
 
-            return GroupTagController.importRecommendationAlias("\(lowered[ownerRange])/\(lowered[repoRange])")
+            return ImportRepositoryIdentity.importRecommendationAlias("\(lowered[ownerRange])/\(lowered[repoRange])")
         }
 
-        return GroupTagController.importRecommendationAlias(lowered.replacingOccurrences(of: ".git", with: ""))
+        return ImportRepositoryIdentity.importRecommendationAlias(lowered.replacingOccurrences(of: ".git", with: ""))
     }
 
     private static func localRecommendationTitle(for canonicalRepo: String) -> String {
@@ -3661,7 +3661,7 @@ final class MainViewModel {
                 source["canonicalRepo"] as? String,
                 source["originLocator"] as? String,
                 source["locator"] as? String,
-            ].compactMap { GroupTagController.normalizedGitHubRepo($0) }.first
+            ].compactMap { ImportRepositoryIdentity.normalizedGitHubRepo($0) }.first
             let selectionMode = (source["selectionMode"] as? String)
                 .flatMap(WorkflowSummary.SelectionMode.init(rawValue:))
 

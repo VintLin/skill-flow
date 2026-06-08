@@ -370,6 +370,66 @@ final class GroupTagControllerTests: XCTestCase {
         }
     }
 
+    func testGitHubRepoAliasInitializesRecommendationTagUnderCanonicalRepoKey() {
+        let suiteName = #function
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let state = DesktopAppState()
+        let controller = makeController(
+            state: state,
+            recommendations: [
+                ImportRecommendationEntry(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: [],
+                    descriptionKey: "desc",
+                    sortOrder: 1
+                )
+            ],
+            userDefaults: defaults,
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { sourceId in sourceId == "alpha" ? "https://github.com/anthropic/skills.git" : nil }
+        )
+
+        let tags = controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "en"))
+
+        XCTAssertEqual(tags.map(\.title), ["General"])
+        XCTAssertEqual(state.groupTags.tagCollection.tagsByGroupKey["repo:anthropics/skills"]?.map(\.tagId), ["general"])
+    }
+
+    func testImportRepositoryIdentityRejectsNonGitHubAndRelativeLocators() {
+        let rejectedForms = [
+            "/Users/x/local-skills",
+            "~/skills",
+            "../skills",
+            "docs/skills",
+            "https://gitlab.com/owner/repo.git",
+            "https://github.com/owner/repo?tab=readme",
+            "https://github.com/owner/repo/tree/main",
+        ]
+
+        for form in rejectedForms {
+            XCTAssertNil(ImportRepositoryIdentity.normalizedGitHubRepo(form), form)
+        }
+    }
+
+    func testNonGitHubRelativeLocatorPersistsUnderLocatorKey() {
+        let state = DesktopAppState()
+        let controller = makeController(
+            state: state,
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { sourceId in sourceId == "alpha" ? "docs/skills" : nil }
+        )
+
+        let result = controller.addCustomTag("设计", accent: .pink, toSourceId: "alpha", locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(result, .added)
+        XCTAssertNil(state.groupTags.tagCollection.tagsByGroupKey["repo:docs/skills"])
+        XCTAssertEqual(state.groupTags.tagCollection.tagsByGroupKey["locator:docs/skills"]?.map(\.title), ["设计"])
+    }
+
     func testRemoveDefaultTagPersistsEmptyV2OverrideAcrossControllerRebuild() {
         let suiteName = #function
         let defaults = UserDefaults(suiteName: suiteName)!
