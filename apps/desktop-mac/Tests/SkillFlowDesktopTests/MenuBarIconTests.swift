@@ -479,30 +479,84 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertTrue(card.showsRecentlyUpdatedIndicator)
     }
 
-    func testGroupCardModelDerivesRecentlyUpdatedIndicatorFromCurrentScopeSet() throws {
-        let source = try sourceText(at: "Sources/DesktopApp/ViewModels/MainViewModel.swift")
-        let groupCardsSource = try sourceSlice(
-            in: source,
-            from: "func groupCards(matching rawQuery: String) -> [GroupCardModel] {",
-            to: "    func sourceCanonicalRepo(for sourceId: String) -> String? {"
+    @MainActor
+    func testRecentlyUpdatedIndicatorAddsGreenDotPixelsWhenEnabled() {
+        let baselineSnapshot = renderSnapshot(
+            for: makeGroupCard(
+                title: "Alpha",
+                originalDisplayName: "anthropic-skills",
+                showsRecentlyUpdatedIndicator: false
+            ),
+            width: 280,
+            accent: .blue
+        )
+        let updatedSnapshot = renderSnapshot(
+            for: makeGroupCard(
+                title: "Alpha",
+                originalDisplayName: "anthropic-skills",
+                showsRecentlyUpdatedIndicator: true
+            ),
+            width: 280,
+            accent: .blue
         )
 
-        XCTAssertTrue(groupCardsSource.contains("showsRecentlyUpdatedIndicator: recentlyUpdatedSourceIds.contains(row.id)"))
+        let successColor = NSColor(AppTheme.statusSuccess(for: .light))
+        let baselineGreenPixels = matchingPixelCount(
+            in: baselineSnapshot.bitmap,
+            color: successColor,
+            region: CGRect(origin: .zero, size: baselineSnapshot.size)
+        )
+        let updatedGreenPixels = matchingPixelCount(
+            in: updatedSnapshot.bitmap,
+            color: successColor,
+            region: CGRect(origin: .zero, size: updatedSnapshot.size)
+        )
+
+        XCTAssertLessThan(baselineGreenPixels, 8)
+        XCTAssertGreaterThan(updatedGreenPixels, 18)
     }
 
-    func testRecentlyUpdatedIndicatorRendersInsideTitleRowWithoutReplacingExistingHeaderAffordances() throws {
-        let source = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
-        let headerSource = try sourceSlice(
-            in: source,
-            from: "private var headerPrimaryContent: some View {",
-            to: "    private var headerPrimaryButtonLabel: some View {"
+    @MainActor
+    func testRecentlyUpdatedIndicatorKeepsWarningAndErrorAffordancesVisible() {
+        let baselineSnapshot = renderSnapshot(
+            for: makeGroupCard(
+                title: "Alpha",
+                warningCount: 2,
+                errorCount: 1,
+                showsRecentlyUpdatedIndicator: false
+            ),
+            width: 320,
+            accent: .blue
+        )
+        let updatedSnapshot = renderSnapshot(
+            for: makeGroupCard(
+                title: "Alpha",
+                warningCount: 2,
+                errorCount: 1,
+                showsRecentlyUpdatedIndicator: true
+            ),
+            width: 320,
+            accent: .blue
         )
 
-        XCTAssertTrue(headerSource.contains("Text(card.title)"))
-        XCTAssertTrue(headerSource.contains("if card.showsRecentlyUpdatedIndicator"))
-        XCTAssertTrue(headerSource.contains("Circle()"))
-        XCTAssertTrue(headerSource.contains("AppTheme.statusSuccess(for: theme)"))
-        XCTAssertTrue(headerSource.contains("if Self.showsOriginalNameIndicator(title: card.title, originalDisplayName: card.originalDisplayName)"))
+        let warningColor = NSColor(AppTheme.statusWarning(for: .light))
+        let errorColor = NSColor(AppTheme.statusError(for: .light))
+        let successColor = NSColor(AppTheme.statusSuccess(for: .light))
+        let baselineRegion = CGRect(origin: .zero, size: baselineSnapshot.size)
+        let updatedRegion = CGRect(origin: .zero, size: updatedSnapshot.size)
+
+        let baselineWarningPixels = matchingPixelCount(in: baselineSnapshot.bitmap, color: warningColor, region: baselineRegion)
+        let updatedWarningPixels = matchingPixelCount(in: updatedSnapshot.bitmap, color: warningColor, region: updatedRegion)
+        let baselineErrorPixels = matchingPixelCount(in: baselineSnapshot.bitmap, color: errorColor, region: baselineRegion)
+        let updatedErrorPixels = matchingPixelCount(in: updatedSnapshot.bitmap, color: errorColor, region: updatedRegion)
+        let baselineGreenPixels = matchingPixelCount(in: baselineSnapshot.bitmap, color: successColor, region: baselineRegion)
+        let updatedGreenPixels = matchingPixelCount(in: updatedSnapshot.bitmap, color: successColor, region: updatedRegion)
+
+        XCTAssertGreaterThan(baselineWarningPixels, 12)
+        XCTAssertGreaterThan(updatedWarningPixels, 12)
+        XCTAssertGreaterThan(baselineErrorPixels, 12)
+        XCTAssertGreaterThan(updatedErrorPixels, 12)
+        XCTAssertGreaterThan(updatedGreenPixels, baselineGreenPixels + 12)
     }
 
     @MainActor
@@ -510,16 +564,20 @@ final class MenuBarIconTests: XCTestCase {
         let baselineCard = makeGroupCard(
             title: "A Very Long Group Card Title That Should Still Fit In One Header Row",
             originalDisplayName: "anthropic-skills",
+            warningCount: 2,
+            errorCount: 1,
             showsRecentlyUpdatedIndicator: false
         )
         let updatedCard = makeGroupCard(
             title: "A Very Long Group Card Title That Should Still Fit In One Header Row",
             originalDisplayName: "anthropic-skills",
+            warningCount: 2,
+            errorCount: 1,
             showsRecentlyUpdatedIndicator: true
         )
 
-        let baselineSize = renderSize(for: baselineCard, width: 280)
-        let updatedSize = renderSize(for: updatedCard, width: 280)
+        let baselineSize = renderSnapshot(for: baselineCard, width: 280, accent: .blue).size
+        let updatedSize = renderSnapshot(for: updatedCard, width: 280, accent: .blue).size
 
         XCTAssertEqual(updatedSize.height, baselineSize.height, accuracy: 0.5)
         XCTAssertLessThanOrEqual(updatedSize.width, 280)
@@ -600,14 +658,15 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     @MainActor
-    private func renderSize(
+    private func renderSnapshot(
         for card: MainViewModel.GroupCardModel,
-        width: CGFloat
-    ) -> CGSize {
+        width: CGFloat,
+        accent: DesktopAccentColor
+    ) -> (size: CGSize, bitmap: NSBitmapImageRep) {
         let view = SharedGroupCard(
             card: card,
             theme: .light,
-            accent: .green,
+            accent: accent,
             displayMode: .homeComfortable,
             clickPolicy: .home,
             skillsCollapsed: false,
@@ -627,7 +686,29 @@ final class MenuBarIconTests: XCTestCase {
         let hostingView = NSHostingView(rootView: view)
         hostingView.frame = NSRect(x: 0, y: 0, width: width, height: 1)
         hostingView.layoutSubtreeIfNeeded()
-        return hostingView.fittingSize
+        let size = hostingView.fittingSize
+        hostingView.frame = NSRect(origin: .zero, size: size)
+        hostingView.layoutSubtreeIfNeeded()
+
+        guard let bitmap = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
+            XCTFail("Expected bitmap snapshot for SharedGroupCard")
+            let fallback = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: max(1, Int(size.width)),
+                pixelsHigh: max(1, Int(size.height)),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )!
+            return (size, fallback)
+        }
+
+        hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+        return (size, bitmap)
     }
 
     private func makeGroupCard(
@@ -664,23 +745,37 @@ final class MenuBarIconTests: XCTestCase {
         )
     }
 
-    private func sourceText(at relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
-    }
+    private func matchingPixelCount(
+        in bitmap: NSBitmapImageRep,
+        color: NSColor,
+        region: CGRect,
+        tolerance: CGFloat = 0.18,
+        minimumAlpha: CGFloat = 0.18
+    ) -> Int {
+        let expected = color.usingColorSpace(.deviceRGB) ?? color
+        let minX = max(0, Int(region.minX.rounded(.down)))
+        let maxX = min(bitmap.pixelsWide, Int(region.maxX.rounded(.up)))
+        let minY = max(0, Int(region.minY.rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh, Int(region.maxY.rounded(.up)))
+        var matches = 0
 
-    private func sourceSlice(in source: String, from startMarker: String, to endMarker: String) throws -> String {
-        guard let startRange = source.range(of: startMarker) else {
-            XCTFail("Missing start marker: \(startMarker)")
-            return ""
+        for x in minX..<maxX {
+            for y in minY..<maxY {
+                guard let pixel = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                guard pixel.alphaComponent >= minimumAlpha else {
+                    continue
+                }
+                let delta = abs(pixel.redComponent - expected.redComponent)
+                    + abs(pixel.greenComponent - expected.greenComponent)
+                    + abs(pixel.blueComponent - expected.blueComponent)
+                if delta <= tolerance {
+                    matches += 1
+                }
+            }
         }
-        guard let endRange = source[startRange.upperBound...].range(of: endMarker) else {
-            XCTFail("Missing end marker: \(endMarker)")
-            return ""
-        }
-        return String(source[startRange.lowerBound..<endRange.lowerBound])
+
+        return matches
     }
 }
