@@ -50,6 +50,40 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
     }
 
+    func testRefreshListRebuildsDraftWithAllSelectionModeUsingAllSummaryLeafIds() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.selectionMode = "all"
+        state.sources["alpha"]?.selectedLeafIds = []
+        state.sources["alpha"]?.enabledTargets = ["claude-code"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        await model.refreshList()
+
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
+        XCTAssertTrue(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
+        XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
+    }
+
+    func testRefreshListRebuildsDraftWithSelectedSelectionModeUsingExplicitSelectedLeafIds() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.selectionMode = "selected"
+        state.sources["alpha"]?.selectedLeafIds = ["alpha-b"]
+        state.sources["alpha"]?.enabledTargets = ["claude-code", "cursor"]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        await model.refreshList()
+
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .partial)
+        XCTAssertFalse(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
+        XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
+    }
+
     func testHomeStatusAndSourceFilterDefaultsAreAvailable() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -1370,6 +1404,7 @@ private struct TestFixture {
         var displayName: String
         var originalDisplayName: String? = nil
         var locator: String
+        var selectionMode: String? = nil
         var starCount: Int?
         var metadataStatus: String?
         var metadataProvider: String?
@@ -1856,7 +1891,8 @@ private struct TestFixture {
             kind: source.kind,
             displayName: source.displayName,
             originalDisplayName: source.originalDisplayName || source.displayName,
-            locator: source.locator
+            locator: source.locator,
+            ...(source.selectionMode ? { selectionMode: source.selectionMode } : {})
           },
           lock: {
             updatedAt: source.updatedAt || '-'
@@ -1954,7 +1990,7 @@ private struct TestFixture {
           originalDisplayName: source.originalDisplayName || source.displayName,
           locator: source.locator,
           addedAt: '2026-03-25T12:00:00Z',
-          selectionMode: 'partial'
+          selectionMode: source.selectionMode || 'partial'
         },
         binding: {
           selectedLeafIds: source.selectedLeafIds || [],

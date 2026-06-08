@@ -752,12 +752,18 @@ final class MainViewModel {
     }
 
     private struct WorkflowSummary: Sendable {
+        enum SelectionMode: String, Sendable {
+            case all
+            case selected
+        }
+
         let sourceId: String
         let sourceKind: String
         let sourceDisplayName: String
         let sourceOriginalDisplayName: String
         let sourceLocator: String
         let sourceCanonicalRepo: String?
+        let selectionMode: SelectionMode?
         let leafs: [LeafSummary]
         let selectedLeafIds: [String]
         let enabledTargets: [String]
@@ -775,6 +781,7 @@ final class MainViewModel {
                 sourceOriginalDisplayName: originalDisplayName,
                 sourceLocator: sourceLocator,
                 sourceCanonicalRepo: sourceCanonicalRepo,
+                selectionMode: selectionMode,
                 leafs: leafs,
                 selectedLeafIds: selectedLeafIds,
                 enabledTargets: enabledTargets,
@@ -3604,6 +3611,8 @@ final class MainViewModel {
             let sourceLocator = source["locator"] as? String ?? ""
             let sourceCanonicalRepo = (source["canonicalRepo"] as? String)?.nonEmpty
                 ?? (source["originLocator"] as? String)?.nonEmpty
+            let selectionMode = (source["selectionMode"] as? String)
+                .flatMap(WorkflowSummary.SelectionMode.init(rawValue:))
 
             let lock = summary["lock"] as? [String: Any]
             let updatedAt = lock?["updatedAt"] as? String ?? "-"
@@ -3654,6 +3663,7 @@ final class MainViewModel {
                 sourceOriginalDisplayName: sourceOriginalDisplayName,
                 sourceLocator: sourceLocator,
                 sourceCanonicalRepo: sourceCanonicalRepo,
+                selectionMode: selectionMode,
                 leafs: leafs,
                 selectedLeafIds: selectedLeafIds,
                 enabledTargets: normalizedTargets(enabledTargets),
@@ -3784,13 +3794,19 @@ final class MainViewModel {
 
     private func buildInitialDraftFromSummary(_ summary: WorkflowSummary) -> DraftState {
         let selectedLeafIds: [String]
-        if !summary.selectedLeafIds.isEmpty {
+        if summary.selectionMode == .all {
+            selectedLeafIds = uniqueSorted(summary.leafs.map(\.id))
+        } else if summary.selectionMode == .selected {
             selectedLeafIds = uniqueSorted(summary.selectedLeafIds)
         } else {
-            let enabledTargetLeafIds = normalizedTargets(summary.enabledTargets).flatMap { target in
-                summary.targetLeafIdsByTarget[target] ?? []
+            if !summary.selectedLeafIds.isEmpty {
+                selectedLeafIds = uniqueSorted(summary.selectedLeafIds)
+            } else {
+                let enabledTargetLeafIds = normalizedTargets(summary.enabledTargets).flatMap { target in
+                    summary.targetLeafIdsByTarget[target] ?? []
+                }
+                selectedLeafIds = uniqueSorted(enabledTargetLeafIds)
             }
-            selectedLeafIds = uniqueSorted(enabledTargetLeafIds)
         }
 
         return DraftState(
