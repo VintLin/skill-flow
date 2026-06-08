@@ -286,6 +286,42 @@ final class GroupTagControllerTests: XCTestCase {
         )
     }
 
+    func testLocatorOnlyTrailingSlashInitializesRecommendationTag() {
+        let suiteName = #function
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let state = DesktopAppState()
+        let controller = makeController(
+            state: state,
+            recommendations: [
+                ImportRecommendationEntry(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: [],
+                    descriptionKey: "desc",
+                    sortOrder: 1
+                )
+            ],
+            userDefaults: defaults,
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { sourceId in sourceId == "alpha" ? "anthropics/skills/" : nil }
+        )
+
+        let tags = controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "en"))
+
+        XCTAssertEqual(tags.map(\.title), ["General"])
+        XCTAssertEqual(state.groupTags.tagCollection.tagsByGroupKey["locator:anthropics/skills"]?.map(\.tagId), ["general"])
+        XCTAssertEqual(
+            DesktopGroupTagStore(userDefaults: defaults)
+                .loadTagCollection()
+                .tagsByGroupKey["locator:anthropics/skills"]?
+                .map(\.tagId),
+            ["general"]
+        )
+    }
+
     func testRemoveDefaultTagPersistsEmptyV2OverrideAcrossControllerRebuild() {
         let suiteName = #function
         let defaults = UserDefaults(suiteName: suiteName)!

@@ -334,12 +334,12 @@ final class GroupTagController {
     }
 
     private func matchingRecommendation(canonicalRepo: String?, locator: String?) -> ImportRecommendationEntry? {
-        let normalizedCanonicalRepo = Self.normalizedKey(canonicalRepo)
-        let normalizedLocator = Self.normalizedKey(locator)
+        let normalizedCanonicalRepo = Self.normalizedGroupKeyMaterial(canonicalRepo) ?? ""
+        let normalizedLocator = Self.normalizedGroupKeyMaterial(locator) ?? ""
 
         return recommendationsProvider().first { entry in
-            let entryRepo = Self.normalizedKey(entry.canonicalRepo)
-            let entryLocator = Self.normalizedKey(entry.locator)
+            let entryRepo = Self.normalizedGroupKeyMaterial(entry.canonicalRepo) ?? ""
+            let entryLocator = Self.normalizedGroupKeyMaterial(entry.locator) ?? ""
             return (!normalizedCanonicalRepo.isEmpty && (entryRepo == normalizedCanonicalRepo || entryLocator == normalizedCanonicalRepo))
                 || (!normalizedLocator.isEmpty && (entryRepo == normalizedLocator || entryLocator == normalizedLocator))
         }
