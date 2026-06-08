@@ -203,6 +203,7 @@ export type SourceSummaryRecord = {
   displayName: string;
   originalDisplayName: string;
   addedAt: string;
+  selectionMode?: "all" | "selected";
   requestedPath?: string;
   originRequestedPath?: string;
   originLocator?: string;

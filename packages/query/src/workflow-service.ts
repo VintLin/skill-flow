@@ -27,9 +27,10 @@ export class WorkflowService {
   ): WorkflowSummary[] {
     return manifest.sources.map((source) => {
       const lock = lockFile.sources[source.id];
-      const bindings = this.sourceBindingToSummaryBinding(manifest.bindings[source.id], lock?.leafIds ?? []);
+      const sourceBinding = manifest.bindings[source.id];
+      const bindings = this.sourceBindingToSummaryBinding(sourceBinding, lock?.leafIds ?? []);
       const leafs = this.resolveSourceLeafs(source, lockFile, manifest, collections);
-      const summarySource = this.resolveSummarySource(source, collections);
+      const summarySource = this.resolveSummarySource(source, sourceBinding, collections);
       const activeTargetCount = Object.values(bindings.targets).filter(
         (binding) => binding?.enabled,
       ).length;
@@ -71,9 +72,11 @@ export class WorkflowService {
 
   private resolveSummarySource(
     source: ManifestFile["sources"][number],
+    binding: ManifestFile["bindings"][string] | undefined,
     collections: CollectionsFile,
   ): SourceSummaryRecord {
     const displayName = this.resolveCollectionRecord(collections, source.id)?.displayName.trim();
+    const normalizedBinding = this.normalizeSourceBinding(binding, []);
     return {
       id: source.id,
       locator: source.locator,
@@ -81,6 +84,7 @@ export class WorkflowService {
       displayName: displayName || source.displayName,
       originalDisplayName: displayName || source.displayName,
       addedAt: source.createdAt,
+      ...(normalizedBinding ? { selectionMode: normalizedBinding.selectionMode } : {}),
       ...(source.requestedPath ? { requestedPath: source.requestedPath } : {}),
       ...(source.originRequestedPath ? { originRequestedPath: source.originRequestedPath } : {}),
       ...(source.canonicalLocator !== source.locator ? { originLocator: source.canonicalLocator } : {}),
