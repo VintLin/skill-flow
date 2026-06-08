@@ -9,7 +9,13 @@ import type {
 } from "@skill-flow/domain/types";
 import { StateStore, StateStoreError } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
-import { pathExists, useSkillFlowSandbox } from "./test-helpers.js";
+import {
+  createRepo,
+  pathExists,
+  skillDoc,
+  useSkillFlowSandbox,
+  writeRepoFiles,
+} from "./test-helpers.js";
 
 describe.sequential("runtime v2 authority reads", () => {
   const sandbox = useSkillFlowSandbox();
@@ -47,24 +53,42 @@ describe.sequential("runtime v2 authority reads", () => {
     expect(inspected.data.deployments).toHaveLength(1);
   });
 
-  test("listWorkflows preserves selectionMode all in summary after authority update adds a new leaf", async () => {
-    const state = createAuthorityState(sandbox);
-    state.manifest.bindings.repo = {
-      sourceId: "repo",
-      selectionMode: "all",
-      selectedLeafIds: [],
-      enabledTargets: ["codex"],
-    };
-    await writeAuthorityState(sandbox.stateRoot, state);
-
-    state.lockFile.sources.repo = {
-      ...state.lockFile.sources.repo,
-      leafIds: ["repo:one", "repo:two", "repo:three"],
-    };
-    state.lockFile.leafInventory.push(createLeaf("repo:three", "three", path.join(sandbox.sandboxRoot, "sources", "repo")));
-    await writeAuthorityState(sandbox.stateRoot, state);
-
+  test("listWorkflows preserves selectionMode all in summary after updateSources adds a new leaf", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
     const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "repo",
+      draft: {
+        selectedLeafIds: ["repo:skills/one"],
+        enabledTargets: ["codex"],
+      },
+    });
+
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await writeRepoFiles(repoPath, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+
+    const updated = await app.updateSources(["repo"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated).toEqual([
+      expect.objectContaining({
+        sourceId: "repo",
+        changed: true,
+        addedLeafIds: ["repo:skills/two"],
+      }),
+    ]);
+
     const listed = await app.listWorkflows();
 
     expect(listed.ok).toBe(true);
@@ -78,9 +102,8 @@ describe.sequential("runtime v2 authority reads", () => {
       selectionMode: "all",
     }));
     expect(summary?.leafs.map((leaf) => leaf.id)).toEqual([
-      "repo:one",
-      "repo:two",
-      "repo:three",
+      "repo:skills/one",
+      "repo:skills/two",
     ]);
   });
 

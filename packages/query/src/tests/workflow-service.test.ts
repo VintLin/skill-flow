@@ -319,6 +319,71 @@ describe("WorkflowService", () => {
     expect(summaries[0]?.activeTargetCount).toBe(0);
   });
 
+  test("does not emit summary selectionMode when authoritative binding mode is missing", () => {
+    const manifest: ManifestFile = {
+      ...collectionManifest,
+      sources: [collectionManifest.sources[0]!],
+      bindings: {
+        alpha: {
+          sourceId: "alpha",
+          selectedLeafIds: ["alpha:one"],
+          enabledTargets: ["codex"],
+        } as unknown as ManifestFile["bindings"][string],
+      },
+    };
+    const lockFile: LockFile = {
+      ...collectionLockFile,
+      sources: {
+        alpha: {
+          sourceId: "alpha",
+          canonicalLocator: "/repos/alpha",
+          revision: {
+            provider: "local",
+            capturedAt: addedAt,
+          },
+          localPath: "/repos/alpha",
+          leafIds: ["alpha:one"],
+        },
+      },
+      leafInventory: [
+        {
+          id: "alpha:one",
+          sourceId: "alpha",
+          displayName: "one",
+          linkName: "one",
+          title: "One",
+          description: "One skill.",
+          relativePath: "one",
+          absolutePath: "/repos/alpha/one",
+          skillFilePath: "/repos/alpha/one/SKILL.md",
+          contentHash: "hash-one",
+          selectors: { aliases: [] },
+          diagnostics: [],
+          valid: true,
+        },
+      ],
+      projections: [],
+    };
+
+    const summaries = new WorkflowService().getSummaries(
+      manifest,
+      lockFile,
+      undefined,
+      { ...collections, collections: {} },
+    );
+
+    expect(summaries[0]?.bindings).toEqual({
+      selectedLeafIds: ["alpha:one"],
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: ["alpha:one"],
+        },
+      },
+    });
+    expect(summaries[0]?.source.selectionMode).toBeUndefined();
+  });
+
   test("derives summary warnings from current diagnostics only", () => {
     const manifest: ManifestFile = {
       ...collectionManifest,

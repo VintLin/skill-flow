@@ -76,7 +76,7 @@ export class WorkflowService {
     collections: CollectionsFile,
   ): SourceSummaryRecord {
     const displayName = this.resolveCollectionRecord(collections, source.id)?.displayName.trim();
-    const normalizedBinding = this.normalizeSourceBinding(binding, []);
+    const selectionMode = this.authoritativeSelectionMode(binding);
     return {
       id: source.id,
       locator: source.locator,
@@ -84,7 +84,7 @@ export class WorkflowService {
       displayName: displayName || source.displayName,
       originalDisplayName: displayName || source.displayName,
       addedAt: source.createdAt,
-      ...(normalizedBinding ? { selectionMode: normalizedBinding.selectionMode } : {}),
+      ...(selectionMode ? { selectionMode } : {}),
       ...(source.requestedPath ? { requestedPath: source.requestedPath } : {}),
       ...(source.originRequestedPath ? { originRequestedPath: source.originRequestedPath } : {}),
       ...(source.canonicalLocator !== source.locator ? { originLocator: source.canonicalLocator } : {}),
@@ -179,6 +179,18 @@ export class WorkflowService {
 
   private stringArray(value: unknown): string[] {
     return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  }
+
+  private authoritativeSelectionMode(
+    binding: ManifestFile["bindings"][string] | undefined,
+  ): "all" | "selected" | undefined {
+    if (!binding || typeof binding !== "object") {
+      return undefined;
+    }
+
+    return binding.selectionMode === "all" || binding.selectionMode === "selected"
+      ? binding.selectionMode
+      : undefined;
   }
 
   private sourceLockToSummaryLock(
