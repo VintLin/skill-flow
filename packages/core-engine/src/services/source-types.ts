@@ -22,7 +22,7 @@ export type SourcePreview = {
 export type AddSourceOptions = {
   path?: string;
   enabledTargets?: DeploymentTargetName[];
-  selectionMode?: "all" | "partial";
+  selectionMode?: "all" | "selected";
   project?: boolean;
   sourceIdOverride?: string;
   displayNameOverride?: string;

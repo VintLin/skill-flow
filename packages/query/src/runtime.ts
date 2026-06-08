@@ -183,7 +183,7 @@ type SkillFlowAddOptions = AddSourceOptions &
 
 type AddSourceResult = RuntimeSourceSnapshot & AddSourcePreparation & { projected: boolean };
 type RuntimeManifestSourceView = SourceSummaryRecord & {
-  selectionMode?: "all" | "partial";
+  selectionMode?: "all" | "selected";
 };
 type RuntimeManifestView = {
   schemaVersion: ManifestFile["schemaVersion"];
@@ -6571,7 +6571,7 @@ export class SkillFlowApp {
       source.selectionMode =
         draft.selectedLeafIds.length >= sourceLeafCount && sourceLeafCount > 0
           ? "all"
-          : "partial";
+          : "selected";
     }
 
     const conflictingLeafIds = this.findExactDuplicateLeafSelections(

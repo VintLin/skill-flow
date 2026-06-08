@@ -1042,7 +1042,7 @@ export type SourceUpdateResultItem = {
   sourceId: SourceId;
   changed: boolean;
   requestedPath?: string;
-  selectionMode?: "all" | "partial";
+  selectionMode?: "all" | "selected";
   addedLeafIds: string[];
   removedLeafIds: string[];
   invalidatedLeafIds: string[];
