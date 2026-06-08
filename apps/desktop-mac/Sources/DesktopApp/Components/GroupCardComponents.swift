@@ -612,6 +612,12 @@ struct SharedGroupCard: View {
                     .foregroundStyle(AppTheme.brand(for: accent, in: theme))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                if card.showsRecentlyUpdatedIndicator {
+                    Circle()
+                        .fill(AppTheme.statusSuccess(for: theme))
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
                 if Self.showsOriginalNameIndicator(title: card.title, originalDisplayName: card.originalDisplayName) {
                     OriginalNameInfoIcon(text: originalNameHelpText ?? "", theme: theme)
                 }

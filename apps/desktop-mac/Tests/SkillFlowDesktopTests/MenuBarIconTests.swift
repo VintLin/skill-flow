@@ -473,6 +473,82 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertFalse(SharedGroupCard.showsOriginalNameIndicator(title: "Research Tools", originalDisplayName: "   "))
     }
 
+    func testGroupCardCanExposeRecentlyUpdatedIndicatorState() {
+        let card = makeGroupCard(showsRecentlyUpdatedIndicator: true)
+
+        XCTAssertTrue(card.showsRecentlyUpdatedIndicator)
+    }
+
+    func testGroupCardModelDerivesRecentlyUpdatedIndicatorFromCurrentScopeSet() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/ViewModels/MainViewModel.swift")
+        let groupCardsSource = try sourceSlice(
+            in: source,
+            from: "func groupCards(matching rawQuery: String) -> [GroupCardModel] {",
+            to: "    func sourceCanonicalRepo(for sourceId: String) -> String? {"
+        )
+
+        XCTAssertTrue(groupCardsSource.contains("showsRecentlyUpdatedIndicator: recentlyUpdatedSourceIds.contains(row.id)"))
+    }
+
+    func testRecentlyUpdatedIndicatorRendersInsideTitleRowWithoutReplacingExistingHeaderAffordances() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+        let headerSource = try sourceSlice(
+            in: source,
+            from: "private var headerPrimaryContent: some View {",
+            to: "    private var headerPrimaryButtonLabel: some View {"
+        )
+
+        XCTAssertTrue(headerSource.contains("Text(card.title)"))
+        XCTAssertTrue(headerSource.contains("if card.showsRecentlyUpdatedIndicator"))
+        XCTAssertTrue(headerSource.contains("Circle()"))
+        XCTAssertTrue(headerSource.contains("AppTheme.statusSuccess(for: theme)"))
+        XCTAssertTrue(headerSource.contains("if Self.showsOriginalNameIndicator(title: card.title, originalDisplayName: card.originalDisplayName)"))
+    }
+
+    @MainActor
+    func testRecentlyUpdatedIndicatorKeepsHeaderHeightStableAtFixedWidth() {
+        let baselineCard = makeGroupCard(
+            title: "A Very Long Group Card Title That Should Still Fit In One Header Row",
+            originalDisplayName: "anthropic-skills",
+            showsRecentlyUpdatedIndicator: false
+        )
+        let updatedCard = makeGroupCard(
+            title: "A Very Long Group Card Title That Should Still Fit In One Header Row",
+            originalDisplayName: "anthropic-skills",
+            showsRecentlyUpdatedIndicator: true
+        )
+
+        let baselineSize = renderSize(for: baselineCard, width: 280)
+        let updatedSize = renderSize(for: updatedCard, width: 280)
+
+        XCTAssertEqual(updatedSize.height, baselineSize.height, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(updatedSize.width, 280)
+    }
+
+    func testRecentlyUpdatedIndicatorDoesNotChangeHeaderDividerLogic() {
+        let baselineCard = makeGroupCard(
+            headerMetaLine: "Source: 2 agent paths",
+            warningCount: 1,
+            errorCount: 2,
+            showsRecentlyUpdatedIndicator: false
+        )
+        let updatedCard = makeGroupCard(
+            headerMetaLine: "Source: 2 agent paths",
+            warningCount: 1,
+            errorCount: 2,
+            showsRecentlyUpdatedIndicator: true
+        )
+
+        XCTAssertEqual(
+            SharedGroupCard.reservesHeaderStatsRow(card: updatedCard, displayMode: .homeComfortable),
+            SharedGroupCard.reservesHeaderStatsRow(card: baselineCard, displayMode: .homeComfortable)
+        )
+        XCTAssertEqual(
+            SharedGroupCard.showsHeaderDivider(card: updatedCard, displayMode: .homeComfortable),
+            SharedGroupCard.showsHeaderDivider(card: baselineCard, displayMode: .homeComfortable)
+        )
+    }
+
     func testOriginalNameHelpTextReturnsNilWhenNilOriginalDisplayName() {
         let card = MainViewModel.GroupCardModel(
             id: "test",
@@ -521,5 +597,90 @@ final class MenuBarIconTests: XCTestCase {
 
     private func nsColor(_ color: Color) -> NSColor? {
         NSColor(color).usingColorSpace(.deviceRGB)
+    }
+
+    @MainActor
+    private func renderSize(
+        for card: MainViewModel.GroupCardModel,
+        width: CGFloat
+    ) -> CGSize {
+        let view = SharedGroupCard(
+            card: card,
+            theme: .light,
+            accent: .green,
+            displayMode: .homeComfortable,
+            clickPolicy: .home,
+            skillsCollapsed: false,
+            isUpdating: false,
+            onOpen: {},
+            onUpdate: {},
+            onTogglePinned: {},
+            onDelete: {},
+            onToggleSkill: { _, _ in },
+            onToggleAllSkills: {},
+            onToggleTarget: { _, _, _ in },
+            onToggleAllTargets: {}
+        )
+        .environment(\.locale, Locale(identifier: "en"))
+        .frame(width: width, alignment: .topLeading)
+
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.frame = NSRect(x: 0, y: 0, width: width, height: 1)
+        hostingView.layoutSubtreeIfNeeded()
+        return hostingView.fittingSize
+    }
+
+    private func makeGroupCard(
+        title: String = "Alpha",
+        originalDisplayName: String? = nil,
+        byline: String? = "by @owner",
+        headerMetaLine: String? = nil,
+        warningCount: Int = 0,
+        errorCount: Int = 0,
+        showsRecentlyUpdatedIndicator: Bool = false
+    ) -> MainViewModel.GroupCardModel {
+        MainViewModel.GroupCardModel(
+            id: "test",
+            title: title,
+            showsRecentlyUpdatedIndicator: showsRecentlyUpdatedIndicator,
+            originalDisplayName: originalDisplayName,
+            byline: byline,
+            headerMetaLine: headerMetaLine,
+            groupPath: nil,
+            sourceKind: "git",
+            sourceLocator: "https://github.com/anthropics/skills.git",
+            isPinned: false,
+            health: "valid",
+            warningCount: warningCount,
+            errorCount: errorCount,
+            skillSelection: .empty,
+            targetSelection: .empty,
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: [],
+            saveState: .init(phase: .idle, detail: nil)
+        )
+    }
+
+    private func sourceText(at relativePath: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private func sourceSlice(in source: String, from startMarker: String, to endMarker: String) throws -> String {
+        guard let startRange = source.range(of: startMarker) else {
+            XCTFail("Missing start marker: \(startMarker)")
+            return ""
+        }
+        guard let endRange = source[startRange.upperBound...].range(of: endMarker) else {
+            XCTFail("Missing end marker: \(endMarker)")
+            return ""
+        }
+        return String(source[startRange.lowerBound..<endRange.lowerBound])
     }
 }

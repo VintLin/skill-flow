@@ -254,6 +254,7 @@ final class MainViewModel {
     struct GroupCardModel: Identifiable {
         let id: String
         let title: String
+        let showsRecentlyUpdatedIndicator: Bool
         let originalDisplayName: String?
         let byline: String?
         let headerMetaLine: String?
@@ -276,6 +277,7 @@ final class MainViewModel {
         init(
             id: String,
             title: String,
+            showsRecentlyUpdatedIndicator: Bool = false,
             originalDisplayName: String? = nil,
             byline: String?,
             headerMetaLine: String? = nil,
@@ -297,6 +299,7 @@ final class MainViewModel {
         ) {
             self.id = id
             self.title = title
+            self.showsRecentlyUpdatedIndicator = showsRecentlyUpdatedIndicator
             self.originalDisplayName = originalDisplayName
             self.byline = byline
             self.headerMetaLine = headerMetaLine
@@ -1486,6 +1489,7 @@ final class MainViewModel {
             return GroupCardModel(
                 id: row.id,
                 title: row.displayName,
+                showsRecentlyUpdatedIndicator: recentlyUpdatedSourceIds.contains(row.id),
                 originalDisplayName: summary.sourceOriginalDisplayName,
                 byline: metadata.byline,
                 groupPath: groupPath,
