@@ -130,7 +130,7 @@ final class GroupTagController {
     }
 
     func resolvedTags(forSourceId sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
-        effectiveTagPreferences(forSourceId: sourceId, locale: locale)
+        savedTagPreferences(forSourceId: sourceId, locale: locale)
             .prefix(Self.maximumTagCount)
             .map { preference in
                 GroupTagDisplayItem(
@@ -243,7 +243,8 @@ final class GroupTagController {
             return .empty
         }
 
-        var current = effectiveTagPreferences(forSourceId: sourceId, locale: locale)
+        let key = groupKey(forSourceId: sourceId)
+        var current = savedTagPreferences(forSourceId: sourceId, locale: locale)
         let existingIdentities = Set(current.flatMap(Self.tagIdentities))
         let candidateIdentities = Self.tagIdentities(
             forTitle: normalized.title,
@@ -260,21 +261,22 @@ final class GroupTagController {
                 tagId: normalized.tagId
             )
         )
-        state.groupTags.customTagsBySourceId[sourceId] = Array(current.prefix(Self.maximumTagCount))
-        store.saveCustomTags(state.groupTags.customTagsBySourceId)
+        state.groupTags.tagCollection.tagsByGroupKey[key] = Array(current.prefix(Self.maximumTagCount))
+        store.saveTagCollection(state.groupTags.tagCollection)
         return .added
     }
 
     func removeCustomTag(_ tagID: String, fromSourceId sourceId: String, locale: Locale) -> GroupTagMutationResult {
-        let current = effectiveTagPreferences(forSourceId: sourceId, locale: locale)
+        let key = groupKey(forSourceId: sourceId)
+        let current = savedTagPreferences(forSourceId: sourceId, locale: locale)
         let next = current.filter { Self.tagKey(for: $0) != tagID }
 
         guard next.count != current.count else {
             return .notFound
         }
 
-        state.groupTags.customTagsBySourceId[sourceId] = next
-        store.saveCustomTags(state.groupTags.customTagsBySourceId)
+        state.groupTags.tagCollection.tagsByGroupKey[key] = next
+        store.saveTagCollection(state.groupTags.tagCollection)
         return .removed
     }
 
@@ -286,18 +288,34 @@ final class GroupTagController {
         normalizedTagInput(rawTitle, locale: locale).title
     }
 
-    private func effectiveTagPreferences(forSourceId sourceId: String, locale: Locale) -> [GroupTagPreference] {
-        if let stored = state.groupTags.customTagsBySourceId[sourceId] {
+    private func savedTagPreferences(forSourceId sourceId: String, locale: Locale) -> [GroupTagPreference] {
+        let key = groupKey(forSourceId: sourceId)
+        if let stored = state.groupTags.tagCollection.tagsByGroupKey[key] {
             return Array(stored.prefix(Self.maximumTagCount))
         }
 
-        return Array(
+        let defaults = Array(
             (presetTags(
                 canonicalRepo: sourceCanonicalRepo(sourceId),
                 locator: sourceLocator(sourceId),
                 locale: locale
             ) ?? []).prefix(Self.maximumTagCount)
         )
+        state.groupTags.tagCollection.tagsByGroupKey[key] = defaults
+        store.saveTagCollection(state.groupTags.tagCollection)
+        return defaults
+    }
+
+    private func groupKey(forSourceId sourceId: String) -> String {
+        if let canonicalRepo = Self.normalizedGroupKeyMaterial(sourceCanonicalRepo(sourceId)) {
+            return "repo:\(canonicalRepo)"
+        }
+
+        if let locator = Self.normalizedGroupKeyMaterial(sourceLocator(sourceId)) {
+            return "locator:\(locator)"
+        }
+
+        return "source:\(Self.normalizedKey(sourceId))"
     }
 
     private func presetTags(canonicalRepo: String?, locator: String?, locale: Locale) -> [GroupTagPreference]? {
@@ -392,6 +410,14 @@ final class GroupTagController {
         (value ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+    }
+
+    private static func normalizedGroupKeyMaterial(_ value: String?) -> String? {
+        let normalized = (value ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .lowercased()
+        return normalized.isEmpty ? nil : normalized
     }
 
     private static func tagKey(for preference: GroupTagPreference) -> String {

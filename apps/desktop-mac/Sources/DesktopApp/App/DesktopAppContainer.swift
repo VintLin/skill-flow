@@ -30,7 +30,7 @@ final class DesktopAppContainer {
         let mutationCoordinator = DesktopMutationCoordinator(commandFacade: resolvedCommandFacade)
         let resolvedRuntime = runtime ?? DesktopRuntime(dependencies: .live(query: resolvedQueryFacade))
         let groupTagStore = DesktopGroupTagStore()
-        resolvedRuntime.state.groupTags.customTagsBySourceId = groupTagStore.loadCustomTags()
+        resolvedRuntime.state.groupTags.tagCollection = groupTagStore.loadTagCollection()
 
         self.runtime = resolvedRuntime
         self.mainViewModel = MainViewModel(

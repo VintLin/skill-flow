@@ -374,9 +374,9 @@ final class MainViewModelSelectionTests: XCTestCase {
         )
         await model.bootstrap()
 
-        appState.groupTags.customTagsBySourceId = [
-            "alpha": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.blue.rawValue)],
-            "beta": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.green.rawValue)]
+        appState.groupTags.tagCollection.tagsByGroupKey = [
+            "source:alpha": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.blue.rawValue)],
+            "source:beta": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.green.rawValue)]
         ]
         appState.groupTags.selectedHomeFilterKey = "custom:shared"
         model.setSelectedHomeAgentFilter("cursor")
