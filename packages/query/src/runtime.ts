@@ -1382,7 +1382,7 @@ export class SkillFlowApp {
     if (!state) {
       return;
     }
-    const summaries = this.workflowService.getSummaries(
+    const summaries = this.getWorkflowSummaries(
       state.manifest,
       state.lockFile,
       undefined,
@@ -1405,6 +1405,28 @@ export class SkillFlowApp {
     }>
   > {
     return this.runSerializedMutation(() => this.listWorkflowsImpl());
+  }
+
+  private getWorkflowSummaries(
+    manifest: ManifestFile,
+    lockFile: LockFile,
+    audit: DoctorReport | undefined,
+    collections: CollectionsFile,
+  ): WorkflowSummary[] {
+    return this.workflowService.getSummaries(manifest, lockFile, audit, collections).map((summary) => {
+      const binding = manifest.bindings[summary.source.id];
+      if (!binding) {
+        return summary;
+      }
+
+      return {
+        ...summary,
+        source: {
+          ...summary.source,
+          selectionMode: binding.selectionMode,
+        },
+      };
+    });
   }
 
   async saveSettings(input: {
@@ -1483,7 +1505,7 @@ export class SkillFlowApp {
       });
     }
 
-    const summary = this.workflowService.getSummaries(manifest, lockFile, undefined, collections).find((item) => item.source.id === sourceId);
+    const summary = this.getWorkflowSummaries(manifest, lockFile, undefined, collections).find((item) => item.source.id === sourceId);
     if (!summary) {
       return fail({
         code: "SOURCE_NOT_FOUND",
@@ -1513,7 +1535,7 @@ export class SkillFlowApp {
     }
     const scopedSource = prepared.data.manifest.sources.find((item) => item.id === sourceId) ?? source;
     const scopedSummary =
-      this.workflowService.getSummaries(prepared.data.manifest, lockFile, undefined, collections).find((item) => item.source.id === sourceId)
+      this.getWorkflowSummaries(prepared.data.manifest, lockFile, undefined, collections).find((item) => item.source.id === sourceId)
       ?? summary;
     const scopedBinding = this.bindingToSummary(
       prepared.data.manifest.bindings[sourceId],
@@ -3975,7 +3997,7 @@ export class SkillFlowApp {
     const hiddenSourceIds = this.hiddenSourceIdsFromCollections(collections);
     return ok(
       {
-        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, collections)
+        summaries: this.getWorkflowSummaries(manifest, lockFile, undefined, collections)
           .filter((summary) => !hiddenSourceIds.has(summary.source.id)),
         pinnedSourceIds: reconciledPreferences.pinnedSourceIds,
         recentProjects: reconciledPreferences.recentProjects,
@@ -4002,7 +4024,7 @@ export class SkillFlowApp {
       {
         manifest,
         lockFile,
-        summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, collections),
+        summaries: this.getWorkflowSummaries(manifest, lockFile, undefined, collections),
       },
       [],
     );

@@ -47,6 +47,43 @@ describe.sequential("runtime v2 authority reads", () => {
     expect(inspected.data.deployments).toHaveLength(1);
   });
 
+  test("listWorkflows preserves selectionMode all in summary after authority update adds a new leaf", async () => {
+    const state = createAuthorityState(sandbox);
+    state.manifest.bindings.repo = {
+      sourceId: "repo",
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets: ["codex"],
+    };
+    await writeAuthorityState(sandbox.stateRoot, state);
+
+    state.lockFile.sources.repo = {
+      ...state.lockFile.sources.repo,
+      leafIds: ["repo:one", "repo:two", "repo:three"],
+    };
+    state.lockFile.leafInventory.push(createLeaf("repo:three", "three", path.join(sandbox.sandboxRoot, "sources", "repo")));
+    await writeAuthorityState(sandbox.stateRoot, state);
+
+    const app = new SkillFlowApp();
+    const listed = await app.listWorkflows();
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+
+    const summary = listed.data.summaries.find((item) => item.source.id === "repo");
+    expect(summary).toBeDefined();
+    expect(summary?.source).toEqual(expect.objectContaining({
+      selectionMode: "all",
+    }));
+    expect(summary?.leafs.map((leaf) => leaf.id)).toEqual([
+      "repo:one",
+      "repo:two",
+      "repo:three",
+    ]);
+  });
+
   test("inspectSource uses v2 projected project drafts for scoped inspect", async () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox, {
       preferences: {
