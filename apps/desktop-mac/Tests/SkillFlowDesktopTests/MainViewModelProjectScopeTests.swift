@@ -137,7 +137,7 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertEqual(model.toast?.message, "Switched to Global.")
     }
 
-    func testSelectingProjectScopeInitializesMissingProjectDraftWithAllSkillsAndNoTargets() async {
+    func testSelectingProjectScopeInitializesMissingProjectDraftFromAuthoritativeSummarySelectionMode() async {
         let query = ProjectScopeQueryStub()
         query.bootstrapProjectDrafts = [:]
         let command = ProjectScopeCommandStub()
@@ -153,14 +153,41 @@ final class MainViewModelProjectScopeTests: XCTestCase {
 
         XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .partial)
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .full)
+        XCTAssertTrue(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
+        XCTAssertFalse(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
 
         await model.selectProjectScope(.project("repo-a"))
 
-        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
-        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .empty)
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .partial)
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .full)
+        XCTAssertTrue(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
+        XCTAssertFalse(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
     }
 
-    func testSelectingProjectScopeDoesNotReinitializeExistingProjectDraft() async {
+    func testSelectingProjectScopeInitializesMissingProjectDraftWithAllSkillsWhenSummaryIsAllSelected() async {
+        let query = ProjectScopeQueryStub()
+        query.bootstrapProjectDrafts = [:]
+        query.bootstrapSummarySelectedLeafIds = []
+        query.bootstrapSummarySelectionMode = "all"
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+        await model.selectProjectScope(.project("repo-a"))
+
+        XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
+        XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .full)
+        XCTAssertTrue(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
+        XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
+    }
+
+    func testSelectingProjectScopeDoesNotReinitializeExistingProjectDraftAfterProjectSpecificSkillChanges() async {
         let query = ProjectScopeQueryStub()
         query.bootstrapProjectDrafts = [:]
         let command = ProjectScopeCommandStub()
@@ -174,12 +201,14 @@ final class MainViewModelProjectScopeTests: XCTestCase {
 
         await model.bootstrap()
         await model.selectProjectScope(.project("repo-a"))
-        await model.setTargetEnabled("codex", enabled: true, sourceId: "alpha")
+        await model.setSkillEnabled("alpha-b", enabled: true, sourceId: "alpha")
         await model.selectProjectScope(.global)
         await model.selectProjectScope(.project("repo-a"))
 
         XCTAssertEqual(model.skillSelectionState(sourceId: "alpha"), .full)
         XCTAssertEqual(model.targetSelectionState(sourceId: "alpha"), .full)
+        XCTAssertTrue(model.isSkillEnabled("alpha-a", sourceId: "alpha"))
+        XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
     }
 
     func testSelectingProjectScopeShowsInitializationToastOnlyWhenProjectDraftsAreCreated() async {
@@ -349,6 +378,9 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
             ]
         ]
     ]
+    var bootstrapSummarySelectedLeafIds: [String] = ["alpha-a"]
+    var bootstrapSummaryEnabledTargets: [String] = ["codex"]
+    var bootstrapSummarySelectionMode: String? = "selected"
     var listRecentProjects: [[String: Any]] = [
         [
             "projectId": "repo-a",
@@ -367,8 +399,9 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
             "summaries": [
                 summaryPayload(
                     sourceId: "alpha",
-                    selectedLeafIds: ["alpha-a"],
-                    enabledTargets: ["codex"]
+                    selectedLeafIds: bootstrapSummarySelectedLeafIds,
+                    enabledTargets: bootstrapSummaryEnabledTargets,
+                    selectionMode: bootstrapSummarySelectionMode
                 )
             ],
             "initialDrafts": [
@@ -404,8 +437,9 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
             "summaries": [
                 summaryPayload(
                     sourceId: "alpha",
-                    selectedLeafIds: ["alpha-a"],
-                    enabledTargets: ["codex"]
+                    selectedLeafIds: bootstrapSummarySelectedLeafIds,
+                    enabledTargets: bootstrapSummaryEnabledTargets,
+                    selectionMode: bootstrapSummarySelectionMode
                 )
             ],
             "recentProjects": listRecentProjects,
@@ -454,14 +488,16 @@ private final class ProjectScopeQueryStub: DesktopQuerying {
     private func summaryPayload(
         sourceId: String,
         selectedLeafIds: [String],
-        enabledTargets: [String]
+        enabledTargets: [String],
+        selectionMode: String? = "selected"
     ) -> [String: Any] {
         [
             "source": [
                 "id": sourceId,
                 "kind": "clawhub",
                 "displayName": "Alpha",
-                "locator": "https://example.com/\(sourceId)"
+                "locator": "https://example.com/\(sourceId)",
+                "selectionMode": selectionMode as Any
             ],
             "lock": [
                 "updatedAt": "2026-03-31T12:00:00.000Z"

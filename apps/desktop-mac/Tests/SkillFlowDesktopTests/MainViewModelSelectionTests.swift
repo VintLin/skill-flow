@@ -701,6 +701,101 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
     }
 
+    func testRefreshListPrunesRecentlyUpdatedMarkersForRemovedSources() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        var updatedAlpha = try XCTUnwrap(state.sources["alpha"])
+        updatedAlpha.updatedAt = "2026-03-30T00:00:00Z"
+        state.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: true,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: updatedAlpha
+            )
+        ]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.recentlyUpdatedIndicatorDuration = .seconds(5)
+
+        await model.updateSource("alpha")
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        var nextState = try fixture.readState()
+        nextState.sources.removeValue(forKey: "alpha")
+        try fixture.reset(state: nextState)
+
+        await model.refreshList()
+
+        XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
+    }
+
+    func testRefreshListCancelsPrunedRecentlyUpdatedClearTasksBeforeSameSourceIdReturns() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        var firstUpdatedAlpha = try XCTUnwrap(state.sources["alpha"])
+        firstUpdatedAlpha.updatedAt = "2026-03-30T00:00:00Z"
+        state.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: true,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: firstUpdatedAlpha
+            )
+        ]
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        model.recentlyUpdatedIndicatorDuration = .milliseconds(150)
+
+        await model.updateSource("alpha")
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        var removedState = try fixture.readState()
+        removedState.sources.removeValue(forKey: "alpha")
+        removedState.pendingUpdatesBySourceId = [:]
+        try fixture.reset(state: removedState)
+
+        await model.refreshList()
+        XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        try await Task.sleep(for: .milliseconds(80))
+
+        var readdedState = removedState
+        var secondUpdatedAlpha = firstUpdatedAlpha
+        secondUpdatedAlpha.updatedAt = "2026-03-31T00:00:00Z"
+        readdedState.sources["alpha"] = secondUpdatedAlpha
+        readdedState.pendingUpdatesBySourceId = [
+            "alpha": TestFixture.State.PendingUpdateState(
+                result: TestFixture.State.UpdateResultState(
+                    changed: true,
+                    addedLeafIds: [],
+                    removedLeafIds: [],
+                    invalidatedLeafIds: []
+                ),
+                nextSource: secondUpdatedAlpha
+            )
+        ]
+        try fixture.reset(state: readdedState)
+
+        await model.refreshList()
+        await model.updateSource("alpha")
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        try await Task.sleep(for: .milliseconds(90))
+        XCTAssertTrue(model.recentlyUpdatedSourceIds.contains("alpha"))
+
+        try await Task.sleep(for: .milliseconds(90))
+        XCTAssertFalse(model.recentlyUpdatedSourceIds.contains("alpha"))
+    }
+
     func testSetTargetEnabledIgnoresStaleRenderedState() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -2220,7 +2315,7 @@ private struct TestFixture {
           originalDisplayName: source.originalDisplayName || source.displayName,
           locator: source.locator,
           addedAt: '2026-03-25T12:00:00Z',
-          selectionMode: source.selectionMode || 'partial'
+          selectionMode: source.selectionMode || 'selected'
         },
         binding: {
           selectedLeafIds: source.selectedLeafIds || [],

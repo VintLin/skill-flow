@@ -4816,10 +4816,7 @@ final class MainViewModel {
                 continue
             }
 
-            workingDrafts[key] = DraftState(
-                selectedLeafIds: summary.leafs.map(\.id),
-                enabledTargets: []
-            )
+            workingDrafts[key] = buildInitialDraftFromSummary(summary)
             saveStateBySourceId[key] = SaveState(phase: .idle, detail: nil)
             didInitialize = true
         }
@@ -6458,6 +6455,19 @@ final class MainViewModel {
     private func pruneStateMaps(allowedSourceIds: Set<String>) {
         workingDrafts = pruneSourceMap(workingDrafts, allowedSourceIds: allowedSourceIds)
         saveStateBySourceId = pruneSourceMap(saveStateBySourceId, allowedSourceIds: allowedSourceIds)
+        let removedRecentlyUpdatedKeys = Set(
+            recentlyUpdatedSourceKeys.filter { !allowedSourceIds.contains($0.sourceId) }
+        )
+        for key in removedRecentlyUpdatedKeys {
+            recentlyUpdatedClearTasksBySourceId[key]?.cancel()
+        }
+        recentlyUpdatedSourceKeys = Set(
+            recentlyUpdatedSourceKeys.filter { allowedSourceIds.contains($0.sourceId) }
+        )
+        recentlyUpdatedClearTasksBySourceId = pruneSourceMap(
+            recentlyUpdatedClearTasksBySourceId,
+            allowedSourceIds: allowedSourceIds
+        )
         renamedSourceDisplayNameOverridesBySourceId = renamedSourceDisplayNameOverridesBySourceId.filter {
             allowedSourceIds.contains($0.key)
         }
