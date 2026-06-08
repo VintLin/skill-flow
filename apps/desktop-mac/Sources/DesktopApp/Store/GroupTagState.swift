@@ -16,7 +16,22 @@ struct GroupTagPreference: Codable, Equatable {
     }
 }
 
+struct GroupTagCollection: Codable, Equatable {
+    static let currentSchemaVersion = 2
+
+    var schemaVersion: Int
+    var tagsByGroupKey: [String: [GroupTagPreference]]
+
+    init(
+        schemaVersion: Int = Self.currentSchemaVersion,
+        tagsByGroupKey: [String: [GroupTagPreference]] = [:]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.tagsByGroupKey = tagsByGroupKey
+    }
+}
+
 struct GroupTagState {
-    var customTagsBySourceId: [String: [GroupTagPreference]] = [:]
+    var tagCollection = GroupTagCollection()
     var selectedHomeFilterKey: String? = nil
 }

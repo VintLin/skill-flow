@@ -103,6 +103,24 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.groupCards.first(where: { $0.id == "beta" })?.isPinned, true)
     }
 
+    func testSourceCanonicalRepoNormalizesOnlyGitHubRepoMetadata() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.canonicalRepo = nil
+        state.sources["alpha"]?.originLocator = "/Users/example/local-skills"
+        state.sources["alpha"]?.locator = "/Users/example/local-skills"
+        state.sources["beta"]?.canonicalRepo = nil
+        state.sources["beta"]?.originLocator = "https://github.com/Anthropics/Skills.git"
+        state.sources["beta"]?.locator = "/Users/example/cache/skills"
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+
+        XCTAssertNil(model.sourceCanonicalRepo(for: "alpha"))
+        XCTAssertEqual(model.sourceCanonicalRepo(for: "beta"), "anthropics/skills")
+        XCTAssertEqual(model.sourceLocator(for: "alpha"), "/Users/example/local-skills")
+    }
+
     func testVisibleTargetsFollowSettingsOrderAndVisibility() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -374,9 +392,9 @@ final class MainViewModelSelectionTests: XCTestCase {
         )
         await model.bootstrap()
 
-        appState.groupTags.customTagsBySourceId = [
-            "alpha": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.blue.rawValue)],
-            "beta": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.green.rawValue)]
+        appState.groupTags.tagCollection.tagsByGroupKey = [
+            "source:alpha": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.blue.rawValue)],
+            "source:beta": [GroupTagPreference(title: "shared", accentRawValue: DesktopAccentColor.green.rawValue)]
         ]
         appState.groupTags.selectedHomeFilterKey = "custom:shared"
         model.setSelectedHomeAgentFilter("cursor")
@@ -1716,6 +1734,8 @@ private struct TestFixture {
         var displayName: String
         var originalDisplayName: String? = nil
         var locator: String
+        var canonicalRepo: String? = nil
+        var originLocator: String? = nil
         var selectionMode: String? = nil
         var starCount: Int?
         var metadataStatus: String?
@@ -2217,6 +2237,8 @@ private struct TestFixture {
             displayName: source.displayName,
             originalDisplayName: source.originalDisplayName || source.displayName,
             locator: source.locator,
+            ...(source.canonicalRepo ? { canonicalRepo: source.canonicalRepo } : {}),
+            ...(source.originLocator ? { originLocator: source.originLocator } : {}),
             ...(source.selectionMode ? { selectionMode: source.selectionMode } : {})
           },
           lock: {
@@ -2314,6 +2336,8 @@ private struct TestFixture {
           displayName: source.displayName,
           originalDisplayName: source.originalDisplayName || source.displayName,
           locator: source.locator,
+          ...(source.canonicalRepo ? { canonicalRepo: source.canonicalRepo } : {}),
+          ...(source.originLocator ? { originLocator: source.originLocator } : {}),
           addedAt: '2026-03-25T12:00:00Z',
           selectionMode: source.selectionMode || 'selected'
         },

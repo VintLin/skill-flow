@@ -1,7 +1,7 @@
 import Foundation
 
 struct DesktopGroupTagStore {
-    static let customTagsKey = "desktop.groupTags.customTagsBySourceId"
+    static let tagCollectionKey = "desktop.groupTags.v2.tagsByGroupKey"
 
     let userDefaults: UserDefaults
     private let encoder = JSONEncoder()
@@ -11,24 +11,21 @@ struct DesktopGroupTagStore {
         self.userDefaults = userDefaults
     }
 
-    func loadCustomTags() -> [String: [GroupTagPreference]] {
-        guard let data = userDefaults.data(forKey: Self.customTagsKey) else {
-            return [:]
+    func loadTagCollection() -> GroupTagCollection {
+        guard let data = userDefaults.data(forKey: Self.tagCollectionKey) else {
+            return GroupTagCollection()
         }
 
-        if let decoded = try? decoder.decode([String: [GroupTagPreference]].self, from: data) {
-            return decoded
+        guard let decoded = try? decoder.decode(GroupTagCollection.self, from: data),
+              decoded.schemaVersion == GroupTagCollection.currentSchemaVersion else {
+            return GroupTagCollection()
         }
 
-        if let legacy = try? decoder.decode([String: GroupTagPreference].self, from: data) {
-            return legacy.mapValues { [$0] }
-        }
-
-        return [:]
+        return decoded
     }
 
-    func saveCustomTags(_ customTagsBySourceId: [String: [GroupTagPreference]]) {
-        let encoded = try? encoder.encode(customTagsBySourceId)
-        userDefaults.set(encoded, forKey: Self.customTagsKey)
+    func saveTagCollection(_ tagCollection: GroupTagCollection) {
+        let encoded = try? encoder.encode(tagCollection)
+        userDefaults.set(encoded, forKey: Self.tagCollectionKey)
     }
 }

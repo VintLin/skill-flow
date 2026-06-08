@@ -675,6 +675,7 @@ final class WorkflowCoverageTests: XCTestCase {
                 "opencode",
                 "openclaw",
                 "hermes-agent",
+                "minimax-code",
                 "pi",
                 "trae",
                 "windsurf",

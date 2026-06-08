@@ -2963,6 +2963,10 @@ final class MainViewModel {
     }
 
     private static func normalizedImportRecommendationKey(_ value: String) -> String {
+        if let normalizedRepo = ImportRepositoryIdentity.normalizedGitHubRepo(value) {
+            return normalizedRepo
+        }
+
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return ""
@@ -2988,19 +2992,10 @@ final class MainViewModel {
                 continue
             }
 
-            return importRecommendationAlias("\(lowered[ownerRange])/\(lowered[repoRange])")
+            return ImportRepositoryIdentity.importRecommendationAlias("\(lowered[ownerRange])/\(lowered[repoRange])")
         }
 
-        return importRecommendationAlias(lowered.replacingOccurrences(of: ".git", with: ""))
-    }
-
-    private static func importRecommendationAlias(_ repo: String) -> String {
-        switch repo {
-        case "anthropic/skills":
-            return "anthropics/skills"
-        default:
-            return repo
-        }
+        return ImportRepositoryIdentity.importRecommendationAlias(lowered.replacingOccurrences(of: ".git", with: ""))
     }
 
     private static func localRecommendationTitle(for canonicalRepo: String) -> String {
@@ -3662,8 +3657,11 @@ final class MainViewModel {
                 ?? rawSourceOriginalDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
                 ?? sourceDisplayName
             let sourceLocator = source["locator"] as? String ?? ""
-            let sourceCanonicalRepo = (source["canonicalRepo"] as? String)?.nonEmpty
-                ?? (source["originLocator"] as? String)?.nonEmpty
+            let sourceCanonicalRepo = [
+                source["canonicalRepo"] as? String,
+                source["originLocator"] as? String,
+                source["locator"] as? String,
+            ].compactMap { ImportRepositoryIdentity.normalizedGitHubRepo($0) }.first
             let selectionMode = (source["selectionMode"] as? String)
                 .flatMap(WorkflowSummary.SelectionMode.init(rawValue:))
 
