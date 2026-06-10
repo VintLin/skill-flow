@@ -192,10 +192,10 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         guard
-            let statusRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.status"#),
-            let sourceTypeRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType"#),
-            let tagsRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.tags"#),
-            let agentsRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents"#),
+            let statusRange = source.range(of: #"sectionId: HomeSidebarSectionID.status"#),
+            let sourceTypeRange = source.range(of: #"sectionId: HomeSidebarSectionID.sourceType"#),
+            let tagsRange = source.range(of: #"sectionId: HomeSidebarSectionID.tags"#),
+            let agentsRange = source.range(of: #"sectionId: HomeSidebarSectionID.agents"#),
             let projectsRange = source.range(of: "homeProjectScopeList")
         else {
             XCTFail("Expected sidebar sections were not found")
@@ -303,6 +303,35 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(tagSource.contains("showsHashPrefix: true"))
         XCTAssertFalse(pillSource.contains("Text(\"#\\(title)\")"))
         XCTAssertTrue(pillSource.contains("HomeSidebarChipTitleFormatter.displayTitle(title, showsHashPrefix: showsHashPrefix)"))
+    }
+
+    func testHomeSidebarOnlyTagSectionEnablesTagReordering() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(source.contains("onMoveTag: { sourceTagID, targetTagID, placement in"))
+        XCTAssertTrue(source.contains("homeContainer.moveHomeTag(sourceTagID: sourceTagID, targetTagID: targetTagID, placement: placement)"))
+        XCTAssertTrue(source.contains("HomeSidebarTagDropDelegate"))
+
+        guard
+            let statusSection = source.range(of: "sectionId: HomeSidebarSectionID.status"),
+            let sourceTypeSection = source.range(of: "sectionId: HomeSidebarSectionID.sourceType"),
+            let tagSection = source.range(of: "sectionId: HomeSidebarSectionID.tags"),
+            let agentSection = source.range(of: "sectionId: HomeSidebarSectionID.agents"),
+            let projectSection = source.range(of: "homeSidebarProjectSection", range: agentSection.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected Home sidebar sections were not found")
+            return
+        }
+
+        let statusBlock = String(source[statusSection.lowerBound..<sourceTypeSection.lowerBound])
+        let sourceTypeBlock = String(source[sourceTypeSection.lowerBound..<tagSection.lowerBound])
+        let tagBlock = String(source[tagSection.lowerBound..<agentSection.lowerBound])
+        let agentBlock = String(source[agentSection.lowerBound..<projectSection.lowerBound])
+
+        XCTAssertTrue(tagBlock.contains("onMoveTag:"))
+        XCTAssertFalse(statusBlock.contains("onMoveTag:"))
+        XCTAssertFalse(sourceTypeBlock.contains("onMoveTag:"))
+        XCTAssertFalse(agentBlock.contains("onMoveTag:"))
     }
 
     func testHomeLayoutUsesIntegratedSidebarHeaderShell() throws {

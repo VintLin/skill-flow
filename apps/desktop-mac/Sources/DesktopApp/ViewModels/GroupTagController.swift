@@ -67,6 +67,11 @@ enum GroupTagMutationResult: Equatable {
     }
 }
 
+enum HomeTagMovePlacement {
+    case before
+    case after
+}
+
 @MainActor
 final class GroupTagController {
     struct HomeSnapshot {
@@ -76,8 +81,9 @@ final class GroupTagController {
         let visibleSourceIDs: [String]
         let tagsBySourceID: [String: [GroupTagDisplayItem]]
         let suggestionsBySourceID: [String: [GroupTagDisplayItem]]
+        let tagRankByID: [String: Int]
 
-        fileprivate let visibleSourceIDSet: Set<String>
+        let visibleSourceIDSet: Set<String>
 
         func contains(sourceId: String) -> Bool {
             visibleSourceIDSet.contains(sourceId)
@@ -161,7 +167,10 @@ final class GroupTagController {
             }
         }
 
-        availableTags.sort(by: Self.sortTags)
+        let orderedTags = reconciledAvailableTags(availableTags)
+        let tagRankByID = Dictionary(uniqueKeysWithValues: orderedTags.enumerated().map { index, item in
+            (item.id, index)
+        })
 
         let selectedKey: String?
         if let selected = state.groupTags.selectedHomeFilterKey,
@@ -185,17 +194,18 @@ final class GroupTagController {
         for sourceId in sourceIds {
             let currentTagIDs = Set(tagsBySourceID[sourceId, default: []].map(\.id))
             suggestionsBySourceID[sourceId] = currentTagIDs.count < Self.maximumTagCount
-                ? availableTags.filter { !currentTagIDs.contains($0.id) }
+                ? orderedTags.filter { !currentTagIDs.contains($0.id) }
                 : []
         }
 
         return HomeSnapshot(
-            availableTags: availableTags,
+            availableTags: orderedTags,
             tagCountsByID: tagCountsByID,
             selectedKey: selectedKey,
             visibleSourceIDs: visibleSourceIDs,
             tagsBySourceID: tagsBySourceID,
             suggestionsBySourceID: suggestionsBySourceID,
+            tagRankByID: tagRankByID,
             visibleSourceIDSet: visibleSourceIDSet
         )
     }
@@ -280,6 +290,25 @@ final class GroupTagController {
         return .removed
     }
 
+    func moveHomeTag(sourceTagID: String, targetTagID: String, placement: HomeTagMovePlacement) {
+        guard sourceTagID != targetTagID else {
+            return
+        }
+
+        var ordered = state.groupTags.tagCollection.orderedTagKeys
+        guard let sourceIndex = ordered.firstIndex(of: sourceTagID),
+              let targetIndex = ordered.firstIndex(of: targetTagID) else {
+            return
+        }
+
+        let source = ordered.remove(at: sourceIndex)
+        let adjustedTargetIndex = ordered.firstIndex(of: targetTagID) ?? targetIndex
+        let insertionIndex = placement == .before ? adjustedTargetIndex : adjustedTargetIndex + 1
+        ordered.insert(source, at: min(insertionIndex, ordered.count))
+        state.groupTags.tagCollection.orderedTagKeys = ordered
+        store.saveTagCollection(state.groupTags.tagCollection)
+    }
+
     static func inputRule(for locale: Locale) -> GroupTagInputRule {
         GroupTagInputRule.forLocale(locale)
     }
@@ -317,6 +346,28 @@ final class GroupTagController {
         }
 
         return "source:\(Self.normalizedKey(sourceId))"
+    }
+
+    private func reconciledAvailableTags(_ tags: [GroupTagDisplayItem]) -> [GroupTagDisplayItem] {
+        let tagsByID = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0) })
+        let existingGlobalTagIDs = Set(
+            state.groupTags.tagCollection.tagsByGroupKey.values
+                .flatMap { $0.map(Self.tagKey) }
+        )
+        let currentOrder = state.groupTags.tagCollection.orderedTagKeys.filter { existingGlobalTagIDs.contains($0) }
+        let orderedVisible = currentOrder.compactMap { tagsByID[$0] }
+        let orderedVisibleIDs = Set(orderedVisible.map(\.id))
+        let appended = tags
+            .filter { !orderedVisibleIDs.contains($0.id) }
+            .sorted(by: Self.sortTags)
+        let reconciledOrder = currentOrder + appended.map(\.id)
+
+        if reconciledOrder != state.groupTags.tagCollection.orderedTagKeys {
+            state.groupTags.tagCollection.orderedTagKeys = reconciledOrder
+            store.saveTagCollection(state.groupTags.tagCollection)
+        }
+
+        return orderedVisible + appended
     }
 
     private func presetTags(canonicalRepo: String?, locator: String?, locale: Locale) -> [GroupTagPreference]? {

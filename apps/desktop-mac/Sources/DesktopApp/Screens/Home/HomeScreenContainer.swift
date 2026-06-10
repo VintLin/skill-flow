@@ -63,9 +63,42 @@ final class HomeScreenContainer {
         from cards: [MainViewModel.GroupCardModel],
         snapshot: GroupTagController.HomeSnapshot
     ) -> [MainViewModel.GroupCardModel] {
-        return cards.filter { card in
+        let filtered = cards.filter { card in
             snapshot.contains(sourceId: card.id)
                 && mainViewModel.matchesHomeSidebarFilters(card)
+        }
+        return Self.sortedHomeGroupCards(
+            filtered,
+            snapshot: snapshot,
+            pinnedSourceIds: mainViewModel.pinnedSourceIds
+        )
+    }
+
+    static func sortedHomeGroupCards(
+        _ cards: [MainViewModel.GroupCardModel],
+        snapshot: GroupTagController.HomeSnapshot,
+        pinnedSourceIds: [String]
+    ) -> [MainViewModel.GroupCardModel] {
+        cards.sorted { lhs, rhs in
+            let leftPin = pinRank(for: lhs.id, pinnedSourceIds: pinnedSourceIds)
+            let rightPin = pinRank(for: rhs.id, pinnedSourceIds: pinnedSourceIds)
+            if leftPin != rightPin {
+                return leftPin < rightPin
+            }
+
+            let leftTag = firstTagRank(for: lhs.id, snapshot: snapshot)
+            let rightTag = firstTagRank(for: rhs.id, snapshot: snapshot)
+            if leftTag != rightTag {
+                return leftTag < rightTag
+            }
+
+            let leftName = homeNameSortKey(lhs.title)
+            let rightName = homeNameSortKey(rhs.title)
+            if leftName != rightName {
+                return leftName < rightName
+            }
+
+            return lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
         }
     }
 
@@ -83,6 +116,14 @@ final class HomeScreenContainer {
 
     func setSelectedHomeTagFilterKey(_ key: String?) {
         groupTagController.setSelectedHomeFilterKey(key)
+    }
+
+    func moveHomeTag(sourceTagID: String, targetTagID: String, placement: HomeTagMovePlacement) {
+        groupTagController.moveHomeTag(
+            sourceTagID: sourceTagID,
+            targetTagID: targetTagID,
+            placement: placement
+        )
     }
 
     func homeAgentFilterOptions() -> [MainViewModel.HomeAgentFilterOption] {
@@ -225,5 +266,26 @@ final class HomeScreenContainer {
                 self?.observeMainViewModelState()
             }
         }
+    }
+
+    private static func pinRank(for sourceId: String, pinnedSourceIds: [String]) -> Int {
+        pinnedSourceIds.firstIndex(of: sourceId) ?? Int.max
+    }
+
+    private static func firstTagRank(for sourceId: String, snapshot: GroupTagController.HomeSnapshot) -> Int {
+        guard let firstTag = snapshot.tagsBySourceID[sourceId]?.first else {
+            return Int.max
+        }
+        return snapshot.tagRankByID[firstTag.id] ?? Int.max - 1
+    }
+
+    private static func homeNameSortKey(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let latin = trimmed.applyingTransform(.mandarinToLatin, reverse: false) ?? trimmed
+        let stripped = latin.applyingTransform(.stripCombiningMarks, reverse: false) ?? latin
+        return stripped.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
     }
 }

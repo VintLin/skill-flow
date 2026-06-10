@@ -568,6 +568,108 @@ final class GroupTagControllerTests: XCTestCase {
         XCTAssertEqual(tags, [])
     }
 
+    func testTagCollectionDecodesMissingOrderedTagKeysAsEmpty() throws {
+        let data = """
+        {
+          "schemaVersion": 2,
+          "tagsByGroupKey": {
+            "source:alpha": [
+              { "title": "设计", "accentRawValue": "pink" }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(GroupTagCollection.self, from: data)
+
+        XCTAssertEqual(decoded.tagsByGroupKey["source:alpha"]?.map(\.title), ["设计"])
+        XCTAssertEqual(decoded.orderedTagKeys, [])
+    }
+
+    func testTagCollectionEncodesOrderedTagKeys() throws {
+        let collection = GroupTagCollection(
+            tagsByGroupKey: [:],
+            orderedTagKeys: ["custom:设计", "preset:general"]
+        )
+
+        let data = try JSONEncoder().encode(collection)
+        let decoded = try JSONDecoder().decode(GroupTagCollection.self, from: data)
+
+        XCTAssertEqual(decoded.orderedTagKeys, ["custom:设计", "preset:general"])
+    }
+
+    func testHomeSnapshotAvailableTagsFollowSavedOrder() {
+        let state = DesktopAppState()
+        state.groupTags.tagCollection.tagsByGroupKey = [
+            "source:alpha": [GroupTagPreference(title: "设计", accentRawValue: DesktopAccentColor.pink.rawValue)],
+            "source:beta": [GroupTagPreference(title: "研究", accentRawValue: DesktopAccentColor.yellow.rawValue)],
+            "source:gamma": [GroupTagPreference(title: "增长", accentRawValue: DesktopAccentColor.orange.rawValue)]
+        ]
+        state.groupTags.tagCollection.orderedTagKeys = ["custom:研究", "custom:设计", "custom:增长"]
+        let controller = makeController(state: state)
+
+        let snapshot = controller.homeSnapshot(sourceIds: ["alpha", "beta", "gamma"], locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(snapshot.availableTags.map(\.title), ["研究", "设计", "增长"])
+        XCTAssertEqual(snapshot.tagRankByID["custom:研究"], 0)
+        XCTAssertEqual(snapshot.tagRankByID["custom:设计"], 1)
+        XCTAssertEqual(snapshot.tagRankByID["custom:增长"], 2)
+    }
+
+    func testHomeSnapshotAppendsUnknownTagsAfterSavedOrderAndPersistsThem() {
+        let suiteName = #function
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let state = DesktopAppState()
+        state.groupTags.tagCollection.tagsByGroupKey = [
+            "source:alpha": [GroupTagPreference(title: "设计", accentRawValue: DesktopAccentColor.pink.rawValue)],
+            "source:beta": [GroupTagPreference(title: "研究", accentRawValue: DesktopAccentColor.yellow.rawValue)]
+        ]
+        state.groupTags.tagCollection.orderedTagKeys = ["custom:研究"]
+        let controller = makeController(state: state, userDefaults: defaults)
+
+        let snapshot = controller.homeSnapshot(sourceIds: ["alpha", "beta"], locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(snapshot.availableTags.map(\.title), ["研究", "设计"])
+        XCTAssertEqual(state.groupTags.tagCollection.orderedTagKeys, ["custom:研究", "custom:设计"])
+        XCTAssertEqual(
+            DesktopGroupTagStore(userDefaults: defaults).loadTagCollection().orderedTagKeys,
+            ["custom:研究", "custom:设计"]
+        )
+    }
+
+    func testHomeSnapshotKeepsHiddenGlobalOrderKeys() {
+        let state = DesktopAppState()
+        state.groupTags.tagCollection.tagsByGroupKey = [
+            "source:alpha": [GroupTagPreference(title: "设计", accentRawValue: DesktopAccentColor.pink.rawValue)],
+            "source:beta": [GroupTagPreference(title: "研究", accentRawValue: DesktopAccentColor.yellow.rawValue)]
+        ]
+        state.groupTags.tagCollection.orderedTagKeys = ["custom:研究", "custom:设计"]
+        let controller = makeController(state: state)
+
+        let snapshot = controller.homeSnapshot(sourceIds: ["alpha"], locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(snapshot.availableTags.map(\.title), ["设计"])
+        XCTAssertEqual(state.groupTags.tagCollection.orderedTagKeys, ["custom:研究", "custom:设计"])
+    }
+
+    func testReorderHomeTagsMovesSourceBeforeTargetAndPersists() {
+        let suiteName = #function
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let state = DesktopAppState()
+        state.groupTags.tagCollection.orderedTagKeys = ["custom:设计", "custom:研究", "custom:增长"]
+        let controller = makeController(state: state, userDefaults: defaults)
+
+        controller.moveHomeTag(sourceTagID: "custom:增长", targetTagID: "custom:设计", placement: .before)
+
+        XCTAssertEqual(state.groupTags.tagCollection.orderedTagKeys, ["custom:增长", "custom:设计", "custom:研究"])
+        XCTAssertEqual(
+            DesktopGroupTagStore(userDefaults: defaults).loadTagCollection().orderedTagKeys,
+            ["custom:增长", "custom:设计", "custom:研究"]
+        )
+    }
+
     private func makeController(
         state: DesktopAppState = DesktopAppState(),
         recommendations: [ImportRecommendationEntry] = [],
