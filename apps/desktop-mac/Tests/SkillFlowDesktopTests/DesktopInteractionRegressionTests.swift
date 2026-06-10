@@ -192,10 +192,10 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
         guard
-            let statusRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.status"#),
-            let sourceTypeRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType"#),
-            let tagsRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.tags"#),
-            let agentsRange = source.range(of: #"homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents"#),
+            let statusRange = source.range(of: #"sectionId: HomeSidebarSectionID.status"#),
+            let sourceTypeRange = source.range(of: #"sectionId: HomeSidebarSectionID.sourceType"#),
+            let tagsRange = source.range(of: #"sectionId: HomeSidebarSectionID.tags"#),
+            let agentsRange = source.range(of: #"sectionId: HomeSidebarSectionID.agents"#),
             let projectsRange = source.range(of: "homeProjectScopeList")
         else {
             XCTFail("Expected sidebar sections were not found")
