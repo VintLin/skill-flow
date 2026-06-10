@@ -83,7 +83,7 @@ final class GroupTagController {
         let suggestionsBySourceID: [String: [GroupTagDisplayItem]]
         let tagRankByID: [String: Int]
 
-        fileprivate let visibleSourceIDSet: Set<String>
+        let visibleSourceIDSet: Set<String>
 
         func contains(sourceId: String) -> Bool {
             visibleSourceIDSet.contains(sourceId)
