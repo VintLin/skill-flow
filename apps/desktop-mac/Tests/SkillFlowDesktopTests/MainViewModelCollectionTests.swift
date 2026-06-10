@@ -57,7 +57,7 @@ final class MainViewModelCollectionTests: XCTestCase {
         XCTAssertEqual(
             model.collectionSourceOptions,
             [
-                MainViewModel.CollectionSourceOption(id: "alpha", title: "Alpha", sourceSubtitle: "@github · Alpha", skillCount: 2, isCollection: false),
+                MainViewModel.CollectionSourceOption(id: "alpha", title: "Alpha", sourceSubtitle: "@github · Alpha", skillCount: 3, isCollection: false),
                 MainViewModel.CollectionSourceOption(id: "beta", title: "Beta", sourceSubtitle: "组合 · Beta", skillCount: 1, isCollection: true),
                 MainViewModel.CollectionSourceOption(id: "gamma", title: "Gamma", sourceSubtitle: "本地 · Gamma", skillCount: 1, isCollection: false),
             ]
@@ -75,6 +75,15 @@ final class MainViewModelCollectionTests: XCTestCase {
                     isEnabled: true
                 ),
                 MainViewModel.CollectionSkillOption(
+                    id: "alpha:alpha-c",
+                    sourceId: "alpha",
+                    sourceTitle: "Alpha",
+                    sourceSubtitle: "@github · Alpha",
+                    leafId: "alpha-c",
+                    title: "Audit",
+                    isEnabled: false
+                ),
+                MainViewModel.CollectionSkillOption(
                     id: "alpha:alpha-b",
                     sourceId: "alpha",
                     sourceTitle: "Alpha",
@@ -85,6 +94,39 @@ final class MainViewModelCollectionTests: XCTestCase {
                 ),
             ]
         )
+    }
+
+    func testGroupAndDetailSkillsSortEnabledFirstThenByLocalizedTitle() async throws {
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: CollectionQueryStub(),
+            commandFacade: RecordingCollectionCommandFacade()
+        )
+
+        await model.bootstrap()
+
+        let alphaCard = try XCTUnwrap(model.groupCards.first(where: { $0.id == "alpha" }))
+        XCTAssertEqual(alphaCard.skills.map(\.id), ["alpha-a", "alpha-c", "alpha-b"])
+        XCTAssertEqual(alphaCard.skills.map(\.label), ["Browse", "Audit", "Review"])
+
+        let detail = try XCTUnwrap(model.detailSnapshot(for: "alpha"))
+        XCTAssertEqual(detail.skills.map(\.id), ["alpha-a", "alpha-c", "alpha-b"])
+    }
+
+    func testSkillSourceTitleOnlyDisplaysForCollectionGroups() async throws {
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: CollectionQueryStub(),
+            commandFacade: RecordingCollectionCommandFacade()
+        )
+
+        await model.bootstrap()
+
+        let alphaCard = try XCTUnwrap(model.groupCards.first(where: { $0.id == "alpha" }))
+        XCTAssertEqual(alphaCard.skills.map(\.sourceTitle), [nil, nil, nil])
+
+        let betaCard = try XCTUnwrap(model.groupCards.first(where: { $0.id == "beta" }))
+        XCTAssertEqual(betaCard.skills.map(\.sourceTitle), ["Alpha"])
     }
 
     func testHomeCardsUseLocalizedAuthorsForLocalAndCollections() async {
@@ -121,6 +163,7 @@ final class MainViewModelCollectionTests: XCTestCase {
         XCTAssertEqual(options.restoreSourceOptions.map(\.id), ["beta"])
         XCTAssertEqual(options.skillOptions.map(\.id), [
             "alpha:alpha-a",
+            "alpha:alpha-c",
             "alpha:alpha-b",
             "gamma:gamma-a",
         ])
@@ -389,8 +432,9 @@ private final class CollectionQueryStub: DesktopQuerying {
                     kind: "git",
                     displayName: "Alpha",
                     leafs: [
-                        ("alpha-a", "Browse"),
-                        ("alpha-b", "Review"),
+                        ("alpha-b", "Review", nil, "Git Source"),
+                        ("alpha-a", "Browse", nil, "Git Source"),
+                        ("alpha-c", "Audit", nil, "Git Source"),
                     ],
                     selectedLeafIds: ["alpha-a"],
                     enabledTargets: ["codex"]
@@ -402,7 +446,7 @@ private final class CollectionQueryStub: DesktopQuerying {
                     originalDisplayName: "组合工具",
                     locator: "collection:skills-2",
                     leafs: [
-                        ("beta-a", "Plan"),
+                        ("beta-a", "Plan", "alpha", "Alpha"),
                     ],
                     selectedLeafIds: ["beta-a"],
                     enabledTargets: ["claude-code"]
@@ -413,7 +457,7 @@ private final class CollectionQueryStub: DesktopQuerying {
                     displayName: "Gamma",
                     locator: "/Users/Vint/skills/Gamma",
                     leafs: [
-                        ("gamma-a", "Local Plan"),
+                        ("gamma-a", "Local Plan", nil, nil),
                     ],
                     selectedLeafIds: ["gamma-a"],
                     enabledTargets: []
@@ -428,7 +472,7 @@ private final class CollectionQueryStub: DesktopQuerying {
         displayName: String,
         originalDisplayName: String? = nil,
         locator: String? = nil,
-        leafs: [(String, String)],
+        leafs: [(String, String, String?, String?)],
         selectedLeafIds: [String],
         enabledTargets: [String]
     ) -> [String: Any] {
@@ -443,14 +487,21 @@ private final class CollectionQueryStub: DesktopQuerying {
             "lock": [
                 "updatedAt": "2026-04-01T00:00:00.000Z",
             ],
-            "leafs": leafs.map { leafId, title in
-                [
-                    "id": leafId,
-                    "linkName": leafId,
-                    "name": title,
+            "leafs": leafs.map { leaf in
+                var payload: [String: Any] = [
+                    "id": leaf.0,
+                    "linkName": leaf.0,
+                    "name": leaf.1,
                     "description": "",
                     "metadataWarnings": [],
-                ] as [String: Any]
+                ]
+                if let sourceId = leaf.2 {
+                    payload["sourceId"] = sourceId
+                }
+                if let sourceTitle = leaf.3 {
+                    payload["sourceTitle"] = sourceTitle
+                }
+                return payload
             },
             "bindings": [
                 "selectedLeafIds": selectedLeafIds,

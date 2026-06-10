@@ -1335,6 +1335,57 @@ final class MainViewModel {
         }
     }
 
+    private static func sortedGroupCardSkills(_ skills: [GroupCardSkill]) -> [GroupCardSkill] {
+        skills.sorted { lhs, rhs in
+            skillSortComesBefore(
+                lhsId: lhs.id,
+                lhsTitle: lhs.label,
+                lhsIsEnabled: lhs.isEnabled,
+                rhsId: rhs.id,
+                rhsTitle: rhs.label,
+                rhsIsEnabled: rhs.isEnabled
+            )
+        }
+    }
+
+    private static func sortedDetailSkills(_ skills: [DetailSkill]) -> [DetailSkill] {
+        skills.sorted { lhs, rhs in
+            skillSortComesBefore(
+                lhsId: lhs.id,
+                lhsTitle: lhs.title,
+                lhsIsEnabled: lhs.isEnabled,
+                rhsId: rhs.id,
+                rhsTitle: rhs.title,
+                rhsIsEnabled: rhs.isEnabled
+            )
+        }
+    }
+
+    private static func skillSortComesBefore(
+        lhsId: String,
+        lhsTitle: String,
+        lhsIsEnabled: Bool,
+        rhsId: String,
+        rhsTitle: String,
+        rhsIsEnabled: Bool
+    ) -> Bool {
+        if lhsIsEnabled != rhsIsEnabled {
+            return lhsIsEnabled
+        }
+
+        let titleComparison = lhsTitle.compare(
+            rhsTitle,
+            options: [.caseInsensitive, .diacriticInsensitive, .numeric],
+            range: nil,
+            locale: presentationLocale
+        )
+        if titleComparison != .orderedSame {
+            return titleComparison == .orderedAscending
+        }
+
+        return lhsId.localizedStandardCompare(rhsId) == .orderedAscending
+    }
+
     private func collectionSkillSourceSubtitle(for card: GroupCardModel) -> String {
         let author = Self.normalizedCollectionAuthor(from: card.byline)
         if let author {
@@ -1485,6 +1536,7 @@ final class MainViewModel {
             let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
             let groupPath = cachedGroupPath ?? preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
             let sourceTitlesById = Dictionary(uniqueKeysWithValues: allSummaries.map { ($0.sourceId, $0.sourceDisplayName) })
+            let showsSkillSourceTitles = Self.isCollectionSourceKind(summary.sourceKind)
 
             return GroupCardModel(
                 id: row.id,
@@ -1504,18 +1556,19 @@ final class MainViewModel {
                 stats: metadata.stats,
                 skillsLoading: false,
                 targetsLoading: false,
-                skills: summary.leafs.map { leaf in
+                skills: Self.sortedGroupCardSkills(summary.leafs.map { leaf in
                     GroupCardSkill(
                         id: leaf.id,
                         label: leaf.name,
                         description: leaf.description,
                         isEnabled: enabledLeafIds.contains(leaf.id),
-                        sourceTitle: leaf.sourceTitle
-                            ?? leaf.sourceId.flatMap { sourceId in
+                        sourceTitle: showsSkillSourceTitles
+                            ? leaf.sourceTitle ?? leaf.sourceId.flatMap { sourceId in
                                 sourceId == summary.sourceId ? nil : sourceTitlesById[sourceId]
                             }
+                            : nil
                     )
-                },
+                }),
                 targets: visibleTargetIds().map { targetId in
                     GroupCardTarget(
                         id: targetId,
@@ -4031,7 +4084,7 @@ final class MainViewModel {
             scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
         }
 
-        let skills: [DetailSkill] = preferredLeafIds.compactMap { leafId -> DetailSkill? in
+        let skills: [DetailSkill] = Self.sortedDetailSkills(preferredLeafIds.compactMap { leafId -> DetailSkill? in
             guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
                 return nil
             }
@@ -4076,7 +4129,7 @@ final class MainViewModel {
                 isEnabled: selectedLeafIds.contains(leaf.id),
                 warningCount: leaf.metadataWarnings.count
             )
-        }
+        })
 
         let sourceFacts = [
             sourcePayload["addedAt"] as? String,
@@ -6621,6 +6674,10 @@ final class MainViewModel {
 
     private func uniqueSorted(_ values: [String]) -> [String] {
         Array(Set(values)).sorted()
+    }
+
+    nonisolated private static func isCollectionSourceKind(_ value: String) -> Bool {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "collection"
     }
 
     private static func sanitizedDetailTitle(_ value: String?) -> String? {
