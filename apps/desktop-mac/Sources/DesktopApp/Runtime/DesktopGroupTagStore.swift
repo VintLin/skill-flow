@@ -13,12 +13,12 @@ struct DesktopGroupTagStore {
 
     func loadTagCollection() -> GroupTagCollection {
         guard let data = userDefaults.data(forKey: Self.tagCollectionKey) else {
-            return GroupTagCollection()
+            return migrateLegacyStoredTagsIfNeeded() ?? GroupTagCollection()
         }
 
         guard let decoded = try? decoder.decode(GroupTagCollection.self, from: data),
               decoded.schemaVersion == GroupTagCollection.currentSchemaVersion else {
-            return GroupTagCollection()
+            return migrateLegacyStoredTagsIfNeeded() ?? GroupTagCollection()
         }
 
         return decoded
@@ -27,5 +27,16 @@ struct DesktopGroupTagStore {
     func saveTagCollection(_ tagCollection: GroupTagCollection) {
         let encoded = try? encoder.encode(tagCollection)
         userDefaults.set(encoded, forKey: Self.tagCollectionKey)
+    }
+
+    private func migrateLegacyStoredTagsIfNeeded() -> GroupTagCollection? {
+        let collection = GroupTagMigration.migrateLegacyStoredTags(
+            legacyData: userDefaults.data(forKey: GroupTagMigration.legacyCustomTagsKey),
+            decoder: decoder
+        )
+        if let collection {
+            saveTagCollection(collection)
+        }
+        return collection
     }
 }

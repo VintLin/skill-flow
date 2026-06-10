@@ -136,7 +136,8 @@ final class GroupTagController {
     }
 
     func resolvedTags(forSourceId sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
-        savedTagPreferences(forSourceId: sourceId, locale: locale)
+        migrateTagsIfNeeded(forSourceIds: [sourceId])
+        return savedTagPreferences(forSourceId: sourceId, locale: locale)
             .prefix(Self.maximumTagCount)
             .map { preference in
                 GroupTagDisplayItem(
@@ -148,6 +149,7 @@ final class GroupTagController {
     }
 
     func homeSnapshot(sourceIds: [String], locale: Locale) -> HomeSnapshot {
+        migrateTagsIfNeeded(forSourceIds: sourceIds)
         var tagsBySourceID: [String: [GroupTagDisplayItem]] = [:]
         tagsBySourceID.reserveCapacity(sourceIds.count)
 
@@ -346,6 +348,27 @@ final class GroupTagController {
         }
 
         return "source:\(Self.normalizedKey(sourceId))"
+    }
+
+    private func migrateTagsIfNeeded(forSourceIds sourceIds: [String]) {
+        let identities = sourceIds.map { sourceId in
+            GroupTagMigration.sourceIdentity(
+                sourceId: sourceId,
+                currentKey: groupKey(forSourceId: sourceId),
+                sourceLocator: sourceLocator(sourceId),
+                sourceCanonicalRepo: sourceCanonicalRepo(sourceId)
+            )
+        }
+        let migrated = GroupTagMigration.migrateGroupKeys(
+            in: state.groupTags.tagCollection,
+            sourceIdentities: identities
+        )
+        guard migrated != state.groupTags.tagCollection else {
+            return
+        }
+
+        state.groupTags.tagCollection = migrated
+        store.saveTagCollection(migrated)
     }
 
     private func reconciledAvailableTags(_ tags: [GroupTagDisplayItem]) -> [GroupTagDisplayItem] {

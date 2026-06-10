@@ -489,6 +489,88 @@ final class GroupTagControllerTests: XCTestCase {
         XCTAssertEqual(secondController.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "zh-Hans")).map(\.title), ["设计"])
     }
 
+    func testLegacySourceIdTagsLoadAfterAppUpdate() throws {
+        let suiteName = #function
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let legacyTags = [
+            "alpha": [
+                GroupTagPreference(title: "设计", accentRawValue: DesktopAccentColor.pink.rawValue)
+            ]
+        ]
+        defaults.set(try JSONEncoder().encode(legacyTags), forKey: "desktop.groupTags.customTagsBySourceId")
+
+        let state = DesktopAppState()
+        state.groupTags.tagCollection = DesktopGroupTagStore(userDefaults: defaults).loadTagCollection()
+        let controller = makeController(state: state, userDefaults: defaults)
+
+        XCTAssertEqual(controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "zh-Hans")).map(\.title), ["设计"])
+        XCTAssertEqual(state.groupTags.tagCollection.tagsByGroupKey["source:alpha"]?.map(\.title), ["设计"])
+    }
+
+    func testLegacySourceIdTagsMigrateToStableRepoKeyAfterAppUpdate() throws {
+        let suiteName = #function
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let legacyTags = [
+            "old-alpha": [
+                GroupTagPreference(title: "设计", accentRawValue: DesktopAccentColor.pink.rawValue)
+            ]
+        ]
+        defaults.set(try JSONEncoder().encode(legacyTags), forKey: "desktop.groupTags.customTagsBySourceId")
+
+        let state = DesktopAppState()
+        state.groupTags.tagCollection = DesktopGroupTagStore(userDefaults: defaults).loadTagCollection()
+        let controller = makeController(
+            state: state,
+            userDefaults: defaults,
+            sourceCanonicalRepo: { sourceId in
+                sourceId == "old-alpha" ? "anthropics/skills" : nil
+            },
+            sourceLocator: { sourceId in
+                sourceId == "old-alpha" ? "https://github.com/anthropics/skills.git" : nil
+            }
+        )
+
+        XCTAssertEqual(controller.resolvedTags(forSourceId: "old-alpha", locale: Locale(identifier: "zh-Hans")).map(\.title), ["设计"])
+        XCTAssertEqual(state.groupTags.tagCollection.tagsByGroupKey["repo:anthropics/skills"]?.map(\.title), ["设计"])
+        XCTAssertNil(state.groupTags.tagCollection.tagsByGroupKey["source:old-alpha"])
+        XCTAssertEqual(
+            DesktopGroupTagStore(userDefaults: defaults)
+                .loadTagCollection()
+                .tagsByGroupKey["repo:anthropics/skills"]?
+                .map(\.title),
+            ["设计"]
+        )
+    }
+
+    func testLegacyLocatorTagsMigrateToStableRepoKeyAfterAppUpdate() {
+        let suiteName = #function
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let state = DesktopAppState()
+        state.groupTags.tagCollection = GroupTagCollection(
+            tagsByGroupKey: [
+                "locator:https://github.com/anthropics/skills.git": [
+                    GroupTagPreference(title: "设计", accentRawValue: DesktopAccentColor.pink.rawValue)
+                ]
+            ]
+        )
+        DesktopGroupTagStore(userDefaults: defaults).saveTagCollection(state.groupTags.tagCollection)
+        let controller = makeController(
+            state: state,
+            userDefaults: defaults,
+            sourceCanonicalRepo: { _ in nil },
+            sourceLocator: { sourceId in
+                sourceId == "alpha" ? "https://github.com/anthropics/skills.git" : nil
+            }
+        )
+
+        XCTAssertEqual(controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "zh-Hans")).map(\.title), ["设计"])
+        XCTAssertEqual(state.groupTags.tagCollection.tagsByGroupKey["repo:anthropics/skills"]?.map(\.title), ["设计"])
+        XCTAssertNil(state.groupTags.tagCollection.tagsByGroupKey["locator:https://github.com/anthropics/skills.git"])
+    }
+
     func testAddedTagFollowsGitHubRepoAcrossSourceIdAndLocatorShapeChanges() {
         let suiteName = #function
         let defaults = UserDefaults(suiteName: suiteName)!
