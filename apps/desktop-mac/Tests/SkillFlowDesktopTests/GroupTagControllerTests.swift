@@ -568,6 +568,36 @@ final class GroupTagControllerTests: XCTestCase {
         XCTAssertEqual(tags, [])
     }
 
+    func testTagCollectionDecodesMissingOrderedTagKeysAsEmpty() throws {
+        let data = """
+        {
+          "schemaVersion": 2,
+          "tagsByGroupKey": {
+            "source:alpha": [
+              { "title": "设计", "accentRawValue": "pink" }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(GroupTagCollection.self, from: data)
+
+        XCTAssertEqual(decoded.tagsByGroupKey["source:alpha"]?.map(\.title), ["设计"])
+        XCTAssertEqual(decoded.orderedTagKeys, [])
+    }
+
+    func testTagCollectionEncodesOrderedTagKeys() throws {
+        let collection = GroupTagCollection(
+            tagsByGroupKey: [:],
+            orderedTagKeys: ["custom:设计", "preset:general"]
+        )
+
+        let data = try JSONEncoder().encode(collection)
+        let decoded = try JSONDecoder().decode(GroupTagCollection.self, from: data)
+
+        XCTAssertEqual(decoded.orderedTagKeys, ["custom:设计", "preset:general"])
+    }
+
     private func makeController(
         state: DesktopAppState = DesktopAppState(),
         recommendations: [ImportRecommendationEntry] = [],
