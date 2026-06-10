@@ -1093,10 +1093,10 @@ struct SharedGroupCard: View {
     }
 
     private var skillSectionCountText: String? {
-        guard let count = card.stats.skillCount ?? (card.skills.isEmpty ? nil : card.skills.count) else {
+        guard !card.skills.isEmpty else {
             return nil
         }
-        return countText(count)
+        return countText(card.skills.count)
     }
 
     private func sectionTitleText(baseTitle: String, compact: Bool) -> String {
@@ -1414,7 +1414,11 @@ struct OriginalNameInfoIcon: View {
     let text: String
     let theme: DesktopThemeMode
 
+    static let tooltipMinWidth: CGFloat = 96
+    static let tooltipMaxWidth: CGFloat = 280
+
     @State private var isHovered = false
+    @State private var hoverDismissTask: Task<Void, Never>?
 
     var body: some View {
         Image(systemName: "info.circle")
@@ -1422,35 +1426,61 @@ struct OriginalNameInfoIcon: View {
             .foregroundStyle(AppTheme.textMuted(for: theme))
             .frame(width: 18, height: 18)
             .contentShape(Rectangle())
-            .overlay(alignment: .top) {
-                if isHovered && !text.isEmpty {
-                    Text(text)
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: 240, alignment: .leading)
-                        .background(AppTheme.surface(for: theme))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-                        }
-                        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
-                        .offset(y: -28)
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
+            .onHover { hovering in
+                hoverDismissTask?.cancel()
+                hoverDismissTask = nil
+
+                if hovering {
+                    isHovered = !text.isEmpty
+                    return
+                }
+
+                hoverDismissTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(180))
+                    guard !Task.isCancelled else {
+                        return
+                    }
+                    isHovered = false
+                    hoverDismissTask = nil
                 }
             }
-            .onHover { hovering in
-                withAnimation(.easeOut(duration: 0.08)) {
-                    isHovered = hovering
-                }
+            .popover(
+                isPresented: $isHovered,
+                attachmentAnchor: .point(.top),
+                arrowEdge: .bottom
+            ) {
+                Text(text)
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .frame(width: Self.tooltipWidth(for: text), alignment: .leading)
+                    .background(AppTheme.surface(for: theme))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+                    }
+                    .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
             }
             .accessibilityLabel(text)
             .zIndex(isHovered ? 20 : 0)
+            .onDisappear {
+                hoverDismissTask?.cancel()
+                hoverDismissTask = nil
+            }
+    }
+
+    static func tooltipWidth(for text: String) -> CGFloat {
+        let normalizedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedText.isEmpty else {
+            return tooltipMinWidth
+        }
+        let font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        let measuredWidth = ceil((normalizedText as NSString).size(withAttributes: [.font: font]).width) + 16
+        return min(max(measuredWidth, tooltipMinWidth), tooltipMaxWidth)
     }
 }
 
@@ -1497,9 +1527,6 @@ extension SharedGroupCard {
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
-        if displayMode == .menuComfortable {
-            return true
-        }
         return displayMode.showsMetaLine && (
             card.headerMetaLine?.isEmpty == false
                 || !visibleHeaderStatKinds(stats: card.stats).isEmpty
@@ -1511,7 +1538,7 @@ extension SharedGroupCard {
         card: MainViewModel.GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
-        displayMode.showsHeaderDivider
+        displayMode.showsHeaderDivider && reservesHeaderStatsRow(card: card, displayMode: displayMode)
     }
 
     static func recommendationBadgeAccent(tagId: String) -> DesktopAccentColor {

@@ -72,7 +72,6 @@ final class HomeScreenContainerSortingTests: XCTestCase {
             skillSelection: .empty,
             targetSelection: .empty,
             stats: MainViewModel.GroupCardStats(
-                skillCount: 0,
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: nil,

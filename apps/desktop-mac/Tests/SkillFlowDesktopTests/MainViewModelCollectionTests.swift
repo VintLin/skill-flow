@@ -378,7 +378,6 @@ final class MainViewModelCollectionTests: XCTestCase {
             skillSelection: .empty,
             targetSelection: .empty,
             stats: MainViewModel.GroupCardStats(
-                skillCount: nil,
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: nil,

@@ -14,7 +14,6 @@ final class DetailViewModelTests: XCTestCase {
             originLabel: "ClawHub",
             starCount: 1200,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -159,7 +158,6 @@ final class DetailViewModelTests: XCTestCase {
             originLabel: "ClawHub",
             starCount: nil,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: nil,
@@ -197,7 +195,6 @@ final class DetailViewModelTests: XCTestCase {
             originLabel: "ClawHub",
             starCount: nil,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: nil,
@@ -249,7 +246,6 @@ final class DetailViewModelTests: XCTestCase {
             originLabel: "ClawHub",
             starCount: 1200,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",

@@ -2,6 +2,21 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.2 - 2026-06-10
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.1` to `1.4.2`.
+- Changed macOS Skill group cards so the visible skill count is derived from rendered skills instead of cached snapshot statistics.
+- Changed original-name hover popovers to keep a short dismiss grace period so tiny pointer movement does not replay the tooltip animation.
+
+### Fixed
+
+- Fixed stale Skill group counts after refreshing a group whose selected skills changed.
+- Fixed renamed Skill groups losing author/source metadata rows after sparse enrichment responses.
+- Fixed renamed Skill groups so the original-name info indicator still appears after relaunch.
+- Fixed original-name tooltip sizing and clipping so long names fit and the popover can escape the group card bounds.
+
 ## v1.4.1 - 2026-06-08
 
 ### Changed

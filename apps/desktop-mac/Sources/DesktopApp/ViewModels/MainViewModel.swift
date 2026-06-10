@@ -204,7 +204,6 @@ final class MainViewModel {
         let displayName: String
         let locator: String
         let kind: String
-        let skillCount: Int
         let status: String
         let lastUpdate: String
         let warningCount: Int
@@ -244,7 +243,6 @@ final class MainViewModel {
     }
 
     struct GroupCardStats: Equatable {
-        let skillCount: Int?
         let downloadCount: Int?
         let starCount: Int?
         let githubURL: String?
@@ -1268,7 +1266,6 @@ final class MainViewModel {
                 displayName: summary.sourceDisplayName,
                 locator: summary.sourceLocator,
                 kind: summary.sourceKind,
-                skillCount: summary.leafs.count,
                 status: summary.health,
                 lastUpdate: summary.updatedAt,
                 warningCount: summary.warningCount,
@@ -1768,7 +1765,6 @@ final class MainViewModel {
             ?? subtitleText(locator: row.locator, kind: row.kind)
 
         let stats = GroupCardStats(
-            skillCount: sourceSnapshot?.skillCount ?? summary.leafs.count,
             downloadCount: sourceSnapshot?.totalInstalls
                 ?? sourceMetadata?["totalInstalls"] as? Int
                 ?? sourceMetadata?["downloadCount"] as? Int,
@@ -3649,20 +3645,22 @@ final class MainViewModel {
             }
 
             let normalizedPayload = payloadWithRenameDisplayNameOverride(payload, sourceId: sourceId)
-            var mergedPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
-            if let sourceMetadata = normalizedPayload["sourceMetadata"] {
-                mergedPayload["sourceMetadata"] = sourceMetadata
-            }
-            if let sourceSnapshot = normalizedPayload["sourceSnapshot"] {
-                mergedPayload["sourceSnapshot"] = sourceSnapshot
-            }
-            if let groupPath = normalizedPayload["groupPath"] {
-                mergedPayload["groupPath"] = groupPath
-            }
+            let mergedPayload = mergedDetailEnrichmentPayload(
+                existing: detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
+                incoming: normalizedPayload
+            )
             if !mergedPayload.isEmpty {
                 detailEnrichmentPayloadBySourceId[sourceId] = mergedPayload
             }
         }
+    }
+
+    private func mergedDetailEnrichmentPayload(existing: [String: Any], incoming: [String: Any]) -> [String: Any] {
+        var mergedPayload = existing
+        for (key, value) in incoming {
+            mergedPayload[key] = value
+        }
+        return mergedPayload
     }
 
     private func parseSummaries(_ response: BridgeResponse) -> [WorkflowSummary] {
@@ -4071,7 +4069,6 @@ final class MainViewModel {
             displayName: summary.sourceDisplayName,
             locator: summary.sourceLocator,
             kind: summary.sourceKind,
-            skillCount: summary.leafs.count,
             status: summary.health,
             lastUpdate: summary.updatedAt,
             warningCount: summary.warningCount,
@@ -4373,7 +4370,10 @@ final class MainViewModel {
                     } else {
                         normalizedPayload = payload
                     }
-                    self.detailEnrichmentPayloadBySourceId[sourceId] = normalizedPayload
+                    self.detailEnrichmentPayloadBySourceId[sourceId] = self.mergedDetailEnrichmentPayload(
+                        existing: self.detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
+                        incoming: normalizedPayload
+                    )
                 }
                 if self.detailEnrichmentTokensBySourceId[sourceId] == token {
                     self.latestWarnings = response.warnings
@@ -6289,7 +6289,6 @@ final class MainViewModel {
         components.append(author)
         components.append(originLabel)
         components.append(starCount.map(String.init) ?? "")
-        components.append(groupStats.skillCount.map(String.init) ?? "")
         components.append(groupStats.downloadCount.map(String.init) ?? "")
         components.append(groupStats.starCount.map(String.init) ?? "")
         components.append(groupStats.githubURL ?? "")

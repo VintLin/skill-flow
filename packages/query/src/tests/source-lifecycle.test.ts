@@ -1064,6 +1064,15 @@ description: |
     const after = await view(app);
     expect(after.manifest.sources.find((source) => source.id === "demo-source")?.displayName).toBe("Writing Tools");
     expect(after.manifest.sources.find((source) => source.id === "demo-source")?.id).toBe("demo-source");
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (listed.ok) {
+      expect(listed.data.summaries.find((summary) => summary.source.id === "demo-source")?.source)
+        .toMatchObject({
+          displayName: "Writing Tools",
+          originalDisplayName,
+        });
+    }
     expect(after.lockFile.sources["demo-source"]?.sourceId).toBe("demo-source");
     expect(after.manifest.bindings["demo-source"]).toEqual(beforeBinding);
     expect(after.lockFile.sources["demo-source"]?.localPath).toBe(

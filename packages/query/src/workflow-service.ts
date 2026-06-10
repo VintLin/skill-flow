@@ -11,6 +11,7 @@ import type {
   SourceSummaryRecord,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
+import { deriveDisplayName } from "@skill-flow/integration/utils/source-id";
 
 type NormalizedSourceBinding = {
   selectionMode: "all" | "selected";
@@ -75,14 +76,15 @@ export class WorkflowService {
     binding: ManifestFile["bindings"][string] | undefined,
     collections: CollectionsFile,
   ): SourceSummaryRecord {
-    const displayName = this.resolveCollectionRecord(collections, source.id)?.displayName.trim();
+    const collectionDisplayName = this.resolveCollectionRecord(collections, source.id)?.displayName.trim();
+    const displayName = collectionDisplayName || source.displayName;
     const selectionMode = this.authoritativeSelectionMode(binding);
     return {
       id: source.id,
       locator: source.locator,
       kind: source.kind,
-      displayName: displayName || source.displayName,
-      originalDisplayName: displayName || source.displayName,
+      displayName,
+      originalDisplayName: collectionDisplayName || this.originalDisplayNameForSource(source),
       addedAt: source.createdAt,
       ...(selectionMode ? { selectionMode } : {}),
       ...(source.requestedPath ? { requestedPath: source.requestedPath } : {}),
@@ -203,7 +205,7 @@ export class WorkflowService {
       locator: source.canonicalLocator,
       kind: source.revision.provider,
       displayName: manifestSource.displayName,
-      originalDisplayName: manifestSource.displayName,
+      originalDisplayName: this.originalDisplayNameForSource(manifestSource),
       checkoutPath: source.localPath,
       updatedAt: source.revision.capturedAt,
       leafIds: [...source.leafIds],
@@ -223,6 +225,10 @@ export class WorkflowService {
       ...(source.observedTargets ? { observedTargets: source.observedTargets.map((target) => ({ ...target })) } : {}),
       ...(source.importMode ? { importMode: source.importMode } : {}),
     };
+  }
+
+  private originalDisplayNameForSource(source: ManifestFile["sources"][number]): string {
+    return deriveDisplayName(source.locator);
   }
 
   private leafToSummaryLeaf(

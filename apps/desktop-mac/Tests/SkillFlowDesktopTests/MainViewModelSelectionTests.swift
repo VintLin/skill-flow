@@ -255,7 +255,6 @@ final class MainViewModelSelectionTests: XCTestCase {
             skillSelection: .empty,
             targetSelection: .empty,
             stats: MainViewModel.GroupCardStats(
-                skillCount: 1,
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: "https://github.com/acme/remote-hub",
@@ -1134,6 +1133,38 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
     }
 
+    func testRenameSourceKeepsGroupCardMetadataWhenSparseEnrichmentReturnsAfterRename() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.inspectEnrichmentDelayMilliseconds = 200
+        state.sources["alpha"]?.omitsInspectEnrichmentMetadata = true
+        try fixture.reset(state: state)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+
+        let initialCard = try XCTUnwrap(model.groupCards.first(where: { $0.id == "alpha" }))
+        XCTAssertEqual(initialCard.byline, "by @steipete")
+        XCTAssertEqual(initialCard.stats.downloadCount, 5045)
+        XCTAssertEqual(initialCard.stats.starCount, 1200)
+        XCTAssertTrue(initialCard.groupPath?.hasSuffix("/docs/alpha") == true)
+        XCTAssertTrue(initialCard.stats.localPath?.hasSuffix("/docs/alpha") == true)
+
+        await model.selectSource("alpha")
+        try await fixture.waitForLoggedRequest(command: "inspect-enrichment", sourceId: "alpha")
+
+        await model.renameSource(sourceId: "alpha", displayName: "Writing Tools")
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let renamedCard = try XCTUnwrap(model.groupCards.first(where: { $0.id == "alpha" }))
+        XCTAssertEqual(renamedCard.title, "Writing Tools")
+        XCTAssertEqual(renamedCard.byline, "by @steipete")
+        XCTAssertEqual(renamedCard.stats.downloadCount, 5045)
+        XCTAssertEqual(renamedCard.stats.starCount, 1200)
+        XCTAssertTrue(renamedCard.groupPath?.hasSuffix("/docs/alpha") == true)
+        XCTAssertTrue(renamedCard.stats.localPath?.hasSuffix("/docs/alpha") == true)
+    }
+
     func testRenameSourceFailureKeepsCardsDetailSelectionAndShowsError() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline
@@ -1163,11 +1194,37 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let alpha = model.groupCards.first(where: { $0.id == "alpha" })
 
-        XCTAssertEqual(alpha?.stats.skillCount, 2)
+        XCTAssertEqual(alpha?.skills.count, 2)
         XCTAssertEqual(alpha?.stats.downloadCount, 5045)
         XCTAssertEqual(alpha?.stats.starCount, 1200)
         XCTAssertTrue(alpha?.groupPath?.hasSuffix("/docs/alpha") == true)
         XCTAssertTrue(alpha?.stats.localPath?.hasSuffix("/docs/alpha") == true)
+    }
+
+    func testGroupCardsPreferLocalLeafCountOverCachedSnapshotSkillCount() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.sources["alpha"]?.leafs = [
+            TestFixture.LeafState(
+                id: "alpha-a",
+                linkName: "browse",
+                name: "browse",
+                description: "Browse things.",
+                metadataWarnings: []
+            )
+        ]
+        state.sources["alpha"]?.enrichmentSourceSnapshotTitle = "AlphaHub"
+        state.sources["alpha"]?.sourceSnapshotSkillCount = 24
+        try fixture.reset(state: state)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        await model.bootstrap()
+
+        let alpha = model.groupCards.first(where: { $0.id == "alpha" })
+
+        XCTAssertEqual(alpha?.skills.count, 1)
+        XCTAssertEqual(alpha?.stats.downloadCount, 5045)
+        XCTAssertEqual(alpha?.stats.starCount, 1200)
     }
 
     func testDetailSnapshotUsesInspectPayload() async throws {
@@ -1192,13 +1249,12 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.subtitle, "clawhub")
-        XCTAssertEqual(detail?.groupStats.skillCount, 2)
+        XCTAssertEqual(detail?.totalSkillCount, 2)
         XCTAssertEqual(detail?.groupStats.downloadCount, 5045)
         XCTAssertEqual(detail?.groupStats.starCount, 1200)
         XCTAssertNil(detail?.groupStats.githubURL)
         XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
         XCTAssertEqual(detail?.enabledSkillCount, 1)
-        XCTAssertEqual(detail?.totalSkillCount, 2)
         XCTAssertEqual(detail?.enabledTargetCount, 1)
         XCTAssertEqual(detail?.saveState.phase, .idle)
         XCTAssertEqual(detail?.targetSelection, .partial)
@@ -1296,7 +1352,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(detail?.title, "AlphaHub")
         XCTAssertEqual(detail?.skills.map(\.id), ["alpha-a", "alpha-b"])
         XCTAssertEqual(detail?.enabledTargetLabels, ["Claude Code"])
-        XCTAssertEqual(detail?.groupStats.skillCount, 2)
+        XCTAssertEqual(detail?.totalSkillCount, 2)
         XCTAssertEqual(detail?.groupStats.starCount, 1200)
         XCTAssertNil(detail?.groupStats.githubURL)
         XCTAssertEqual(detail?.targets.map(\.id), ["claude-code", "cursor"])
@@ -1345,7 +1401,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertNil(detail?.groupStats.starCount)
-        XCTAssertEqual(detail?.groupStats.skillCount, 2)
+        XCTAssertEqual(detail?.totalSkillCount, 2)
     }
 
     func testDetailSnapshotShowsFailedMetadataState() async throws {
@@ -1359,7 +1415,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertNil(detail?.groupStats.starCount)
-        XCTAssertEqual(detail?.groupStats.skillCount, 2)
+        XCTAssertEqual(detail?.totalSkillCount, 2)
     }
 
     func testDetailSnapshotShowsDisabledMetadataState() async throws {
@@ -1373,7 +1429,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         let detail = model.detailSnapshot(for: "alpha")
 
         XCTAssertNil(detail?.groupStats.starCount)
-        XCTAssertEqual(detail?.groupStats.skillCount, 2)
+        XCTAssertEqual(detail?.totalSkillCount, 2)
     }
 
     func testDetailDocumentResolutionFallsBackWhenSkillDocumentIsMissing() async throws {
@@ -1751,7 +1807,9 @@ private struct TestFixture {
         var renameFailures: [String] = []
         var sourceSnapshotTitle: String? = nil
         var enrichmentSourceSnapshotTitle: String? = nil
+        var sourceSnapshotSkillCount: Int? = nil
         var inspectEnrichmentTotalInstalls: Int? = nil
+        var omitsInspectEnrichmentMetadata: Bool? = nil
     }
 
     struct State: Codable, Equatable {
@@ -2272,6 +2330,7 @@ private struct TestFixture {
         repoUrl: source.locator,
         repoLabel: source.locator.replace(/^https:\\/\\/github.com\\//, ''),
         provider: source.metadataProvider || 'clawhub',
+        skillCount: source.sourceSnapshotSkillCount ?? ((source.leafs || []).length),
         owner: {
           slug: 'acme',
           sourceUrl: 'https://github.com/acme'
@@ -2441,6 +2500,15 @@ private struct TestFixture {
       if (request.command === 'inspect-enrichment') {
         const sourceId = request.payload && request.payload.sourceId;
         const source = (state.sources || {})[sourceId] || {};
+        if (source.omitsInspectEnrichmentMetadata) {
+          const response = JSON.stringify(responseFor(request, true, {}, [], []));
+          if (state.inspectEnrichmentDelayMilliseconds > 0) {
+            setTimeout(() => process.stdout.write(response), state.inspectEnrichmentDelayMilliseconds);
+          } else {
+            process.stdout.write(response);
+          }
+          return;
+        }
         const sourceMetadata = (() => {
           const status = source.metadataStatus || 'ready';
           const provider = source.metadataProvider || 'clawhub';

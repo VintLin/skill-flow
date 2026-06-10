@@ -1,6 +1,6 @@
 {
   "name": "@skill-flow/tui",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "type": "module",
   "private": true,
   "main": "dist/add-flow.js",
@@ -13,9 +13,9 @@
     "test:watch": "vitest --passWithNoTests"
   },
   "dependencies": {
-    "@skill-flow/domain": "1.4.1",
-    "@skill-flow/integration": "1.4.1",
-    "@skill-flow/query": "1.4.1",
+    "@skill-flow/domain": "1.4.2",
+    "@skill-flow/integration": "1.4.2",
+    "@skill-flow/query": "1.4.2",
     "ink": "^6.8.0",
     "react": "^19.2.0"
   },

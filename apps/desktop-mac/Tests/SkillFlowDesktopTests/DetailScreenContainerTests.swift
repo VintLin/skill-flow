@@ -17,7 +17,6 @@ final class DetailScreenContainerTests: XCTestCase {
             originLabel: "ClawHub",
             starCount: 1200,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -596,7 +595,6 @@ final class DetailScreenContainerTests: XCTestCase {
                     displayName: "AlphaHub",
                     locator: "clawhub/alpha",
                     kind: "clawhub",
-                    skillCount: 2,
                     status: "healthy",
                     lastUpdate: "2026-03-25T12:00:00Z",
                     warningCount: 0,
@@ -694,7 +692,6 @@ private extension DetailViewModel.Snapshot {
             originLabel: "ClawHub",
             starCount: 1200,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -733,7 +730,6 @@ private extension DetailViewModel.Snapshot {
             originLabel: "ClawHub",
             starCount: 1200,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -780,7 +776,6 @@ private extension DetailViewModel.Snapshot {
             originLabel: "ClawHub",
             starCount: 5000,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: 100000,
                 starCount: 5000,
                 githubURL: "https://github.com/anthropics/skills",
@@ -850,7 +845,6 @@ private extension MainViewModel.DetailViewData {
             originLabel: "ClawHub",
             starCount: 1200,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -896,7 +890,6 @@ private extension MainViewModel.DetailViewData {
             originLabel: "ClawHub",
             starCount: 1200,
             groupStats: MainViewModel.GroupCardStats(
-                skillCount: 2,
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",

@@ -129,6 +129,22 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertFalse(detail.contains(".help(L10n.string(\"group_card.original_name\""))
     }
 
+    func testOriginalNameInfoTooltipEscapesGroupCardClipping() throws {
+        let cards = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(cards.contains(".popover("))
+        XCTAssertTrue(cards.contains("isPresented: $isHovered"))
+        XCTAssertFalse(cards.contains(".overlay(alignment: .top) {"))
+    }
+
+    func testOriginalNameInfoTooltipDebouncesHoverExitWithoutReplayAnimation() throws {
+        let cards = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+
+        XCTAssertTrue(cards.contains("hoverDismissTask"))
+        XCTAssertTrue(cards.contains("Task.sleep(for: .milliseconds(180))"))
+        XCTAssertFalse(cards.contains("withAnimation(.easeOut(duration: 0.08))"))
+    }
+
     func testHomeScrollingSurfacesUseLazyStacksInsideHorizontalScrollViews() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
         let tags = try sourceText(at: "Sources/DesktopApp/Components/GroupTagComponents.swift")

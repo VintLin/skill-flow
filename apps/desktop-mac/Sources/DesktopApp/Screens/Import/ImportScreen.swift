@@ -230,7 +230,6 @@ struct ImportScreen: View {
             skillSelection: importSelectionState(allIds: card.skills.map(\.id), selectedIds: draft.selectedSkills.map(\.uiId)),
             targetSelection: importSelectionState(allIds: card.targets.map(\.id), selectedIds: draft.enabledTargetIds),
             stats: MainViewModel.GroupCardStats(
-                skillCount: card.stats.skillCount,
                 downloadCount: card.stats.downloadCount,
                 starCount: card.stats.starCount,
                 githubURL: card.stats.githubURL,

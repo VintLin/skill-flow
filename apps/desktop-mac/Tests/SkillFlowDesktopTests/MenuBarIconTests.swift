@@ -133,7 +133,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: MainViewModel.GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: true,
             targetsLoading: false,
             skills: [],
@@ -159,7 +159,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: 10, starCount: 12, githubURL: nil, localPath: nil),
+            stats: MainViewModel.GroupCardStats(downloadCount: 10, starCount: 12, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -186,7 +186,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: "/tmp/local"),
+            stats: MainViewModel.GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: "/tmp/local"),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -196,6 +196,13 @@ final class MenuBarIconTests: XCTestCase {
 
         XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: localCard, displayMode: .homeComfortable))
         XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: localCard, displayMode: .homeComfortable))
+    }
+
+    func testHomeCardsDoNotReserveMetadataRowWhenMetadataIsMissing() {
+        let card = makeGroupCard(byline: nil)
+
+        XCTAssertFalse(SharedGroupCard.reservesHeaderStatsRow(card: card, displayMode: .homeComfortable))
+        XCTAssertFalse(SharedGroupCard.showsHeaderDivider(card: card, displayMode: .homeComfortable))
     }
 
     func testImportLocalScanCardUsesReservedMetadataRowForSourceSummary() {
@@ -213,7 +220,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: MainViewModel.GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -225,7 +232,7 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertTrue(SharedGroupCard.showsHeaderDivider(card: localScanCard, displayMode: .importSearch))
     }
 
-    func testMenuComfortableCardsKeepMetadataRowButHideHeaderDivider() {
+    func testMenuComfortableCardsOnlyReserveMetadataRowWhenSourceMetadataExists() {
         let menuCard = MainViewModel.GroupCardModel(
             id: "menu",
             title: "Menu Group",
@@ -239,7 +246,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: MainViewModel.GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -248,7 +255,7 @@ final class MenuBarIconTests: XCTestCase {
         )
 
         XCTAssertTrue(GroupCardDisplayMode.menuComfortable.showsMetaLine)
-        XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: menuCard, displayMode: .menuComfortable))
+        XCTAssertFalse(SharedGroupCard.reservesHeaderStatsRow(card: menuCard, displayMode: .menuComfortable))
         XCTAssertFalse(SharedGroupCard.showsHeaderDivider(card: menuCard, displayMode: .menuComfortable))
         XCTAssertFalse(GroupCardDisplayMode.menuComfortable.showsSummaryDivider)
     }
@@ -267,7 +274,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(skillCount: nil, downloadCount: 1, starCount: 2, githubURL: nil, localPath: nil),
+            stats: MainViewModel.GroupCardStats(downloadCount: 1, starCount: 2, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -283,7 +290,6 @@ final class MenuBarIconTests: XCTestCase {
 
     func testGroupCardHeaderStatsExcludeSkillCount() {
         let stats = MainViewModel.GroupCardStats(
-            skillCount: 9,
             downloadCount: 12,
             starCount: 34,
             githubURL: "https://github.com/example/repo",
@@ -428,7 +434,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: .init(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -454,7 +460,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: .init(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -464,6 +470,17 @@ final class MenuBarIconTests: XCTestCase {
         let zhLocale = Locale(identifier: "zh-Hans")
         let result = SharedGroupCard.originalNameHelpText(card: card, locale: zhLocale)
         XCTAssertEqual(result, "anthropic-skills")
+    }
+
+    func testOriginalNameTooltipWidthAdaptsToTextWithinBounds() {
+        let shortWidth = OriginalNameInfoIcon.tooltipWidth(for: "AlphaHub")
+        let longWidth = OriginalNameInfoIcon.tooltipWidth(
+            for: "Original repository display name with enough text to require a wider tooltip"
+        )
+
+        XCTAssertGreaterThanOrEqual(shortWidth, OriginalNameInfoIcon.tooltipMinWidth)
+        XCTAssertGreaterThan(longWidth, shortWidth)
+        XCTAssertLessThanOrEqual(longWidth, OriginalNameInfoIcon.tooltipMaxWidth)
     }
 
     func testOriginalNameIndicatorShowsOnlyForCustomDisplayName() {
@@ -624,7 +641,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: .init(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
@@ -738,7 +755,7 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: errorCount,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: .init(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],

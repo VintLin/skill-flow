@@ -168,6 +168,35 @@ const collections: CollectionsFile = {
 };
 
 describe("WorkflowService", () => {
+  test("derives original display name from locator when manifest display name is renamed", () => {
+    const manifest: ManifestFile = {
+      ...collectionManifest,
+      sources: [
+        {
+          id: "alpha",
+          locator: "https://github.com/acme/alpha-hub",
+          canonicalLocator: "https://github.com/acme/alpha-hub",
+          kind: "git",
+          displayName: "Writing Tools",
+          enabled: true,
+          createdAt: addedAt,
+          updatedAt: addedAt,
+        },
+      ],
+      bindings: {},
+    };
+
+    const summaries = new WorkflowService().getSummaries(
+      manifest,
+      { ...collectionLockFile, sources: {}, leafInventory: [] },
+      undefined,
+      { ...collections, collections: {} },
+    );
+
+    expect(summaries[0]?.source.displayName).toBe("Writing Tools");
+    expect(summaries[0]?.source.originalDisplayName).toBe("alpha-hub");
+  });
+
   test("uses collections v2 state for collection summary display names and ordered leafs", () => {
     const summaries = new WorkflowService().getSummaries(
       collectionManifest,

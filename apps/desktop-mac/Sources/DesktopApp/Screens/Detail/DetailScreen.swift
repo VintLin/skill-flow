@@ -405,7 +405,7 @@ struct DetailScreen: View {
                 )
             }
 
-            detailHeaderMetadataRow(stats: detail?.groupStats ?? emptyStats)
+            detailHeaderMetadataRow(stats: detail?.groupStats ?? emptyStats, skillCount: detail?.skills.count)
         }
         .padding(14)
         .frame(height: detailHeaderMinHeight, alignment: .center)
@@ -531,9 +531,9 @@ struct DetailScreen: View {
         return original
     }
 
-    private func detailHeaderMetadataRow(stats: MainViewModel.GroupCardStats) -> some View {
+    private func detailHeaderMetadataRow(stats: MainViewModel.GroupCardStats, skillCount: Int?) -> some View {
         HStack(spacing: 10) {
-            if let skillCount = stats.skillCount {
+            if let skillCount {
                 detailStatItem(icon: .skills, text: formattedCount(skillCount))
             }
             if let downloadCount = stats.downloadCount {
@@ -570,7 +570,7 @@ struct DetailScreen: View {
     }
 
     private var emptyStats: MainViewModel.GroupCardStats {
-        .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil)
+        .init(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil)
     }
 
     private func detailSkillHeader(skill: DetailViewModel.DetailSkill?, fallbackGroupId: String) -> some View {
