@@ -1,9 +1,76 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum HomeSidebarChipTitleFormatter {
     static func displayTitle(_ title: String, showsHashPrefix: Bool) -> String {
         showsHashPrefix ? "#\(title)" : title
+    }
+}
+
+private struct HomeSidebarTagReorderModifier: ViewModifier {
+    let tagID: String?
+    let onMoveTag: ((String, String, HomeTagMovePlacement) -> Void)?
+
+    func body(content: Content) -> some View {
+        guard let tagID, let onMoveTag else {
+            return AnyView(content)
+        }
+
+        return AnyView(
+            content
+                .onDrag {
+                    NSItemProvider(object: tagID as NSString)
+                }
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onDrop(
+                                of: [.text],
+                                delegate: HomeSidebarTagDropDelegate(
+                                    targetTagID: tagID,
+                                    targetWidth: proxy.size.width,
+                                    onMoveTag: onMoveTag
+                                )
+                            )
+                    }
+                }
+        )
+    }
+}
+
+private struct HomeSidebarTagDropDelegate: DropDelegate {
+    let targetTagID: String
+    let targetWidth: CGFloat
+    let onMoveTag: (String, String, HomeTagMovePlacement) -> Void
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [.text]).first else {
+            return false
+        }
+        let placement: HomeTagMovePlacement = info.location.x < targetWidth / 2 ? .before : .after
+
+        provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, _ in
+            let value: String?
+            if let data = item as? Data {
+                value = String(data: data, encoding: .utf8)
+            } else if let string = item as? NSString {
+                value = string as String
+            } else {
+                value = item as? String
+            }
+
+            guard let sourceTagID = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !sourceTagID.isEmpty,
+                  sourceTagID != targetTagID else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                onMoveTag(sourceTagID, targetTagID, placement)
+            }
+        }
+        return true
     }
 }
 
@@ -1410,9 +1477,18 @@ struct MainView: View {
                     homeContainer.setSelectedHomeSourceTypeFilter(optionId)
                 }
 
-                homeSidebarChipSection(sectionId: HomeSidebarSectionID.tags, title: t("home.sidebar.tags"), options: homeTagChipItems(snapshot: homeTagSnapshot), selectedId: homeTagSnapshot.selectedKey ?? "all") { optionId in
-                    homeContainer.setSelectedHomeTagFilterKey(optionId == "all" ? nil : optionId)
-                }
+                homeSidebarChipSection(
+                    sectionId: HomeSidebarSectionID.tags,
+                    title: t("home.sidebar.tags"),
+                    options: homeTagChipItems(snapshot: homeTagSnapshot),
+                    selectedId: homeTagSnapshot.selectedKey ?? "all",
+                    onSelect: { optionId in
+                        homeContainer.setSelectedHomeTagFilterKey(optionId == "all" ? nil : optionId)
+                    },
+                    onMoveTag: { sourceTagID, targetTagID, placement in
+                        homeContainer.moveHomeTag(sourceTagID: sourceTagID, targetTagID: targetTagID, placement: placement)
+                    }
+                )
 
                 homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents, title: t("home.sidebar.agents"), options: homeAgentOptions, selectedId: selectedHomeAgentFilterId ?? "all") { optionId in
                     homeContainer.setSelectedHomeAgentFilter(optionId == "all" ? nil : optionId)
@@ -1516,7 +1592,8 @@ struct MainView: View {
         title: String,
         options: [HomeSidebarChipItem],
         selectedId: String,
-        onSelect: @escaping (String) -> Void
+        onSelect: @escaping (String) -> Void,
+        onMoveTag: ((String, String, HomeTagMovePlacement) -> Void)? = nil
     ) -> some View {
         let expanded = homeContainer.isHomeSidebarSectionExpanded(sectionId)
 
@@ -1544,7 +1621,7 @@ struct MainView: View {
             if expanded {
                 WrappingHStack(horizontalSpacing: 6, verticalSpacing: 6) {
                     ForEach(options) { option in
-                        homeSidebarChip(option: option, isSelected: selectedId == option.id) {
+                        homeSidebarChip(option: option, isSelected: selectedId == option.id, onMoveTag: onMoveTag) {
                             onSelect(option.id)
                         }
                     }
@@ -1553,7 +1630,7 @@ struct MainView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 6) {
                         ForEach(options) { option in
-                            homeSidebarChip(option: option, isSelected: selectedId == option.id) {
+                            homeSidebarChip(option: option, isSelected: selectedId == option.id, onMoveTag: onMoveTag) {
                                 onSelect(option.id)
                             }
                         }
@@ -1569,6 +1646,7 @@ struct MainView: View {
     private func homeSidebarChip(
         option: HomeSidebarChipItem,
         isSelected: Bool,
+        onMoveTag: ((String, String, HomeTagMovePlacement) -> Void)? = nil,
         action: @escaping () -> Void
     ) -> some View {
         homeFilterPill(
@@ -1577,6 +1655,8 @@ struct MainView: View {
             accent: option.accent ?? accent,
             showsHashPrefix: option.showsHashPrefix,
             isSelected: isSelected,
+            tagID: option.id == "all" ? nil : option.id,
+            onMoveTag: onMoveTag,
             action: action
         )
     }
@@ -1742,6 +1822,8 @@ struct MainView: View {
         accent: DesktopAccentColor,
         showsHashPrefix: Bool = false,
         isSelected: Bool,
+        tagID: String? = nil,
+        onMoveTag: ((String, String, HomeTagMovePlacement) -> Void)? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1777,6 +1859,7 @@ struct MainView: View {
         }
         .buttonStyle(.plain)
         .opacity(isSelected ? 1.0 : 0.58)
+        .modifier(HomeSidebarTagReorderModifier(tagID: tagID, onMoveTag: onMoveTag))
     }
 
     static func projectScopePillBackground(

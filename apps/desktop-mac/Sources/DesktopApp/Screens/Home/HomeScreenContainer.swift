@@ -118,6 +118,14 @@ final class HomeScreenContainer {
         groupTagController.setSelectedHomeFilterKey(key)
     }
 
+    func moveHomeTag(sourceTagID: String, targetTagID: String, placement: HomeTagMovePlacement) {
+        groupTagController.moveHomeTag(
+            sourceTagID: sourceTagID,
+            targetTagID: targetTagID,
+            placement: placement
+        )
+    }
+
     func homeAgentFilterOptions() -> [MainViewModel.HomeAgentFilterOption] {
         mainViewModel.homeAgentFilterOptions
     }

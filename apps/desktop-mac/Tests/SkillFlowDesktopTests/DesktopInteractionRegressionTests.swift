@@ -305,6 +305,35 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(pillSource.contains("HomeSidebarChipTitleFormatter.displayTitle(title, showsHashPrefix: showsHashPrefix)"))
     }
 
+    func testHomeSidebarOnlyTagSectionEnablesTagReordering() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(source.contains("onMoveTag: { sourceTagID, targetTagID, placement in"))
+        XCTAssertTrue(source.contains("homeContainer.moveHomeTag(sourceTagID: sourceTagID, targetTagID: targetTagID, placement: placement)"))
+        XCTAssertTrue(source.contains("HomeSidebarTagDropDelegate"))
+
+        guard
+            let statusSection = source.range(of: "sectionId: HomeSidebarSectionID.status"),
+            let sourceTypeSection = source.range(of: "sectionId: HomeSidebarSectionID.sourceType"),
+            let tagSection = source.range(of: "sectionId: HomeSidebarSectionID.tags"),
+            let agentSection = source.range(of: "sectionId: HomeSidebarSectionID.agents"),
+            let projectSection = source.range(of: "homeSidebarProjectSection", range: agentSection.upperBound..<source.endIndex)
+        else {
+            XCTFail("Expected Home sidebar sections were not found")
+            return
+        }
+
+        let statusBlock = String(source[statusSection.lowerBound..<sourceTypeSection.lowerBound])
+        let sourceTypeBlock = String(source[sourceTypeSection.lowerBound..<tagSection.lowerBound])
+        let tagBlock = String(source[tagSection.lowerBound..<agentSection.lowerBound])
+        let agentBlock = String(source[agentSection.lowerBound..<projectSection.lowerBound])
+
+        XCTAssertTrue(tagBlock.contains("onMoveTag:"))
+        XCTAssertFalse(statusBlock.contains("onMoveTag:"))
+        XCTAssertFalse(sourceTypeBlock.contains("onMoveTag:"))
+        XCTAssertFalse(agentBlock.contains("onMoveTag:"))
+    }
+
     func testHomeLayoutUsesIntegratedSidebarHeaderShell() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
