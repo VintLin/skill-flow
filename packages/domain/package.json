@@ -1,6 +1,6 @@
 {
   "name": "@skill-flow/domain",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "type": "module",
   "private": true,
   "main": "dist/index.js",

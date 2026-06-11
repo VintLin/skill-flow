@@ -2,6 +2,19 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.3 - 2026-06-11
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.2` to `1.4.3`.
+- Tightened the macOS import preview protocol so preview skills use explicit `providerSkillId`, `uiId`, `selector`, and `selectorAliases` fields.
+
+### Fixed
+
+- Fixed importing a single selected skill from GitHub skill groups when the preview selector path differs from the visible skill id.
+- Fixed `VintLin/action-browser` search previews so root-level skills appear in the Group Card instead of rendering an empty skill list.
+- Fixed legacy or incomplete preview skill payloads so the import page fails with a clear invalid-preview state instead of silently guessing selectors.
+
 ## v1.4.2 - 2026-06-10
 
 ### Changed
