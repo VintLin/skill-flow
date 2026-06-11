@@ -104,14 +104,24 @@ final class ImportScreenContainer {
     }
 
     func importGroup(_ card: ImportViewModel.Card) async {
-        let choice = selectedLocalChoice(for: card)
-        let locator = choice?.locator ?? card.locator
-        let selectedSkills = selectedSkillsForImport(for: card)
-        let skillSelectionMode = skillSelectionModeForImport(for: card)
-        let draft = draft(for: card)
+        let initialDraft = draft(for: card)
+        var importCard = card
+
+        if card.needsSkillDetails {
+            await mainViewModel.previewImportGroupIfNeeded(card.id)
+            if let refreshedCard = refreshedImportCard(for: card) {
+                importCard = refreshedCard
+            }
+        }
+
+        let choice = selectedLocalChoice(for: importCard)
+        let locator = choice?.locator ?? importCard.locator
+        let selectedSkills = selectedSkillsForImport(for: importCard, draft: initialDraft)
+        let skillSelectionMode = skillSelectionModeForImport(for: importCard)
+        let draft = draft(for: importCard)
 
         await mainViewModel.importImportGroup(
-            groupId: card.id,
+            groupId: importCard.id,
             locator: locator,
             selectedSkills: selectedSkills,
             skillSelectionMode: skillSelectionMode,
@@ -160,10 +170,16 @@ final class ImportScreenContainer {
     }
 
     func selectedSkillsForImport(for card: ImportViewModel.Card) -> [ImportSkillSelection] {
-        let draft = draft(for: card)
+        selectedSkillsForImport(for: card, draft: draft(for: card))
+    }
+
+    private func selectedSkillsForImport(
+        for card: ImportViewModel.Card,
+        draft: ImportDraftState
+    ) -> [ImportSkillSelection] {
         guard let choice = selectedLocalChoice(for: card),
               !choice.selectedSkills.isEmpty else {
-            return draft.selectedSkills
+            return resolvedSelectedSkills(from: draft, for: card)
         }
 
         let draftSelected = Set(draft.selectedSkills.map(\.uiId))
@@ -267,5 +283,47 @@ final class ImportScreenContainer {
 
     private func isLockedTarget(_ targetId: String, for card: ImportViewModel.Card) -> Bool {
         card.targets.first(where: { $0.id == targetId })?.isLocked ?? false
+    }
+
+    private func refreshedImportCard(for card: ImportViewModel.Card) -> ImportViewModel.Card? {
+        mainViewModel.importDisplayGroups
+            .first { $0.id == card.id }
+            .map {
+                ImportViewModel.card(
+                    from: $0,
+                    locale: Locale.current,
+                    fallbackTargetIds: mainViewModel.importPageTargetIds,
+                    submittedQuery: mainViewModel.importSubmittedQuery
+                )
+            }
+    }
+
+    private func resolvedSelectedSkills(
+        from draft: ImportDraftState,
+        for card: ImportViewModel.Card
+    ) -> [ImportSkillSelection] {
+        guard !draft.selectedSkills.isEmpty else {
+            return []
+        }
+
+        let selectedKeys = Set(draft.selectedSkills.flatMap(selectionKeys(for:)))
+        let refreshedSelections = card.skills
+            .filter { skill in
+                !selectedKeys.isDisjoint(with: skillSelectionKeys(for: skill))
+            }
+            .map(\.selection)
+
+        return refreshedSelections.isEmpty ? draft.selectedSkills : refreshedSelections
+    }
+
+    private func selectionKeys(for selection: ImportSkillSelection) -> [String] {
+        switch selection.selector {
+        case .repoPath(let path):
+            return [selection.uiId, path]
+        }
+    }
+
+    private func skillSelectionKeys(for skill: ImportViewModel.Skill) -> Set<String> {
+        Set([skill.id] + selectionKeys(for: skill.selection) + skill.selectorAliases)
     }
 }

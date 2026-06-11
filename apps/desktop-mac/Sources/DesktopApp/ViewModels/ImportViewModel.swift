@@ -21,6 +21,7 @@ struct ImportViewModel: Equatable {
         let selectedByDefault: Bool
         let highlightQuery: String?
         let selection: ImportSkillSelection
+        let selectorAliases: [String]
 
         init(
             id: String,
@@ -28,7 +29,8 @@ struct ImportViewModel: Equatable {
             summary: String,
             selectedByDefault: Bool,
             highlightQuery: String? = nil,
-            selection: ImportSkillSelection? = nil
+            selection: ImportSkillSelection? = nil,
+            selectorAliases: [String] = []
         ) {
             self.id = id
             self.title = title
@@ -36,6 +38,7 @@ struct ImportViewModel: Equatable {
             self.selectedByDefault = selectedByDefault
             self.highlightQuery = highlightQuery
             self.selection = selection ?? .repoPath(id)
+            self.selectorAliases = selectorAliases
         }
     }
 
@@ -79,6 +82,7 @@ struct ImportViewModel: Equatable {
         let selectedLocalChoiceId: String?
         let localChoices: [MainViewModel.LocalImportChoice]
         let requiresLocalVariantSelection: Bool
+        let needsSkillDetails: Bool
 
         init(
             id: String,
@@ -103,7 +107,8 @@ struct ImportViewModel: Equatable {
             localValidationStatus: String? = nil,
             selectedLocalChoiceId: String? = nil,
             localChoices: [MainViewModel.LocalImportChoice] = [],
-            requiresLocalVariantSelection: Bool = false
+            requiresLocalVariantSelection: Bool = false,
+            needsSkillDetails: Bool = false
         ) {
             self.id = id
             self.title = title
@@ -128,6 +133,7 @@ struct ImportViewModel: Equatable {
             self.selectedLocalChoiceId = selectedLocalChoiceId
             self.localChoices = localChoices
             self.requiresLocalVariantSelection = requiresLocalVariantSelection
+            self.needsSkillDetails = needsSkillDetails
         }
     }
 
@@ -187,7 +193,8 @@ struct ImportViewModel: Equatable {
             localValidationStatus: item.localImport?.validationStatus,
             selectedLocalChoiceId: item.localImport?.selectedChoiceId,
             localChoices: item.localImport?.choices ?? [],
-            requiresLocalVariantSelection: item.localImport?.validationStatus == "version-conflict"
+            requiresLocalVariantSelection: item.localImport?.validationStatus == "version-conflict",
+            needsSkillDetails: needsSkillDetails(for: item)
         )
     }
 
@@ -324,9 +331,20 @@ struct ImportViewModel: Equatable {
                 id: skill.skillId,
                 title: skill.title,
                 summary: skill.summary,
-                selectedByDefault: true
+                selectedByDefault: true,
+                selectorAliases: [skill.skillId]
             )
         } ?? []
+    }
+
+    private static func needsSkillDetails(for item: MainViewModel.ImportGroupItem) -> Bool {
+        guard item.provider != "local" else {
+            return false
+        }
+        guard case .idle = item.previewPhase else {
+            return false
+        }
+        return true
     }
 
     private static func resolvedSkills(
@@ -360,7 +378,8 @@ struct ImportViewModel: Equatable {
                         summary: skill.summary,
                         selectedByDefault: skill.selectedByDefault,
                         highlightQuery: matchesQuery ? normalizedQuery : nil,
-                        selection: skill.selection
+                        selection: skill.selection,
+                        selectorAliases: skill.selectorAliases
                     )
                 )
             }

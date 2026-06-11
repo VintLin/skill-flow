@@ -324,6 +324,94 @@ final class ImportScreenContainerTests: XCTestCase {
         ])
     }
 
+    func testImportingSelectedSnapshotSkillUsesPreviewRepoPathSelector() async {
+        let state = DesktopAppState()
+        let commands = RecordingImportCommandFacade()
+        let query = RecordingPreviewQueryFacade(
+            previewSkills: [
+                [
+                    "id": "plugins/devops-tools/skills/disk-hygiene",
+                    "uiId": "skill_disk_hygiene",
+                    "title": "Disk Hygiene",
+                    "summary": "",
+                    "selector": [
+                        "kind": "repoPath",
+                        "path": "plugins/devops-tools/skills/disk-hygiene",
+                    ],
+                    "selectorAliases": [
+                        "disk-hygiene",
+                        "plugins/devops-tools/skills/disk-hygiene",
+                    ],
+                ],
+                [
+                    "id": "plugins/devops-tools/skills/session-recovery",
+                    "uiId": "skill_session_recovery",
+                    "title": "Session Recovery",
+                    "summary": "",
+                    "selector": [
+                        "kind": "repoPath",
+                        "path": "plugins/devops-tools/skills/session-recovery",
+                    ],
+                    "selectorAliases": [
+                        "session-recovery",
+                        "plugins/devops-tools/skills/session-recovery",
+                    ],
+                ],
+            ]
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "terrylica-cc-skills",
+                title: "cc-skills",
+                locator: "terrylica/cc-skills",
+                skills: [
+                    MainViewModel.ImportGroupSkill(
+                        id: "disk-hygiene",
+                        title: "Disk Hygiene",
+                        summary: "",
+                        selectedByDefault: true
+                    ),
+                    MainViewModel.ImportGroupSkill(
+                        id: "session-recovery",
+                        title: "Session Recovery",
+                        summary: "",
+                        selectedByDefault: true
+                    ),
+                ],
+                previewPhase: .idle
+            )
+        ]
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let card = ImportViewModel.card(
+            from: model.recommendedImportGroups[0],
+            locale: Locale(identifier: "en")
+        )
+
+        container.setSkill("session-recovery", enabled: false, for: card)
+        await container.importGroup(card)
+
+        let previewLocators = await query.recordedPreviewLocators()
+        XCTAssertEqual(previewLocators, ["terrylica/cc-skills"])
+        XCTAssertEqual(commands.importCalls, [
+            .init(
+                locator: "terrylica/cc-skills",
+                selectedSkills: [
+                    ImportSkillSelection(
+                        uiId: "skill_disk_hygiene",
+                        selector: .repoPath("plugins/devops-tools/skills/disk-hygiene")
+                    ),
+                ],
+                enabledTargets: [],
+                skillSelectionMode: .selected
+            )
+        ])
+    }
+
     func testBackendSelectedLocalChoiceIsUsedBeforeManualSelection() async {
         let state = DesktopAppState()
         let commands = RecordingImportCommandFacade()
@@ -739,7 +827,7 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(container.snapshot(locale: Locale(identifier: "en"))?.content.map(\.id), ["local"])
     }
 
-    func testImportScreenOnlyPrefetchesRemoteCardsMissingSkills() {
+    func testImportScreenPrefetchesRemoteCardsNeedingSkillDetails() {
         let cards = [
             ImportViewModel.Card(
                 id: "remote-loading",
@@ -763,7 +851,8 @@ final class ImportScreenContainerTests: XCTestCase {
                 localValidationStatus: nil,
                 selectedLocalChoiceId: nil,
                 localChoices: [],
-                requiresLocalVariantSelection: false
+                requiresLocalVariantSelection: false,
+                needsSkillDetails: true
             ),
             ImportViewModel.Card(
                 id: "remote-ready",
@@ -789,7 +878,8 @@ final class ImportScreenContainerTests: XCTestCase {
                 localValidationStatus: nil,
                 selectedLocalChoiceId: nil,
                 localChoices: [],
-                requiresLocalVariantSelection: false
+                requiresLocalVariantSelection: false,
+                needsSkillDetails: false
             ),
             ImportViewModel.Card(
                 id: "local-loading",
@@ -813,7 +903,8 @@ final class ImportScreenContainerTests: XCTestCase {
                 localValidationStatus: "local-only",
                 selectedLocalChoiceId: nil,
                 localChoices: [],
-                requiresLocalVariantSelection: false
+                requiresLocalVariantSelection: false,
+                needsSkillDetails: true
             ),
         ]
 
@@ -1889,7 +1980,9 @@ final class ImportScreenContainerTests: XCTestCase {
         title: String,
         locator: String,
         preparationId: String? = nil,
-        preparationStatus: String? = nil
+        preparationStatus: String? = nil,
+        skills: [MainViewModel.ImportGroupSkill]? = nil,
+        previewPhase: MainViewModel.ImportLoadPhase = .idle
     ) -> MainViewModel.ImportGroupItem {
         MainViewModel.ImportGroupItem(
             id: id,
@@ -1910,8 +2003,8 @@ final class ImportScreenContainerTests: XCTestCase {
             localImport: nil,
             snapshot: nil,
             enrichPhase: .idle,
-            previewPhase: .idle,
-            skills: [
+            previewPhase: previewPhase,
+            skills: skills ?? [
                 MainViewModel.ImportGroupSkill(
                     id: "browse",
                     title: "Browse",
@@ -2090,10 +2183,22 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
     private let recorder = PreviewConcurrencyRecorder()
     private let blockPrepareUntilReleased: Bool
     private let prepareStatus: String
+    private let previewSkills: [[String: Any]]
 
-    init(blockPrepareUntilReleased: Bool = false, prepareStatus: String = "ready") {
+    init(
+        blockPrepareUntilReleased: Bool = false,
+        prepareStatus: String = "ready",
+        previewSkills: [[String: Any]] = [
+            [
+                "id": "browse",
+                "title": "Browse",
+                "summary": "",
+            ],
+        ]
+    ) {
         self.blockPrepareUntilReleased = blockPrepareUntilReleased
         self.prepareStatus = prepareStatus
+        self.previewSkills = previewSkills
     }
 
     func recordedPreviewLocators() async -> [String] {
@@ -2179,13 +2284,7 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
             data: AnyCodable([
                 "status": "ready",
                 "locator": locator,
-                "skills": [
-                    [
-                        "id": "browse",
-                        "title": "Browse",
-                        "summary": "",
-                    ],
-                ],
+                "skills": previewSkills,
                 "targets": [],
                 "selectedSkills": [
                     [

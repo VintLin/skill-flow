@@ -620,19 +620,22 @@ final class MainViewModel {
         let summary: String
         let selectedByDefault: Bool
         let selection: ImportSkillSelection
+        let selectorAliases: [String]
 
         init(
             id: String,
             title: String,
             summary: String,
             selectedByDefault: Bool,
-            selection: ImportSkillSelection? = nil
+            selection: ImportSkillSelection? = nil,
+            selectorAliases: [String] = []
         ) {
             self.id = id
             self.title = title
             self.summary = summary
             self.selectedByDefault = selectedByDefault
             self.selection = selection ?? .repoPath(id)
+            self.selectorAliases = selectorAliases
         }
     }
 
@@ -2414,7 +2417,6 @@ final class MainViewModel {
             }
             guard let item = importGroupItem(id: groupId),
                   item.provider != "local",
-                  item.skills.isEmpty,
                   item.previewPhase == .idle
             else {
                 continue
@@ -2865,10 +2867,10 @@ final class MainViewModel {
                     id: skill.skillId,
                     title: skill.title,
                     summary: skill.summary,
-                    selectedByDefault: true
+                    selectedByDefault: true,
+                    selectorAliases: [skill.skillId]
                 )
             } ?? []
-            let previewPhase: ImportLoadPhase = skills.isEmpty ? .idle : .ready
 
             return ImportGroupItem(
                 id: id,
@@ -2891,7 +2893,7 @@ final class MainViewModel {
                 localImport: localImport,
                 snapshot: snapshot,
                 enrichPhase: parseImportLoadPhase(group["enrichState"] as? [String: Any]),
-                previewPhase: previewPhase,
+                previewPhase: .idle,
                 skills: skills,
                 targets: []
             )
@@ -3243,7 +3245,8 @@ final class MainViewModel {
                 selection: parseImportSkillSelection(
                     skill,
                     fallbackId: id
-                )
+                ),
+                selectorAliases: uniqueSorted(skill["selectorAliases"] as? [String] ?? [])
             )
         }
 

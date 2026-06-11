@@ -382,7 +382,7 @@ extension ImportScreen {
 
     static func groupIDsNeedingSkillDetails(for cards: [ImportViewModel.Card]) -> [String] {
         cards.compactMap { card in
-            guard card.provider != "local", card.skills.isEmpty else {
+            guard card.provider != "local", card.needsSkillDetails else {
                 return nil
             }
             return card.id
