@@ -330,7 +330,7 @@ final class ImportScreenContainerTests: XCTestCase {
         let query = RecordingPreviewQueryFacade(
             previewSkills: [
                 [
-                    "id": "plugins/devops-tools/skills/disk-hygiene",
+                    "providerSkillId": "plugins/devops-tools/skills/disk-hygiene",
                     "uiId": "skill_disk_hygiene",
                     "title": "Disk Hygiene",
                     "summary": "",
@@ -344,7 +344,7 @@ final class ImportScreenContainerTests: XCTestCase {
                     ],
                 ],
                 [
-                    "id": "plugins/devops-tools/skills/session-recovery",
+                    "providerSkillId": "plugins/devops-tools/skills/session-recovery",
                     "uiId": "skill_session_recovery",
                     "title": "Session Recovery",
                     "summary": "",
@@ -1817,6 +1817,47 @@ final class ImportScreenContainerTests: XCTestCase {
         await previewTask.value
     }
 
+    func testPreviewParsesProviderSkillIdFromBridgeProtocol() async {
+        let query = RecordingPreviewQueryFacade(
+            previewSkills: [
+                [
+                    "providerSkillId": "action-browser",
+                    "uiId": "skill_action_browser",
+                    "title": "浏览器操作",
+                    "summary": "",
+                    "selector": [
+                        "kind": "repoPath",
+                        "path": ".",
+                    ],
+                    "selectorAliases": [
+                        "action-browser",
+                        ".",
+                    ],
+                ],
+            ]
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        model.searchImportGroups = [
+            makeItem(
+                id: "vintlin-action-browser",
+                title: "action-browser",
+                locator: "https://github.com/VintLin/action-browser"
+            )
+        ]
+        model.importSubmittedQuery = "VintLin/action-browser"
+
+        await model.previewImportGroupIfNeeded("vintlin-action-browser")
+
+        XCTAssertEqual(model.searchImportGroups.first?.skills.map(\.id), ["action-browser"])
+        XCTAssertEqual(model.searchImportGroups.first?.skills.first?.selection, ImportSkillSelection(
+            uiId: "skill_action_browser",
+            selector: .repoPath(".")
+        ))
+    }
+
     func testPrefetchGroupSkillDetailsLimitsPreviewConcurrency() async {
         let query = RecordingPreviewQueryFacade()
         let model = MainViewModel(
@@ -2190,7 +2231,7 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
         prepareStatus: String = "ready",
         previewSkills: [[String: Any]] = [
             [
-                "id": "browse",
+                "providerSkillId": "browse",
                 "title": "Browse",
                 "summary": "",
             ],

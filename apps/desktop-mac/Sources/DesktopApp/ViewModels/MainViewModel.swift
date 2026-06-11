@@ -3232,7 +3232,7 @@ final class MainViewModel {
         let snapshot = parseSourceSnapshot(payload["snapshot"] as? [String: Any])
 
         let skills = skillsPayload.compactMap { skill -> ImportGroupSkill? in
-            guard let id = (skill["id"] as? String)?.nonEmpty,
+            guard let id = ((skill["providerSkillId"] as? String) ?? (skill["id"] as? String))?.nonEmpty,
                   let title = (skill["title"] as? String)?.nonEmpty
             else {
                 return nil
