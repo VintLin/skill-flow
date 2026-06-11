@@ -1858,6 +1858,74 @@ final class ImportScreenContainerTests: XCTestCase {
         ))
     }
 
+    func testPreviewRejectsLegacyIdOnlySkillPayload() async {
+        let query = RecordingPreviewQueryFacade(
+            previewSkills: [
+                [
+                    "id": "legacy-skill",
+                    "uiId": "skill_legacy",
+                    "title": "Legacy Skill",
+                    "summary": "",
+                    "selector": [
+                        "kind": "repoPath",
+                        "path": "legacy-skill",
+                    ],
+                    "selectorAliases": [
+                        "legacy-skill",
+                    ],
+                ],
+            ]
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        model.searchImportGroups = [
+            makeItem(id: "legacy-repo", title: "Legacy Repo", locator: "owner/legacy")
+        ]
+        model.importSubmittedQuery = "owner/legacy"
+
+        await model.previewImportGroupIfNeeded("legacy-repo")
+
+        guard case .failed = model.searchImportGroups.first?.previewPhase else {
+            XCTFail("Expected legacy id-only preview skill payload to fail parsing.")
+            return
+        }
+        XCTAssertEqual(model.searchImportGroups.first?.skills.map(\.id), ["browse"])
+    }
+
+    func testPreviewRejectsSkillPayloadWithoutSelector() async {
+        let query = RecordingPreviewQueryFacade(
+            previewSkills: [
+                [
+                    "providerSkillId": "missing-selector",
+                    "uiId": "skill_missing_selector",
+                    "title": "Missing Selector",
+                    "summary": "",
+                    "selectorAliases": [
+                        "missing-selector",
+                    ],
+                ],
+            ]
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        model.searchImportGroups = [
+            makeItem(id: "missing-selector-repo", title: "Missing Selector Repo", locator: "owner/missing-selector")
+        ]
+        model.importSubmittedQuery = "owner/missing-selector"
+
+        await model.previewImportGroupIfNeeded("missing-selector-repo")
+
+        guard case .failed = model.searchImportGroups.first?.previewPhase else {
+            XCTFail("Expected preview skill payload without selector to fail parsing.")
+            return
+        }
+        XCTAssertEqual(model.searchImportGroups.first?.skills.map(\.id), ["browse"])
+    }
+
     func testPrefetchGroupSkillDetailsLimitsPreviewConcurrency() async {
         let query = RecordingPreviewQueryFacade()
         let model = MainViewModel(
@@ -2232,8 +2300,16 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
         previewSkills: [[String: Any]] = [
             [
                 "providerSkillId": "browse",
+                "uiId": "browse",
                 "title": "Browse",
                 "summary": "",
+                "selector": [
+                    "kind": "repoPath",
+                    "path": "browse",
+                ],
+                "selectorAliases": [
+                    "browse",
+                ],
             ],
         ]
     ) {

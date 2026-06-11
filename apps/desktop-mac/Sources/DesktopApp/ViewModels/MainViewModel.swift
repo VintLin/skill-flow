@@ -3232,22 +3232,12 @@ final class MainViewModel {
         let snapshot = parseSourceSnapshot(payload["snapshot"] as? [String: Any])
 
         let skills = skillsPayload.compactMap { skill -> ImportGroupSkill? in
-            guard let id = ((skill["providerSkillId"] as? String) ?? (skill["id"] as? String))?.nonEmpty,
-                  let title = (skill["title"] as? String)?.nonEmpty
-            else {
-                return nil
-            }
-            return ImportGroupSkill(
-                id: id,
-                title: title,
-                summary: (skill["summary"] as? String) ?? "",
-                selectedByDefault: selectedSkillUiIds.contains((skill["uiId"] as? String) ?? ""),
-                selection: parseImportSkillSelection(
-                    skill,
-                    fallbackId: id
-                ),
-                selectorAliases: uniqueSorted(skill["selectorAliases"] as? [String] ?? [])
-            )
+            parseImportPreviewSkill(skill, selectedSkillUiIds: selectedSkillUiIds)
+        }
+
+        if skills.count != skillsPayload.count {
+            setPreviewPhase(.failed(localizedText("import.error.invalid_preview_response")), for: groupId)
+            return
         }
 
         let targets = targetsPayload.compactMap { target -> ImportGroupTarget? in
@@ -3289,15 +3279,33 @@ final class MainViewModel {
         }
     }
 
-    private func parseImportSkillSelection(
+    private func parseImportPreviewSkill(
         _ payload: [String: Any],
-        fallbackId: String
-    ) -> ImportSkillSelection {
+        selectedSkillUiIds: Set<String>
+    ) -> ImportGroupSkill? {
+        guard let providerSkillId = (payload["providerSkillId"] as? String)?.nonEmpty,
+              let title = (payload["title"] as? String)?.nonEmpty,
+              let selection = parseImportPreviewSkillSelection(payload),
+              let selectorAliases = payload["selectorAliases"] as? [String] else {
+            return nil
+        }
+
+        return ImportGroupSkill(
+            id: providerSkillId,
+            title: title,
+            summary: (payload["summary"] as? String) ?? "",
+            selectedByDefault: selectedSkillUiIds.contains(selection.uiId),
+            selection: selection,
+            selectorAliases: uniqueSorted(selectorAliases)
+        )
+    }
+
+    private func parseImportPreviewSkillSelection(_ payload: [String: Any]) -> ImportSkillSelection? {
         guard let uiId = (payload["uiId"] as? String)?.nonEmpty,
               let selector = payload["selector"] as? [String: Any],
               (selector["kind"] as? String) == "repoPath",
               let selectorPath = (selector["path"] as? String)?.nonEmpty else {
-            return .repoPath(fallbackId)
+            return nil
         }
 
         return ImportSkillSelection(uiId: uiId, selector: .repoPath(selectorPath))

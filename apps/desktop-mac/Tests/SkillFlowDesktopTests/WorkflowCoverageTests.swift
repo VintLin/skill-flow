@@ -1457,11 +1457,12 @@ private struct TestFixture {
           locator: group.locator,
           snapshot: serializeImportGroup(group, false).snapshot,
           skills: (group.skills || []).map((skill) => ({
-            id: skill.id,
+            providerSkillId: skill.id,
             uiId: skill.id,
             selector: { kind: 'repoPath', path: skill.id },
             title: skill.title,
-            summary: skill.summary || ''
+            summary: skill.summary || '',
+            selectorAliases: [skill.id]
           })),
           targets: (group.targets || []).map((target) => ({ id: target })),
           selectedSkills: (group.skills || []).map((skill) => ({
