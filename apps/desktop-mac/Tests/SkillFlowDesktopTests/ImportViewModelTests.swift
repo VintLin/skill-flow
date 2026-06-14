@@ -431,6 +431,36 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.content.first?.isInstalledLocally, true)
     }
 
+    func testContentPreservesSkillDetailsNeedForRecommendedCards() {
+        let viewModel = ImportViewModel(
+            items: [
+                makeItem(
+                    id: "anthropics-skills",
+                    title: "Anthropic Skills",
+                    locator: "anthropics/skills",
+                    canonicalRepo: "anthropics/skills",
+                    previewPhase: .idle
+                )
+            ],
+            locale: locale,
+            fallbackTargetIds: [],
+            submittedQuery: "",
+            recommendations: [
+                .init(
+                    canonicalRepo: "anthropics/skills",
+                    locator: "anthropics/skills",
+                    categoryId: "general",
+                    primaryTagId: "general",
+                    secondaryTagIds: [],
+                    descriptionKey: "import.recommendation.description.anthropics_skills",
+                    sortOrder: 10
+                )
+            ]
+        )
+
+        XCTAssertEqual(viewModel.content.first?.needsSkillDetails, true)
+    }
+
     func testSummaryPrefersExplicitSummaryThenSnapshotThenMatchesThenFallbackStates() {
         let explicit = makeItem(
             summary: "Explicit summary",

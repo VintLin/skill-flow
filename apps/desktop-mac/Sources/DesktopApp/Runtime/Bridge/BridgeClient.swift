@@ -107,10 +107,16 @@ final class BridgeClient: @unchecked Sendable {
 
     private let mutationCoordinator = MutationCoordinator()
     private let commandTimeoutMilliseconds: UInt64
+    private let importCommandTimeoutMilliseconds: UInt64
     private let commandTimeoutGraceMilliseconds: UInt64
 
-    init(commandTimeoutMilliseconds: UInt64 = 60_000, commandTimeoutGraceMilliseconds: UInt64 = 1_000) {
+    init(
+        commandTimeoutMilliseconds: UInt64 = 60_000,
+        importCommandTimeoutMilliseconds: UInt64 = 180_000,
+        commandTimeoutGraceMilliseconds: UInt64 = 1_000
+    ) {
         self.commandTimeoutMilliseconds = commandTimeoutMilliseconds
+        self.importCommandTimeoutMilliseconds = importCommandTimeoutMilliseconds
         self.commandTimeoutGraceMilliseconds = commandTimeoutGraceMilliseconds
     }
 
@@ -418,7 +424,12 @@ final class BridgeClient: @unchecked Sendable {
         inputPipe.fileHandleForWriting.write(requestData)
         inputPipe.fileHandleForWriting.closeFile()
 
-        let didExit = await waitForProcessExit(process, state: exitWaitState, timeoutMilliseconds: commandTimeoutMilliseconds)
+        let activeTimeoutMilliseconds = timeoutMilliseconds(for: command)
+        let didExit = await waitForProcessExit(
+            process,
+            state: exitWaitState,
+            timeoutMilliseconds: activeTimeoutMilliseconds
+        )
 
         if !didExit {
             outputPipe.fileHandleForReading.readabilityHandler = nil
@@ -427,7 +438,7 @@ final class BridgeClient: @unchecked Sendable {
             if process.isRunning {
                 await terminateTimedOutProcess(process)
             }
-            throw BridgeClientError.timeout(commandTimeoutMilliseconds)
+            throw BridgeClientError.timeout(activeTimeoutMilliseconds)
         }
 
         outputPipe.fileHandleForReading.readabilityHandler = nil
@@ -479,6 +490,36 @@ final class BridgeClient: @unchecked Sendable {
             throw dependencyError
         }
         throw BridgeClientError.commandFailed(message, response: response)
+    }
+
+    private func timeoutMilliseconds(for command: BridgeCommand) -> UInt64 {
+        switch command {
+        case .searchImportGroups,
+             .scanLocalImportGroups,
+             .prepareImportSource,
+             .previewImportSource,
+             .commitImportSource,
+             .importSource:
+            return importCommandTimeoutMilliseconds
+        case .bootstrap,
+             .list,
+             .inspectStateMigration,
+             .migrateState,
+             .inspect,
+             .inspectEnrichment,
+             .createCollection,
+             .mergeGroups,
+             .restoreCollectionSources,
+             .renameSource,
+             .togglePin,
+             .doctor,
+             .add,
+             .apply,
+             .update,
+             .uninstall,
+             .saveSettings:
+            return commandTimeoutMilliseconds
+        }
     }
 
     private func waitForProcessExit(

@@ -252,7 +252,8 @@ struct ImportViewModel: Equatable {
             localValidationStatus: baseCard.localValidationStatus,
             selectedLocalChoiceId: baseCard.selectedLocalChoiceId,
             localChoices: baseCard.localChoices,
-            requiresLocalVariantSelection: baseCard.requiresLocalVariantSelection
+            requiresLocalVariantSelection: baseCard.requiresLocalVariantSelection,
+            needsSkillDetails: baseCard.needsSkillDetails
         )
     }
 

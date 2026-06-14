@@ -73,6 +73,18 @@ final class BridgeClientExecutionTests: XCTestCase {
         }
     }
 
+    func testPreviewImportSourceUsesImportCommandTimeout() async throws {
+        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 75)
+        self.fixture = fixture
+
+        let bridge = await MainActor.run { BridgeClient(commandTimeoutMilliseconds: 50) }
+
+        let response = try await bridge.previewImportSource(locator: "anthropics/skills")
+
+        XCTAssertEqual(response.command, BridgeCommand.previewImportSource)
+        XCTAssertTrue(response.ok)
+    }
+
     func testTimedOutHelperIsForceKilledWhenItIgnoresTerminate() async throws {
         let fixture = try StubbornBridgeFixture.install()
         stubbornFixture = fixture

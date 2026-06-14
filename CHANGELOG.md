@@ -2,6 +2,18 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.4 - 2026-06-14
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.3` to `1.4.4`.
+- Changed macOS desktop import bridge requests to use a longer timeout for import search, preview, preparation, commit, and source import commands.
+
+### Fixed
+
+- Fixed first-run macOS group imports that could wait on slow provider or checkout work and then fail with a generic bridge timeout before the import runtime returned a structured result.
+- Fixed recommended import cards so recommendation decoration preserves the need to load skill details before import.
+
 ## v1.4.3 - 2026-06-11
 
 ### Changed
