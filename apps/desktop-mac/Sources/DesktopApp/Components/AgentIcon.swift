@@ -24,6 +24,7 @@ enum AgentIconLibrary {
         "cline": "cline.svg",
         "amp": "amp.svg",
         "kiro": "kiro-cli.svg",
+        "zcode": "zcode.svg",
     ]
 
     private static let cache = NSCache<NSString, NSImage>()

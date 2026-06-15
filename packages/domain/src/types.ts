@@ -32,7 +32,8 @@ export type DeploymentTargetName =
   | "roo-code"
   | "cline"
   | "amp"
-  | "kiro";
+  | "kiro"
+  | "zcode";
 
 export type DeploymentTargetId = DeploymentTargetName | (string & {});
 

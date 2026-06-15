@@ -48,6 +48,9 @@ describe("target definitions", () => {
     expect(TARGET_PATH_CANDIDATES.kiro).toContain(
       path.join(os.homedir(), ".kiro", "skills"),
     );
+    expect(TARGET_PATH_CANDIDATES.zcode).toContain(
+      path.join(os.homedir(), ".zcode", "skills"),
+    );
     expect(TARGET_PATH_CANDIDATES["hermes-agent"]).toContain(
       path.join(os.homedir(), ".hermes", "skills"),
     );
@@ -117,6 +120,8 @@ describe("target definitions", () => {
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["minimax-code"]).toBe("~/.minimax/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.kiro).toBe("~/.kiro/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.trae).toBe("~/.trae/skills/");
+    expect(TARGET_DOCUMENTED_PROJECT_PATHS.zcode).toBe(".zcode/skills/");
+    expect(TARGET_DOCUMENTED_GLOBAL_PATHS.zcode).toBe("~/.zcode/skills/");
   });
 
   test("resolves documented project skill paths from project roots", () => {
@@ -135,6 +140,9 @@ describe("target definitions", () => {
     expect(resolveDocumentedProjectSkillPath("minimax-code", "/Users/test/src/repo-a")).toBe(
       "/Users/test/src/repo-a/.mavis/skills",
     );
+    expect(resolveDocumentedProjectSkillPath("zcode", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.zcode/skills",
+    );
     expect(resolveDocumentedProjectSkillPath("codex", "   ")).toBeNull();
   });
 
@@ -145,6 +153,7 @@ describe("target definitions", () => {
     expect(TARGET_ICON_ASSET_NAMES["hermes-agent"]).toBe("hermesagent.svg");
     expect(TARGET_ICON_ASSET_NAMES["minimax-code"]).toBe("minimax.svg");
     expect(TARGET_ICON_ASSET_NAMES.trae).toBe("trae.svg");
+    expect(TARGET_ICON_ASSET_NAMES.zcode).toBe("zcode.svg");
     expect(TARGET_ICON_ASSET_NAMES.pi).toBeUndefined();
     expect(TARGET_DEFINITIONS["roo-code"].documentedAgentIds).toEqual(["roo"]);
     expect(TARGET_DEFINITIONS["hermes-agent"].documentedAgentIds).toEqual(["hermes"]);

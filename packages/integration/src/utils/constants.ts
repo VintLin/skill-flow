@@ -47,6 +47,7 @@ export const TARGET_ORDER: DeploymentTargetName[] = [
   "cline",
   "amp",
   "kiro",
+  "zcode",
 ];
 
 export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> = {
@@ -261,6 +262,19 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     documentedGlobalPath: "~/.kiro/skills/",
     iconAssetName: "kiro-cli.svg",
     documentedAgentIds: ["kiro-cli"],
+  },
+  zcode: {
+    label: "ZCode",
+    strategy: "symlink",
+    envVar: "SKILL_FLOW_TARGET_ZCODE",
+    writerKey: "zcode-home",
+    writeRootCandidates: [path.join(os.homedir(), ".zcode", "skills")],
+    compatReadRootCandidates: [
+      path.join(os.homedir(), ".agents", "skills"),
+    ],
+    documentedProjectPath: ".zcode/skills/",
+    documentedGlobalPath: "~/.zcode/skills/",
+    iconAssetName: "zcode.svg",
   },
 };
 

@@ -1825,11 +1825,13 @@ description: |
       "hermes-agent",
       "minimax-code",
       "pi",
+      "trae",
       "windsurf",
       "roo-code",
       "cline",
       "amp",
       "kiro",
+      "zcode",
     ]);
   });
 
@@ -1845,11 +1847,13 @@ description: |
       hermesAgent: process.env.SKILL_FLOW_TARGET_HERMES_AGENT,
       minimaxCode: process.env.SKILL_FLOW_TARGET_MINIMAX_CODE,
       pi: process.env.SKILL_FLOW_TARGET_PI,
+      trae: process.env.SKILL_FLOW_TARGET_TRAE,
       windsurf: process.env.SKILL_FLOW_TARGET_WINDSURF,
       rooCode: process.env.SKILL_FLOW_TARGET_ROO_CODE,
       cline: process.env.SKILL_FLOW_TARGET_CLINE,
       amp: process.env.SKILL_FLOW_TARGET_AMP,
       kiro: process.env.SKILL_FLOW_TARGET_KIRO,
+      zcode: process.env.SKILL_FLOW_TARGET_ZCODE,
     };
     const previousHome = process.env.HOME;
     try {
@@ -1863,11 +1867,13 @@ description: |
       delete process.env.SKILL_FLOW_TARGET_HERMES_AGENT;
       delete process.env.SKILL_FLOW_TARGET_MINIMAX_CODE;
       delete process.env.SKILL_FLOW_TARGET_PI;
+      delete process.env.SKILL_FLOW_TARGET_TRAE;
       delete process.env.SKILL_FLOW_TARGET_WINDSURF;
       delete process.env.SKILL_FLOW_TARGET_ROO_CODE;
       delete process.env.SKILL_FLOW_TARGET_CLINE;
       delete process.env.SKILL_FLOW_TARGET_AMP;
       delete process.env.SKILL_FLOW_TARGET_KIRO;
+      delete process.env.SKILL_FLOW_TARGET_ZCODE;
       await fs.mkdir(path.join(sandbox.sandboxRoot, ".agents", "skills"), { recursive: true });
 
       const app = new SkillFlowApp();
@@ -1886,11 +1892,13 @@ description: |
       process.env.SKILL_FLOW_TARGET_HERMES_AGENT = previousTargets.hermesAgent;
       process.env.SKILL_FLOW_TARGET_MINIMAX_CODE = previousTargets.minimaxCode;
       process.env.SKILL_FLOW_TARGET_PI = previousTargets.pi;
+      process.env.SKILL_FLOW_TARGET_TRAE = previousTargets.trae;
       process.env.SKILL_FLOW_TARGET_WINDSURF = previousTargets.windsurf;
       process.env.SKILL_FLOW_TARGET_ROO_CODE = previousTargets.rooCode;
       process.env.SKILL_FLOW_TARGET_CLINE = previousTargets.cline;
       process.env.SKILL_FLOW_TARGET_AMP = previousTargets.amp;
       process.env.SKILL_FLOW_TARGET_KIRO = previousTargets.kiro;
+      process.env.SKILL_FLOW_TARGET_ZCODE = previousTargets.zcode;
     }
   });
 });

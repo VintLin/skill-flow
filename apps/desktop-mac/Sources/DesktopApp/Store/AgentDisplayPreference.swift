@@ -26,6 +26,7 @@ enum AgentDisplayCatalog {
         "cline",
         "amp",
         "kiro",
+        "zcode",
     ]
 
     private static let labelsByTargetId: [String: String] = [
@@ -45,6 +46,7 @@ enum AgentDisplayCatalog {
         "cline": "Cline",
         "amp": "Amp",
         "kiro": "Kiro",
+        "zcode": "ZCode",
     ]
 
     private static let shortLabelsByTargetId: [String: String] = [
@@ -64,6 +66,7 @@ enum AgentDisplayCatalog {
         "cline": "CL",
         "amp": "AM",
         "kiro": "KI",
+        "zcode": "ZC",
     ]
 
     static func defaultPreferences(customAgents: [CustomAgentDefinition] = []) -> [AgentDisplayPreference] {
@@ -151,6 +154,8 @@ enum AgentDisplayCatalog {
             return homeDirectory.appendingPathComponent(".config/agents/skills", isDirectory: true).path
         case "kiro":
             return homeDirectory.appendingPathComponent(".kiro/skills", isDirectory: true).path
+        case "zcode":
+            return homeDirectory.appendingPathComponent(".zcode/skills", isDirectory: true).path
         default:
             return targetId
         }
@@ -184,6 +189,8 @@ enum AgentDisplayCatalog {
             return ".agents/skills"
         case "kiro":
             return ".kiro/skills"
+        case "zcode":
+            return ".zcode/skills"
         default:
             return nil
         }
