@@ -12,6 +12,7 @@ import type {
   Result,
   ScopedSourceDrafts,
   SourceUpdateResult,
+  Warning,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
 import { formatGroupLabel } from "@skill-flow/integration/utils/naming";
@@ -44,6 +45,7 @@ type ConfigCoordinatorDeps = {
   };
   getAvailableTargets(): Promise<DeploymentTargetId[]>;
   pruneMissingCheckouts(): Promise<Result<{ removedSourceIds: string[] }>>;
+  ensureBuiltInSources?(): Promise<Result<{ sourceIds: string[] }>>;
   getConfigData(): Promise<
     Result<{ manifest: ManifestFile; lockFile: LockFile; summaries: WorkflowSummary[] }>
   >;
@@ -79,12 +81,28 @@ export class ConfigCoordinator {
     if (!pruned.ok) {
       return fail(pruned.errors, pruned.warnings);
     }
+    const warnings: Warning[] = [...pruned.warnings];
     if (pruned.data.removedSourceIds.length > 0) {
       onEvent?.({
         phase: "refresh-sources",
         level: "warning",
         message: `Removed ${pruned.data.removedSourceIds.length} missing group${pruned.data.removedSourceIds.length === 1 ? "" : "s"} from config state.`,
       });
+    }
+
+    if (this.deps.ensureBuiltInSources) {
+      const ensured = await this.deps.ensureBuiltInSources();
+      if (!ensured.ok) {
+        return fail(ensured.errors, [...warnings, ...ensured.warnings]);
+      }
+      warnings.push(...ensured.warnings);
+      if (ensured.data.sourceIds.length > 0) {
+        onEvent?.({
+          phase: "refresh-sources",
+          level: "info",
+          message: `Registered ${ensured.data.sourceIds.length} built-in group${ensured.data.sourceIds.length === 1 ? "" : "s"}.`,
+        });
+      }
     }
 
     onEvent?.({
@@ -94,8 +112,9 @@ export class ConfigCoordinator {
     });
     const configData = await this.deps.getConfigData();
     if (!configData.ok) {
-      return fail(configData.errors, configData.warnings);
+      return fail(configData.errors, [...warnings, ...configData.warnings]);
     }
+    warnings.push(...configData.warnings);
 
     onEvent?.({
       phase: "audit-projections",
@@ -109,8 +128,9 @@ export class ConfigCoordinator {
       currentPreferences,
     );
     if (!audit.ok) {
-      return fail(audit.errors, audit.warnings);
+      return fail(audit.errors, [...warnings, ...audit.warnings]);
     }
+    warnings.push(...audit.warnings);
 
     onEvent?.({
       phase: "build-summaries",
@@ -156,7 +176,7 @@ export class ConfigCoordinator {
       recentProjects: reconciledPreferences.recentProjects,
       selectedProjectScope: reconciledPreferences.selectedProjectScope,
       projectDrafts: projectDraftsFromPreferences(reconciledPreferences),
-    });
+    }, warnings);
   }
 }
 

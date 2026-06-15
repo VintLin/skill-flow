@@ -1,6 +1,6 @@
 {
   "name": "@skill-flow/query",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "type": "module",
   "private": true,
   "main": "dist/index.js",
@@ -16,10 +16,10 @@
     "test:watch": "vitest --passWithNoTests"
   },
   "dependencies": {
-    "@skill-flow/core-engine": "1.4.4",
-    "@skill-flow/domain": "1.4.4",
-    "@skill-flow/integration": "1.4.4",
-    "@skill-flow/storage": "1.4.4"
+    "@skill-flow/core-engine": "1.4.5",
+    "@skill-flow/domain": "1.4.5",
+    "@skill-flow/integration": "1.4.5",
+    "@skill-flow/storage": "1.4.5"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

@@ -340,6 +340,60 @@ describe("ConfigCoordinator", () => {
     });
   });
 
+  test("ensures built-in sources after pruning and before reading config data", async () => {
+    const preferences = createPreferences();
+    const calls: string[] = [];
+    const coordinator = new ConfigCoordinator({
+      store: {
+        readPreferences: vi.fn().mockResolvedValue(preferences),
+        readCollections: vi.fn().mockResolvedValue(emptyCollections),
+        writePreferences: vi.fn().mockResolvedValue(undefined),
+      },
+      recentProjectService: {
+        listRecentProjects: vi.fn().mockResolvedValue([]),
+      },
+      doctorService: {
+        run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
+      },
+      workflowService: {
+        getSummaries: vi.fn().mockReturnValue(summaries),
+      },
+      getAvailableTargets: vi.fn().mockResolvedValue(["codex"]),
+      pruneMissingCheckouts: vi.fn().mockImplementation(async () => {
+        calls.push("prune");
+        return {
+          ok: true,
+          data: { removedSourceIds: ["skill-flow"] },
+          warnings: [],
+          errors: [],
+        };
+      }),
+      ensureBuiltInSources: vi.fn().mockImplementation(async () => {
+        calls.push("ensure-built-in");
+        return {
+          ok: true,
+          data: { sourceIds: ["skill-flow"] },
+          warnings: [],
+          errors: [],
+        };
+      }),
+      getConfigData: vi.fn().mockImplementation(async () => {
+        calls.push("config-data");
+        return {
+          ok: true,
+          data: { manifest, lockFile, summaries },
+          warnings: [],
+          errors: [],
+        };
+      }),
+    });
+
+    const result = await coordinator.bootstrapWorkspaceState();
+
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual(["prune", "ensure-built-in", "config-data"]);
+  });
+
   test("restores selected skills from binding even when enabled targets are empty", async () => {
     const summariesWithLocalOnly: WorkflowSummary[] = [
       {

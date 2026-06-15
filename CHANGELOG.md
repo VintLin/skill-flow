@@ -2,6 +2,19 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.5 - 2026-06-15
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.4` to `1.4.5`.
+- Changed app bootstrap so installed builds register the built-in `skill-flow` group from packaged resources instead of requiring a manual local import.
+- Changed CLI publish staging and macOS desktop helper packaging so the built-in `skills/skill-flow` resource ships with release artifacts.
+
+### Fixed
+
+- Fixed fresh installs where the home page could not show the built-in `skill-flow` group because the packaged app had no runtime-managed local source yet.
+- Fixed built-in group bootstrap after missing-checkout pruning so the `skill-flow` group can be re-registered automatically without enabling any skills or targets.
+
 ## v1.4.4 - 2026-06-14
 
 ### Changed

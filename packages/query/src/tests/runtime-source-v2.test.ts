@@ -495,6 +495,89 @@ describe.sequential("runtime source v2 write chain", () => {
     expect(state.lockFile.projections).toEqual([]);
   });
 
+  test("bootstrapWorkspaceState registers built-in skill-flow source with skills off", async () => {
+    const builtInSkillsRoot = path.join(sandbox.sandboxRoot, "built-in-skills");
+    await writeRepoFiles(builtInSkillsRoot, {
+      "skill-flow/SKILL.md": skillDoc(
+        "skill-flow",
+        "Operate Skill Flow through the skill-flow CLI or bridge protocol.",
+      ),
+    });
+    const app = new SkillFlowApp({ builtInSkillsRoot });
+    expectNoLegacyAuthorityApi(app);
+
+    const bootstrapped = await app.bootstrapWorkspaceState();
+
+    expect(bootstrapped.ok).toBe(true);
+    if (!bootstrapped.ok) {
+      return;
+    }
+    expectNoLegacyAuthorityApi(app);
+    expect(bootstrapped.data.summaries.map((summary) => summary.source.id)).toContain("skill-flow");
+    expect(bootstrapped.data.initialDrafts["skill-flow"]).toEqual({
+      enabledTargets: [],
+      selectedLeafIds: [],
+    });
+
+    const state = await new StateStore(sandbox.stateRoot).readState();
+    expect(state.manifest.sources).toEqual([
+      expect.objectContaining({
+        id: "skill-flow",
+        kind: "local",
+        locator: path.join(builtInSkillsRoot, "skill-flow"),
+        displayName: "skill-flow",
+      }),
+    ]);
+    expect(state.manifest.bindings["skill-flow"]).toEqual({
+      sourceId: "skill-flow",
+      selectionMode: "selected",
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
+    expect(state.lockFile.leafInventory).toHaveLength(1);
+    expect(state.lockFile.leafInventory[0]).toEqual(expect.objectContaining({
+      sourceId: "skill-flow",
+      linkName: "skill-flow",
+    }));
+    expect(state.lockFile.projections).toEqual([]);
+
+    const bootstrappedAgain = await app.bootstrapWorkspaceState();
+
+    expect(bootstrappedAgain.ok).toBe(true);
+    const stateAfterSecondBootstrap = await new StateStore(sandbox.stateRoot).readState();
+    expect(stateAfterSecondBootstrap.manifest.sources.map((source) => source.id)).toEqual(["skill-flow"]);
+  });
+
+  test("bootstrapWorkspaceState re-registers built-in skill-flow source after missing checkout pruning", async () => {
+    const builtInSkillsRoot = path.join(sandbox.sandboxRoot, "built-in-skills");
+    await writeRepoFiles(builtInSkillsRoot, {
+      "skill-flow/SKILL.md": skillDoc(
+        "skill-flow",
+        "Operate Skill Flow through the skill-flow CLI or bridge protocol.",
+      ),
+    });
+    const app = new SkillFlowApp({ builtInSkillsRoot });
+    const firstBoot = await app.bootstrapWorkspaceState();
+    expect(firstBoot.ok).toBe(true);
+    await fs.rm(path.join(sandbox.stateRoot, "source", "local", "skill-flow"), {
+      recursive: true,
+      force: true,
+    });
+
+    const bootstrapped = await app.bootstrapWorkspaceState();
+
+    expect(bootstrapped.ok).toBe(true);
+    if (!bootstrapped.ok) {
+      return;
+    }
+    expect(bootstrapped.data.summaries.map((summary) => summary.source.id)).toContain("skill-flow");
+    const state = await new StateStore(sandbox.stateRoot).readState();
+    expect(state.manifest.sources.map((source) => source.id)).toEqual(["skill-flow"]);
+    await expect(
+      pathExists(path.join(sandbox.stateRoot, "source", "local", "skill-flow")),
+    ).resolves.toBe(true);
+  });
+
   test("togglePinnedSource writes v2 preferences without legacy manifest or preferences", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),

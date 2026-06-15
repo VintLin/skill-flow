@@ -36,6 +36,7 @@ export async function createCliPublishStage(stageRoot) {
   }
 
   await fs.cp(path.join(cliRoot, "dist"), path.join(stageRoot, "dist"), { recursive: true });
+  await fs.cp(path.join(repoRoot, "skills"), path.join(stageRoot, "skills"), { recursive: true });
 
   const { packageManifest } = await readCliManifest();
   const sanitizedManifest = sanitizeCliManifest(packageManifest);

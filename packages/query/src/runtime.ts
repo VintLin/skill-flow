@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createChannelAdapters, type ChannelAdapter } from "@skill-flow/integration/adapters/channel-adapters";
 import type {
   CollectionsFile,
@@ -153,9 +154,12 @@ import {
 } from "@skill-flow/core-engine/services/skill-collection-materializer";
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
+const BUILT_IN_SKILL_SOURCE_ID = "skill-flow";
+const BUILT_IN_SKILL_DISPLAY_NAME = "skill-flow";
 
 export type SkillFlowAppOptions = {
   agentsOriginReader?: AgentsOriginReader;
+  builtInSkillsRoot?: string;
 };
 
 type AddSourceDraftOptions = {
@@ -410,6 +414,7 @@ export class SkillFlowApp {
   readonly recentProjectService: RecentProjectService;
   readonly workspaceBootstrapService: WorkspaceBootstrapService;
   readonly configCoordinator: ConfigCoordinator;
+  private readonly builtInSkillsRoot: string | undefined;
   private mutationQueue: Promise<void> = Promise.resolve();
   private metadataRefreshesBySourceId = new Map<string, Promise<void>>();
   private importSearchRefreshesByQuery = new Map<string, Promise<ImportSearchSnapshot>>();
@@ -417,6 +422,7 @@ export class SkillFlowApp {
   private importRecommendationRefreshesByFeed = new Map<ImportRecommendationFeedId, Promise<ImportRecommendationFeed>>();
 
   constructor(options: SkillFlowAppOptions = {}) {
+    this.builtInSkillsRoot = options.builtInSkillsRoot;
     this.store = new RuntimeStore();
     this.stateStore = new StateStore(this.store.rootPath);
     this.importPreparationCacheStore = new ImportPreparationCacheStore(this.store.rootPath);
@@ -456,6 +462,7 @@ export class SkillFlowApp {
       workflowService: this.workflowService,
       getAvailableTargets: () => this.getAvailableTargets(),
       pruneMissingCheckouts: () => this.pruneMissingCheckoutsImpl(),
+      ensureBuiltInSources: () => this.ensureBuiltInSourcesImpl(),
       getConfigData: async () => {
         const result = await this.getConfigDataImpl();
         if (!result.ok) {
@@ -464,6 +471,73 @@ export class SkillFlowApp {
         return result;
       },
     });
+  }
+
+  private async ensureBuiltInSourcesImpl(): Promise<Result<{ sourceIds: string[] }>> {
+    const resolved = await this.resolveBuiltInSkillFlowPath();
+    if (!resolved.path) {
+      return ok(
+        { sourceIds: [] },
+        resolved.explicit
+          ? [{
+            code: "BUILT_IN_SKILL_SOURCE_MISSING",
+            message: "Unable to register the built-in Skill Flow group because the configured built-in skills resource was not found.",
+          }]
+          : [],
+      );
+    }
+
+    const state = await this.stateStore.readState();
+    const existingSource = state.manifest.sources.find((source) => source.id === BUILT_IN_SKILL_SOURCE_ID);
+    if (existingSource) {
+      const sourceLock = state.lockFile.sources[BUILT_IN_SKILL_SOURCE_ID];
+      if (sourceLock && await pathExists(sourceLock.localPath)) {
+        return ok({ sourceIds: [] });
+      }
+      return ok({ sourceIds: [] }, [{
+        code: "BUILT_IN_SKILL_SOURCE_CONFLICT",
+        message: "The built-in Skill Flow group id is already registered but its checkout is incomplete.",
+      }]);
+    }
+
+    const added = await this.sourceAuthorityService.addSource(resolved.path, {
+      sourceIdOverride: BUILT_IN_SKILL_SOURCE_ID,
+      displayNameOverride: BUILT_IN_SKILL_DISPLAY_NAME,
+      originLocator: `builtin:${BUILT_IN_SKILL_SOURCE_ID}`,
+      importMode: "bootstrap-detected",
+    });
+    if (!added.ok) {
+      if (added.errors.some((error) => error.code === "SOURCE_EXISTS")) {
+        return ok({ sourceIds: [] }, added.warnings);
+      }
+      return ok({ sourceIds: [] }, [
+        ...added.warnings,
+        ...added.errors.map((error) => ({
+          code: "BUILT_IN_SKILL_SOURCE_REGISTER_FAILED",
+          message: error.message,
+        })),
+      ]);
+    }
+
+    return ok({ sourceIds: [BUILT_IN_SKILL_SOURCE_ID] }, added.warnings);
+  }
+
+  private async resolveBuiltInSkillFlowPath(): Promise<{ path?: string; explicit: boolean }> {
+    const explicitRoot = this.builtInSkillsRoot ?? process.env.SKILL_FLOW_BUILTIN_SKILLS_ROOT;
+    const runtimeDir = path.dirname(fileURLToPath(import.meta.url));
+    const roots = [
+      explicitRoot,
+      path.resolve(runtimeDir, "..", "skills"),
+    ].filter((value): value is string => Boolean(value));
+
+    for (const root of roots) {
+      const skillPath = path.join(root, BUILT_IN_SKILL_SOURCE_ID);
+      if (await pathExists(path.join(skillPath, "SKILL.md"))) {
+        return { path: skillPath, explicit: root === explicitRoot };
+      }
+    }
+
+    return { explicit: Boolean(explicitRoot) };
   }
 
   private readCollectionsForRuntime(): Promise<CollectionsFile> {

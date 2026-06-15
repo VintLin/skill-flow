@@ -68,6 +68,9 @@ describe.sequential("npm package", () => {
     expect(packedBridgeEntry).not.toMatch(internalImportPattern);
     expect(packedDesktopBridgeEntry).not.toMatch(internalImportPattern);
     expect(packedDesktopBridgeEntry).not.toMatch(desktopOnlyExternalImportPattern);
+    await expect(
+      fs.stat(path.join(packedPackageRoot, "skills", "skill-flow", "SKILL.md")),
+    ).resolves.toBeTruthy();
   });
 
   test("staged publish manifest strips internal workspace dependencies", async () => {
@@ -89,5 +92,15 @@ describe.sequential("npm package", () => {
     expect(packageManifest.devDependencies).toBeUndefined();
     await expect(fs.stat(path.join(stageRoot, "dist", "cli.js"))).resolves.toBeTruthy();
     await expect(fs.stat(path.join(stageRoot, "dist", "desktop-bridge.js"))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(stageRoot, "skills", "skill-flow", "SKILL.md"))).resolves.toBeTruthy();
+  });
+
+  test("desktop helper packaging includes built-in skills resource", async () => {
+    const desktopPackageScript = await fs.readFile(
+      path.resolve(cliRoot, "../../scripts/release/package-desktop-mac.sh"),
+      "utf8",
+    );
+
+    expect(desktopPackageScript).toContain('cp -R "$ROOT_DIR/skills" "$helper_stage/skills"');
   });
 });

@@ -6,7 +6,9 @@ const command = process.argv[2];
 const repoRoot = path.resolve(new URL("../..", import.meta.url).pathname);
 const cliRoot = path.join(repoRoot, "apps", "cli");
 const statePath = path.join(cliRoot, ".pack-sync-state.json");
+const backupRoot = path.join(cliRoot, ".pack-sync-backups");
 const files = ["README.md", "README.zh.md", "LICENSE"];
+const directories = ["skills"];
 const packageJsonPath = path.join(cliRoot, "package.json");
 
 if (command === "prepare") {
@@ -20,6 +22,7 @@ if (command === "prepare") {
 
 async function prepare() {
   const state = {};
+  await fs.rm(backupRoot, { recursive: true, force: true });
 
   for (const file of files) {
     const sourcePath = path.join(repoRoot, file);
@@ -34,6 +37,24 @@ async function prepare() {
     }
 
     await fs.writeFile(targetPath, sourceContent, "utf8");
+  }
+
+  for (const directory of directories) {
+    const sourcePath = path.join(repoRoot, directory);
+    const targetPath = path.join(cliRoot, directory);
+    const backupPath = path.join(backupRoot, directory);
+
+    try {
+      await fs.stat(targetPath);
+      state[directory] = { existed: true, backupPath };
+      await fs.mkdir(path.dirname(backupPath), { recursive: true });
+      await fs.cp(targetPath, backupPath, { recursive: true });
+    } catch {
+      state[directory] = { existed: false };
+    }
+
+    await fs.rm(targetPath, { recursive: true, force: true });
+    await fs.cp(sourcePath, targetPath, { recursive: true });
   }
 
   const { packageJsonContent, packageManifest } = await readCliManifest(cliRoot);
@@ -74,10 +95,24 @@ async function restore() {
     await fs.rm(targetPath, { force: true });
   }
 
+  for (const directory of directories) {
+    const targetPath = path.join(cliRoot, directory);
+    const entry = state[directory];
+    if (!entry) {
+      continue;
+    }
+
+    await fs.rm(targetPath, { recursive: true, force: true });
+    if (entry.existed) {
+      await fs.cp(entry.backupPath, targetPath, { recursive: true });
+    }
+  }
+
   const packageEntry = state["package.json"];
   if (packageEntry?.existed) {
     await fs.writeFile(packageJsonPath, packageEntry.content, "utf8");
   }
 
   await fs.rm(statePath, { force: true });
+  await fs.rm(backupRoot, { recursive: true, force: true });
 }

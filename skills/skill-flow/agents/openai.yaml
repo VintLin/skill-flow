@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Flow"
+  short_description: "Manage Skill Flow safely through CLI"
+  default_prompt: "Use $skill-flow to inspect local Skill Flow state and safely apply requested changes."

@@ -176,6 +176,7 @@ stage_helper() {
 
   mkdir -p "$helper_stage/dist"
   cp "$CLI_DIST_DIR/desktop-bridge.js" "$helper_stage/dist/desktop-bridge.js"
+  cp -R "$ROOT_DIR/skills" "$helper_stage/skills"
 
   cat > "$helper_stage/package.json" <<EOF
 {
