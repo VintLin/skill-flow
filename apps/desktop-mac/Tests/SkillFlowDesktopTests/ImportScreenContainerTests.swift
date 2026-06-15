@@ -412,6 +412,160 @@ final class ImportScreenContainerTests: XCTestCase {
         ])
     }
 
+    func testTogglingPreviewSkillMatchesSelectionAliasesWhenUiIdDiffersFromSkillId() {
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let diskSelection = ImportSkillSelection(
+            uiId: "skill_disk_hygiene",
+            selector: .repoPath("plugins/devops-tools/skills/disk-hygiene")
+        )
+        let sessionSelection = ImportSkillSelection(
+            uiId: "skill_session_recovery",
+            selector: .repoPath("plugins/devops-tools/skills/session-recovery")
+        )
+        let card = ImportViewModel.Card(
+            id: "terrylica-cc-skills",
+            title: "cc-skills",
+            locator: "terrylica/cc-skills",
+            canonicalRepo: "terrylica/cc-skills",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @terrylica",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [
+                .init(
+                    id: "plugins/devops-tools/skills/disk-hygiene",
+                    title: "Disk Hygiene",
+                    summary: "",
+                    selectedByDefault: true,
+                    selection: diskSelection,
+                    selectorAliases: ["disk-hygiene"]
+                ),
+                .init(
+                    id: "plugins/devops-tools/skills/session-recovery",
+                    title: "Session Recovery",
+                    summary: "",
+                    selectedByDefault: true,
+                    selection: sessionSelection,
+                    selectorAliases: ["session-recovery"]
+                ),
+            ],
+            targets: []
+        )
+
+        container.setSkill("plugins/devops-tools/skills/session-recovery", enabled: false, for: card)
+
+        XCTAssertEqual(container.draft(for: card).selectedSkills, [diskSelection])
+
+        container.setSkill("plugins/devops-tools/skills/session-recovery", enabled: true, for: card)
+
+        XCTAssertEqual(container.draft(for: card).selectedSkills, [diskSelection, sessionSelection])
+    }
+
+    func testSelectedSkillIdsUseSelectionAliasesWhenUiIdDiffersFromSkillId() {
+        let diskSelection = ImportSkillSelection(
+            uiId: "skill_disk_hygiene",
+            selector: .repoPath("plugins/devops-tools/skills/disk-hygiene")
+        )
+        let sessionSelection = ImportSkillSelection(
+            uiId: "skill_session_recovery",
+            selector: .repoPath("plugins/devops-tools/skills/session-recovery")
+        )
+        let skills: [ImportViewModel.Skill] = [
+            .init(
+                id: "plugins/devops-tools/skills/disk-hygiene",
+                title: "Disk Hygiene",
+                summary: "",
+                selectedByDefault: true,
+                selection: diskSelection,
+                selectorAliases: ["disk-hygiene"]
+            ),
+            .init(
+                id: "plugins/devops-tools/skills/session-recovery",
+                title: "Session Recovery",
+                summary: "",
+                selectedByDefault: true,
+                selection: sessionSelection,
+                selectorAliases: ["session-recovery"]
+            ),
+        ]
+        let draft = ImportDraftState(
+            selectedSkills: [diskSelection],
+            enabledTargetIds: []
+        )
+
+        XCTAssertEqual(
+            ImportSkillSelectionResolver.selectedSkillIds(for: skills, draft: draft),
+            ["plugins/devops-tools/skills/disk-hygiene"]
+        )
+    }
+
+    func testSelectedSkillIdsFallsBackToUniqueAliasForRefreshedPreviewSkills() {
+        let diskSelection = ImportSkillSelection(
+            uiId: "skill_disk_hygiene",
+            selector: .repoPath("plugins/devops-tools/skills/disk-hygiene")
+        )
+        let skills: [ImportViewModel.Skill] = [
+            .init(
+                id: "plugins/devops-tools/skills/disk-hygiene",
+                title: "Disk Hygiene",
+                summary: "",
+                selectedByDefault: true,
+                selection: diskSelection,
+                selectorAliases: ["disk-hygiene"]
+            )
+        ]
+        let draft = ImportDraftState(
+            selectedSkills: [.repoPath("disk-hygiene")],
+            enabledTargetIds: []
+        )
+
+        XCTAssertEqual(
+            ImportSkillSelectionResolver.selectedSkillIds(for: skills, draft: draft),
+            ["plugins/devops-tools/skills/disk-hygiene"]
+        )
+    }
+
+    func testSelectedSkillIdsDoesNotMatchNonUniqueAliases() {
+        let skills: [ImportViewModel.Skill] = [
+            .init(
+                id: "plugins/a/skills/review",
+                title: "Review A",
+                summary: "",
+                selectedByDefault: true,
+                selection: ImportSkillSelection(
+                    uiId: "skill_review_a",
+                    selector: .repoPath("plugins/a/skills/review")
+                ),
+                selectorAliases: ["review"]
+            ),
+            .init(
+                id: "plugins/b/skills/review",
+                title: "Review B",
+                summary: "",
+                selectedByDefault: true,
+                selection: ImportSkillSelection(
+                    uiId: "skill_review_b",
+                    selector: .repoPath("plugins/b/skills/review")
+                ),
+                selectorAliases: ["review"]
+            ),
+        ]
+        let draft = ImportDraftState(
+            selectedSkills: [.repoPath("review")],
+            enabledTargetIds: []
+        )
+
+        XCTAssertEqual(
+            ImportSkillSelectionResolver.selectedSkillIds(for: skills, draft: draft),
+            []
+        )
+    }
+
     func testBackendSelectedLocalChoiceIsUsedBeforeManualSelection() async {
         let state = DesktopAppState()
         let commands = RecordingImportCommandFacade()
@@ -1541,6 +1695,20 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertTrue(source.contains("let isAnotherImportRunning = importingGroupId != nil && importingGroupId != card.id"))
         XCTAssertTrue(source.contains("activeImportDisabledReason: isAnotherImportRunning"))
         XCTAssertTrue(source.contains("actionButtonHelpText: Self.importActionHelpText("))
+    }
+
+    func testImportSuccessDoesNotWriteDetailRoute() throws {
+        let source = try String(
+            contentsOfFile: sourceRoot()
+                .appendingPathComponent("Sources/DesktopApp/ViewModels/MainViewModel.swift")
+                .path,
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(
+            source.contains("currentRoute = .detail(sourceId: sourceId)"),
+            "Import success should not open the imported group detail page automatically."
+        )
     }
 
     func testSharedGroupCardUsesActionButtonHelpTextForHelp() throws {

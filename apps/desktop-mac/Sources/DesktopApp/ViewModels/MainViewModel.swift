@@ -2581,9 +2581,6 @@ final class MainViewModel {
                     refreshDoctor: true,
                     inspectSourceId: sourceId.nonEmpty
                 )
-                if self.currentRoute != .importPage, let sourceId = sourceId.nonEmpty {
-                    self.routeState?.view.currentRoute = .detail(sourceId: sourceId)
-                }
             }
             showToast(style: .success, text: localizedText("toast.import.success"))
         } catch {

@@ -212,7 +212,7 @@ struct ImportScreen: View {
 
     private func importCardModel(for card: ImportViewModel.Card) -> MainViewModel.GroupCardModel {
         let draft = container.draft(for: card)
-        let selectedSkillIds = Set(draft.selectedSkills.map(\.uiId))
+        let selectedSkillIds = Set(ImportSkillSelectionResolver.selectedSkillIds(for: card.skills, draft: draft))
         let enabledTargetIds = Set(draft.enabledTargetIds)
 
         return MainViewModel.GroupCardModel(
@@ -227,7 +227,7 @@ struct ImportScreen: View {
             health: "DISCOVER",
             warningCount: 0,
             errorCount: 0,
-            skillSelection: importSelectionState(allIds: card.skills.map(\.id), selectedIds: draft.selectedSkills.map(\.uiId)),
+            skillSelection: importSelectionState(allIds: card.skills.map(\.id), selectedIds: Array(selectedSkillIds)),
             targetSelection: importSelectionState(allIds: card.targets.map(\.id), selectedIds: draft.enabledTargetIds),
             stats: MainViewModel.GroupCardStats(
                 downloadCount: card.stats.downloadCount,

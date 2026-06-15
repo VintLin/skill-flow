@@ -508,29 +508,38 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(draft?["enabledTargets"] as? [String], ["cursor"])
     }
 
-    func testImportPageSearchResultMarksImportedGroupAsInstalled() async throws {
+    func testImportPageSearchResultMarksImportedGroupAsInstalledWithoutOpeningDetail() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)
         let model = container.mainViewModel
+        runtime.state.view.currentRoute = .importPage
 
         await model.submitImportSearch("https://github.com/anthropic/skills.git")
         let group = try XCTUnwrap(model.importDisplayGroups.first(where: { $0.canonicalRepo == "anthropics/skills" }))
 
-        await model.importImportGroup(
-            groupId: group.id,
-            locator: group.locator,
-            selectedSkills: [.repoPath("research")],
-            enabledTargets: []
-        )
+        let importTask = Task {
+            await model.importImportGroup(
+                groupId: group.id,
+                locator: group.locator,
+                selectedSkills: [.repoPath("research")],
+                enabledTargets: []
+            )
+        }
+        runtime.state.view.currentRoute = .home
+        await importTask.value
+
         await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
-            model.currentRoute == .detail(sourceId: "anthropics-skills")
+            model.sourceIds.contains("anthropics-skills")
                 && model.searchImportGroups.first(where: { $0.canonicalRepo == "anthropics/skills" })?.isInstalledLocally == true
         }
+        await Task.yield()
+        await Task.yield()
 
-        XCTAssertEqual(model.currentRoute, .detail(sourceId: "anthropics-skills"))
+        XCTAssertEqual(model.currentRoute, .home)
+        XCTAssertEqual(runtime.state.view.currentRoute, .home)
         XCTAssertEqual(
             model.searchImportGroups.first(where: { $0.canonicalRepo == "anthropics/skills" })?.isInstalledLocally,
             true

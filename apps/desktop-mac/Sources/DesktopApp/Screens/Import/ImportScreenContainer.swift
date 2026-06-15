@@ -179,11 +179,10 @@ final class ImportScreenContainer {
     ) -> [ImportSkillSelection] {
         guard let choice = selectedLocalChoice(for: card),
               !choice.selectedSkills.isEmpty else {
-            return resolvedSelectedSkills(from: draft, for: card)
+            return ImportSkillSelectionResolver.selectedSkills(from: draft, for: card)
         }
 
-        let draftSelected = Set(draft.selectedSkills.map(\.uiId))
-        return choice.selectedSkills.filter { draftSelected.contains($0.uiId) }
+        return ImportSkillSelectionResolver.selectedSkills(from: choice.selectedSkills, matching: draft)
     }
 
     func skillSelectionModeForImport(for card: ImportViewModel.Card) -> ImportSkillSelectionMode {
@@ -211,7 +210,7 @@ final class ImportScreenContainer {
 
     func setSkill(_ skillId: String, enabled: Bool, for card: ImportViewModel.Card) {
         let current = draft(for: card)
-        let selectedIds = Set(current.selectedSkills.map(\.uiId))
+        let selectedIds = Set(ImportSkillSelectionResolver.selectedSkillIds(for: card.skills, draft: current))
         let nextSelectedIds: [String]
 
         if enabled {
@@ -228,7 +227,8 @@ final class ImportScreenContainer {
 
     func toggleAllSkills(for card: ImportViewModel.Card) {
         let current = draft(for: card)
-        let nextSelectedIds = current.selectedSkills.count == card.skills.count ? [] : card.skills.map(\.id)
+        let selectedIds = ImportSkillSelectionResolver.selectedSkillIds(for: card.skills, draft: current)
+        let nextSelectedIds = selectedIds.count == card.skills.count ? [] : card.skills.map(\.id)
 
         state.importState.draftsByItemId[card.id] = ImportDraftState(
             selectedSkills: card.skills.filter { nextSelectedIds.contains($0.id) }.map(\.selection),
@@ -298,32 +298,4 @@ final class ImportScreenContainer {
             }
     }
 
-    private func resolvedSelectedSkills(
-        from draft: ImportDraftState,
-        for card: ImportViewModel.Card
-    ) -> [ImportSkillSelection] {
-        guard !draft.selectedSkills.isEmpty else {
-            return []
-        }
-
-        let selectedKeys = Set(draft.selectedSkills.flatMap(selectionKeys(for:)))
-        let refreshedSelections = card.skills
-            .filter { skill in
-                !selectedKeys.isDisjoint(with: skillSelectionKeys(for: skill))
-            }
-            .map(\.selection)
-
-        return refreshedSelections.isEmpty ? draft.selectedSkills : refreshedSelections
-    }
-
-    private func selectionKeys(for selection: ImportSkillSelection) -> [String] {
-        switch selection.selector {
-        case .repoPath(let path):
-            return [selection.uiId, path]
-        }
-    }
-
-    private func skillSelectionKeys(for skill: ImportViewModel.Skill) -> Set<String> {
-        Set([skill.id] + selectionKeys(for: skill.selection) + skill.selectorAliases)
-    }
 }
