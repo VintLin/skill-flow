@@ -14,7 +14,7 @@
 
 </div>
 
-すべての主要なコーディングエージェントでスキルをインストール、管理、共有 —— Claude Code、Cursor、Copilot、Trae など。
+すべての主要なコーディングエージェントでスキルをインストール、管理、共有 —— Claude Code、Cursor、Copilot、Trae、ZCode など。
 
 skills.sh、GitHub、またはローカルソースからスキルを検索してインポート。複数のエージェントに一度にデプロイ。すべてを整理して最新の状態に保つ。
 
@@ -35,7 +35,7 @@ skills.sh、GitHub、またはローカルソースからスキルを検索し�
 ## 主な機能
 
 - **グループ化されたソース管理**: ローカル、Git、skills.sh ソースはすべて同じインポートモデルを通じて流れます。
-- **マルチエージェントデプロイ**: 選択した一つのスキルセットを Claude Code、Codex、Cursor、Gemini CLI、OpenCode、OpenClaw、Hermes Agent、MiniMax Code、Trae、Windsurf などにデプロイします。
+- **マルチエージェントデプロイ**: 選択した一つのスキルセットを Claude Code、Codex、Cursor、Gemini CLI、OpenCode、OpenClaw、Hermes Agent、MiniMax Code、Trae、Windsurf、ZCode などにデプロイします。
 - **インタラクティブな設定フロー**: add/config フロー、選択状態、レビュー、修復のための Ink ベース TUI。
 - **macOS 15+ デスクトップアプリ**: SwiftUI メインウィンドウ、インポートビュー、詳細パネル、設定、メニューバークイック設定。
 - **明示的な状態**: `manifest.json` は意図を保存し、`lock.json` は解決されたインベントリとデプロイメントを保存します。
@@ -153,6 +153,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 - Cline
 - Amp
 - Kiro
+- ZCode
 
 ターゲットパスは `SKILL_FLOW_TARGET_*` 環境変数でオーバーライドできます。
 
