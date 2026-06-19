@@ -235,6 +235,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         get { stateManager.latestWarnings }
         set { stateManager.setLatestWarnings(newValue) }
     }
+    var latestWarningPresentations: [DesktopWarningPresentation] { stateManager.latestWarningPresentations }
     var inspectorVisible: Bool { stateManager.inspectorVisible }
     var compactSidebarVisible: Bool { stateManager.compactSidebarVisible }
     var showAllTargets: Bool {

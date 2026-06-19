@@ -4,6 +4,12 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class DesktopLocalizationTests: XCTestCase {
+    private let supportedLocales = [
+        Locale(identifier: "zh-Hans"),
+        Locale(identifier: "en"),
+        Locale(identifier: "ja"),
+    ]
+
     private func loadRecommendations() -> [ImportRecommendationEntry] {
         let configurationURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -12,6 +18,50 @@ final class DesktopLocalizationTests: XCTestCase {
             .appendingPathComponent("Sources/DesktopApp/Resources/ImportRecommendations/recommendations.json")
         let data = try! Data(contentsOf: configurationURL)
         return try! JSONDecoder().decode([ImportRecommendationEntry].self, from: data)
+    }
+
+    private func loadDesktopLocalizedStrings(localeIdentifier: String) -> [String: String] {
+        let fileURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/DesktopApp/Resources/\(localeIdentifier).lproj/Localizable.strings")
+        return NSDictionary(contentsOf: fileURL) as? [String: String] ?? [:]
+    }
+
+    private func knownIssueDetailKeys() -> [String] {
+        let codes = [
+            "IMPORT_SELECTOR_NOT_FOUND",
+            "IMPORT_SELECTOR_AMBIGUOUS",
+            "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+            "ADD_SKILL_NOT_FOUND",
+            "ADD_SKILL_SELECTOR_AMBIGUOUS",
+            "IMPORT_SELECTOR_INVALID",
+            "provider_not_supported",
+            "provider_data_unavailable",
+            "provider_rate_limited",
+            "provider_response_invalid",
+            "provider_request_failed",
+            "IMPORT_PREPARE_FAILED",
+            "IMPORT_PREVIEW_INVALID",
+            "IMPORT_APPLY_FAILED",
+            "IMPORT_PREPARATION_STALE",
+            "IMPORT_PREPARATION_MISSING",
+            "NO_VALID_LEAFS",
+            "SOURCE_PATH_NOT_FOUND",
+            "ADD_AGENT_NOT_AVAILABLE",
+            "LOCAL_IMPORT_SCAN_FAILED",
+            "BRIDGE_EMPTY_REQUEST",
+            "BRIDGE_REQUEST_INVALID",
+            "BRIDGE_IMPORT_DRAFT_REJECTED",
+            "UNSUPPORTED_COMMAND",
+            "SOURCE_NOT_FOUND",
+            "COLLECTION_NOT_FOUND",
+            "GROUP_DELETE_INCOMPLETE",
+            "STATE_MIGRATION_BLOCKED",
+        ]
+        let detailKeys = codes.map { DesktopIssuePresentationCatalog.presentation(forInternalCode: $0).detailKey }
+        return Array(Set(detailKeys + [DesktopIssuePresentationCatalog.presentation(forInternalCode: nil).detailKey])).sorted()
     }
 
     func testDesktopLanguageNormalizesSupportedIdentifiers() {
@@ -44,6 +94,29 @@ final class DesktopLocalizationTests: XCTestCase {
 
     func testL10nFallsBackToEnglishBundleWhenKeyMissingInSelectedLocale() {
         XCTAssertEqual(L10n.string("test.fallback.only_en", locale: Locale(identifier: "ja")), "Only English")
+    }
+
+    func testUserFacingLocalizedCopyDoesNotLeakInternalReasonCodes() {
+        let issueDetailKeys = knownIssueDetailKeys()
+
+        for locale in supportedLocales {
+            let localizedStrings = loadDesktopLocalizedStrings(localeIdentifier: locale.identifier)
+            let resourceValues = localizedStrings.compactMap { key, value -> String? in
+                guard key.hasPrefix("toast.") || key.hasPrefix("bridge.error.") else {
+                    return nil
+                }
+                return value
+            }
+            let issueDetailValues = issueDetailKeys.map { key in
+                L10n.string(key, locale: locale, arguments: ["599"])
+            }
+
+            for value in resourceValues + issueDetailValues {
+                XCTAssertFalse(value.contains("IMPORT_"), locale.identifier)
+                XCTAssertFalse(value.contains("BRIDGE_"), locale.identifier)
+                XCTAssertFalse(value.contains("STATE_MIGRATION_"), locale.identifier)
+            }
+        }
     }
 
     func testL10nLoadsDetailDerivedLocalizationKeys() {
@@ -98,11 +171,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "toast.rename.reset_success",
             "toast.rename.failed",
         ]
-        let locales = [
-            Locale(identifier: "zh-Hans"),
-            Locale(identifier: "en"),
-            Locale(identifier: "ja"),
-        ]
+        let locales = supportedLocales
 
         for locale in locales {
             for key in requiredKeys {
@@ -147,11 +216,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "group_editor.impact.clear_bindings",
             "group_editor.impact.save_restore_snapshot",
         ]
-        let locales = [
-            Locale(identifier: "zh-Hans"),
-            Locale(identifier: "en"),
-            Locale(identifier: "ja"),
-        ]
+        let locales = supportedLocales
 
         for locale in locales {
             for key in requiredKeys {
@@ -197,11 +262,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "import.reason.source_path_not_found",
             "import.reason.add_agent_not_available",
         ]
-        let locales = [
-            Locale(identifier: "zh-Hans"),
-            Locale(identifier: "en"),
-            Locale(identifier: "ja"),
-        ]
+        let locales = supportedLocales
 
         for locale in locales {
             for key in requiredKeys {
@@ -253,11 +314,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "import.card.meta.local_scan_sources",
             "import.error.scan_local",
         ]
-        let locales = [
-            Locale(identifier: "zh-Hans"),
-            Locale(identifier: "en"),
-            Locale(identifier: "ja"),
-        ]
+        let locales = supportedLocales
 
         for locale in locales {
             for key in requiredKeys {
@@ -370,11 +427,7 @@ final class DesktopLocalizationTests: XCTestCase {
         let recommendations = loadRecommendations()
         XCTAssertFalse(recommendations.isEmpty)
 
-        let locales = [
-            Locale(identifier: "zh-Hans"),
-            Locale(identifier: "en"),
-            Locale(identifier: "ja"),
-        ]
+        let locales = supportedLocales
 
         for recommendation in recommendations {
             for locale in locales {
@@ -422,11 +475,7 @@ final class DesktopLocalizationTests: XCTestCase {
 
     func testImportRecommendationCategoryAndTagKeysExistInAllSupportedLocales() {
         let recommendations = loadRecommendations()
-        let locales = [
-            Locale(identifier: "zh-Hans"),
-            Locale(identifier: "en"),
-            Locale(identifier: "ja"),
-        ]
+        let locales = supportedLocales
 
         for recommendation in recommendations {
             let tagIds = [recommendation.primaryTagId] + recommendation.secondaryTagIds

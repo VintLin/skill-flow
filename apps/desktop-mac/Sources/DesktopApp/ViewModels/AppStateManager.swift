@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+struct DesktopWarningPresentation: Identifiable, Equatable, Sendable {
+    let id: String
+    let issueCode: String
+    let message: PresentationText
+}
+
 @MainActor
 @Observable
 final class AppStateManager {
@@ -67,6 +73,7 @@ final class AppStateManager {
     var pinnedSourceIds: [String] = []
     var healthStatus: HealthStatus = .unknown
     var latestWarnings: [BridgeIssue] = []
+    var latestWarningPresentations: [DesktopWarningPresentation] = []
     var pendingDetailRename: PendingDetailRename?
     var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?
@@ -158,6 +165,14 @@ final class AppStateManager {
 
     func setLatestWarnings(_ warnings: [BridgeIssue]) {
         latestWarnings = warnings
+        latestWarningPresentations = warnings.map { warning in
+            let presentation = DesktopIssuePresentationCatalog.presentation(forInternalCode: warning.code)
+            return DesktopWarningPresentation(
+                id: warning.id,
+                issueCode: presentation.issueCode,
+                message: DesktopIssuePresentationCatalog.toastText(forInternalCode: warning.code, locale: PresentationText.presentationLocale)
+            )
+        }
     }
 
     func setDeploymentFilter(target: String, kind: String) {
@@ -199,6 +214,7 @@ final class AppStateManager {
         pinnedSourceIds = []
         healthStatus = .unknown
         latestWarnings = []
+        latestWarningPresentations = []
         pendingDetailRename = nil
         doctorIssues = []
         lastDoctorError = nil

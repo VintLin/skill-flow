@@ -3,6 +3,25 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class DesktopIssuePresentationCatalogTests: XCTestCase {
+    func testKnownDesktopVisibleCodesHaveNonFallbackIssueCodes() {
+        let codes = [
+            "IMPORT_SELECTOR_NOT_FOUND",
+            "IMPORT_SELECTOR_AMBIGUOUS",
+            "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+            "ADD_SKILL_NOT_FOUND",
+            "IMPORT_PREPARE_FAILED",
+            "LOCAL_IMPORT_SCAN_FAILED",
+            "BRIDGE_REQUEST_INVALID",
+            "SOURCE_NOT_FOUND",
+            "COLLECTION_NOT_FOUND",
+            "STATE_MIGRATION_BLOCKED",
+        ]
+
+        for code in codes {
+            XCTAssertNotEqual(DesktopIssuePresentationCatalog.presentation(forInternalCode: code).issueCode, "599", code)
+        }
+    }
+
     func testCatalogMapsKnownImportCodesToNumericIssueCodes() {
         let selectionNotFound = DesktopIssuePresentationCatalog.presentation(forInternalCode: "IMPORT_SELECTOR_NOT_FOUND")
         XCTAssertEqual(selectionNotFound.issueCode, "101")
@@ -71,5 +90,23 @@ final class DesktopIssuePresentationCatalogTests: XCTestCase {
         XCTAssertFalse(text.contains("Import failed"))
         XCTAssertTrue(text.contains("101"))
         XCTAssertFalse(text.contains("IMPORT_SELECTOR_NOT_FOUND"))
+    }
+
+    @MainActor
+    func testMainViewModelExposesPresentationReadyWarningsWithoutRawCodes() throws {
+        let viewModel = MainViewModel(bridgeClient: BridgeClient())
+        viewModel.latestWarnings = [
+            BridgeIssue(code: "BRIDGE_REQUEST_INVALID", message: "BRIDGE_REQUEST_INVALID"),
+            BridgeIssue(code: "IMPORT_SELECTOR_NOT_FOUND", message: "IMPORT_SELECTOR_NOT_FOUND"),
+        ]
+
+        let rows = viewModel.latestWarningPresentations
+        XCTAssertEqual(rows.map(\.issueCode), ["502", "101"])
+
+        let firstMessage = try XCTUnwrap(rows.first?.message.resolve(locale: Locale(identifier: "en")))
+        XCTAssertFalse(firstMessage.contains("BRIDGE_REQUEST_INVALID"))
+
+        let secondMessage = try XCTUnwrap(rows.last?.message.resolve(locale: Locale(identifier: "en")))
+        XCTAssertFalse(secondMessage.contains("IMPORT_SELECTOR_NOT_FOUND"))
     }
 }
