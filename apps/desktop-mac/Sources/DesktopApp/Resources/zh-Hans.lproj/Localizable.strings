@@ -270,6 +270,9 @@
 "toast.uninstall.no_group_selected" = "卸载失败：未选择分组。";
 "toast.uninstall.success" = "已移除 %@。";
 "toast.uninstall.failed" = "卸载失败：%@";
+"toast.operation.source_not_found" = "所选分组已不存在。问题代码：%@。";
+"toast.operation.collection_not_found" = "所选组合已不存在。问题代码：%@。";
+"toast.state.migration_blocked" = "状态迁移已被阻止。问题代码：%@。";
 "toast.rename.empty" = "请输入分组名称。";
 "toast.rename.success" = "已重命名为 %@。";
 "toast.rename.reset_success" = "已恢复原名 %@";

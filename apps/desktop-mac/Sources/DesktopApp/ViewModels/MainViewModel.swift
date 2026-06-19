@@ -1889,7 +1889,12 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func showBridgeCommandFailure(_ response: BridgeResponse) {
-        showToast(style: .error, message: response.errors.map(\.message).joined(separator: "\n"))
+        let first = response.errors.first
+        let text = DesktopIssuePresentationCatalog.toastText(
+            forInternalCode: first?.code,
+            locale: Self.presentationLocale
+        )
+        showToast(style: .error, text: text)
     }
 
     // MARK: - Static Utility Methods (kept for backward compatibility)

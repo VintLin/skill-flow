@@ -24,6 +24,22 @@ final class DesktopIssuePresentationCatalogTests: XCTestCase {
         let bridgeInvalid = DesktopIssuePresentationCatalog.presentation(forInternalCode: "BRIDGE_REQUEST_INVALID")
         XCTAssertEqual(bridgeInvalid.issueCode, "502")
         XCTAssertEqual(bridgeInvalid.toastKey, "toast.issue.generic")
+
+        let sourceNotFound = DesktopIssuePresentationCatalog.presentation(forInternalCode: "SOURCE_NOT_FOUND")
+        XCTAssertEqual(sourceNotFound.issueCode, "601")
+        XCTAssertEqual(sourceNotFound.toastKey, "toast.operation.source_not_found")
+
+        let collectionNotFound = DesktopIssuePresentationCatalog.presentation(forInternalCode: "COLLECTION_NOT_FOUND")
+        XCTAssertEqual(collectionNotFound.issueCode, "602")
+        XCTAssertEqual(collectionNotFound.toastKey, "toast.operation.collection_not_found")
+
+        let uninstallIncomplete = DesktopIssuePresentationCatalog.presentation(forInternalCode: "GROUP_DELETE_INCOMPLETE")
+        XCTAssertEqual(uninstallIncomplete.issueCode, "604")
+        XCTAssertEqual(uninstallIncomplete.toastKey, "toast.uninstall.failed")
+
+        let migrationBlocked = DesktopIssuePresentationCatalog.presentation(forInternalCode: "STATE_MIGRATION_BLOCKED")
+        XCTAssertEqual(migrationBlocked.issueCode, "701")
+        XCTAssertEqual(migrationBlocked.toastKey, "toast.state.migration_blocked")
     }
 
     func testUnknownCodeMapsToFallbackIssue() {

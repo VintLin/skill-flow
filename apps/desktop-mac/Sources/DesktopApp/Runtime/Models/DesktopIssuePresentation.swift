@@ -108,6 +108,14 @@ enum DesktopIssuePresentationCatalog {
             return error("502", "toast.issue.generic", "issue.detail.bridge.invalid_response", internalCode, [])
         case "UNSUPPORTED_COMMAND":
             return error("509", "toast.issue.generic", "issue.detail.bridge.unsupported_command", internalCode, [])
+        case "SOURCE_NOT_FOUND":
+            return error("601", "toast.operation.source_not_found", "issue.detail.operation.source_not_found", internalCode, [.groupLocator])
+        case "COLLECTION_NOT_FOUND":
+            return error("602", "toast.operation.collection_not_found", "issue.detail.operation.collection_not_found", internalCode, [.groupLocator])
+        case "GROUP_DELETE_INCOMPLETE":
+            return error("604", "toast.uninstall.failed", "issue.detail.operation.uninstall_incomplete", internalCode, [.groupLocator])
+        case "STATE_MIGRATION_BLOCKED":
+            return error("701", "toast.state.migration_blocked", "issue.detail.state.migration_blocked", internalCode, [])
         default:
             return error("599", "toast.issue.generic", "issue.detail.generic", internalCode, [])
         }

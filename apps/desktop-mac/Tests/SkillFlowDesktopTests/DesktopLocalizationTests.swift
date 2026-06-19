@@ -171,6 +171,9 @@ final class DesktopLocalizationTests: XCTestCase {
     func testImportFailureReasonKeysExistInAllSupportedLocales() {
         let requiredKeys = [
             "toast.issue.generic",
+            "toast.operation.source_not_found",
+            "toast.operation.collection_not_found",
+            "toast.state.migration_blocked",
             "toast.import.failed.provider_not_supported",
             "toast.import.failed.provider_data_unavailable",
             "toast.import.failed.provider_rate_limited",
@@ -223,6 +226,7 @@ final class DesktopLocalizationTests: XCTestCase {
 
             let invalidResponseValue = L10n.string("toast.issue.generic", locale: locale, arguments: ["502"])
             XCTAssertTrue(invalidResponseValue.contains("502"), "Missing bridge issue code in \(locale.identifier)")
+            XCTAssertFalse(invalidResponseValue.contains("BRIDGE_REQUEST_INVALID"), "Bridge internal code leaked in \(locale.identifier)")
         }
     }
 

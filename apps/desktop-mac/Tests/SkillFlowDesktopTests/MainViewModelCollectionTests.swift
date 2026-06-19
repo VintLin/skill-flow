@@ -245,6 +245,37 @@ final class MainViewModelCollectionTests: XCTestCase {
         XCTAssertEqual(query.listCallCount, 1)
     }
 
+    func testCreateCollectionBridgeFailureToastUsesCatalogIssueCodeInsteadOfInternalCode() async {
+        let query = CollectionQueryStub()
+        let command = RecordingCollectionCommandFacade()
+        command.createResponse = BridgeResponse(
+            protocolVersion: "1.0",
+            requestId: "test",
+            command: .apply,
+            ok: false,
+            data: nil,
+            warnings: [],
+            errors: [BridgeIssue(code: "BRIDGE_REQUEST_INVALID", message: "BRIDGE_REQUEST_INVALID")]
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+
+        await model.bootstrap()
+        await model.createCollection(
+            displayName: "Team Tools",
+            skills: [
+                CollectionSkillRef(sourceId: "alpha", leafId: "alpha-a"),
+            ],
+            enabledTargets: ["codex"]
+        )
+
+        XCTAssertTrue(model.toast?.message.contains("502") == true)
+        XCTAssertFalse(model.toast?.message.contains("BRIDGE_REQUEST_INVALID") == true)
+    }
+
     func testHomeCardDoesNotExposeDeleteActionForCollections() throws {
         let homeSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
         let cardSource = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
@@ -531,6 +562,7 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
     }
 
     private(set) var createCalls: [CreateCall] = []
+    var createResponse: BridgeResponse = .success(command: .createCollection, payload: ["sourceId": "collection-team-tools"])
 
     func saveSettings(customTargets: [[String: String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
         fatalError("unused")
@@ -550,7 +582,7 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
 
     func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
         createCalls.append(CreateCall(displayName: displayName, skills: skills, enabledTargets: enabledTargets))
-        return BridgeResponse.success(command: .createCollection, payload: ["sourceId": "collection-team-tools"])
+        return createResponse
     }
 
     func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {

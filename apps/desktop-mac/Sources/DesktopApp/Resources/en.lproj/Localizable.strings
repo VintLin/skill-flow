@@ -270,6 +270,9 @@
 "toast.uninstall.no_group_selected" = "Uninstall failed: no group selected.";
 "toast.uninstall.success" = "Removed %@.";
 "toast.uninstall.failed" = "Uninstall failed: %@";
+"toast.operation.source_not_found" = "The selected group no longer exists. Issue code: %@.";
+"toast.operation.collection_not_found" = "The selected collection no longer exists. Issue code: %@.";
+"toast.state.migration_blocked" = "State migration is blocked. Issue code: %@.";
 "toast.rename.empty" = "Enter a group name.";
 "toast.rename.success" = "Renamed to %@.";
 "toast.rename.reset_success" = "Restored original name %@.";
