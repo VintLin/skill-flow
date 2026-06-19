@@ -227,9 +227,14 @@
 "toast.import.failed.provider_request_failed" = "インポートに失敗しました: このソースを読み取れません。後でもう一度試してください。";
 "toast.import.failed.no_valid_leafs" = "インポートに失敗しました: 認識できる Skill ファイルが見つかりません。";
 "toast.import.failed.source_path_not_found" = "インポートに失敗しました: 選択したパスに有効な Skill がありません。";
-"toast.import.failed.add_agent_not_available" = "インポートに失敗しました: Agent のインストールを利用できません。";
-"toast.import.failed.add_skill_not_found" = "インポートに失敗しました: 選択した Skill がこのソースに見つかりません。";
-"toast.import.failed.import_prepare_failed" = "インポートに失敗しました: ソースのチェックアウトを準備できません。";
+"toast.issue.generic" = "問題が発生しました。問題コード: %@。";
+"toast.import.failed.add_agent_not_available" = "インポートに失敗しました: Agent のインストールを利用できません。問題コード: %@。";
+"toast.import.failed.add_skill_not_found" = "インポートに失敗しました: 選択した Skill がこのソースに見つかりません。問題コード: %@。";
+"toast.import.failed.selection_not_found" = "インポートに失敗しました: 選択した Skill はこの Group にもう存在しません。問題コード: %@。";
+"toast.import.failed.selection_ambiguous" = "インポートに失敗しました: 選択した Skill が複数の項目に一致しました。問題コード: %@。";
+"toast.import.failed.selection_invalid" = "インポートに失敗しました: 選択した Skill 参照が無効です。問題コード: %@。";
+"toast.import.failed.import_prepare_failed" = "インポートに失敗しました: ソースのチェックアウトを準備できません。問題コード: %@。";
+"toast.import.failed.preparation_stale" = "インポートに失敗しました: このインポートは最新ではありません。Group を更新して再試行してください。問題コード: %@。";
 "toast.import.failed.invalid_response" = "インポート失敗: 無効なレスポンスです。";
 "toast.import.failed.reason_code" = "インポートに失敗しました: %@。";
 "toast.import.failed.generic" = "インポートに失敗しました。後でもう一度試してください。";
@@ -239,7 +244,7 @@
 "toast.import.in_progress" = "この Group はインポート中です。";
 "toast.import.another_running" = "別のインポートが実行中です。";
 "toast.import.success" = "ソースをインポートしました。";
-"toast.import.warning.selection_drift" = "元の Skill 選択と一致しなくなったため、ダウンロードした内容に基づいて Group をインポートしました。";
+"toast.import.warning.selection_drift" = "ダウンロードした内容から Group をインポートしました。選択した Skill の一部が変わっています。問題コード: %@。";
 "toast.import.local_source_target_locked" = "この Skill は %@ の Agent パス由来のため、解除できません。";
 "toast.import.local_scan_failed" = "ローカルスキャンに失敗しました：%@";
 "toast.import.local_already_scanned" = "このローカル Skill はすでにスキャン一覧にあります。";

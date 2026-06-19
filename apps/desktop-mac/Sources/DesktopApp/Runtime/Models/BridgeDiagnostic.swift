@@ -48,20 +48,33 @@ struct BridgeDiagnostic: Equatable, Sendable {
 
 enum ImportToastDiagnosticsFormatter {
     static func message(reasonCode: String?, diagnostics: [BridgeDiagnostic]) -> String {
-        var parts: [String] = []
-        if let reasonCode = nonEmptyDiagnosticValue(reasonCode) {
-            parts.append(reasonCode)
-        }
+        let presentation = DesktopIssuePresentationCatalog.presentation(
+            forInternalCode: reasonCode,
+            diagnostics: diagnostics,
+            context: DesktopIssueContext.from(diagnostics: diagnostics)
+        )
+        let context = DesktopIssueContext.from(diagnostics: diagnostics)
+        var parts: [String] = [presentation.issueCode]
 
-        if let diagnostic = diagnostics.first {
-            appendUnique(diagnostic.code, to: &parts)
-            appendUnique(diagnostic.details["kind"], to: &parts)
-            appendUnique(diagnostic.details["value"], to: &parts)
-            appendUnique(diagnostic.details["target"], to: &parts)
-            appendUnique(diagnostic.details["bridgeCode"], to: &parts)
-        }
-
+        appendIfSafe(context.skillName, field: .skillName, presentation: presentation, to: &parts)
+        appendIfSafe(context.selectorKind, field: .selectorKind, presentation: presentation, to: &parts)
+        appendIfSafe(context.selectorValue, field: .selectorValue, presentation: presentation, to: &parts)
+        appendIfSafe(context.groupLocator, field: .groupLocator, presentation: presentation, to: &parts)
+        appendIfSafe(context.target, field: .target, presentation: presentation, to: &parts)
+        appendIfSafe(context.timeoutMilliseconds, field: .timeoutMilliseconds, presentation: presentation, to: &parts)
         return parts.joined(separator: " · ")
+    }
+
+    private static func appendIfSafe(
+        _ value: String?,
+        field: DesktopIssueContextField,
+        presentation: DesktopIssuePresentation,
+        to parts: inout [String]
+    ) {
+        guard presentation.safeContextFields.contains(field) else {
+            return
+        }
+        appendUnique(value, to: &parts)
     }
 
     private static func appendUnique(_ value: String?, to parts: inout [String]) {

@@ -3,7 +3,7 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class ImportToastDiagnosticsFormatterTests: XCTestCase {
-    func testImportToastFormatterIncludesReasonDiagnosticSelectorTargetAndBridgeCode() {
+    func testImportToastFormatterUsesNumericIssueCodeWithoutInternalCodes() {
         let message = ImportToastDiagnosticsFormatter.message(
             reasonCode: "IMPORT_SELECTOR_NOT_FOUND",
             diagnostics: [
@@ -20,14 +20,13 @@ final class ImportToastDiagnosticsFormatterTests: XCTestCase {
             ]
         )
 
-        XCTAssertTrue(message.contains("IMPORT_SELECTOR_NOT_FOUND"))
-        XCTAssertTrue(message.contains("repoPath"))
+        XCTAssertTrue(message.contains("101"))
         XCTAssertTrue(message.contains("skills/missing"))
-        XCTAssertTrue(message.contains("codex"))
-        XCTAssertTrue(message.contains("BRIDGE_REQUEST_INVALID"))
+        XCTAssertFalse(message.contains("IMPORT_SELECTOR_NOT_FOUND"))
+        XCTAssertFalse(message.contains("BRIDGE_REQUEST_INVALID"))
     }
 
-    func testImportToastFormatterIncludesBridgeErrorCode() {
+    func testImportToastFormatterUsesGenericIssueCodeForBridgeErrors() {
         let message = ImportToastDiagnosticsFormatter.message(
             reasonCode: "BRIDGE_IMPORT_DRAFT_REJECTED",
             diagnostics: [
@@ -39,10 +38,11 @@ final class ImportToastDiagnosticsFormatterTests: XCTestCase {
             ]
         )
 
-        XCTAssertTrue(message.contains("BRIDGE_IMPORT_DRAFT_REJECTED"))
+        XCTAssertTrue(message.contains("502"))
+        XCTAssertFalse(message.contains("BRIDGE_IMPORT_DRAFT_REJECTED"))
     }
 
-    func testImportToastFormatterIncludesUnavailableTarget() {
+    func testImportToastFormatterKeepsSafeDetailWithoutInternalCode() {
         let message = ImportToastDiagnosticsFormatter.message(
             reasonCode: "ADD_AGENT_NOT_AVAILABLE",
             diagnostics: [
@@ -54,7 +54,8 @@ final class ImportToastDiagnosticsFormatterTests: XCTestCase {
             ]
         )
 
-        XCTAssertTrue(message.contains("ADD_AGENT_NOT_AVAILABLE"))
+        XCTAssertTrue(message.contains("403"))
         XCTAssertTrue(message.contains("codex"))
+        XCTAssertFalse(message.contains("ADD_AGENT_NOT_AVAILABLE"))
     }
 }

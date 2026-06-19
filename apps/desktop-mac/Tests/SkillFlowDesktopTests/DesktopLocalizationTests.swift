@@ -170,6 +170,7 @@ final class DesktopLocalizationTests: XCTestCase {
 
     func testImportFailureReasonKeysExistInAllSupportedLocales() {
         let requiredKeys = [
+            "toast.issue.generic",
             "toast.import.failed.provider_not_supported",
             "toast.import.failed.provider_data_unavailable",
             "toast.import.failed.provider_rate_limited",
@@ -179,10 +180,13 @@ final class DesktopLocalizationTests: XCTestCase {
             "toast.import.failed.source_path_not_found",
             "toast.import.failed.add_agent_not_available",
             "toast.import.failed.add_skill_not_found",
+            "toast.import.failed.selection_not_found",
+            "toast.import.failed.selection_ambiguous",
+            "toast.import.failed.selection_invalid",
             "toast.import.failed.import_prepare_failed",
+            "toast.import.failed.preparation_stale",
             "toast.import.failed.invalid_response",
             "toast.import.failed.reason_code",
-            "toast.import.failed.generic",
             "toast.import.warning.selection_drift",
             "import.reason.no_valid_leafs",
             "import.reason.source_path_not_found",
@@ -200,6 +204,15 @@ final class DesktopLocalizationTests: XCTestCase {
                 XCTAssertNotEqual(value, key, "Missing localization for \(key) in \(locale.identifier)")
                 XCTAssertFalse(value.contains("provider_request_failed"), "User-facing import message leaked a reason code")
             }
+
+            let genericValue = L10n.string("toast.issue.generic", locale: locale, arguments: ["599"])
+            XCTAssertTrue(genericValue.contains("599"), "Missing generic issue code in \(locale.identifier)")
+
+            let warningValue = L10n.string("toast.import.warning.selection_drift", locale: locale, arguments: ["103"])
+            XCTAssertTrue(warningValue.contains("103"), "Missing warning issue code in \(locale.identifier)")
+
+            let notFoundValue = L10n.string("toast.import.failed.selection_not_found", locale: locale, arguments: ["101"])
+            XCTAssertTrue(notFoundValue.contains("101"), "Missing selection-not-found issue code in \(locale.identifier)")
         }
     }
 

@@ -239,7 +239,7 @@ final class ImportScreenContainerTests: XCTestCase {
         )
     }
 
-    func testImportSuccessMarksGroupInstalledImmediately() async {
+    func testImportSuccessMarksGroupInstalledImmediately() async throws {
         let commands = RecordingImportCommandFacade()
         commands.importWarnings = [
             BridgeIssue(
@@ -269,13 +269,54 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(model.recommendedImportGroups.first?.isInstalledLocally, true)
         XCTAssertEqual(model.latestWarnings.map(\.code), ["IMPORT_SELECTORS_UNRESOLVED_USED_ALL"])
         XCTAssertEqual(model.toast?.style, .neutral)
-        let toastMessage = model.toast?.text.resolve(locale: Locale(identifier: "en")) ?? ""
-        XCTAssertEqual(
-            toastMessage,
-            "Imported the group using the downloaded contents because the original skill selection no longer matched."
-        )
+        let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("103"))
         XCTAssertFalse(toastMessage.contains("IMPORT_SELECTORS_UNRESOLVED_USED_ALL"))
+        XCTAssertFalse(toastMessage.contains("IMPORT_SELECTOR"))
         XCTAssertNil(model.importingImportGroupId)
+    }
+
+    func testImportFailureToastUsesNumericIssueCodeInsteadOfInternalReasonCode() async throws {
+        let commands = RecordingImportCommandFacade()
+        commands.commitPayloads = [[
+            "status": "failed",
+            "reasonCode": "IMPORT_SELECTOR_NOT_FOUND",
+            "diagnostics": [[
+                "code": "IMPORT_SELECTOR_NOT_FOUND",
+                "message": "Selector not found",
+                "details": [
+                    "kind": "repoPath",
+                    "value": "skills/missing",
+                    "bridgeCode": "BRIDGE_REQUEST_INVALID",
+                ]
+            ]],
+        ]]
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo",
+                preparationId: "prep-1",
+                preparationStatus: "ready"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkills: [.repoPath("browse")],
+            enabledTargets: []
+        )
+
+        XCTAssertEqual(model.toast?.style, .error)
+        let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("101"))
+        XCTAssertFalse(toastMessage.contains("IMPORT_SELECTOR_NOT_FOUND"))
+        XCTAssertFalse(toastMessage.contains("BRIDGE_"))
     }
 
     func testSelectedLocalChoiceOverridesImportLocatorAndSelectedSkills() async {

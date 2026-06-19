@@ -298,17 +298,10 @@ final class ImportLogic {
                 }
                 if status != "ready" {
                     let diagnostics = parseBridgeDiagnostics(payload["diagnostics"])
-                    if diagnostics.isEmpty {
-                        delegate?.showToast(style: .error, text: importFailureToastText(reasonCode: reasonCode))
-                    } else {
-                        let baseMessage = importFailureToastText(reasonCode: reasonCode)
-                            .resolve(locale: Self.presentationLocale)
-                        let diagnosticMessage = ImportToastDiagnosticsFormatter.message(
-                            reasonCode: reasonCode,
-                            diagnostics: diagnostics
-                        )
-                        delegate?.showToast(style: .error, message: "\(baseMessage) (\(diagnosticMessage))")
-                    }
+                    delegate?.showToast(
+                        style: .error,
+                        text: importFailureToastText(reasonCode: reasonCode, diagnostics: diagnostics)
+                    )
                     return
                 }
             }
@@ -1222,49 +1215,22 @@ final class ImportLogic {
         }
     }
 
-    private func importFailureToastText(reasonCode: String?) -> PresentationText {
-        switch reasonCode {
-        case "provider_not_supported":
-            return localizedText("toast.import.failed.provider_not_supported")
-        case "provider_data_unavailable":
-            return localizedText("toast.import.failed.provider_data_unavailable")
-        case "provider_rate_limited":
-            return localizedText("toast.import.failed.provider_rate_limited")
-        case "provider_response_invalid":
-            return localizedText("toast.import.failed.provider_response_invalid")
-        case "provider_request_failed":
-            return localizedText("toast.import.failed.provider_request_failed")
-        case "NO_VALID_LEAFS":
-            return localizedText("toast.import.failed.no_valid_leafs")
-        case "SOURCE_PATH_NOT_FOUND":
-            return localizedText("toast.import.failed.source_path_not_found")
-        case "ADD_AGENT_NOT_AVAILABLE":
-            return localizedText("toast.import.failed.add_agent_not_available")
-        case "ADD_SKILL_NOT_FOUND":
-            return localizedText("toast.import.failed.add_skill_not_found")
-        case "IMPORT_PREPARE_FAILED":
-            return localizedText("toast.import.failed.import_prepare_failed")
-        case "IMPORT_PREVIEW_INVALID", "IMPORT_APPLY_FAILED":
-            return localizedText("toast.import.failed.invalid_response")
-        default:
-            if let reasonCode = reasonCode?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !reasonCode.isEmpty {
-                return localizedText("toast.import.failed.reason_code", reasonCode)
-            }
-            return localizedText("toast.import.failed.generic")
-        }
+    private func importFailureToastText(reasonCode: String?, diagnostics: [BridgeDiagnostic] = []) -> PresentationText {
+        DesktopIssuePresentationCatalog.toastText(
+            forInternalCode: reasonCode,
+            diagnostics: diagnostics,
+            context: DesktopIssueContext.from(diagnostics: diagnostics),
+            locale: Self.presentationLocale
+        )
     }
 
     private func importWarningToastText(warnings: [BridgeIssue]) -> PresentationText? {
-        let warningCodes = Set(warnings.map(\.code))
-        if !warningCodes.isDisjoint(with: [
-            "IMPORT_SELECTOR_NOT_FOUND",
-            "IMPORT_SELECTOR_AMBIGUOUS",
-            "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
-        ]) {
-            return localizedText("toast.import.warning.selection_drift")
+        guard let warning = warnings.first(where: {
+            ["IMPORT_SELECTOR_NOT_FOUND", "IMPORT_SELECTOR_AMBIGUOUS", "IMPORT_SELECTORS_UNRESOLVED_USED_ALL"].contains($0.code)
+        }) else {
+            return nil
         }
-        return nil
+        return DesktopIssuePresentationCatalog.toastText(forInternalCode: warning.code, locale: Self.presentationLocale)
     }
 
     private func parseBridgeDiagnostics(_ value: Any?) -> [BridgeDiagnostic] {
