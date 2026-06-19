@@ -2,6 +2,19 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.7 - 2026-06-20
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.6` to `1.4.7`.
+- Changed macOS import warning presentation so selector-drift warnings prefer the aggregate downloaded-group fallback message when both aggregate and per-selector warnings are present.
+
+### Fixed
+
+- Fixed macOS Skill group imports so stale or missing selected skill selectors no longer block a group that downloaded successfully.
+- Fixed desktop import failure and warning messages so user-visible toasts and import-card summaries show numeric issue codes instead of internal bridge or selector code strings.
+- Fixed structured bridge failure handling across import, collection, source operation, and project refresh paths so internal command codes are mapped through the shared issue presentation catalog.
+
 ## v1.4.6 - 2026-06-19
 
 ### Added
