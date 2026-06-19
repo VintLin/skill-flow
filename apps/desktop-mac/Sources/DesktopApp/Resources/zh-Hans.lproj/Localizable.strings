@@ -228,8 +228,8 @@
 "toast.import.failed.no_valid_leafs" = "导入失败：未找到可识别的 Skill 文件。";
 "toast.import.failed.source_path_not_found" = "导入失败：所选路径不包含有效 Skill。";
 "toast.import.failed.add_agent_not_available" = "导入失败：当前无法安装 Agent。";
-"toast.import.failed.add_skill_not_found" = "导入失败：所选 Skill 在该来源中不存在。（ADD_SKILL_NOT_FOUND）";
-"toast.import.failed.import_prepare_failed" = "导入失败：无法准备来源检出目录。（IMPORT_PREPARE_FAILED）";
+"toast.import.failed.add_skill_not_found" = "导入失败：所选 Skill 在该来源中不存在。";
+"toast.import.failed.import_prepare_failed" = "导入失败：无法准备来源检出目录。";
 "toast.import.failed.invalid_response" = "导入失败：响应无效。";
 "toast.import.failed.reason_code" = "导入失败：%@。";
 "toast.import.failed.generic" = "导入失败，请稍后再试。";
@@ -239,6 +239,7 @@
 "toast.import.in_progress" = "该组正在导入。";
 "toast.import.another_running" = "已有导入任务正在进行。";
 "toast.import.success" = "已导入来源。";
+"toast.import.warning.selection_drift" = "已按下载后的内容导入该组，因为原先选择的 Skill 已无法匹配。";
 "toast.import.local_source_target_locked" = "该 Skill 来源于 %@ 代理路径，无法取消。";
 "toast.import.local_scan_failed" = "本地扫描失败：%@";
 "toast.import.local_already_scanned" = "该本地 Skill 已在扫描列表中。";

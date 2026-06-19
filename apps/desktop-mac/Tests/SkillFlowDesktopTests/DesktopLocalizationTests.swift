@@ -183,6 +183,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "toast.import.failed.invalid_response",
             "toast.import.failed.reason_code",
             "toast.import.failed.generic",
+            "toast.import.warning.selection_drift",
             "import.reason.no_valid_leafs",
             "import.reason.source_path_not_found",
             "import.reason.add_agent_not_available",

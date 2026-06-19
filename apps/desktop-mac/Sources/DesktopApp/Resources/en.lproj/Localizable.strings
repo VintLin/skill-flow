@@ -228,8 +228,8 @@
 "toast.import.failed.no_valid_leafs" = "Import failed: no recognizable Skill files were found.";
 "toast.import.failed.source_path_not_found" = "Import failed: the selected path does not contain a valid Skill.";
 "toast.import.failed.add_agent_not_available" = "Import failed: agent installation is not available.";
-"toast.import.failed.add_skill_not_found" = "Import failed: selected skills were not found in this source. (ADD_SKILL_NOT_FOUND)";
-"toast.import.failed.import_prepare_failed" = "Import failed: unable to prepare the source checkout. (IMPORT_PREPARE_FAILED)";
+"toast.import.failed.add_skill_not_found" = "Import failed: selected skills were not found in this source.";
+"toast.import.failed.import_prepare_failed" = "Import failed: unable to prepare the source checkout.";
 "toast.import.failed.invalid_response" = "Import failed: invalid response.";
 "toast.import.failed.reason_code" = "Import failed: %@.";
 "toast.import.failed.generic" = "Import failed. Try again later.";
@@ -239,6 +239,7 @@
 "toast.import.in_progress" = "This group is already being imported.";
 "toast.import.another_running" = "Another import is already running.";
 "toast.import.success" = "Imported source.";
+"toast.import.warning.selection_drift" = "Imported the group using the downloaded contents because the original skill selection no longer matched.";
 "toast.import.local_source_target_locked" = "This skill comes from the %@ agent path and cannot be deselected.";
 "toast.import.local_scan_failed" = "Local scan failed: %@";
 "toast.import.local_already_scanned" = "This local skill is already in the scan list.";

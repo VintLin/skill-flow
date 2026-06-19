@@ -351,7 +351,11 @@ final class ImportLogic {
                 )
             }
             delegate?.applyWarningsFromApplyResponse(response.warnings)
-            delegate?.showToast(style: .success, text: localizedText("toast.import.success"))
+            if let warningToastText = importWarningToastText(warnings: response.warnings) {
+                delegate?.showToast(style: .neutral, text: warningToastText)
+            } else {
+                delegate?.showToast(style: .success, text: localizedText("toast.import.success"))
+            }
         } catch {
             delegate?.showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
         }
@@ -1249,6 +1253,18 @@ final class ImportLogic {
             }
             return localizedText("toast.import.failed.generic")
         }
+    }
+
+    private func importWarningToastText(warnings: [BridgeIssue]) -> PresentationText? {
+        let warningCodes = Set(warnings.map(\.code))
+        if !warningCodes.isDisjoint(with: [
+            "IMPORT_SELECTOR_NOT_FOUND",
+            "IMPORT_SELECTOR_AMBIGUOUS",
+            "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+        ]) {
+            return localizedText("toast.import.warning.selection_drift")
+        }
+        return nil
     }
 
     private func parseBridgeDiagnostics(_ value: Any?) -> [BridgeDiagnostic] {

@@ -268,6 +268,13 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(model.recommendedImportGroups.first?.isInstalledLocally, true)
         XCTAssertEqual(model.latestWarnings.map(\.code), ["IMPORT_SELECTORS_UNRESOLVED_USED_ALL"])
+        XCTAssertEqual(model.toast?.style, .neutral)
+        let toastMessage = model.toast?.text.resolve(locale: Locale(identifier: "en")) ?? ""
+        XCTAssertEqual(
+            toastMessage,
+            "Imported the group using the downloaded contents because the original skill selection no longer matched."
+        )
+        XCTAssertFalse(toastMessage.contains("IMPORT_SELECTORS_UNRESOLVED_USED_ALL"))
         XCTAssertNil(model.importingImportGroupId)
     }
 
