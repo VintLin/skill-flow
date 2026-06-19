@@ -65,9 +65,9 @@ enum DesktopIssuePresentationCatalog {
 
         switch internalCode {
         case "IMPORT_SELECTOR_NOT_FOUND":
-            return warning("101", "toast.import.warning.selection_drift", "issue.detail.import.selection_not_found", internalCode, [.skillName, .selectorKind, .selectorValue, .groupLocator])
+            return error("101", "toast.import.failed.selection_not_found", "issue.detail.import.selection_not_found", internalCode, [.skillName, .selectorKind, .selectorValue, .groupLocator])
         case "IMPORT_SELECTOR_AMBIGUOUS":
-            return warning("102", "toast.import.warning.selection_drift", "issue.detail.import.selection_ambiguous", internalCode, [.skillName, .selectorKind, .selectorValue, .groupLocator])
+            return error("102", "toast.import.failed.selection_ambiguous", "issue.detail.import.selection_ambiguous", internalCode, [.skillName, .selectorKind, .selectorValue, .groupLocator])
         case "IMPORT_SELECTORS_UNRESOLVED_USED_ALL":
             return warning("103", "toast.import.warning.selection_drift", "issue.detail.import.selection_drift_used_all", internalCode, [.groupLocator])
         case "ADD_SKILL_NOT_FOUND":
@@ -103,11 +103,11 @@ enum DesktopIssuePresentationCatalog {
         case "LOCAL_IMPORT_SCAN_FAILED":
             return error("404", "toast.import.local_scan_failed", "issue.detail.import.local_scan_failed", internalCode, [.groupLocator])
         case "BRIDGE_EMPTY_REQUEST":
-            return error("501", "bridge.error.invalid_response", "issue.detail.bridge.empty_request", internalCode, [])
+            return error("501", "toast.issue.generic", "issue.detail.bridge.empty_request", internalCode, [])
         case "BRIDGE_REQUEST_INVALID", "BRIDGE_IMPORT_DRAFT_REJECTED":
-            return error("502", "bridge.error.invalid_response", "issue.detail.bridge.invalid_response", internalCode, [])
+            return error("502", "toast.issue.generic", "issue.detail.bridge.invalid_response", internalCode, [])
         case "UNSUPPORTED_COMMAND":
-            return error("509", "bridge.error.command_failed_default", "issue.detail.bridge.unsupported_command", internalCode, [])
+            return error("509", "toast.issue.generic", "issue.detail.bridge.unsupported_command", internalCode, [])
         default:
             return error("599", "toast.issue.generic", "issue.detail.generic", internalCode, [])
         }

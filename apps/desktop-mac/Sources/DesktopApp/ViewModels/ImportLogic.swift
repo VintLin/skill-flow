@@ -350,6 +350,16 @@ final class ImportLogic {
                 delegate?.showToast(style: .success, text: localizedText("toast.import.success"))
             }
         } catch {
+            if case .commandFailed(_, let response) = error as? BridgeClientError,
+               let response {
+                let issue = response.errors.first
+                let diagnostics = parseBridgeDiagnostics(response.data?.value)
+                delegate?.showToast(
+                    style: .error,
+                    text: importFailureToastText(reasonCode: issue?.code, diagnostics: diagnostics)
+                )
+                return
+            }
             delegate?.showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
         }
     }

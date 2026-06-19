@@ -270,6 +270,8 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(model.latestWarnings.map(\.code), ["IMPORT_SELECTORS_UNRESOLVED_USED_ALL"])
         XCTAssertEqual(model.toast?.style, .neutral)
         let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("Imported the group"))
+        XCTAssertFalse(toastMessage.contains("Import failed"))
         XCTAssertTrue(toastMessage.contains("103"))
         XCTAssertFalse(toastMessage.contains("IMPORT_SELECTORS_UNRESOLVED_USED_ALL"))
         XCTAssertFalse(toastMessage.contains("IMPORT_SELECTOR"))
@@ -314,9 +316,63 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(model.toast?.style, .error)
         let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("Import failed"))
+        XCTAssertFalse(toastMessage.contains("Imported the group"))
         XCTAssertTrue(toastMessage.contains("101"))
         XCTAssertFalse(toastMessage.contains("IMPORT_SELECTOR_NOT_FOUND"))
         XCTAssertFalse(toastMessage.contains("BRIDGE_"))
+    }
+
+    func testBridgeImportFailureToastUsesGenericIssueCodeInsteadOfInternalBridgeCode() async throws {
+        let commands = RecordingImportCommandFacade()
+        commands.commitError = BridgeClientError.commandFailed(
+            "Bridge helper returned an invalid response.",
+            response: BridgeResponse(
+                protocolVersion: "1",
+                requestId: nil,
+                command: .commitImportSource,
+                ok: false,
+                data: AnyCodable([
+                    "diagnostics": [[
+                        "code": "BRIDGE_REQUEST_INVALID",
+                        "message": "Invalid request",
+                        "details": [
+                            "bridgeCode": "BRIDGE_REQUEST_INVALID",
+                        ],
+                    ]],
+                ]),
+                warnings: [],
+                errors: [
+                    BridgeIssue(code: "BRIDGE_REQUEST_INVALID", message: "Invalid request"),
+                ]
+            )
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo",
+                preparationId: "prep-1",
+                preparationStatus: "ready"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkills: [.repoPath("browse")],
+            enabledTargets: []
+        )
+
+        XCTAssertEqual(model.toast?.style, .error)
+        let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("Something went wrong"))
+        XCTAssertTrue(toastMessage.contains("502"))
+        XCTAssertFalse(toastMessage.contains("BRIDGE_REQUEST_INVALID"))
     }
 
     func testSelectedLocalChoiceOverridesImportLocatorAndSelectedSkills() async {
@@ -2407,6 +2463,8 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
     var importWarnings: [BridgeIssue] = []
     var commitWarnings: [BridgeIssue] = []
     var commitPayloads: [[String: Any]] = [["status": "ready", "sourceId": "local-skills"]]
+    var importError: Error?
+    var commitError: Error?
 
     func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
         fatalError("unused")
@@ -2435,6 +2493,9 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
         enabledTargets: [String],
         skillSelectionMode: ImportSkillSelectionMode
     ) async throws -> BridgeResponse {
+        if let importError {
+            throw importError
+        }
         importCalls.append(
             RecordedImportCall(
                 locator: locator,
@@ -2455,6 +2516,9 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
     }
 
     func commitImportSource(preparationId: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
+        if let commitError {
+            throw commitError
+        }
         commitCalls.append(
             RecordedCommitCall(
                 preparationId: preparationId,

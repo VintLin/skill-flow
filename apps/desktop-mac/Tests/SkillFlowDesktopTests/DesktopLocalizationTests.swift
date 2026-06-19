@@ -210,9 +210,13 @@ final class DesktopLocalizationTests: XCTestCase {
 
             let warningValue = L10n.string("toast.import.warning.selection_drift", locale: locale, arguments: ["103"])
             XCTAssertTrue(warningValue.contains("103"), "Missing warning issue code in \(locale.identifier)")
+            XCTAssertFalse(warningValue.contains("Import failed"), "Warning copy regressed in \(locale.identifier)")
 
             let notFoundValue = L10n.string("toast.import.failed.selection_not_found", locale: locale, arguments: ["101"])
             XCTAssertTrue(notFoundValue.contains("101"), "Missing selection-not-found issue code in \(locale.identifier)")
+
+            let invalidResponseValue = L10n.string("toast.issue.generic", locale: locale, arguments: ["502"])
+            XCTAssertTrue(invalidResponseValue.contains("502"), "Missing bridge issue code in \(locale.identifier)")
         }
     }
 
