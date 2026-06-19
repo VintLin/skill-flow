@@ -2343,6 +2343,41 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(model.searchImportGroups.first?.skills.map(\.id), ["browse"])
     }
 
+    func testPreviewFailedReasonUsesCatalogDetailTextWithNumericIssueCode() async throws {
+        let query = RecordingPreviewQueryFacade(
+            previewPayload: [
+                "status": "failed",
+                "reasonCode": "provider_not_supported",
+            ]
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        model.searchImportGroups = [
+            makeItem(id: "provider-failed-repo", title: "Provider Failed Repo", locator: "owner/provider-failed")
+        ]
+        model.importSubmittedQuery = "owner/provider-failed"
+
+        await model.previewImportGroupIfNeeded("provider-failed-repo")
+
+        guard case .failed(let failureText) = model.searchImportGroups.first?.previewPhase else {
+            XCTFail("Expected preview failure phase.")
+            return
+        }
+
+        let failureMessage = failureText.resolve(locale: Locale(identifier: "en"))
+        XCTAssertTrue(failureMessage.contains("201"))
+        XCTAssertFalse(failureMessage.contains("provider_not_supported"))
+
+        let failedItem = try XCTUnwrap(model.searchImportGroups.first)
+        let card = ImportViewModel.card(from: failedItem, locale: Locale(identifier: "en"))
+        XCTAssertEqual(card.summary, failureMessage)
+        XCTAssertTrue(card.summary.contains("201"))
+        XCTAssertFalse(card.summary.contains("provider_not_supported"))
+        XCTAssertEqual(card.summary, "This source provider is not supported. Issue code: 201.")
+    }
+
     func testPrefetchGroupSkillDetailsLimitsPreviewConcurrency() async {
         let query = RecordingPreviewQueryFacade()
         let model = MainViewModel(
@@ -2719,11 +2754,13 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
     private let recorder = PreviewConcurrencyRecorder()
     private let blockPrepareUntilReleased: Bool
     private let prepareStatus: String
+    private let previewPayload: [String: Any]
     private let previewSkills: [[String: Any]]
 
     init(
         blockPrepareUntilReleased: Bool = false,
         prepareStatus: String = "ready",
+        previewPayload: [String: Any]? = nil,
         previewSkills: [[String: Any]] = [
             [
                 "providerSkillId": "browse",
@@ -2743,6 +2780,21 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
         self.blockPrepareUntilReleased = blockPrepareUntilReleased
         self.prepareStatus = prepareStatus
         self.previewSkills = previewSkills
+        self.previewPayload = previewPayload ?? [
+            "status": "ready",
+            "skills": previewSkills,
+            "targets": [],
+            "selectedSkills": [
+                [
+                    "uiId": "browse",
+                    "selector": [
+                        "kind": "repoPath",
+                        "path": "browse",
+                    ],
+                ],
+            ],
+            "enabledTargets": [],
+        ]
     }
 
     func recordedPreviewLocators() async -> [String] {
@@ -2820,27 +2872,17 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
         try await Task.sleep(nanoseconds: 80_000_000)
         await recorder.end()
 
+        var payload = previewPayload
+        if payload["locator"] == nil {
+            payload["locator"] = locator
+        }
+
         return BridgeResponse(
             protocolVersion: "1",
             requestId: nil,
             command: .previewImportSource,
             ok: true,
-            data: AnyCodable([
-                "status": "ready",
-                "locator": locator,
-                "skills": previewSkills,
-                "targets": [],
-                "selectedSkills": [
-                    [
-                        "uiId": "browse",
-                        "selector": [
-                            "kind": "repoPath",
-                            "path": "browse",
-                        ],
-                    ],
-                ],
-                "enabledTargets": [],
-            ]),
+            data: AnyCodable(payload),
             warnings: [],
             errors: []
         )

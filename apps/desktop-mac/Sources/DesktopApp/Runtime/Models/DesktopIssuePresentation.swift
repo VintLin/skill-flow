@@ -132,6 +132,17 @@ enum DesktopIssuePresentationCatalog {
         return PresentationText.localized(presentation.toastKey, [presentation.issueCode])
     }
 
+    static func detailText(
+        forInternalCode code: String?,
+        diagnostics: [BridgeDiagnostic] = [],
+        context: DesktopIssueContext = .empty,
+        locale: Locale
+    ) -> PresentationText {
+        let presentation = presentation(forInternalCode: code, diagnostics: diagnostics, context: context)
+        _ = locale
+        return PresentationText.localized(presentation.detailKey, [presentation.issueCode])
+    }
+
     static func successWarningToastText(
         forInternalCode code: String?,
         locale: Locale

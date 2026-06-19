@@ -1215,24 +1215,10 @@ final class ImportLogic {
     }
 
     private func importReasonText(reasonCode: String?) -> PresentationText {
-        switch reasonCode {
-        case "provider_not_supported":
-            return localizedText("import.reason.provider_not_supported")
-        case "provider_data_unavailable":
-            return localizedText("common.source_metadata.unavailable")
-        case "provider_rate_limited":
-            return localizedText("import.reason.provider_rate_limited")
-        case "provider_response_invalid":
-            return localizedText("import.reason.provider_response_invalid")
-        case "NO_VALID_LEAFS":
-            return localizedText("import.reason.no_valid_leafs")
-        case "SOURCE_PATH_NOT_FOUND":
-            return localizedText("import.reason.source_path_not_found")
-        case "ADD_AGENT_NOT_AVAILABLE":
-            return localizedText("import.reason.add_agent_not_available")
-        default:
-            return localizedText("import.reason.request_failed")
-        }
+        DesktopIssuePresentationCatalog.detailText(
+            forInternalCode: reasonCode,
+            locale: Self.presentationLocale
+        )
     }
 
     private func importFailureToastText(reasonCode: String?, diagnostics: [BridgeDiagnostic] = []) -> PresentationText {
