@@ -125,8 +125,12 @@ final class ImportLogic {
 
             localImportScanPhase = .ready
         } catch {
-            localImportScanPhase = .failed(.plain(error.localizedDescription))
-            delegate?.showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
+            let toastText = importFailurePresentationText(
+                fallback: localizedText("toast.import.failed", error.localizedDescription),
+                error: error
+            )
+            localImportScanPhase = .failed(toastText)
+            delegate?.showToast(style: .error, text: toastText)
         }
     }
 
@@ -156,7 +160,13 @@ final class ImportLogic {
             importSearchPhase = .ready
         } catch {
             importSearchPhase = .failed(localizedText("import.error.search_groups"))
-            delegate?.showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
+            delegate?.showToast(
+                style: .error,
+                text: importFailurePresentationText(
+                    fallback: localizedText("toast.import.failed", error.localizedDescription),
+                    error: error
+                )
+            )
         }
     }
 
@@ -267,7 +277,7 @@ final class ImportLogic {
             guard var payload = response.data?.value as? [String: Any],
                   var status = payload["status"] as? String
             else {
-                delegate?.showToast(style: .error, text: localizedText("toast.import.invalid_response"))
+                delegate?.showToast(style: .error, text: importFailureToastText(reasonCode: "IMPORT_APPLY_FAILED"))
                 return
             }
 
@@ -288,7 +298,7 @@ final class ImportLogic {
                         guard let retryPayload = retryResponse.data?.value as? [String: Any],
                               let retryStatus = retryPayload["status"] as? String
                         else {
-                            delegate?.showToast(style: .error, text: localizedText("toast.import.invalid_response"))
+                            delegate?.showToast(style: .error, text: importFailureToastText(reasonCode: "IMPORT_APPLY_FAILED"))
                             return
                         }
                         payload = retryPayload
@@ -1008,7 +1018,7 @@ final class ImportLogic {
         fallbackLocator: String
     ) {
         guard let status = payload["status"] as? String else {
-            setPreviewPhase(.failed(localizedText("import.error.invalid_preview_response")), for: groupId)
+            setPreviewPhase(.failed(importFailureToastText(reasonCode: "IMPORT_PREVIEW_INVALID")), for: groupId)
             return
         }
 
@@ -1029,7 +1039,7 @@ final class ImportLogic {
         }
 
         if skills.count != skillsPayload.count {
-            setPreviewPhase(.failed(localizedText("import.error.invalid_preview_response")), for: groupId)
+            setPreviewPhase(.failed(importFailureToastText(reasonCode: "IMPORT_PREVIEW_INVALID")), for: groupId)
             return
         }
 
@@ -1234,6 +1244,20 @@ final class ImportLogic {
         )
     }
 
+    private func importFailurePresentationText(
+        fallback: PresentationText,
+        error: Error
+    ) -> PresentationText {
+        guard case .commandFailed(_, let response) = error as? BridgeClientError,
+              let response else {
+            return fallback
+        }
+
+        let diagnostics = parseBridgeDiagnostics(response.data?.value)
+        let reasonCode = response.errors.first?.code
+        return importFailureToastText(reasonCode: reasonCode, diagnostics: diagnostics)
+    }
+
     private func importWarningToastText(warnings: [BridgeIssue]) -> PresentationText? {
         guard let warning = warnings.first(where: {
             ["IMPORT_SELECTOR_NOT_FOUND", "IMPORT_SELECTOR_AMBIGUOUS", "IMPORT_SELECTORS_UNRESOLVED_USED_ALL"].contains($0.code)
@@ -1264,7 +1288,9 @@ final class ImportLogic {
 
         importSearchTokenSeed &+= 1
         let token = importSearchTokenSeed
-        let task = Task { try await bridgeClient.searchImportGroups(query: query) }
+        let task = Task { [queryFacade] in
+            try await queryFacade.searchImportGroups(query: query)
+        }
         importSearchTasksByQuery[normalizedQuery] = task
         importSearchTokensByQuery[normalizedQuery] = token
 

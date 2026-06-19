@@ -413,6 +413,96 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(toastMessage.contains("BRIDGE_REQUEST_INVALID"))
     }
 
+    func testLocalImportScanStructuredBridgeFailureUsesCatalogIssueCode() async throws {
+        let query = RecordingLocalImportQueryFacade()
+        query.scanError = BridgeClientError.commandFailed(
+            "Bridge helper returned an invalid response.",
+            response: BridgeResponse(
+                protocolVersion: "1",
+                requestId: nil,
+                command: .scanLocalImportGroups,
+                ok: false,
+                data: AnyCodable([String: Any]()),
+                warnings: [],
+                errors: [
+                    BridgeIssue(code: "BRIDGE_REQUEST_INVALID", message: "Invalid request")
+                ]
+            )
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+
+        await model.loadLocalImportGroups(path: "/Users/Vint/skills")
+
+        XCTAssertEqual(model.toast?.style, .error)
+        let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("502"))
+        XCTAssertFalse(toastMessage.contains("BRIDGE_REQUEST_INVALID"))
+    }
+
+    func testImportSearchStructuredBridgeFailureUsesCatalogIssueCode() async throws {
+        let query = RecordingSearchImportQueryFacade()
+        query.searchError = BridgeClientError.commandFailed(
+            "Bridge helper returned an invalid response.",
+            response: BridgeResponse(
+                protocolVersion: "1",
+                requestId: nil,
+                command: .searchImportGroups,
+                ok: false,
+                data: AnyCodable([String: Any]()),
+                warnings: [],
+                errors: [
+                    BridgeIssue(code: "BRIDGE_REQUEST_INVALID", message: "Invalid request")
+                ]
+            )
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+
+        await model.submitImportSearch("owner/repo")
+
+        XCTAssertEqual(model.toast?.style, .error)
+        let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("502"))
+        XCTAssertFalse(toastMessage.contains("BRIDGE_REQUEST_INVALID"))
+    }
+
+    func testImportCommitMalformedResponseUsesCatalogIssueCode() async throws {
+        let commands = RecordingImportCommandFacade()
+        commands.commitPayloads = [
+            ["sourceId": "owner-repo"]
+        ]
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo",
+                preparationId: "prep-1",
+                preparationStatus: "ready"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkills: [.repoPath("browse")],
+            enabledTargets: []
+        )
+
+        XCTAssertEqual(model.toast?.style, .error)
+        let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("303"))
+        XCTAssertFalse(toastMessage.contains("toast.import.invalid_response"))
+    }
+
     func testSelectedLocalChoiceOverridesImportLocatorAndSelectedSkills() async {
         let state = DesktopAppState()
         let commands = RecordingImportCommandFacade()
@@ -2208,6 +2298,11 @@ final class ImportScreenContainerTests: XCTestCase {
             XCTFail("Expected legacy id-only preview skill payload to fail parsing.")
             return
         }
+        if case .failed(let failureText) = model.searchImportGroups.first?.previewPhase {
+            XCTAssertEqual(failureText.resolve(locale: Locale(identifier: "en")), "Import failed: invalid response. Issue code: 302.")
+        } else {
+            XCTFail("Expected preview failure text.")
+        }
         XCTAssertEqual(model.searchImportGroups.first?.skills.map(\.id), ["browse"])
     }
 
@@ -2239,6 +2334,11 @@ final class ImportScreenContainerTests: XCTestCase {
         guard case .failed = model.searchImportGroups.first?.previewPhase else {
             XCTFail("Expected preview skill payload without selector to fail parsing.")
             return
+        }
+        if case .failed(let failureText) = model.searchImportGroups.first?.previewPhase {
+            XCTAssertEqual(failureText.resolve(locale: Locale(identifier: "en")), "Import failed: invalid response. Issue code: 302.")
+        } else {
+            XCTFail("Expected preview failure text.")
         }
         XCTAssertEqual(model.searchImportGroups.first?.skills.map(\.id), ["browse"])
     }
@@ -2803,6 +2903,7 @@ private final class RecordingLocalImportQueryFacade: DesktopQuerying {
     private(set) var scanPaths: [String?] = []
     var localGroups: [[String: Any]] = []
     var localScanPayloads: [[String: Any]] = []
+    var scanError: Error?
 
     func bootstrap() async throws -> BridgeResponse {
         BridgeResponse(
@@ -2833,6 +2934,9 @@ private final class RecordingLocalImportQueryFacade: DesktopQuerying {
     }
 
     func scanLocalImportGroups(path: String?) async throws -> BridgeResponse {
+        if let scanError {
+            throw scanError
+        }
         scanPaths.append(path)
         let payload: [String: Any]
         if localScanPayloads.isEmpty {
@@ -2853,5 +2957,33 @@ private final class RecordingLocalImportQueryFacade: DesktopQuerying {
 
     func previewImportSource(locator: String) async throws -> BridgeResponse {
         fatalError("unused")
+    }
+}
+
+@MainActor
+private final class RecordingSearchImportQueryFacade: DesktopQuerying {
+    var searchError: Error?
+
+    func bootstrap() async throws -> BridgeResponse { fatalError("unused") }
+    func list() async throws -> BridgeResponse { fatalError("unused") }
+    func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse { fatalError("unused") }
+    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
+    func scanLocalImportGroups(path: String?) async throws -> BridgeResponse { fatalError("unused") }
+    func prepareImportSource(locator: String) async throws -> BridgeResponse { fatalError("unused") }
+    func previewImportSource(locator: String) async throws -> BridgeResponse { fatalError("unused") }
+
+    func searchImportGroups(query: String?) async throws -> BridgeResponse {
+        if let searchError {
+            throw searchError
+        }
+        return BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .searchImportGroups,
+            ok: true,
+            data: AnyCodable(["groups": []]),
+            warnings: [],
+            errors: []
+        )
     }
 }
