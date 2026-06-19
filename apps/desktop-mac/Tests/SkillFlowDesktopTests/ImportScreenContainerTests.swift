@@ -316,6 +316,52 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(toastMessage.contains("BRIDGE_"))
     }
 
+    func testCommitImportPrioritizesAggregateWarningOverIndividualWhenAllSelectorsUnresolved() async throws {
+        let commands = RecordingImportCommandFacade()
+        // Simulate the core returning both per-selector and aggregate warnings.
+        commands.commitWarnings = [
+            BridgeIssue(
+                code: "IMPORT_SELECTOR_NOT_FOUND",
+                message: "Import selector not found."
+            ),
+            BridgeIssue(
+                code: "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+                message: "No selected import selectors matched the downloaded group, so all downloaded skills were selected."
+            ),
+        ]
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo",
+                preparationId: "prep-1",
+                preparationStatus: "ready"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkills: [.repoPath("browse")],
+            enabledTargets: []
+        )
+
+        XCTAssertEqual(model.recommendedImportGroups.first?.isInstalledLocally, true)
+        // Both warnings are stored, but the toast picks the aggregate (103) over the individual (101).
+        XCTAssertEqual(model.latestWarnings.map(\.code), ["IMPORT_SELECTOR_NOT_FOUND", "IMPORT_SELECTORS_UNRESOLVED_USED_ALL"])
+        XCTAssertEqual(model.toast?.style, .neutral)
+        let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertTrue(toastMessage.contains("103"))
+        XCTAssertFalse(toastMessage.contains("101"))
+        XCTAssertFalse(toastMessage.contains("IMPORT_SELECTOR_NOT_FOUND"))
+        XCTAssertFalse(toastMessage.contains("IMPORT_SELECTORS_UNRESOLVED_USED_ALL"))
+        XCTAssertNil(model.importingImportGroupId)
+    }
+
     func testImportFailureToastUsesNumericIssueCodeInsteadOfInternalReasonCode() async throws {
         let commands = RecordingImportCommandFacade()
         commands.commitPayloads = [[

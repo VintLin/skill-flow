@@ -1245,15 +1245,17 @@ final class ImportLogic {
     }
 
     private func importWarningToastText(warnings: [BridgeIssue]) -> PresentationText? {
-        guard let warning = warnings.first(where: {
-            ["IMPORT_SELECTOR_NOT_FOUND", "IMPORT_SELECTOR_AMBIGUOUS", "IMPORT_SELECTORS_UNRESOLVED_USED_ALL"].contains($0.code)
-        }) else {
-            return nil
+        for priority in ["IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+                         "IMPORT_SELECTOR_NOT_FOUND",
+                         "IMPORT_SELECTOR_AMBIGUOUS"] {
+            if let match = warnings.first(where: { $0.code == priority }) {
+                return DesktopIssuePresentationCatalog.successWarningToastText(
+                    forInternalCode: match.code,
+                    locale: Self.presentationLocale
+                )
+            }
         }
-        return DesktopIssuePresentationCatalog.successWarningToastText(
-            forInternalCode: warning.code,
-            locale: Self.presentationLocale
-        )
+        return nil
     }
 
     private func parseBridgeDiagnostics(_ value: Any?) -> [BridgeDiagnostic] {
