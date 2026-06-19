@@ -4,6 +4,13 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class DesktopLocalizationTests: XCTestCase {
+    private enum DesktopLocalizedStringsLoadError: Error {
+        case fileNotFound(URL)
+        case invalidPropertyList(URL, underlying: Error)
+        case invalidRootObject(URL, actualType: String)
+        case nonStringValue(URL, key: String, actualType: String)
+    }
+
     private let supportedLocales = [
         Locale(identifier: "zh-Hans"),
         Locale(identifier: "en"),
@@ -20,17 +27,70 @@ final class DesktopLocalizationTests: XCTestCase {
         return try! JSONDecoder().decode([ImportRecommendationEntry].self, from: data)
     }
 
-    private func loadDesktopLocalizedStrings(localeIdentifier: String) -> [String: String] {
+    private func loadDesktopLocalizedStrings(localeIdentifier: String) throws -> [String: String] {
         let fileURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/DesktopApp/Resources/\(localeIdentifier).lproj/Localizable.strings")
-        return NSDictionary(contentsOf: fileURL) as? [String: String] ?? [:]
+        return try loadDesktopLocalizedStrings(from: fileURL)
     }
 
-    private func userFacingDesktopLocalizedStrings(localeIdentifier: String) -> [(key: String, value: String)] {
-        let localizedStrings = loadDesktopLocalizedStrings(localeIdentifier: localeIdentifier)
+    private func loadDesktopLocalizedStrings(from fileURL: URL) throws -> [String: String] {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw DesktopLocalizedStringsLoadError.fileNotFound(fileURL)
+        }
+
+        let data = try Data(contentsOf: fileURL)
+
+        let propertyList: Any
+        do {
+            propertyList = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        } catch {
+            throw DesktopLocalizedStringsLoadError.invalidPropertyList(fileURL, underlying: error)
+        }
+
+        guard let dictionary = propertyList as? [String: Any] else {
+            throw DesktopLocalizedStringsLoadError.invalidRootObject(
+                fileURL,
+                actualType: String(describing: type(of: propertyList))
+            )
+        }
+
+        var localizedStrings: [String: String] = [:]
+        localizedStrings.reserveCapacity(dictionary.count)
+
+        for key in dictionary.keys.sorted() {
+            guard let value = dictionary[key] else {
+                continue
+            }
+            guard let stringValue = value as? String else {
+                throw DesktopLocalizedStringsLoadError.nonStringValue(
+                    fileURL,
+                    key: key,
+                    actualType: String(describing: type(of: value))
+                )
+            }
+            localizedStrings[key] = stringValue
+        }
+
+        return localizedStrings
+    }
+
+    private func makeTemporaryFileURL(filename: String = UUID().uuidString) throws -> URL {
+        let directoryURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "DesktopLocalizationTests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        return directoryURL.appendingPathComponent(filename)
+    }
+
+    private func userFacingDesktopLocalizedStrings(localeIdentifier: String) throws -> [(key: String, value: String)] {
+        let localizedStrings = try loadDesktopLocalizedStrings(localeIdentifier: localeIdentifier)
         return localizedStrings
             .filter { key, _ in
                 key.hasPrefix("toast.") || key.hasPrefix("bridge.error.") || key.hasPrefix("issue.detail.")
@@ -70,9 +130,40 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("test.fallback.only_en", locale: Locale(identifier: "ja")), "Only English")
     }
 
-    func testUserFacingLocalizedCopyDoesNotLeakInternalReasonCodes() {
+    func testLoadDesktopLocalizedStringsThrowsWhenLocaleFileIsMissing() {
+        let missingFileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("Localizable.strings")
+
+        XCTAssertThrowsError(try loadDesktopLocalizedStrings(from: missingFileURL))
+    }
+
+    func testLoadDesktopLocalizedStringsThrowsWhenStringsFileCannotBeParsed() throws {
+        let fileURL = try makeTemporaryFileURL(filename: "Broken.strings")
+        try Data("not a plist".utf8).write(to: fileURL)
+
+        XCTAssertThrowsError(try loadDesktopLocalizedStrings(from: fileURL))
+    }
+
+    func testLoadDesktopLocalizedStringsThrowsWhenStringsFileContainsNonStringValues() throws {
+        let fileURL = try makeTemporaryFileURL(filename: "Typed.strings")
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: ["toast.issue.generic": 599],
+            format: .xml,
+            options: 0
+        )
+        try data.write(to: fileURL)
+
+        XCTAssertThrowsError(try loadDesktopLocalizedStrings(from: fileURL))
+    }
+
+    func testUserFacingLocalizedCopyDoesNotLeakInternalReasonCodes() throws {
         for locale in supportedLocales {
-            for entry in userFacingDesktopLocalizedStrings(localeIdentifier: locale.identifier) {
+            let entries = try userFacingDesktopLocalizedStrings(localeIdentifier: locale.identifier)
+            XCTAssertFalse(entries.isEmpty, "Expected user-facing localized strings for \(locale.identifier)")
+            _ = try XCTUnwrap(entries.first, "Expected at least one user-facing localized string in \(locale.identifier)")
+
+            for entry in entries {
                 XCTAssertFalse(entry.value.contains("IMPORT_"), "\(locale.identifier):\(entry.key)")
                 XCTAssertFalse(entry.value.contains("BRIDGE_"), "\(locale.identifier):\(entry.key)")
                 XCTAssertFalse(entry.value.contains("STATE_MIGRATION_"), "\(locale.identifier):\(entry.key)")
