@@ -33,7 +33,6 @@
 
 ## Release Artifacts
 
-- `skill-flow-1.4.7.tgz`
 - `Skill-Flow-arm64.dmg`
 - `Skill-Flow-arm64.zip`
 - `Skill-Flow-x86_64.dmg`
