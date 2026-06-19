@@ -1240,7 +1240,10 @@ final class ImportLogic {
         }) else {
             return nil
         }
-        return DesktopIssuePresentationCatalog.toastText(forInternalCode: warning.code, locale: Self.presentationLocale)
+        return DesktopIssuePresentationCatalog.successWarningToastText(
+            forInternalCode: warning.code,
+            locale: Self.presentationLocale
+        )
     }
 
     private func parseBridgeDiagnostics(_ value: Any?) -> [BridgeDiagnostic] {

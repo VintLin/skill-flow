@@ -124,6 +124,32 @@ enum DesktopIssuePresentationCatalog {
         return PresentationText.localized(presentation.toastKey, [presentation.issueCode])
     }
 
+    static func successWarningToastText(
+        forInternalCode code: String?,
+        locale: Locale
+    ) -> PresentationText? {
+        guard let toastKey = successWarningToastKey(forInternalCode: code) else {
+            return nil
+        }
+        let presentation = presentation(forInternalCode: code)
+        _ = locale
+        return PresentationText.localized(toastKey, [presentation.issueCode])
+    }
+
+    private static func successWarningToastKey(forInternalCode code: String?) -> String? {
+        let normalized = code?.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch normalized?.isEmpty == false ? normalized : nil {
+        case "IMPORT_SELECTOR_NOT_FOUND":
+            return "toast.import.warning.selection_not_found"
+        case "IMPORT_SELECTOR_AMBIGUOUS":
+            return "toast.import.warning.selection_ambiguous"
+        case "IMPORT_SELECTORS_UNRESOLVED_USED_ALL":
+            return "toast.import.warning.selection_drift"
+        default:
+            return nil
+        }
+    }
+
     private static func warning(
         _ issueCode: String,
         _ toastKey: String,

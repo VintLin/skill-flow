@@ -188,6 +188,8 @@ final class DesktopLocalizationTests: XCTestCase {
             "toast.import.failed.invalid_response",
             "toast.import.failed.reason_code",
             "toast.import.warning.selection_drift",
+            "toast.import.warning.selection_not_found",
+            "toast.import.warning.selection_ambiguous",
             "import.reason.no_valid_leafs",
             "import.reason.source_path_not_found",
             "import.reason.add_agent_not_available",
@@ -211,6 +213,10 @@ final class DesktopLocalizationTests: XCTestCase {
             let warningValue = L10n.string("toast.import.warning.selection_drift", locale: locale, arguments: ["103"])
             XCTAssertTrue(warningValue.contains("103"), "Missing warning issue code in \(locale.identifier)")
             XCTAssertFalse(warningValue.contains("Import failed"), "Warning copy regressed in \(locale.identifier)")
+
+            let warningNotFoundValue = L10n.string("toast.import.warning.selection_not_found", locale: locale, arguments: ["101"])
+            XCTAssertTrue(warningNotFoundValue.contains("101"), "Missing selector-not-found warning issue code in \(locale.identifier)")
+            XCTAssertFalse(warningNotFoundValue.contains("Import failed"), "Selector-not-found warning regressed in \(locale.identifier)")
 
             let notFoundValue = L10n.string("toast.import.failed.selection_not_found", locale: locale, arguments: ["101"])
             XCTAssertTrue(notFoundValue.contains("101"), "Missing selection-not-found issue code in \(locale.identifier)")

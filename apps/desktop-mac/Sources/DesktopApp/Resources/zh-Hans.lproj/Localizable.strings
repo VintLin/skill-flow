@@ -244,6 +244,8 @@
 "toast.import.in_progress" = "该组正在导入。";
 "toast.import.another_running" = "已有导入任务正在进行。";
 "toast.import.success" = "已导入来源。";
+"toast.import.warning.selection_not_found" = "已按下载后的内容导入该组，所选 Skill 中有项已不在该组内。问题代码：%@。";
+"toast.import.warning.selection_ambiguous" = "已按下载后的内容导入该组，所选 Skill 中有项匹配到了多个条目。问题代码：%@。";
 "toast.import.warning.selection_drift" = "已按下载后的内容导入该组，部分所选 Skill 已发生变化。问题代码：%@。";
 "toast.import.local_source_target_locked" = "该 Skill 来源于 %@ 代理路径，无法取消。";
 "toast.import.local_scan_failed" = "本地扫描失败：%@";

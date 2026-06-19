@@ -244,6 +244,8 @@
 "toast.import.in_progress" = "この Group はインポート中です。";
 "toast.import.another_running" = "別のインポートが実行中です。";
 "toast.import.success" = "ソースをインポートしました。";
+"toast.import.warning.selection_not_found" = "ダウンロードした内容から Group をインポートしました。選択した Skill の一部はこの Group にもう存在しません。問題コード: %@。";
+"toast.import.warning.selection_ambiguous" = "ダウンロードした内容から Group をインポートしました。選択した Skill の一部が複数の項目に一致しました。問題コード: %@。";
 "toast.import.warning.selection_drift" = "ダウンロードした内容から Group をインポートしました。選択した Skill の一部が変わっています。問題コード: %@。";
 "toast.import.local_source_target_locked" = "この Skill は %@ の Agent パス由来のため、解除できません。";
 "toast.import.local_scan_failed" = "ローカルスキャンに失敗しました：%@";

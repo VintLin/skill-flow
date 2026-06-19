@@ -278,6 +278,44 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertNil(model.importingImportGroupId)
     }
 
+    func testImportSuccessWarningUsesNonFailureCopyForSelectorNotFound() async throws {
+        let commands = RecordingImportCommandFacade()
+        commands.importWarnings = [
+            BridgeIssue(
+                code: "IMPORT_SELECTOR_NOT_FOUND",
+                message: "A selected import selector no longer exists in the downloaded group."
+            )
+        ]
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkills: [.repoPath("browse")],
+            enabledTargets: []
+        )
+
+        XCTAssertEqual(model.recommendedImportGroups.first?.isInstalledLocally, true)
+        XCTAssertEqual(model.latestWarnings.map(\.code), ["IMPORT_SELECTOR_NOT_FOUND"])
+        XCTAssertEqual(model.toast?.style, .neutral)
+        let toastMessage = try XCTUnwrap(model.toast?.message)
+        XCTAssertFalse(toastMessage.contains("Import failed"))
+        XCTAssertTrue(toastMessage.contains("Imported the group"))
+        XCTAssertTrue(toastMessage.contains("101"))
+        XCTAssertFalse(toastMessage.contains("IMPORT_SELECTOR_NOT_FOUND"))
+        XCTAssertFalse(toastMessage.contains("BRIDGE_"))
+    }
+
     func testImportFailureToastUsesNumericIssueCodeInsteadOfInternalReasonCode() async throws {
         let commands = RecordingImportCommandFacade()
         commands.commitPayloads = [[

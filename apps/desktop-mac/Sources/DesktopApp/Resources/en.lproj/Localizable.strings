@@ -244,6 +244,8 @@
 "toast.import.in_progress" = "This group is already being imported.";
 "toast.import.another_running" = "Another import is already running.";
 "toast.import.success" = "Imported source.";
+"toast.import.warning.selection_not_found" = "Imported the group from the downloaded contents. A selected Skill no longer exists in this group. Issue code: %@.";
+"toast.import.warning.selection_ambiguous" = "Imported the group from the downloaded contents. A selected Skill matched more than one item. Issue code: %@.";
 "toast.import.warning.selection_drift" = "Imported the group from the downloaded contents. Some selected skills changed. Issue code: %@.";
 "toast.import.local_source_target_locked" = "This skill comes from the %@ agent path and cannot be deselected.";
 "toast.import.local_scan_failed" = "Local scan failed: %@";

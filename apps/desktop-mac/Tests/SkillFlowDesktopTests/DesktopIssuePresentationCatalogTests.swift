@@ -43,4 +43,17 @@ final class DesktopIssuePresentationCatalogTests: XCTestCase {
         XCTAssertFalse(text.contains("IMPORT_SELECTOR_NOT_FOUND"))
         XCTAssertFalse(text.contains("BRIDGE_"))
     }
+
+    func testSuccessWarningToastTextUsesNonFailureCopy() throws {
+        let warningText = DesktopIssuePresentationCatalog.successWarningToastText(
+            forInternalCode: "IMPORT_SELECTOR_NOT_FOUND",
+            locale: Locale(identifier: "en")
+        )
+        let text = try XCTUnwrap(warningText?.resolve(locale: Locale(identifier: "en")))
+
+        XCTAssertTrue(text.contains("Imported the group"))
+        XCTAssertFalse(text.contains("Import failed"))
+        XCTAssertTrue(text.contains("101"))
+        XCTAssertFalse(text.contains("IMPORT_SELECTOR_NOT_FOUND"))
+    }
 }
