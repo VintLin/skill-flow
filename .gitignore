@@ -34,6 +34,7 @@ PRD/
 .superset/
 .build/
 .gstack/
+.codegraph/
 
 # Build artifacts
 *.tgz
