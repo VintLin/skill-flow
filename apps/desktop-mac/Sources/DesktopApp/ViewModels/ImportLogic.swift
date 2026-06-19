@@ -350,6 +350,7 @@ final class ImportLogic {
                     inspectSourceId: sourceId.nonEmpty
                 )
             }
+            delegate?.applyWarningsFromApplyResponse(response.warnings)
             delegate?.showToast(style: .success, text: localizedText("toast.import.success"))
         } catch {
             delegate?.showToast(style: .error, text: localizedText("toast.import.failed", error.localizedDescription))
@@ -1338,5 +1339,6 @@ protocol ImportLogicDelegate: AnyObject {
     func showToast(style: ToastStyle, message: String)
     func cancelDeferredDraftSync()
     func synchronizeState(refreshDoctor: Bool, inspectSourceId: String?) async
+    func applyWarningsFromApplyResponse(_ warnings: [BridgeIssue])
     func localizedText(_ key: String, _ arguments: [String]) -> PresentationText
 }

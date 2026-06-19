@@ -1723,7 +1723,7 @@ description: "Safe Codex local-state maintenance"
     ]);
   });
 
-  test("importSource selectedSkills selector fails when the selector is missing", async () => {
+  test("importSource falls back to the downloaded group when selectors are missing", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review things."),
     });
@@ -1740,11 +1740,19 @@ description: "Safe Codex local-state maintenance"
     if (!imported.ok) {
       return;
     }
-    expect(imported.data).toMatchObject({
-      status: "failed",
-      reasonCode: "IMPORT_SELECTOR_NOT_FOUND",
-      retryable: true,
-    });
+    expect(imported.data).toMatchObject({ status: "ready" });
+    expect(imported.warnings.map((warning) => warning.code)).toContain("IMPORT_SELECTOR_NOT_FOUND");
+    if (imported.data.status !== "ready") {
+      return;
+    }
+
+    const { manifest, lockFile } = await new StateStore(app.store.rootPath).readState();
+    const binding = manifest.bindings[imported.data.sourceId];
+    expect(binding?.selectedLeafIds).toEqual([]);
+    expect(binding?.selectionMode).toBe("all");
+    expect(lockFile.sources[imported.data.sourceId]?.leafIds).toEqual([
+      `${imported.data.sourceId}:skills/review`,
+    ]);
   });
 
   test("importSource skillSelectionMode all selects every imported skill", async () => {

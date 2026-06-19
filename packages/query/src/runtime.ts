@@ -6466,6 +6466,7 @@ export class SkillFlowApp {
     canonicalRepo?: string,
   ): Result<string[]> {
     const matchedLeafIds: string[] = [];
+    const warnings: Warning[] = [];
 
     for (const selected of selectedSkills) {
       if (selected.selector.kind !== "repoPath") {
@@ -6515,21 +6516,36 @@ export class SkillFlowApp {
           }
         }
 
-        return fail({
+        warnings.push({
           code: "IMPORT_SELECTOR_AMBIGUOUS",
           message:
             `Import selector '${selectorPath}' matched multiple skills. ` +
             `Use a relative path such as '${fallbackMatches[0]!.relativePath}'.`,
         });
+        continue;
       }
 
-      return fail({
+      warnings.push({
         code: "IMPORT_SELECTOR_NOT_FOUND",
         message: `Import selector '${selectorPath}' was not found in the prepared source.`,
       });
     }
 
-    return ok([...new Set(matchedLeafIds)]);
+    const selectedLeafIds = [...new Set(matchedLeafIds)];
+    if (selectedLeafIds.length === 0 && selectedSkills.length > 0 && sourceLeafs.length > 0) {
+      return ok(
+        sourceLeafs.map((leaf) => leaf.id),
+        [
+          ...warnings,
+          {
+            code: "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+            message: "No selected import selectors matched the downloaded group, so all downloaded skills were selected.",
+          },
+        ],
+      );
+    }
+
+    return ok(selectedLeafIds, warnings);
   }
 
   private findImportSelectorFallbackMatches(

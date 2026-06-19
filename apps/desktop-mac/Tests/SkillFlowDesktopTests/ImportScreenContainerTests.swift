@@ -241,6 +241,12 @@ final class ImportScreenContainerTests: XCTestCase {
 
     func testImportSuccessMarksGroupInstalledImmediately() async {
         let commands = RecordingImportCommandFacade()
+        commands.importWarnings = [
+            BridgeIssue(
+                code: "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+                message: "No selected import selectors matched the downloaded group, so all downloaded skills were selected."
+            )
+        ]
         let model = MainViewModel(
             bridgeClient: BridgeClient(),
             commandFacade: commands
@@ -261,6 +267,7 @@ final class ImportScreenContainerTests: XCTestCase {
         )
 
         XCTAssertEqual(model.recommendedImportGroups.first?.isInstalledLocally, true)
+        XCTAssertEqual(model.latestWarnings.map(\.code), ["IMPORT_SELECTORS_UNRESOLVED_USED_ALL"])
         XCTAssertNil(model.importingImportGroupId)
     }
 
@@ -2349,6 +2356,8 @@ private struct RecordedCommitCall: Equatable {
 private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked Sendable {
     private(set) var importCalls: [RecordedImportCall] = []
     private(set) var commitCalls: [RecordedCommitCall] = []
+    var importWarnings: [BridgeIssue] = []
+    var commitWarnings: [BridgeIssue] = []
     var commitPayloads: [[String: Any]] = [["status": "ready", "sourceId": "local-skills"]]
 
     func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
@@ -2392,7 +2401,7 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
             command: .importSource,
             ok: true,
             data: AnyCodable(["status": "ready", "sourceId": "local-skills"]),
-            warnings: [],
+            warnings: importWarnings,
             errors: []
         )
     }
@@ -2414,7 +2423,7 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
             command: .commitImportSource,
             ok: true,
             data: AnyCodable(payload),
-            warnings: [],
+            warnings: commitWarnings,
             errors: []
         )
     }
