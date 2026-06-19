@@ -6445,7 +6445,11 @@ export class SkillFlowApp {
       });
     }
 
-    const selectedLeafIdsResult = this.resolveImportLeafIdsForSelectors(sourceLeafs, draft.selectedSkills);
+    const selectedLeafIdsResult = this.resolveImportLeafIdsForSelectors(
+      sourceLeafs,
+      draft.selectedSkills,
+      canonicalRepo,
+    );
     if (!selectedLeafIdsResult.ok) {
       return fail(selectedLeafIdsResult.errors, selectedLeafIdsResult.warnings);
     }
@@ -6459,6 +6463,7 @@ export class SkillFlowApp {
   private resolveImportLeafIdsForSelectors(
     sourceLeafs: SelectableLeaf[],
     selectedSkills: NonNullable<ImportDraft["selectedSkills"]>,
+    canonicalRepo?: string,
   ): Result<string[]> {
     const matchedLeafIds: string[] = [];
 
@@ -6492,6 +6497,32 @@ export class SkillFlowApp {
         });
       }
 
+      const fallbackMatches = this.findImportSelectorFallbackMatches(
+        sourceLeafs,
+        selectorPath,
+        canonicalRepo,
+      );
+      if (fallbackMatches.length === 1) {
+        matchedLeafIds.push(fallbackMatches[0]!.id);
+        continue;
+      }
+      if (fallbackMatches.length > 1) {
+        if (canonicalRepo) {
+          const preferred = this.pickPreferredImportLeafMatch(fallbackMatches);
+          if (preferred) {
+            matchedLeafIds.push(preferred.id);
+            continue;
+          }
+        }
+
+        return fail({
+          code: "IMPORT_SELECTOR_AMBIGUOUS",
+          message:
+            `Import selector '${selectorPath}' matched multiple skills. ` +
+            `Use a relative path such as '${fallbackMatches[0]!.relativePath}'.`,
+        });
+      }
+
       return fail({
         code: "IMPORT_SELECTOR_NOT_FOUND",
         message: `Import selector '${selectorPath}' was not found in the prepared source.`,
@@ -6499,6 +6530,32 @@ export class SkillFlowApp {
     }
 
     return ok([...new Set(matchedLeafIds)]);
+  }
+
+  private findImportSelectorFallbackMatches(
+    sourceLeafs: SelectableLeaf[],
+    selectorPath: string,
+    canonicalRepo: string | undefined,
+  ): SelectableLeaf[] {
+    return sourceLeafs.filter((leaf) => {
+      if (leaf.linkName === selectorPath || leaf.title === selectorPath || leaf.name === selectorPath) {
+        return true;
+      }
+
+      if (!canonicalRepo) {
+        return false;
+      }
+
+      const selectorVariants = this.buildImportSkillSelectorVariants(selectorPath, canonicalRepo);
+      const leafVariants = new Set([
+        ...this.buildImportSkillSelectorVariants(leaf.linkName, canonicalRepo),
+        ...this.buildImportSkillSelectorVariants(leaf.title, canonicalRepo),
+        ...(leaf.name ? this.buildImportSkillSelectorVariants(leaf.name, canonicalRepo) : []),
+        ...this.buildImportSkillSelectorVariants(path.posix.basename(leaf.relativePath), canonicalRepo),
+      ]);
+
+      return selectorVariants.some((variant) => leafVariants.has(variant));
+    });
   }
 
   private resolveSelectedLeafIds(

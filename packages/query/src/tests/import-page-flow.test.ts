@@ -633,6 +633,46 @@ describe.sequential("import page flow", () => {
     }
   });
 
+  test("importSource accepts unique GitHub snapshot skill ids when repo paths are nested", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/research/SKILL.md": skillDoc("research", "Research things."),
+      "skills/debugging/SKILL.md": skillDoc("debugging", "Debug things."),
+    });
+    const prepareSourceCheckout = SourceCheckoutService.prototype.prepareSourceCheckout;
+    vi.spyOn(SourceCheckoutService.prototype, "prepareSourceCheckout").mockImplementation(
+      async function (locator, input) {
+        if (locator !== "anthropics/skills" && locator !== "https://github.com/anthropics/skills.git") {
+          throw new Error(`Unexpected locator: ${locator}`);
+        }
+        return prepareSourceCheckout.call(this, repoPath, input);
+      },
+    );
+
+    const app = new SkillFlowApp();
+    const imported = await app.importSource("anthropics/skills", {
+      selectedSkills: [
+        { uiId: "skill_research", selector: { kind: "repoPath", path: "research" } },
+      ],
+      enabledTargets: [],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) {
+      return;
+    }
+    expect(imported.data).toMatchObject({ status: "ready" });
+    if (imported.data.status !== "ready") {
+      return;
+    }
+
+    const { manifest, lockFile } = await new StateStore(app.store.rootPath).readState();
+    const binding = manifest.bindings[imported.data.sourceId];
+    expect(binding?.selectedLeafIds).toHaveLength(1);
+    expect(
+      lockFile.leafInventory.find((leaf) => leaf.id === binding?.selectedLeafIds?.[0])?.relativePath,
+    ).toBe("skills/research");
+  });
+
   test("previewImportSource supports local paths", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browse things."),
