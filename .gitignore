@@ -35,6 +35,7 @@ PRD/
 .build/
 .gstack/
 .codegraph/
+.superpowers/
 
 # Build artifacts
 *.tgz
