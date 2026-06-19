@@ -113,7 +113,7 @@ enum DesktopIssuePresentationCatalog {
         case "COLLECTION_NOT_FOUND":
             return error("602", "toast.operation.collection_not_found", "issue.detail.operation.collection_not_found", internalCode, [.groupLocator])
         case "GROUP_DELETE_INCOMPLETE":
-            return error("604", "toast.uninstall.failed", "issue.detail.operation.uninstall_incomplete", internalCode, [.groupLocator])
+            return error("604", "toast.operation.uninstall_incomplete", "issue.detail.operation.uninstall_incomplete", internalCode, [.groupLocator])
         case "STATE_MIGRATION_BLOCKED":
             return error("701", "toast.state.migration_blocked", "issue.detail.state.migration_blocked", internalCode, [])
         default:

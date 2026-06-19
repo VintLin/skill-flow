@@ -276,6 +276,67 @@ final class MainViewModelCollectionTests: XCTestCase {
         XCTAssertFalse(model.toast?.message.contains("BRIDGE_REQUEST_INVALID") == true)
     }
 
+    func testCreateCollectionThrownBridgeFailureUsesCatalogIssueCodeInsteadOfInternalCode() async {
+        let query = CollectionQueryStub()
+        let command = RecordingCollectionCommandFacade()
+        command.createError = structuredBridgeFailure()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+
+        await model.bootstrap()
+        await model.createCollection(
+            displayName: "Team Tools",
+            skills: [
+                CollectionSkillRef(sourceId: "alpha", leafId: "alpha-a"),
+            ],
+            enabledTargets: ["codex"]
+        )
+
+        XCTAssertTrue(model.toast?.message.contains("502") == true)
+        XCTAssertFalse(model.toast?.message.contains("BRIDGE_REQUEST_INVALID") == true)
+    }
+
+    func testStructuredMainViewModelOperationFailuresUseCatalogIssueCodes() async {
+        await assertStructuredOperationFailureUsesCatalogIssueCode { model, command in
+            command.togglePinnedError = structuredBridgeFailure()
+            await model.togglePinned(sourceId: "alpha")
+        }
+
+        await assertStructuredOperationFailureUsesCatalogIssueCode { model, command in
+            command.renameError = structuredBridgeFailure()
+            await model.renameSource(sourceId: "alpha", displayName: "Renamed")
+        }
+
+        await assertStructuredOperationFailureUsesCatalogIssueCode { model, command in
+            command.updateError = structuredBridgeFailure()
+            await model.updateSource("alpha")
+        }
+
+        await assertStructuredOperationFailureUsesCatalogIssueCode { model, command in
+            command.applyError = structuredBridgeFailure()
+            await model.setSkillEnabled("alpha-b", enabled: true, sourceId: "alpha")
+        }
+    }
+
+    func testProjectRefreshStructuredFailureUsesCatalogIssueCode() async {
+        let query = CollectionQueryStub()
+        query.listError = structuredBridgeFailure()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: RecordingCollectionCommandFacade()
+        )
+
+        await model.bootstrap()
+        await model.refreshProjectScopes()
+
+        XCTAssertTrue(model.toast?.message.contains("502") == true)
+        XCTAssertFalse(model.toast?.message.contains("BRIDGE_REQUEST_INVALID") == true)
+    }
+
     func testHomeCardDoesNotExposeDeleteActionForCollections() throws {
         let homeSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
         let cardSource = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
@@ -421,18 +482,56 @@ final class MainViewModelCollectionTests: XCTestCase {
             saveState: SaveState(phase: .idle, detail: nil)
         )
     }
+
+    private func assertStructuredOperationFailureUsesCatalogIssueCode(
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        operation: (MainViewModel, RecordingCollectionCommandFacade) async -> Void
+    ) async {
+        let command = RecordingCollectionCommandFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: CollectionQueryStub(),
+            commandFacade: command
+        )
+
+        await model.bootstrap()
+        await operation(model, command)
+
+        XCTAssertTrue(model.toast?.message.contains("502") == true, file: file, line: line)
+        XCTAssertFalse(model.toast?.message.contains("BRIDGE_REQUEST_INVALID") == true, file: file, line: line)
+    }
+
+    private func structuredBridgeFailure() -> BridgeClientError {
+        BridgeClientError.commandFailed(
+            "BRIDGE_REQUEST_INVALID",
+            response: BridgeResponse(
+                protocolVersion: "1.0",
+                requestId: "test",
+                command: .apply,
+                ok: false,
+                data: nil,
+                warnings: [],
+                errors: [BridgeIssue(code: "BRIDGE_REQUEST_INVALID", message: "BRIDGE_REQUEST_INVALID")]
+            )
+        )
+    }
 }
 
 @MainActor
 private final class CollectionQueryStub: DesktopQuerying {
     private(set) var listCallCount = 0
     var useCollectionLocatorDisplayName = false
+    var listError: Error?
 
     func bootstrap() async throws -> BridgeResponse {
         BridgeResponse.success(command: .bootstrap, payload: payload())
     }
 
     func list() async throws -> BridgeResponse {
+        if let listError {
+            throw listError
+        }
         listCallCount += 1
         return BridgeResponse.success(command: .list, payload: payload())
     }
@@ -563,17 +662,28 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
 
     private(set) var createCalls: [CreateCall] = []
     var createResponse: BridgeResponse = .success(command: .createCollection, payload: ["sourceId": "collection-team-tools"])
+    var createError: Error?
+    var togglePinnedError: Error?
+    var updateError: Error?
+    var renameError: Error?
+    var applyError: Error?
 
     func saveSettings(customTargets: [[String: String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
         fatalError("unused")
     }
 
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
-        fatalError("unused")
+        if let togglePinnedError {
+            throw togglePinnedError
+        }
+        return .success(command: .togglePin, payload: ["pinnedSourceIds": [sourceId]])
     }
 
     func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
-        fatalError("unused")
+        if let updateError {
+            throw updateError
+        }
+        return .success(command: .update, payload: ["updated": sourceIds ?? []])
     }
 
     func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
@@ -581,6 +691,9 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
     }
 
     func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
+        if let createError {
+            throw createError
+        }
         createCalls.append(CreateCall(displayName: displayName, skills: skills, enabledTargets: enabledTargets))
         return createResponse
     }
@@ -594,7 +707,18 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
     }
 
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
-        fatalError("unused")
+        if let renameError {
+            throw renameError
+        }
+        return .success(
+            command: .renameSource,
+            payload: [
+                "sourceId": sourceId,
+                "displayName": displayName,
+                "originalDisplayName": displayName,
+                "isResetToOriginal": false,
+            ]
+        )
     }
 
     func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
@@ -602,7 +726,10 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
     }
 
     func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
+        if let applyError {
+            throw applyError
+        }
+        return .success(command: .apply, payload: [:])
     }
 
     func doctor() async throws -> BridgeResponse {

@@ -696,7 +696,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             stateManager.setPinnedSourceIds(result)
         } catch {
             stateManager.setPinnedSourceIds(previousPinnedSourceIds)
-            showToast(style: .error, text: localizedText("toast.pin.failed", firstErrorLine(from: error)))
+            showOperationFailureToast(fallbackKey: "toast.pin.failed", fallbackArgument: firstErrorLine(from: error), error: error)
         }
     }
 
@@ -727,7 +727,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             let toastKey = result.isResetToOriginal ? "toast.rename.reset_success" : "toast.rename.success"
             showToast(style: .success, text: localizedText(toastKey, result.displayName))
         } catch {
-            showToast(style: .error, text: localizedText("toast.rename.failed", firstErrorLine(from: error)))
+            showOperationFailureToast(fallbackKey: "toast.rename.failed", fallbackArgument: firstErrorLine(from: error), error: error)
         }
     }
 
@@ -887,7 +887,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 successStyle: nextState.selectedLeafIds.isEmpty ? .neutral : .success
             )
         } catch {
-            showToast(style: .error, text: localizedText("toast.save.failed", firstErrorLine(from: error)))
+            showOperationFailureToast(fallbackKey: "toast.save.failed", fallbackArgument: firstErrorLine(from: error), error: error)
         }
     }
 
@@ -916,7 +916,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 successStyle: enabled ? .success : .neutral
             )
         } catch {
-            showToast(style: .error, text: localizedText("toast.save.failed", firstErrorLine(from: error)))
+            showOperationFailureToast(fallbackKey: "toast.save.failed", fallbackArgument: firstErrorLine(from: error), error: error)
         }
     }
 
@@ -939,7 +939,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 successStyle: draft.enabledTargets.isEmpty ? .neutral : .success
             )
         } catch {
-            showToast(style: .error, text: localizedText("toast.save.failed", firstErrorLine(from: error)))
+            showOperationFailureToast(fallbackKey: "toast.save.failed", fallbackArgument: firstErrorLine(from: error), error: error)
         }
     }
 
@@ -971,7 +971,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 successStyle: enabled ? .success : .neutral
             )
         } catch {
-            showToast(style: .error, text: localizedText("toast.save.failed", firstErrorLine(from: error)))
+            showOperationFailureToast(fallbackKey: "toast.save.failed", fallbackArgument: firstErrorLine(from: error), error: error)
         }
     }
 
@@ -1027,7 +1027,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             }
         } catch {
             if showProjectScopeToast {
-                showToast(style: .error, text: localizedText("toast.project_scope.refresh.failed", error.localizedDescription))
+                showOperationFailureToast(fallbackKey: "toast.project_scope.refresh.failed", fallbackArgument: error.localizedDescription, error: error)
             }
             stateManager.setLoadState(.failed(error.localizedDescription))
         }
@@ -1047,7 +1047,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             }
             stateManager.setLatestWarnings(response.warnings)
         } catch {
-            showToast(style: .error, text: localizedText("toast.details.load_failed", sourceId))
+            showOperationFailureToast(fallbackKey: "toast.details.load_failed", fallbackArgument: sourceId, error: error)
         }
     }
 
@@ -1070,7 +1070,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             await synchronizeState(refreshDoctor: true)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: nil, fallbackCount: sourceIds.count)))
         } catch {
-            showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
+            showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
         }
     }
 
@@ -1090,7 +1090,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             registerRecentlyUpdatedSources(from: payload)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: nil, fallbackCount: sourceIds.count)))
         } catch {
-            showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
+            showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
         }
     }
 
@@ -1125,7 +1125,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             registerRecentlyUpdatedSources(from: response?.data?.value)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: nil, fallbackCount: 1)))
         } catch {
-            showToast(style: .error, text: localizedText("toast.update.failed", error.localizedDescription))
+            showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
         }
     }
 
@@ -1185,7 +1185,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             }
             showToast(style: .success, text: localizedText("toast.uninstall.success", sourceId))
         } catch {
-            showToast(style: .error, text: localizedText("toast.uninstall.failed", error.localizedDescription))
+            showOperationFailureToast(fallbackKey: "toast.uninstall.failed", fallbackArgument: error.localizedDescription, error: error)
         }
     }
 
@@ -1844,7 +1844,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 _ = try? await sourceManagement.togglePinned(sourceId: migratedSourceId)
             }
             stateManager.setPinnedSourceIds(previousPinnedSourceIds)
-            showToast(style: .error, text: localizedText("toast.pinned_migration.failed", firstErrorLine(from: error)))
+            showOperationFailureToast(fallbackKey: "toast.pinned_migration.failed", fallbackArgument: firstErrorLine(from: error), error: error)
         }
     }
 
@@ -1896,6 +1896,22 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             locale: Self.presentationLocale
         )
         showToast(style: .error, text: text)
+    }
+
+    private func showOperationFailureToast(fallbackKey: String, fallbackArgument: String, error: Error) {
+        let text = structuredBridgeFailureToastText(from: error) ?? localizedText(fallbackKey, fallbackArgument)
+        showToast(style: .error, text: text)
+    }
+
+    private func structuredBridgeFailureToastText(from error: Error) -> PresentationText? {
+        guard case BridgeClientError.commandFailed(_, let response) = error,
+              let response else {
+            return nil
+        }
+        return DesktopIssuePresentationCatalog.toastText(
+            forInternalCode: response.errors.first?.code,
+            locale: Self.presentationLocale
+        )
     }
 
     // MARK: - Static Utility Methods (kept for backward compatibility)

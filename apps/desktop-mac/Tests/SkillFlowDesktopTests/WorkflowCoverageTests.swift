@@ -255,7 +255,7 @@ final class WorkflowCoverageTests: XCTestCase {
 
         XCTAssertEqual(model.pinnedSourceIds, [])
         XCTAssertEqual(model.toast?.style, .error)
-        XCTAssertEqual(model.toast?.message, "Pin failed: Shared preferences unavailable.")
+        XCTAssertEqual(model.toast?.message, "Something went wrong. Issue code: 599.")
 
         let pinRequests = fixture.loggedRequests().filter { $0.command == "toggle-pin" }
         XCTAssertEqual(pinRequests.count, 1)
@@ -565,7 +565,7 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertFalse(model.sourceIds.contains("anthropics-skills"))
         XCTAssertEqual(model.currentRoute, .home)
         XCTAssertEqual(model.toast?.style, .error)
-        XCTAssertEqual(model.toast?.message, "Import failed: unable to read this source. Try again later.")
+        XCTAssertEqual(model.toast?.message, "Import failed: unable to read this source. Try again later. Issue code: 205.")
         XCTAssertTrue(model.recommendedImportGroups.contains(where: { $0.id == "anthropics-skills" }))
     }
 

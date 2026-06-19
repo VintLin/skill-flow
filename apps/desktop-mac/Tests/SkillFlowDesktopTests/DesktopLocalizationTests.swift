@@ -290,6 +290,7 @@ final class DesktopLocalizationTests: XCTestCase {
             "toast.issue.generic",
             "toast.operation.source_not_found",
             "toast.operation.collection_not_found",
+            "toast.operation.uninstall_incomplete",
             "toast.state.migration_blocked",
             "toast.import.failed.provider_not_supported",
             "toast.import.failed.provider_data_unavailable",
@@ -340,6 +341,35 @@ final class DesktopLocalizationTests: XCTestCase {
             let invalidResponseValue = L10n.string("toast.issue.generic", locale: locale, arguments: ["502"])
             XCTAssertTrue(invalidResponseValue.contains("502"), "Missing bridge issue code in \(locale.identifier)")
             XCTAssertFalse(invalidResponseValue.contains("BRIDGE_REQUEST_INVALID"), "Bridge internal code leaked in \(locale.identifier)")
+        }
+    }
+
+    func testCatalogToastKeysIncludeIssueCodeInAllSupportedLocales() {
+        let internalCodes = catalogInternalCodes()
+
+        for locale in supportedLocales {
+            for code in internalCodes {
+                let presentation = DesktopIssuePresentationCatalog.presentation(forInternalCode: code)
+                let value = L10n.string(presentation.toastKey, locale: locale, arguments: [presentation.issueCode])
+
+                XCTAssertNotEqual(value, presentation.toastKey, "Missing \(presentation.toastKey) in \(locale.identifier)")
+                XCTAssertTrue(value.contains(presentation.issueCode), "\(locale.identifier):\(presentation.toastKey):\(code)")
+                XCTAssertFalse(value.contains(code), "\(locale.identifier):\(presentation.toastKey):\(code)")
+            }
+        }
+    }
+
+    func testCatalogDetailKeysExistInAllSupportedLocales() {
+        let detailKeys = Set(catalogInternalCodes().map {
+            DesktopIssuePresentationCatalog.presentation(forInternalCode: $0).detailKey
+        })
+
+        for locale in supportedLocales {
+            for key in detailKeys.sorted() {
+                let value = L10n.string(key, locale: locale, arguments: ["599"])
+                XCTAssertNotEqual(value, key, "Missing \(key) in \(locale.identifier)")
+                XCTAssertFalse(value.isEmpty, "Empty \(key) in \(locale.identifier)")
+            }
         }
     }
 
@@ -394,6 +424,39 @@ final class DesktopLocalizationTests: XCTestCase {
             let subtitleValue = L10n.string("import.card.meta.local_scan_sources", locale: locale, arguments: [2])
             XCTAssertTrue(subtitleValue.contains("2"), "Missing local scan subtitle count in \(locale.identifier)")
         }
+    }
+
+    private func catalogInternalCodes() -> [String] {
+        [
+            "IMPORT_SELECTOR_NOT_FOUND",
+            "IMPORT_SELECTOR_AMBIGUOUS",
+            "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+            "ADD_SKILL_NOT_FOUND",
+            "ADD_SKILL_SELECTOR_AMBIGUOUS",
+            "IMPORT_SELECTOR_INVALID",
+            "provider_not_supported",
+            "provider_data_unavailable",
+            "provider_rate_limited",
+            "provider_response_invalid",
+            "provider_request_failed",
+            "IMPORT_PREPARE_FAILED",
+            "IMPORT_PREVIEW_INVALID",
+            "IMPORT_APPLY_FAILED",
+            "IMPORT_PREPARATION_STALE",
+            "IMPORT_PREPARATION_MISSING",
+            "NO_VALID_LEAFS",
+            "SOURCE_PATH_NOT_FOUND",
+            "ADD_AGENT_NOT_AVAILABLE",
+            "LOCAL_IMPORT_SCAN_FAILED",
+            "BRIDGE_EMPTY_REQUEST",
+            "BRIDGE_REQUEST_INVALID",
+            "BRIDGE_IMPORT_DRAFT_REJECTED",
+            "UNSUPPORTED_COMMAND",
+            "SOURCE_NOT_FOUND",
+            "COLLECTION_NOT_FOUND",
+            "GROUP_DELETE_INCOMPLETE",
+            "STATE_MIGRATION_BLOCKED",
+        ]
     }
 
     func testChineseImportStringsUseZuInsteadOfEnglishGroup() {

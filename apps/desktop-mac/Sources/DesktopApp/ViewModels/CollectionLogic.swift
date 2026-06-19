@@ -107,6 +107,9 @@ final class CollectionLogic {
             }
             await onRefreshList?()
         } catch {
+            guard !showStructuredBridgeFailure(from: error) else {
+                return
+            }
             onShowToast?(.error, firstErrorLine(from: error))
         }
     }
@@ -134,6 +137,9 @@ final class CollectionLogic {
             }
             await onRefreshList?()
         } catch {
+            guard !showStructuredBridgeFailure(from: error) else {
+                return
+            }
             onShowToast?(.error, firstErrorLine(from: error))
         }
     }
@@ -152,6 +158,9 @@ final class CollectionLogic {
             }
             await onRefreshList?()
         } catch {
+            guard !showStructuredBridgeFailure(from: error) else {
+                return
+            }
             onShowToast?(.error, firstErrorLine(from: error))
         }
     }
@@ -203,5 +212,14 @@ final class CollectionLogic {
             return firstErrorLine(from: first)
         }
         return nsError.localizedDescription
+    }
+
+    private func showStructuredBridgeFailure(from error: Error) -> Bool {
+        guard case BridgeClientError.commandFailed(_, let response) = error,
+              let response else {
+            return false
+        }
+        onShowBridgeCommandFailure?(response)
+        return true
     }
 }

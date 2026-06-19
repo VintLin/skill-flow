@@ -3,6 +3,37 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class DesktopIssuePresentationCatalogTests: XCTestCase {
+    private let knownInternalCodes = [
+        "IMPORT_SELECTOR_NOT_FOUND",
+        "IMPORT_SELECTOR_AMBIGUOUS",
+        "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
+        "ADD_SKILL_NOT_FOUND",
+        "ADD_SKILL_SELECTOR_AMBIGUOUS",
+        "IMPORT_SELECTOR_INVALID",
+        "provider_not_supported",
+        "provider_data_unavailable",
+        "provider_rate_limited",
+        "provider_response_invalid",
+        "provider_request_failed",
+        "IMPORT_PREPARE_FAILED",
+        "IMPORT_PREVIEW_INVALID",
+        "IMPORT_APPLY_FAILED",
+        "IMPORT_PREPARATION_STALE",
+        "IMPORT_PREPARATION_MISSING",
+        "NO_VALID_LEAFS",
+        "SOURCE_PATH_NOT_FOUND",
+        "ADD_AGENT_NOT_AVAILABLE",
+        "LOCAL_IMPORT_SCAN_FAILED",
+        "BRIDGE_EMPTY_REQUEST",
+        "BRIDGE_REQUEST_INVALID",
+        "BRIDGE_IMPORT_DRAFT_REJECTED",
+        "UNSUPPORTED_COMMAND",
+        "SOURCE_NOT_FOUND",
+        "COLLECTION_NOT_FOUND",
+        "GROUP_DELETE_INCOMPLETE",
+        "STATE_MIGRATION_BLOCKED",
+    ]
+
     func testKnownDesktopVisibleCodesHaveNonFallbackIssueCodes() {
         let codes = [
             "IMPORT_SELECTOR_NOT_FOUND",
@@ -54,7 +85,7 @@ final class DesktopIssuePresentationCatalogTests: XCTestCase {
 
         let uninstallIncomplete = DesktopIssuePresentationCatalog.presentation(forInternalCode: "GROUP_DELETE_INCOMPLETE")
         XCTAssertEqual(uninstallIncomplete.issueCode, "604")
-        XCTAssertEqual(uninstallIncomplete.toastKey, "toast.uninstall.failed")
+        XCTAssertEqual(uninstallIncomplete.toastKey, "toast.operation.uninstall_incomplete")
 
         let migrationBlocked = DesktopIssuePresentationCatalog.presentation(forInternalCode: "STATE_MIGRATION_BLOCKED")
         XCTAssertEqual(migrationBlocked.issueCode, "701")
@@ -77,6 +108,18 @@ final class DesktopIssuePresentationCatalogTests: XCTestCase {
         XCTAssertTrue(text.contains("101"))
         XCTAssertFalse(text.contains("IMPORT_SELECTOR_NOT_FOUND"))
         XCTAssertFalse(text.contains("BRIDGE_"))
+    }
+
+    func testCatalogToastTextIncludesIssueCodeAndHidesInternalCodeForKnownCodes() {
+        for code in knownInternalCodes {
+            let presentation = DesktopIssuePresentationCatalog.presentation(forInternalCode: code)
+            let text = DesktopIssuePresentationCatalog
+                .toastText(forInternalCode: code, locale: Locale(identifier: "en"))
+                .resolve(locale: Locale(identifier: "en"))
+
+            XCTAssertTrue(text.contains(presentation.issueCode), code)
+            XCTAssertFalse(text.contains(code), code)
+        }
     }
 
     func testSuccessWarningToastTextUsesNonFailureCopy() throws {
