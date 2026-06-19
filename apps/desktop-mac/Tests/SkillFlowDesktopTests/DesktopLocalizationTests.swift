@@ -29,39 +29,13 @@ final class DesktopLocalizationTests: XCTestCase {
         return NSDictionary(contentsOf: fileURL) as? [String: String] ?? [:]
     }
 
-    private func knownIssueDetailKeys() -> [String] {
-        let codes = [
-            "IMPORT_SELECTOR_NOT_FOUND",
-            "IMPORT_SELECTOR_AMBIGUOUS",
-            "IMPORT_SELECTORS_UNRESOLVED_USED_ALL",
-            "ADD_SKILL_NOT_FOUND",
-            "ADD_SKILL_SELECTOR_AMBIGUOUS",
-            "IMPORT_SELECTOR_INVALID",
-            "provider_not_supported",
-            "provider_data_unavailable",
-            "provider_rate_limited",
-            "provider_response_invalid",
-            "provider_request_failed",
-            "IMPORT_PREPARE_FAILED",
-            "IMPORT_PREVIEW_INVALID",
-            "IMPORT_APPLY_FAILED",
-            "IMPORT_PREPARATION_STALE",
-            "IMPORT_PREPARATION_MISSING",
-            "NO_VALID_LEAFS",
-            "SOURCE_PATH_NOT_FOUND",
-            "ADD_AGENT_NOT_AVAILABLE",
-            "LOCAL_IMPORT_SCAN_FAILED",
-            "BRIDGE_EMPTY_REQUEST",
-            "BRIDGE_REQUEST_INVALID",
-            "BRIDGE_IMPORT_DRAFT_REJECTED",
-            "UNSUPPORTED_COMMAND",
-            "SOURCE_NOT_FOUND",
-            "COLLECTION_NOT_FOUND",
-            "GROUP_DELETE_INCOMPLETE",
-            "STATE_MIGRATION_BLOCKED",
-        ]
-        let detailKeys = codes.map { DesktopIssuePresentationCatalog.presentation(forInternalCode: $0).detailKey }
-        return Array(Set(detailKeys + [DesktopIssuePresentationCatalog.presentation(forInternalCode: nil).detailKey])).sorted()
+    private func userFacingDesktopLocalizedStrings(localeIdentifier: String) -> [(key: String, value: String)] {
+        let localizedStrings = loadDesktopLocalizedStrings(localeIdentifier: localeIdentifier)
+        return localizedStrings
+            .filter { key, _ in
+                key.hasPrefix("toast.") || key.hasPrefix("bridge.error.") || key.hasPrefix("issue.detail.")
+            }
+            .sorted { lhs, rhs in lhs.key < rhs.key }
     }
 
     func testDesktopLanguageNormalizesSupportedIdentifiers() {
@@ -97,24 +71,11 @@ final class DesktopLocalizationTests: XCTestCase {
     }
 
     func testUserFacingLocalizedCopyDoesNotLeakInternalReasonCodes() {
-        let issueDetailKeys = knownIssueDetailKeys()
-
         for locale in supportedLocales {
-            let localizedStrings = loadDesktopLocalizedStrings(localeIdentifier: locale.identifier)
-            let resourceValues = localizedStrings.compactMap { key, value -> String? in
-                guard key.hasPrefix("toast.") || key.hasPrefix("bridge.error.") else {
-                    return nil
-                }
-                return value
-            }
-            let issueDetailValues = issueDetailKeys.map { key in
-                L10n.string(key, locale: locale, arguments: ["599"])
-            }
-
-            for value in resourceValues + issueDetailValues {
-                XCTAssertFalse(value.contains("IMPORT_"), locale.identifier)
-                XCTAssertFalse(value.contains("BRIDGE_"), locale.identifier)
-                XCTAssertFalse(value.contains("STATE_MIGRATION_"), locale.identifier)
+            for entry in userFacingDesktopLocalizedStrings(localeIdentifier: locale.identifier) {
+                XCTAssertFalse(entry.value.contains("IMPORT_"), "\(locale.identifier):\(entry.key)")
+                XCTAssertFalse(entry.value.contains("BRIDGE_"), "\(locale.identifier):\(entry.key)")
+                XCTAssertFalse(entry.value.contains("STATE_MIGRATION_"), "\(locale.identifier):\(entry.key)")
             }
         }
     }

@@ -167,10 +167,17 @@ final class AppStateManager {
         latestWarnings = warnings
         latestWarningPresentations = warnings.map { warning in
             let presentation = DesktopIssuePresentationCatalog.presentation(forInternalCode: warning.code)
+            let message = DesktopIssuePresentationCatalog.successWarningToastText(
+                forInternalCode: warning.code,
+                locale: PresentationText.presentationLocale
+            ) ?? DesktopIssuePresentationCatalog.toastText(
+                forInternalCode: warning.code,
+                locale: PresentationText.presentationLocale
+            )
             return DesktopWarningPresentation(
                 id: warning.id,
                 issueCode: presentation.issueCode,
-                message: DesktopIssuePresentationCatalog.toastText(forInternalCode: warning.code, locale: PresentationText.presentationLocale)
+                message: message
             )
         }
     }

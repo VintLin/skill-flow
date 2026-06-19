@@ -108,5 +108,7 @@ final class DesktopIssuePresentationCatalogTests: XCTestCase {
 
         let secondMessage = try XCTUnwrap(rows.last?.message.resolve(locale: Locale(identifier: "en")))
         XCTAssertFalse(secondMessage.contains("IMPORT_SELECTOR_NOT_FOUND"))
+        XCTAssertFalse(secondMessage.contains("Import failed"))
+        XCTAssertTrue(secondMessage.contains("101"))
     }
 }

@@ -588,7 +588,7 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertFalse(model.sourceIds.contains("anthropics-skills"))
         XCTAssertEqual(model.toast?.style, .error)
         let toastMessage = try XCTUnwrap(model.toast?.message)
-        XCTAssertTrue(toastMessage.contains("104"))
+        XCTAssertTrue(toastMessage.contains("Issue code: 104"))
         XCTAssertFalse(toastMessage.contains("ADD_SKILL_NOT_FOUND"))
     }
 
