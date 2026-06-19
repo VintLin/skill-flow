@@ -12,7 +12,7 @@ final class ImportScreenState {
 @MainActor
 final class ImportScreenContainer {
     struct Snapshot {
-        let searchPhase: MainViewModel.ImportLoadPhase
+        let searchPhase: ImportLoadPhase
         let submittedQuery: String
         let content: [ImportViewModel.Card]
         let importingGroupId: String?
@@ -41,11 +41,11 @@ final class ImportScreenContainer {
         return true
     }
 
-    var importPageMode: MainViewModel.ImportPageMode {
+    var importPageMode: ImportPageMode {
         mainViewModel.importPageMode
     }
 
-    func setImportPageMode(_ mode: MainViewModel.ImportPageMode) {
+    func setImportPageMode(_ mode: ImportPageMode) {
         mainViewModel.importPageMode = mode
     }
 
@@ -198,7 +198,7 @@ final class ImportScreenContainer {
         return .all
     }
 
-    func selectedLocalChoice(for card: ImportViewModel.Card) -> MainViewModel.LocalImportChoice? {
+    func selectedLocalChoice(for card: ImportViewModel.Card) -> LocalImportChoice? {
         let selectedChoiceId = screenState.localChoiceByItemId[card.id] ?? card.selectedLocalChoiceId
         return card.localChoices.first { $0.id == selectedChoiceId }
             ?? card.localChoices.first

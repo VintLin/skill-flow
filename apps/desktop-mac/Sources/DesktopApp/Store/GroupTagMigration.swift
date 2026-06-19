@@ -37,14 +37,24 @@ struct GroupTagMigration {
                 continue
             }
 
-            guard let legacyKey = identity.legacyKeys.first(where: { key in
+            let legacyKeys = identity.legacyKeys.filter { key in
                 key != identity.currentKey && next.tagsByGroupKey[key] != nil
-            }) else {
+            }
+            guard !legacyKeys.isEmpty else {
                 continue
             }
 
-            next.tagsByGroupKey[identity.currentKey] = next.tagsByGroupKey[legacyKey]
-            next.tagsByGroupKey.removeValue(forKey: legacyKey)
+            var migratedTags: [GroupTagPreference] = []
+            var seenTagKeys = Set<String>()
+            for legacyKey in legacyKeys {
+                for tag in next.tagsByGroupKey[legacyKey] ?? [] {
+                    if seenTagKeys.insert(tagKey(tag)).inserted {
+                        migratedTags.append(tag)
+                    }
+                }
+                next.tagsByGroupKey.removeValue(forKey: legacyKey)
+            }
+            next.tagsByGroupKey[identity.currentKey] = migratedTags
         }
         return next
     }
@@ -55,12 +65,22 @@ struct GroupTagMigration {
         sourceLocator: String?,
         sourceCanonicalRepo: String?
     ) -> GroupTagSourceIdentity {
-        GroupTagSourceIdentity(
+        let normalizedLocator = normalizedGroupKeyMaterial(sourceLocator)
+        let normalizedCanonicalRepo = normalizedGroupKeyMaterial(sourceCanonicalRepo)
+        let normalizedLocatorRepo = ImportRepositoryIdentity.normalizedGitHubRepo(sourceLocator)
+        let normalizedCanonicalRepoAlias = ImportRepositoryIdentity.normalizedGitHubRepo(sourceCanonicalRepo)
+        return GroupTagSourceIdentity(
             currentKey: currentKey,
             legacyKeys: [
                 sourceGroupKey(sourceId),
-                sourceLocator.flatMap(normalizedGroupKeyMaterial).map { "locator:\($0)" },
-                sourceCanonicalRepo.flatMap(normalizedGroupKeyMaterial).map { "repo:\($0)" },
+                normalizedLocator.map { "source:\($0)" },
+                normalizedCanonicalRepo.map { "source:\($0)" },
+                normalizedLocatorRepo.map { "source:\($0)" },
+                normalizedCanonicalRepoAlias.map { "source:\($0)" },
+                normalizedLocator.map { "locator:\($0)" },
+                normalizedCanonicalRepo.map { "repo:\($0)" },
+                normalizedLocatorRepo.map { "repo:\($0)" },
+                normalizedCanonicalRepoAlias.map { "repo:\($0)" },
             ].compactMap { $0 }
         )
     }
@@ -83,5 +103,12 @@ struct GroupTagMigration {
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             .lowercased()
         return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func tagKey(_ tag: GroupTagPreference) -> String {
+        if let tagId = tag.tagId?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !tagId.isEmpty {
+            return "preset:\(tagId)"
+        }
+        return "custom:\(tag.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
     }
 }

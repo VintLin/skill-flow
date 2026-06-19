@@ -17,8 +17,8 @@ final class WorkflowCoverageTests: XCTestCase {
 
     func testDismissToastIgnoresStaleIdentifier() {
         let model = MainViewModel(bridgeClient: BridgeClient())
-        let firstToast = MainViewModel.ToastState(style: .success, message: "First")
-        let secondToast = MainViewModel.ToastState(style: .error, message: "Second")
+        let firstToast = ToastState(style: .success, message: "First")
+        let secondToast = ToastState(style: .error, message: "Second")
 
         model.toast = firstToast
         model.toast = secondToast

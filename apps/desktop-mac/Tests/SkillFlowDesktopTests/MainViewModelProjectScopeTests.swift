@@ -276,6 +276,28 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertTrue(detail?.deploymentFacts.contains(where: { $0.contains(".agents/skills/review") }) == true)
     }
 
+    func testProjectScopedDeploymentRowsUseProjectDraft() async {
+        let query = ProjectScopeQueryStub()
+        let command = ProjectScopeCommandStub()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: command
+        )
+        model.bindRouteState(state)
+
+        await model.bootstrap()
+
+        XCTAssertEqual(model.filteredDeploymentRows.map(\.skill), ["alpha-a"])
+        XCTAssertEqual(model.filteredDeploymentRows.map(\.target), ["Codex"])
+
+        await model.selectProjectScope(.project("repo-a"))
+
+        XCTAssertEqual(model.filteredDeploymentRows.map(\.skill), ["alpha-b"])
+        XCTAssertEqual(model.filteredDeploymentRows.map(\.target), ["Codex"])
+    }
+
     func testGlobalTargetTogglePreservesRecentProjectScopesWhenApplyOmitsProjectState() async {
         let query = ProjectScopeQueryStub()
         let command = ProjectScopeCommandStub()

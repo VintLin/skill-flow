@@ -16,7 +16,7 @@ final class DetailScreenContainerTests: XCTestCase {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -34,14 +34,14 @@ final class DetailScreenContainerTests: XCTestCase {
             enabledSkillCount: 1,
             totalSkillCount: 2,
             enabledTargetCount: 1,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .full,
             enabledTargetLabels: ["Claude Code"],
             sourceFacts: ["2026-03-25T12:00:00Z"],
             deploymentFacts: ["Claude Code -> /Users/vint/.claude"],
             fileTree: [
-                MainViewModel.FileTreeItem(
+                FileTreeItem(
                     id: "root",
                     title: "alpha",
                     path: "/groups/alpha",
@@ -53,19 +53,19 @@ final class DetailScreenContainerTests: XCTestCase {
                 )
             ],
             groupDocuments: [
-                MainViewModel.DocumentDescriptor(
+                DocumentDescriptor(
                     id: "readme",
                     title: "README.md",
                     path: "README.md",
                     metadata: [
-                        MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
+                        MetadataEntry(id: "name", key: "name", value: "AlphaHub")
                     ],
                     renderCacheKey: "readme-cache",
                     externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
                 )
             ],
             targets: [
-                MainViewModel.DetailTarget(
+                DetailTarget(
                     id: "claude-code",
                     label: "Claude Code",
                     shortLabel: "Claude",
@@ -73,7 +73,7 @@ final class DetailScreenContainerTests: XCTestCase {
                 )
             ],
             skills: [
-                MainViewModel.DetailSkill(
+                DetailSkill(
                     id: "alpha-a",
                     title: "browse",
                     summary: "Browse things.",
@@ -131,7 +131,7 @@ final class DetailScreenContainerTests: XCTestCase {
 
         var title = "AlphaHub"
         var groupDocuments = [
-            MainViewModel.DocumentDescriptor(
+            DocumentDescriptor(
                 id: "group:/tmp/README.md",
                 title: "README.md",
                 path: "/tmp/README.md",
@@ -152,7 +152,7 @@ final class DetailScreenContainerTests: XCTestCase {
         let firstViewModel = try XCTUnwrap(container.viewModel)
         title = "AlphaHub v2"
         groupDocuments = [
-            MainViewModel.DocumentDescriptor(
+            DocumentDescriptor(
                 id: "group:/tmp/README.md",
                 title: "Guide.md",
                 path: "/tmp/GUIDE.md",
@@ -171,12 +171,12 @@ final class DetailScreenContainerTests: XCTestCase {
         state.view.currentRoute = .detail(sourceId: "alpha")
 
         var groupDocuments = [
-            MainViewModel.DocumentDescriptor(
+            DocumentDescriptor(
                 id: "group:/tmp/README.md",
                 title: "README.md",
                 path: "/tmp/README.md",
                 metadata: [
-                    MainViewModel.MetadataEntry(id: "m1", key: "name", value: "AlphaHub")
+                    MetadataEntry(id: "m1", key: "name", value: "AlphaHub")
                 ],
                 renderCacheKey: "group:/tmp/README.md:rev-1",
                 externalURL: nil
@@ -192,12 +192,12 @@ final class DetailScreenContainerTests: XCTestCase {
 
         let firstViewModel = try XCTUnwrap(container.viewModel)
         groupDocuments = [
-            MainViewModel.DocumentDescriptor(
+            DocumentDescriptor(
                 id: "group:/tmp/README.md",
                 title: "README.md",
                 path: "/tmp/README.md",
                 metadata: [
-                    MainViewModel.MetadataEntry(id: "m1", key: "name", value: "AlphaHub v2")
+                    MetadataEntry(id: "m1", key: "name", value: "AlphaHub v2")
                 ],
                 renderCacheKey: "group:/tmp/README.md:rev-1",
                 externalURL: nil
@@ -214,7 +214,7 @@ final class DetailScreenContainerTests: XCTestCase {
         state.view.currentRoute = .detail(sourceId: "alpha")
 
         var fileTree = [
-            MainViewModel.FileTreeItem(
+            FileTreeItem(
                 id: "root",
                 title: "alpha",
                 path: "/groups/alpha",
@@ -223,7 +223,7 @@ final class DetailScreenContainerTests: XCTestCase {
                 isSkillDocument: false,
                 skillId: nil,
                 children: [
-                    MainViewModel.FileTreeItem(
+                    FileTreeItem(
                         id: "root/skill",
                         title: "browse",
                         path: "/groups/alpha/skills/browse",
@@ -232,7 +232,7 @@ final class DetailScreenContainerTests: XCTestCase {
                         isSkillDocument: false,
                         skillId: "browse",
                         children: [
-                            MainViewModel.FileTreeItem(
+                            FileTreeItem(
                                 id: "root/skill/doc",
                                 title: "SKILL.md",
                                 path: "/groups/alpha/skills/browse/SKILL.md",
@@ -257,7 +257,7 @@ final class DetailScreenContainerTests: XCTestCase {
 
         let firstViewModel = try XCTUnwrap(container.viewModel)
         fileTree = [
-            MainViewModel.FileTreeItem(
+            FileTreeItem(
                 id: "root",
                 title: "alpha",
                 path: "/groups/alpha",
@@ -266,7 +266,7 @@ final class DetailScreenContainerTests: XCTestCase {
                 isSkillDocument: false,
                 skillId: nil,
                 children: [
-                    MainViewModel.FileTreeItem(
+                    FileTreeItem(
                         id: "root/skill",
                         title: "browse",
                         path: "/groups/alpha/skills/browse",
@@ -275,7 +275,7 @@ final class DetailScreenContainerTests: XCTestCase {
                         isSkillDocument: false,
                         skillId: "browse",
                         children: [
-                            MainViewModel.FileTreeItem(
+                            FileTreeItem(
                                 id: "root/skill/doc-v2",
                                 title: "GUIDE.md",
                                 path: "/groups/alpha/skills/browse/GUIDE.md",
@@ -323,7 +323,7 @@ final class DetailScreenContainerTests: XCTestCase {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
-        var tab = MainViewModel.DocumentTab(
+        var tab = DocumentTab(
             id: "group:/tmp/README.md",
             title: "README.md",
             path: "/tmp/README.md",
@@ -332,7 +332,7 @@ final class DetailScreenContainerTests: XCTestCase {
             renderCacheKey: "group:/tmp/README.md:rev-1",
             externalURL: nil
         )
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: tab.id,
             title: tab.title,
             path: tab.path,
@@ -373,7 +373,7 @@ final class DetailScreenContainerTests: XCTestCase {
             "# Alpha v1"
         )
 
-        tab = MainViewModel.DocumentTab(
+        tab = DocumentTab(
             id: tab.id,
             title: tab.title,
             path: tab.path,
@@ -426,9 +426,9 @@ final class DetailScreenContainerTests: XCTestCase {
         var renderCacheKey = "group:/tmp/README.md:rev-1"
         let container = DetailScreenContainer(state: state) { _ in
             DetailViewModel.Snapshot(
-                detail: MainViewModel.DetailViewData.fixture(
+                detail: DetailViewData.fixture(
                     groupDocuments: [
-                        MainViewModel.DocumentTab(
+                        DocumentTab(
                             id: "group:/tmp/README.md",
                             title: "README.md",
                             path: "/tmp/README.md",
@@ -456,9 +456,9 @@ final class DetailScreenContainerTests: XCTestCase {
         var renderCacheKey = "skill:/tmp/SKILL.md:rev-1"
         let container = DetailScreenContainer(state: state) { _ in
             DetailViewModel.Snapshot(
-                detail: MainViewModel.DetailViewData.fixture(
+                detail: DetailViewData.fixture(
                     skills: [
-                        MainViewModel.DetailSkill(
+                        DetailSkill(
                             id: "alpha-a",
                             title: "browse",
                             summary: "Browse things.",
@@ -469,7 +469,7 @@ final class DetailScreenContainerTests: XCTestCase {
                             folderPath: "/tmp/alpha-a",
                             relativeFolderPath: "alpha-a",
                             documents: [
-                                MainViewModel.DocumentTab(
+                                DocumentTab(
                                     id: "skill:/tmp/SKILL.md",
                                     title: "SKILL.md",
                                     path: "/tmp/SKILL.md",
@@ -502,7 +502,7 @@ final class DetailScreenContainerTests: XCTestCase {
         state.view.currentRoute = .detail(sourceId: "alpha")
 
         var revision = "alpha:rev-1"
-        let oldDocument = MainViewModel.DocumentTab(
+        let oldDocument = DocumentTab(
             id: "doc",
             title: "README.md",
             path: "/tmp/README.md",
@@ -536,7 +536,7 @@ final class DetailScreenContainerTests: XCTestCase {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
 
-        let loaded = MainViewModel.DocumentTab(
+        let loaded = DocumentTab(
             id: "skill:/tmp/SKILL.md",
             title: "SKILL.md",
             path: "/tmp/SKILL.md",
@@ -590,7 +590,7 @@ final class DetailScreenContainerTests: XCTestCase {
             detailSnapshot: { _ in nil },
             fallbackRow: { sourceId in
                 XCTAssertEqual(sourceId, "alpha")
-                return MainViewModel.SourceRow(
+                return SourceRow(
                     id: sourceId,
                     displayName: "AlphaHub",
                     locator: "clawhub/alpha",
@@ -671,10 +671,10 @@ private extension DetailViewModel.Snapshot {
         title: String = "AlphaHub",
         originalDisplayName: String? = nil,
         updatedRelative: String = "Updated 1 day ago",
-        fileTree: [MainViewModel.FileTreeItem] = [],
-        groupDocuments: [MainViewModel.DocumentDescriptor] = [],
-        targets: [MainViewModel.DetailTarget] = [
-            MainViewModel.DetailTarget(
+        fileTree: [FileTreeItem] = [],
+        groupDocuments: [DocumentDescriptor] = [],
+        targets: [DetailTarget] = [
+            DetailTarget(
                 id: "claude-code",
                 label: "Claude Code",
                 shortLabel: "Claude",
@@ -691,7 +691,7 @@ private extension DetailViewModel.Snapshot {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -709,7 +709,7 @@ private extension DetailViewModel.Snapshot {
             enabledSkillCount: 1,
             totalSkillCount: 2,
             enabledTargetCount: targets.filter(\.isEnabled).count,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .partial,
             enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
@@ -729,7 +729,7 @@ private extension DetailViewModel.Snapshot {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -747,7 +747,7 @@ private extension DetailViewModel.Snapshot {
             enabledSkillCount: 1,
             totalSkillCount: 2,
             enabledTargetCount: targets.filter(\.isEnabled).count,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .partial,
             enabledTargetLabels: targets.filter(\.isEnabled).map(\.label),
@@ -775,7 +775,7 @@ private extension DetailViewModel.Snapshot {
             author: "Anthropic",
             originLabel: "ClawHub",
             starCount: 5000,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: 100000,
                 starCount: 5000,
                 githubURL: "https://github.com/anthropics/skills",
@@ -793,7 +793,7 @@ private extension DetailViewModel.Snapshot {
             enabledSkillCount: 1,
             totalSkillCount: 2,
             enabledTargetCount: 1,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .full,
             enabledTargetLabels: ["Claude Code"],
@@ -827,13 +827,13 @@ private extension DetailViewModel.Snapshot {
         XCTAssertEqual(receivedOriginalDisplayName, "anthropic-skills")
     }
 
-private extension MainViewModel.DetailViewData {
+private extension DetailViewData {
     static func fixture(
         sourceId: String = "alpha",
         revision: String? = nil,
         originalDisplayName: String = "AlphaHub",
-        groupDocuments: [MainViewModel.DocumentTab] = [],
-        skills: [MainViewModel.DetailSkill] = []
+        groupDocuments: [DocumentTab] = [],
+        skills: [DetailSkill] = []
     ) -> Self {
         let descriptors = MainViewModel.documentDescriptors(groupDocuments)
         let resolvedRevision = revision ?? MainViewModel.detailRevision(
@@ -844,7 +844,7 @@ private extension MainViewModel.DetailViewData {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -862,7 +862,7 @@ private extension MainViewModel.DetailViewData {
             enabledSkillCount: 1,
             totalSkillCount: max(skills.count, 1),
             enabledTargetCount: 1,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .full,
             enabledTargetLabels: ["Claude Code"],
@@ -871,7 +871,7 @@ private extension MainViewModel.DetailViewData {
             fileTree: [],
             groupDocuments: descriptors,
             targets: [
-                MainViewModel.DetailTarget(
+                DetailTarget(
                     id: "claude-code",
                     label: "Claude Code",
                     shortLabel: "Claude",
@@ -889,7 +889,7 @@ private extension MainViewModel.DetailViewData {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -907,7 +907,7 @@ private extension MainViewModel.DetailViewData {
             enabledSkillCount: 1,
             totalSkillCount: max(skills.count, 1),
             enabledTargetCount: 1,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .full,
             enabledTargetLabels: ["Claude Code"],
@@ -916,7 +916,7 @@ private extension MainViewModel.DetailViewData {
             fileTree: [],
             groupDocuments: groupDocuments,
             targets: [
-                MainViewModel.DetailTarget(
+                DetailTarget(
                     id: "claude-code",
                     label: "Claude Code",
                     shortLabel: "Claude",

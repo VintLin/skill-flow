@@ -205,8 +205,8 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(
             model.homeAgentFilterOptions,
             [
-                MainViewModel.HomeAgentFilterOption(id: "claude-code", label: "Claude Code", enabledGroupCount: 1),
-                MainViewModel.HomeAgentFilterOption(id: "cursor", label: "Cursor", enabledGroupCount: 1),
+                HomeAgentFilterOption(id: "claude-code", label: "Claude Code", enabledGroupCount: 1),
+                HomeAgentFilterOption(id: "cursor", label: "Cursor", enabledGroupCount: 1),
             ]
         )
     }
@@ -225,23 +225,23 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(
             model.homeStatusFilterOptions,
             [
-                MainViewModel.HomeSidebarFilterOption(id: "all", count: 2),
-                MainViewModel.HomeSidebarFilterOption(id: "pinned", count: 1),
+                HomeSidebarFilterOption(id: "all", count: 2),
+                HomeSidebarFilterOption(id: "pinned", count: 1),
             ]
         )
         XCTAssertEqual(
             model.homeSourceTypeFilterOptions,
             [
-                MainViewModel.HomeSidebarFilterOption(id: "all", count: 2),
-                MainViewModel.HomeSidebarFilterOption(id: "local", count: 1),
-                MainViewModel.HomeSidebarFilterOption(id: "remote", count: 1),
-                MainViewModel.HomeSidebarFilterOption(id: "collection", count: 0),
+                HomeSidebarFilterOption(id: "all", count: 2),
+                HomeSidebarFilterOption(id: "local", count: 1),
+                HomeSidebarFilterOption(id: "remote", count: 1),
+                HomeSidebarFilterOption(id: "collection", count: 0),
             ]
         )
     }
 
     func testRemoteHomeSourceWithLocalCheckoutPathDoesNotCountAsLocal() {
-        let card = MainViewModel.GroupCardModel(
+        let card = GroupCardModel(
             id: "remote",
             title: "RemoteHub",
             byline: nil,
@@ -254,7 +254,7 @@ final class MainViewModelSelectionTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(
+            stats: GroupCardStats(
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: "https://github.com/acme/remote-hub",
@@ -264,7 +264,7 @@ final class MainViewModelSelectionTests: XCTestCase {
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
 
         XCTAssertFalse(MainViewModel.isLocalHomeSource(card))
@@ -1744,7 +1744,7 @@ final class MainViewModelSelectionTests: XCTestCase {
     }
 }
 
-private extension Array where Element == MainViewModel.FileTreeItem {
+private extension Array where Element == FileTreeItem {
     func containsSkillRoot(skillId: String) -> Bool {
         for item in self {
             if item.skillId == skillId, item.isSkillRoot {

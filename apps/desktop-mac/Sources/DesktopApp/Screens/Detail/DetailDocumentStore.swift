@@ -4,7 +4,7 @@ import Foundation
 final class DetailDocumentStore {
     struct LoadedDocument: Equatable, Sendable {
         let id: String
-        let metadata: [MainViewModel.MetadataEntry]
+        let metadata: [MetadataEntry]
         let content: String
         let renderCacheKey: String
     }
@@ -26,7 +26,7 @@ final class DetailDocumentStore {
         self.fileReader = fileReader
     }
 
-    func document(for descriptor: MainViewModel.DocumentDescriptor) async throws -> LoadedDocument {
+    func document(for descriptor: DocumentDescriptor) async throws -> LoadedDocument {
         if let cached = cache[descriptor.renderCacheKey] {
             return cached
         }
@@ -106,7 +106,7 @@ final class DetailDocumentStore {
 
     nonisolated private static func loadDocument(
         fileReader: @escaping FileReader,
-        descriptor: MainViewModel.DocumentDescriptor
+        descriptor: DocumentDescriptor
     ) async throws -> LoadedDocument {
         try await withThrowingTaskGroup(of: LoadedDocument.self) { group in
             group.addTask(priority: .userInitiated) {
@@ -133,7 +133,7 @@ final class DetailDocumentStore {
 
     nonisolated private static func readRawDocument(
         fileReader: @escaping FileReader,
-        descriptor: MainViewModel.DocumentDescriptor
+        descriptor: DocumentDescriptor
     ) throws -> String {
         do {
             return try fileReader(descriptor.path)
@@ -143,10 +143,19 @@ final class DetailDocumentStore {
                 let title = descriptor.title
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 return title == "SKILL.md"
-                    ? MainViewModel.localizedWarmup("detail.document.skill_unavailable")
+                    ? Self.localizedWarmup("detail.document.skill_unavailable")
                     : "\(title.isEmpty ? "Document" : title) unavailable."
             }
             throw error
         }
+    }
+
+    nonisolated private static func localizedWarmup(_ key: String) -> String {
+        let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey)
+        if rawValue == nil, ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            return PresentationText.localized(key).resolve(locale: DesktopLanguage.en.locale)
+        }
+        return PresentationText.localized(key)
+            .resolve(locale: DesktopLanguage(storageValue: rawValue ?? DesktopLanguage.system.rawValue).locale)
     }
 }

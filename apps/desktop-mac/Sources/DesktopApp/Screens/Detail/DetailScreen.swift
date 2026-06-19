@@ -205,7 +205,7 @@ struct DetailScreen: View {
     private func detailSidebar(
         groupId: String,
         detail: DetailViewModel?,
-        fallbackRow: MainViewModel.SourceRow?
+        fallbackRow: SourceRow?
     ) -> some View {
         let skills = detail?.skills ?? []
         let selectedItemId = DetailRouteBootstrap.selectedSidebarItemId(state: screenState, sourceId: groupId)
@@ -248,7 +248,7 @@ struct DetailScreen: View {
     private func detailMain(
         groupId: String,
         detail: DetailViewModel?,
-        fallbackRow: MainViewModel.SourceRow?
+        fallbackRow: SourceRow?
     ) -> some View {
         let selectedSkill = selectedDetailSkill(for: groupId, detail: detail)
         let showingGroupOverview = isShowingGroupOverview(groupId)
@@ -305,7 +305,7 @@ struct DetailScreen: View {
     private func detailGroupOverview(
         groupId: String,
         detail: DetailViewModel?,
-        fallbackRow _: MainViewModel.SourceRow?
+        fallbackRow _: SourceRow?
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             detailTagRail(groupId: groupId)
@@ -531,7 +531,7 @@ struct DetailScreen: View {
         return original
     }
 
-    private func detailHeaderMetadataRow(stats: MainViewModel.GroupCardStats, skillCount: Int?) -> some View {
+    private func detailHeaderMetadataRow(stats: GroupCardStats, skillCount: Int?) -> some View {
         HStack(spacing: 10) {
             if let skillCount {
                 detailStatItem(icon: .skills, text: formattedCount(skillCount))
@@ -569,7 +569,7 @@ struct DetailScreen: View {
         detailInfoRow(version: version, documentContent: nil, fontSize: detailHeaderMetaSize)
     }
 
-    private var emptyStats: MainViewModel.GroupCardStats {
+    private var emptyStats: GroupCardStats {
         .init(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil)
     }
 
@@ -591,7 +591,7 @@ struct DetailScreen: View {
     private func detailGroupListRow(
         groupId: String,
         detail: DetailViewModel?,
-        fallbackRow: MainViewModel.SourceRow?
+        fallbackRow: SourceRow?
     ) -> some View {
         let isSelected = isShowingGroupOverview(groupId)
         return HStack(spacing: 10) {
@@ -1351,7 +1351,7 @@ struct DetailScreen: View {
         return widths[index % widths.count]
     }
 
-    private func detailFallbackTitle(sourceId: String, fallbackRow: MainViewModel.SourceRow?) -> String {
+    private func detailFallbackTitle(sourceId: String, fallbackRow: SourceRow?) -> String {
         guard let rawLocator = fallbackRow?.locator else {
             return sourceId
         }
@@ -1662,7 +1662,7 @@ private enum DetailHeaderStatIcon {
     }
 }
 
-private extension Array where Element == MainViewModel.FileTreeItem {
+private extension Array where Element == FileTreeItem {
     func skillRootItemId(for skillId: String) -> String? {
         for item in self {
             if item.skillId == skillId, item.isSkillRoot {

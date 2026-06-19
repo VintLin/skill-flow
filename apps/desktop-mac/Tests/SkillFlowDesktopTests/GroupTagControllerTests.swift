@@ -571,6 +571,36 @@ final class GroupTagControllerTests: XCTestCase {
         XCTAssertNil(state.groupTags.tagCollection.tagsByGroupKey["locator:https://github.com/anthropics/skills.git"])
     }
 
+    func testLegacySourceLocatorTagsMigrateToStableRepoKeyAfterAppUpdate() {
+        let suiteName = #function
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let state = DesktopAppState()
+        state.groupTags.tagCollection = GroupTagCollection(
+            tagsByGroupKey: [
+                "source:https://github.com/anthropics/skills.git": [
+                    GroupTagPreference(title: "设计", accentRawValue: DesktopAccentColor.pink.rawValue)
+                ],
+                "source:anthropics/skills": [
+                    GroupTagPreference(title: "研究", accentRawValue: DesktopAccentColor.yellow.rawValue)
+                ]
+            ]
+        )
+        DesktopGroupTagStore(userDefaults: defaults).saveTagCollection(state.groupTags.tagCollection)
+        let controller = makeController(
+            state: state,
+            userDefaults: defaults,
+            sourceCanonicalRepo: { _ in "Anthropics/Skills" },
+            sourceLocator: { sourceId in
+                sourceId == "alpha" ? "https://github.com/anthropics/skills.git" : nil
+            }
+        )
+
+        XCTAssertEqual(controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "zh-Hans")).map(\.title), ["设计", "研究"])
+        XCTAssertEqual(state.groupTags.tagCollection.tagsByGroupKey["repo:anthropics/skills"]?.map(\.title), ["设计", "研究"])
+        XCTAssertNil(state.groupTags.tagCollection.tagsByGroupKey["source:https://github.com/anthropics/skills.git"])
+    }
+
     func testAddedTagFollowsGitHubRepoAcrossSourceIdAndLocatorShapeChanges() {
         let suiteName = #function
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -735,6 +765,32 @@ final class GroupTagControllerTests: XCTestCase {
         XCTAssertEqual(state.groupTags.tagCollection.orderedTagKeys, ["custom:研究", "custom:设计"])
     }
 
+    func testCollectionResolvedTagsMergeMemberTagsInOrderAndLimitToMaximum() {
+        let state = DesktopAppState()
+        state.groupTags.tagCollection.tagsByGroupKey = [
+            "source:alpha": [
+                GroupTagPreference(title: "设计", accentRawValue: DesktopAccentColor.pink.rawValue),
+                GroupTagPreference(title: "研究", accentRawValue: DesktopAccentColor.yellow.rawValue),
+                GroupTagPreference(title: "增长", accentRawValue: DesktopAccentColor.orange.rawValue)
+            ],
+            "source:beta": [
+                GroupTagPreference(title: "研究", accentRawValue: DesktopAccentColor.green.rawValue),
+                GroupTagPreference(title: "效率", accentRawValue: DesktopAccentColor.blue.rawValue)
+            ]
+        ]
+        let controller = makeController(
+            state: state,
+            collectionMemberSourceIds: { sourceId in
+                sourceId == "collection-team" ? ["alpha", "beta"] : []
+            }
+        )
+
+        let tags = controller.resolvedTags(forSourceId: "collection-team", locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(tags.map(\.title), ["设计", "研究", "增长"])
+        XCTAssertNil(state.groupTags.tagCollection.tagsByGroupKey["source:collection-team"])
+    }
+
     func testReorderHomeTagsMovesSourceBeforeTargetAndPersists() {
         let suiteName = #function
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -757,7 +813,8 @@ final class GroupTagControllerTests: XCTestCase {
         recommendations: [ImportRecommendationEntry] = [],
         userDefaults: UserDefaults = .standard,
         sourceCanonicalRepo: @escaping (String) -> String? = { _ in nil },
-        sourceLocator: @escaping (String) -> String? = { _ in nil }
+        sourceLocator: @escaping (String) -> String? = { _ in nil },
+        collectionMemberSourceIds: @escaping (String) -> [String] = { _ in [] }
     ) -> GroupTagController {
         GroupTagController(
             state: state,
@@ -765,6 +822,7 @@ final class GroupTagControllerTests: XCTestCase {
             recommendationsProvider: { recommendations },
             sourceCanonicalRepo: sourceCanonicalRepo,
             sourceLocator: sourceLocator,
+            collectionMemberSourceIds: collectionMemberSourceIds,
             randomAccent: { .blue }
         )
     }

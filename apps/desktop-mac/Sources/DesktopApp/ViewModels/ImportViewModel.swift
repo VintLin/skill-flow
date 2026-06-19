@@ -80,7 +80,7 @@ struct ImportViewModel: Equatable {
         let provider: String
         let localValidationStatus: String?
         let selectedLocalChoiceId: String?
-        let localChoices: [MainViewModel.LocalImportChoice]
+        let localChoices: [LocalImportChoice]
         let requiresLocalVariantSelection: Bool
         let needsSkillDetails: Bool
 
@@ -106,7 +106,7 @@ struct ImportViewModel: Equatable {
             provider: String = "skills",
             localValidationStatus: String? = nil,
             selectedLocalChoiceId: String? = nil,
-            localChoices: [MainViewModel.LocalImportChoice] = [],
+            localChoices: [LocalImportChoice] = [],
             requiresLocalVariantSelection: Bool = false,
             needsSkillDetails: Bool = false
         ) {
@@ -140,7 +140,7 @@ struct ImportViewModel: Equatable {
     let content: [Card]
 
     init(
-        items: [MainViewModel.ImportGroupItem],
+        items: [ImportGroupItem],
         locale: Locale,
         fallbackTargetIds: [String] = [],
         submittedQuery: String = "",
@@ -158,7 +158,7 @@ struct ImportViewModel: Equatable {
     }
 
     static func card(
-        from item: MainViewModel.ImportGroupItem,
+        from item: ImportGroupItem,
         locale: Locale,
         fallbackTargetIds: [String] = [],
         submittedQuery: String = ""
@@ -298,7 +298,7 @@ struct ImportViewModel: Equatable {
             .lowercased()
     }
 
-    private static func stats(for item: MainViewModel.ImportGroupItem) -> Stats {
+    private static func stats(for item: ImportGroupItem) -> Stats {
         Stats(
             skillCount: item.snapshot?.skillCount ?? item.skillCount,
             downloadCount: item.snapshot?.totalInstalls ?? item.totalInstalls,
@@ -307,7 +307,7 @@ struct ImportViewModel: Equatable {
         )
     }
 
-    private static func shouldShowSkillLoadingState(for item: MainViewModel.ImportGroupItem) -> Bool {
+    private static func shouldShowSkillLoadingState(for item: ImportGroupItem) -> Bool {
         if !resolvedBaseSkills(for: item).isEmpty {
             return false
         }
@@ -322,13 +322,13 @@ struct ImportViewModel: Equatable {
         }
     }
 
-    private static func resolvedBaseSkills(for item: MainViewModel.ImportGroupItem) -> [MainViewModel.ImportGroupSkill] {
+    private static func resolvedBaseSkills(for item: ImportGroupItem) -> [ImportGroupSkill] {
         if !item.skills.isEmpty {
             return item.skills
         }
 
         return item.snapshot?.skills.map { skill in
-            MainViewModel.ImportGroupSkill(
+            ImportGroupSkill(
                 id: skill.skillId,
                 title: skill.title,
                 summary: skill.summary,
@@ -338,7 +338,7 @@ struct ImportViewModel: Equatable {
         } ?? []
     }
 
-    private static func needsSkillDetails(for item: MainViewModel.ImportGroupItem) -> Bool {
+    private static func needsSkillDetails(for item: ImportGroupItem) -> Bool {
         guard item.provider != "local" else {
             return false
         }
@@ -349,7 +349,7 @@ struct ImportViewModel: Equatable {
     }
 
     private static func resolvedSkills(
-        for item: MainViewModel.ImportGroupItem,
+        for item: ImportGroupItem,
         submittedQuery: String
     ) -> [Skill] {
         let baseSkills = resolvedBaseSkills(for: item)
@@ -400,7 +400,7 @@ struct ImportViewModel: Equatable {
     }
 
     private static func resolvedTargets(
-        for item: MainViewModel.ImportGroupItem,
+        for item: ImportGroupItem,
         fallbackTargetIds: [String]
     ) -> [ResolvedTarget] {
         let sourceTargetIds = localSourceTargetIds(for: item)
@@ -423,7 +423,7 @@ struct ImportViewModel: Equatable {
         }
     }
 
-    private static func localSourceTargetIds(for item: MainViewModel.ImportGroupItem) -> [String] {
+    private static func localSourceTargetIds(for item: ImportGroupItem) -> [String] {
         var targetIds: [String] = []
 
         for detectedSkill in item.localImport?.detectedSkills ?? [] {
@@ -438,7 +438,7 @@ struct ImportViewModel: Equatable {
         return targetIds
     }
 
-    private static func summary(for item: MainViewModel.ImportGroupItem, locale: Locale) -> String {
+    private static func summary(for item: ImportGroupItem, locale: Locale) -> String {
         if !item.summary.isEmpty {
             return item.summary
         }
@@ -466,7 +466,7 @@ struct ImportViewModel: Equatable {
         }
     }
 
-    private static func subtitle(for item: MainViewModel.ImportGroupItem, locale: Locale) -> String {
+    private static func subtitle(for item: ImportGroupItem, locale: Locale) -> String {
         if item.provider == "local" || item.localImport != nil {
             return localized("import.card.subtitle.local_scan", locale: locale)
         }
@@ -495,7 +495,7 @@ struct ImportViewModel: Equatable {
         return localized("import.card.subtitle.recommended", locale: locale)
     }
 
-    private static func headerMetaLine(for item: MainViewModel.ImportGroupItem, locale: Locale) -> String? {
+    private static func headerMetaLine(for item: ImportGroupItem, locale: Locale) -> String? {
         guard item.provider == "local" || item.localImport != nil else {
             return nil
         }

@@ -26,7 +26,6 @@ enum AgentDisplayCatalog {
         "cline",
         "amp",
         "kiro",
-        "zcode",
     ]
 
     private static let labelsByTargetId: [String: String] = [
@@ -222,11 +221,5 @@ enum AgentDisplayCatalog {
             return String(tokens.prefix(2).compactMap { $0.first }).uppercased()
         }
         return String(name.prefix(2)).uppercased()
-    }
-}
-
-private extension String {
-    var nonEmpty: String? {
-        isEmpty ? nil : self
     }
 }

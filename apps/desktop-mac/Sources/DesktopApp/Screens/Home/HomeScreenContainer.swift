@@ -45,7 +45,7 @@ final class HomeScreenContainer {
         observeMainViewModelState()
     }
 
-    func visibleGroupCards(locale: Locale) -> [MainViewModel.GroupCardModel] {
+    func visibleGroupCards(locale: Locale) -> [GroupCardModel] {
         return mainViewModel.filteredHomeGroupCards(locale: locale).filter { card in
             groupTagController.matchesHomeFilter(
                 sourceId: card.id,
@@ -60,9 +60,9 @@ final class HomeScreenContainer {
     }
 
     func visibleGroupCards(
-        from cards: [MainViewModel.GroupCardModel],
+        from cards: [GroupCardModel],
         snapshot: GroupTagController.HomeSnapshot
-    ) -> [MainViewModel.GroupCardModel] {
+    ) -> [GroupCardModel] {
         let filtered = cards.filter { card in
             snapshot.contains(sourceId: card.id)
                 && mainViewModel.matchesHomeSidebarFilters(card)
@@ -75,10 +75,10 @@ final class HomeScreenContainer {
     }
 
     static func sortedHomeGroupCards(
-        _ cards: [MainViewModel.GroupCardModel],
+        _ cards: [GroupCardModel],
         snapshot: GroupTagController.HomeSnapshot,
         pinnedSourceIds: [String]
-    ) -> [MainViewModel.GroupCardModel] {
+    ) -> [GroupCardModel] {
         cards.sorted { lhs, rhs in
             let leftPin = pinRank(for: lhs.id, pinnedSourceIds: pinnedSourceIds)
             let rightPin = pinRank(for: rhs.id, pinnedSourceIds: pinnedSourceIds)
@@ -126,7 +126,7 @@ final class HomeScreenContainer {
         )
     }
 
-    func homeAgentFilterOptions() -> [MainViewModel.HomeAgentFilterOption] {
+    func homeAgentFilterOptions() -> [HomeAgentFilterOption] {
         mainViewModel.homeAgentFilterOptions
     }
 
@@ -138,7 +138,7 @@ final class HomeScreenContainer {
         mainViewModel.setSelectedHomeAgentFilter(targetId)
     }
 
-    func homeStatusFilterOptions() -> [MainViewModel.HomeSidebarFilterOption] {
+    func homeStatusFilterOptions() -> [HomeSidebarFilterOption] {
         mainViewModel.homeStatusFilterOptions
     }
 
@@ -150,7 +150,7 @@ final class HomeScreenContainer {
         mainViewModel.setSelectedHomeStatusFilter(filterId)
     }
 
-    func homeSourceTypeFilterOptions() -> [MainViewModel.HomeSidebarFilterOption] {
+    func homeSourceTypeFilterOptions() -> [HomeSidebarFilterOption] {
         mainViewModel.homeSourceTypeFilterOptions
     }
 

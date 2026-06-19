@@ -2,6 +2,23 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.6 - 2026-06-19
+
+### Added
+
+- Added ZCode as a desktop deployment target so Skill groups can be deployed into ZCode's local skill directory.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.5` to `1.4.6`.
+- Changed macOS desktop state management so home, import, detail, collection, and source operations share the split view-model state paths without parallel route or import state.
+
+### Fixed
+
+- Fixed macOS desktop group tags after app updates so saved tags migrate from legacy source, locator, and repository keys into the stable tag store instead of disappearing from installed Skill groups.
+- Fixed combined Skill group cards so their visible tags are derived from member groups, merged in order, de-duplicated, and capped at the normal tag limit.
+- Fixed macOS import installed-state refresh, collection display names, detail document caching, renamed group title stability, project-scoped deployment rows, and recently-updated indicators after source refreshes.
+
 ## v1.4.5 - 2026-06-15
 
 ### Changed

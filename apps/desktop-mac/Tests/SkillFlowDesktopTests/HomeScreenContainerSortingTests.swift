@@ -57,8 +57,8 @@ final class HomeScreenContainerSortingTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.id), ["she", "shu", "zi"])
     }
 
-    private func card(id: String, title: String, isPinned: Bool) -> MainViewModel.GroupCardModel {
-        MainViewModel.GroupCardModel(
+    private func card(id: String, title: String, isPinned: Bool) -> GroupCardModel {
+        GroupCardModel(
             id: id,
             title: title,
             byline: nil,
@@ -71,7 +71,7 @@ final class HomeScreenContainerSortingTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(
+            stats: GroupCardStats(
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: nil,
@@ -81,7 +81,7 @@ final class HomeScreenContainerSortingTests: XCTestCase {
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
     }
 }

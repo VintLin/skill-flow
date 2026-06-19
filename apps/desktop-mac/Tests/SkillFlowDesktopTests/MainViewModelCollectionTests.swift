@@ -57,15 +57,15 @@ final class MainViewModelCollectionTests: XCTestCase {
         XCTAssertEqual(
             model.collectionSourceOptions,
             [
-                MainViewModel.CollectionSourceOption(id: "alpha", title: "Alpha", sourceSubtitle: "@github · Alpha", skillCount: 3, isCollection: false),
-                MainViewModel.CollectionSourceOption(id: "beta", title: "Beta", sourceSubtitle: "组合 · Beta", skillCount: 1, isCollection: true),
-                MainViewModel.CollectionSourceOption(id: "gamma", title: "Gamma", sourceSubtitle: "本地 · Gamma", skillCount: 1, isCollection: false),
+                CollectionSourceOption(id: "alpha", title: "Alpha", sourceSubtitle: "@github · Alpha", skillCount: 3, isCollection: false),
+                CollectionSourceOption(id: "beta", title: "Beta", sourceSubtitle: "组合 · Beta", skillCount: 1, isCollection: true),
+                CollectionSourceOption(id: "gamma", title: "Gamma", sourceSubtitle: "本地 · Gamma", skillCount: 1, isCollection: false),
             ]
         )
         XCTAssertEqual(
             model.collectionSkillOptions(for: "alpha"),
             [
-                MainViewModel.CollectionSkillOption(
+                CollectionSkillOption(
                     id: "alpha:alpha-a",
                     sourceId: "alpha",
                     sourceTitle: "Alpha",
@@ -74,7 +74,7 @@ final class MainViewModelCollectionTests: XCTestCase {
                     title: "Browse",
                     isEnabled: true
                 ),
-                MainViewModel.CollectionSkillOption(
+                CollectionSkillOption(
                     id: "alpha:alpha-c",
                     sourceId: "alpha",
                     sourceTitle: "Alpha",
@@ -83,7 +83,7 @@ final class MainViewModelCollectionTests: XCTestCase {
                     title: "Audit",
                     isEnabled: false
                 ),
-                MainViewModel.CollectionSkillOption(
+                CollectionSkillOption(
                     id: "alpha:alpha-b",
                     sourceId: "alpha",
                     sourceTitle: "Alpha",
@@ -303,7 +303,7 @@ final class MainViewModelCollectionTests: XCTestCase {
         let homeSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
         let sheetSource = try sourceSlice(in: homeSource, from: "private struct GroupEditorSheet", to: "private struct RenameSourceDialog")
 
-        XCTAssertTrue(homeSource.contains("@State private var groupEditorOptions: MainViewModel.CollectionEditorOptions?"))
+        XCTAssertTrue(homeSource.contains("@State private var groupEditorOptions: CollectionEditorOptions?"))
         XCTAssertTrue(homeSource.contains("@State private var groupEditorOptionsTask: Task<Void, Never>?"))
         XCTAssertTrue(homeSource.contains("prepareGroupEditorOptions()"))
         XCTAssertTrue(homeSource.contains("await Task.yield()"))
@@ -363,8 +363,8 @@ final class MainViewModelCollectionTests: XCTestCase {
     private func groupCard(
         sourceKind: String,
         sourceLocator: String = "https://example.com/alpha"
-    ) -> MainViewModel.GroupCardModel {
-        MainViewModel.GroupCardModel(
+    ) -> GroupCardModel {
+        GroupCardModel(
             id: "alpha",
             title: "Alpha",
             byline: nil,
@@ -377,7 +377,7 @@ final class MainViewModelCollectionTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(
+            stats: GroupCardStats(
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: nil,
@@ -387,7 +387,7 @@ final class MainViewModelCollectionTests: XCTestCase {
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
     }
 }

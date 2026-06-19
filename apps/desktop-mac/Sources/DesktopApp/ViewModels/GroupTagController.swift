@@ -117,6 +117,7 @@ final class GroupTagController {
     private let recommendationsProvider: () -> [ImportRecommendationEntry]
     private let sourceCanonicalRepo: (String) -> String?
     private let sourceLocator: (String) -> String?
+    private let collectionMemberSourceIds: (String) -> [String]
     private let randomAccent: () -> DesktopAccentColor
 
     init(
@@ -125,6 +126,7 @@ final class GroupTagController {
         recommendationsProvider: @escaping () -> [ImportRecommendationEntry] = { ImportRecommendationLoader.load() },
         sourceCanonicalRepo: @escaping (String) -> String?,
         sourceLocator: @escaping (String) -> String?,
+        collectionMemberSourceIds: @escaping (String) -> [String] = { _ in [] },
         randomAccent: @escaping () -> DesktopAccentColor = { DesktopAccentColor.allCases.randomElement() ?? .blue }
     ) {
         self.state = state
@@ -132,12 +134,12 @@ final class GroupTagController {
         self.recommendationsProvider = recommendationsProvider
         self.sourceCanonicalRepo = sourceCanonicalRepo
         self.sourceLocator = sourceLocator
+        self.collectionMemberSourceIds = collectionMemberSourceIds
         self.randomAccent = randomAccent
     }
 
     func resolvedTags(forSourceId sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
-        migrateTagsIfNeeded(forSourceIds: [sourceId])
-        return savedTagPreferences(forSourceId: sourceId, locale: locale)
+        resolvedTagPreferences(forSourceId: sourceId, locale: locale, visitedSourceIds: [])
             .prefix(Self.maximumTagCount)
             .map { preference in
                 GroupTagDisplayItem(
@@ -146,6 +148,43 @@ final class GroupTagController {
                     accent: preference.accent
                 )
             }
+    }
+
+    private func resolvedTagPreferences(
+        forSourceId sourceId: String,
+        locale: Locale,
+        visitedSourceIds: Set<String>
+    ) -> [GroupTagPreference] {
+        guard !visitedSourceIds.contains(sourceId) else {
+            return []
+        }
+
+        let memberSourceIds = normalizedSourceIds(collectionMemberSourceIds(sourceId))
+        guard !memberSourceIds.isEmpty else {
+            migrateTagsIfNeeded(forSourceIds: [sourceId])
+            return savedTagPreferences(forSourceId: sourceId, locale: locale)
+        }
+
+        migrateTagsIfNeeded(forSourceIds: memberSourceIds)
+        var merged: [GroupTagPreference] = []
+        var seenTagKeys = Set<String>()
+        var nextVisited = visitedSourceIds
+        nextVisited.insert(sourceId)
+        for memberSourceId in memberSourceIds {
+            for preference in resolvedTagPreferences(
+                forSourceId: memberSourceId,
+                locale: locale,
+                visitedSourceIds: nextVisited
+            ) {
+                if seenTagKeys.insert(Self.tagKey(for: preference)).inserted {
+                    merged.append(preference)
+                }
+                if merged.count == Self.maximumTagCount {
+                    return merged
+                }
+            }
+        }
+        return merged
     }
 
     func homeSnapshot(sourceIds: [String], locale: Locale) -> HomeSnapshot {
@@ -348,6 +387,19 @@ final class GroupTagController {
         }
 
         return "source:\(Self.normalizedKey(sourceId))"
+    }
+
+    private func normalizedSourceIds(_ sourceIds: [String]) -> [String] {
+        var normalized: [String] = []
+        var seen = Set<String>()
+        for sourceId in sourceIds {
+            let trimmed = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed).inserted else {
+                continue
+            }
+            normalized.append(trimmed)
+        }
+        return normalized
     }
 
     private func migrateTagsIfNeeded(forSourceIds sourceIds: [String]) {

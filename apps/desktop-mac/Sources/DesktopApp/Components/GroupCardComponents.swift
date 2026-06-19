@@ -340,7 +340,7 @@ struct SharedGroupCard: View {
     }
 
     @Environment(\.locale) private var locale
-    let card: MainViewModel.GroupCardModel
+    let card: GroupCardModel
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
     let displayMode: GroupCardDisplayMode
@@ -382,7 +382,7 @@ struct SharedGroupCard: View {
     private let actionMenuWidth: CGFloat = 176
 
     init(
-        card: MainViewModel.GroupCardModel,
+        card: GroupCardModel,
         theme: DesktopThemeMode,
         accent: DesktopAccentColor,
         displayMode: GroupCardDisplayMode,
@@ -1502,7 +1502,7 @@ extension SharedGroupCard {
         return nil
     }
 
-    static func visibleHeaderStatKinds(stats: MainViewModel.GroupCardStats) -> [HeaderStatKind] {
+    static func visibleHeaderStatKinds(stats: GroupCardStats) -> [HeaderStatKind] {
         var kinds: [HeaderStatKind] = []
         if stats.downloadCount != nil {
             kinds.append(.downloads)
@@ -1524,7 +1524,7 @@ extension SharedGroupCard {
     }
 
     static func reservesHeaderStatsRow(
-        card: MainViewModel.GroupCardModel,
+        card: GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
         return displayMode.showsMetaLine && (
@@ -1535,7 +1535,7 @@ extension SharedGroupCard {
     }
 
     static func showsHeaderDivider(
-        card: MainViewModel.GroupCardModel,
+        card: GroupCardModel,
         displayMode: GroupCardDisplayMode
     ) -> Bool {
         displayMode.showsHeaderDivider && reservesHeaderStatsRow(card: card, displayMode: displayMode)
@@ -1574,7 +1574,7 @@ extension SharedGroupCard {
         return !normalizedOriginal.isEmpty && normalizedTitle != normalizedOriginal
     }
 
-    static func originalNameHelpText(card: MainViewModel.GroupCardModel, locale: Locale) -> String? {
+    static func originalNameHelpText(card: GroupCardModel, locale: Locale) -> String? {
         guard showsOriginalNameIndicator(title: card.title, originalDisplayName: card.originalDisplayName) else {
             return nil
         }

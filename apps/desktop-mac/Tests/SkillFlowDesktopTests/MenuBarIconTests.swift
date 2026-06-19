@@ -120,7 +120,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testImportCardsReserveMetadataRowAndDividerWhileLoading() {
-        let loadingCard = MainViewModel.GroupCardModel(
+        let loadingCard = GroupCardModel(
             id: "import-loading",
             title: "Loading",
             byline: "by @owner",
@@ -133,12 +133,12 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: true,
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
 
         XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: loadingCard, displayMode: .importSearch))
@@ -146,7 +146,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testCompactHomeCardsHideMetadataRowAndHeaderDivider() {
-        let card = MainViewModel.GroupCardModel(
+        let card = GroupCardModel(
             id: "compact-home",
             title: "Compact Home",
             byline: "by @owner",
@@ -159,12 +159,12 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(downloadCount: 10, starCount: 12, githubURL: nil, localPath: nil),
+            stats: GroupCardStats(downloadCount: 10, starCount: 12, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
 
         XCTAssertFalse(SharedGroupCard.reservesHeaderStatsRow(card: card, displayMode: .homeCompact))
@@ -173,7 +173,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testHomeCardsReserveMetadataRowAndDividerEvenWhenStatsAreMissing() {
-        let localCard = MainViewModel.GroupCardModel(
+        let localCard = GroupCardModel(
             id: "local",
             title: "Local Group",
             byline: "by @owner",
@@ -186,12 +186,12 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: "/tmp/local"),
+            stats: GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: "/tmp/local"),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
 
         XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: localCard, displayMode: .homeComfortable))
@@ -206,7 +206,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testImportLocalScanCardUsesReservedMetadataRowForSourceSummary() {
-        let localScanCard = MainViewModel.GroupCardModel(
+        let localScanCard = GroupCardModel(
             id: "local-scan",
             title: "Local Scan",
             byline: "本地扫描",
@@ -220,12 +220,12 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
 
         XCTAssertTrue(SharedGroupCard.reservesHeaderStatsRow(card: localScanCard, displayMode: .importSearch))
@@ -233,7 +233,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testMenuComfortableCardsOnlyReserveMetadataRowWhenSourceMetadataExists() {
-        let menuCard = MainViewModel.GroupCardModel(
+        let menuCard = GroupCardModel(
             id: "menu",
             title: "Menu Group",
             byline: "by @owner",
@@ -246,12 +246,12 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
+            stats: GroupCardStats(downloadCount: nil, starCount: nil, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
 
         XCTAssertTrue(GroupCardDisplayMode.menuComfortable.showsMetaLine)
@@ -261,7 +261,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testMenuCompactCardsHideMetadataRowAndHeaderDivider() {
-        let menuCard = MainViewModel.GroupCardModel(
+        let menuCard = GroupCardModel(
             id: "menu-compact",
             title: "Menu Group",
             byline: "by @owner",
@@ -274,12 +274,12 @@ final class MenuBarIconTests: XCTestCase {
             errorCount: 0,
             skillSelection: .empty,
             targetSelection: .empty,
-            stats: MainViewModel.GroupCardStats(downloadCount: 1, starCount: 2, githubURL: nil, localPath: nil),
+            stats: GroupCardStats(downloadCount: 1, starCount: 2, githubURL: nil, localPath: nil),
             skillsLoading: false,
             targetsLoading: false,
             skills: [],
             targets: [],
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
 
         XCTAssertFalse(GroupCardDisplayMode.menuCompact.showsMetaLine)
@@ -289,7 +289,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testGroupCardHeaderStatsExcludeSkillCount() {
-        let stats = MainViewModel.GroupCardStats(
+        let stats = GroupCardStats(
             downloadCount: 12,
             starCount: 34,
             githubURL: "https://github.com/example/repo",
@@ -304,10 +304,10 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testHealthStatusUsesStableMenuBarIcons() {
-        XCTAssertEqual(MainViewModel.HealthStatus.healthy.menuIconSystemName, "checkmark.circle")
-        XCTAssertEqual(MainViewModel.HealthStatus.warnings.menuIconSystemName, "exclamationmark.triangle")
-        XCTAssertEqual(MainViewModel.HealthStatus.error.menuIconSystemName, "xmark.circle")
-        XCTAssertEqual(MainViewModel.HealthStatus.unknown.menuIconSystemName, "circle")
+        XCTAssertEqual(HealthStatus.healthy.menuIconSystemName, "checkmark.circle")
+        XCTAssertEqual(HealthStatus.warnings.menuIconSystemName, "exclamationmark.triangle")
+        XCTAssertEqual(HealthStatus.error.menuIconSystemName, "xmark.circle")
+        XCTAssertEqual(HealthStatus.unknown.menuIconSystemName, "circle")
     }
 
     func testGroupCardTitleSizeDoesNotShrinkInMenuScale() {
@@ -420,7 +420,7 @@ final class MenuBarIconTests: XCTestCase {
 
 
     func testOriginalNameHelpTextReturnsNilWhenNamesMatch() {
-        let card = MainViewModel.GroupCardModel(
+        let card = GroupCardModel(
             id: "test",
             title: "anthropic-skills",
             originalDisplayName: "anthropic-skills",
@@ -446,7 +446,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testOriginalNameHelpTextReturnsPlainOriginalNameWhenNamesDiffer() {
-        let card = MainViewModel.GroupCardModel(
+        let card = GroupCardModel(
             id: "test",
             title: "Research Tools",
             originalDisplayName: "anthropic-skills",
@@ -627,7 +627,7 @@ final class MenuBarIconTests: XCTestCase {
     }
 
     func testOriginalNameHelpTextReturnsNilWhenNilOriginalDisplayName() {
-        let card = MainViewModel.GroupCardModel(
+        let card = GroupCardModel(
             id: "test",
             title: "Research Tools",
             originalDisplayName: nil,
@@ -678,7 +678,7 @@ final class MenuBarIconTests: XCTestCase {
 
     @MainActor
     private func renderSnapshot(
-        for card: MainViewModel.GroupCardModel,
+        for card: GroupCardModel,
         width: CGFloat,
         accent: DesktopAccentColor
     ) -> (size: CGSize, bitmap: NSBitmapImageRep) {
@@ -738,8 +738,8 @@ final class MenuBarIconTests: XCTestCase {
         warningCount: Int = 0,
         errorCount: Int = 0,
         showsRecentlyUpdatedIndicator: Bool = false
-    ) -> MainViewModel.GroupCardModel {
-        MainViewModel.GroupCardModel(
+    ) -> GroupCardModel {
+        GroupCardModel(
             id: "test",
             title: title,
             showsRecentlyUpdatedIndicator: showsRecentlyUpdatedIndicator,

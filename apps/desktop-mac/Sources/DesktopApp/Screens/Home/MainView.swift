@@ -168,7 +168,7 @@ struct MainView: View {
     @State private var groupEditorSelectedSkills = Set<CollectionSkillRef>()
     @State private var groupEditorSelectedSourceIds = Set<String>()
     @State private var groupEditorValidationKey: String?
-    @State private var groupEditorOptions: MainViewModel.CollectionEditorOptions?
+    @State private var groupEditorOptions: CollectionEditorOptions?
     @State private var groupEditorOptionsTask: Task<Void, Never>?
     @FocusState private var focusedSearchField: SearchFieldFocus?
     private let importAutoPreviewLimit = 4
@@ -694,7 +694,7 @@ struct MainView: View {
         }
     }
 
-    private func importModeButton(_ mode: MainViewModel.ImportPageMode, titleKey: String, icon: ActionIcon) -> some View {
+    private func importModeButton(_ mode: ImportPageMode, titleKey: String, icon: ActionIcon) -> some View {
         let isSelected = importContainer.importPageMode == mode
         return Button {
             importContainer.setImportPageMode(mode)
@@ -994,7 +994,7 @@ struct MainView: View {
         isEditCustomAgentPresented = false
     }
 
-    private func beginRenameSource(_ card: MainViewModel.GroupCardModel) {
+    private func beginRenameSource(_ card: GroupCardModel) {
         renameSourceId = card.id
         renameDraft = card.title
         renameOriginalDisplayName = card.originalDisplayName ?? card.title
@@ -1081,7 +1081,7 @@ struct MainView: View {
     private func homeMainColumn(
         layout: LayoutMetrics,
         homeTagSnapshot: GroupTagController.HomeSnapshot,
-        visibleCards: [MainViewModel.GroupCardModel],
+        visibleCards: [GroupCardModel],
         isSidebarVisible: Bool
     ) -> some View {
         VStack(spacing: 0) {
@@ -1139,7 +1139,7 @@ struct MainView: View {
     private func homeContent(
         layout: LayoutMetrics,
         homeTagSnapshot: GroupTagController.HomeSnapshot,
-        visibleCards: [MainViewModel.GroupCardModel],
+        visibleCards: [GroupCardModel],
         isSidebarVisible: Bool
     ) -> some View {
         Group {
@@ -1181,7 +1181,7 @@ struct MainView: View {
     private func gridSection(
         layout: LayoutMetrics,
         homeTagSnapshot: GroupTagController.HomeSnapshot,
-        groupCards: [MainViewModel.GroupCardModel],
+        groupCards: [GroupCardModel],
         isSidebarVisible: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1350,7 +1350,7 @@ struct MainView: View {
     static func importSearchActionState(
         isFocused: Bool,
         query: String,
-        searchPhase: MainViewModel.ImportLoadPhase,
+        searchPhase: ImportLoadPhase,
         resultCount: Int,
         submittedQuery: String
     ) -> ImportSearchActionState {
@@ -1887,7 +1887,7 @@ struct MainView: View {
         L10n.string(key, locale: locale, arguments: arguments)
     }
 
-    private func toastBanner(_ toast: MainViewModel.ToastState) -> some View {
+    private func toastBanner(_ toast: ToastState) -> some View {
         HStack(spacing: 10) {
             if toast.style == .loading {
                 ProgressView()
@@ -1908,7 +1908,7 @@ struct MainView: View {
         .foregroundStyle(toastForeground(toast.style))
     }
 
-    private func toastBackground(_ style: MainViewModel.ToastStyle) -> Color {
+    private func toastBackground(_ style: ToastStyle) -> Color {
         switch style {
         case .loading:
             return AppTheme.surface(for: theme)
@@ -1925,7 +1925,7 @@ struct MainView: View {
         }
     }
 
-    private func toastBorder(_ style: MainViewModel.ToastStyle) -> Color {
+    private func toastBorder(_ style: ToastStyle) -> Color {
         switch style {
         case .loading:
             return AppTheme.border(for: theme).opacity(theme == .dark ? 0.55 : 0.45)
@@ -1942,7 +1942,7 @@ struct MainView: View {
         }
     }
 
-    private func toastForeground(_ style: MainViewModel.ToastStyle) -> Color {
+    private func toastForeground(_ style: ToastStyle) -> Color {
         switch style {
         case .success:
             return theme == .dark
@@ -2268,9 +2268,9 @@ private struct GroupEditorSheet: View {
     @Binding var validationKey: String?
 
     let isLoading: Bool
-    let skillOptions: [MainViewModel.CollectionSkillOption]
-    let sourceOptions: [MainViewModel.CollectionSourceOption]
-    let restoreOptions: [MainViewModel.CollectionSourceOption]
+    let skillOptions: [CollectionSkillOption]
+    let sourceOptions: [CollectionSourceOption]
+    let restoreOptions: [CollectionSourceOption]
     let title: String
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
@@ -2586,11 +2586,11 @@ private struct GroupEditorSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func skillRef(for option: MainViewModel.CollectionSkillOption) -> CollectionSkillRef {
+    private func skillRef(for option: CollectionSkillOption) -> CollectionSkillRef {
         CollectionSkillRef(sourceId: option.sourceId, leafId: option.leafId)
     }
 
-    private var filteredSkillOptions: [MainViewModel.CollectionSkillOption] {
+    private var filteredSkillOptions: [CollectionSkillOption] {
         let query = normalizedSkillSearchQuery
         guard !query.isEmpty else {
             return skillOptions
@@ -2603,7 +2603,7 @@ private struct GroupEditorSheet: View {
         }
     }
 
-    private var filteredSourceOptions: [MainViewModel.CollectionSourceOption] {
+    private var filteredSourceOptions: [CollectionSourceOption] {
         let query = normalizedSkillSearchQuery
         guard !query.isEmpty else {
             return sourceOptions
@@ -2622,11 +2622,11 @@ private struct GroupEditorSheet: View {
         }
     }
 
-    private func mergeSourceSubtitle(for option: MainViewModel.CollectionSourceOption) -> String {
+    private func mergeSourceSubtitle(for option: CollectionSourceOption) -> String {
         "\(option.sourceSubtitle) · \(option.skillCount)"
     }
 
-    private var skillsBySourceId: [String: [MainViewModel.CollectionSkillOption]] {
+    private var skillsBySourceId: [String: [CollectionSkillOption]] {
         Dictionary(grouping: skillOptions, by: \.sourceId)
     }
 
@@ -2642,7 +2642,7 @@ private struct GroupEditorSheet: View {
         }
     }
 
-    private func toggleSkill(_ option: MainViewModel.CollectionSkillOption) {
+    private func toggleSkill(_ option: CollectionSkillOption) {
         let ref = skillRef(for: option)
         if selectedSkills.contains(ref) {
             selectedSkills.remove(ref)
@@ -3075,12 +3075,6 @@ enum AppTheme {
     private static func grayscaleColor(_ value: Double) -> Color {
         let channel = value / 255.0
         return Color(red: channel, green: channel, blue: channel)
-    }
-}
-
-private extension String {
-    var nonEmpty: String? {
-        isEmpty ? nil : self
     }
 }
 

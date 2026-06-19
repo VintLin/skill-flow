@@ -4,12 +4,10 @@ import Observation
 @MainActor
 @Observable
 final class DetailViewModel {
-    typealias SaveState = MainViewModel.SaveState
-    typealias FileTreeItem = MainViewModel.FileTreeItem
-    typealias DocumentTab = MainViewModel.DocumentTab
-    typealias DocumentDescriptor = MainViewModel.DocumentDescriptor
-    typealias DetailTarget = MainViewModel.DetailTarget
-    typealias DetailSkill = MainViewModel.DetailSkill
+    typealias DetailSkill = SkillFlowDesktop.DetailSkill
+    typealias DocumentTab = SkillFlowDesktop.DocumentTab
+    typealias DocumentDescriptor = SkillFlowDesktop.DocumentDescriptor
+    typealias FileTreeItem = SkillFlowDesktop.FileTreeItem
 
     struct Snapshot: Equatable {
         let sourceId: String
@@ -20,7 +18,7 @@ final class DetailViewModel {
         let author: String
         let originLabel: String
         let starCount: Int?
-        let groupStats: MainViewModel.GroupCardStats
+        let groupStats: GroupCardStats
         let sourceDetailLines: [String]
         let sourceRepositoryURL: String?
         let locator: String
@@ -53,7 +51,7 @@ final class DetailViewModel {
             author: String,
             originLabel: String,
             starCount: Int?,
-            groupStats: MainViewModel.GroupCardStats,
+            groupStats: GroupCardStats,
             sourceDetailLines: [String],
             sourceRepositoryURL: String?,
             locator: String,
@@ -123,7 +121,7 @@ final class DetailViewModel {
     let author: String
     let originLabel: String
     let starCount: Int?
-    let groupStats: MainViewModel.GroupCardStats
+    let groupStats: GroupCardStats
     let sourceDetailLines: [String]
     let sourceRepositoryURL: String?
     let locator: String
@@ -136,16 +134,16 @@ final class DetailViewModel {
     let enabledSkillCount: Int
     let totalSkillCount: Int
     let enabledTargetCount: Int
-    let saveState: MainViewModel.SaveState
+    let saveState: SaveState
     let skillSelection: SelectionState
     let targetSelection: SelectionState
     let enabledTargetLabels: [String]
     let sourceFacts: [String]
     let deploymentFacts: [String]
-    let fileTree: [MainViewModel.FileTreeItem]
-    let groupDocuments: [MainViewModel.DocumentDescriptor]
-    let targets: [MainViewModel.DetailTarget]
-    let skills: [MainViewModel.DetailSkill]
+    let fileTree: [FileTreeItem]
+    let groupDocuments: [DocumentDescriptor]
+    let targets: [DetailTarget]
+    let skills: [DetailSkill]
 
     var hasCustomDisplayName: Bool {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -195,7 +193,7 @@ extension DetailViewModel.Snapshot {
         author: String,
         originLabel: String,
         starCount: Int?,
-        groupStats: MainViewModel.GroupCardStats,
+        groupStats: GroupCardStats,
         sourceDetailLines: [String],
         sourceRepositoryURL: String?,
         locator: String,
@@ -208,16 +206,16 @@ extension DetailViewModel.Snapshot {
         enabledSkillCount: Int,
         totalSkillCount: Int,
         enabledTargetCount: Int,
-        saveState: MainViewModel.SaveState,
+        saveState: SaveState,
         skillSelection: SelectionState,
         targetSelection: SelectionState,
         enabledTargetLabels: [String],
         sourceFacts: [String],
         deploymentFacts: [String],
-        fileTree: [MainViewModel.FileTreeItem],
-        groupDocuments: [MainViewModel.DocumentDescriptor],
-        targets: [MainViewModel.DetailTarget],
-        skills: [MainViewModel.DetailSkill]
+        fileTree: [FileTreeItem],
+        groupDocuments: [DocumentDescriptor],
+        targets: [DetailTarget],
+        skills: [DetailSkill]
     ) {
         let resolvedOriginalDisplayName = originalDisplayName ?? title
         self.init(
@@ -286,10 +284,42 @@ extension DetailViewModel.Snapshot {
         )
     }
 
-    init(detail: MainViewModel.DetailViewData) {
+    init(detail: DetailViewData) {
+        let visibleRevision = MainViewModel.detailRevision(
+            sourceId: detail.sourceId,
+            title: detail.title,
+            originalDisplayName: detail.originalDisplayName,
+            subtitle: detail.subtitle,
+            author: detail.author,
+            originLabel: detail.originLabel,
+            starCount: detail.starCount,
+            groupStats: detail.groupStats,
+            sourceDetailLines: detail.sourceDetailLines,
+            sourceRepositoryURL: detail.sourceRepositoryURL,
+            locator: detail.locator,
+            groupPath: detail.groupPath,
+            updatedAt: detail.updatedAt,
+            updatedRelative: detail.updatedRelative,
+            health: detail.health,
+            warningCount: detail.warningCount,
+            errorCount: detail.errorCount,
+            enabledSkillCount: detail.enabledSkillCount,
+            totalSkillCount: detail.totalSkillCount,
+            enabledTargetCount: detail.enabledTargetCount,
+            saveState: detail.saveState,
+            skillSelection: detail.skillSelection,
+            targetSelection: detail.targetSelection,
+            enabledTargetLabels: detail.enabledTargetLabels,
+            sourceFacts: detail.sourceFacts,
+            deploymentFacts: detail.deploymentFacts,
+            fileTree: detail.fileTree,
+            groupDocuments: MainViewModel.documentDescriptors(detail.groupDocuments),
+            targets: detail.targets,
+            skills: detail.skills
+        )
         self.init(
             sourceId: detail.sourceId,
-            revision: detail.revision,
+            revision: "\(detail.revision)|\(visibleRevision)",
             title: detail.title,
             originalDisplayName: detail.originalDisplayName,
             subtitle: detail.subtitle,
@@ -330,7 +360,7 @@ extension DetailViewModel.Snapshot {
         author: String,
         originLabel: String,
         starCount: Int?,
-        groupStats: MainViewModel.GroupCardStats,
+        groupStats: GroupCardStats,
         sourceDetailLines: [String],
         sourceRepositoryURL: String?,
         locator: String,
@@ -343,16 +373,16 @@ extension DetailViewModel.Snapshot {
         enabledSkillCount: Int,
         totalSkillCount: Int,
         enabledTargetCount: Int,
-        saveState: MainViewModel.SaveState,
+        saveState: SaveState,
         skillSelection: SelectionState,
         targetSelection: SelectionState,
         enabledTargetLabels: [String],
         sourceFacts: [String],
         deploymentFacts: [String],
-        fileTree: [MainViewModel.FileTreeItem],
-        groupDocuments: [MainViewModel.DocumentDescriptor],
-        targets: [MainViewModel.DetailTarget],
-        skills: [MainViewModel.DetailSkill]
+        fileTree: [FileTreeItem],
+        groupDocuments: [DocumentDescriptor],
+        targets: [DetailTarget],
+        skills: [DetailSkill]
     ) -> String {
         MainViewModel.detailRevision(
             sourceId: sourceId,

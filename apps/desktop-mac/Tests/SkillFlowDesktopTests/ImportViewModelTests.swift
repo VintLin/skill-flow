@@ -211,11 +211,11 @@ final class ImportViewModelTests: XCTestCase {
                     locator: "file:///Users/Vint/skills-b",
                     canonicalRepo: "local-skill-b",
                     provider: "local",
-                    localImport: MainViewModel.LocalImportInfo(
+                    localImport: LocalImportInfo(
                         validationStatus: "valid",
                         selectedChoiceId: "local-choice-b",
                         choices: [
-                            MainViewModel.LocalImportChoice(
+                            LocalImportChoice(
                                 id: "local-choice-b",
                                 label: "Local choice B",
                                 locator: "file:///Users/Vint/skills-b",
@@ -231,11 +231,11 @@ final class ImportViewModelTests: XCTestCase {
                     locator: "file:///Users/Vint/skills",
                     canonicalRepo: "local-skill",
                     provider: "local",
-                    localImport: MainViewModel.LocalImportInfo(
+                    localImport: LocalImportInfo(
                         validationStatus: "valid",
                         selectedChoiceId: "local-choice",
                         choices: [
-                            MainViewModel.LocalImportChoice(
+                            LocalImportChoice(
                                 id: "local-choice",
                                 label: "Local choice",
                                 locator: "file:///Users/Vint/skills",
@@ -374,7 +374,7 @@ final class ImportViewModelTests: XCTestCase {
                     locator: "anthropics/skills",
                     canonicalRepo: "anthropics/skills",
                     provider: "local",
-                    localImport: MainViewModel.LocalImportInfo(
+                    localImport: LocalImportInfo(
                         validationStatus: "valid",
                         selectedChoiceId: nil,
                         choices: [],
@@ -514,7 +514,7 @@ final class ImportViewModelTests: XCTestCase {
                 totalInstalls: 2400,
                 skillCount: 12,
                 repoStars: 800,
-                owner: MainViewModel.SnapshotOwner(
+                owner: SnapshotOwner(
                     slug: "anthropics",
                     sourceURL: "https://example.com/anthropics",
                     githubURL: "https://github.com/anthropics",
@@ -522,7 +522,7 @@ final class ImportViewModelTests: XCTestCase {
                     skillCount: 42,
                     totalInstalls: 9999
                 ),
-                trust: MainViewModel.SnapshotTrust(
+                trust: SnapshotTrust(
                     official: true,
                     trending: true,
                     hot: false,
@@ -552,7 +552,7 @@ final class ImportViewModelTests: XCTestCase {
         let ready = makeItem(
             previewPhase: .ready,
             skills: [
-                MainViewModel.ImportGroupSkill(
+                ImportGroupSkill(
                     id: "browse",
                     title: "Browse",
                     summary: "Browse things.",
@@ -560,7 +560,7 @@ final class ImportViewModelTests: XCTestCase {
                 )
             ],
             targets: [
-                MainViewModel.ImportGroupTarget(
+                ImportGroupTarget(
                     id: "claude-code",
                     selectedByDefault: false
                 )
@@ -575,7 +575,7 @@ final class ImportViewModelTests: XCTestCase {
         let item = makeItem(
             snapshot: makeSnapshot(
                 skills: [
-                    MainViewModel.SnapshotSkill(
+                    SnapshotSkill(
                         skillId: "research",
                         title: "Research",
                         installs: 1200,
@@ -585,7 +585,7 @@ final class ImportViewModelTests: XCTestCase {
                         installedOn: [],
                         audits: nil
                     ),
-                    MainViewModel.SnapshotSkill(
+                    SnapshotSkill(
                         skillId: "debugging",
                         title: "Debugging",
                         installs: 800,
@@ -613,19 +613,19 @@ final class ImportViewModelTests: XCTestCase {
             matchedSkillNames: ["browse"],
             previewPhase: .ready,
             skills: [
-                MainViewModel.ImportGroupSkill(
+                ImportGroupSkill(
                     id: "review",
                     title: "Review",
                     summary: "Review things.",
                     selectedByDefault: true
                 ),
-                MainViewModel.ImportGroupSkill(
+                ImportGroupSkill(
                     id: "browse",
                     title: "Browse",
                     summary: "Browse things.",
                     selectedByDefault: true
                 ),
-                MainViewModel.ImportGroupSkill(
+                ImportGroupSkill(
                     id: "debug",
                     title: "Debug",
                     summary: "Debug things.",
@@ -687,16 +687,16 @@ final class ImportViewModelTests: XCTestCase {
         totalInstalls: Int? = nil,
         skillCount: Int? = nil,
         matchedSkillNames: [String] = [],
-        matchedSkills: [MainViewModel.ImportMatchedSkill] = [],
-        snapshot: MainViewModel.SourceSnapshotData? = nil,
-        enrichPhase: MainViewModel.ImportLoadPhase = .ready,
-        previewPhase: MainViewModel.ImportLoadPhase = .ready,
+        matchedSkills: [ImportMatchedSkill] = [],
+        snapshot: SourceSnapshotData? = nil,
+        enrichPhase: ImportLoadPhase = .ready,
+        previewPhase: ImportLoadPhase = .ready,
         provider: String = "skills",
-        localImport: MainViewModel.LocalImportInfo? = nil,
-        skills: [MainViewModel.ImportGroupSkill] = [],
-        targets: [MainViewModel.ImportGroupTarget] = []
-    ) -> MainViewModel.ImportGroupItem {
-        MainViewModel.ImportGroupItem(
+        localImport: LocalImportInfo? = nil,
+        skills: [ImportGroupSkill] = [],
+        targets: [ImportGroupTarget] = []
+    ) -> ImportGroupItem {
+        ImportGroupItem(
             id: id,
             title: title,
             locator: locator,
@@ -719,8 +719,8 @@ final class ImportViewModelTests: XCTestCase {
         )
     }
 
-    private func makeMatchedSkill(title: String, installs: Int?) -> MainViewModel.ImportMatchedSkill {
-        MainViewModel.ImportMatchedSkill(skillId: title, title: title, installs: installs)
+    private func makeMatchedSkill(title: String, installs: Int?) -> ImportMatchedSkill {
+        ImportMatchedSkill(skillId: title, title: title, installs: installs)
     }
 
     private func makeSnapshot(
@@ -728,8 +728,8 @@ final class ImportViewModelTests: XCTestCase {
         totalInstalls: Int? = nil,
         skillCount: Int? = nil,
         repoStars: Int? = nil,
-        skills: [MainViewModel.SnapshotSkill] = [],
-        owner: MainViewModel.SnapshotOwner = MainViewModel.SnapshotOwner(
+        skills: [SnapshotSkill] = [],
+        owner: SnapshotOwner = SnapshotOwner(
             slug: "anthropics",
             sourceURL: "https://example.com/anthropics",
             githubURL: "https://github.com/anthropics",
@@ -737,9 +737,9 @@ final class ImportViewModelTests: XCTestCase {
             skillCount: nil,
             totalInstalls: nil
         ),
-        trust: MainViewModel.SnapshotTrust? = nil
-    ) -> MainViewModel.SourceSnapshotData {
-        MainViewModel.SourceSnapshotData(
+        trust: SnapshotTrust? = nil
+    ) -> SourceSnapshotData {
+        SourceSnapshotData(
             canonicalRepo: "anthropics/skills",
             title: "Anthropic Skills",
             provider: "clawhub",

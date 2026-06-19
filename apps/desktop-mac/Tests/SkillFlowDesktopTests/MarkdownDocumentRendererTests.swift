@@ -39,7 +39,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
     }
 
     func testMarkdownViewModelEqualityDistinguishesLoadingFromLoadedState() {
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "group:/tmp/README.md",
             title: "README.md",
             path: "/tmp/README.md",
@@ -56,7 +56,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
     @MainActor
     func testRendererCachesRenderedMarkdownByRenderCacheKey() async {
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "readme",
             title: "README.md",
             path: "/tmp/README.md",
@@ -83,7 +83,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
     @MainActor
     func testRendererSharesInFlightRenderTaskForSameDocument() async {
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "readme",
             title: "README.md",
             path: "/tmp/README.md",
@@ -112,7 +112,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
     @MainActor
     func testRendererResetsWithoutTouchingOtherCacheKeys() async {
-        let firstDescriptor = MainViewModel.DocumentDescriptor(
+        let firstDescriptor = DocumentDescriptor(
             id: "a",
             title: "A.md",
             path: "/tmp/A.md",
@@ -120,7 +120,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
             renderCacheKey: "doc-a",
             externalURL: nil
         )
-        let secondDescriptor = MainViewModel.DocumentDescriptor(
+        let secondDescriptor = DocumentDescriptor(
             id: "b",
             title: "B.md",
             path: "/tmp/B.md",
@@ -142,7 +142,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
     @MainActor
     func testRendererCancelsInFlightRenderWhenLastWaiterCancels() async {
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "readme",
             title: "README.md",
             path: "/tmp/README.md",
@@ -177,7 +177,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
     @MainActor
     func testRendererStartsFreshRenderWhenCancelledDocumentIsReopened() async {
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "readme",
             title: "README.md",
             path: "/tmp/README.md",
@@ -222,7 +222,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
 
     @MainActor
     func testRendererBenchmarkWarmCacheIsFasterThanColdRender() async {
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "benchmark",
             title: "README.md",
             path: "/tmp/README.md",
@@ -251,7 +251,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
     }
 
     func testDocumentTabRecognizesMarkdownFilesByPath() {
-        let markdownTab = MainViewModel.DocumentTab(
+        let markdownTab = DocumentTab(
             id: "readme",
             title: "README.md",
             path: "/tmp/README.md",
@@ -260,7 +260,7 @@ final class MarkdownDocumentRendererTests: XCTestCase {
             renderCacheKey: "readme",
             externalURL: nil
         )
-        let fileTreeTab = MainViewModel.DocumentTab(
+        let fileTreeTab = DocumentTab(
             id: "filetree",
             title: "FILETREE",
             path: "/tmp/group",

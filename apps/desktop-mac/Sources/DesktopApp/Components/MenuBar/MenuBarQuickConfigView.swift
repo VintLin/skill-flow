@@ -211,7 +211,7 @@ struct MenuBarQuickConfigView: View {
             .fill(menuFill)
     }
 
-    private var groupCards: [MainViewModel.GroupCardModel] {
+    private var groupCards: [GroupCardModel] {
         viewModel.groupCards(matching: screenState.searchQuery)
     }
 

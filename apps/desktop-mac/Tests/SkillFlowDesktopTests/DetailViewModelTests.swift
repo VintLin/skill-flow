@@ -13,7 +13,7 @@ final class DetailViewModelTests: XCTestCase {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -34,14 +34,14 @@ final class DetailViewModelTests: XCTestCase {
             enabledSkillCount: 1,
             totalSkillCount: 2,
             enabledTargetCount: 1,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .full,
             enabledTargetLabels: ["Claude Code"],
             sourceFacts: ["2026-03-25T12:00:00Z"],
             deploymentFacts: ["Claude Code -> /Users/vint/.claude"],
             fileTree: [
-                MainViewModel.FileTreeItem(
+                FileTreeItem(
                     id: "root",
                     title: "alpha",
                     path: "/groups/alpha",
@@ -50,7 +50,7 @@ final class DetailViewModelTests: XCTestCase {
                     isSkillDocument: false,
                     skillId: nil,
                     children: [
-                        MainViewModel.FileTreeItem(
+                        FileTreeItem(
                             id: "root/alpha-a",
                             title: "alpha-a",
                             path: "/groups/alpha/alpha-a",
@@ -64,19 +64,19 @@ final class DetailViewModelTests: XCTestCase {
                 )
             ],
             groupDocuments: [
-                MainViewModel.DocumentDescriptor(
+                DocumentDescriptor(
                     id: "readme",
                     title: "README.md",
                     path: "README.md",
                     metadata: [
-                        MainViewModel.MetadataEntry(id: "name", key: "name", value: "AlphaHub")
+                        MetadataEntry(id: "name", key: "name", value: "AlphaHub")
                     ],
                     renderCacheKey: "readme-cache",
                     externalURL: "https://github.com/acme/alpha-hub/blob/HEAD/README.md"
                 )
             ],
             targets: [
-                MainViewModel.DetailTarget(
+                DetailTarget(
                     id: "claude-code",
                     label: "Claude Code",
                     shortLabel: "Claude",
@@ -84,7 +84,7 @@ final class DetailViewModelTests: XCTestCase {
                 )
             ],
             skills: [
-                MainViewModel.DetailSkill(
+                DetailSkill(
                     id: "alpha-a",
                     title: "browse",
                     summary: "Browse things.",
@@ -157,7 +157,7 @@ final class DetailViewModelTests: XCTestCase {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: nil,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: nil,
@@ -175,7 +175,7 @@ final class DetailViewModelTests: XCTestCase {
             enabledSkillCount: 1,
             totalSkillCount: 2,
             enabledTargetCount: 1,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .full,
             enabledTargetLabels: ["Claude Code"],
@@ -194,7 +194,7 @@ final class DetailViewModelTests: XCTestCase {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: nil,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: nil,
                 starCount: nil,
                 githubURL: nil,
@@ -212,7 +212,7 @@ final class DetailViewModelTests: XCTestCase {
             enabledSkillCount: 1,
             totalSkillCount: 2,
             enabledTargetCount: 1,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .full,
             enabledTargetLabels: ["Claude Code"],
@@ -228,7 +228,7 @@ final class DetailViewModelTests: XCTestCase {
     }
 
     func testSnapshotStoresOnlyDescriptorDrivenGroupDocuments() {
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "readme",
             title: "README.md",
             path: "README.md",
@@ -245,7 +245,7 @@ final class DetailViewModelTests: XCTestCase {
             author: "Acme",
             originLabel: "ClawHub",
             starCount: 1200,
-            groupStats: MainViewModel.GroupCardStats(
+            groupStats: GroupCardStats(
                 downloadCount: 211898,
                 starCount: 1200,
                 githubURL: "https://github.com/acme/alpha-hub",
@@ -263,7 +263,7 @@ final class DetailViewModelTests: XCTestCase {
             enabledSkillCount: 1,
             totalSkillCount: 2,
             enabledTargetCount: 1,
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil),
+            saveState: SaveState(phase: .idle, detail: nil),
             skillSelection: .partial,
             targetSelection: .full,
             enabledTargetLabels: ["Claude Code"],

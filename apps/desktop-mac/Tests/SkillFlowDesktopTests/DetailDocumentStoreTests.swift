@@ -85,7 +85,7 @@ final class DetailDocumentStoreTests: XCTestCase {
             return try String(contentsOfFile: path, encoding: .utf8)
         })
 
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "group:\(url.path)",
             title: "README.md",
             path: url.path,
@@ -117,7 +117,7 @@ final class DetailDocumentStoreTests: XCTestCase {
             return currentContents.read()
         })
 
-        let firstDescriptor = MainViewModel.DocumentDescriptor(
+        let firstDescriptor = DocumentDescriptor(
             id: "group:\(url.path)",
             title: "README.md",
             path: url.path,
@@ -128,7 +128,7 @@ final class DetailDocumentStoreTests: XCTestCase {
         let first = try await store.document(for: firstDescriptor)
 
         currentContents.write("# Updated")
-        let secondDescriptor = MainViewModel.DocumentDescriptor(
+        let secondDescriptor = DocumentDescriptor(
             id: firstDescriptor.id,
             title: firstDescriptor.title,
             path: firstDescriptor.path,
@@ -157,7 +157,7 @@ final class DetailDocumentStoreTests: XCTestCase {
             return "# Hello"
         })
 
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "group:\(url.path)",
             title: "README.md",
             path: url.path,
@@ -193,7 +193,7 @@ final class DetailDocumentStoreTests: XCTestCase {
             }
             return "# Hello"
         })
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "group:\(url.path)",
             title: "README.md",
             path: url.path,
@@ -242,7 +242,7 @@ final class DetailDocumentStoreTests: XCTestCase {
             }
             return "# Reopened"
         })
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "group:\(url.path)",
             title: "README.md",
             path: url.path,
@@ -271,7 +271,7 @@ final class DetailDocumentStoreTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("detail-document-store-tests-\(UUID().uuidString)", isDirectory: false)
         let store = DetailDocumentStore()
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "group:\(url.path)",
             title: "README.md",
             path: url.path,
@@ -291,7 +291,7 @@ final class DetailDocumentStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let store = DetailDocumentStore()
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "group:\(directory.path)",
             title: "README.md",
             path: directory.path,
@@ -311,7 +311,7 @@ final class DetailDocumentStoreTests: XCTestCase {
             contents: heavyMarkdownDocument(sectionCount: 1200)
         )
         let store = DetailDocumentStore()
-        let descriptor = MainViewModel.DocumentDescriptor(
+        let descriptor = DocumentDescriptor(
             id: "group:\(url.path)",
             title: "README.md",
             path: url.path,

@@ -55,7 +55,7 @@ struct ImportScreen: View {
     }
 
     @ViewBuilder
-    private func centeredStateContent(searchPhase: MainViewModel.ImportLoadPhase, submittedQuery: String) -> some View {
+    private func centeredStateContent(searchPhase: ImportLoadPhase, submittedQuery: String) -> some View {
         if Self.loadingPresentationStyle(searchPhase: searchPhase, cardCount: 0) == .spinner {
             importLoadingIndicator
         } else if case .failed(let message) = searchPhase {
@@ -210,12 +210,12 @@ struct ImportScreen: View {
         return .importSearch
     }
 
-    private func importCardModel(for card: ImportViewModel.Card) -> MainViewModel.GroupCardModel {
+    private func importCardModel(for card: ImportViewModel.Card) -> GroupCardModel {
         let draft = container.draft(for: card)
         let selectedSkillIds = Set(ImportSkillSelectionResolver.selectedSkillIds(for: card.skills, draft: draft))
         let enabledTargetIds = Set(draft.enabledTargetIds)
 
-        return MainViewModel.GroupCardModel(
+        return GroupCardModel(
             id: card.id,
             title: card.title,
             byline: card.subtitle,
@@ -229,7 +229,7 @@ struct ImportScreen: View {
             errorCount: 0,
             skillSelection: importSelectionState(allIds: card.skills.map(\.id), selectedIds: Array(selectedSkillIds)),
             targetSelection: importSelectionState(allIds: card.targets.map(\.id), selectedIds: draft.enabledTargetIds),
-            stats: MainViewModel.GroupCardStats(
+            stats: GroupCardStats(
                 downloadCount: card.stats.downloadCount,
                 starCount: card.stats.starCount,
                 githubURL: card.stats.githubURL,
@@ -238,7 +238,7 @@ struct ImportScreen: View {
             skillsLoading: card.skillsLoading,
             targetsLoading: card.targetsLoading,
             skills: card.skills.map { skill in
-                MainViewModel.GroupCardSkill(
+                GroupCardSkill(
                     id: skill.id,
                     label: skill.title,
                     description: skill.summary,
@@ -247,14 +247,14 @@ struct ImportScreen: View {
                 )
             },
             targets: card.targets.map { target in
-                MainViewModel.GroupCardTarget(
+                GroupCardTarget(
                     id: target.id,
                     label: targetLabel(target.id),
                     shortLabel: String(targetLabel(target.id).prefix(2)).uppercased(),
                     isEnabled: enabledTargetIds.contains(target.id)
                 )
             },
-            saveState: MainViewModel.SaveState(phase: .idle, detail: nil)
+            saveState: SaveState(phase: .idle, detail: nil)
         )
     }
 
@@ -394,7 +394,7 @@ extension ImportScreen {
     }
 
     static func loadingPresentationStyle(
-        searchPhase: MainViewModel.ImportLoadPhase,
+        searchPhase: ImportLoadPhase,
         cardCount: Int
     ) -> LoadingPresentationStyle {
         guard case .loading = searchPhase, cardCount == 0 else {
@@ -403,26 +403,26 @@ extension ImportScreen {
         return .spinner
     }
 
-    static func showsResultsHeader(searchPhase: MainViewModel.ImportLoadPhase, cardCount: Int) -> Bool {
+    static func showsResultsHeader(searchPhase: ImportLoadPhase, cardCount: Int) -> Bool {
         false
     }
 
     static func usesChromedEmptyState(
-        searchPhase: MainViewModel.ImportLoadPhase,
+        searchPhase: ImportLoadPhase,
         cardCount: Int
     ) -> Bool {
         false
     }
 
     static func usesChromedLoadingState(
-        searchPhase: MainViewModel.ImportLoadPhase,
+        searchPhase: ImportLoadPhase,
         cardCount: Int
     ) -> Bool {
         false
     }
 
     static func usesCenteredStandaloneState(
-        searchPhase: MainViewModel.ImportLoadPhase,
+        searchPhase: ImportLoadPhase,
         cardCount: Int
     ) -> Bool {
         cardCount == 0

@@ -292,13 +292,13 @@ final class ImportScreenContainerTests: XCTestCase {
                 .init(id: "claude-code", selectedByDefault: false)
             ],
             localChoices: [
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "choice-a",
                     label: "All",
                     locator: "file:///Users/Vint/skills",
                     selectedSkills: [.repoPath("browse"), .repoPath("review")]
                 ),
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "choice-b",
                     label: "Browse only",
                     locator: "file:///Users/Vint/skills/browse",
@@ -370,13 +370,13 @@ final class ImportScreenContainerTests: XCTestCase {
                 title: "cc-skills",
                 locator: "terrylica/cc-skills",
                 skills: [
-                    MainViewModel.ImportGroupSkill(
+                    ImportGroupSkill(
                         id: "disk-hygiene",
                         title: "Disk Hygiene",
                         summary: "",
                         selectedByDefault: true
                     ),
-                    MainViewModel.ImportGroupSkill(
+                    ImportGroupSkill(
                         id: "session-recovery",
                         title: "Session Recovery",
                         summary: "",
@@ -593,13 +593,13 @@ final class ImportScreenContainerTests: XCTestCase {
             targets: [],
             selectedLocalChoiceId: "choice-b",
             localChoices: [
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "choice-a",
                     label: "All",
                     locator: "file:///Users/Vint/skills",
                     selectedSkills: [.repoPath("browse"), .repoPath("review")]
                 ),
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "choice-b",
                     label: "Browse only",
                     locator: "file:///Users/Vint/skills/browse",
@@ -649,7 +649,7 @@ final class ImportScreenContainerTests: XCTestCase {
             targets: [],
             selectedLocalChoiceId: "origin",
             localChoices: [
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "origin",
                     label: "Origin",
                     locator: "https://github.com/paramchoudhary/resumeskills.git",
@@ -697,7 +697,7 @@ final class ImportScreenContainerTests: XCTestCase {
             ],
             targets: [],
             localChoices: [
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "local",
                     label: "Local",
                     locator: "file:///Users/Vint/skills/changed",
@@ -750,13 +750,13 @@ final class ImportScreenContainerTests: XCTestCase {
             ],
             targets: [],
             localChoices: [
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "all",
                     label: "All",
                     locator: "file:///Users/Vint/skills",
                     selectedSkills: [.repoPath("browse"), .repoPath("review")]
                 ),
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "browse-only",
                     label: "Browse only",
                     locator: "file:///Users/Vint/skills/browse",
@@ -810,7 +810,7 @@ final class ImportScreenContainerTests: XCTestCase {
             targets: [],
             selectedLocalChoiceId: "origin",
             localChoices: [
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "origin",
                     label: "Origin",
                     locator: "https://github.com/paramchoudhary/resumeskills.git",
@@ -860,7 +860,7 @@ final class ImportScreenContainerTests: XCTestCase {
             localValidationStatus: "changed",
             selectedLocalChoiceId: nil,
             localChoices: [
-                MainViewModel.LocalImportChoice(
+                LocalImportChoice(
                     id: "local",
                     label: "Local",
                     locator: "file:///Users/Vint/skills/writer",
@@ -929,7 +929,7 @@ final class ImportScreenContainerTests: XCTestCase {
             makeItem(id: "recommended", title: "Recommended", locator: "owner/recommended")
         ]
         model.localImportGroups = [
-            MainViewModel.ImportGroupItem(
+            ImportGroupItem(
                 id: "local",
                 title: "Local",
                 locator: "/Users/me/local",
@@ -1157,7 +1157,7 @@ final class ImportScreenContainerTests: XCTestCase {
 
         await model.loadImportPageIfNeeded()
 
-        XCTAssertEqual(model.importSearchPhase, MainViewModel.ImportLoadPhase.ready)
+        XCTAssertEqual(model.importSearchPhase, ImportLoadPhase.ready)
         XCTAssertEqual(model.recommendedImportGroups.map { $0.canonicalRepo }, [
             "anthropics/skills",
             "obra/superpowers",
@@ -1727,7 +1727,7 @@ final class ImportScreenContainerTests: XCTestCase {
     func testImportViewModelFallsBackToVisibleTargetsWhenPreviewTargetsAreUnavailable() {
         let viewModel = ImportViewModel(
             items: [
-                MainViewModel.ImportGroupItem(
+                ImportGroupItem(
                     id: "recommended",
                     title: "Recommended",
                     locator: "anthropic/skills",
@@ -2258,10 +2258,10 @@ final class ImportScreenContainerTests: XCTestCase {
         locator: String,
         preparationId: String? = nil,
         preparationStatus: String? = nil,
-        skills: [MainViewModel.ImportGroupSkill]? = nil,
-        previewPhase: MainViewModel.ImportLoadPhase = .idle
-    ) -> MainViewModel.ImportGroupItem {
-        MainViewModel.ImportGroupItem(
+        skills: [ImportGroupSkill]? = nil,
+        previewPhase: ImportLoadPhase = .idle
+    ) -> ImportGroupItem {
+        ImportGroupItem(
             id: id,
             title: title,
             locator: locator,
@@ -2282,7 +2282,7 @@ final class ImportScreenContainerTests: XCTestCase {
             enrichPhase: .idle,
             previewPhase: previewPhase,
             skills: skills ?? [
-                MainViewModel.ImportGroupSkill(
+                ImportGroupSkill(
                     id: "browse",
                     title: "Browse",
                     summary: "Browse things.",
@@ -2290,7 +2290,7 @@ final class ImportScreenContainerTests: XCTestCase {
                 )
             ],
             targets: [
-                MainViewModel.ImportGroupTarget(
+                ImportGroupTarget(
                     id: "claude-code",
                     selectedByDefault: false
                 )

@@ -7,21 +7,21 @@ import AppKit
 
 struct MarkdownDocumentView: View, Equatable {
     struct Model: Equatable {
-        let descriptor: MainViewModel.DocumentDescriptor
+        let descriptor: DocumentDescriptor
         let content: String?
-        let metadata: [MainViewModel.MetadataEntry]
+        let metadata: [MetadataEntry]
 
         init(
-            descriptor: MainViewModel.DocumentDescriptor,
+            descriptor: DocumentDescriptor,
             content: String?,
-            metadata: [MainViewModel.MetadataEntry]
+            metadata: [MetadataEntry]
         ) {
             self.descriptor = descriptor
             self.content = content
             self.metadata = metadata
         }
 
-        init(document: MainViewModel.DocumentTab) {
+        init(document: DocumentTab) {
             self.init(
                 descriptor: MainViewModel.documentDescriptor(for: document),
                 content: document.isLoaded ? document.content : nil,
@@ -88,7 +88,7 @@ struct MarkdownDocumentView: View, Equatable {
         }
     }
 
-    private func metadataTable(_ metadata: [MainViewModel.MetadataEntry]) -> some View {
+    private func metadataTable(_ metadata: [MetadataEntry]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(metadata.enumerated()), id: \.element.id) { index, entry in
                 HStack(alignment: .top, spacing: 12) {
@@ -166,7 +166,7 @@ struct MarkdownDocumentView: View, Equatable {
     }
 }
 
-extension MainViewModel.DocumentTab {
+extension DocumentTab {
     var isMarkdown: Bool {
         path.lowercased().hasSuffix(".md")
     }

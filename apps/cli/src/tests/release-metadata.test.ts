@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 const repoRoot = path.resolve(import.meta.dirname, "../../../..");
 
 describe("release metadata", () => {
-  test("workspace packages, changelog, and release notes are aligned to v1.4.5", async () => {
+  test("workspace packages, changelog, and release notes are aligned to v1.4.6", async () => {
     const packageJsonPaths = [
       "apps/cli/package.json",
       "packages/core-engine/package.json",
@@ -25,16 +25,16 @@ describe("release metadata", () => {
       }),
     );
 
-    expect(new Set(packageVersions)).toEqual(new Set(["1.4.5"]));
+    expect(new Set(packageVersions)).toEqual(new Set(["1.4.6"]));
 
     const changelog = await fs.readFile(path.join(repoRoot, "CHANGELOG.md"), "utf8");
-    expect(changelog).toContain("## v1.4.5");
+    expect(changelog).toContain("## v1.4.6");
 
     const releaseNotes = await fs.readFile(
-      path.join(repoRoot, "releases", "RELEASE_v1.4.5.md"),
+      path.join(repoRoot, "releases", "RELEASE_v1.4.6.md"),
       "utf8",
     );
-    expect(releaseNotes).toContain("# RELEASE v1.4.5");
-    expect(releaseNotes).toContain("Compared with `v1.4.4`");
+    expect(releaseNotes).toContain("# RELEASE v1.4.6");
+    expect(releaseNotes).toContain("Compared with `v1.4.5`");
   });
 });

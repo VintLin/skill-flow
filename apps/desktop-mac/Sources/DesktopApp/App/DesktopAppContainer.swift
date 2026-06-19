@@ -48,6 +48,9 @@ final class DesktopAppContainer {
             },
             sourceLocator: { [weak mainViewModel] sourceId in
                 mainViewModel?.sourceLocator(for: sourceId)
+            },
+            collectionMemberSourceIds: { [weak mainViewModel] sourceId in
+                mainViewModel?.collectionMemberSourceIds(for: sourceId) ?? []
             }
         )
         self.menuBarScreenState = MenuBarScreenState()
@@ -100,7 +103,7 @@ final class DesktopAppContainer {
                 )
             },
             onRenameGroup: { [weak mainViewModel] sourceId, title, originalDisplayName in
-                mainViewModel?.pendingDetailRename = MainViewModel.PendingDetailRename(
+                mainViewModel?.pendingDetailRename = PendingDetailRename(
                     sourceId: sourceId,
                     title: title,
                     originalDisplayName: originalDisplayName
