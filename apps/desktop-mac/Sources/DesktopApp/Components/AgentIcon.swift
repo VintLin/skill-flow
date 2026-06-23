@@ -20,6 +20,7 @@ enum AgentIconLibrary {
         "minimax-code": "minimax.svg",
         "windsurf": "windsurf.svg",
         "trae": "trae.svg",
+        "trae-cn": "trae.svg",
         "roo-code": "roo.svg",
         "cline": "cline.svg",
         "amp": "amp.svg",

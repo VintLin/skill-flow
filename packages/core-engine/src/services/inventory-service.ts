@@ -54,6 +54,7 @@ export class InventoryService {
     ".qoder/skills",
     ".roo/skills",
     ".trae/skills",
+    ".trae-cn/skills",
     ".windsurf/skills",
     ".zencoder/skills",
   ] as const;

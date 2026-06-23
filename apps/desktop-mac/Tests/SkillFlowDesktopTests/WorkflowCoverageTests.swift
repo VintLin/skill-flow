@@ -686,11 +686,13 @@ final class WorkflowCoverageTests: XCTestCase {
                 "minimax-code",
                 "pi",
                 "trae",
+                "trae-cn",
                 "windsurf",
                 "roo-code",
                 "cline",
                 "amp",
-                "kiro"
+                "kiro",
+                "zcode"
             ]
         )
     }

@@ -1826,6 +1826,7 @@ description: |
       "minimax-code",
       "pi",
       "trae",
+      "trae-cn",
       "windsurf",
       "roo-code",
       "cline",
@@ -1848,6 +1849,7 @@ description: |
       minimaxCode: process.env.SKILL_FLOW_TARGET_MINIMAX_CODE,
       pi: process.env.SKILL_FLOW_TARGET_PI,
       trae: process.env.SKILL_FLOW_TARGET_TRAE,
+      traeCn: process.env.SKILL_FLOW_TARGET_TRAE_CN,
       windsurf: process.env.SKILL_FLOW_TARGET_WINDSURF,
       rooCode: process.env.SKILL_FLOW_TARGET_ROO_CODE,
       cline: process.env.SKILL_FLOW_TARGET_CLINE,
@@ -1868,6 +1870,7 @@ description: |
       delete process.env.SKILL_FLOW_TARGET_MINIMAX_CODE;
       delete process.env.SKILL_FLOW_TARGET_PI;
       delete process.env.SKILL_FLOW_TARGET_TRAE;
+      delete process.env.SKILL_FLOW_TARGET_TRAE_CN;
       delete process.env.SKILL_FLOW_TARGET_WINDSURF;
       delete process.env.SKILL_FLOW_TARGET_ROO_CODE;
       delete process.env.SKILL_FLOW_TARGET_CLINE;
@@ -1893,6 +1896,7 @@ description: |
       process.env.SKILL_FLOW_TARGET_MINIMAX_CODE = previousTargets.minimaxCode;
       process.env.SKILL_FLOW_TARGET_PI = previousTargets.pi;
       process.env.SKILL_FLOW_TARGET_TRAE = previousTargets.trae;
+      process.env.SKILL_FLOW_TARGET_TRAE_CN = previousTargets.traeCn;
       process.env.SKILL_FLOW_TARGET_WINDSURF = previousTargets.windsurf;
       process.env.SKILL_FLOW_TARGET_ROO_CODE = previousTargets.rooCode;
       process.env.SKILL_FLOW_TARGET_CLINE = previousTargets.cline;

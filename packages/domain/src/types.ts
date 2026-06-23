@@ -28,6 +28,7 @@ export type DeploymentTargetName =
   | "minimax-code"
   | "pi"
   | "trae"
+  | "trae-cn"
   | "windsurf"
   | "roo-code"
   | "cline"

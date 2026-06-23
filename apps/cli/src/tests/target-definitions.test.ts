@@ -40,7 +40,7 @@ describe("target definitions", () => {
       path.join(os.homedir(), ".roo", "skills"),
     );
     expect(TARGET_PATH_CANDIDATES.cline).toContain(
-      path.join(os.homedir(), ".agents", "skills"),
+      path.join(os.homedir(), ".cline", "skills"),
     );
     expect(TARGET_PATH_CANDIDATES.amp).toContain(
       path.join(os.homedir(), ".config", "agents", "skills"),
@@ -59,6 +59,9 @@ describe("target definitions", () => {
     );
     expect(TARGET_PATH_CANDIDATES.trae).toContain(
       path.join(os.homedir(), ".trae", "skills"),
+    );
+    expect(TARGET_PATH_CANDIDATES["trae-cn"]).toContain(
+      path.join(os.homedir(), ".trae-cn", "skills"),
     );
   });
 
@@ -83,13 +86,22 @@ describe("target definitions", () => {
       path.join(os.homedir(), ".claude", "skills"),
     );
     expect(TARGET_COMPAT_READ_CANDIDATES.cline).toContain(
-      path.join(os.homedir(), ".cline", "skills"),
+      path.join(os.homedir(), ".claude", "skills"),
     );
     expect(TARGET_COMPAT_READ_CANDIDATES.amp).toContain(
       path.join(os.homedir(), ".config", "amp", "skills"),
     );
     expect(TARGET_COMPAT_READ_CANDIDATES.amp).toContain(
       path.join(os.homedir(), ".claude", "skills"),
+    );
+    expect(TARGET_COMPAT_READ_CANDIDATES.opencode).toContain(
+      path.join(os.homedir(), ".opencode", "skills"),
+    );
+    expect(TARGET_COMPAT_READ_CANDIDATES.opencode).toContain(
+      path.join(os.homedir(), ".agents", "skills"),
+    );
+    expect(TARGET_COMPAT_READ_CANDIDATES.zcode).not.toContain(
+      path.join(os.homedir(), ".agents", "skills"),
     );
     expect(TARGET_PATH_CANDIDATES["gemini-cli"]).not.toContain(
       path.join(os.homedir(), ".agents", "skills"),
@@ -98,28 +110,34 @@ describe("target definitions", () => {
       path.join(os.homedir(), ".claude", "skills"),
     );
     expect(TARGET_PATH_CANDIDATES.cline).not.toContain(
-      path.join(os.homedir(), ".cline", "skills"),
+      path.join(os.homedir(), ".agents", "skills"),
     );
   });
 
   test("exposes documented project/global paths as future-facing metadata", () => {
     expect(TARGET_DOCUMENTED_PROJECT_PATHS["claude-code"]).toBe(".claude/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.codex).toBe(".agents/skills/");
+    expect(TARGET_DOCUMENTED_PROJECT_PATHS.opencode).toBe(".opencode/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.openclaw).toBe("skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS["hermes-agent"]).toBe(".hermes/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS["minimax-code"]).toBe(".mavis/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.pi).toBe(".pi/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.trae).toBe(".trae/skills/");
+    expect(TARGET_DOCUMENTED_PROJECT_PATHS["trae-cn"]).toBe(".trae/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.windsurf).toBe(".windsurf/skills/");
+    expect(TARGET_DOCUMENTED_PROJECT_PATHS.cline).toBe(".cline/skills/");
 
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["claude-code"]).toBe("~/.claude/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.codex).toBe("~/.codex/skills/");
+    expect(TARGET_DOCUMENTED_GLOBAL_PATHS.opencode).toBe("~/.config/opencode/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["github-copilot"]).toBe("~/.copilot/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["roo-code"]).toBe("~/.roo/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["hermes-agent"]).toBe("~/.hermes/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS["minimax-code"]).toBe("~/.minimax/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.kiro).toBe("~/.kiro/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.trae).toBe("~/.trae/skills/");
+    expect(TARGET_DOCUMENTED_GLOBAL_PATHS["trae-cn"]).toBe("~/.trae-cn/skills/");
+    expect(TARGET_DOCUMENTED_GLOBAL_PATHS.cline).toBe("~/.cline/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.zcode).toBe(".zcode/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.zcode).toBe("~/.zcode/skills/");
   });
@@ -131,7 +149,13 @@ describe("target definitions", () => {
     expect(resolveDocumentedProjectSkillPath("claude-code", "/Users/test/src/repo-a")).toBe(
       "/Users/test/src/repo-a/.claude/skills",
     );
+    expect(resolveDocumentedProjectSkillPath("opencode", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.opencode/skills",
+    );
     expect(resolveDocumentedProjectSkillPath("trae", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.trae/skills",
+    );
+    expect(resolveDocumentedProjectSkillPath("trae-cn", "/Users/test/src/repo-a")).toBe(
       "/Users/test/src/repo-a/.trae/skills",
     );
     expect(resolveDocumentedProjectSkillPath("hermes-agent", "/Users/test/src/repo-a")).toBe(
@@ -139,6 +163,9 @@ describe("target definitions", () => {
     );
     expect(resolveDocumentedProjectSkillPath("minimax-code", "/Users/test/src/repo-a")).toBe(
       "/Users/test/src/repo-a/.mavis/skills",
+    );
+    expect(resolveDocumentedProjectSkillPath("cline", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.cline/skills",
     );
     expect(resolveDocumentedProjectSkillPath("zcode", "/Users/test/src/repo-a")).toBe(
       "/Users/test/src/repo-a/.zcode/skills",
@@ -153,6 +180,7 @@ describe("target definitions", () => {
     expect(TARGET_ICON_ASSET_NAMES["hermes-agent"]).toBe("hermesagent.svg");
     expect(TARGET_ICON_ASSET_NAMES["minimax-code"]).toBe("minimax.svg");
     expect(TARGET_ICON_ASSET_NAMES.trae).toBe("trae.svg");
+    expect(TARGET_ICON_ASSET_NAMES["trae-cn"]).toBe("trae.svg");
     expect(TARGET_ICON_ASSET_NAMES.zcode).toBe("zcode.svg");
     expect(TARGET_ICON_ASSET_NAMES.pi).toBeUndefined();
     expect(TARGET_DEFINITIONS["roo-code"].documentedAgentIds).toEqual(["roo"]);

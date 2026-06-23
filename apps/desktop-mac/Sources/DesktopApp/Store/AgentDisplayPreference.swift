@@ -21,11 +21,13 @@ enum AgentDisplayCatalog {
         "minimax-code",
         "pi",
         "trae",
+        "trae-cn",
         "windsurf",
         "roo-code",
         "cline",
         "amp",
         "kiro",
+        "zcode",
     ]
 
     private static let labelsByTargetId: [String: String] = [
@@ -40,6 +42,7 @@ enum AgentDisplayCatalog {
         "minimax-code": "MiniMax Code",
         "pi": "Pi",
         "trae": "Trae",
+        "trae-cn": "Trae CN",
         "windsurf": "Windsurf",
         "roo-code": "Roo Code",
         "cline": "Cline",
@@ -60,6 +63,7 @@ enum AgentDisplayCatalog {
         "minimax-code": "MX",
         "pi": "PI",
         "trae": "TR",
+        "trae-cn": "TC",
         "windsurf": "WS",
         "roo-code": "RO",
         "cline": "CL",
@@ -143,12 +147,14 @@ enum AgentDisplayCatalog {
             return homeDirectory.appendingPathComponent(".pi/agent/skills", isDirectory: true).path
         case "trae":
             return homeDirectory.appendingPathComponent(".trae/skills", isDirectory: true).path
+        case "trae-cn":
+            return homeDirectory.appendingPathComponent(".trae-cn/skills", isDirectory: true).path
         case "windsurf":
             return homeDirectory.appendingPathComponent(".codeium/windsurf/skills", isDirectory: true).path
         case "roo-code":
             return homeDirectory.appendingPathComponent(".roo/skills", isDirectory: true).path
         case "cline":
-            return homeDirectory.appendingPathComponent(".agents/skills", isDirectory: true).path
+            return homeDirectory.appendingPathComponent(".cline/skills", isDirectory: true).path
         case "amp":
             return homeDirectory.appendingPathComponent(".config/agents/skills", isDirectory: true).path
         case "kiro":
@@ -168,8 +174,12 @@ enum AgentDisplayCatalog {
         switch targetId {
         case "claude-code":
             return ".claude/skills"
-        case "codex", "cursor", "github-copilot", "gemini-cli", "opencode", "cline":
+        case "codex", "cursor", "github-copilot", "gemini-cli":
             return ".agents/skills"
+        case "opencode":
+            return ".opencode/skills"
+        case "cline":
+            return ".cline/skills"
         case "openclaw":
             return "skills"
         case "hermes-agent":
@@ -179,6 +189,8 @@ enum AgentDisplayCatalog {
         case "pi":
             return ".pi/skills"
         case "trae":
+            return ".trae/skills"
+        case "trae-cn":
             return ".trae/skills"
         case "windsurf":
             return ".windsurf/skills"

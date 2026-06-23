@@ -14,7 +14,7 @@ Turn scattered AI agent skills into organized workflows.
 
 </div>
 
-Install, manage, and share skills across every major coding agent — Claude Code, Cursor, Copilot, Trae, ZCode, and more.
+Install, manage, and share skills across every major coding agent — Claude Code, Cursor, Copilot, Trae, Trae CN, ZCode, and more.
 
 Search and import skills from skills.sh, GitHub, or local sources. Deploy to multiple agents at once. Keep everything organized and up to date.
 
@@ -35,7 +35,7 @@ Installing skills one by one breaks down at scale:
 ## What You Get
 
 - **Grouped source management**: local, Git, and skills.sh sources all flow through the same import model.
-- **Multi-agent deployment**: deploy one selected skill set to Claude Code, Codex, Cursor, Gemini CLI, OpenCode, OpenClaw, Hermes Agent, MiniMax Code, Trae, Windsurf, ZCode, and more.
+- **Multi-agent deployment**: deploy one selected skill set to Claude Code, Codex, Cursor, Gemini CLI, OpenCode, OpenClaw, Hermes Agent, MiniMax Code, Trae, Trae CN, Windsurf, ZCode, and more.
 - **Interactive config flow**: Ink-based TUI for add/config flows, selection state, review, and repair.
 - **Desktop app on macOS 15+**: SwiftUI main window, import view, detail panel, settings, and menu bar quick config.
 - **Explicit state**: `manifest.json` stores intent, `lock.json` stores resolved inventory and deployments.
@@ -146,6 +146,7 @@ Current built-in targets:
 - MiniMax Code
 - Pi
 - Trae
+- Trae CN
 - Windsurf
 - Roo Code
 - Cline

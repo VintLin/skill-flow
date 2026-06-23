@@ -162,6 +162,23 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertFalse(model.visibleTargets.map(\.id).contains("cursor"))
     }
 
+    func testHomeVisibleTargetsIncludeAllDetectedBeyondTen() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.availableTargets = AgentDisplayCatalog.defaultTargetOrder
+        try fixture.reset(state: state)
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        let appState = DesktopAppState()
+        model.bindRouteState(appState)
+        await model.bootstrap()
+
+        XCTAssertTrue(model.visibleTargets.map(\.id).contains("trae"))
+        XCTAssertTrue(model.visibleTargets.map(\.id).contains("trae-cn"))
+        XCTAssertTrue(model.visibleTargets.map(\.id).contains("zcode"))
+        XCTAssertTrue(model.visibleTargets.map(\.id).contains("hermes-agent"))
+    }
+
     func testCustomAgentsRemainVisibleInGroupCardsWithoutDetection() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)

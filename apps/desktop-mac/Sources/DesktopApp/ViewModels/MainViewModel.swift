@@ -1390,7 +1390,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         let customTargetIds = Set((routeState?.settings.customAgents ?? []).map(\.id))
 
         if showAllTargets { return visibleTargetIds }
-        return Array(visibleTargetIds.filter { detectedTargets.contains($0) || customTargetIds.contains($0) }.prefix(10))
+        return visibleTargetIds.filter { detectedTargets.contains($0) || customTargetIds.contains($0) }
     }
 
     private func visibleEnabledTargets(for sourceId: String, within targetIds: [String]) -> [String] {
