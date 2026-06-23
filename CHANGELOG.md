@@ -2,6 +2,19 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.8 - 2026-06-23
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.7` to `1.4.8`.
+- Changed macOS target icons to use consistent cropped and padded rendering.
+
+### Fixed
+
+- Fixed macOS home and import search fields so users can clear active search text directly from the field.
+- Fixed macOS home search results so matching skills inside a group are highlighted and sorted ahead of non-matching skills.
+- Fixed macOS import success refresh so it keeps the user on the import page and preserves prepared recommendation card details.
+
 ## v1.4.7 - 2026-06-20
 
 ### Changed

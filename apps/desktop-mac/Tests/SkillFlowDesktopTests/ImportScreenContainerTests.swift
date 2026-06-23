@@ -35,6 +35,23 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(container.screenState.placeholderIndex, 2)
     }
 
+    func testClearSearchClearsImportTextAndRefreshesResults() async {
+        let query = RecordingSearchImportQueryFacade()
+        let state = DesktopAppState()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query
+        )
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        container.screenState.searchText = "anthropics"
+
+        await container.clearSearch()
+
+        XCTAssertEqual(container.screenState.searchText, "")
+        XCTAssertEqual(model.importSubmittedQuery, "")
+        XCTAssertEqual(query.searchQueries, [])
+    }
+
     func testHomeLocatorHandoffRoutesToImportPageAndSubmitsDirectLocator() async {
         let runtime = DesktopRuntime()
         let container = DesktopAppContainer(runtime: runtime)
@@ -276,6 +293,81 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(toastMessage.contains("IMPORT_SELECTORS_UNRESOLVED_USED_ALL"))
         XCTAssertFalse(toastMessage.contains("IMPORT_SELECTOR"))
         XCTAssertNil(model.importingImportGroupId)
+    }
+
+    func testImportSuccessDoesNotAutoInspectImportedGroup() async {
+        let commands = RecordingImportCommandFacade()
+        let query = RecordingPreviewQueryFacade()
+        query.listPayload = ["summaries": [makeSummary(id: "local-skills", locator: "owner/repo")]]
+        let state = DesktopAppState()
+        state.view.currentRoute = .importPage
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: commands
+        )
+        model.bindRouteState(state)
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo"
+            )
+        ]
+
+        await model.importImportGroup(
+            groupId: "owner-repo",
+            locator: "owner/repo",
+            selectedSkills: [.repoPath("browse")],
+            enabledTargets: []
+        )
+
+        await waitForCondition(timeoutNanoseconds: 500_000_000) {
+            query.listCallCount > 0
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+
+        XCTAssertEqual(state.view.currentRoute, .importPage)
+        XCTAssertEqual(query.inspectSourceIds, [])
+    }
+
+    func testImportStateRefreshPreservesRecommendedCardDetails() async {
+        let query = RecordingPreviewQueryFacade()
+        query.listPayload = ["summaries": [makeSummary(id: "local-skills", locator: "owner/repo")]]
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            recommendationsProvider: {
+                [
+                    ImportRecommendationEntry(
+                        canonicalRepo: "owner/repo",
+                        locator: "owner/repo",
+                        categoryId: "development",
+                        primaryTagId: "general",
+                        secondaryTagIds: [],
+                        descriptionKey: "import.recommendation.owner_repo.description",
+                        sortOrder: 1
+                    )
+                ]
+            }
+        )
+        model.recommendedImportGroups = [
+            makeItem(
+                id: "owner-repo",
+                title: "Owner Repo",
+                locator: "owner/repo",
+                preparationId: "prep-owner-repo",
+                preparationStatus: "ready",
+                previewPhase: .ready
+            )
+        ]
+
+        await model.synchronizeState(refreshDoctor: false)
+
+        XCTAssertEqual(model.recommendedImportGroups.first?.isInstalledLocally, true)
+        XCTAssertEqual(model.recommendedImportGroups.first?.preparationId, "prep-owner-repo")
+        XCTAssertEqual(model.recommendedImportGroups.first?.preparationStatus, "ready")
+        XCTAssertEqual(model.recommendedImportGroups.first?.previewPhase, .ready)
     }
 
     func testImportSuccessWarningUsesNonFailureCopyForSelectorNotFound() async throws {
@@ -2628,6 +2720,31 @@ final class ImportScreenContainerTests: XCTestCase {
         )
     }
 
+    private func makeSummary(id: String, locator: String) -> [String: Any] {
+        [
+            "source": [
+                "id": id,
+                "kind": "skills",
+                "displayName": id,
+                "locator": locator,
+                "canonicalRepo": locator,
+            ],
+            "leafs": [
+                [
+                    "id": "browse",
+                    "name": "Browse",
+                    "description": "",
+                ]
+            ],
+            "bindings": [
+                "selectedLeafIds": ["browse"],
+                "targets": [:],
+            ],
+            "issueCounts": [:],
+            "health": "OK",
+        ]
+    }
+
     private func sourceRoot() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -2802,6 +2919,12 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
     private let prepareStatus: String
     private let previewPayload: [String: Any]
     private let previewSkills: [[String: Any]]
+    var listPayload: [String: Any] = [
+        "summaries": [],
+        "pinnedSourceIds": [],
+    ]
+    private(set) var listCallCount = 0
+    private(set) var inspectSourceIds: [String] = []
 
     init(
         blockPrepareUntilReleased: Bool = false,
@@ -2864,22 +2987,29 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
     }
 
     func list() async throws -> BridgeResponse {
-        BridgeResponse(
+        listCallCount += 1
+        return BridgeResponse(
             protocolVersion: "1",
             requestId: nil,
             command: .list,
             ok: true,
-            data: AnyCodable([
-                "summaries": [],
-                "pinnedSourceIds": [],
-            ]),
+            data: AnyCodable(listPayload),
             warnings: [],
             errors: []
         )
     }
 
     func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
-        fatalError("unused")
+        inspectSourceIds.append(sourceId)
+        return BridgeResponse(
+            protocolVersion: "1",
+            requestId: nil,
+            command: .inspect,
+            ok: true,
+            data: AnyCodable([String: Any]()),
+            warnings: [],
+            errors: []
+        )
     }
 
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
@@ -3051,6 +3181,7 @@ private final class RecordingLocalImportQueryFacade: DesktopQuerying {
 @MainActor
 private final class RecordingSearchImportQueryFacade: DesktopQuerying {
     var searchError: Error?
+    private(set) var searchQueries: [String?] = []
 
     func bootstrap() async throws -> BridgeResponse { fatalError("unused") }
     func list() async throws -> BridgeResponse { fatalError("unused") }
@@ -3064,6 +3195,7 @@ private final class RecordingSearchImportQueryFacade: DesktopQuerying {
         if let searchError {
             throw searchError
         }
+        searchQueries.append(query)
         return BridgeResponse(
             protocolVersion: "1",
             requestId: nil,

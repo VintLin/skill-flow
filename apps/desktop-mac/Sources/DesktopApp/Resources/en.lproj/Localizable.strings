@@ -400,6 +400,7 @@
 "settings.row.clear_cache.title" = "Clear Cache";
 "settings.row.clear_cache.description" = "Remove cached author, repo, and skill metadata fetched from the network.";
 "settings.action.clear_cache" = "Clear";
+"search.action.clear" = "Clear search";
 "settings.row.reset_configuration.title" = "Reset Configuration";
 "settings.row.reset_configuration.description" = "Restore settings on this page to their default values.";
 "settings.action.reset_configuration" = "Reset";

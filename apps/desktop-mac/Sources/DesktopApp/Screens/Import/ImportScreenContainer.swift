@@ -72,6 +72,11 @@ final class ImportScreenContainer {
         await mainViewModel.submitImportSearch(query)
     }
 
+    func clearSearch() async {
+        screenState.searchText = ""
+        await mainViewModel.submitImportSearch("")
+    }
+
     func submitDirectLocator(_ locator: String) async {
         screenState.searchText = locator
         await mainViewModel.submitImportSearch(locator)

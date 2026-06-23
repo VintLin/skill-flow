@@ -595,6 +595,11 @@ struct MainView: View {
                         }
                     }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            searchClearButton(isVisible: Self.shouldShowSearchClearButton(query: viewModel.searchQuery)) {
+                viewModel.searchQuery = ""
+            }
         }
         .padding(.horizontal, 12)
         .frame(width: width, height: Self.headerSearchFieldHeight, alignment: .leading)
@@ -630,7 +635,13 @@ struct MainView: View {
                         }
                     }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
+            searchClearButton(isVisible: Self.shouldShowSearchClearButton(query: importScreenState.searchText)) {
+                Task {
+                    await importContainer.clearSearch()
+                }
+            }
         }
         .padding(.horizontal, 12)
         .frame(width: width, height: Self.headerSearchFieldHeight, alignment: .leading)
@@ -1339,6 +1350,10 @@ struct MainView: View {
         query.isEmpty && !isFocused
     }
 
+    static func shouldShowSearchClearButton(query: String) -> Bool {
+        !query.isEmpty
+    }
+
     private func scheduleImplicitSearchFocusReset(for route: DesktopRoute) {
         guard Self.shouldClearImplicitSearchFocusOnAppear(for: route) else {
             return
@@ -1994,6 +2009,24 @@ struct MainView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+    }
+
+    @ViewBuilder
+    private func searchClearButton(
+        isVisible: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        if isVisible {
+            Button(action: action) {
+                actionIcon(.close, size: 14)
+                    .foregroundStyle(AppTheme.statusError(for: theme))
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(t("search.action.clear"))
+            .accessibilityLabel(t("search.action.clear"))
         }
     }
 }

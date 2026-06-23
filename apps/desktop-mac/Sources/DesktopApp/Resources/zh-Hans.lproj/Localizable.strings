@@ -400,6 +400,7 @@
 "settings.row.clear_cache.title" = "清理缓存";
 "settings.row.clear_cache.description" = "清除网络获取的作者、仓库和技能元数据缓存。";
 "settings.action.clear_cache" = "清理";
+"search.action.clear" = "清空搜索";
 "settings.row.reset_configuration.title" = "重置配置";
 "settings.row.reset_configuration.description" = "将本页设置恢复为默认值。";
 "settings.action.reset_configuration" = "重置";

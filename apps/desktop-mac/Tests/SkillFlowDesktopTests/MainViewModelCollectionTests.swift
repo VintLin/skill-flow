@@ -129,6 +129,22 @@ final class MainViewModelCollectionTests: XCTestCase {
         XCTAssertEqual(betaCard.skills.map(\.sourceTitle), ["Alpha"])
     }
 
+    func testHomeSearchHighlightsMatchingSkillInsideGroup() async throws {
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: CollectionQueryStub(),
+            commandFacade: RecordingCollectionCommandFacade()
+        )
+
+        await model.bootstrap()
+        model.searchQuery = "Audit"
+
+        let card = try XCTUnwrap(model.filteredHomeGroupCards(locale: .init(identifier: "en")).first)
+        XCTAssertEqual(card.id, "alpha")
+        XCTAssertEqual(card.skills.first?.label, "Audit")
+        XCTAssertEqual(card.skills.first?.highlightQuery, "Audit")
+    }
+
     func testHomeCardsUseLocalizedAuthorsForLocalAndCollections() async {
         let model = MainViewModel(
             bridgeClient: BridgeClient(),

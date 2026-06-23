@@ -400,6 +400,7 @@
 "settings.row.clear_cache.title" = "キャッシュを削除";
 "settings.row.clear_cache.description" = "ネットワーク取得した作成者、リポジトリ、スキルのメタデータキャッシュを削除します。";
 "settings.action.clear_cache" = "削除";
+"search.action.clear" = "検索をクリア";
 "settings.row.reset_configuration.title" = "設定をリセット";
 "settings.row.reset_configuration.description" = "このページの設定を既定値に戻します。";
 "settings.action.reset_configuration" = "リセット";

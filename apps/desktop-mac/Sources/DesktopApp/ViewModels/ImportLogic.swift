@@ -316,7 +316,6 @@ final class ImportLogic {
                 }
             }
 
-            let sourceId = payload["sourceId"] as? String ?? ""
             delegate?.cancelDeferredDraftSync()
             mutateImportGroup(groupId) { item in
                 ImportGroupItem(
@@ -350,7 +349,7 @@ final class ImportLogic {
                 guard let self, let delegate = self.delegate else { return }
                 await delegate.synchronizeState(
                     refreshDoctor: true,
-                    inspectSourceId: sourceId.nonEmpty
+                    inspectSourceId: nil
                 )
             }
             delegate?.applyWarningsFromApplyResponse(response.warnings)
@@ -550,7 +549,7 @@ final class ImportLogic {
 
     private func refreshImportGroupInstalledState() {
         if !recommendedImportGroups.isEmpty {
-            recommendedImportGroups = makeLocalRecommendedImportGroups(recommendationsProvider())
+            recommendedImportGroups = recommendedImportGroups.map(withCurrentInstalledState)
         }
         localImportGroups = localImportGroups.map(withCurrentInstalledState)
         searchImportGroups = searchImportGroups.map(withCurrentInstalledState)

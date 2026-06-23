@@ -603,7 +603,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func groupCards(matching rawQuery: String) -> [GroupCardModel] {
-        sourceRows(matching: rawQuery).compactMap { row -> GroupCardModel? in
+        let normalizedQuery = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryKey = normalizedQuery.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        return sourceRows(matching: rawQuery).compactMap { row -> GroupCardModel? in
             guard let summary = sourceManagement.summary(for: row.id), let draft = draft(for: row.id) else { return nil }
 
             let enabledLeafIds = Set(draft.selectedLeafIds)
@@ -637,7 +639,12 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 skillsLoading: false,
                 targetsLoading: false,
                 skills: sortedGroupCardSkills(summary.leafs.map { leaf in
-                    GroupCardSkill(
+                    let nameKey = leaf.name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    let linkNameKey = leaf.linkName.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    let matchesQuery = !queryKey.isEmpty && (
+                        nameKey.contains(queryKey) || linkNameKey.contains(queryKey)
+                    )
+                    return GroupCardSkill(
                         id: leaf.id,
                         label: leaf.name,
                         description: leaf.description,
@@ -647,7 +654,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                                 sourceId == summary.sourceId ? nil : sourceTitlesById[sourceId]
                             }
                             : nil,
-                        highlightQuery: nil
+                        highlightQuery: matchesQuery ? normalizedQuery : nil
                     )
                 }),
                 targets: visibleTargetIds().map { targetId in
@@ -1570,6 +1577,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     private func sortedGroupCardSkills(_ skills: [GroupCardSkill]) -> [GroupCardSkill] {
         skills.sorted { lhs, rhs in
+            if (lhs.highlightQuery != nil) != (rhs.highlightQuery != nil) {
+                return lhs.highlightQuery != nil
+            }
             if lhs.isEnabled != rhs.isEnabled {
                 return lhs.isEnabled && !rhs.isEnabled
             }

@@ -49,6 +49,29 @@ final class ClickTargetRegressionTests: XCTestCase {
         XCTAssertFalse(source.contains(".opacity(isEnabled ? 1.0 : 0.45)"))
     }
 
+    func testHomeAndImportSearchFieldsRenderClearButton() throws {
+        let source = try sourceText(
+            at: "Sources/DesktopApp/Screens/Home/MainView.swift"
+        )
+
+        XCTAssertTrue(source.contains("searchClearButton(isVisible: Self.shouldShowSearchClearButton(query: viewModel.searchQuery))"))
+        XCTAssertTrue(source.contains("searchClearButton(isVisible: Self.shouldShowSearchClearButton(query: importScreenState.searchText))"))
+        XCTAssertTrue(source.contains("await importContainer.clearSearch()"))
+        XCTAssertTrue(source.contains("actionIcon(.close, size: 14)"))
+        XCTAssertTrue(source.contains(".foregroundStyle(AppTheme.statusError(for: theme))"))
+        XCTAssertTrue(source.contains(".frame(width: 22, height: 22)"))
+    }
+
+    func testGroupCardTargetIconsUseCroppedPaddedRendering() throws {
+        let source = try sourceText(
+            at: "Sources/DesktopApp/Components/GroupCardComponents.swift"
+        )
+
+        XCTAssertTrue(source.contains("cropToVisibleBounds: true"))
+        XCTAssertTrue(source.contains(".padding(6)"))
+        XCTAssertFalse(source.contains("targetId == \"hermes-agent\" || targetId == \"minimax-code\""))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
