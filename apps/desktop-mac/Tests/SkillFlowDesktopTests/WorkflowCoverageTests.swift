@@ -677,22 +677,25 @@ final class WorkflowCoverageTests: XCTestCase {
             [
                 "claude-code",
                 "codex",
+                "zcode",
                 "cursor",
-                "github-copilot",
-                "gemini-cli",
-                "opencode",
-                "openclaw",
-                "hermes-agent",
-                "minimax-code",
                 "pi",
+                "workbuddy",
+                "codebuddy",
                 "trae",
                 "trae-cn",
+                "kimi-code",
+                "opencode",
+                "minimax-code",
+                "hermes-agent",
+                "openclaw",
+                "github-copilot",
+                "gemini-cli",
                 "windsurf",
-                "roo-code",
-                "cline",
                 "amp",
                 "kiro",
-                "zcode"
+                "roo-code",
+                "cline"
             ]
         )
     }

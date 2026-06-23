@@ -321,6 +321,45 @@ description: One.
     expect(await pathExists(outsidePath)).toBe(false);
   });
 
+  test("creates a missing managed target root before writing a skill", async () => {
+    const rootPath = path.join(sandbox.sandboxRoot, "targets", "trae-cn", "skills");
+    const sourcePath = path.join(sandbox.sandboxRoot, "source-a", "one");
+    const targetPath = path.join(rootPath, "one");
+    const lockFile = createLockFile({ projections: [] });
+
+    await fs.rm(rootPath, { recursive: true, force: true });
+    await writeRepoFiles(sourcePath, {
+      "SKILL.md": `---
+name: one
+description: One.
+---
+`,
+    });
+
+    const applier = new DeploymentApplier({
+      trustedTargetRoots: {
+        "trae-cn": rootPath,
+      },
+    });
+    const result = await applier.applyPlan(lockFile, [
+      {
+        kind: "create",
+        sourceId: "source-a",
+        leafId: "source-a:one",
+        target: "trae-cn",
+        strategy: "symlink",
+        sourcePath,
+        targetPath,
+        targetRootPath: rootPath,
+        contentHash: "hash-one",
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(await pathExists(rootPath)).toBe(true);
+    expect(await fs.realpath(targetPath)).toBe(await fs.realpath(sourcePath));
+  });
+
   test("skips noop actions without changing the lock file", async () => {
     const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
     const projection: LockFile["projections"][number] = {

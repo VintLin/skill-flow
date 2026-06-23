@@ -8,6 +8,7 @@ import type {
 } from "@skill-flow/domain/types";
 import {
   getTargetDetectionCandidates,
+  getTargetWriteRootCandidates,
   getBuiltInTargetDefinitions,
 } from "../utils/constants.js";
 import { pathExists } from "../utils/fs.js";
@@ -35,6 +36,9 @@ class DefaultChannelAdapter implements ChannelAdapter {
     const candidates = this.definition.kind === "builtin"
       ? getTargetDetectionCandidates(this.definition.id as DeploymentTargetName)
       : [this.definition.globalPath];
+    const writeRootCandidates = this.definition.kind === "builtin"
+      ? getTargetWriteRootCandidates(this.definition.id as DeploymentTargetName)
+      : [this.definition.globalPath];
     const envVar = this.definition.kind === "builtin"
       ? ` Set ${this.target} target env override to enable it.`
       : "";
@@ -58,7 +62,7 @@ class DefaultChannelAdapter implements ChannelAdapter {
           target: this.target,
           strategy: this.strategy,
           available: true,
-          rootPath,
+          rootPath: path.resolve(writeRootCandidates[0] ?? rootPath),
         };
       }
     }

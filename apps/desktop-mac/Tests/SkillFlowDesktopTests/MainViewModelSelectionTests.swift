@@ -158,7 +158,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         await model.bootstrap()
         model.showAllTargets = true
 
-        XCTAssertEqual(model.visibleTargets.prefix(3).map(\.id), ["codex", "claude-code", "github-copilot"])
+        XCTAssertEqual(model.visibleTargets.prefix(3).map(\.id), ["codex", "claude-code", "zcode"])
         XCTAssertFalse(model.visibleTargets.map(\.id).contains("cursor"))
     }
 

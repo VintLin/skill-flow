@@ -1770,6 +1770,9 @@ description: |
         "gemini-cli",
         "hermes-agent",
         "minimax-code",
+        "kimi-code",
+        "workbuddy",
+        "codebuddy",
         "windsurf",
         "roo-code",
         "cline",
@@ -1792,6 +1795,15 @@ description: |
     expect(
       await pathExists(path.join(process.env.SKILL_FLOW_TARGET_MINIMAX_CODE!, "browse")),
     ).toBe(true);
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_KIMI_CODE!, "browse"))).toBe(
+      true,
+    );
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_WORKBUDDY!, "browse"))).toBe(
+      true,
+    );
+    expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_CODEBUDDY!, "browse"))).toBe(
+      true,
+    );
     expect(await pathExists(path.join(process.env.SKILL_FLOW_TARGET_WINDSURF!, "browse"))).toBe(
       true,
     );
@@ -1817,22 +1829,25 @@ description: |
     expect(targets).toEqual([
       "claude-code",
       "codex",
+      "zcode",
       "cursor",
-      "github-copilot",
-      "gemini-cli",
-      "opencode",
-      "openclaw",
-      "hermes-agent",
-      "minimax-code",
       "pi",
+      "workbuddy",
+      "codebuddy",
       "trae",
       "trae-cn",
+      "kimi-code",
+      "opencode",
+      "minimax-code",
+      "hermes-agent",
+      "openclaw",
+      "github-copilot",
+      "gemini-cli",
       "windsurf",
-      "roo-code",
-      "cline",
       "amp",
       "kiro",
-      "zcode",
+      "roo-code",
+      "cline",
     ]);
   });
 
@@ -1847,6 +1862,9 @@ description: |
       openclaw: process.env.SKILL_FLOW_TARGET_OPENCLAW,
       hermesAgent: process.env.SKILL_FLOW_TARGET_HERMES_AGENT,
       minimaxCode: process.env.SKILL_FLOW_TARGET_MINIMAX_CODE,
+      kimiCode: process.env.SKILL_FLOW_TARGET_KIMI_CODE,
+      workbuddy: process.env.SKILL_FLOW_TARGET_WORKBUDDY,
+      codebuddy: process.env.SKILL_FLOW_TARGET_CODEBUDDY,
       pi: process.env.SKILL_FLOW_TARGET_PI,
       trae: process.env.SKILL_FLOW_TARGET_TRAE,
       traeCn: process.env.SKILL_FLOW_TARGET_TRAE_CN,
@@ -1868,6 +1886,9 @@ description: |
       delete process.env.SKILL_FLOW_TARGET_OPENCLAW;
       delete process.env.SKILL_FLOW_TARGET_HERMES_AGENT;
       delete process.env.SKILL_FLOW_TARGET_MINIMAX_CODE;
+      delete process.env.SKILL_FLOW_TARGET_KIMI_CODE;
+      delete process.env.SKILL_FLOW_TARGET_WORKBUDDY;
+      delete process.env.SKILL_FLOW_TARGET_CODEBUDDY;
       delete process.env.SKILL_FLOW_TARGET_PI;
       delete process.env.SKILL_FLOW_TARGET_TRAE;
       delete process.env.SKILL_FLOW_TARGET_TRAE_CN;
@@ -1894,6 +1915,9 @@ description: |
       process.env.SKILL_FLOW_TARGET_OPENCLAW = previousTargets.openclaw;
       process.env.SKILL_FLOW_TARGET_HERMES_AGENT = previousTargets.hermesAgent;
       process.env.SKILL_FLOW_TARGET_MINIMAX_CODE = previousTargets.minimaxCode;
+      process.env.SKILL_FLOW_TARGET_KIMI_CODE = previousTargets.kimiCode;
+      process.env.SKILL_FLOW_TARGET_WORKBUDDY = previousTargets.workbuddy;
+      process.env.SKILL_FLOW_TARGET_CODEBUDDY = previousTargets.codebuddy;
       process.env.SKILL_FLOW_TARGET_PI = previousTargets.pi;
       process.env.SKILL_FLOW_TARGET_TRAE = previousTargets.trae;
       process.env.SKILL_FLOW_TARGET_TRAE_CN = previousTargets.traeCn;

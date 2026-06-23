@@ -2,6 +2,24 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.4.9 - 2026-06-23
+
+### Added
+
+- Added Kimi Code, WorkBuddy, and CodeBuddy as built-in deployment targets.
+- Added bundled macOS target icons for Kimi Code and CodeBuddy, with WorkBuddy sharing the CodeBuddy icon.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.8` to `1.4.9`.
+- Changed the default built-in target order across CLI, bridge, and macOS desktop surfaces.
+- Changed built-in target detection so detection roots can differ from managed write roots.
+
+### Fixed
+
+- Fixed deployment to create missing managed target roots before writing skills.
+- Fixed macOS import target lists so visible fallback targets are enforced while local source targets remain available.
+
 ## v1.4.8 - 2026-06-23
 
 ### Changed

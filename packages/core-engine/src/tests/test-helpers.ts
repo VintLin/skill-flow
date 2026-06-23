@@ -33,12 +33,18 @@ export function useSkillFlowSandbox() {
     process.env.SKILL_FLOW_TARGET_OPENCLAW = path.join(context.targetsRoot, "openclaw");
     process.env.SKILL_FLOW_TARGET_HERMES_AGENT = path.join(context.targetsRoot, "hermes-agent");
     process.env.SKILL_FLOW_TARGET_MINIMAX_CODE = path.join(context.targetsRoot, "minimax-code");
+    process.env.SKILL_FLOW_TARGET_KIMI_CODE = path.join(context.targetsRoot, "kimi-code");
+    process.env.SKILL_FLOW_TARGET_WORKBUDDY = path.join(context.targetsRoot, "workbuddy");
+    process.env.SKILL_FLOW_TARGET_CODEBUDDY = path.join(context.targetsRoot, "codebuddy");
     process.env.SKILL_FLOW_TARGET_PI = path.join(context.targetsRoot, "pi");
+    process.env.SKILL_FLOW_TARGET_TRAE = path.join(context.targetsRoot, "trae");
+    process.env.SKILL_FLOW_TARGET_TRAE_CN = path.join(context.targetsRoot, "trae-cn");
     process.env.SKILL_FLOW_TARGET_WINDSURF = path.join(context.targetsRoot, "windsurf");
     process.env.SKILL_FLOW_TARGET_ROO_CODE = path.join(context.targetsRoot, "roo-code");
     process.env.SKILL_FLOW_TARGET_CLINE = path.join(context.targetsRoot, "cline");
     process.env.SKILL_FLOW_TARGET_AMP = path.join(context.targetsRoot, "amp");
     process.env.SKILL_FLOW_TARGET_KIRO = path.join(context.targetsRoot, "kiro");
+    process.env.SKILL_FLOW_TARGET_ZCODE = path.join(context.targetsRoot, "zcode");
 
     await Promise.all([
       fs.mkdir(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, { recursive: true }),
@@ -50,12 +56,18 @@ export function useSkillFlowSandbox() {
       fs.mkdir(process.env.SKILL_FLOW_TARGET_OPENCLAW!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_HERMES_AGENT!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_MINIMAX_CODE!, { recursive: true }),
+      fs.mkdir(process.env.SKILL_FLOW_TARGET_KIMI_CODE!, { recursive: true }),
+      fs.mkdir(process.env.SKILL_FLOW_TARGET_WORKBUDDY!, { recursive: true }),
+      fs.mkdir(process.env.SKILL_FLOW_TARGET_CODEBUDDY!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_PI!, { recursive: true }),
+      fs.mkdir(process.env.SKILL_FLOW_TARGET_TRAE!, { recursive: true }),
+      fs.mkdir(process.env.SKILL_FLOW_TARGET_TRAE_CN!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_WINDSURF!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_ROO_CODE!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_CLINE!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_AMP!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_KIRO!, { recursive: true }),
+      fs.mkdir(process.env.SKILL_FLOW_TARGET_ZCODE!, { recursive: true }),
     ]);
   });
 
@@ -71,12 +83,18 @@ export function useSkillFlowSandbox() {
     delete process.env.SKILL_FLOW_TARGET_OPENCLAW;
     delete process.env.SKILL_FLOW_TARGET_HERMES_AGENT;
     delete process.env.SKILL_FLOW_TARGET_MINIMAX_CODE;
+    delete process.env.SKILL_FLOW_TARGET_KIMI_CODE;
+    delete process.env.SKILL_FLOW_TARGET_WORKBUDDY;
+    delete process.env.SKILL_FLOW_TARGET_CODEBUDDY;
     delete process.env.SKILL_FLOW_TARGET_PI;
+    delete process.env.SKILL_FLOW_TARGET_TRAE;
+    delete process.env.SKILL_FLOW_TARGET_TRAE_CN;
     delete process.env.SKILL_FLOW_TARGET_WINDSURF;
     delete process.env.SKILL_FLOW_TARGET_ROO_CODE;
     delete process.env.SKILL_FLOW_TARGET_CLINE;
     delete process.env.SKILL_FLOW_TARGET_AMP;
     delete process.env.SKILL_FLOW_TARGET_KIRO;
+    delete process.env.SKILL_FLOW_TARGET_ZCODE;
     if (context.sandboxRoot) {
       await fs.rm(context.sandboxRoot, { recursive: true, force: true });
     }

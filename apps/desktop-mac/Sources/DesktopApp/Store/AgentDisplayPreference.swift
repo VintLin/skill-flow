@@ -12,22 +12,25 @@ enum AgentDisplayCatalog {
     static let defaultTargetOrder: [String] = [
         "claude-code",
         "codex",
+        "zcode",
         "cursor",
-        "github-copilot",
-        "gemini-cli",
-        "opencode",
-        "openclaw",
-        "hermes-agent",
-        "minimax-code",
         "pi",
+        "workbuddy",
+        "codebuddy",
         "trae",
         "trae-cn",
+        "kimi-code",
+        "opencode",
+        "minimax-code",
+        "hermes-agent",
+        "openclaw",
+        "github-copilot",
+        "gemini-cli",
         "windsurf",
-        "roo-code",
-        "cline",
         "amp",
         "kiro",
-        "zcode",
+        "roo-code",
+        "cline",
     ]
 
     private static let labelsByTargetId: [String: String] = [
@@ -40,6 +43,9 @@ enum AgentDisplayCatalog {
         "openclaw": "OpenClaw",
         "hermes-agent": "Hermes Agent",
         "minimax-code": "MiniMax Code",
+        "kimi-code": "Kimi Code",
+        "workbuddy": "WorkBuddy",
+        "codebuddy": "CodeBuddy",
         "pi": "Pi",
         "trae": "Trae",
         "trae-cn": "Trae CN",
@@ -61,6 +67,9 @@ enum AgentDisplayCatalog {
         "openclaw": "OC",
         "hermes-agent": "HA",
         "minimax-code": "MX",
+        "kimi-code": "KM",
+        "workbuddy": "WB",
+        "codebuddy": "CB",
         "pi": "PI",
         "trae": "TR",
         "trae-cn": "TC",
@@ -143,6 +152,12 @@ enum AgentDisplayCatalog {
             return homeDirectory.appendingPathComponent(".hermes/skills", isDirectory: true).path
         case "minimax-code":
             return homeDirectory.appendingPathComponent(".minimax/skills", isDirectory: true).path
+        case "kimi-code":
+            return homeDirectory.appendingPathComponent(".kimi-code/skills", isDirectory: true).path
+        case "workbuddy":
+            return homeDirectory.appendingPathComponent(".workbuddy/skills", isDirectory: true).path
+        case "codebuddy":
+            return homeDirectory.appendingPathComponent(".codebuddy/skills", isDirectory: true).path
         case "pi":
             return homeDirectory.appendingPathComponent(".pi/agent/skills", isDirectory: true).path
         case "trae":
@@ -186,6 +201,12 @@ enum AgentDisplayCatalog {
             return ".hermes/skills"
         case "minimax-code":
             return ".mavis/skills"
+        case "kimi-code":
+            return ".kimi-code/skills"
+        case "workbuddy":
+            return ".workbuddy/skills"
+        case "codebuddy":
+            return ".codebuddy/skills"
         case "pi":
             return ".pi/skills"
         case "trae":

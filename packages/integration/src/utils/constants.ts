@@ -21,6 +21,7 @@ export type TargetDefinition = {
   envVar: string;
   writerKey: string;
   writeRootCandidates: string[];
+  detectionRootCandidates?: string[];
   compatReadRootCandidates: string[];
   // Reserved for future project-scope installs. Current runtime still writes via writeRootCandidates.
   documentedProjectPath?: string;
@@ -33,22 +34,25 @@ export type TargetDefinition = {
 export const TARGET_ORDER: DeploymentTargetName[] = [
   "claude-code",
   "codex",
+  "zcode",
   "cursor",
-  "github-copilot",
-  "gemini-cli",
-  "opencode",
-  "openclaw",
-  "hermes-agent",
-  "minimax-code",
   "pi",
+  "workbuddy",
+  "codebuddy",
   "trae",
   "trae-cn",
+  "kimi-code",
+  "opencode",
+  "minimax-code",
+  "hermes-agent",
+  "openclaw",
+  "github-copilot",
+  "gemini-cli",
   "windsurf",
-  "roo-code",
-  "cline",
   "amp",
   "kiro",
-  "zcode",
+  "roo-code",
+  "cline",
 ];
 
 export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> = {
@@ -172,6 +176,39 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     iconAssetName: "minimax.svg",
     documentedAgentIds: ["minimax"],
   },
+  "kimi-code": {
+    label: "Kimi Code",
+    strategy: "symlink",
+    envVar: "SKILL_FLOW_TARGET_KIMI_CODE",
+    writerKey: "kimi-home",
+    writeRootCandidates: [path.join(os.homedir(), ".kimi-code", "skills")],
+    compatReadRootCandidates: [path.join(os.homedir(), ".agents", "skills")],
+    documentedProjectPath: ".kimi-code/skills/",
+    documentedGlobalPath: "~/.kimi-code/skills/",
+    iconAssetName: "kimi.svg",
+  },
+  workbuddy: {
+    label: "WorkBuddy",
+    strategy: "symlink",
+    envVar: "SKILL_FLOW_TARGET_WORKBUDDY",
+    writerKey: "workbuddy-home",
+    writeRootCandidates: [path.join(os.homedir(), ".workbuddy", "skills")],
+    compatReadRootCandidates: [],
+    documentedProjectPath: ".workbuddy/skills/",
+    documentedGlobalPath: "~/.workbuddy/skills/",
+    iconAssetName: "codebuddy.svg",
+  },
+  codebuddy: {
+    label: "CodeBuddy",
+    strategy: "symlink",
+    envVar: "SKILL_FLOW_TARGET_CODEBUDDY",
+    writerKey: "codebuddy-home",
+    writeRootCandidates: [path.join(os.homedir(), ".codebuddy", "skills")],
+    compatReadRootCandidates: [],
+    documentedProjectPath: ".codebuddy/skills/",
+    documentedGlobalPath: "~/.codebuddy/skills/",
+    iconAssetName: "codebuddy.svg",
+  },
   pi: {
     label: "Pi",
     strategy: "symlink",
@@ -203,6 +240,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     envVar: "SKILL_FLOW_TARGET_TRAE_CN",
     writerKey: "trae-cn-home",
     writeRootCandidates: [path.join(os.homedir(), ".trae-cn", "skills")],
+    detectionRootCandidates: [path.join(os.homedir(), ".trae-cn")],
     compatReadRootCandidates: [],
     documentedProjectPath: ".trae/skills/",
     documentedGlobalPath: "~/.trae-cn/skills/",
@@ -448,6 +486,24 @@ export function isExplicitTargetMode(): boolean {
 }
 
 export function getTargetDetectionCandidates(target: DeploymentTargetName): string[] {
+  const definition = TARGET_DEFINITIONS[target];
+  const override = process.env[definition.envVar]?.trim();
+
+  if (isExplicitTargetMode()) {
+    return override ? [override] : [];
+  }
+
+  return override
+    ? [override]
+    : [
+      ...new Set([
+        ...definition.writeRootCandidates,
+        ...(definition.detectionRootCandidates ?? []),
+      ]),
+    ];
+}
+
+export function getTargetWriteRootCandidates(target: DeploymentTargetName): string[] {
   const definition = TARGET_DEFINITIONS[target];
   const override = process.env[definition.envVar]?.trim();
 

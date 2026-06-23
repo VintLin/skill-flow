@@ -153,7 +153,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         viewModel.moveAgents(from: IndexSet(integer: 1), to: 0, detectedTargetIds: ["claude-code", "codex", "cursor"])
 
-        XCTAssertEqual(state.settings.agentDisplayPreferences.prefix(3).map(\.targetId), ["codex", "claude-code", "cursor"])
+        XCTAssertEqual(state.settings.agentDisplayPreferences.prefix(3).map(\.targetId), ["codex", "claude-code", "zcode"])
         XCTAssertEqual(state.settings.agentDisplayPreferences.prefix(3).map(\.sortOrder), [0, 1, 2])
     }
 
@@ -172,7 +172,7 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.moveAgents(from: IndexSet(integer: 1), to: 0, detectedTargetIds: ["claude-code", "codex", "cursor"])
 
         await fulfillment(of: [saveExpectation], timeout: 1.0)
-        XCTAssertEqual(commandFacade.saveSettingsCalls.last?.agentDisplayOrder.prefix(3).map { $0 }, ["codex", "claude-code", "cursor"])
+        XCTAssertEqual(commandFacade.saveSettingsCalls.last?.agentDisplayOrder.prefix(3).map { $0 }, ["codex", "claude-code", "zcode"])
     }
 
     @MainActor
@@ -366,7 +366,7 @@ final class SettingsViewModelTests: XCTestCase {
         viewModel.resetAgentDisplayPreferences()
 
         await fulfillment(of: [resetExpectation], timeout: 1.0)
-        XCTAssertEqual(commandFacade.saveSettingsCalls.last?.agentDisplayOrder.prefix(3).map { $0 }, ["claude-code", "codex", "cursor"])
+        XCTAssertEqual(commandFacade.saveSettingsCalls.last?.agentDisplayOrder.prefix(3).map { $0 }, ["claude-code", "codex", "zcode"])
     }
 
     func testAgentDisplayCatalogReturnsMountPaths() {
@@ -377,6 +377,12 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "hermes-agent"), "\(homePath)/.hermes/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "minimax-code"), "\(homePath)/.minimax/skills")
         XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "minimax-code"), ".mavis/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "kimi-code"), "\(homePath)/.kimi-code/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "kimi-code"), ".kimi-code/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "workbuddy"), "\(homePath)/.workbuddy/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "workbuddy"), ".workbuddy/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "codebuddy"), "\(homePath)/.codebuddy/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "codebuddy"), ".codebuddy/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "cline"), "\(homePath)/.cline/skills")
         XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "cline"), ".cline/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "opencode"), "\(homePath)/.config/opencode/skills")

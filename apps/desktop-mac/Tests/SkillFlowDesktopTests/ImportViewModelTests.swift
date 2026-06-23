@@ -320,6 +320,60 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertTrue(card.requiresLocalVariantSelection)
     }
 
+    func testImportCardTargetsAreLimitedToVisibleFallbackTargets() {
+        let item = makeItem(
+            targets: [
+                ImportGroupTarget(id: "codex", selectedByDefault: true),
+                ImportGroupTarget(id: "cursor", selectedByDefault: true),
+                ImportGroupTarget(id: "claude-code", selectedByDefault: true),
+            ]
+        )
+
+        let card = ImportViewModel.card(
+            from: item,
+            locale: locale,
+            fallbackTargetIds: ["codex", "claude-code"]
+        )
+
+        XCTAssertEqual(card.targets.map(\.id), ["codex", "claude-code"])
+    }
+
+    func testLocalScanCardIncludesVisibleFallbackTargetsAndHiddenSourceTargets() {
+        let item = makeItem(
+            provider: "local",
+            localImport: .init(
+                validationStatus: "changed",
+                selectedChoiceId: nil,
+                choices: [],
+                detectedSkills: [
+                    .init(
+                        id: "writer",
+                        title: "Writer",
+                        localPath: "/Users/me/.cursor/skills/writer",
+                        discoveredTargets: ["cursor"],
+                        validationStatus: "changed",
+                        originSkillId: nil
+                    ),
+                ]
+            ),
+            targets: [
+                ImportGroupTarget(id: "codex", selectedByDefault: true),
+                ImportGroupTarget(id: "cursor", selectedByDefault: true),
+                ImportGroupTarget(id: "claude-code", selectedByDefault: true),
+            ]
+        )
+
+        let card = ImportViewModel.card(
+            from: item,
+            locale: locale,
+            fallbackTargetIds: ["codex"]
+        )
+
+        XCTAssertEqual(card.targets.map(\.id), ["codex", "cursor"])
+        XCTAssertEqual(card.targets.filter(\.selectedByDefault).map(\.id), ["codex", "cursor"])
+        XCTAssertEqual(card.targets.filter(\.isLocked).map(\.id), ["cursor"])
+    }
+
     func testLocalScanCardWithChangedChoiceRemainsImportableWithoutDefaultSelection() {
         let item = makeItem(
             id: "local-changed",

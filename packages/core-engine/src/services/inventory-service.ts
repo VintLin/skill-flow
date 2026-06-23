@@ -45,6 +45,7 @@ export class InventoryService {
     ".junie/skills",
     ".kilocode/skills",
     ".kiro/skills",
+    ".kimi-code/skills",
     ".mavis/skills",
     ".mux/skills",
     ".neovate/skills",
@@ -56,6 +57,7 @@ export class InventoryService {
     ".trae/skills",
     ".trae-cn/skills",
     ".windsurf/skills",
+    ".workbuddy/skills",
     ".zencoder/skills",
   ] as const;
 

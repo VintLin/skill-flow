@@ -14,7 +14,7 @@
 
 </div>
 
-在所有主流编码 agent 中安装、管理和共享 skill —— Claude Code、Cursor、Copilot、Trae、Trae CN、ZCode 等。
+在所有主流编码 agent 中安装、管理和共享 skill —— Claude Code、Cursor、Copilot、Kimi Code、WorkBuddy、CodeBuddy、ZCode 等。
 
 从 skills.sh、GitHub 或本地来源搜索并导入 skill。一次部署到多个 agent。保持一切井然有序且及时更新。
 
@@ -35,7 +35,7 @@
 ## 当前能力
 
 - **分组化 source 管理**：本地、Git、skills.sh 统一走同一套导入模型。
-- **多 agent 部署**：把同一组选中的 skill 部署到 Claude Code、Codex、Cursor、Gemini CLI、OpenCode、OpenClaw、Hermes Agent、MiniMax Code、Trae、Trae CN、Windsurf、ZCode 等目标。
+- **多 agent 部署**：把同一组选中的 skill 部署到 Claude Code、Codex、Cursor、Gemini CLI、OpenCode、OpenClaw、Hermes Agent、MiniMax Code、Kimi Code、WorkBuddy、CodeBuddy、Trae、Trae CN、Windsurf、ZCode 等目标。
 - **交互式配置流程**：基于 Ink 的 add/config/find TUI，覆盖选择、审阅和修复流程。
 - **macOS 15+ 桌面应用**：SwiftUI 主窗口、导入页、详情页、设置页和菜单栏快速配置。
 - **显式状态**：`manifest.json` 记录意图，`lock.json` 记录实际 inventory 与 deployment。
@@ -144,6 +144,9 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 - OpenClaw
 - Hermes Agent
 - MiniMax Code
+- Kimi Code
+- WorkBuddy
+- CodeBuddy
 - Pi
 - Trae
 - Trae CN

@@ -404,10 +404,16 @@ struct ImportViewModel: Equatable {
         fallbackTargetIds: [String]
     ) -> [ResolvedTarget] {
         let sourceTargetIds = localSourceTargetIds(for: item)
+        let shouldFilterToFallbackTargets = !fallbackTargetIds.isEmpty
         let explicitTargetsById = Dictionary(uniqueKeysWithValues: item.targets.map { ($0.id, $0) })
         var orderedTargetIds: [String] = []
 
         for targetId in item.targets.map(\.id) + fallbackTargetIds + sourceTargetIds {
+            if shouldFilterToFallbackTargets,
+               !fallbackTargetIds.contains(targetId),
+               !sourceTargetIds.contains(targetId) {
+                continue
+            }
             guard !orderedTargetIds.contains(targetId) else {
                 continue
             }
