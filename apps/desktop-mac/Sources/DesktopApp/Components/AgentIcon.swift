@@ -215,7 +215,7 @@ enum AgentIconLibrary {
 
     private static func symbolAlphaMode(for targetId: String) -> SymbolAlphaMode {
         switch targetId {
-        case "hermes-agent", "minimax-code":
+        case "hermes-agent", "minimax-code", "workbuddy", "codebuddy":
             return .darkForeground
         default:
             return .brightForeground

@@ -101,6 +101,21 @@ final class AgentIconTests: XCTestCase {
         XCTAssertTrue(hasVisiblePixels(cgImage), "MiniMax Code symbol image should not be fully transparent after recoloring")
     }
 
+    func testCodeBuddySharedSymbolIconRetainsVisiblePixelsAfterRecoloring() {
+        let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
+
+        for targetId in ["workbuddy", "codebuddy"] {
+            guard
+                let image = AgentIconLibrary.symbolImage(for: targetId, foreground: foreground),
+                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else {
+                return XCTFail("Expected \(targetId) symbol image to load")
+            }
+
+            XCTAssertTrue(hasVisiblePixels(cgImage), "\(targetId) symbol image should not be fully transparent after recoloring")
+        }
+    }
+
     func testGroupMetadataIconLoaderFindsBundledSvgAssets() {
         XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .skills))
         XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .download))
