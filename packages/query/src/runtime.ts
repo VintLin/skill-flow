@@ -1837,16 +1837,14 @@ export class SkillFlowApp {
 
   private async detectLocalImportObservedTargets(skillPath: string): Promise<LocalSkillScanResult["observedTargets"]> {
     const observedTargets: LocalSkillScanResult["observedTargets"] = [];
-    const resolvedSkillPath = await fs.realpath(skillPath).catch(() => skillPath);
     for (const target of TARGET_ORDER) {
-      for (const root of getTargetScanRoots(target)) {
-        const rootPath = await fs.realpath(path.resolve(root)).catch(() => path.resolve(root));
-        const relative = path.relative(rootPath, resolvedSkillPath);
+      for (const rootPath of getTargetScanRoots(target).map((root) => path.resolve(root))) {
+        const relative = path.relative(rootPath, skillPath);
         if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
           observedTargets.push({
             target,
             rootPath,
-            targetPath: resolvedSkillPath,
+            targetPath: skillPath,
           });
         }
       }
@@ -2938,8 +2936,8 @@ export class SkillFlowApp {
     if (!localSkillPath) {
       return;
     }
-    const observedTargets = await this.detectLocalImportObservedTargets(localSkillPath);
-    if (observedTargets.length === 0) {
+    const isManagedByTargetRoot = await this.isLocalImportTargetPath(localSkillPath);
+    if (!isManagedByTargetRoot) {
       return;
     }
     const { lockFile } = await this.readRuntimeAuthorityView();
@@ -2947,6 +2945,22 @@ export class SkillFlowApp {
     if (source?.localPath) {
       await createSymlink(source.localPath, localSkillPath);
     }
+  }
+
+  private async isLocalImportTargetPath(localSkillPath: string): Promise<boolean> {
+    for (const target of TARGET_ORDER) {
+      for (const root of getTargetScanRoots(target).map((root) => path.resolve(root))) {
+        if (isPathInside(root, localSkillPath)) {
+          return true;
+        }
+        const resolvedRoot = await fs.realpath(root).catch(() => root);
+        const resolvedLocalSkillPath = await fs.realpath(localSkillPath).catch(() => localSkillPath);
+        if (isPathInside(resolvedRoot, resolvedLocalSkillPath)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private async resolveSourceMetadata(
