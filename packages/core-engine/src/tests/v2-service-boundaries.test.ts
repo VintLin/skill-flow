@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type {
   LockFile,
   ManifestFile,
@@ -40,6 +40,15 @@ describe("v2 service boundaries", () => {
       return;
     }
     expect(result.data.issues).toEqual([]);
+  });
+
+  test("doctor treats missing external target roots as empty", async () => {
+    const enoent = Object.assign(new Error("missing target root"), { code: "ENOENT" });
+    vi.spyOn(fs, "readdir").mockRejectedValueOnce(enoent);
+
+    const result = await new DoctorService().run(createManifest(), createLockFile(), defaultPreferences());
+
+    expect(result.ok).toBe(true);
   });
 
   test("workspace bootstrap skips managed v2 local paths", async () => {

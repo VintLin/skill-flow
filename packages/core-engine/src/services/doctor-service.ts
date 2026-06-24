@@ -221,7 +221,13 @@ export class DoctorService {
         continue;
       }
 
-      const entries = await fs.readdir(detection.rootPath, { withFileTypes: true });
+      const entries = await fs.readdir(detection.rootPath, { withFileTypes: true })
+        .catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") {
+            return [];
+          }
+          throw error;
+        });
       for (const entry of entries) {
         const skillDir = path.join(detection.rootPath, entry.name);
         const isDirectoryLike =
