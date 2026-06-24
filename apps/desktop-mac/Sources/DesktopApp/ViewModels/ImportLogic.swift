@@ -932,9 +932,11 @@ final class ImportLogic {
                 continue
             }
             let skill = localScanSkillPayload(forPath: path, skills: skills)
+            let variant = localScanVariantPayload(forPath: path, skill: skill)
             detectedSkills.append(makeLocalScanDetectedSkill(
                 path: path,
                 sourcePath: sourcePath,
+                variant: variant,
                 skill: skill,
                 groupStatus: groupStatus
             ))
@@ -950,6 +952,7 @@ final class ImportLogic {
                 detectedSkills.append(makeLocalScanDetectedSkill(
                     path: path,
                     sourcePath: nil,
+                    variant: variant,
                     skill: skill,
                     groupStatus: groupStatus
                 ))
@@ -967,9 +970,15 @@ final class ImportLogic {
         } ?? skills.first
     }
 
+    private func localScanVariantPayload(forPath path: String, skill: [String: Any]?) -> [String: Any]? {
+        (skill?["variants"] as? [[String: Any]] ?? [])
+            .first { ($0["path"] as? String)?.nonEmpty == path }
+    }
+
     private func makeLocalScanDetectedSkill(
         path: String,
         sourcePath: [String: Any]?,
+        variant: [String: Any]? = nil,
         skill: [String: Any]?,
         groupStatus: String
     ) -> LocalImportDetectedSkill {
@@ -979,6 +988,7 @@ final class ImportLogic {
         let title = (skill?["title"] as? String)?.nonEmpty ?? skillId
         let status = (skill?["status"] as? String)?.nonEmpty ?? groupStatus
         let target = (sourcePath?["target"] as? String)?.nonEmpty
+            ?? (variant?["target"] as? String)?.nonEmpty
 
         return LocalImportDetectedSkill(
             id: "\(skillId):\(path)",

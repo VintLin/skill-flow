@@ -139,8 +139,7 @@ enum AgentIconLibrary {
     }
 
     private static func loadImage(from url: URL, targetId: String) -> NSImage? {
-        if (targetId == "hermes-agent" || targetId == "minimax-code"),
-           url.pathExtension.lowercased() == "svg",
+        if url.pathExtension.lowercased() == "svg",
            let image = loadCurrentColorSVG(from: url) {
             return image
         }
@@ -153,6 +152,10 @@ enum AgentIconLibrary {
             let data = try? Data(contentsOf: url),
             let svg = String(data: data, encoding: .utf8)
         else {
+            return nil
+        }
+
+        guard svg.contains("currentColor") else {
             return nil
         }
 

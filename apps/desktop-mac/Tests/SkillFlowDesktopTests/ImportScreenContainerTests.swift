@@ -1618,6 +1618,9 @@ final class ImportScreenContainerTests: XCTestCase {
     func testImportLocalDirectoryProjectsVersionConflictLocalScanGroupsInSnapshot() async throws {
         let state = DesktopAppState()
         state.view.currentRoute = .importPage
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.defaultPreferences().map {
+            AgentDisplayPreference(targetId: $0.targetId, isVisible: $0.targetId == "codex", sortOrder: $0.sortOrder)
+        }
         let query = RecordingLocalImportQueryFacade()
         query.localScanPayloads = [
             [
@@ -1640,7 +1643,6 @@ final class ImportScreenContainerTests: XCTestCase {
                                 "kind": "target-agent",
                                 "contentHash": "hash-cursor",
                                 "alreadyManaged": false,
-                                "target": "cursor",
                             ],
                         ],
                         "skills": [
@@ -1662,6 +1664,7 @@ final class ImportScreenContainerTests: XCTestCase {
                                         "id": "skills/resume-review:hash-cursor",
                                         "path": "/Users/me/.cursor/skills/resume-review",
                                         "contentHash": "hash-cursor",
+                                        "target": "cursor",
                                         "selectedByDefault": false,
                                         "importable": true,
                                     ],
@@ -1682,6 +1685,7 @@ final class ImportScreenContainerTests: XCTestCase {
             bridgeClient: BridgeClient(),
             queryFacade: query
         )
+        model.bindRouteState(state)
         let container = ImportScreenContainer(state: state, mainViewModel: model)
 
         await container.importLocalDirectory("/Users/me/.codex/skills/resume-review")
@@ -1692,7 +1696,7 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(card.localValidationStatus, "version-conflict")
         XCTAssertEqual(card.subtitle, "Local scan")
         XCTAssertEqual(card.headerMetaLine, "Source: 2 agent paths")
-        XCTAssertEqual(card.targets.map(\.id), model.importPageTargetIds)
+        XCTAssertEqual(card.targets.map(\.id), ["codex", "cursor"])
         XCTAssertEqual(card.targets.filter(\.selectedByDefault).map(\.id), ["codex", "cursor"])
         XCTAssertEqual(card.targets.filter(\.isLocked).map(\.id), ["codex", "cursor"])
         XCTAssertTrue(card.requiresLocalVariantSelection)
@@ -2127,7 +2131,7 @@ final class ImportScreenContainerTests: XCTestCase {
                 )
             ],
             locale: Locale(identifier: "en"),
-            fallbackTargetIds: ["claude-code", "cursor"],
+            targetVisibility: .settingsVisible(["claude-code", "cursor"]),
             submittedQuery: "recommended"
         )
 

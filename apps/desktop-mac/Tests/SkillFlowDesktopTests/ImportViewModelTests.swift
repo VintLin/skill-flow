@@ -23,7 +23,6 @@ final class ImportViewModelTests: XCTestCase {
                 ),
             ],
             locale: locale,
-            fallbackTargetIds: [],
             submittedQuery: "",
             recommendations: [
                 .init(
@@ -85,7 +84,6 @@ final class ImportViewModelTests: XCTestCase {
                 )
             ],
             locale: locale,
-            fallbackTargetIds: [],
             submittedQuery: "",
             recommendations: [
                 .init(
@@ -138,7 +136,6 @@ final class ImportViewModelTests: XCTestCase {
                 )
             ],
             locale: locale,
-            fallbackTargetIds: [],
             submittedQuery: "skill",
             recommendations: [
                 .init(
@@ -184,7 +181,6 @@ final class ImportViewModelTests: XCTestCase {
                 )
             ],
             locale: locale,
-            fallbackTargetIds: [],
             submittedQuery: "",
             recommendations: [
                 .init(
@@ -253,7 +249,6 @@ final class ImportViewModelTests: XCTestCase {
                 ),
             ],
             locale: locale,
-            fallbackTargetIds: [],
             submittedQuery: "",
             recommendations: [
                 .init(
@@ -332,10 +327,27 @@ final class ImportViewModelTests: XCTestCase {
         let card = ImportViewModel.card(
             from: item,
             locale: locale,
-            fallbackTargetIds: ["codex", "claude-code"]
+            targetVisibility: .settingsVisible(["codex", "claude-code"])
         )
 
         XCTAssertEqual(card.targets.map(\.id), ["codex", "claude-code"])
+    }
+
+    func testImportCardTargetsCanBeEmptyWhenNoFallbackTargetsAreVisible() {
+        let item = makeItem(
+            targets: [
+                ImportGroupTarget(id: "codex", selectedByDefault: true),
+                ImportGroupTarget(id: "cursor", selectedByDefault: true),
+            ]
+        )
+
+        let card = ImportViewModel.card(
+            from: item,
+            locale: locale,
+            targetVisibility: .settingsVisible([])
+        )
+
+        XCTAssertEqual(card.targets.map(\.id), [])
     }
 
     func testLocalScanCardIncludesVisibleFallbackTargetsAndHiddenSourceTargets() {
@@ -366,11 +378,46 @@ final class ImportViewModelTests: XCTestCase {
         let card = ImportViewModel.card(
             from: item,
             locale: locale,
-            fallbackTargetIds: ["codex"]
+            targetVisibility: .settingsVisible(["codex"])
         )
 
         XCTAssertEqual(card.targets.map(\.id), ["codex", "cursor"])
         XCTAssertEqual(card.targets.filter(\.selectedByDefault).map(\.id), ["codex", "cursor"])
+        XCTAssertEqual(card.targets.filter(\.isLocked).map(\.id), ["cursor"])
+    }
+
+    func testLocalScanCardIncludesSourceTargetsWhenNoFallbackTargetsAreVisible() {
+        let item = makeItem(
+            provider: "local",
+            localImport: .init(
+                validationStatus: "changed",
+                selectedChoiceId: nil,
+                choices: [],
+                detectedSkills: [
+                    .init(
+                        id: "writer",
+                        title: "Writer",
+                        localPath: "/Users/me/.cursor/skills/writer",
+                        discoveredTargets: ["cursor"],
+                        validationStatus: "changed",
+                        originSkillId: nil
+                    ),
+                ]
+            ),
+            targets: [
+                ImportGroupTarget(id: "codex", selectedByDefault: true),
+                ImportGroupTarget(id: "cursor", selectedByDefault: true),
+            ]
+        )
+
+        let card = ImportViewModel.card(
+            from: item,
+            locale: locale,
+            targetVisibility: .settingsVisible([])
+        )
+
+        XCTAssertEqual(card.targets.map(\.id), ["cursor"])
+        XCTAssertEqual(card.targets.filter(\.selectedByDefault).map(\.id), ["cursor"])
         XCTAssertEqual(card.targets.filter(\.isLocked).map(\.id), ["cursor"])
     }
 
@@ -437,7 +484,6 @@ final class ImportViewModelTests: XCTestCase {
                 ),
             ],
             locale: locale,
-            fallbackTargetIds: [],
             submittedQuery: "",
             recommendations: [
                 .init(
@@ -467,7 +513,6 @@ final class ImportViewModelTests: XCTestCase {
                 )
             ],
             locale: locale,
-            fallbackTargetIds: [],
             submittedQuery: "",
             recommendations: [
                 .init(
@@ -497,7 +542,6 @@ final class ImportViewModelTests: XCTestCase {
                 )
             ],
             locale: locale,
-            fallbackTargetIds: [],
             submittedQuery: "",
             recommendations: [
                 .init(

@@ -56,7 +56,7 @@ final class ImportScreenContainer {
         let viewModel = ImportViewModel(
             items: mainViewModel.importDisplayGroups,
             locale: locale,
-            fallbackTargetIds: mainViewModel.importPageTargetIds,
+            targetVisibility: .settingsVisible(mainViewModel.importPageTargetIds),
             submittedQuery: mainViewModel.importSubmittedQuery,
             recommendations: recommendationsProvider()
         )
@@ -297,7 +297,7 @@ final class ImportScreenContainer {
                 ImportViewModel.card(
                     from: $0,
                     locale: Locale.current,
-                    fallbackTargetIds: mainViewModel.importPageTargetIds,
+                    targetVisibility: .settingsVisible(mainViewModel.importPageTargetIds),
                     submittedQuery: mainViewModel.importSubmittedQuery
                 )
             }

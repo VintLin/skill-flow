@@ -58,6 +58,11 @@ struct ImportViewModel: Equatable {
         }
     }
 
+    enum TargetVisibility: Equatable {
+        case unfiltered
+        case settingsVisible([String])
+    }
+
     struct Card: Identifiable, Equatable {
         let id: String
         let title: String
@@ -142,12 +147,12 @@ struct ImportViewModel: Equatable {
     init(
         items: [ImportGroupItem],
         locale: Locale,
-        fallbackTargetIds: [String] = [],
+        targetVisibility: TargetVisibility = .unfiltered,
         submittedQuery: String = "",
         recommendations: [ImportRecommendationEntry] = []
     ) {
         let baseCards = items.map {
-            Self.card(from: $0, locale: locale, fallbackTargetIds: fallbackTargetIds, submittedQuery: submittedQuery)
+            Self.card(from: $0, locale: locale, targetVisibility: targetVisibility, submittedQuery: submittedQuery)
         }
 
         if submittedQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -160,7 +165,7 @@ struct ImportViewModel: Equatable {
     static func card(
         from item: ImportGroupItem,
         locale: Locale,
-        fallbackTargetIds: [String] = [],
+        targetVisibility: TargetVisibility = .unfiltered,
         submittedQuery: String = ""
     ) -> Card {
         let resolvedSkills = resolvedSkills(for: item, submittedQuery: submittedQuery)
@@ -180,7 +185,7 @@ struct ImportViewModel: Equatable {
             skillsLoading: shouldShowSkillLoadingState(for: item),
             targetsLoading: false,
             skills: resolvedSkills,
-            targets: resolvedTargets(for: item, fallbackTargetIds: fallbackTargetIds).map {
+            targets: resolvedTargets(for: item, visibility: targetVisibility).map {
                 Target(
                     id: $0.id,
                     selectedByDefault: $0.selectedByDefault,
@@ -401,16 +406,25 @@ struct ImportViewModel: Equatable {
 
     private static func resolvedTargets(
         for item: ImportGroupItem,
-        fallbackTargetIds: [String]
+        visibility: TargetVisibility
     ) -> [ResolvedTarget] {
         let sourceTargetIds = localSourceTargetIds(for: item)
-        let shouldFilterToFallbackTargets = !fallbackTargetIds.isEmpty
+        let visibleTargetIds: [String]
+        let shouldFilterToVisibleTargets: Bool
+        switch visibility {
+        case .unfiltered:
+            visibleTargetIds = []
+            shouldFilterToVisibleTargets = false
+        case .settingsVisible(let targetIds):
+            visibleTargetIds = targetIds
+            shouldFilterToVisibleTargets = true
+        }
         let explicitTargetsById = Dictionary(uniqueKeysWithValues: item.targets.map { ($0.id, $0) })
         var orderedTargetIds: [String] = []
 
-        for targetId in item.targets.map(\.id) + fallbackTargetIds + sourceTargetIds {
-            if shouldFilterToFallbackTargets,
-               !fallbackTargetIds.contains(targetId),
+        for targetId in item.targets.map(\.id) + visibleTargetIds + sourceTargetIds {
+            if shouldFilterToVisibleTargets,
+               !visibleTargetIds.contains(targetId),
                !sourceTargetIds.contains(targetId) {
                 continue
             }

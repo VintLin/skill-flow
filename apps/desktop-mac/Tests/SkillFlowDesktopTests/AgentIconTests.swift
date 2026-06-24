@@ -68,6 +68,21 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.image(for: "trae"))
     }
 
+    func testCurrentColorAgentIconsLoadAtUsableResolution() {
+        for targetId in ["kimi-code", "workbuddy", "codebuddy"] {
+            guard
+                let image = AgentIconLibrary.image(for: targetId),
+                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else {
+                return XCTFail("Expected \(targetId) icon image to load")
+            }
+
+            XCTAssertGreaterThanOrEqual(cgImage.width, 24)
+            XCTAssertGreaterThanOrEqual(cgImage.height, 24)
+            XCTAssertTrue(hasVisiblePixels(cgImage), "\(targetId) icon should not be blank")
+        }
+    }
+
     func testSymbolIconLoaderCanRecolorBundledSvgAssets() {
         let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
 
