@@ -34,9 +34,41 @@ final class SettingsViewTests: XCTestCase {
         XCTAssertTrue(
             matches(
                 source,
-                pattern: #"if viewModel\.updateStatus == \.checking \{\s*settingsActionLoadingIndicator\(\)\s*\}"#
+                pattern: #"if viewModel\.updateStatus == \.checking \|\| viewModel\.updateStatus == \.installing \{\s*settingsActionLoadingIndicator\(\)\s*\}"#
             )
         )
+    }
+
+    func testUpdateInstallCopyDescribesManualDMGInstall() {
+        XCTAssertEqual(
+            L10n.string("settings.row.check_updates.description.installing", locale: Locale(identifier: "en")),
+            "Downloading and opening the installer..."
+        )
+        XCTAssertEqual(
+            L10n.string("settings.row.check_updates.description.installer_opened", locale: Locale(identifier: "en")),
+            "The installer has been opened. Quit Skill Flow, then drag the new app into Applications."
+        )
+
+        XCTAssertEqual(
+            L10n.string("settings.row.check_updates.description.installing", locale: Locale(identifier: "zh-Hans")),
+            "正在下载安装包并打开..."
+        )
+        XCTAssertEqual(
+            L10n.string("settings.row.check_updates.description.installer_opened", locale: Locale(identifier: "zh-Hans")),
+            "安装包已打开。请退出 Skill Flow，然后将新版应用拖入 Applications。"
+        )
+
+        XCTAssertEqual(
+            L10n.string("settings.row.check_updates.description.installing", locale: Locale(identifier: "ja")),
+            "インストーラをダウンロードして開いています..."
+        )
+        XCTAssertEqual(
+            L10n.string("settings.row.check_updates.description.installer_opened", locale: Locale(identifier: "ja")),
+            "インストーラを開きました。Skill Flow を終了し、新しいアプリを Applications にドラッグしてください。"
+        )
+
+        XCTAssertEqual(L10n.string("settings.action.check_updates", locale: Locale(identifier: "en")), "Check")
+        XCTAssertEqual(L10n.string("settings.action.install_update", locale: Locale(identifier: "en")), "Install")
     }
 
     func testSettingsActionLoadingIndicatorReusesActionButtonChrome() throws {

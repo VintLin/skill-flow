@@ -146,11 +146,14 @@
 "settings.row.check_updates.title" = "Check for updates";
 "settings.row.check_updates.description.idle" = "Check the latest GitHub release for a newer version.";
 "settings.row.check_updates.description.checking" = "Checking GitHub Releases...";
+"settings.row.check_updates.description.installing" = "Downloading and opening the installer...";
+"settings.row.check_updates.description.installer_opened" = "The installer has been opened. Quit Skill Flow, then drag the new app into Applications.";
 "settings.row.check_updates.description.up_to_date" = "You're up to date on %@.";
 "settings.row.check_updates.description.available" = "Version %@ is available on GitHub Releases.";
 "settings.row.check_updates.description.newer_local" = "This build is newer than the latest GitHub release (%@).";
 "settings.row.check_updates.description.failed" = "Could not fetch the latest release right now.";
 "settings.action.check_updates" = "Check";
+"settings.action.install_update" = "Install";
 "settings.row.open_releases.title" = "Open releases";
 "settings.row.open_releases.description" = "Open the latest GitHub release page in your browser.";
 "settings.action.open_releases" = "Open";

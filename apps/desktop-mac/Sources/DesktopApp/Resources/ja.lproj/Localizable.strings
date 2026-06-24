@@ -146,11 +146,14 @@
 "settings.row.check_updates.title" = "更新を確認";
 "settings.row.check_updates.description.idle" = "GitHub Releases の最新バージョンを確認します。";
 "settings.row.check_updates.description.checking" = "GitHub Releases を確認中...";
+"settings.row.check_updates.description.installing" = "インストーラをダウンロードして開いています...";
+"settings.row.check_updates.description.installer_opened" = "インストーラを開きました。Skill Flow を終了し、新しいアプリを Applications にドラッグしてください。";
 "settings.row.check_updates.description.up_to_date" = "現在のバージョン %@ は最新です。";
 "settings.row.check_updates.description.available" = "GitHub Releases でバージョン %@ を利用できます。";
 "settings.row.check_updates.description.newer_local" = "このビルドは GitHub Releases の最新バージョン（%@）より新しいです。";
 "settings.row.check_updates.description.failed" = "最新リリースを取得できませんでした。";
 "settings.action.check_updates" = "確認";
+"settings.action.install_update" = "インストール";
 "settings.row.open_releases.title" = "Releases を開く";
 "settings.row.open_releases.description" = "ブラウザで最新の GitHub release ページを開きます。";
 "settings.action.open_releases" = "開く";

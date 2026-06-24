@@ -146,11 +146,14 @@
 "settings.row.check_updates.title" = "检查更新";
 "settings.row.check_updates.description.idle" = "检查 GitHub Releases 上是否有更新版本。";
 "settings.row.check_updates.description.checking" = "正在检查 GitHub Releases...";
+"settings.row.check_updates.description.installing" = "正在下载安装包并打开...";
+"settings.row.check_updates.description.installer_opened" = "安装包已打开。请退出 Skill Flow，然后将新版应用拖入 Applications。";
 "settings.row.check_updates.description.up_to_date" = "当前已经是 %@ 版本。";
 "settings.row.check_updates.description.available" = "GitHub Releases 上已有 %@ 版本可用。";
 "settings.row.check_updates.description.newer_local" = "当前构建比 GitHub Releases 最新版本（%@）更新。";
 "settings.row.check_updates.description.failed" = "暂时无法获取最新 release。";
 "settings.action.check_updates" = "检查";
+"settings.action.install_update" = "安装";
 "settings.row.open_releases.title" = "打开 Releases";
 "settings.row.open_releases.description" = "在浏览器中打开最新的 GitHub release 页面。";
 "settings.action.open_releases" = "打开";
