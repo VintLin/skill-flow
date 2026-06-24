@@ -2,6 +2,27 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.5.0 - 2026-06-24
+
+### Added
+
+- Added an in-app DMG update flow in the macOS desktop app: Settings now surfaces the latest release, lets users trigger an in-place DMG install, and re-launches the app when the new version is ready.
+- Added localized install confirmation copy for the desktop update flow (English, Simplified Chinese, Japanese).
+- Added a release process document describing the GitHub Release pipeline used to ship desktop artifacts.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.4.9` to `1.5.0`.
+
+### Fixed
+
+- Fixed macOS import target projection so the visible agent list matches the targets recommended to users.
+- Fixed macOS import target filtering so fallback targets are not silently dropped.
+- Fixed macOS import page agent visibility so locally managed targets remain selectable.
+- Fixed WorkBuddy and Kimi Code icon rendering in the macOS agent selector.
+- Fixed the `doctor` service so missing managed target roots no longer fail the diagnosis.
+- Fixed macOS update installer validation to reject unsupported payloads and keep DMG paths inside the expected staging directory.
+
 ## v1.4.9 - 2026-06-23
 
 ### Added
