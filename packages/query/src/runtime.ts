@@ -1837,14 +1837,16 @@ export class SkillFlowApp {
 
   private async detectLocalImportObservedTargets(skillPath: string): Promise<LocalSkillScanResult["observedTargets"]> {
     const observedTargets: LocalSkillScanResult["observedTargets"] = [];
+    const resolvedSkillPath = await fs.realpath(skillPath).catch(() => skillPath);
     for (const target of TARGET_ORDER) {
-      for (const rootPath of getTargetScanRoots(target).map((root) => path.resolve(root))) {
-        const relative = path.relative(rootPath, skillPath);
+      for (const root of getTargetScanRoots(target)) {
+        const rootPath = await fs.realpath(path.resolve(root)).catch(() => path.resolve(root));
+        const relative = path.relative(rootPath, resolvedSkillPath);
         if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
           observedTargets.push({
             target,
             rootPath,
-            targetPath: skillPath,
+            targetPath: resolvedSkillPath,
           });
         }
       }
@@ -2934,6 +2936,10 @@ export class SkillFlowApp {
     sourceId: string,
   ): Promise<void> {
     if (!localSkillPath) {
+      return;
+    }
+    const observedTargets = await this.detectLocalImportObservedTargets(localSkillPath);
+    if (observedTargets.length === 0) {
       return;
     }
     const { lockFile } = await this.readRuntimeAuthorityView();
