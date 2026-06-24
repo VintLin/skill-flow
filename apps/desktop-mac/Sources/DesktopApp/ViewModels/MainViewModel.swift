@@ -436,10 +436,13 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     var importPageTargetIds: [String] {
-        AgentDisplayCatalog.normalize(
+        let customTargetIds = Set((routeState?.settings.customAgents ?? []).map(\.id))
+        return AgentDisplayCatalog.normalize(
             routeState?.settings.agentDisplayPreferences ?? [],
             customAgents: routeState?.settings.customAgents ?? []
-        ).filter(\.isVisible).map(\.targetId)
+        )
+        .filter { $0.isVisible && (detectedTargets.contains($0.targetId) || customTargetIds.contains($0.targetId)) }
+        .map(\.targetId)
     }
 
     func importTargetLabel(for targetId: String) -> String {

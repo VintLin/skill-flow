@@ -148,14 +148,28 @@ final class MainViewModelSelectionTests: XCTestCase {
 
         let state = DesktopAppState()
         state.settings.agentDisplayPreferences = AgentDisplayCatalog.defaultPreferences().map {
-            AgentDisplayPreference(targetId: $0.targetId, isVisible: $0.targetId == "codex", sortOrder: $0.sortOrder)
+            AgentDisplayPreference(targetId: $0.targetId, isVisible: $0.targetId == "cursor", sortOrder: $0.sortOrder)
         }
 
         let model = MainViewModel(bridgeClient: BridgeClient())
         model.bindRouteState(state)
         await model.bootstrap()
 
-        XCTAssertEqual(model.importPageTargetIds, ["codex"])
+        XCTAssertEqual(model.importPageTargetIds, ["cursor"])
+    }
+
+    func testImportPageTargetIdsExcludeUndetectedBuiltInTargets() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let state = DesktopAppState()
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.defaultPreferences()
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+
+        XCTAssertEqual(model.importPageTargetIds, ["claude-code", "cursor"])
     }
 
     func testShowAllTargetsStillHonorsVisibilityAndUserOrder() async throws {

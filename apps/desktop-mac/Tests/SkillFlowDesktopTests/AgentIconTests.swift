@@ -116,6 +116,19 @@ final class AgentIconTests: XCTestCase {
         XCTAssertTrue(hasVisiblePixels(cgImage), "MiniMax Code symbol image should not be fully transparent after recoloring")
     }
 
+    func testKimiSymbolIconRetainsVisiblePixelsAfterRecoloring() {
+        let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
+
+        guard
+            let image = AgentIconLibrary.symbolImage(for: "kimi-code", foreground: foreground),
+            let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else {
+            return XCTFail("Expected Kimi Code symbol image to load")
+        }
+
+        XCTAssertTrue(hasVisiblePixels(cgImage), "Kimi Code symbol image should not be fully transparent after recoloring")
+    }
+
     func testCodeBuddySharedSymbolIconRetainsVisiblePixelsAfterRecoloring() {
         let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
 
