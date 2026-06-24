@@ -85,6 +85,28 @@ final class DesktopUpdateCheckerTests: XCTestCase {
         XCTAssertNil(installerURL)
     }
 
+    func testPreferredInstallerURLRejectsWrongGitHubRepo() {
+        let installerURL = DesktopGitHubUpdateChecker.preferredInstallerURL(from: [
+            GitHubReleaseAsset(
+                name: "Skill-Flow-universal.dmg",
+                browserDownloadURL: "https://github.com/attacker/repo/releases/download/v1.3.6/Skill-Flow-universal.dmg"
+            ),
+        ])
+
+        XCTAssertNil(installerURL)
+    }
+
+    func testPreferredInstallerURLRejectsNonReleaseGitHubPath() {
+        let installerURL = DesktopGitHubUpdateChecker.preferredInstallerURL(from: [
+            GitHubReleaseAsset(
+                name: "Skill-Flow-universal.dmg",
+                browserDownloadURL: "https://github.com/VintLin/skill-flow/raw/main/Skill-Flow-universal.dmg"
+            ),
+        ])
+
+        XCTAssertNil(installerURL)
+    }
+
     func testPreferredInstallerURLFallsBackToUniversalDMG() {
         let universalURL = "https://github.com/VintLin/skill-flow/releases/download/v1.3.6/Skill-Flow-universal.dmg"
         let installerURL = DesktopGitHubUpdateChecker.preferredInstallerURL(from: [

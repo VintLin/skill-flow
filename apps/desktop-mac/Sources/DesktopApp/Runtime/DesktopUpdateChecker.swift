@@ -77,8 +77,8 @@ struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
 
     private static func isAllowedInstallerURL(_ url: URL, assetName: String) -> Bool {
         guard url.scheme?.lowercased() == "https",
-              let host = url.host?.lowercased(),
-              ["github.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"].contains(host),
+              url.host?.lowercased() == "github.com",
+              url.path.hasPrefix("/VintLin/skill-flow/releases/download/"),
               assetName.lowercased().hasSuffix(".dmg"),
               url.lastPathComponent.lowercased().hasSuffix(".dmg") else {
             return false
