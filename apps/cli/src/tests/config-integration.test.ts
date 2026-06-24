@@ -537,6 +537,33 @@ describe.sequential("config integration", () => {
     expect(scanned[0]?.contentHash).toEqual(expect.any(String));
   });
 
+  test("local skill import replaces the original skill directory with a managed symlink", async () => {
+    const app = new SkillFlowApp();
+    const localSkillPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "local-writer");
+    await writeRepoFiles(localSkillPath, {
+      "SKILL.md": skillDoc("local-writer", "Writes local drafts."),
+    });
+
+    const imported = await app.importSource(localSkillPath, {
+      selectedSkills: [{
+        uiId: "local-writer",
+        selector: { kind: "repoPath", path: "local-writer" },
+      }],
+      enabledTargets: [],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok || imported.data.status !== "ready") {
+      return;
+    }
+    const source = (await v2State(app)).lockFile.sources[imported.data.sourceId];
+    expect(source).toBeDefined();
+    expect(await fs.lstat(localSkillPath)).toSatisfy((stats: { isSymbolicLink(): boolean }) =>
+      stats.isSymbolicLink(),
+    );
+    expect(path.resolve(await fs.readlink(localSkillPath))).toBe(source?.localPath);
+  });
+
   test("local import scan preserves agents lock origin metadata", async () => {
     const agentsRoot = path.join(sandbox.sandboxRoot, "home", ".agents");
     const oldHome = process.env.HOME;

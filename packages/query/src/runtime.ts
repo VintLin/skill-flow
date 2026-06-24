@@ -74,6 +74,7 @@ import {
 } from "@skill-flow/storage/source-metadata-cache";
 import {
   ensureDir,
+  createSymlink,
   hashDirectory,
   isPathInside,
   pathExists,
@@ -2708,6 +2709,7 @@ export class SkillFlowApp {
     preparationId: string,
     draft?: ImportDraft,
     canonicalRepo?: string,
+    localSkillPath?: string,
   ): Promise<Result<ImportSourceResult>> {
     const committed = await this.importPreparationService.commitPreparedImportSource(preparationId);
     if (!committed.ok) {
@@ -2745,6 +2747,8 @@ export class SkillFlowApp {
         retryable: true,
       }, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
     }
+
+    await this.replaceLocalImportWithManagedSymlink(localSkillPath, committedData.sourceId);
 
     return ok(committedData, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
   }
@@ -2848,6 +2852,9 @@ export class SkillFlowApp {
   ): Promise<Result<ImportSourceResult>> {
     const githubLocator = this.parseGitHubImportLocator(locator);
     const normalizedLocator = githubLocator?.locator ?? locator.trim();
+    const localSkillPath = githubLocator
+      ? undefined
+      : await this.resolveLocalImportSkillPath(normalizedLocator);
     const preparation = await this.importPreparationService.prepareImportSource(normalizedLocator, {
       project: false,
       ...(githubLocator?.requestedPath ? { path: githubLocator.requestedPath } : {}),
@@ -2870,6 +2877,7 @@ export class SkillFlowApp {
         preparation.data.preparationId,
         importDraft,
         canonicalRepo,
+        localSkillPath,
       );
     }
 
@@ -2910,11 +2918,29 @@ export class SkillFlowApp {
       }, [...finalDraft.warnings, ...applied.warnings]);
     }
 
+    if (localSkillPath) {
+      await this.replaceLocalImportWithManagedSymlink(localSkillPath, prepared.data.sourceId);
+    }
+
     return ok({
       status: "ready",
       sourceId: prepared.data.sourceId,
       canonicalRepo: canonicalRepo ?? normalizedLocator,
     }, [...finalDraft.warnings, ...applied.warnings]);
+  }
+
+  private async replaceLocalImportWithManagedSymlink(
+    localSkillPath: string | undefined,
+    sourceId: string,
+  ): Promise<void> {
+    if (!localSkillPath) {
+      return;
+    }
+    const { lockFile } = await this.readRuntimeAuthorityView();
+    const source = lockFile.sources[sourceId];
+    if (source?.localPath) {
+      await createSymlink(source.localPath, localSkillPath);
+    }
   }
 
   private async resolveSourceMetadata(
