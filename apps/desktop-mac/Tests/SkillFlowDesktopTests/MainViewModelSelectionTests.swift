@@ -142,6 +142,22 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.targets.map(\.id), ["cursor"])
     }
 
+    func testImportPageTargetIdsFollowSettingsVisibility() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+
+        let state = DesktopAppState()
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.defaultPreferences().map {
+            AgentDisplayPreference(targetId: $0.targetId, isVisible: $0.targetId == "codex", sortOrder: $0.sortOrder)
+        }
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+
+        XCTAssertEqual(model.importPageTargetIds, ["codex"])
+    }
+
     func testShowAllTargetsStillHonorsVisibilityAndUserOrder() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
