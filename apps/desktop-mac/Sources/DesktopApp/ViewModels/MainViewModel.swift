@@ -439,7 +439,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         AgentDisplayCatalog.normalize(
             routeState?.settings.agentDisplayPreferences ?? [],
             customAgents: routeState?.settings.customAgents ?? []
-        ).map(\.targetId)
+        ).filter(\.isVisible).map(\.targetId)
     }
 
     func importTargetLabel(for targetId: String) -> String {
