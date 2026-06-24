@@ -10,6 +10,8 @@ final class SettingsViewModel {
     enum UpdateStatus: Equatable {
         case idle
         case checking
+        case installing
+        case installerOpened
         case upToDate
         case updateAvailable
         case runningNewerBuild
@@ -54,12 +56,14 @@ final class SettingsViewModel {
     private let updateChecker: any DesktopUpdateChecking
     private let currentVersionProvider: () -> String
     private let releaseURLOpener: (URL) -> Void
+    private let updateInstaller: (URL) async throws -> Void
     private var hasPerformedBackgroundUpdateCheck = false
 
     private(set) var updateStatus: UpdateStatus = .idle
     private(set) var currentVersion: String
     private(set) var latestVersion: String?
     var releaseURL: URL?
+    var installerURL: URL?
 
     var autoLaunch: Bool {
         get { state.settings.autoLaunch }
@@ -134,7 +138,8 @@ final class SettingsViewModel {
         currentVersionProvider: @escaping () -> String = {
             Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         },
-        releaseURLOpener: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }
+        releaseURLOpener: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) },
+        updateInstaller: @escaping (URL) async throws -> Void = { try await DesktopUpdateInstaller.install(from: $0) }
     ) {
         self.state = state
         self.store = store
@@ -143,6 +148,7 @@ final class SettingsViewModel {
         self.updateChecker = updateChecker
         self.currentVersionProvider = currentVersionProvider
         self.releaseURLOpener = releaseURLOpener
+        self.updateInstaller = updateInstaller
         self.currentVersion = currentVersionProvider()
         self.state.settings = store.load()
     }
@@ -329,6 +335,7 @@ final class SettingsViewModel {
             let release = try await updateChecker.fetchLatestRelease()
             latestVersion = release.version
             releaseURL = release.releaseURL
+            installerURL = release.installerURL
             if Self.isVersion(release.version, newerThan: currentVersion) {
                 updateStatus = .updateAvailable
             } else if Self.isVersion(currentVersion, newerThan: release.version) {
@@ -339,6 +346,7 @@ final class SettingsViewModel {
         } catch {
             latestVersion = nil
             releaseURL = nil
+            installerURL = nil
             updateStatus = .failed
         }
     }
@@ -353,6 +361,21 @@ final class SettingsViewModel {
 
     func openReleasePage() {
         releaseURLOpener(releaseURL ?? Self.latestReleasesURL)
+    }
+
+    func installUpdate() async {
+        guard let installerURL else {
+            openReleasePage()
+            return
+        }
+
+        updateStatus = .installing
+        do {
+            try await updateInstaller(installerURL)
+            updateStatus = .installerOpened
+        } catch {
+            updateStatus = .failed
+        }
     }
 
     private static func isVersion(_ lhs: String, newerThan rhs: String) -> Bool {

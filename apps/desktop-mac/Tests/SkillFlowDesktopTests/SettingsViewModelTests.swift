@@ -454,10 +454,11 @@ final class SettingsViewModelTests: XCTestCase {
     func testCheckForUpdatesMarksUpdateAvailableWhenLatestVersionIsNewer() async {
         let defaults = UserDefaults(suiteName: suiteName)!
         let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.1")!
+        let installerURL = URL(string: "https://github.com/VintLin/skill-flow/releases/download/v1.3.1/Skill-Flow-universal.dmg")!
         let viewModel = SettingsViewModel(
             state: DesktopAppState(),
             store: DesktopSettingsStore(userDefaults: defaults),
-            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.1", releaseURL: releaseURL))),
+            updateChecker: FakeUpdateChecker(result: .success(.init(version: "1.3.1", releaseURL: releaseURL, installerURL: installerURL))),
             currentVersionProvider: { "1.1.0" }
         )
 
@@ -467,6 +468,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.latestVersion, "1.3.1")
         XCTAssertEqual(viewModel.updateStatus, .updateAvailable)
         XCTAssertEqual(viewModel.releaseURL, releaseURL)
+        XCTAssertEqual(viewModel.installerURL, installerURL)
     }
 
     @MainActor
@@ -537,6 +539,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.updateStatus, .failed)
         XCTAssertNil(viewModel.releaseURL)
+        XCTAssertNil(viewModel.installerURL)
     }
 
     @MainActor
@@ -554,6 +557,44 @@ final class SettingsViewModelTests: XCTestCase {
 
         viewModel.releaseURL = releaseURL
         viewModel.openReleasePage()
+
+        XCTAssertEqual(openedURL, releaseURL)
+    }
+
+    @MainActor
+    func testInstallUpdateUsesInstallerURLWhenAvailable() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let installerURL = URL(string: "https://github.com/VintLin/skill-flow/releases/download/v1.3.1/Skill-Flow-universal.dmg")!
+        var installedURL: URL?
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            currentVersionProvider: { "1.1.0" },
+            updateInstaller: { url in installedURL = url }
+        )
+
+        viewModel.installerURL = installerURL
+        await viewModel.installUpdate()
+
+        XCTAssertEqual(installedURL, installerURL)
+        XCTAssertEqual(viewModel.updateStatus, .installerOpened)
+    }
+
+    @MainActor
+    func testInstallUpdateFallsBackToReleasePageWhenInstallerURLIsMissing() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.1")!
+        var openedURL: URL?
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            currentVersionProvider: { "1.1.0" },
+            releaseURLOpener: { openedURL = $0 },
+            updateInstaller: { _ in XCTFail("Installer should not run without an installer URL.") }
+        )
+
+        viewModel.releaseURL = releaseURL
+        await viewModel.installUpdate()
 
         XCTAssertEqual(openedURL, releaseURL)
     }

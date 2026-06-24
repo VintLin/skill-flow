@@ -192,13 +192,13 @@ struct SettingsView: View {
                         }
 
                         settingsRow(title: t("settings.row.check_updates.title"), description: updateStatusDescription) {
-                            if viewModel.updateStatus == .checking {
+                            if viewModel.updateStatus == .checking || viewModel.updateStatus == .installing {
                                 settingsActionLoadingIndicator()
                             } else {
                                 settingsActionButton(updateActionTitle) {
                                     Task {
                                         if viewModel.updateStatus == .updateAvailable {
-                                            viewModel.openReleasePage()
+                                            await viewModel.installUpdate()
                                         } else {
                                             await viewModel.checkForUpdates()
                                         }
@@ -283,6 +283,10 @@ struct SettingsView: View {
             return t("settings.row.check_updates.description.idle")
         case .checking:
             return t("settings.row.check_updates.description.checking")
+        case .installing:
+            return t("settings.row.check_updates.description.installing")
+        case .installerOpened:
+            return t("settings.row.check_updates.description.installer_opened")
         case .upToDate:
             return t("settings.row.check_updates.description.up_to_date", viewModel.latestVersion ?? viewModel.currentVersion)
         case .updateAvailable:
@@ -296,7 +300,7 @@ struct SettingsView: View {
 
     private var updateActionTitle: String {
         viewModel.updateStatus == .updateAvailable
-            ? t("settings.action.open_releases")
+            ? t("settings.action.install_update")
             : t("settings.action.check_updates")
     }
 

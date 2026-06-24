@@ -9,37 +9,57 @@ final class DesktopUpdateCheckerTests: XCTestCase {
         super.tearDown()
     }
 
-    func testFetchLatestReleaseUsesGitHubLatestRedirectURL() async throws {
-        let finalURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.6")!
+    func testFetchLatestReleaseUsesGitHubLatestReleaseAPI() async throws {
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.6")!
+        let installerURL = URL(string: "https://github.com/VintLin/skill-flow/releases/download/v1.3.6/Skill-Flow-universal.dmg")!
         MockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.url?.absoluteString, "https://github.com/VintLin/skill-flow/releases/latest")
-            XCTAssertEqual(request.httpMethod, "HEAD")
+            XCTAssertEqual(request.url?.absoluteString, "https://api.github.com/repos/VintLin/skill-flow/releases/latest")
+            XCTAssertEqual(request.httpMethod, "GET")
             let response = HTTPURLResponse(
-                url: finalURL,
+                url: request.url!,
                 statusCode: 200,
                 httpVersion: nil,
                 headerFields: nil
             )!
-            return (response, Data())
+            let body = """
+            {
+              "tag_name": "v1.3.6",
+              "html_url": "\(releaseURL.absoluteString)",
+              "assets": [
+                {
+                  "name": "Skill-Flow-universal.dmg",
+                  "browser_download_url": "\(installerURL.absoluteString)"
+                }
+              ]
+            }
+            """
+            return (response, Data(body.utf8))
         }
 
         let checker = DesktopGitHubUpdateChecker(session: Self.mockSession())
         let release = try await checker.fetchLatestRelease()
 
         XCTAssertEqual(release.version, "1.3.6")
-        XCTAssertEqual(release.releaseURL, finalURL)
+        XCTAssertEqual(release.releaseURL, releaseURL)
+        XCTAssertEqual(release.installerURL, installerURL)
     }
 
     func testFetchLatestReleaseRejectsNonReleaseURL() async {
-        let finalURL = URL(string: "https://github.com/VintLin/skill-flow/releases")!
         MockURLProtocol.requestHandler = { _ in
             let response = HTTPURLResponse(
-                url: finalURL,
+                url: URL(string: "https://api.github.com/repos/VintLin/skill-flow/releases/latest")!,
                 statusCode: 200,
                 httpVersion: nil,
                 headerFields: nil
             )!
-            return (response, Data())
+            let body = """
+            {
+              "tag_name": "v1.3.6",
+              "html_url": "://not-a-url",
+              "assets": []
+            }
+            """
+            return (response, Data(body.utf8))
         }
 
         let checker = DesktopGitHubUpdateChecker(session: Self.mockSession())
@@ -52,6 +72,33 @@ final class DesktopUpdateCheckerTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testPreferredInstallerURLFallsBackToUniversalDMG() {
+        let universalURL = "https://github.com/VintLin/skill-flow/releases/download/v1.3.6/Skill-Flow-universal.dmg"
+        let installerURL = DesktopGitHubUpdateChecker.preferredInstallerURL(from: [
+            GitHubReleaseAsset(
+                name: "Skill-Flow-universal.dmg",
+                browserDownloadURL: universalURL
+            ),
+            GitHubReleaseAsset(
+                name: "Skill-Flow-universal.zip",
+                browserDownloadURL: "https://github.com/VintLin/skill-flow/releases/download/v1.3.6/Skill-Flow-universal.zip"
+            ),
+        ])
+
+        XCTAssertEqual(installerURL?.absoluteString, universalURL)
+    }
+
+    func testPreferredInstallerURLRejectsNonHTTPURL() {
+        let installerURL = DesktopGitHubUpdateChecker.preferredInstallerURL(from: [
+            GitHubReleaseAsset(
+                name: "Skill-Flow-universal.dmg",
+                browserDownloadURL: "file:///tmp/Skill-Flow-universal.dmg"
+            ),
+        ])
+
+        XCTAssertNil(installerURL)
     }
 
     private static func mockSession() -> URLSession {
