@@ -24,19 +24,25 @@ struct DesktopUpdateInstaller {
         }
         try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
 
-        _ = await MainActor.run {
+        let opened = await MainActor.run {
             opener(destinationURL)
+        }
+        guard opened else {
+            throw DesktopUpdateInstallError.openFailed
         }
     }
 }
 
 enum DesktopUpdateInstallError: LocalizedError, Equatable {
     case invalidResponse
+    case openFailed
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
             return "Update installer download failed."
+        case .openFailed:
+            return "Unable to open the downloaded update installer."
         }
     }
 }

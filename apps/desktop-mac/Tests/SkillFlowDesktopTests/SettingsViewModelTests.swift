@@ -581,6 +581,23 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testInstallUpdateStoresFailureStateWhenInstallerThrows() async {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let installerURL = URL(string: "https://github.com/VintLin/skill-flow/releases/download/v1.3.1/Skill-Flow-universal.dmg")!
+        let viewModel = SettingsViewModel(
+            state: DesktopAppState(),
+            store: DesktopSettingsStore(userDefaults: defaults),
+            currentVersionProvider: { "1.1.0" },
+            updateInstaller: { _ in throw DesktopUpdateInstallError.openFailed }
+        )
+
+        viewModel.installerURL = installerURL
+        await viewModel.installUpdate()
+
+        XCTAssertEqual(viewModel.updateStatus, .failed)
+    }
+
+    @MainActor
     func testInstallUpdateFallsBackToReleasePageWhenInstallerURLIsMissing() async {
         let defaults = UserDefaults(suiteName: suiteName)!
         let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.1")!

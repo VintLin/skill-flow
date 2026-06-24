@@ -34,8 +34,7 @@ struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
 
         let payload = try JSONDecoder().decode(GitHubReleasePayload.self, from: data)
         guard let releaseURL = URL(string: payload.htmlURL),
-              ["http", "https"].contains(releaseURL.scheme?.lowercased()),
-              releaseURL.host != nil else {
+              Self.isAllowedReleaseURL(releaseURL) else {
             throw DesktopUpdateCheckError.invalidReleaseURL
         }
 
@@ -60,12 +59,31 @@ struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
         let preferredAsset = dmgAssets.first { $0.name.localizedCaseInsensitiveContains(preferredArch) }
             ?? dmgAssets.first { $0.name.localizedCaseInsensitiveContains("universal") }
             ?? dmgAssets.first
-        guard let installerURL = preferredAsset.flatMap({ URL(string: $0.browserDownloadURL) }),
-              ["http", "https"].contains(installerURL.scheme?.lowercased()),
-              installerURL.host != nil else {
+        guard let preferredAsset,
+              let installerURL = URL(string: preferredAsset.browserDownloadURL),
+              Self.isAllowedInstallerURL(installerURL, assetName: preferredAsset.name) else {
             return nil
         }
         return installerURL
+    }
+
+    private static func isAllowedReleaseURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "github.com" else {
+            return false
+        }
+        return url.path.hasPrefix("/VintLin/skill-flow/releases")
+    }
+
+    private static func isAllowedInstallerURL(_ url: URL, assetName: String) -> Bool {
+        guard url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              ["github.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"].contains(host),
+              assetName.lowercased().hasSuffix(".dmg"),
+              url.lastPathComponent.lowercased().hasSuffix(".dmg") else {
+            return false
+        }
+        return true
     }
 
     private static func currentArchitectureAssetToken() -> String {

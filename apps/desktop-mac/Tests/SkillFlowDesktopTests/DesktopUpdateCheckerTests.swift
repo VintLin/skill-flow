@@ -44,7 +44,7 @@ final class DesktopUpdateCheckerTests: XCTestCase {
         XCTAssertEqual(release.installerURL, installerURL)
     }
 
-    func testFetchLatestReleaseRejectsNonReleaseURL() async {
+    func testFetchLatestReleaseRejectsUnexpectedReleaseHost() async {
         MockURLProtocol.requestHandler = { _ in
             let response = HTTPURLResponse(
                 url: URL(string: "https://api.github.com/repos/VintLin/skill-flow/releases/latest")!,
@@ -55,7 +55,7 @@ final class DesktopUpdateCheckerTests: XCTestCase {
             let body = """
             {
               "tag_name": "v1.3.6",
-              "html_url": "://not-a-url",
+              "html_url": "https://example.com/VintLin/skill-flow/releases/tag/v1.3.6",
               "assets": []
             }
             """
@@ -72,6 +72,17 @@ final class DesktopUpdateCheckerTests: XCTestCase {
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
+    }
+
+    func testPreferredInstallerURLRejectsUnexpectedHost() {
+        let installerURL = DesktopGitHubUpdateChecker.preferredInstallerURL(from: [
+            GitHubReleaseAsset(
+                name: "Skill-Flow-universal.dmg",
+                browserDownloadURL: "https://example.com/VintLin/skill-flow/releases/download/v1.3.6/Skill-Flow-universal.dmg"
+            ),
+        ])
+
+        XCTAssertNil(installerURL)
     }
 
     func testPreferredInstallerURLFallsBackToUniversalDMG() {

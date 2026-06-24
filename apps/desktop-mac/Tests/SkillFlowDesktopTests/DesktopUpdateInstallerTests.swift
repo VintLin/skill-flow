@@ -77,6 +77,39 @@ final class DesktopUpdateInstallerTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testInstallFailsWhenOpenerReturnsFalse() async throws {
+        let installerURL = URL(string: "https://github.com/VintLin/skill-flow/releases/download/v1.3.6/Skill-Flow-universal.dmg")!
+        let downloadsDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: downloadsDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: downloadsDirectory) }
+
+        InstallerMockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data("dmg".utf8))
+        }
+
+        do {
+            try await DesktopUpdateInstaller.install(
+                from: installerURL,
+                session: Self.mockSession(),
+                downloadsDirectory: downloadsDirectory,
+                opener: { _ in false }
+            )
+            XCTFail("Expected install to fail when the opener rejects the destination.")
+        } catch let error as DesktopUpdateInstallError {
+            XCTAssertEqual(error, .openFailed)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     private static func mockSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [InstallerMockURLProtocol.self]
