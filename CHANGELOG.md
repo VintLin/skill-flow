@@ -2,6 +2,17 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.5.1 - 2026-06-25
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.5.0` to `1.5.1`.
+
+### Fixed
+
+- Fixed local scan import so skills imported from agent target directories are replaced by managed symlinks, while skills imported from manual local directories keep their original source directory unchanged.
+- Fixed local scan import symlink replacement so the replacement decision stays local to the import cleanup path and does not change persisted observed-target metadata.
+
 ## v1.5.0 - 2026-06-24
 
 ### Added

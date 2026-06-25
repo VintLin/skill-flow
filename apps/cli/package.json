@@ -1,6 +1,6 @@
 {
   "name": "skill-flow",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Workflow-first management for AI agent skills. Group, project, and sync skills across multiple agents with explicit state tracking.",
   "type": "module",
   "main": "dist/cli.js",
@@ -50,13 +50,13 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@skill-flow/core-engine": "1.5.0",
-    "@skill-flow/domain": "1.5.0",
-    "@skill-flow/integration": "1.5.0",
-    "@skill-flow/query": "1.5.0",
-    "@skill-flow/shared-types": "1.5.0",
-    "@skill-flow/storage": "1.5.0",
-    "@skill-flow/tui": "1.5.0",
+    "@skill-flow/core-engine": "1.5.1",
+    "@skill-flow/domain": "1.5.1",
+    "@skill-flow/integration": "1.5.1",
+    "@skill-flow/query": "1.5.1",
+    "@skill-flow/shared-types": "1.5.1",
+    "@skill-flow/storage": "1.5.1",
+    "@skill-flow/tui": "1.5.1",
     "commander": "^14.0.3",
     "ink": "^6.8.0",
     "react": "^19.2.0"
