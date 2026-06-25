@@ -36,7 +36,75 @@ final class DesktopUpdateCheckerTests: XCTestCase {
             return (response, Data(body.utf8))
         }
 
-        let checker = DesktopGitHubUpdateChecker(session: Self.mockSession())
+        let checker = DesktopGitHubUpdateChecker(session: Self.mockSession(), gitHubCLIReleaseFetcher: nil)
+        let release = try await checker.fetchLatestRelease()
+
+        XCTAssertEqual(release.version, "1.3.6")
+        XCTAssertEqual(release.releaseURL, releaseURL)
+        XCTAssertEqual(release.installerURL, installerURL)
+    }
+
+    func testFetchLatestReleasePrefersGitHubCLIWhenAvailable() async throws {
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.5.1")!
+        let installerURL = URL(string: "https://github.com/VintLin/skill-flow/releases/download/v1.5.1/Skill-Flow-universal.dmg")!
+        MockURLProtocol.requestHandler = { _ in
+            XCTFail("Expected GitHub CLI response to avoid URLSession fallback.")
+            throw DesktopUpdateCheckError.invalidResponse
+        }
+        let body = """
+        {
+          "tag_name": "v1.5.1",
+          "html_url": "\(releaseURL.absoluteString)",
+          "assets": [
+            {
+              "name": "Skill-Flow-universal.dmg",
+              "browser_download_url": "\(installerURL.absoluteString)"
+            }
+          ]
+        }
+        """
+
+        let checker = DesktopGitHubUpdateChecker(
+            session: Self.mockSession(),
+            gitHubCLIReleaseFetcher: { Data(body.utf8) }
+        )
+        let release = try await checker.fetchLatestRelease()
+
+        XCTAssertEqual(release.version, "1.5.1")
+        XCTAssertEqual(release.releaseURL, releaseURL)
+        XCTAssertEqual(release.installerURL, installerURL)
+    }
+
+    func testFetchLatestReleaseFallsBackToURLSessionWhenGitHubCLIFails() async throws {
+        let releaseURL = URL(string: "https://github.com/VintLin/skill-flow/releases/tag/v1.3.6")!
+        let installerURL = URL(string: "https://github.com/VintLin/skill-flow/releases/download/v1.3.6/Skill-Flow-universal.dmg")!
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://api.github.com/repos/VintLin/skill-flow/releases/latest")
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let body = """
+            {
+              "tag_name": "v1.3.6",
+              "html_url": "\(releaseURL.absoluteString)",
+              "assets": [
+                {
+                  "name": "Skill-Flow-universal.dmg",
+                  "browser_download_url": "\(installerURL.absoluteString)"
+                }
+              ]
+            }
+            """
+            return (response, Data(body.utf8))
+        }
+
+        let checker = DesktopGitHubUpdateChecker(
+            session: Self.mockSession(),
+            gitHubCLIReleaseFetcher: { throw DesktopUpdateCheckError.invalidResponse }
+        )
         let release = try await checker.fetchLatestRelease()
 
         XCTAssertEqual(release.version, "1.3.6")
@@ -62,7 +130,7 @@ final class DesktopUpdateCheckerTests: XCTestCase {
             return (response, Data(body.utf8))
         }
 
-        let checker = DesktopGitHubUpdateChecker(session: Self.mockSession())
+        let checker = DesktopGitHubUpdateChecker(session: Self.mockSession(), gitHubCLIReleaseFetcher: nil)
 
         do {
             _ = try await checker.fetchLatestRelease()

@@ -19,12 +19,23 @@ protocol DesktopUpdateChecking: Sendable {
 struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
     private let latestReleaseAPIURL = URL(string: "https://api.github.com/repos/VintLin/skill-flow/releases/latest")!
     private let session: URLSession
+    private let gitHubCLIReleaseFetcher: (@Sendable () async throws -> Data)?
 
-    init(session: URLSession = .shared) {
+    init(
+        session: URLSession = .shared,
+        gitHubCLIReleaseFetcher: (@Sendable () async throws -> Data)? = Self.fetchLatestReleaseWithGitHubCLI
+    ) {
         self.session = session
+        self.gitHubCLIReleaseFetcher = gitHubCLIReleaseFetcher
     }
 
     func fetchLatestRelease() async throws -> DesktopReleaseInfo {
+        if let gitHubCLIReleaseFetcher,
+           let data = try? await gitHubCLIReleaseFetcher(),
+           let release = try? Self.releaseInfo(from: data) {
+            return release
+        }
+
         var request = URLRequest(url: latestReleaseAPIURL)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
@@ -32,17 +43,7 @@ struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
             throw DesktopUpdateCheckError.invalidResponse
         }
 
-        let payload = try JSONDecoder().decode(GitHubReleasePayload.self, from: data)
-        guard let releaseURL = URL(string: payload.htmlURL),
-              Self.isAllowedReleaseURL(releaseURL) else {
-            throw DesktopUpdateCheckError.invalidReleaseURL
-        }
-
-        return DesktopReleaseInfo(
-            version: Self.normalizedVersion(payload.tagName),
-            releaseURL: releaseURL,
-            installerURL: Self.preferredInstallerURL(from: payload.assets)
-        )
+        return try Self.releaseInfo(from: data)
     }
 
     static func normalizedVersion(_ rawValue: String) -> String {
@@ -65,6 +66,54 @@ struct DesktopGitHubUpdateChecker: DesktopUpdateChecking {
             return nil
         }
         return installerURL
+    }
+
+    private static func releaseInfo(from data: Data) throws -> DesktopReleaseInfo {
+        let payload = try JSONDecoder().decode(GitHubReleasePayload.self, from: data)
+        guard let releaseURL = URL(string: payload.htmlURL),
+              Self.isAllowedReleaseURL(releaseURL) else {
+            throw DesktopUpdateCheckError.invalidReleaseURL
+        }
+
+        return DesktopReleaseInfo(
+            version: Self.normalizedVersion(payload.tagName),
+            releaseURL: releaseURL,
+            installerURL: Self.preferredInstallerURL(from: payload.assets)
+        )
+    }
+
+    private static func fetchLatestReleaseWithGitHubCLI() async throws -> Data {
+        guard let executable = resolveGitHubCLIExecutable() else {
+            throw DesktopUpdateCheckError.invalidResponse
+        }
+        return try await Task.detached(priority: .utility) {
+            let process = Process()
+            let outputPipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = ["api", "repos/VintLin/skill-flow/releases/latest"]
+            process.standardOutput = outputPipe
+            process.standardError = Pipe()
+
+            try process.run()
+            process.waitUntilExit()
+
+            let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            guard process.terminationStatus == 0, !data.isEmpty else {
+                throw DesktopUpdateCheckError.invalidResponse
+            }
+            return data
+        }.value
+    }
+
+    private static func resolveGitHubCLIExecutable(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        isExecutable: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
+    ) -> String? {
+        var candidates = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"]
+        if let path = environment["PATH"] {
+            candidates.append(contentsOf: path.split(separator: ":").map { "\($0)/gh" })
+        }
+        return candidates.first { isExecutable($0) }
     }
 
     private static func isAllowedReleaseURL(_ url: URL) -> Bool {
