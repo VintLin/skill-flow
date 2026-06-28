@@ -199,4 +199,4 @@ test: verify state schema v2 migration flow
 
 ## 关联设计
 
-- [../2026-06-04-import-data-contract-redesign.md](../2026-06-04-import-data-contract-redesign.md)
+- [2026-06-04-import-data-contract-redesign.md](2026-06-04-import-data-contract-redesign.md)

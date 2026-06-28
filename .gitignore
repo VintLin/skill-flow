@@ -49,5 +49,5 @@ PRD/
 *.png
 !img/*.png
 
-AGENTS.md
-DESIGN.md
+/AGENTS.md
+/DESIGN.md
