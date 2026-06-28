@@ -48,6 +48,7 @@ PRD/
 .opencli/
 *.png
 !img/*.png
+!docs/**/*.png
 
 /AGENTS.md
 /DESIGN.md
