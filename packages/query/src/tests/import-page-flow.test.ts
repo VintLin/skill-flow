@@ -1224,6 +1224,31 @@ describe.sequential("import page flow", () => {
       expect(result.data.groups[0].localImport?.detectedSkills[0]).toMatchObject({
         originSkillId: "skills/resume-bullet-writer",
       });
+      expect(result.data.localScanGroups).toHaveLength(1);
+      expect(result.data.localScanGroups[0]?.importChoices.map((choice) => choice.sourceChoiceId)).toEqual([
+        "local",
+        "origin",
+      ]);
+      expect(result.data.localScanGroups[0]?.importChoices[0]).toMatchObject({
+        sourceChoiceId: "local",
+        sourcePath: localPath,
+        selectedSkills: [
+          {
+            uiId: "resume-bullet-writer",
+            selector: { kind: "repoPath", path: "resume-bullet-writer" },
+          },
+        ],
+      });
+      expect(result.data.localScanGroups[0]?.importChoices[1]).toMatchObject({
+        sourceChoiceId: "origin",
+        sourcePath: "https://github.com/paramchoudhary/resumeskills.git",
+        selectedSkills: [
+          {
+            uiId: "skills/resume-bullet-writer",
+            selector: { kind: "repoPath", path: "skills/resume-bullet-writer" },
+          },
+        ],
+      });
     } finally {
       restoreHome(originalHome);
     }

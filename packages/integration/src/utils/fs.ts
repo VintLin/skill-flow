@@ -18,7 +18,7 @@ export async function ensureDir(targetPath: string): Promise<void> {
 export async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
   try {
     const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw) as T;
+    return JSON.parse(stripUtf8Bom(raw)) as T;
   } catch {
     return fallback;
   }
@@ -31,10 +31,23 @@ export async function writeJsonFile(filePath: string, value: unknown): Promise<v
   await fs.rename(tempPath, filePath);
 }
 
+export type FileLockMetadata = {
+  command?: string;
+  pid?: number;
+  startedAt?: string;
+};
+
+type FileLockOptions = {
+  pollMs?: number;
+  staleMs?: number;
+  timeoutMs?: number;
+  metadata?: FileLockMetadata;
+};
+
 export async function withFileLock<T>(
   lockPath: string,
   task: () => Promise<T>,
-  options: { pollMs?: number; staleMs?: number; timeoutMs?: number } = {},
+  options: FileLockOptions = {},
 ): Promise<T> {
   const pollMs = options.pollMs ?? 25;
   const staleMs = options.staleMs ?? 5 * 60_000;
@@ -67,7 +80,11 @@ export async function withFileLock<T>(
   try {
     await fs.writeFile(
       path.join(lockPath, "owner.json"),
-      `${JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }, null, 2)}\n`,
+      `${JSON.stringify({
+        ...options.metadata,
+        pid: process.pid,
+        acquiredAt: new Date().toISOString(),
+      }, null, 2)}\n`,
       "utf8",
     );
     return await task();
@@ -171,4 +188,8 @@ function isAlreadyExistsError(error: unknown) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function stripUtf8Bom(text: string): string {
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
 }

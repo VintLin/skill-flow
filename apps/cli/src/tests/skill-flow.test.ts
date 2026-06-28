@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "vitest";
 import type { PreferencesFile } from "@skill-flow/domain/types";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
@@ -1235,6 +1236,355 @@ describe.sequential("skill-flow", () => {
     expect(list.data.summaries[0]?.lock?.invalidLeafs).toEqual([]);
   });
 
+  test("list --json prints workflow summaries", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const output = execFileSync("node", [
+      "--import",
+      "tsx",
+      "src/cli.tsx",
+      "list",
+      "--json",
+    ], {
+      cwd: path.resolve(import.meta.dirname, "../.."),
+      env: process.env,
+      encoding: "utf8",
+    });
+    const summaries = JSON.parse(output) as Array<{ source: { id: string } }>;
+
+    expect(summaries[0]?.source.id).toBe(added.data.sourceId);
+  });
+
+  test("list --ids --warnings prints source ids and warning details", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+    const state = await v2(app).readState();
+    const leaf = state.lockFile.leafInventory.find((leaf) => leaf.sourceId === added.data.sourceId);
+    expect(leaf).toBeDefined();
+    if (!leaf) {
+      return;
+    }
+    leaf.diagnostics = [{
+      code: "TEST_WARNING",
+      message: "unmanaged external content in codex target",
+    }];
+    await v2(app).writeState(state);
+
+    const output = execFileSync("node", [
+      "--import",
+      "tsx",
+      "src/cli.tsx",
+      "list",
+      "--ids",
+      "--warnings",
+    ], {
+      cwd: path.resolve(import.meta.dirname, "../.."),
+      env: process.env,
+      encoding: "utf8",
+    });
+
+    expect(output).toContain(added.data.sourceId);
+    expect(output).toContain("warning: unmanaged external content in codex target");
+  });
+
+  test("enable --targets sets source targets", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "demo-source",
+      draft: {
+        enabledTargets: [],
+        selectedLeafIds: ["demo-source:skills/review"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const output = runCli(["enable", "demo-source", "--targets", "codex"]);
+
+    expect(output).toContain("Enabled: 1");
+    const state = await v2State(app);
+    expect(state.manifest.bindings["demo-source"]?.enabledTargets).toEqual(["codex"]);
+  });
+
+  test("disable clears targets from manifest", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "demo-source",
+      draft: {
+        enabledTargets: ["codex"],
+        selectedLeafIds: ["demo-source:skills/review"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const output = runCli(["disable", "demo-source"]);
+
+    expect(output).toContain("Disabled: 1");
+    const state = await v2State(app);
+    expect(state.manifest.sources.some((source) => source.id === "demo-source")).toBe(true);
+    expect(state.manifest.bindings["demo-source"]?.enabledTargets).toEqual([]);
+  });
+
+  test("only keeps all sources registered while disabling others", async () => {
+    const oneRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const twoRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+    const app = new SkillFlowApp();
+    const one = await app.addSource(oneRepoPath, { sourceIdOverride: "one-source" });
+    const two = await app.addSource(twoRepoPath, { sourceIdOverride: "two-source" });
+    expect(one.ok).toBe(true);
+    expect(two.ok).toBe(true);
+    if (!one.ok || !two.ok) {
+      return;
+    }
+
+    const output = runCli(["only", "one-source", "--targets", "codex"]);
+
+    expect(output).toContain("Enabled: 1");
+    expect(output).toContain("Disabled: 1");
+    const state = await v2State(app);
+    expect(state.manifest.sources.map((source) => source.id)).toEqual([
+      "one-source",
+      "two-source",
+    ]);
+    expect(state.manifest.bindings["one-source"]?.enabledTargets).toEqual(["codex"]);
+    expect(state.manifest.bindings["two-source"]?.enabledTargets).toEqual([]);
+  });
+
+  test("enable without targets fails when source has no existing targets", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "demo-source",
+      draft: {
+        enabledTargets: [],
+        selectedLeafIds: ["demo-source:skills/review"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const failure = runCliFailure(["enable", "demo-source"]);
+
+    expect(failure.status).toBe(1);
+    expect(failure.stderr).toContain(
+      "Source demo-source has no existing targets. Pass --targets codex,cline.",
+    );
+  });
+
+  test("enable with an unknown target id fails", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const failure = runCliFailure([
+      "enable",
+      "demo-source",
+      "--targets",
+      "missing-target",
+    ]);
+
+    expect(failure.status).toBe(1);
+    expect(failure.stderr).toContain("Unknown target id(s): missing-target.");
+  });
+
+  test("importManifest dry run does not mutate state", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+
+    const result = await app.importManifest({
+      sources: [{ source: repoPath, skills: "none", targets: [] }],
+      dryRun: true,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.imported).toBe(0);
+    expect(result.data.inactive).toBe(1);
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    expect(listed.data.summaries).toEqual([]);
+  });
+
+  test("import-manifest --dry-run prints summary without mutating state", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const manifestPath = path.join(sandbox.sandboxRoot, "sources.txt");
+    await fs.writeFile(manifestPath, `${repoPath}\n`, "utf8");
+    const app = new SkillFlowApp();
+
+    const output = runCli(["import-manifest", manifestPath, "--dry-run"]);
+
+    expect(output).toContain("Imported: 0");
+    expect(output).toContain("Inactive: 1");
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    expect(listed.data.summaries).toEqual([]);
+  });
+
+  test("importManifest rejects unknown targets without registering source", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+
+    const result = await app.importManifest({
+      sources: [{ source: repoPath, targets: ["missing-target" as never] }],
+      apply: true,
+    });
+
+    expect(result.ok).toBe(false);
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    expect(listed.data.summaries).toEqual([]);
+  });
+
+  test("importManifest rolls back when apply throws", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    app.applyDraft = async () => {
+      throw new Error("apply exploded");
+    };
+
+    const result = await app.importManifest({
+      sources: [{ source: repoPath, targets: ["codex"] }],
+      apply: true,
+    });
+
+    expect(result.ok).toBe(false);
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    expect(listed.data.summaries).toEqual([]);
+  });
+
+  test("importManifest skipExisting does not collapse same-basename local paths", async () => {
+    const firstParent = path.join(sandbox.sandboxRoot, "first-parent");
+    const secondParent = path.join(sandbox.sandboxRoot, "second-parent");
+    const firstRepo = path.join(firstParent, "same");
+    const secondRepo = path.join(secondParent, "same");
+    await fs.mkdir(firstRepo, { recursive: true });
+    await fs.mkdir(secondRepo, { recursive: true });
+    for (const repoPath of [firstRepo, secondRepo]) {
+      git(repoPath, ["init"]);
+      git(repoPath, ["config", "user.email", "test@example.com"]);
+      git(repoPath, ["config", "user.name", "Skill Flow Test"]);
+      await writeRepoFiles(repoPath, { "SKILL.md": skillDoc("root", "Root skill.") });
+      git(repoPath, ["add", "."]);
+      git(repoPath, ["commit", "-m", "initial"]);
+    }
+    const app = new SkillFlowApp();
+    const added = await app.addSource(firstRepo, { project: false });
+    expect(added.ok).toBe(true);
+
+    const result = await app.importManifest({
+      sources: [{ source: secondRepo, skills: "none", targets: [] }],
+      dryRun: true,
+      skipExisting: true,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.skippedExisting).toBe(0);
+    expect(result.data.inactive).toBe(1);
+  });
+
+  test("importManifest can skip missing local sources", async () => {
+    const app = new SkillFlowApp();
+    const result = await app.importManifest({
+      sources: [{ source: path.join(sandbox.sandboxRoot, "missing-local"), skills: "none" }],
+      dryRun: true,
+      skipLocalMissing: true,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.skippedLocalMissing).toBe(1);
+  });
+
+  test("import-manifest writes summary on success only", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const manifestPath = path.join(sandbox.sandboxRoot, "sources-summary.txt");
+    const summaryPath = path.join(sandbox.sandboxRoot, "summary.json");
+    await fs.writeFile(manifestPath, `${repoPath}\n`, "utf8");
+
+    runCli(["import-manifest", manifestPath, "--dry-run", "--summary", summaryPath]);
+    await expect(fs.readFile(summaryPath, "utf8")).resolves.toContain("\"inactive\": 1");
+
+    const failureSummaryPath = path.join(sandbox.sandboxRoot, "failure-summary.json");
+    const failure = runCliFailure([
+      "import-manifest",
+      path.join(sandbox.sandboxRoot, "missing-manifest.json"),
+      "--summary",
+      failureSummaryPath,
+    ]);
+    expect(failure.status).toBe(1);
+    await expect(pathExists(failureSummaryPath)).resolves.toBe(false);
+  });
+
   test("reports when a source has no SKILL.md files at all", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "engineering/engineering-senior-developer.md": "# Agent",
@@ -1930,3 +2280,37 @@ description: |
     }
   });
 });
+
+function runCli(args: string[]): string {
+  return execFileSync("node", [
+    "--import",
+    "tsx",
+    "src/cli.tsx",
+    ...args,
+  ], {
+    cwd: path.resolve(import.meta.dirname, "../.."),
+    env: process.env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function runCliFailure(args: string[]): { status: number | undefined; stderr: string } {
+  try {
+    runCli(args);
+  } catch (error) {
+    const cliError = error as { status?: number; stderr?: Buffer | string };
+    return {
+      status: cliError.status,
+      stderr: stringifyProcessOutput(cliError.stderr),
+    };
+  }
+  throw new Error(`Expected CLI command to fail: ${args.join(" ")}`);
+}
+
+function stringifyProcessOutput(value: Buffer | string | undefined): string {
+  if (value === undefined) {
+    return "";
+  }
+  return Buffer.isBuffer(value) ? value.toString("utf8") : value;
+}

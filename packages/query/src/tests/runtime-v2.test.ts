@@ -35,6 +35,7 @@ describe.sequential("runtime v2 authority reads", () => {
     expect(inspected.data.leafs.map((leaf) => leaf.id)).toEqual(["repo:one", "repo:two"]);
     expect(inspected.data.binding).toEqual({
       selectedLeafIds: ["repo:one"],
+      resolvedSelectedLeafCount: 1,
       targets: {
         codex: {
           enabled: true,
@@ -51,6 +52,35 @@ describe.sequential("runtime v2 authority reads", () => {
       }),
     ]);
     expect(inspected.data.deployments).toHaveLength(1);
+  });
+
+  test("inspectSource preserves stale explicit selected ids but resolves counts and target leaf ids", async () => {
+    const state = createAuthorityState(sandbox);
+    state.manifest.bindings.repo = {
+      sourceId: "repo",
+      selectionMode: "selected",
+      selectedLeafIds: ["repo:one", "repo:missing"],
+      enabledTargets: ["codex"],
+    };
+    await writeAuthorityState(sandbox.stateRoot, state);
+    const app = new SkillFlowApp();
+
+    const inspected = await app.inspectSource("repo");
+
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+    expect(inspected.data.binding).toEqual({
+      selectedLeafIds: ["repo:one", "repo:missing"],
+      resolvedSelectedLeafCount: 1,
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: ["repo:one"],
+        },
+      },
+    });
   });
 
   test("listWorkflows preserves selectionMode all in summary after updateSources adds a new leaf", async () => {
@@ -107,6 +137,44 @@ describe.sequential("runtime v2 authority reads", () => {
     ]);
   });
 
+  test("listWorkflows resolves all-selection leaf counts", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+      "review/SKILL.md": skillDoc("review", "Review flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { project: false });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const applied = await app.applyDraft(added.data.sourceId, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: added.data.leafs.map((leaf) => leaf.id),
+    });
+    expect(applied.ok).toBe(true);
+
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+
+    const summary = listed.data.summaries.find((item) => item.source.id === added.data.sourceId);
+    expect(summary?.source.selectionMode).toBe("all");
+    expect(summary?.bindings.selectedLeafIds).toEqual([]);
+    expect(summary?.bindings.resolvedSelectedLeafCount).toBe(2);
+
+    const inspected = await app.inspectSource(added.data.sourceId);
+    expect(inspected.ok).toBe(true);
+    if (!inspected.ok) {
+      return;
+    }
+    expect(inspected.data.binding.selectedLeafIds).toEqual([]);
+    expect(inspected.data.binding.resolvedSelectedLeafCount).toBe(2);
+  });
+
   test("inspectSource uses v2 projected project drafts for scoped inspect", async () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox, {
       preferences: {
@@ -141,6 +209,7 @@ describe.sequential("runtime v2 authority reads", () => {
     }
     expect(inspected.data.binding).toEqual({
       selectedLeafIds: ["repo:two"],
+      resolvedSelectedLeafCount: 1,
       targets: {
         cursor: {
           enabled: true,
@@ -387,7 +456,8 @@ describe.sequential("runtime v2 authority reads", () => {
       displayName: "Writing Stack",
     }));
     expect(created.data.binding).toEqual({
-      selectedLeafIds: ["writing-stack:member-1", "writing-stack:member-2"],
+      selectedLeafIds: [],
+      resolvedSelectedLeafCount: 2,
       targets: {
         codex: {
           enabled: true,

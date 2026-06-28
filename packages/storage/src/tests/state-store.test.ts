@@ -8,6 +8,7 @@ import type {
   ManifestFile,
   PreferencesFile,
 } from "@skill-flow/domain/types";
+import { withFileLock } from "@skill-flow/integration/utils/fs";
 import { StateStore, StateStoreError } from "../state-store.js";
 import type { StateStoreState } from "../state-store.js";
 
@@ -88,6 +89,35 @@ describe("StateStore", () => {
     );
 
     expect(result).toBe("nested-ok");
+  });
+
+  test("withMutationLock writes owner metadata", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+
+    await store.withMutationLock(async () => {
+      const metadata = await readJsonFile<Record<string, unknown>>(
+        path.join(stateRoot, ".mutation.lock", "owner.json"),
+      );
+
+      expect(metadata.pid).toBe(process.pid);
+      expect(metadata.startedAt).toEqual(expect.any(String));
+      expect(metadata.command).toBe(process.argv.join(" "));
+    });
+  });
+
+  test("withFileLock metadata cannot spoof owner pid", async () => {
+    const lockPath = path.join(stateRoot, ".spoof.lock");
+
+    await withFileLock(lockPath, async () => {
+      const metadata = await readJsonFile<Record<string, unknown>>(
+        path.join(lockPath, "owner.json"),
+      );
+
+      expect(metadata.pid).toBe(process.pid);
+    }, {
+      metadata: { pid: -1 },
+    });
   });
 
   test("readState returns V2 structures without projecting to V1", async () => {
@@ -215,6 +245,44 @@ describe("StateStore", () => {
     expect(state).toEqual({ manifest, lockFile, preferences, collections });
     expect(Array.isArray(state.lockFile.sources)).toBe(false);
     expect("deployments" in state.lockFile).toBe(false);
+  });
+
+  test("readState accepts BOM-prefixed authority JSON files", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+
+    for (const filePath of [
+      store.manifestPath,
+      store.lockPath,
+      store.preferencesPath,
+      store.collectionsPath,
+    ]) {
+      const raw = await fs.readFile(filePath, "utf8");
+      await fs.writeFile(filePath, `\uFEFF${raw}`, "utf8");
+    }
+
+    const state = await store.readState();
+
+    expect(state.manifest.schemaVersion).toBe(2);
+    expect(state.lockFile.schemaVersion).toBe(2);
+    expect(state.preferences.schemaVersion).toBe(2);
+    expect(state.collections.schemaVersion).toBe(2);
+  });
+
+  test("malformed BOM-prefixed authority JSON reports BOM detection", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    await fs.writeFile(store.manifestPath, "\uFEFF{", "utf8");
+
+    await expect(store.readState()).rejects.toMatchObject({
+      code: "STATE_MIGRATION_BLOCKED",
+      reasonCode: "STATE_MIGRATION_BLOCKED",
+      path: store.manifestPath,
+      details: {
+        cause: "STATE_FILE_PARSE_FAILED",
+        bomDetected: true,
+      },
+    });
   });
 
   test("V1 manifest causes STATE_MIGRATION_REQUIRED", async () => {

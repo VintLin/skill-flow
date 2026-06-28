@@ -140,15 +140,18 @@ export class WorkflowService {
   ): SourceBindingSummary {
     const normalized = this.normalizeSourceBinding(binding, leafIds);
     if (!normalized) {
-      return { selectedLeafIds: [], targets: {} };
+      return { selectedLeafIds: [], resolvedSelectedLeafCount: 0, targets: {} };
     }
+    const resolvedLeafIds = new Set(leafIds);
     const selectedLeafIds = normalized.selectionMode === "all" ? [...leafIds] : [...normalized.selectedLeafIds];
+    const resolvedSelectedLeafIds = selectedLeafIds.filter((leafId) => resolvedLeafIds.has(leafId));
     return {
-      selectedLeafIds,
+      selectedLeafIds: normalized.selectionMode === "all" ? [] : selectedLeafIds,
+      resolvedSelectedLeafCount: resolvedSelectedLeafIds.length,
       targets: Object.fromEntries(
         normalized.enabledTargets.map((target) => [
           target,
-          { enabled: true, leafIds: [...selectedLeafIds] },
+          { enabled: true, leafIds: [...resolvedSelectedLeafIds] },
         ]),
       ),
     };

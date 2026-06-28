@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
@@ -71,6 +73,22 @@ describe.sequential("add selection and find command regression", () => {
     expect(manifest.bindings[result.data.manifest.id]?.enabledTargets).toContain("claude-code");
   });
 
+  test("reports progress for non-interactive CLI add", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "SKILL.md": skillDoc("root", "Root skill."),
+    });
+
+    const output = runCli(["add", repoPath, "--yes"]);
+    const lines = output.split(/\r?\n/);
+
+    expect(output).toContain("Added ");
+    expect(lines).toContain("Preparing source");
+    expect(lines).toContain("Source prepared");
+    expect(lines).toContain("Applying projections");
+    await expect(v2({ store: { rootPath: sandbox.stateRoot } }).readManifest())
+      .resolves.toMatchObject({ sources: [expect.any(Object)] });
+  });
+
   test("builds predictable follow-up add commands from search candidates", () => {
     expect(
       buildFindCommand({
@@ -111,3 +129,17 @@ describe.sequential("add selection and find command regression", () => {
     ).toBe("skill-flow add https://github.com/anthropics/skills.git --path skills/find-skills");
   });
 });
+
+function runCli(args: string[]): string {
+  return execFileSync("node", [
+    "--import",
+    "tsx",
+    "src/cli.tsx",
+    ...args,
+  ], {
+    cwd: path.resolve(import.meta.dirname, "../.."),
+    env: process.env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}

@@ -156,7 +156,8 @@ describe.sequential("source lifecycle", () => {
 
     expect(result.data.summary.source.id).toBe(added.data.manifest.id);
     expect(result.data.leafs.map((leaf) => leaf.id)).toEqual([`${added.data.manifest.id}:skills/review`]);
-    expect(result.data.binding.selectedLeafIds).toEqual([`${added.data.manifest.id}:skills/review`]);
+    expect(result.data.binding.selectedLeafIds).toEqual([]);
+    expect(result.data.binding.resolvedSelectedLeafCount).toBe(1);
     expect(result.data).not.toHaveProperty("sourceMetadata");
     expect(result.data).not.toHaveProperty("sourceSnapshot");
   });
@@ -224,6 +225,215 @@ describe.sequential("source lifecycle", () => {
     expect(applied.data.inspect?.summary.source.id).toBe(sourceId);
     expect(applied.data.inspect?.binding.targets.codex?.enabled).toBe(true);
     expect(applied.data.inspect?.deployments[0]?.target).toBe("codex");
+  });
+
+  test("disableSources clears targets without deleting source metadata", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const disabled = await app.disableSources(["demo-source"]);
+
+    expect(disabled.ok).toBe(true);
+    if (!disabled.ok) {
+      return;
+    }
+    expect(disabled.data.enabledSourceIds).toEqual([]);
+    expect(disabled.data.disabledSourceIds).toEqual(["demo-source"]);
+    expect(disabled.data.backupPath).toBeUndefined();
+
+    const state = await view(app);
+    expect(state.manifest.sources.find((source) => source.id === "demo-source")).toBeDefined();
+    expect(state.lockFile.sources["demo-source"]).toBeDefined();
+    expect(state.manifest.bindings["demo-source"]?.enabledTargets).toEqual([]);
+    expect(state.manifest.bindings["demo-source"]?.selectionMode).toBe("all");
+  });
+
+  test("disableSources cleans bootstrap imported target paths without existing enabled targets", async () => {
+    const externalSkillPath = path.join(sandbox.sandboxRoot, "bootstrap-imported-cleanup");
+    await writeRepoFiles(externalSkillPath, {
+      "SKILL.md": skillDoc("bootstrap-imported-cleanup", "Cleanup imported target path."),
+    });
+    const app = new SkillFlowApp();
+    const targetPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "bootstrap-imported-cleanup");
+    const observedTargets = [{
+      target: "codex" as const,
+      rootPath: process.env.SKILL_FLOW_TARGET_CODEX!,
+      targetPath,
+    }];
+
+    const added = await app.addSource(externalSkillPath, {
+      project: false,
+      importedFromTargets: ["codex"],
+      observedTargets,
+      importMode: "bootstrap-detected",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const before = await view(app);
+    const sourceLock = before.lockFile.sources[added.data.manifest.id];
+    expect(sourceLock).toBeDefined();
+    expect(before.manifest.bindings[added.data.manifest.id]?.enabledTargets).toEqual([]);
+    if (!sourceLock) {
+      return;
+    }
+    await fs.cp(sourceLock.localPath, targetPath, { recursive: true });
+    expect(await pathExists(targetPath)).toBe(true);
+
+    const disabled = await app.disableSources([added.data.manifest.id]);
+
+    expect(disabled.ok).toBe(true);
+    if (!disabled.ok) {
+      return;
+    }
+    expect(await pathExists(targetPath)).toBe(false);
+    const after = await view(app);
+    expect(after.lockFile.projections.some((projection) =>
+      projection.sourceId === added.data.manifest.id &&
+      projection.target === "codex" &&
+      projection.status === "active"
+    )).toBe(false);
+  });
+
+  test("onlySources enables listed sources and disables others", async () => {
+    const oneRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const twoRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+    const app = new SkillFlowApp();
+
+    const one = await app.addSource(oneRepoPath, { sourceIdOverride: "one-source" });
+    const two = await app.addSource(twoRepoPath, { sourceIdOverride: "two-source" });
+    expect(one.ok).toBe(true);
+    expect(two.ok).toBe(true);
+    if (!one.ok || !two.ok) {
+      return;
+    }
+
+    const result = await app.onlySources(["one-source"], ["codex"]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.enabledSourceIds).toEqual(["one-source"]);
+    expect(result.data.disabledSourceIds).toEqual(["two-source"]);
+    expect(result.data.actions.length).toBeGreaterThan(0);
+
+    const state = await view(app);
+    expect(state.manifest.bindings["one-source"]?.enabledTargets).toEqual(["codex"]);
+    expect(state.manifest.bindings["two-source"]?.enabledTargets).toEqual([]);
+    expect(state.manifest.sources.map((source) => source.id)).toEqual([
+      "one-source",
+      "two-source",
+    ]);
+    expect(Object.keys(state.lockFile.sources)).toEqual(["one-source", "two-source"]);
+  });
+
+  test("onlySources without targets fails for a source with no existing targets", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "demo-source",
+      draft: {
+        enabledTargets: [],
+        selectedLeafIds: ["demo-source:skills/review"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const result = await app.onlySources(["demo-source"]);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.errors[0]).toEqual({
+      code: "TARGETS_REQUIRED",
+      message: "Source demo-source has no existing targets. Pass --targets codex,cline.",
+    });
+    const state = await view(app);
+    expect(state.manifest.bindings["demo-source"]?.enabledTargets).toEqual([]);
+  });
+
+  test("enableSources and onlySources validate unknown source ids and target ids", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "demo-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const missing = await app.enableSources(["missing-source"], ["codex"]);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.errors[0]?.code).toBe("SOURCE_NOT_FOUND");
+    }
+
+    const unknownTarget = await app.onlySources(["demo-source"], ["missing-target" as never]);
+    expect(unknownTarget.ok).toBe(false);
+    if (!unknownTarget.ok) {
+      expect(unknownTarget.errors[0]).toEqual({
+        code: "TARGET_NOT_FOUND",
+        message: "Unknown target id(s): missing-target.",
+      });
+    }
+  });
+
+  test("enableSources preserves selected leaf data", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "demo-source",
+      draft: {
+        enabledTargets: ["codex"],
+        selectedLeafIds: ["demo-source:skills/one"],
+      },
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const enabled = await app.enableSources(["demo-source"], ["cline"]);
+
+    expect(enabled.ok).toBe(true);
+    if (!enabled.ok) {
+      return;
+    }
+    const state = await view(app);
+    expect(state.manifest.bindings["demo-source"]).toMatchObject({
+      sourceId: "demo-source",
+      selectionMode: "selected",
+      selectedLeafIds: ["demo-source:skills/one"],
+      enabledTargets: ["cline"],
+    });
   });
 
   test("doctor removes orphan target symlinks after mode-free active projection state", async () => {
@@ -334,7 +544,9 @@ describe.sequential("source lifecycle", () => {
       }
 
       expect(inspect.data.leafs.map((leaf) => leaf.id)).toEqual([leafId]);
-      expect(inspect.data.binding.selectedLeafIds).toEqual([leafId]);
+      expect(inspect.data.binding.selectedLeafIds).toEqual([]);
+      expect(inspect.data.binding.resolvedSelectedLeafCount).toBe(1);
+      expect(inspect.data.binding.targets.codex?.leafIds).toEqual([leafId]);
       expect(inspect.data.deployments).toHaveLength(1);
       expect(inspect.data.deployments[0]?.target).toBe("codex");
       expect(await pathExists(targetPath)).toBe(true);

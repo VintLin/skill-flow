@@ -181,9 +181,11 @@ type RuntimeSourceSnapshot = {
   leafCount: number;
   invalidLeafCount: number;
 };
+export type RuntimeProgressReporter = (message: string) => void;
 type SkillFlowAddOptions = AddSourceOptions &
   AddSourceDraftOptions & {
     project?: boolean;
+    onProgress?: RuntimeProgressReporter;
   };
 
 type AddSourceResult = RuntimeSourceSnapshot & AddSourcePreparation & { projected: boolean };
@@ -248,6 +250,34 @@ type ApplyDraftResult = {
   recentProjects?: RecentProject[];
   selectedProjectScope?: ProjectScope;
   projectDrafts?: PreferencesFile["projectSourceDrafts"];
+};
+type SourceTargetUpdateResult = {
+  enabledSourceIds: string[];
+  disabledSourceIds: string[];
+  actions: DeploymentAction[];
+  backupPath?: string;
+};
+export type ImportManifestOptions = {
+  sources: Array<{
+    source: string;
+    skills?: "all" | "none";
+    targets?: DeploymentTargetId[];
+  }>;
+  dryRun?: boolean;
+  apply?: boolean;
+  skipExisting?: boolean;
+  continueOnError?: boolean;
+  skipLocalMissing?: boolean;
+};
+export type ImportManifestResult = {
+  imported: number;
+  skippedExisting: number;
+  skippedLocalMissing: number;
+  enabled: number;
+  inactive: number;
+  failed: number;
+  timedOut: number;
+  backupPath?: string;
 };
 type RuntimeAuthoritySnapshot = {
   manifest: ManifestFile;
@@ -657,15 +687,18 @@ export class SkillFlowApp {
     leafIds: string[],
   ): SourceBindingSummary {
     if (!binding) {
-      return { selectedLeafIds: [], targets: {} };
+      return { selectedLeafIds: [], resolvedSelectedLeafCount: 0, targets: {} };
     }
+    const resolvedLeafIds = new Set(leafIds);
     const selectedLeafIds = binding.selectionMode === "all" ? [...leafIds] : [...binding.selectedLeafIds];
+    const resolvedSelectedLeafIds = selectedLeafIds.filter((leafId) => resolvedLeafIds.has(leafId));
     return {
-      selectedLeafIds,
+      selectedLeafIds: binding.selectionMode === "all" ? [] : selectedLeafIds,
+      resolvedSelectedLeafCount: resolvedSelectedLeafIds.length,
       targets: Object.fromEntries(
         binding.enabledTargets.map((target) => [
           target,
-          { enabled: true, leafIds: [...selectedLeafIds] },
+          { enabled: true, leafIds: [...resolvedSelectedLeafIds] },
         ]),
       ),
     };
@@ -757,6 +790,7 @@ export class SkillFlowApp {
       return prepared;
     }
 
+    addOptions.onProgress?.("Applying projections");
     const applied = await this.applyDraftImpl(
       prepared.data.sourceId,
       addOptions.draft ?? prepared.data.draft,
@@ -781,10 +815,12 @@ export class SkillFlowApp {
     options?: SkillFlowAddOptions,
   ): Promise<Result<AddSourceResult>> {
     const addOptions = options ?? {};
+    addOptions.onProgress?.("Preparing source");
     const result = await this.sourceAuthorityService.addSource(locator, addOptions);
     if (!result.ok) {
       return fail(result.errors, result.warnings);
     }
+    addOptions.onProgress?.("Source prepared");
 
     const state = await this.stateStore.readState();
     const { manifest, lockFile } = state;
@@ -2084,7 +2120,7 @@ export class SkillFlowApp {
       return [];
     }
     if (options.status === "matched" && options.canonicalRepo && options.originLocator) {
-      return [{
+      const originChoice: LocalScanImportChoice = {
         scanId: options.canonicalRepo,
         sourceChoiceId: "origin",
         rootPath: options.originLocator,
@@ -2093,7 +2129,21 @@ export class SkillFlowApp {
         detectedSkills: options.localSkills.map((skill) => this.localScanDetectedSkill(skill)),
         selectedSkills: this.importSkillSelectionsForRepoPaths(options.skillIds),
         enabledTargets: [],
-      }];
+      };
+      if (options.localSkills.length === 1) {
+        const localSkill = options.localSkills[0]!;
+        return [{
+          scanId: options.canonicalRepo,
+          sourceChoiceId: "local",
+          rootPath: localSkill.path,
+          sourcePath: localSkill.path,
+          variant: "single-source",
+          detectedSkills: [this.localScanDetectedSkill(localSkill)],
+          selectedSkills: this.importSkillSelectionsForRepoPaths([localSkill.displayName]),
+          enabledTargets: [],
+        }, originChoice];
+      }
+      return [originChoice];
     }
     const localSkill = options.localSkills[0];
     return [{
@@ -4339,6 +4389,161 @@ export class SkillFlowApp {
     return availableTargets;
   }
 
+  async importManifest(options: ImportManifestOptions): Promise<Result<ImportManifestResult>> {
+    const result: ImportManifestResult = {
+      imported: 0,
+      skippedExisting: 0,
+      skippedLocalMissing: 0,
+      enabled: 0,
+      inactive: 0,
+      failed: 0,
+      timedOut: 0,
+    };
+    const apply = options.apply === true && options.dryRun !== true;
+    const knownTargets = await this.importManifestTargetIds();
+
+    for (const entry of options.sources) {
+      if (options.skipExisting && await this.importSourceExists(entry.source)) {
+        result.skippedExisting += 1;
+        continue;
+      }
+      if (options.skipLocalMissing && !(await this.importLocalSourceExists(entry.source))) {
+        result.skippedLocalMissing += 1;
+        continue;
+      }
+
+      const targets = [...new Set(entry.targets ?? [])];
+      const unknownTargets = targets.filter((target) => !knownTargets.has(target));
+      if (unknownTargets.length > 0) {
+        result.failed += 1;
+        const error = {
+          code: "TARGET_NOT_FOUND",
+          message: `Unknown target id(s): ${unknownTargets.join(", ")}.`,
+        };
+        if (options.continueOnError) {
+          continue;
+        }
+        return fail(error);
+      }
+      if (!apply) {
+        if (entry.skills === "none" || targets.length === 0) {
+          result.inactive += 1;
+        } else {
+          result.enabled += 1;
+        }
+        continue;
+      }
+
+      const added = await this.addSource(entry.source, { project: false });
+      if (!added.ok) {
+        result.failed += 1;
+        if (options.continueOnError) {
+          continue;
+        }
+        return fail(added.errors, added.warnings);
+      }
+
+      const selectedLeafIds = entry.skills === "none"
+        ? []
+        : added.data.leafs.map((leaf) => leaf.id);
+      let applied: Awaited<ReturnType<SkillFlowApp["applyDraft"]>>;
+      try {
+        applied = await this.applyDraft(added.data.sourceId, {
+          selectedLeafIds,
+          enabledTargets: targets,
+        });
+      } catch (error) {
+        await this.rollbackPreparedSourceInternal(added.data.sourceId);
+        result.failed += 1;
+        if (options.continueOnError) {
+          continue;
+        }
+        return fail({
+          code: "IMPORT_MANIFEST_APPLY_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+        }, added.warnings);
+      }
+      if (!applied.ok) {
+        await this.rollbackPreparedSourceInternal(added.data.sourceId);
+        result.failed += 1;
+        if (options.continueOnError) {
+          continue;
+        }
+        return fail(applied.errors, [...added.warnings, ...applied.warnings]);
+      }
+
+      result.imported += 1;
+      if (targets.length === 0) {
+        result.inactive += 1;
+      } else {
+        result.enabled += 1;
+      }
+    }
+
+    return ok(result);
+  }
+
+  private async importManifestTargetIds(): Promise<Set<DeploymentTargetId>> {
+    const { preferences } = await this.readRuntimeAuthorityView();
+    return new Set(
+      getMergedTargetDefinitions(
+        preferences.customTargets,
+        preferences.agentDisplayOrder,
+      ).map((target) => target.id),
+    );
+  }
+
+  private async importSourceExists(locator: string): Promise<boolean> {
+    const { manifest } = await this.readRuntimeAuthorityView();
+    const localPath = this.importLocalPath(locator);
+    const sourceId = deriveSourceId(locator);
+    return manifest.sources.some((source) =>
+      source.locator === locator ||
+      source.canonicalLocator === locator ||
+      (localPath ? this.sourceMatchesLocalImport(source, localPath) : source.id === sourceId)
+    );
+  }
+
+  private sourceMatchesLocalImport(source: ManifestFile["sources"][number], localPath: string): boolean {
+    return [source.locator, source.canonicalLocator].some((locator) => {
+      const sourcePath = this.importLocalPath(locator);
+      return sourcePath ? sourcePath === localPath : false;
+    });
+  }
+
+  private async importLocalSourceExists(locator: string): Promise<boolean> {
+    const localPath = this.importLocalPath(locator);
+    return localPath ? pathExists(localPath) : true;
+  }
+
+  private importLocalPath(locator: string): string | undefined {
+    if (locator.startsWith("file://")) {
+      return fileURLToPath(locator);
+    }
+    if (path.isAbsolute(locator) || locator.startsWith(".")) {
+      return path.resolve(locator);
+    }
+    return undefined;
+  }
+
+  async enableSources(
+    sourceIds: string[],
+    targets?: DeploymentTargetId[],
+  ): Promise<Result<SourceTargetUpdateResult>> {
+    return this.runSerializedMutation(() => this.updateSourceTargets("enable", sourceIds, targets));
+  }
+
+  async disableSources(sourceIds: string[]): Promise<Result<SourceTargetUpdateResult>> {
+    return this.runSerializedMutation(() => this.updateSourceTargets("disable", sourceIds));
+  }
+
+  async onlySources(
+    sourceIds: string[],
+    targets?: DeploymentTargetId[],
+  ): Promise<Result<SourceTargetUpdateResult>> {
+    return this.runSerializedMutation(() => this.updateSourceTargets("only", sourceIds, targets));
+  }
+
   async previewDraft(
     sourceId: string,
     draft: DraftBinding,
@@ -4661,6 +4866,183 @@ export class SkillFlowApp {
       summary: inspected.data.summary,
       inspect: inspected.data,
     };
+  }
+
+  private async updateSourceTargets(
+    mode: "enable" | "disable" | "only",
+    sourceIds: string[],
+    targets?: DeploymentTargetId[],
+  ): Promise<Result<SourceTargetUpdateResult>> {
+    const state = await this.stateStore.readState();
+    const manifest = this.cloneAuthorityManifest(state.manifest);
+    const lockFile = this.cloneLockFile(state.lockFile);
+    const preferences = state.preferences;
+    const requestedSourceIds = uniqueNonEmptyStrings(sourceIds);
+    const requestedSourceIdSet = new Set(requestedSourceIds);
+    const allSourceIds = manifest.sources.map((source) => source.id);
+
+    for (const sourceId of requestedSourceIds) {
+      if (!manifest.sources.some((source) => source.id === sourceId)) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+    }
+
+    const requestedTargets = targets?.length ? uniqueNonEmptyStrings(targets) : undefined;
+    if (requestedTargets) {
+      const knownTargetIds = new Set(
+        getMergedTargetDefinitions(
+          preferences.customTargets,
+          preferences.agentDisplayOrder,
+        ).map((target) => target.id),
+      );
+      const unknownTargets = requestedTargets.filter((target) => !knownTargetIds.has(target));
+      if (unknownTargets.length > 0) {
+        return fail({
+          code: "TARGET_NOT_FOUND",
+          message: `Unknown target id(s): ${unknownTargets.join(", ")}.`,
+        });
+      }
+    }
+
+    const enabledSourceIds = mode === "disable" ? [] : requestedSourceIds;
+    const disabledSourceIds = mode === "only"
+      ? allSourceIds.filter((sourceId) => !requestedSourceIdSet.has(sourceId))
+      : mode === "disable"
+        ? requestedSourceIds
+        : [];
+    const affectedSourceIds = [...new Set([...enabledSourceIds, ...disabledSourceIds])];
+    const previousEnabledTargetsBySourceId = new Map(
+      allSourceIds.map((sourceId) => [
+        sourceId,
+        this.getEnabledTargetsForSource(state.manifest, sourceId),
+      ]),
+    );
+    const prepareWarnings: Warning[] = [];
+
+    const currentDraftForSource = (sourceId: string): Result<DraftBinding> => {
+      const sourceLock = lockFile.sources[sourceId];
+      if (!sourceLock) {
+        return fail({
+          code: "SOURCE_LOCK_MISSING",
+          message: `${sourceId} is missing from authority lock sources.`,
+        });
+      }
+
+      const binding = manifest.bindings[sourceId];
+      if (binding) {
+        return ok(this.draftFromBinding(
+          sourceId,
+          this.bindingToSummary(binding, sourceLock.leafIds),
+          lockFile,
+        ));
+      }
+
+      return ok({
+        selectedLeafIds: [...sourceLock.leafIds],
+        enabledTargets: [],
+      });
+    };
+
+    for (const sourceId of disabledSourceIds) {
+      const currentDraft = currentDraftForSource(sourceId);
+      if (!currentDraft.ok) {
+        return fail(currentDraft.errors, currentDraft.warnings);
+      }
+
+      const prepared = this.prepareAuthorityManifestForDraft(manifest, lockFile, sourceId, {
+        selectedLeafIds: currentDraft.data.selectedLeafIds,
+        enabledTargets: [],
+      });
+      if (!prepared.ok) {
+        return fail(prepared.errors, [...currentDraft.warnings, ...prepared.warnings]);
+      }
+      prepareWarnings.push(...currentDraft.warnings, ...prepared.warnings);
+    }
+
+    for (const sourceId of enabledSourceIds) {
+      const currentDraft = currentDraftForSource(sourceId);
+      if (!currentDraft.ok) {
+        return fail(currentDraft.errors, currentDraft.warnings);
+      }
+
+      const enabledTargets = requestedTargets
+        ? [...requestedTargets]
+        : previousEnabledTargetsBySourceId.get(sourceId) ?? [];
+      if (enabledTargets.length === 0) {
+        return fail({
+          code: "TARGETS_REQUIRED",
+          message: `Source ${sourceId} has no existing targets. Pass --targets codex,cline.`,
+        });
+      }
+
+      const prepared = this.prepareAuthorityManifestForDraft(manifest, lockFile, sourceId, {
+        selectedLeafIds: currentDraft.data.selectedLeafIds,
+        enabledTargets,
+      });
+      if (!prepared.ok) {
+        return fail(prepared.errors, [...currentDraft.warnings, ...prepared.warnings]);
+      }
+      prepareWarnings.push(...currentDraft.warnings, ...prepared.warnings);
+    }
+
+    const previouslyProjectedSourceIds = lockFile.projections
+      .filter((projection) => projection.status === "active")
+      .map((projection) => projection.sourceId);
+    const planSourceIds = allSourceIds.filter((sourceId) =>
+      affectedSourceIds.includes(sourceId) ||
+      this.hasActiveTargets(manifest, sourceId) ||
+      previouslyProjectedSourceIds.includes(sourceId)
+    );
+    const planned = await this.planForSources(manifest, lockFile, planSourceIds, preferences);
+    if (!planned.ok) {
+      return fail(planned.errors, [...prepareWarnings, ...planned.warnings]);
+    }
+
+    const applier = new DeploymentApplier(this.createAdaptersForPreferences(preferences));
+    const applied = await applier.applyPlan(lockFile, planned.data.actions);
+    if (!applied.ok) {
+      return fail(applied.errors, [...prepareWarnings, ...planned.warnings, ...applied.warnings]);
+    }
+
+    const cleanupWarnings: Warning[] = [];
+    for (const sourceId of affectedSourceIds) {
+      const importedTargets = lockFile.sources[sourceId]?.importedFromTargets ?? [];
+      const nextTargets = this.getEnabledTargetsForSource(manifest, sourceId);
+      const disabledImportedTargets = importedTargets.filter((target) =>
+        !nextTargets.includes(target)
+      );
+      if (disabledImportedTargets.length > 0) {
+        cleanupWarnings.push(
+          ...await this.cleanupImportedTargetPaths(
+            manifest,
+            lockFile,
+            [sourceId],
+            disabledImportedTargets,
+          ),
+        );
+      }
+    }
+    cleanupWarnings.push(
+      ...await this.cleanupDetachedTargetSymlinksForSources(lockFile, affectedSourceIds),
+    );
+
+    await this.stateStore.writeState({
+      ...state,
+      manifest,
+      lockFile,
+    });
+
+    return ok(
+      {
+        enabledSourceIds,
+        disabledSourceIds,
+        actions: planned.data.actions,
+      },
+      [...prepareWarnings, ...planned.warnings, ...applied.warnings, ...cleanupWarnings],
+    );
   }
 
   async updateSources(sourceIds?: string[]): Promise<
@@ -5191,6 +5573,7 @@ export class SkillFlowApp {
     }
     return {
       selectedLeafIds: [...draft.selectedLeafIds],
+      resolvedSelectedLeafCount: draft.selectedLeafIds.length,
       targets,
     };
   }
@@ -5465,6 +5848,7 @@ export class SkillFlowApp {
 
       bindings[sourceId] = {
         selectedLeafIds: [...binding.selectedLeafIds],
+        resolvedSelectedLeafCount: binding.resolvedSelectedLeafCount ?? binding.selectedLeafIds.length,
         targets,
       };
     }
@@ -6270,7 +6654,11 @@ export class SkillFlowApp {
     let changed = false;
 
     for (const source of manifest.sources) {
-      const currentBinding = manifest.bindings[source.id] ?? { selectedLeafIds: [], targets: {} };
+      const currentBinding = manifest.bindings[source.id] ?? {
+        selectedLeafIds: [],
+        resolvedSelectedLeafCount: 0,
+        targets: {},
+      };
       const normalizedDraft = this.draftFromSourceBinding(source, currentBinding, lockFile, collections);
       const normalizedBinding = this.bindingFromDraft(normalizedDraft);
 
@@ -6322,11 +6710,16 @@ export class SkillFlowApp {
     const enabledTargets = Object.entries(binding.targets)
       .filter(([, targetBinding]) => targetBinding?.enabled)
       .map(([target]) => target) as DeploymentTargetName[];
+    const targetLeafIds = enabledTargets.flatMap((target) => binding.targets[target]?.leafIds ?? []);
     const selectedLeafIds = [
       ...new Set(
         (binding.selectedLeafIds && binding.selectedLeafIds.length > 0
           ? binding.selectedLeafIds
-          : enabledTargets.flatMap((target) => binding.targets[target]?.leafIds ?? [])),
+          : targetLeafIds.length > 0
+            ? targetLeafIds
+            : binding.resolvedSelectedLeafCount > 0
+              ? [...leafIds]
+              : []),
       ),
     ].filter((leafId) => leafIds.has(leafId));
 

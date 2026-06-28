@@ -63,6 +63,10 @@ export function writeCollections(stateRoot: string, collections: CollectionsFile
   return writeAuthorityFile(stateRoot, "collections.json", collections);
 }
 
+export function stripUtf8Bom(text: string): string {
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+}
+
 export async function inspectStateMigrationStatus(stateRoot: string): Promise<StateMigrationStatus> {
   const markerPath = path.join(stateRoot, ".skillflow-migration.json");
   if (await pathExists(markerPath)) {
@@ -384,11 +388,14 @@ type JsonReadResult =
   | { ok: false; path: string; diagnostic: Diagnostic };
 
 async function readJsonFile(filePath: string): Promise<JsonReadResult> {
+  let bomDetected = false;
   try {
+    const raw = await fs.readFile(filePath, "utf8");
+    bomDetected = raw.charCodeAt(0) === 0xFEFF;
     return {
       ok: true,
       path: filePath,
-      value: JSON.parse(await fs.readFile(filePath, "utf8")) as unknown,
+      value: JSON.parse(stripUtf8Bom(raw)) as unknown,
     };
   } catch (error) {
     return {
@@ -398,6 +405,7 @@ async function readJsonFile(filePath: string): Promise<JsonReadResult> {
         code: getFileErrorCode(error),
         message: "State authority file could not be read.",
         path: filePath,
+        ...(bomDetected ? { details: { bomDetected } } : {}),
         retryable: false,
       },
     };

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from "node:fs/promises";
 import React from "react";
 import { Command } from "commander";
 import { render } from "ink";
@@ -18,6 +19,7 @@ import { filterAddWarnings, resolveAddSourceLocator } from "@skill-flow/integrat
 import { buildFindCommand } from "@skill-flow/integration/utils/find-command";
 import { runBridgeCommand } from "./bridge-runner.js";
 import { runMigrateStateCli } from "./state-migration-command.js";
+import { parseImportManifestText } from "./import-manifest-command.js";
 
 const program = new Command();
 const app = new SkillFlowApp();
@@ -68,7 +70,7 @@ program
     };
 
     if (options.all || options.yes) {
-      const result = await runAddFlowNonInteractive(app, request);
+      const result = await runAddFlowNonInteractive(createProgressReportingAddApp(app), request);
       handleAddFlowResult(result);
       return;
     }
@@ -77,15 +79,53 @@ program
     handleAddFlowResult(result, { rendered: true });
   });
 
-program.command("list").action(async () => {
-  const result = await app.listWorkflows();
-  if (!result.ok) {
-    printErrors(result.errors);
-    process.exitCode = 1;
-    return;
-  }
-  console.log(formatWorkflowList(result.data.summaries));
-});
+program
+  .command("list")
+  .option("--ids", "Show source ids next to display names")
+  .option("--warnings", "Show warning details under affected groups")
+  .option("--json", "Print JSON output")
+  .action(async (options: { ids?: boolean; warnings?: boolean; json?: boolean }) => {
+    const result = await app.listWorkflows();
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    if (options.json) {
+      console.log(JSON.stringify(result.data.summaries, null, 2));
+      return;
+    }
+    console.log(formatWorkflowList(result.data.summaries, {
+      showIds: Boolean(options.ids),
+      showWarnings: Boolean(options.warnings),
+    }));
+  });
+
+program
+  .command("enable")
+  .argument("<sourceIds...>", "Skills group ids to enable")
+  .option("--targets <ids>", "Comma-separated target ids to enable")
+  .action(async (sourceIds: string[], options: { targets?: string }) => {
+    const result = await app.enableSources(sourceIds, parseTargets(options.targets) as never);
+    handleSourceTargetUpdate(result);
+  });
+
+program
+  .command("disable")
+  .argument("<sourceIds...>", "Skills group ids to disable")
+  .action(async (sourceIds: string[]) => {
+    const result = await app.disableSources(sourceIds);
+    handleSourceTargetUpdate(result);
+  });
+
+program
+  .command("only")
+  .argument("<sourceIds...>", "Skills group ids to keep enabled")
+  .option("--targets <ids>", "Comma-separated target ids to enable")
+  .action(async (sourceIds: string[], options: { targets?: string }) => {
+    const result = await app.onlySources(sourceIds, parseTargets(options.targets) as never);
+    handleSourceTargetUpdate(result);
+  });
 
 program
   .command("find")
@@ -183,6 +223,45 @@ program
   });
 
 program
+  .command("import-manifest")
+  .argument("<file>", "Import manifest file")
+  .option("--dry-run", "Validate and summarize without writing state")
+  .option("--apply", "Apply the import manifest")
+  .option("--continue-on-error", "Continue after per-source failures")
+  .option("--skip-existing", "Skip sources already in state")
+  .option("--skip-local-missing", "Skip missing local source paths")
+  .option("--summary <path>", "Write JSON summary to a file")
+  .action(async (
+    file: string,
+    options: {
+      dryRun?: boolean;
+      apply?: boolean;
+      continueOnError?: boolean;
+      skipExisting?: boolean;
+      skipLocalMissing?: boolean;
+      summary?: string;
+    },
+  ) => {
+    let manifest;
+    try {
+      manifest = parseImportManifestText(await fs.readFile(file, "utf8"), file);
+    } catch (error) {
+      printErrors([{ message: error instanceof Error ? error.message : String(error) }]);
+      process.exitCode = 1;
+      return;
+    }
+    const result = await app.importManifest({
+      ...manifest,
+      dryRun: options.apply ? Boolean(options.dryRun) : true,
+      apply: Boolean(options.apply),
+      skipExisting: Boolean(options.skipExisting),
+      continueOnError: Boolean(options.continueOnError),
+      skipLocalMissing: Boolean(options.skipLocalMissing),
+    });
+    await handleImportManifestResult(result, options.summary);
+  });
+
+program
   .command("update")
   .argument("[sourceId]", "Optional skills group id")
   .option("--all", "Update all registered skills groups")
@@ -277,6 +356,55 @@ function printWarnings(messages: string[]) {
   }
 }
 
+function parseTargets(value: string | undefined): string[] | undefined {
+  if (!value) return undefined;
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function handleSourceTargetUpdate(result: Awaited<ReturnType<SkillFlowApp["onlySources"]>>) {
+  if (!result.ok) {
+    printErrors(result.errors);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (result.data.backupPath) {
+    console.log(`Backup: ${result.data.backupPath}`);
+  }
+  console.log(`Enabled: ${result.data.enabledSourceIds.length}`);
+  console.log(`Disabled: ${result.data.disabledSourceIds.length}`);
+  const summary = formatActionSummary(result.data.actions);
+  if (summary) {
+    console.log(summary);
+  }
+  printWarnings(result.warnings.map((warning) => warning.message));
+}
+
+async function handleImportManifestResult(
+  result: Awaited<ReturnType<SkillFlowApp["importManifest"]>>,
+  summaryPath: string | undefined,
+) {
+  if (!result.ok) {
+    printErrors(result.errors);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (result.data.backupPath) {
+    console.log(`Backup: ${result.data.backupPath}`);
+  }
+  console.log(`Imported: ${result.data.imported}`);
+  console.log(`Enabled: ${result.data.enabled}`);
+  console.log(`Inactive: ${result.data.inactive}`);
+  console.log(`Skipped existing: ${result.data.skippedExisting}`);
+  console.log(`Skipped local missing: ${result.data.skippedLocalMissing}`);
+  console.log(`Failed: ${result.data.failed}`);
+  if (summaryPath) {
+    await fs.writeFile(summaryPath, `${JSON.stringify(result.data, null, 2)}\n`, "utf8");
+  }
+  printWarnings(result.warnings.map((warning) => warning.message));
+}
+
 function createAppForStateRoot(stateRoot: string): SkillFlowApp {
   const previousStateRoot = process.env.SKILL_FLOW_STATE_ROOT;
   process.env.SKILL_FLOW_STATE_ROOT = stateRoot;
@@ -287,6 +415,20 @@ function createAppForStateRoot(stateRoot: string): SkillFlowApp {
     process.env.SKILL_FLOW_STATE_ROOT = previousStateRoot;
   }
   return runtime;
+}
+
+function createProgressReportingAddApp(runtime: SkillFlowApp): SkillFlowApp {
+  const progressApp = Object.create(runtime) as SkillFlowApp;
+  progressApp.prepareAddSource = (locator, options) =>
+    runtime.prepareAddSource(locator, {
+      ...options,
+      onProgress: (message) => console.log(message),
+    });
+  progressApp.applyDraft = (sourceId, draft, scope) => {
+    console.log("Applying projections");
+    return runtime.applyDraft(sourceId, draft, scope);
+  };
+  return progressApp;
 }
 
 async function runRenderedAddFlow(

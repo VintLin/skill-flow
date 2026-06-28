@@ -10,6 +10,7 @@ import type {
   ProjectionRecord,
 } from "@skill-flow/domain/types";
 import {
+  stripUtf8Bom,
   writeCollections,
   writeLock,
   writeManifest,
@@ -219,6 +220,12 @@ export class StateStore {
       } finally {
         this.mutationLockDepth -= 1;
       }
+    }, {
+      metadata: {
+        command: process.argv.join(" "),
+        pid: process.pid,
+        startedAt: new Date().toISOString(),
+      },
     });
   }
 
@@ -329,14 +336,20 @@ async function readAuthorityFile<T>(
   validate: (payload: unknown, filePath: string) => asserts payload is T,
 ): Promise<T> {
   let payload: unknown;
+  let bomDetected = false;
   try {
-    payload = JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
+    const raw = await fs.readFile(filePath, "utf8");
+    bomDetected = raw.charCodeAt(0) === 0xFEFF;
+    payload = JSON.parse(stripUtf8Bom(raw)) as unknown;
   } catch (error) {
     throw new StateStoreError(
       "STATE_MIGRATION_BLOCKED",
       "State authority file could not be read.",
       filePath,
-      { cause: getFileErrorCode(error) },
+      {
+        cause: getFileErrorCode(error),
+        ...(bomDetected ? { bomDetected } : {}),
+      },
     );
   }
 

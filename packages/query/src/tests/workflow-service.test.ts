@@ -281,6 +281,7 @@ describe("WorkflowService", () => {
 
     expect(summaries[0]?.bindings).toEqual({
       selectedLeafIds: [],
+      resolvedSelectedLeafCount: 0,
       targets: {},
     });
     expect(summaries[0]?.activeTargetCount).toBe(0);
@@ -343,9 +344,76 @@ describe("WorkflowService", () => {
 
     expect(summaries[0]?.bindings).toEqual({
       selectedLeafIds: ["alpha:one"],
+      resolvedSelectedLeafCount: 1,
       targets: {},
     });
     expect(summaries[0]?.activeTargetCount).toBe(0);
+  });
+
+  test("counts and targets only selected leaf ids that still resolve", () => {
+    const manifest: ManifestFile = {
+      ...collectionManifest,
+      sources: [collectionManifest.sources[0]!],
+      bindings: {
+        alpha: {
+          sourceId: "alpha",
+          selectionMode: "selected",
+          selectedLeafIds: ["alpha:one", "alpha:missing"],
+          enabledTargets: ["codex"],
+        },
+      },
+    };
+    const lockFile: LockFile = {
+      ...collectionLockFile,
+      sources: {
+        alpha: {
+          sourceId: "alpha",
+          canonicalLocator: "/repos/alpha",
+          revision: {
+            provider: "local",
+            capturedAt: addedAt,
+          },
+          localPath: "/repos/alpha",
+          leafIds: ["alpha:one"],
+        },
+      },
+      leafInventory: [
+        {
+          id: "alpha:one",
+          sourceId: "alpha",
+          displayName: "one",
+          linkName: "one",
+          title: "One",
+          description: "One skill.",
+          relativePath: "one",
+          absolutePath: "/repos/alpha/one",
+          skillFilePath: "/repos/alpha/one/SKILL.md",
+          contentHash: "hash-one",
+          selectors: { aliases: [] },
+          diagnostics: [],
+          valid: true,
+        },
+      ],
+      projections: [],
+    };
+
+    const summaries = new WorkflowService().getSummaries(
+      manifest,
+      lockFile,
+      undefined,
+      { ...collections, collections: {} },
+    );
+
+    expect(summaries[0]?.bindings).toEqual({
+      selectedLeafIds: ["alpha:one", "alpha:missing"],
+      resolvedSelectedLeafCount: 1,
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: ["alpha:one"],
+        },
+      },
+    });
   });
 
   test("does not emit summary selectionMode when authoritative binding mode is missing", () => {
@@ -403,6 +471,7 @@ describe("WorkflowService", () => {
 
     expect(summaries[0]?.bindings).toEqual({
       selectedLeafIds: ["alpha:one"],
+      resolvedSelectedLeafCount: 1,
       targets: {
         codex: {
           enabled: true,

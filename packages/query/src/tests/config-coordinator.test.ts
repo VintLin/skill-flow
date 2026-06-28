@@ -125,6 +125,7 @@ const summaries: WorkflowSummary[] = [
     }],
     bindings: {
       selectedLeafIds: ["alpha:browse"],
+      resolvedSelectedLeafCount: 1,
       targets: {
         codex: {
           enabled: true,
@@ -147,10 +148,30 @@ const summaries: WorkflowSummary[] = [
     },
     lock: undefined,
     leafs: [],
-    bindings: { selectedLeafIds: [], targets: {} },
+    bindings: { selectedLeafIds: [], resolvedSelectedLeafCount: 0, targets: {} },
     activeTargetCount: 0,
     health: "INACTIVE",
     issueCounts: { warning: 0, error: 0 },
+  },
+];
+
+const allModeSummaries: WorkflowSummary[] = [
+  {
+    ...summaries[0]!,
+    source: {
+      ...summaries[0]!.source,
+      selectionMode: "all",
+    },
+    bindings: {
+      selectedLeafIds: [],
+      resolvedSelectedLeafCount: 1,
+      targets: {
+        codex: {
+          enabled: true,
+          leafIds: ["alpha:browse"],
+        },
+      },
+    },
   },
 ];
 
@@ -287,6 +308,50 @@ describe("ConfigCoordinator", () => {
     expect(result.data.selectedProjectScope).toEqual({ kind: "global" });
     expect(result.data.projectDrafts).toEqual({});
     expect(getSummaries).toHaveBeenCalledWith(manifest, lockFile, audit, emptyCollections);
+  });
+
+  test("derives all-mode initial draft selections from enabled target leaf ids", async () => {
+    const preferences = createPreferences();
+    const coordinator = new ConfigCoordinator({
+      store: {
+        readPreferences: vi.fn().mockResolvedValue(preferences),
+        readCollections: vi.fn().mockResolvedValue(emptyCollections),
+        writePreferences: vi.fn().mockResolvedValue(undefined),
+      },
+      recentProjectService: {
+        listRecentProjects: vi.fn().mockResolvedValue([]),
+      },
+      doctorService: {
+        run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
+      },
+      workflowService: {
+        getSummaries: vi.fn().mockReturnValue(allModeSummaries),
+      },
+      getAvailableTargets: vi.fn().mockResolvedValue(["codex"]),
+      pruneMissingCheckouts: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { removedSourceIds: [] },
+        warnings: [],
+        errors: [],
+      }),
+      getConfigData: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { manifest, lockFile, summaries: allModeSummaries },
+        warnings: [],
+        errors: [],
+      }),
+    });
+
+    const result = await coordinator.bootstrapWorkspaceState();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.initialDrafts.alpha).toEqual({
+      enabledTargets: ["codex"],
+      selectedLeafIds: ["alpha:browse"],
+    });
   });
 
   test("keeps config boot usable when prune removes missing groups", async () => {

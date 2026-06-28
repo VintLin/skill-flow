@@ -186,7 +186,18 @@ function buildInitialDrafts(summaries: WorkflowSummary[]): Record<string, DraftB
       const enabledTargets = Object.entries(summary.bindings.targets)
         .filter(([, value]) => value?.enabled)
         .map(([target]) => target) as DraftBinding["enabledTargets"];
-      const selectedLeafIds = [...new Set(summary.bindings.selectedLeafIds)];
+      const targetLeafIds = enabledTargets.flatMap((target) => summary.bindings.targets[target]?.leafIds ?? []);
+      const selectedLeafIds = [
+        ...new Set(
+          summary.bindings.selectedLeafIds.length > 0
+            ? summary.bindings.selectedLeafIds
+            : targetLeafIds.length > 0
+              ? targetLeafIds
+              : summary.bindings.resolvedSelectedLeafCount > 0
+                ? summary.leafs.map((leaf) => leaf.id)
+                : [],
+        ),
+      ];
       return [summary.source.id, { enabledTargets, selectedLeafIds }];
     }),
   );

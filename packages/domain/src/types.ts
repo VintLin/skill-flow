@@ -263,6 +263,7 @@ export type SourceTargetBindingSummary = {
 
 export type SourceBindingSummary = {
   selectedLeafIds: SkillLeafId[];
+  resolvedSelectedLeafCount: number;
   targets: Partial<Record<DeploymentTargetId, SourceTargetBindingSummary>>;
 };
 

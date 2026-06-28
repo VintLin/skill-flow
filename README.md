@@ -84,6 +84,12 @@ skill-flow add garrytan/gstack
 # Review installed workflow groups
 skill-flow list
 
+# Migrate or mirror a known source set
+skill-flow import-manifest skill-group-install-manifest.json --dry-run
+skill-flow import-manifest skill-group-install-manifest.json --apply --skip-existing
+skill-flow only garrytan-gstack --targets codex,cline
+skill-flow list --ids --warnings
+
 # Open the interactive config UI
 skill-flow config
 
@@ -165,6 +171,11 @@ Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 | --- | --- |
 | `add <source>` | Import a source and choose skills/targets |
 | `list` | Show workflow groups and current health |
+| `list --ids --warnings` | Show source IDs and warning details for migration/debugging |
+| `enable <sourceIds...>` | Enable registered groups for targets |
+| `disable <sourceIds...>` | Turn registered groups OFF without uninstalling |
+| `only <sourceIds...>` | Keep only selected groups ON |
+| `import-manifest <file>` | Batch import source manifests |
 | `find <query>` / `search <query>` | Search installed skills, built-in Git catalogs, and skills.sh |
 | `config` | Open the interactive configuration UI |
 | `update [sourceId] --all` | Refresh one source or all registered sources |

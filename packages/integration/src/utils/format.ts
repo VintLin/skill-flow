@@ -9,7 +9,15 @@ import { TARGET_LABELS, TARGET_ORDER } from "./constants.js";
 import { buildFindCommand } from "./find-command.js";
 import { formatGroupLabel } from "./naming.js";
 
-export function formatWorkflowList(summaries: WorkflowSummary[]): string {
+export type WorkflowListFormatOptions = {
+  showIds?: boolean;
+  showWarnings?: boolean;
+};
+
+export function formatWorkflowList(
+  summaries: WorkflowSummary[],
+  options: WorkflowListFormatOptions = {},
+): string {
   if (summaries.length === 0) {
     return [
       "No skills groups yet",
@@ -32,7 +40,23 @@ export function formatWorkflowList(summaries: WorkflowSummary[]): string {
         suffixParts.push(`${invalidCount} skipped`);
       }
       const suffix = suffixParts.length > 0 ? `, ${suffixParts.join(", ")}` : "";
-      return `${formatGroupLabel(summary.source)}  ${summary.health}  ${summary.leafs.length} skills  ${summary.activeTargetCount} targets${suffix}`;
+      const label = options.showIds
+        ? `${formatGroupLabel(summary.source)}  ${summary.source.id}`
+        : formatGroupLabel(summary.source);
+      const lines = [
+        `${label}  ${summary.health}  ${summary.leafs.length} skills  ${summary.activeTargetCount} targets${suffix}`,
+      ];
+      if (options.showWarnings) {
+        for (const leaf of summary.leafs) {
+          for (const warning of leaf.metadataWarnings) {
+            lines.push(`  warning: ${warning}`);
+          }
+        }
+        for (const invalidLeaf of summary.lock?.invalidLeafs ?? []) {
+          lines.push(`  skipped: ${invalidLeaf.path} - ${invalidLeaf.reason}`);
+        }
+      }
+      return lines.join("\n");
     })
     .join("\n");
 }

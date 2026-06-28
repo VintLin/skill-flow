@@ -165,6 +165,11 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | --- | --- |
 | `add <source>` | 导入 source，并选择 skill 与目标 |
 | `list` | 查看 workflow group 和当前健康状态 |
+| `list --ids --warnings` | 显示 source ID 与 warning 详情，便于迁移和排查 |
+| `enable <sourceIds...>` | 为已注册 group 开启目标 |
+| `disable <sourceIds...>` | 不卸载 group，只关闭目标 |
+| `only <sourceIds...>` | 只保留指定 group 开启 |
+| `import-manifest <file>` | 批量导入 source manifest |
 | `find <query>` / `search <query>` | 搜索本地技能、内置 Git 目录与 skills.sh |
 | `config` | 打开交互式配置 UI |
 | `update [sourceId] --all` | 更新单个或全部已注册 source |
