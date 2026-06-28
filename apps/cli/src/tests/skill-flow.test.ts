@@ -1309,9 +1309,39 @@ describe.sequential("skill-flow", () => {
     const app = new SkillFlowApp();
     const added = await app.addSource(repoPath, {
       sourceIdOverride: "demo-source",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+    const leafId = added.data.leafs[0]?.id;
+    expect(leafId).toBeTruthy();
+    if (!leafId) {
+      return;
+    }
+    const selected = await app.applyDraft(added.data.sourceId, {
+      enabledTargets: [],
+      selectedLeafIds: [leafId],
+    });
+    expect(selected.ok).toBe(true);
+
+    const output = runCli(["enable", "demo-source", "--targets", "codex"]);
+
+    expect(output).toContain("Enabled: 1");
+    const state = await v2State(app);
+    expect(state.manifest.bindings["demo-source"]?.enabledTargets).toEqual(["codex"]);
+  });
+
+  test("enable --all-skills fills an empty selection before enabling targets", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "demo-source",
       draft: {
         enabledTargets: [],
-        selectedLeafIds: ["demo-source:skills/review"],
+        selectedLeafIds: [],
       },
     });
     expect(added.ok).toBe(true);
@@ -1319,11 +1349,65 @@ describe.sequential("skill-flow", () => {
       return;
     }
 
-    const output = runCli(["enable", "demo-source", "--targets", "codex"]);
-
+    const output = runCli(["enable", "demo-source", "--targets", "codex", "--all-skills"]);
     expect(output).toContain("Enabled: 1");
+
+    const listOutput = runCli(["list", "--json"]);
+    const summaries = JSON.parse(listOutput) as Array<{
+      source: { id: string };
+      bindings: { resolvedSelectedLeafCount: number };
+    }>;
+    expect(
+      summaries.find((summary) => summary.source.id === "demo-source")?.bindings
+        .resolvedSelectedLeafCount,
+    ).toBe(1);
+  });
+
+  test("enable without --all-skills reports empty selection error", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "demo-source",
+      draft: {
+        enabledTargets: [],
+        selectedLeafIds: [],
+      },
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const failure = runCliFailure(["enable", "demo-source", "--targets", "codex"]);
+    expect(failure.status).toBe(1);
+    expect(failure.stderr).toContain("Pass --all-skills");
+  });
+
+  test("only --all-skills fills an empty selection before enabling targets", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "demo-source",
+      draft: {
+        enabledTargets: [],
+        selectedLeafIds: [],
+      },
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const output = runCli(["only", "demo-source", "--targets", "codex", "--all-skills"]);
+    expect(output).toContain("Enabled: 1");
+
     const state = await v2State(app);
     expect(state.manifest.bindings["demo-source"]?.enabledTargets).toEqual(["codex"]);
+    expect(state.manifest.bindings["demo-source"]?.selectionMode).toBe("all");
   });
 
   test("disable clears targets from manifest", async () => {
@@ -1492,6 +1576,35 @@ describe.sequential("skill-flow", () => {
     expect(listed.data.summaries).toEqual([]);
   });
 
+  test("importManifest rejects targets unless skills is all", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "alpha/SKILL.md": skillDoc("alpha", "Alpha flow."),
+    });
+    const app = new SkillFlowApp();
+
+    const omitted = await app.importManifest({
+      sources: [{ source: repoPath, targets: ["codex"] }],
+      apply: true,
+    });
+    expect(omitted.ok).toBe(false);
+    if (!omitted.ok) {
+      expect(omitted.errors[0]?.message).toContain('skills to "all"');
+    }
+
+    const none = await app.importManifest({
+      sources: [{ source: repoPath, skills: "none", targets: ["codex"] }],
+      apply: true,
+    });
+    expect(none.ok).toBe(false);
+
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    expect(listed.data.summaries.some((item) => item.source.locator === repoPath)).toBe(false);
+  });
+
   test("importManifest rolls back when apply throws", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "browse/SKILL.md": skillDoc("browse", "Browser flow."),
@@ -1502,7 +1615,7 @@ describe.sequential("skill-flow", () => {
     };
 
     const result = await app.importManifest({
-      sources: [{ source: repoPath, targets: ["codex"] }],
+      sources: [{ source: repoPath, skills: "all", targets: ["codex"] }],
       apply: true,
     });
 

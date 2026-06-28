@@ -105,8 +105,11 @@ program
   .command("enable")
   .argument("<sourceIds...>", "Skills group ids to enable")
   .option("--targets <ids>", "Comma-separated target ids to enable")
-  .action(async (sourceIds: string[], options: { targets?: string }) => {
-    const result = await app.enableSources(sourceIds, parseTargets(options.targets) as never);
+  .option("--all-skills", "If a group has no selected skills, select all current skills before enabling targets")
+  .action(async (sourceIds: string[], options: { targets?: string; allSkills?: boolean }) => {
+    const result = await app.enableSources(sourceIds, parseTargets(options.targets) as never, {
+      allSkills: Boolean(options.allSkills),
+    });
     handleSourceTargetUpdate(result);
   });
 
@@ -122,8 +125,11 @@ program
   .command("only")
   .argument("<sourceIds...>", "Skills group ids to keep enabled")
   .option("--targets <ids>", "Comma-separated target ids to enable")
-  .action(async (sourceIds: string[], options: { targets?: string }) => {
-    const result = await app.onlySources(sourceIds, parseTargets(options.targets) as never);
+  .option("--all-skills", "If a group has no selected skills, select all current skills before enabling targets")
+  .action(async (sourceIds: string[], options: { targets?: string; allSkills?: boolean }) => {
+    const result = await app.onlySources(sourceIds, parseTargets(options.targets) as never, {
+      allSkills: Boolean(options.allSkills),
+    });
     handleSourceTargetUpdate(result);
   });
 

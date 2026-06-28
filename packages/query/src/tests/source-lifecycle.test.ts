@@ -374,6 +374,70 @@ describe.sequential("source lifecycle", () => {
     expect(state.manifest.bindings["demo-source"]?.enabledTargets).toEqual([]);
   });
 
+  test("enableSources rejects empty selections unless allSkills is requested", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/alpha/SKILL.md": skillDoc("alpha", "Alpha."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "empty-select-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const cleared = await app.applyDraft(added.data.sourceId, {
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
+    expect(cleared.ok).toBe(true);
+
+    const rejected = await app.enableSources([added.data.sourceId], ["codex"]);
+    expect(rejected.ok).toBe(false);
+    if (rejected.ok) {
+      return;
+    }
+    expect(rejected.errors[0]?.message).toContain("Pass --all-skills");
+
+    const enabled = await app.enableSources([added.data.sourceId], ["codex"], { allSkills: true });
+    expect(enabled.ok).toBe(true);
+
+    const listed = await app.listWorkflows();
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    const summary = listed.data.summaries.find((item) => item.source.id === added.data.sourceId);
+    expect(summary?.bindings.resolvedSelectedLeafCount).toBe(1);
+  });
+
+  test("onlySources with allSkills preserves existing selections", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/alpha/SKILL.md": skillDoc("alpha", "Alpha."),
+      "skills/beta/SKILL.md": skillDoc("beta", "Beta."),
+    });
+    const app = new SkillFlowApp();
+
+    const added = await app.addSource(repoPath, { sourceIdOverride: "partial-select-source" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const firstLeaf = added.data.leafs[0]!.id;
+    const selected = await app.applyDraft(added.data.sourceId, {
+      selectedLeafIds: [firstLeaf],
+      enabledTargets: [],
+    });
+    expect(selected.ok).toBe(true);
+
+    const result = await app.onlySources([added.data.sourceId], ["codex"], { allSkills: true });
+    expect(result.ok).toBe(true);
+
+    const state = await view(app);
+    expect(state.manifest.bindings[added.data.sourceId]?.selectedLeafIds).toEqual([firstLeaf]);
+  });
+
   test("enableSources and onlySources validate unknown source ids and target ids", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),

@@ -257,6 +257,9 @@ type SourceTargetUpdateResult = {
   actions: DeploymentAction[];
   backupPath?: string;
 };
+type SourceTargetUpdateOptions = {
+  allSkills?: boolean;
+};
 export type ImportManifestOptions = {
   sources: Array<{
     source: string;
@@ -4425,6 +4428,17 @@ export class SkillFlowApp {
         }
         return fail(error);
       }
+      if (targets.length > 0 && entry.skills !== "all") {
+        result.failed += 1;
+        const error = {
+          code: "IMPORT_MANIFEST_SKILLS_REQUIRED",
+          message: `Import manifest source ${entry.source} with targets must set skills to "all".`,
+        };
+        if (options.continueOnError) {
+          continue;
+        }
+        return fail(error);
+      }
       if (!apply) {
         if (entry.skills === "none" || targets.length === 0) {
           result.inactive += 1;
@@ -4529,8 +4543,9 @@ export class SkillFlowApp {
   async enableSources(
     sourceIds: string[],
     targets?: DeploymentTargetId[],
+    options: SourceTargetUpdateOptions = {},
   ): Promise<Result<SourceTargetUpdateResult>> {
-    return this.runSerializedMutation(() => this.updateSourceTargets("enable", sourceIds, targets));
+    return this.runSerializedMutation(() => this.updateSourceTargets("enable", sourceIds, targets, options));
   }
 
   async disableSources(sourceIds: string[]): Promise<Result<SourceTargetUpdateResult>> {
@@ -4540,8 +4555,9 @@ export class SkillFlowApp {
   async onlySources(
     sourceIds: string[],
     targets?: DeploymentTargetId[],
+    options: SourceTargetUpdateOptions = {},
   ): Promise<Result<SourceTargetUpdateResult>> {
-    return this.runSerializedMutation(() => this.updateSourceTargets("only", sourceIds, targets));
+    return this.runSerializedMutation(() => this.updateSourceTargets("only", sourceIds, targets, options));
   }
 
   async previewDraft(
@@ -4872,6 +4888,7 @@ export class SkillFlowApp {
     mode: "enable" | "disable" | "only",
     sourceIds: string[],
     targets?: DeploymentTargetId[],
+    options: SourceTargetUpdateOptions = {},
   ): Promise<Result<SourceTargetUpdateResult>> {
     const state = await this.stateStore.readState();
     const manifest = this.cloneAuthorityManifest(state.manifest);
@@ -4977,9 +4994,20 @@ export class SkillFlowApp {
           message: `Source ${sourceId} has no existing targets. Pass --targets codex,cline.`,
         });
       }
+      const selectedLeafIds = currentDraft.data.selectedLeafIds.length > 0
+        ? currentDraft.data.selectedLeafIds
+        : options.allSkills
+          ? [...(lockFile.sources[sourceId]?.leafIds ?? [])]
+          : [];
+      if (selectedLeafIds.length === 0) {
+        return fail({
+          code: "SOURCE_SELECTION_REQUIRED",
+          message: `Source ${sourceId} has no selected skills. Pass --all-skills to select all current skills before enabling targets.`,
+        });
+      }
 
       const prepared = this.prepareAuthorityManifestForDraft(manifest, lockFile, sourceId, {
-        selectedLeafIds: currentDraft.data.selectedLeafIds,
+        selectedLeafIds,
         enabledTargets,
       });
       if (!prepared.ok) {
