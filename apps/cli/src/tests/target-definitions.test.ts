@@ -145,6 +145,25 @@ describe("target definitions", () => {
     ]);
   });
 
+  test("detects built-in targets from agent roots while writing to skills roots", () => {
+    expect(getTargetDetectionCandidates("zcode")).toContain(
+      path.join(os.homedir(), ".zcode"),
+    );
+    expect(getTargetDetectionCandidates("zcode")).toContain(
+      path.join(os.homedir(), ".zcode", "skills"),
+    );
+    expect(getTargetWriteRootCandidates("zcode")).toEqual([
+      path.join(os.homedir(), ".zcode", "skills"),
+    ]);
+
+    expect(getTargetDetectionCandidates("pi")).toContain(
+      path.join(os.homedir(), ".pi", "agent"),
+    );
+    expect(getTargetWriteRootCandidates("pi")).toEqual([
+      path.join(os.homedir(), ".pi", "agent", "skills"),
+    ]);
+  });
+
   test("exposes documented project/global paths as future-facing metadata", () => {
     expect(TARGET_DOCUMENTED_PROJECT_PATHS["claude-code"]).toBe(".claude/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.codex).toBe(".agents/skills/");
