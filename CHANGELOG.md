@@ -2,6 +2,23 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.5.2 - 2026-06-29
+
+### Added
+
+- Added CLI migration and source-management commands for warning visibility, group enablement, all-skill target selection, and manifest imports.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.5.1` to `1.5.2`.
+- Changed desktop update checks to prefer GitHub Release data from the GitHub CLI when available.
+
+### Fixed
+
+- Fixed empty CLI selections after duplicate filtering so invalid target updates are rejected cleanly.
+- Fixed detected agent refresh so desktop target lists stay aligned after local agent roots change.
+- Fixed built-in agent detection so agents installed at root directories are discovered.
+
 ## v1.5.1 - 2026-06-25
 
 ### Changed
