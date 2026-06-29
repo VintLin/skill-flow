@@ -179,6 +179,9 @@ final class SettingsViewModel {
 
     func detectedAgentRows(detectedTargetIds: [String]) -> [AgentDisplayRow] {
         let detectedSet = Set(detectedTargetIds)
+        if detectedSet.isEmpty {
+            return allAgentRows()
+        }
         return allAgentRows()
             .filter { $0.isBuiltIn ? detectedSet.contains($0.targetId) : true }
     }
@@ -224,7 +227,7 @@ final class SettingsViewModel {
         let customTargetIds = Set(state.settings.customAgents.map(\.id))
         var preferences = normalizedAgentDisplayPreferences()
         var reorderedDetected = preferences.filter { preference in
-            detectedSet.contains(preference.targetId) || customTargetIds.contains(preference.targetId)
+            detectedSet.isEmpty || detectedSet.contains(preference.targetId) || customTargetIds.contains(preference.targetId)
         }
 
         guard !reorderedDetected.isEmpty else {
@@ -235,7 +238,7 @@ final class SettingsViewModel {
         var reorderedIterator = reorderedDetected.makeIterator()
 
         preferences = preferences.map { preference in
-            guard (detectedSet.contains(preference.targetId) || customTargetIds.contains(preference.targetId)),
+            guard (detectedSet.isEmpty || detectedSet.contains(preference.targetId) || customTargetIds.contains(preference.targetId)),
                   let reordered = reorderedIterator.next() else {
                 return preference
             }

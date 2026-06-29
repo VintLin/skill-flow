@@ -172,24 +172,87 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.importPageTargetIds, ["claude-code", "cursor"])
     }
 
-    func testShowAllTargetsStillHonorsVisibilityAndUserOrder() async throws {
+    func testVisibleTargetsFallbackWhenNoAgentsAreDetected() async throws {
         let fixture = try TestFixture.install()
-        try fixture.reset(state: .baseline)
+        var fixtureState = TestFixture.State.baseline
+        fixtureState.availableTargets = []
+        fixtureState.sources["alpha"]?.enabledTargets = []
+        fixtureState.sources["alpha"]?.targetLeafIdsByTarget = [:]
+        try fixture.reset(state: fixtureState)
 
         let state = DesktopAppState()
-        state.settings.agentDisplayPreferences = [
-            AgentDisplayPreference(targetId: "codex", isVisible: true, sortOrder: 0),
-            AgentDisplayPreference(targetId: "claude-code", isVisible: true, sortOrder: 1),
-            AgentDisplayPreference(targetId: "cursor", isVisible: false, sortOrder: 2),
-        ]
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.defaultPreferences().map {
+            AgentDisplayPreference(
+                targetId: $0.targetId,
+                isVisible: ["codex", "zcode"].contains($0.targetId),
+                sortOrder: $0.sortOrder
+            )
+        }
 
         let model = MainViewModel(bridgeClient: BridgeClient())
         model.bindRouteState(state)
         await model.bootstrap()
-        model.showAllTargets = true
 
-        XCTAssertEqual(model.visibleTargets.prefix(3).map(\.id), ["codex", "claude-code", "zcode"])
-        XCTAssertFalse(model.visibleTargets.map(\.id).contains("cursor"))
+        XCTAssertEqual(model.visibleTargets.map(\.id), ["codex", "zcode"])
+        XCTAssertEqual(model.groupCards.first?.targets.map(\.id), ["codex", "zcode"])
+    }
+
+    func testRefreshListUpdatesDetectedTargetsFromListPayload() async throws {
+        let fixture = try TestFixture.install()
+        var fixtureState = TestFixture.State.baseline
+        fixtureState.availableTargets = []
+        fixtureState.sources["alpha"]?.enabledTargets = []
+        fixtureState.sources["alpha"]?.targetLeafIdsByTarget = [:]
+        try fixture.reset(state: fixtureState)
+
+        let state = DesktopAppState()
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.defaultPreferences().map {
+            AgentDisplayPreference(
+                targetId: $0.targetId,
+                isVisible: ["codex", "zcode"].contains($0.targetId),
+                sortOrder: $0.sortOrder
+            )
+        }
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+
+        fixtureState.availableTargets = ["codex", "zcode"]
+        try fixture.reset(state: fixtureState)
+        await model.refreshList()
+
+        XCTAssertEqual(model.detectedTargetIdsForSettings, ["codex", "zcode"])
+        XCTAssertEqual(model.visibleTargets.map(\.id), ["codex", "zcode"])
+    }
+
+    func testRefreshListRemovesStaleDetectedTargetsFromListPayload() async throws {
+        let fixture = try TestFixture.install()
+        var fixtureState = TestFixture.State.baseline
+        fixtureState.availableTargets = ["codex", "zcode"]
+        fixtureState.sources["alpha"]?.enabledTargets = []
+        fixtureState.sources["alpha"]?.targetLeafIdsByTarget = [:]
+        try fixture.reset(state: fixtureState)
+
+        let state = DesktopAppState()
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.defaultPreferences().map {
+            AgentDisplayPreference(
+                targetId: $0.targetId,
+                isVisible: ["codex", "zcode"].contains($0.targetId),
+                sortOrder: $0.sortOrder
+            )
+        }
+
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+
+        fixtureState.availableTargets = ["zcode"]
+        try fixture.reset(state: fixtureState)
+        await model.refreshList()
+
+        XCTAssertEqual(model.detectedTargetIdsForSettings, ["zcode"])
+        XCTAssertEqual(model.visibleTargets.map(\.id), ["zcode"])
     }
 
     func testHomeVisibleTargetsIncludeAllDetectedBeyondTen() async throws {
@@ -2521,6 +2584,7 @@ private struct TestFixture {
 
       if (request.command === 'list') {
         const response = JSON.stringify(responseFor(request, true, {
+          availableTargets: state.availableTargets || [],
           pinnedSourceIds: state.pinnedSourceIds || [],
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state)

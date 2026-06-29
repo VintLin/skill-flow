@@ -25,7 +25,6 @@ final class AppStateManager {
 
     var inspectorVisible: Bool = true
     var compactSidebarVisible: Bool = true
-    var showAllTargets: Bool = false
 
     // MARK: - 加载状态
 
@@ -210,7 +209,6 @@ final class AppStateManager {
         sourceIds = []
         inspectorVisible = true
         compactSidebarVisible = true
-        showAllTargets = false
         loadState = .idle
         isRefreshing = false
         updatingSourceIds = []
