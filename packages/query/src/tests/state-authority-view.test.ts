@@ -114,6 +114,7 @@ describe("current authority state shape", () => {
     );
     expect(summaries[0]?.bindings).toEqual({
       selectedLeafIds: ["repo:review"],
+      resolvedSelectedLeafCount: 1,
       targets: {},
     });
     expect(summaries[0]?.activeTargetCount).toBe(0);

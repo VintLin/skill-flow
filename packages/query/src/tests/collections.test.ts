@@ -174,7 +174,9 @@ describe.sequential("collections", () => {
     if (!inspected.ok) {
       return;
     }
-    expect(inspected.data.binding.selectedLeafIds).toEqual(memberLeafIds);
+    expect(inspected.data.binding.selectedLeafIds).toEqual([]);
+    expect(inspected.data.binding.resolvedSelectedLeafCount).toBe(memberLeafIds.length);
+    expect(inspected.data.binding.targets.codex?.leafIds).toEqual(memberLeafIds);
 
     const { manifest } = await v2(app).readState();
     expect(manifest.bindings["writing-stack"]).toEqual({

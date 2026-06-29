@@ -395,6 +395,7 @@ describe.sequential("config integration", () => {
       result.data.summaries.find((summary) => summary.source.id === sourceId)?.bindings,
     ).toEqual({
       selectedLeafIds: [`${sourceId}:browse`, `${sourceId}:review`],
+      resolvedSelectedLeafCount: 2,
       targets: {
         "claude-code": {
           enabled: true,
