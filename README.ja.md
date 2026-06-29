@@ -165,10 +165,10 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | `add <source>` | ソースをインポートし、スキル/ターゲットを選択 |
 | `list` | ワークフローグループと現在の健全性を表示 |
 | `list --ids --warnings` | 移行や調査用にソース ID と警告詳細を表示 |
-| `enable <sourceIds...>` | 登録済みグループのターゲットを有効化 |
+| `enable <sourceIds...> --targets <ids> --all-skills` | 登録済みグループのターゲットを有効化。`--all-skills` は空のスキル選択を先に埋めます |
 | `disable <sourceIds...>` | アンインストールせずにグループを OFF にする |
-| `only <sourceIds...>` | 指定したグループだけを ON にする |
-| `import-manifest <file>` | ソース manifest を一括インポート |
+| `only <sourceIds...> --targets <ids> --all-skills` | 指定したグループだけを ON にする。`--all-skills` は空のスキル選択を先に埋めます |
+| `import-manifest <file>` | ソース manifest を一括インポート。`targets` を持つ JSON entry には `skills: "all"` が必要 |
 | `find <query>` / `search <query>` | インストールされたスキル、組み込み Git カタログ、skills.sh を検索 |
 | `config` | インタラクティブな設定 UI を開く |
 | `update [sourceId] --all` | 一つのソースまたはすべての登録されたソースを更新 |

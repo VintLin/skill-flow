@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 
-const repoRoot = path.resolve(new URL("../..", import.meta.url).pathname);
+const repoRoot = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const cliRoot = path.join(repoRoot, "apps", "cli");
 const distRoot = path.join(cliRoot, "dist");
 
@@ -37,8 +38,13 @@ await build({
 });
 
 execFileSync(
-  "npx",
-  ["tsc", "-p", "tsconfig.json", "--emitDeclarationOnly"],
+  process.execPath,
+  [
+    path.join(repoRoot, "node_modules", "typescript", "bin", "tsc"),
+    "-p",
+    "tsconfig.json",
+    "--emitDeclarationOnly",
+  ],
   {
     cwd: cliRoot,
     stdio: "inherit",
