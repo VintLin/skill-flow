@@ -411,6 +411,43 @@ describe.sequential("source lifecycle", () => {
     expect(summary?.bindings.resolvedSelectedLeafCount).toBe(1);
   });
 
+  test("enableSources rejects allSkills when duplicate filtering leaves no selected skills", async () => {
+    const firstRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const secondRepoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+
+    const first = await app.addSource(firstRepoPath, { sourceIdOverride: "first-source" });
+    const second = await app.addSource(secondRepoPath, { sourceIdOverride: "second-source" });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) {
+      return;
+    }
+
+    const selectedFirst = await app.applyDraft(first.data.sourceId, {
+      selectedLeafIds: [`${first.data.sourceId}:browse`],
+      enabledTargets: ["codex"],
+    });
+    expect(selectedFirst.ok).toBe(true);
+    const clearedSecond = await app.applyDraft(second.data.sourceId, {
+      selectedLeafIds: [],
+      enabledTargets: [],
+    });
+    expect(clearedSecond.ok).toBe(true);
+
+    const enabled = await app.enableSources([second.data.sourceId], ["codex"], { allSkills: true });
+
+    expect(enabled.ok).toBe(false);
+    if (enabled.ok) {
+      return;
+    }
+    expect(enabled.errors[0]?.code).toBe("SOURCE_SELECTION_REQUIRED");
+  });
+
   test("onlySources with allSkills preserves existing selections", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/alpha/SKILL.md": skillDoc("alpha", "Alpha."),

@@ -4999,12 +4999,6 @@ export class SkillFlowApp {
         : options.allSkills
           ? [...(lockFile.sources[sourceId]?.leafIds ?? [])]
           : [];
-      if (selectedLeafIds.length === 0) {
-        return fail({
-          code: "SOURCE_SELECTION_REQUIRED",
-          message: `Source ${sourceId} has no selected skills. Pass --all-skills to select all current skills before enabling targets.`,
-        });
-      }
 
       const prepared = this.prepareAuthorityManifestForDraft(manifest, lockFile, sourceId, {
         selectedLeafIds,
@@ -5012,6 +5006,12 @@ export class SkillFlowApp {
       });
       if (!prepared.ok) {
         return fail(prepared.errors, [...currentDraft.warnings, ...prepared.warnings]);
+      }
+      if (prepared.data.draft.selectedLeafIds.length === 0) {
+        return fail({
+          code: "SOURCE_SELECTION_REQUIRED",
+          message: `Source ${sourceId} has no selected skills. Pass --all-skills to select all current skills before enabling targets.`,
+        }, [...currentDraft.warnings, ...prepared.warnings]);
       }
       prepareWarnings.push(...currentDraft.warnings, ...prepared.warnings);
     }
