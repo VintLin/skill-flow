@@ -238,10 +238,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     var latestWarningPresentations: [DesktopWarningPresentation] { stateManager.latestWarningPresentations }
     var inspectorVisible: Bool { stateManager.inspectorVisible }
     var compactSidebarVisible: Bool { stateManager.compactSidebarVisible }
-    var showAllTargets: Bool {
-        get { stateManager.showAllTargets }
-        set { stateManager.showAllTargets = newValue }
-    }
     var isRefreshing: Bool { stateManager.isRefreshing }
     var updatingSourceIds: Set<String> { stateManager.updatingSourceIds }
     var toast: ToastState? {
@@ -1399,7 +1395,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         let visibleTargetIds = preferences.filter(\.isVisible).map(\.targetId)
         let customTargetIds = Set((routeState?.settings.customAgents ?? []).map(\.id))
 
-        if showAllTargets { return visibleTargetIds }
+        if detectedTargets.isEmpty { return visibleTargetIds }
         return visibleTargetIds.filter { detectedTargets.contains($0) || customTargetIds.contains($0) }
     }
 

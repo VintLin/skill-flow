@@ -90,6 +90,29 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testDetectedAgentRowsFallbackToConfiguredAgentsWhenDetectionIsEmpty() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        XCTAssertEqual(
+            viewModel.detectedAgentRows(detectedTargetIds: []).prefix(3).map(\.targetId),
+            ["claude-code", "codex", "zcode"]
+        )
+    }
+
+    @MainActor
+    func testMoveAgentsCanReorderWhenDetectionIsEmpty() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        viewModel.moveAgents(from: IndexSet(integer: 1), to: 0, detectedTargetIds: [])
+
+        XCTAssertEqual(state.settings.agentDisplayPreferences.prefix(3).map(\.targetId), ["codex", "claude-code", "zcode"])
+    }
+
+    @MainActor
     func testWritesPersistImmediately() {
         let defaults = UserDefaults(suiteName: suiteName)!
         let state = DesktopAppState()

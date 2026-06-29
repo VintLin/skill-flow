@@ -175,6 +175,19 @@ describe.sequential("runtime v2 authority reads", () => {
     expect(inspected.data.binding.resolvedSelectedLeafCount).toBe(2);
   });
 
+  test("listWorkflows returns currently available targets", async () => {
+    const app = new SkillFlowApp();
+
+    const listed = await app.listWorkflows();
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) {
+      return;
+    }
+    expect(listed.data.availableTargets).toContain("codex");
+    expect(listed.data.availableTargets).toContain("zcode");
+  });
+
   test("inspectSource uses v2 projected project drafts for scoped inspect", async () => {
     await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox, {
       preferences: {

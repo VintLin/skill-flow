@@ -575,12 +575,19 @@ final class SourceManagement {
     }
 
     private func applyList(_ response: BridgeResponse) {
+        let summaries = parseSummariesPayload(response.data?.value)
         if let data = response.data?.value as? [String: Any] {
             delegate?.applyCachedGroupCardEnrichment(data)
             delegate?.applyProjectScopeState(data)
+            if let availableTargets = data["availableTargets"] as? [String] {
+                detectedTargets = Set(availableTargets)
+                for summary in summaries {
+                    detectedTargets.formUnion(summary.enabledTargets)
+                }
+            }
         }
         applyPinnedSourceIds(response.data?.value)
-        applySummaries(parseSummariesPayload(response.data?.value))
+        applySummaries(summaries)
     }
 
     private func applyPinnedSourceIds(_ value: Any?) {

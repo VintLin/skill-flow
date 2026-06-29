@@ -1506,6 +1506,7 @@ export class SkillFlowApp {
 
   async listWorkflows(): Promise<
     Result<{
+      availableTargets: DeploymentTargetId[];
       summaries: WorkflowSummary[];
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
@@ -4122,6 +4123,7 @@ export class SkillFlowApp {
 
   private async listWorkflowsImpl(): Promise<
     Result<{
+      availableTargets: DeploymentTargetId[];
       summaries: WorkflowSummary[];
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
@@ -4138,6 +4140,7 @@ export class SkillFlowApp {
       ...runtimeView.preferences,
       recentProjects,
     });
+    const availableTargets = await this.getAvailableTargets();
     const groupCardEnrichmentBySourceId = await this.readCachedGroupCardEnrichmentBySourceId(
       manifest,
       lockFile,
@@ -4145,6 +4148,7 @@ export class SkillFlowApp {
     const hiddenSourceIds = this.hiddenSourceIdsFromCollections(collections);
     return ok(
       {
+        availableTargets,
         summaries: this.workflowService.getSummaries(manifest, lockFile, undefined, collections)
           .filter((summary) => !hiddenSourceIds.has(summary.source.id)),
         pinnedSourceIds: reconciledPreferences.pinnedSourceIds,

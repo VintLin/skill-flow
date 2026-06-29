@@ -67,16 +67,16 @@ class DefaultChannelAdapter implements ChannelAdapter {
       }
     }
 
-      return {
-        target: this.target,
-        strategy: this.strategy,
-        available: false,
-        rootPath: path.resolve(candidates[0] ?? "."),
-        reason: this.definition.kind === "builtin"
-          ? `Target directory not found.${envVar || " Create the agent directory first."}`
-          : "Custom target directory not found. Create the configured global target directory first.",
-      };
-    }
+    return {
+      target: this.target,
+      strategy: this.strategy,
+      available: false,
+      rootPath: path.resolve(candidates[0] ?? "."),
+      reason: this.definition.kind === "builtin"
+        ? `Target directory not found.${envVar || " Create the agent directory first."}`
+        : "Custom target directory not found. Create the configured global target directory first.",
+    };
+  }
 
   resolveTargetPath(rootPath: string, linkName: string): string {
     return path.join(rootPath, linkName);

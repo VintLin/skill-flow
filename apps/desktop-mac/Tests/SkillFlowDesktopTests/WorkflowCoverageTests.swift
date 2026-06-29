@@ -609,7 +609,7 @@ final class WorkflowCoverageTests: XCTestCase {
 
         try fixture.reset(state: .baseline)
 
-        try await verifyDetectedTargetsDefaultAndShowAll(using: fixture)
+        try await verifyDetectedTargetsDefault(using: fixture)
 
         try fixture.reset(state: .failureBaseline)
 
@@ -660,43 +660,13 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(model.toast?.style, .neutral)
     }
 
-    private func verifyDetectedTargetsDefaultAndShowAll(using fixture: TestFixture) async throws {
+    private func verifyDetectedTargetsDefault(using fixture: TestFixture) async throws {
         let model = try await fixture.makeModel()
 
         let detectedTargets = model.visibleTargets.map(\.id)
         XCTAssertEqual(
             detectedTargets,
             ["claude-code", "cursor"]
-        )
-
-        model.showAllTargets = true
-
-        let allTargets = model.visibleTargets.map(\.id)
-        XCTAssertEqual(
-            allTargets,
-            [
-                "claude-code",
-                "codex",
-                "zcode",
-                "cursor",
-                "pi",
-                "workbuddy",
-                "codebuddy",
-                "trae",
-                "trae-cn",
-                "kimi-code",
-                "opencode",
-                "minimax-code",
-                "hermes-agent",
-                "openclaw",
-                "github-copilot",
-                "gemini-cli",
-                "windsurf",
-                "amp",
-                "kiro",
-                "roo-code",
-                "cline"
-            ]
         )
     }
 
@@ -1339,6 +1309,7 @@ private struct TestFixture {
 
       if (request.command === 'list') {
         process.stdout.write(JSON.stringify(responseFor(request, true, {
+          availableTargets: state.availableTargets || [],
           summaries: buildSummaries(state),
           groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
           pinnedSourceIds: state.pinnedSourceIds || [],
