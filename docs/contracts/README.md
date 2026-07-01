@@ -10,8 +10,11 @@
 | Request / response types | `packages/shared-types/src/protocol.ts` |
 | Protocol parser tests | `packages/shared-types/src/tests/protocol.test.ts` |
 | CLI bridge entry | `apps/cli/src/cli.tsx` |
+| CLI bridge handlers | `apps/cli/src/bridge-command.ts` |
 | Desktop bridge models | `apps/desktop-mac/Sources/DesktopApp/Runtime/Models/BridgeProtocol.swift` |
 | Desktop bridge client | `apps/desktop-mac/Sources/DesktopApp/Runtime/Bridge/BridgeClient.swift` |
+| Cross-language command fixture | `packages/shared-types/src/fixtures/bridge-command-catalog.json` |
+| Desktop catalog tests | `apps/desktop-mac/Tests/SkillFlowDesktopTests/BridgeProtocolCatalogTests.swift` |
 
 Current protocol version: `1.0`.
 
@@ -45,6 +48,15 @@ save-settings
 
 Bridge changes are external changes. Update parser tests, CLI bridge behavior, desktop bridge models, and release/user docs when changing this surface.
 
+When adding, removing, or renaming a bridge command:
+
+1. Update `BRIDGE_COMMAND_NAMES` in `packages/shared-types/src/protocol.ts`.
+2. Update the golden fixture in `packages/shared-types/src/fixtures/bridge-command-catalog.json`.
+3. Update the CLI handler table in `apps/cli/src/bridge-command.ts`.
+4. Update `BridgeCommand` in `apps/desktop-mac/Sources/DesktopApp/Runtime/Models/BridgeProtocol.swift`.
+5. Update `BridgeCommand.usesImportTimeout` when the command should use the import timeout.
+6. Run the TypeScript protocol tests, CLI bridge tests, and Swift bridge catalog tests.
+
 ## State Files
 
 | 文件 | 用途 |
@@ -56,4 +68,3 @@ Bridge changes are external changes. Update parser tests, CLI bridge behavior, d
 State compatibility is implemented in `packages/storage` and domain types live in `packages/domain`.
 
 State shape changes are external changes. Add storage/domain tests and migration or normalizer coverage.
-
