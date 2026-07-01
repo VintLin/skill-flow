@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
+import bridgeCommandCatalogFixture from "../fixtures/bridge-command-catalog.json" with { type: "json" };
 import {
+  BRIDGE_COMMAND_NAMES,
   buildBridgeResponse,
   isBridgeCommandName,
   isJsonObject,
@@ -9,6 +11,52 @@ import {
 } from "../protocol.js";
 
 describe("bridge protocol", () => {
+  test("matches the bridge command catalog fixture", () => {
+    expect(bridgeCommandCatalogFixture).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      commands: BRIDGE_COMMAND_NAMES,
+    });
+  });
+
+  test("derives supported bridge commands from one catalog", () => {
+    expect(BRIDGE_COMMAND_NAMES).toEqual([
+      "bootstrap",
+      "list",
+      "inspect-state-migration",
+      "migrate-state",
+      "inspect",
+      "inspect-enrichment",
+      "search-import-groups",
+      "scan-local-import-groups",
+      "prepare-import-source",
+      "preview-import-source",
+      "commit-import-source",
+      "import-source",
+      "toggle-pin",
+      "rename-source",
+      "create-collection",
+      "merge-groups",
+      "restore-collection-sources",
+      "doctor",
+      "add",
+      "apply",
+      "update",
+      "uninstall",
+      "save-settings",
+    ]);
+
+    for (const command of BRIDGE_COMMAND_NAMES) {
+      expect(isBridgeCommandName(command)).toBe(true);
+    }
+
+    expect(() =>
+      parseBridgeRequest({
+        protocolVersion: PROTOCOL_VERSION,
+        command: "unknown",
+      }),
+    ).toThrow(`Bridge request 'command' must be one of: ${BRIDGE_COMMAND_NAMES.join(", ")}.`);
+  });
+
   test("parses a valid bridge request with nested JSON payload", () => {
     expect(
       parseBridgeRequest({
