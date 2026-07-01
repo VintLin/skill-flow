@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
   BRIDGE_COMMAND_NAMES,
@@ -9,7 +12,19 @@ import {
   PROTOCOL_VERSION,
 } from "../protocol.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 describe("bridge protocol", () => {
+  test("matches the bridge command catalog fixture", () => {
+    const fixturePath = path.join(__dirname, "../fixtures/bridge-command-catalog.json");
+    const fixture = JSON.parse(readFileSync(fixturePath, "utf8"));
+
+    expect(fixture).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      commands: BRIDGE_COMMAND_NAMES,
+    });
+  });
+
   test("derives supported bridge commands from one catalog", () => {
     expect(BRIDGE_COMMAND_NAMES).toEqual([
       "bootstrap",

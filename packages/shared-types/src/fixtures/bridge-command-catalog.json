@@ -1,0 +1,28 @@
+{
+  "protocolVersion": "1.0",
+  "commands": [
+    "bootstrap",
+    "list",
+    "inspect-state-migration",
+    "migrate-state",
+    "inspect",
+    "inspect-enrichment",
+    "search-import-groups",
+    "scan-local-import-groups",
+    "prepare-import-source",
+    "preview-import-source",
+    "commit-import-source",
+    "import-source",
+    "toggle-pin",
+    "rename-source",
+    "create-collection",
+    "merge-groups",
+    "restore-collection-sources",
+    "doctor",
+    "add",
+    "apply",
+    "update",
+    "uninstall",
+    "save-settings"
+  ]
+}

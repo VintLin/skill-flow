@@ -1,6 +1,6 @@
 import Foundation
 
-enum BridgeCommand: String, Codable, Sendable {
+enum BridgeCommand: String, Codable, Sendable, CaseIterable {
     case bootstrap
     case list
     case inspectStateMigration = "inspect-state-migration"
@@ -13,11 +13,11 @@ enum BridgeCommand: String, Codable, Sendable {
     case previewImportSource = "preview-import-source"
     case commitImportSource = "commit-import-source"
     case importSource = "import-source"
+    case togglePin = "toggle-pin"
+    case renameSource = "rename-source"
     case createCollection = "create-collection"
     case mergeGroups = "merge-groups"
     case restoreCollectionSources = "restore-collection-sources"
-    case renameSource = "rename-source"
-    case togglePin = "toggle-pin"
     case doctor
     case add
     case apply
