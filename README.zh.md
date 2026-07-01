@@ -257,7 +257,7 @@ export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
 - [文档索引](./docs/README.md)
 - [CLI 参考](./docs/references/REF_00_cli-commands.md)
 - [桌面打包参考](./docs/references/REF_09_desktop-packaging.md)
-- [v1.3.7 发布说明](./releases/RELEASE_v1.3.7.md)
+- [v1.5.3 发布说明](./releases/RELEASE_v1.5.3.md)
 
 ## 许可证
 

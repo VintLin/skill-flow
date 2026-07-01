@@ -2,6 +2,22 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## v1.5.3 - 2026-07-01
+
+### Added
+
+- Added a shared bridge command catalog fixture that is checked by both TypeScript and Swift tests.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.5.2` to `1.5.3`.
+- Changed CLI bridge dispatch to use a handler table derived from the shared command catalog.
+- Moved desktop bridge timeout metadata next to the Swift `BridgeCommand` model.
+
+### Fixed
+
+- Fixed bridge command drift risk by keeping TypeScript command parsing, CLI handlers, and Swift commands covered by the same catalog.
+
 ## v1.5.2 - 2026-06-29
 
 ### Added
