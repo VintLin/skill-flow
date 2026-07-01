@@ -1,29 +1,34 @@
 export const PROTOCOL_VERSION = "1.0" as const;
 
-export type BridgeCommandName =
-  | "bootstrap"
-  | "list"
-  | "inspect-state-migration"
-  | "migrate-state"
-  | "inspect"
-  | "inspect-enrichment"
-  | "search-import-groups"
-  | "scan-local-import-groups"
-  | "prepare-import-source"
-  | "preview-import-source"
-  | "commit-import-source"
-  | "import-source"
-  | "toggle-pin"
-  | "rename-source"
-  | "create-collection"
-  | "merge-groups"
-  | "restore-collection-sources"
-  | "doctor"
-  | "add"
-  | "apply"
-  | "update"
-  | "uninstall"
-  | "save-settings";
+export const BRIDGE_COMMAND_NAMES = [
+  "bootstrap",
+  "list",
+  "inspect-state-migration",
+  "migrate-state",
+  "inspect",
+  "inspect-enrichment",
+  "search-import-groups",
+  "scan-local-import-groups",
+  "prepare-import-source",
+  "preview-import-source",
+  "commit-import-source",
+  "import-source",
+  "toggle-pin",
+  "rename-source",
+  "create-collection",
+  "merge-groups",
+  "restore-collection-sources",
+  "doctor",
+  "add",
+  "apply",
+  "update",
+  "uninstall",
+  "save-settings",
+] as const;
+
+const BRIDGE_COMMAND_NAME_SET = new Set<string>(BRIDGE_COMMAND_NAMES);
+
+export type BridgeCommandName = typeof BRIDGE_COMMAND_NAMES[number];
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -70,7 +75,7 @@ export function parseBridgeRequest(input: unknown): BridgeRequest {
 
   if (!isBridgeCommandName(command)) {
     throw new Error(
-      "Bridge request 'command' must be one of: bootstrap, list, inspect-state-migration, migrate-state, inspect, inspect-enrichment, search-import-groups, scan-local-import-groups, prepare-import-source, preview-import-source, commit-import-source, import-source, toggle-pin, rename-source, create-collection, merge-groups, restore-collection-sources, doctor, add, apply, update, uninstall, save-settings.",
+      `Bridge request 'command' must be one of: ${BRIDGE_COMMAND_NAMES.join(", ")}.`,
     );
   }
 
@@ -132,29 +137,5 @@ export function isJsonValue(value: unknown): value is JsonValue {
 }
 
 export function isBridgeCommandName(value: unknown): value is BridgeCommandName {
-  return (
-    value === "bootstrap" ||
-    value === "list" ||
-    value === "inspect-state-migration" ||
-    value === "migrate-state" ||
-    value === "inspect" ||
-    value === "inspect-enrichment" ||
-    value === "search-import-groups" ||
-    value === "scan-local-import-groups" ||
-    value === "prepare-import-source" ||
-    value === "preview-import-source" ||
-    value === "commit-import-source" ||
-    value === "import-source" ||
-    value === "toggle-pin" ||
-    value === "rename-source" ||
-    value === "create-collection" ||
-    value === "merge-groups" ||
-    value === "restore-collection-sources" ||
-    value === "doctor" ||
-    value === "add" ||
-    value === "apply" ||
-    value === "update" ||
-    value === "uninstall" ||
-    value === "save-settings"
-  );
+  return typeof value === "string" && BRIDGE_COMMAND_NAME_SET.has(value);
 }
