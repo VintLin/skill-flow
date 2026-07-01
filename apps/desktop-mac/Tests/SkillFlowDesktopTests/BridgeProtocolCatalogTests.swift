@@ -13,6 +13,21 @@ final class BridgeProtocolCatalogTests: XCTestCase {
         XCTAssertEqual(BridgeCommand.allCases.map(\.rawValue), fixture.commands)
     }
 
+    func testImportTimeoutCommandsAreDeclaredOnBridgeCommand() {
+        let importTimeoutCommands = BridgeCommand.allCases
+            .filter(\.usesImportTimeout)
+            .map(\.rawValue)
+
+        XCTAssertEqual(importTimeoutCommands, [
+            "search-import-groups",
+            "scan-local-import-groups",
+            "prepare-import-source",
+            "preview-import-source",
+            "commit-import-source",
+            "import-source",
+        ])
+    }
+
     private func bridgeCommandCatalogFixtureURL() throws -> URL {
         let fileManager = FileManager.default
         let searchRoots = [

@@ -26,6 +26,38 @@ enum BridgeCommand: String, Codable, Sendable, CaseIterable {
     case saveSettings = "save-settings"
 }
 
+extension BridgeCommand {
+    var usesImportTimeout: Bool {
+        switch self {
+        case .searchImportGroups,
+             .scanLocalImportGroups,
+             .prepareImportSource,
+             .previewImportSource,
+             .commitImportSource,
+             .importSource:
+            return true
+        case .bootstrap,
+             .list,
+             .inspectStateMigration,
+             .migrateState,
+             .inspect,
+             .inspectEnrichment,
+             .createCollection,
+             .mergeGroups,
+             .restoreCollectionSources,
+             .renameSource,
+             .togglePin,
+             .doctor,
+             .add,
+             .apply,
+             .update,
+             .uninstall,
+             .saveSettings:
+            return false
+        }
+    }
+}
+
 struct BridgeRequest: Codable, Sendable {
     let protocolVersion: String
     let requestId: String

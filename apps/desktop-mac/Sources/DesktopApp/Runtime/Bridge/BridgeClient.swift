@@ -493,33 +493,9 @@ final class BridgeClient: @unchecked Sendable {
     }
 
     private func timeoutMilliseconds(for command: BridgeCommand) -> UInt64 {
-        switch command {
-        case .searchImportGroups,
-             .scanLocalImportGroups,
-             .prepareImportSource,
-             .previewImportSource,
-             .commitImportSource,
-             .importSource:
-            return importCommandTimeoutMilliseconds
-        case .bootstrap,
-             .list,
-             .inspectStateMigration,
-             .migrateState,
-             .inspect,
-             .inspectEnrichment,
-             .createCollection,
-             .mergeGroups,
-             .restoreCollectionSources,
-             .renameSource,
-             .togglePin,
-             .doctor,
-             .add,
-             .apply,
-             .update,
-             .uninstall,
-             .saveSettings:
-            return commandTimeoutMilliseconds
-        }
+        command.usesImportTimeout
+            ? importCommandTimeoutMilliseconds
+            : commandTimeoutMilliseconds
     }
 
     private func waitForProcessExit(
