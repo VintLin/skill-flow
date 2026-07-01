@@ -2,12 +2,35 @@ import { describe, expect, test, vi } from "vitest";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { ok } from "@skill-flow/integration/utils/result";
-import { executeBridgeRequest } from "../bridge-command.js";
-import { PROTOCOL_VERSION } from "@skill-flow/shared-types/protocol";
+import { executeBridgeRequest, getBridgeCommandHandlerNames } from "../bridge-command.js";
+import { BRIDGE_COMMAND_NAMES, PROTOCOL_VERSION } from "@skill-flow/shared-types/protocol";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
 
 describe.sequential("bridge command dispatcher", () => {
   const sandbox = useSkillFlowSandbox();
+
+  test("has one CLI handler for every supported bridge command", () => {
+    expect(getBridgeCommandHandlerNames()).toEqual(BRIDGE_COMMAND_NAMES);
+  });
+
+  test("returns unsupported command response before handler lookup", async () => {
+    const app = new SkillFlowApp();
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "not-real" as never,
+    });
+
+    expect(response).toMatchObject({
+      ok: false,
+      command: "not-real",
+      errors: [
+        {
+          code: "UNSUPPORTED_COMMAND",
+          message: "Bridge command 'not-real' is not supported.",
+        },
+      ],
+    });
+  });
 
   test("returns list envelope", async () => {
     const app = new SkillFlowApp();

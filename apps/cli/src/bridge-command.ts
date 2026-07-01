@@ -1,5 +1,7 @@
 import {
+  BRIDGE_COMMAND_NAMES,
   buildBridgeResponse,
+  type BridgeCommandName,
   type BridgeRequest,
   type BridgeResponse,
   isJsonObject,
@@ -15,11 +17,21 @@ type BridgeFailure = {
 };
 
 type BridgeResult<T> = {
-  ok: boolean;
+  ok: true;
   data: T;
   warnings: Array<{ code: string; message: string }>;
   errors: Array<{ code: string; message: string }>;
+} | {
+  ok: false;
+  data?: T;
+  warnings: Array<{ code: string; message: string }>;
+  errors: Array<{ code: string; message: string }>;
 };
+
+type BridgeCommandHandler = (app: SkillFlowApp, request: BridgeRequest) => Promise<BridgeResponse>;
+type BridgeCommandHandlerMap = Record<BridgeCommandName, BridgeCommandHandler>;
+type BridgeResultCommand<T> = () => Promise<BridgeResult<T>>;
+type BridgeValueCommand<T> = () => Promise<T>;
 
 type CollectionSkillRef = {
   sourceId: string;
@@ -49,421 +61,7 @@ export async function executeBridgeRequest(
     const previousCaller = process.env.SKILL_FLOW_CALLER;
     process.env.SKILL_FLOW_CALLER = previousCaller?.trim() || "bridge";
     try {
-      switch (request.command) {
-      case "bootstrap": {
-        const result = await app.bootstrapWorkspaceState();
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "list": {
-        const result = await app.listWorkflows();
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "inspect-state-migration": {
-        const result = await app.inspectStateMigration();
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result),
-        });
-      }
-      case "migrate-state": {
-        const payload = expectObjectPayload(request.payload, "migrate-state");
-        const to = expectMigrationTarget(payload.to);
-        const dryRun = expectOptionalBoolean(payload.dryRun, "dryRun", "migrate-state");
-        const backup = expectOptionalBoolean(payload.backup, "backup", "migrate-state");
-        const tolerateOrphanSources = expectOptionalBoolean(
-          payload.tolerateOrphanSources,
-          "tolerateOrphanSources",
-          "migrate-state",
-        );
-        const result = await app.migrateState({
-          to,
-          ...(dryRun !== undefined ? { dryRun } : {}),
-          ...(backup !== undefined ? { backup } : {}),
-          ...(tolerateOrphanSources !== undefined ? { tolerateOrphanSources } : {}),
-        });
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result),
-        });
-      }
-      case "inspect": {
-        const payload = expectObjectPayload(request.payload, "inspect");
-        const sourceId = expectString(payload.sourceId, "sourceId", "inspect");
-        const scope = expectProjectScope(payload.scope);
-        const result = await app.inspectSource(sourceId, scope);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "inspect-enrichment": {
-        const payload = expectObjectPayload(request.payload, "inspect-enrichment");
-        const sourceId = expectString(payload.sourceId, "sourceId", "inspect-enrichment");
-        const result = await app.inspectSourceEnrichment(sourceId);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "search-import-groups": {
-        const payload = expectOptionalObject(request.payload, "search-import-groups");
-        const query = payload ? expectOptionalString(payload.query, "query", "search-import-groups") : undefined;
-        const result = await app.searchImportGroups(query ?? "");
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "scan-local-import-groups": {
-        const payload = expectOptionalObject(request.payload, "scan-local-import-groups");
-        const localPath = payload ? expectOptionalString(payload.path, "path", "scan-local-import-groups") : undefined;
-        const result = await app.scanLocalImportGroups(localPath);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "prepare-import-source": {
-        const payload = expectObjectPayload(request.payload, "prepare-import-source");
-        const locator = expectString(payload.locator, "locator", "prepare-import-source");
-        const result = await app.prepareImportSource(locator);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "preview-import-source": {
-        const payload = expectObjectPayload(request.payload, "preview-import-source");
-        const locator = expectString(payload.locator, "locator", "preview-import-source");
-        const result = await app.previewImportSource(locator);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "commit-import-source": {
-        const payload = expectObjectPayload(request.payload, "commit-import-source");
-        const preparationId = expectString(payload.preparationId, "preparationId", "commit-import-source");
-        const draft = expectOptionalImportDraft(payload.draft);
-        const result = await app.commitPreparedImportSource(preparationId, draft);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "import-source": {
-        const payload = expectObjectPayload(request.payload, "import-source");
-        const locator = expectString(payload.locator, "locator", "import-source");
-        const draft = expectOptionalImportDraft(payload.draft);
-        const result = await app.importSource(locator, draft);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "toggle-pin": {
-        const payload = expectObjectPayload(request.payload, "toggle-pin");
-        const sourceId = expectString(payload.sourceId, "sourceId", "toggle-pin");
-        const result = await app.togglePinnedSource(sourceId);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "rename-source": {
-        const payload = expectObjectPayload(request.payload, "rename-source");
-        const sourceId = expectString(payload.sourceId, "sourceId", "rename-source");
-        const displayName = expectPossiblyEmptyString(payload.displayName, "displayName", "rename-source");
-        const result = await app.renameSource(sourceId, displayName);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "create-collection": {
-        const payload = expectObjectPayload(request.payload, "create-collection");
-        const displayName = expectString(payload.displayName, "displayName", "create-collection");
-        const skills = parseCollectionSkillRefs(payload.skills, "create-collection");
-        const enabledTargets = parseOptionalStringArray(
-          payload.enabledTargets,
-          "create-collection.enabledTargets",
-        ) ?? [];
-        const result = await (app as SkillFlowApp & CollectionBridgeApp).createCollection({
-          displayName,
-          skills,
-          enabledTargets,
-        });
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "merge-groups": {
-        const payload = expectObjectPayload(request.payload, "merge-groups");
-        const displayName = expectString(payload.displayName, "displayName", "merge-groups");
-        const sourceIds = parseRequiredStringArray(payload.sourceIds, "merge-groups.sourceIds");
-        const enabledTargets = parseOptionalStringArray(
-          payload.enabledTargets,
-          "merge-groups.enabledTargets",
-        ) ?? [];
-        const result = await (app as SkillFlowApp & CollectionBridgeApp).mergeGroups({
-          displayName,
-          sourceIds,
-          enabledTargets,
-        });
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "restore-collection-sources": {
-        const payload = expectObjectPayload(request.payload, "restore-collection-sources");
-        const collectionId = expectString(
-          payload.collectionId,
-          "collectionId",
-          "restore-collection-sources",
-        );
-        const result = await (app as SkillFlowApp & CollectionBridgeApp).restoreCollectionSources(collectionId);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "doctor": {
-        const result = await app.doctor();
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "add": {
-        const payload = expectObjectPayload(request.payload, "add");
-        const locator = expectString(payload.locator, "locator", "add");
-        const options = expectOptionalObject(payload.options, "add.options");
-        const applyNow = payload.applyNow === true;
-        const result = applyNow
-          ? await app.addSource(locator, options as Parameters<SkillFlowApp["addSource"]>[1])
-          : await app.prepareAddSource(locator, options as Parameters<SkillFlowApp["prepareAddSource"]>[1]);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "apply": {
-        const payload = expectObjectPayload(request.payload, "apply");
-        const sourceId = expectString(payload.sourceId, "sourceId", "apply");
-        const draft = expectDraftBinding(payload.draft);
-        const scope = expectProjectScope(payload.scope);
-        const result = await app.applyDraft(sourceId, draft, scope);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "update": {
-        const payload = expectOptionalObject(request.payload, "update");
-        const sourceIds = parseOptionalStringArray(payload?.sourceIds, "update.sourceIds");
-        const result = await app.updateSources(sourceIds);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      case "uninstall": {
-        const payload = expectObjectPayload(request.payload, "uninstall");
-        const sourceIds = parseRequiredStringArray(payload.sourceIds, "uninstall.sourceIds");
-        const result = await app.uninstall(sourceIds);
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-        });
-      }
-      case "save-settings": {
-        const payload = expectObjectPayload(request.payload, "save-settings");
-        const customTargets = expectCustomTargets(payload.customTargets);
-        const agentDisplayOrder = parseOptionalStringArray(
-          payload.agentDisplayOrder,
-          "save-settings.agentDisplayOrder",
-        ) ?? [];
-        const result = await app.saveSettings({ customTargets, agentDisplayOrder });
-        if (!result.ok) {
-          return toFailureResponse(request, result.errors, result.warnings);
-        }
-        return buildResponseWithRequest({
-          request,
-          ok: true,
-          data: sanitizeForJson(result.data),
-          warnings: result.warnings.map((warning) => ({
-            code: warning.code,
-            message: warning.message,
-          })),
-        });
-      }
-      default:
+      if (!BRIDGE_COMMAND_NAMES.includes(request.command as BridgeCommandName)) {
         return buildResponseWithRequest({
           request,
           ok: false,
@@ -475,6 +73,7 @@ export async function executeBridgeRequest(
           ],
         });
       }
+      return await bridgeCommandHandlers[request.command](app, request);
     } finally {
       if (previousCaller === undefined) {
         delete process.env.SKILL_FLOW_CALLER;
@@ -494,6 +93,196 @@ export async function executeBridgeRequest(
       ],
     });
   }
+}
+
+export function getBridgeCommandHandlerNames(): BridgeCommandName[] {
+  return BRIDGE_COMMAND_NAMES.filter((command) => bridgeCommandHandlers[command]);
+}
+
+const bridgeCommandHandlers = {
+  bootstrap: (app, request) => runBridgeResult(request, () => app.bootstrapWorkspaceState()),
+  list: (app, request) => runBridgeResult(request, () => app.listWorkflows()),
+  "inspect-state-migration": (app, request) => runBridgeValue(request, () => app.inspectStateMigration()),
+  "migrate-state": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "migrate-state");
+    const to = expectMigrationTarget(payload.to);
+    const dryRun = expectOptionalBoolean(payload.dryRun, "dryRun", "migrate-state");
+    const backup = expectOptionalBoolean(payload.backup, "backup", "migrate-state");
+    const tolerateOrphanSources = expectOptionalBoolean(
+      payload.tolerateOrphanSources,
+      "tolerateOrphanSources",
+      "migrate-state",
+    );
+    return runBridgeValue(request, () => app.migrateState({
+      to,
+      ...(dryRun !== undefined ? { dryRun } : {}),
+      ...(backup !== undefined ? { backup } : {}),
+      ...(tolerateOrphanSources !== undefined ? { tolerateOrphanSources } : {}),
+    }));
+  },
+  inspect: async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "inspect");
+    const sourceId = expectString(payload.sourceId, "sourceId", "inspect");
+    const scope = expectProjectScope(payload.scope);
+    return runBridgeResult(request, () => app.inspectSource(sourceId, scope));
+  },
+  "inspect-enrichment": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "inspect-enrichment");
+    const sourceId = expectString(payload.sourceId, "sourceId", "inspect-enrichment");
+    return runBridgeResult(request, () => app.inspectSourceEnrichment(sourceId));
+  },
+  "search-import-groups": async (app, request) => {
+    const payload = expectOptionalObject(request.payload, "search-import-groups");
+    const query = payload ? expectOptionalString(payload.query, "query", "search-import-groups") : undefined;
+    return runBridgeResult(request, () => app.searchImportGroups(query ?? ""));
+  },
+  "scan-local-import-groups": async (app, request) => {
+    const payload = expectOptionalObject(request.payload, "scan-local-import-groups");
+    const localPath = payload ? expectOptionalString(payload.path, "path", "scan-local-import-groups") : undefined;
+    return runBridgeResult(request, () => app.scanLocalImportGroups(localPath));
+  },
+  "prepare-import-source": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "prepare-import-source");
+    const locator = expectString(payload.locator, "locator", "prepare-import-source");
+    return runBridgeResult(request, () => app.prepareImportSource(locator));
+  },
+  "preview-import-source": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "preview-import-source");
+    const locator = expectString(payload.locator, "locator", "preview-import-source");
+    return runBridgeResult(request, () => app.previewImportSource(locator));
+  },
+  "commit-import-source": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "commit-import-source");
+    const preparationId = expectString(payload.preparationId, "preparationId", "commit-import-source");
+    const draft = expectOptionalImportDraft(payload.draft);
+    return runBridgeResult(request, () => app.commitPreparedImportSource(preparationId, draft));
+  },
+  "import-source": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "import-source");
+    const locator = expectString(payload.locator, "locator", "import-source");
+    const draft = expectOptionalImportDraft(payload.draft);
+    return runBridgeResult(request, () => app.importSource(locator, draft));
+  },
+  "toggle-pin": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "toggle-pin");
+    const sourceId = expectString(payload.sourceId, "sourceId", "toggle-pin");
+    return runBridgeResult(request, () => app.togglePinnedSource(sourceId));
+  },
+  "rename-source": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "rename-source");
+    const sourceId = expectString(payload.sourceId, "sourceId", "rename-source");
+    const displayName = expectPossiblyEmptyString(payload.displayName, "displayName", "rename-source");
+    return runBridgeResult(request, () => app.renameSource(sourceId, displayName));
+  },
+  "create-collection": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "create-collection");
+    const displayName = expectString(payload.displayName, "displayName", "create-collection");
+    const skills = parseCollectionSkillRefs(payload.skills, "create-collection");
+    const enabledTargets = parseOptionalStringArray(
+      payload.enabledTargets,
+      "create-collection.enabledTargets",
+    ) ?? [];
+    return runBridgeResult(request, () => (app as SkillFlowApp & CollectionBridgeApp).createCollection({
+      displayName,
+      skills,
+      enabledTargets,
+    }));
+  },
+  "merge-groups": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "merge-groups");
+    const displayName = expectString(payload.displayName, "displayName", "merge-groups");
+    const sourceIds = parseRequiredStringArray(payload.sourceIds, "merge-groups.sourceIds");
+    const enabledTargets = parseOptionalStringArray(
+      payload.enabledTargets,
+      "merge-groups.enabledTargets",
+    ) ?? [];
+    return runBridgeResult(request, () => (app as SkillFlowApp & CollectionBridgeApp).mergeGroups({
+      displayName,
+      sourceIds,
+      enabledTargets,
+    }));
+  },
+  "restore-collection-sources": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "restore-collection-sources");
+    const collectionId = expectString(
+      payload.collectionId,
+      "collectionId",
+      "restore-collection-sources",
+    );
+    return runBridgeResult(request, () => (
+      app as SkillFlowApp & CollectionBridgeApp
+    ).restoreCollectionSources(collectionId));
+  },
+  doctor: (app, request) => runBridgeResult(request, () => app.doctor()),
+  add: async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "add");
+    const locator = expectString(payload.locator, "locator", "add");
+    const options = expectOptionalObject(payload.options, "add.options");
+    const applyNow = payload.applyNow === true;
+    return runBridgeResult(request, () => applyNow
+      ? app.addSource(locator, options as Parameters<SkillFlowApp["addSource"]>[1])
+      : app.prepareAddSource(locator, options as Parameters<SkillFlowApp["prepareAddSource"]>[1]));
+  },
+  apply: async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "apply");
+    const sourceId = expectString(payload.sourceId, "sourceId", "apply");
+    const draft = expectDraftBinding(payload.draft);
+    const scope = expectProjectScope(payload.scope);
+    return runBridgeResult(request, () => app.applyDraft(sourceId, draft, scope));
+  },
+  update: async (app, request) => {
+    const payload = expectOptionalObject(request.payload, "update");
+    const sourceIds = parseOptionalStringArray(payload?.sourceIds, "update.sourceIds");
+    return runBridgeResult(request, () => app.updateSources(sourceIds));
+  },
+  uninstall: async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "uninstall");
+    const sourceIds = parseRequiredStringArray(payload.sourceIds, "uninstall.sourceIds");
+    return runBridgeResult(request, () => app.uninstall(sourceIds), { includeSuccessWarnings: false });
+  },
+  "save-settings": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "save-settings");
+    const customTargets = expectCustomTargets(payload.customTargets);
+    const agentDisplayOrder = parseOptionalStringArray(
+      payload.agentDisplayOrder,
+      "save-settings.agentDisplayOrder",
+    ) ?? [];
+    return runBridgeResult(request, () => app.saveSettings({ customTargets, agentDisplayOrder }));
+  },
+} satisfies BridgeCommandHandlerMap;
+
+async function runBridgeResult<T>(
+  request: BridgeRequest,
+  command: BridgeResultCommand<T>,
+  options: { includeSuccessWarnings?: boolean } = {},
+): Promise<BridgeResponse> {
+  const result = await command();
+  if (!result.ok) {
+    return toFailureResponse(request, result.errors, result.warnings);
+  }
+  return buildResponseWithRequest({
+    request,
+    ok: true,
+    data: sanitizeForJson(result.data),
+    ...(options.includeSuccessWarnings === false ? {} : {
+      warnings: result.warnings.map((warning) => ({
+        code: warning.code,
+        message: warning.message,
+      })),
+    }),
+  });
+}
+
+async function runBridgeValue<T>(
+  request: BridgeRequest,
+  command: BridgeValueCommand<T>,
+): Promise<BridgeResponse> {
+  const result = await command();
+  return buildResponseWithRequest({
+    request,
+    ok: true,
+    data: sanitizeForJson(result),
+  });
 }
 
 function toFailureResponse(
