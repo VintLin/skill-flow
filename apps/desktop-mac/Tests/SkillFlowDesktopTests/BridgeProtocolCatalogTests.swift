@@ -13,12 +13,12 @@ final class BridgeProtocolCatalogTests: XCTestCase {
         XCTAssertEqual(BridgeCommand.allCases.map(\.rawValue), fixture.commands)
     }
 
-    func testImportTimeoutCommandsAreDeclaredOnBridgeCommand() {
-        let importTimeoutCommands = BridgeCommand.allCases
-            .filter(\.usesImportTimeout)
+    func testExtendedNetworkTimeoutCommandsAreDeclaredOnBridgeCommand() {
+        let extendedTimeoutCommands = BridgeCommand.allCases
+            .filter(\.usesExtendedNetworkTimeout)
             .map(\.rawValue)
 
-        XCTAssertEqual(importTimeoutCommands, [
+        XCTAssertEqual(extendedTimeoutCommands, [
             "search-import-groups",
             "scan-local-import-groups",
             "prepare-import-source",
@@ -31,10 +31,10 @@ final class BridgeProtocolCatalogTests: XCTestCase {
     }
 
     func testUpdateAndAddUseExtendedNetworkTimeoutBudget() {
-        XCTAssertTrue(BridgeCommand.update.usesImportTimeout)
-        XCTAssertTrue(BridgeCommand.add.usesImportTimeout)
-        XCTAssertFalse(BridgeCommand.apply.usesImportTimeout)
-        XCTAssertFalse(BridgeCommand.list.usesImportTimeout)
+        XCTAssertTrue(BridgeCommand.update.usesExtendedNetworkTimeout)
+        XCTAssertTrue(BridgeCommand.add.usesExtendedNetworkTimeout)
+        XCTAssertFalse(BridgeCommand.apply.usesExtendedNetworkTimeout)
+        XCTAssertFalse(BridgeCommand.list.usesExtendedNetworkTimeout)
     }
 
     private func bridgeCommandCatalogFixtureURL() throws -> URL {

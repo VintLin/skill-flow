@@ -452,34 +452,7 @@ export class SourceCheckoutService {
     }
 
     if (source.kind === "git") {
-      if (!(await isGitAvailable())) {
-        await this.fetchGitArchive(source.gitLocator!, checkoutPath);
-        return;
-      }
-      try {
-        await withNetworkRetries(async () => {
-          await removePath(checkoutPath).catch(() => {});
-          await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
-        }, { attempts: 2 });
-      } catch {
-        const fallbackLocator = this.resolveGitCloneFallbackLocator(source.gitLocator!);
-        if (fallbackLocator) {
-          try {
-            await withNetworkRetries(async () => {
-              await removePath(checkoutPath).catch(() => {});
-              await git(["clone", "--depth", "1", fallbackLocator, checkoutPath]);
-            }, { attempts: 2 });
-            return;
-          } catch {
-            await removePath(checkoutPath);
-            await this.fetchGitArchive(fallbackLocator, checkoutPath);
-            return;
-          }
-        }
-
-        await removePath(checkoutPath);
-        await this.fetchGitArchive(source.gitLocator!, checkoutPath);
-      }
+      await this.fetchGitSource(source.gitLocator!, checkoutPath);
       return;
     }
 
@@ -809,6 +782,42 @@ export class SourceCheckoutService {
     }
 
     return `${normalizedBase}/${normalizedChild}`;
+  }
+
+  private async fetchGitSource(locator: string, checkoutPath: string): Promise<void> {
+    if (!(await isGitAvailable())) {
+      await this.fetchGitArchive(locator, checkoutPath);
+      return;
+    }
+
+    try {
+      await this.cloneGitWithRetries(locator, checkoutPath);
+      return;
+    } catch {
+      // Prefer HTTPS fallback when SSH/clone URL variants fail, then archive.
+    }
+
+    const fallbackLocator = this.resolveGitCloneFallbackLocator(locator);
+    if (fallbackLocator) {
+      try {
+        await this.cloneGitWithRetries(fallbackLocator, checkoutPath);
+        return;
+      } catch {
+        await removePath(checkoutPath);
+        await this.fetchGitArchive(fallbackLocator, checkoutPath);
+        return;
+      }
+    }
+
+    await removePath(checkoutPath);
+    await this.fetchGitArchive(locator, checkoutPath);
+  }
+
+  private async cloneGitWithRetries(locator: string, checkoutPath: string): Promise<void> {
+    await withNetworkRetries(async () => {
+      await removePath(checkoutPath).catch(() => {});
+      await git(["clone", "--depth", "1", locator, checkoutPath]);
+    }, { attempts: 2 });
   }
 
   private async fetchGitArchive(

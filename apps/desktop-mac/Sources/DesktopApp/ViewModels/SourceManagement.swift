@@ -257,10 +257,15 @@ final class SourceManagement {
     }
 
     func updateSources(_ sourceIds: [String]) async throws -> Any? {
+        let response = try await updateSourcesReturningResponse(sourceIds)
+        return response.data?.value
+    }
+
+    func updateSourcesReturningResponse(_ sourceIds: [String]) async throws -> BridgeResponse {
         cancelDeferredDraftSync()
         let response = try await bridgeClient.updateSources(sourceIds)
         registerRecentlyUpdatedSources(from: response.data?.value)
-        return response.data?.value
+        return response
     }
 
     func updateSelectedSource(_ sourceId: String) async throws -> BridgeResponse? {

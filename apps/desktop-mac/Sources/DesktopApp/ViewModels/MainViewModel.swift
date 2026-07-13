@@ -187,16 +187,8 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     private var cachedSelectedProjectScope: ProjectScopeSelection = .global
     private var cachedRecentProjectScopes: [RecentProjectScopeItem] = []
 
-    private struct PendingImportRequest {
-        let locator: String
-        let selectedSkills: [ImportSkillSelection]
-        let skillSelectionMode: ImportSkillSelectionMode
-        let enabledTargets: [String]
-    }
-
-    private let groupOperationQueue = GroupOperationQueue()
-    private var pendingImportRequestsByGroupId: [String: PendingImportRequest] = [:]
-    private var isDrainingGroupOperationQueue = false
+    private let groupOperations = GroupOperationCoordinator()
+    /// Published mirrors of the coordinator (single writer: GroupOperationCoordinator).
     private(set) var updateOperationPhases: [String: GroupOperationQueue.Phase] = [:]
     private(set) var importOperationPhases: [String: GroupOperationQueue.Phase] = [:]
 
@@ -240,16 +232,8 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         set { importLogic.searchImportGroups = newValue }
     }
     var importingImportGroupId: String? {
-        get { groupOperationQueue.runningImportGroupId ?? importLogic.importingImportGroupId }
-        set {
-            // Test hook: seed a running-like import phase via ImportLogic for legacy tests.
-            importLogic.importingImportGroupId = newValue
-            if let newValue {
-                importOperationPhases[newValue] = .running
-            } else {
-                importOperationPhases = groupOperationQueue.snapshotImportPhases()
-            }
-        }
+        get { groupOperations.importingImportGroupId }
+        set { groupOperations.testing_seedImportRunning(newValue) }
     }
     var healthStatus: HealthStatus { stateManager.healthStatus }
     var latestWarnings: [BridgeIssue] {
@@ -323,6 +307,48 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         collectionLogic.onShowToast = { [weak self] style, message in self?.stateManager.showToast(style: style, message: message) }
         collectionLogic.onShowBridgeCommandFailure = { [weak self] response in self?.showBridgeCommandFailure(response) }
         collectionLogic.groupCardsProvider = { [weak self] in self?.groupCards ?? [] }
+
+        groupOperations.bind(
+            GroupOperationCoordinator.Hosts(
+                isSourcePresent: { [weak self] sourceId in
+                    guard let self else { return false }
+                    return self.sourceIds.contains(sourceId) || self.sourceManagement.summary(for: sourceId) != nil
+                },
+                isImportInstalledLocally: { [weak self] groupId in
+                    self?.importLogic.isImportGroupInstalledLocally(groupId) == true
+                },
+                performUpdate: { [weak self] sourceId in
+                    await self?.performQueuedUpdate(sourceId: sourceId)
+                },
+                performBulkUpdate: { [weak self] sourceIds in
+                    await self?.performQueuedBulkUpdate(sourceIds: sourceIds)
+                },
+                performImport: { [weak self] groupId, request in
+                    await self?.importLogic.importImportGroup(
+                        groupId: groupId,
+                        locator: request.locator,
+                        selectedSkills: request.selectedSkills,
+                        skillSelectionMode: request.skillSelectionMode,
+                        enabledTargets: request.enabledTargets
+                    )
+                },
+                onAlreadyQueued: { [weak self] in
+                    self?.showOperationAlreadyQueuedToast()
+                },
+                onSkippedMissing: { [weak self] in
+                    self?.showToast(style: .neutral, text: self?.localizedText("toast.operation.skipped.missing_group") ?? .plain(""))
+                },
+                onImportAlreadyExists: { [weak self] in
+                    self?.showImportAlreadyExistsToast()
+                },
+                onPhasesChange: { [weak self] updatePhases, importPhases in
+                    guard let self else { return }
+                    self.updateOperationPhases = updatePhases
+                    self.importOperationPhases = importPhases
+                    self.stateManager.setUpdatingSourceIds(Set(updatePhases.keys))
+                }
+            )
+        )
     }
 
     func showToast(style: ToastStyle, message: String) {
@@ -1111,15 +1137,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             showToast(style: .neutral, text: localizedText("toast.update.none"))
             return
         }
-
-        switch groupOperationQueue.enqueueBulkUpdate(sourceIds: sourceIds) {
-        case .alreadyPresent:
-            showOperationAlreadyQueuedToast()
-            return
-        case .enqueued:
-            refreshOperationPhases()
-            await drainGroupOperationQueue()
-        }
+        await groupOperations.enqueueBulkUpdate(sourceIds: sourceIds)
     }
 
     func updateCurrentGroup() async {
@@ -1127,11 +1145,11 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func isUpdatingSource(_ sourceId: String) -> Bool {
-        updateOperationPhases[sourceId] != nil || updatingSourceIds.contains(sourceId)
+        groupOperations.isUpdatingSource(sourceId)
     }
 
     func isQueuedUpdateSource(_ sourceId: String) -> Bool {
-        updateOperationPhases[sourceId] == .queued
+        groupOperations.isQueuedUpdateSource(sourceId)
     }
 
     func updateSource(_ sourceId: String) async {
@@ -1140,23 +1158,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
             return
         }
-
-        switch groupOperationQueue.enqueueUpdate(sourceId: normalized) {
-        case .alreadyPresent:
-            showOperationAlreadyQueuedToast()
-            return
-        case .enqueued:
-            refreshOperationPhases()
-            await drainGroupOperationQueue()
-        }
+        await groupOperations.enqueueUpdate(sourceId: normalized)
     }
 
     private func performQueuedUpdate(sourceId: String) async {
-        guard sourceIds.contains(sourceId) || sourceManagement.summary(for: sourceId) != nil else {
-            showToast(style: .neutral, text: localizedText("toast.operation.skipped.missing_group"))
-            return
-        }
-
         do {
             let response = try await sourceManagement.updateSelectedSource(sourceId)
             await synchronizeState(refreshDoctor: true)
@@ -1168,17 +1173,11 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func performQueuedBulkUpdate(sourceIds: [String]) async {
-        let existing = sourceIds.filter { self.sourceIds.contains($0) || sourceManagement.summary(for: $0) != nil }
-        guard !existing.isEmpty else {
-            showToast(style: .neutral, text: localizedText("toast.operation.skipped.missing_group"))
-            return
-        }
-
         do {
-            let payload = try await sourceManagement.updateSources(existing)
+            let response = try await sourceManagement.updateSourcesReturningResponse(sourceIds)
             await synchronizeState(refreshDoctor: true)
-            registerRecentlyUpdatedSources(from: payload)
-            showToast(style: .success, text: .plain(updateSummaryMessage(from: nil, fallbackCount: existing.count)))
+            registerRecentlyUpdatedSources(from: response.data?.value)
+            presentBulkUpdateOutcome(requestedCount: sourceIds.count, payload: response.data?.value, warnings: response.warnings)
         } catch {
             showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
         }
@@ -1189,15 +1188,15 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func isImportingImportGroup(_ groupId: String) -> Bool {
-        importOperationPhases[groupId] != nil || importLogic.isImportingImportGroup(groupId)
+        groupOperations.isImportingImportGroup(groupId)
     }
 
     func isQueuedImportGroup(_ groupId: String) -> Bool {
-        importOperationPhases[groupId] == .queued
+        groupOperations.isQueuedImportGroup(groupId)
     }
 
     func importOperationPhase(for groupId: String) -> GroupOperationQueue.Phase? {
-        importOperationPhases[groupId]
+        groupOperations.importOperationPhase(for: groupId)
     }
 
     func loadImportPageIfNeeded() async {
@@ -1225,89 +1224,68 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func importImportGroup(groupId: String, locator: String, selectedSkills: [ImportSkillSelection], skillSelectionMode: ImportSkillSelectionMode = .selected, enabledTargets: [String]) async {
-        let normalizedGroupId = groupId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedGroupId.isEmpty else {
-            return
-        }
-
-        switch groupOperationQueue.enqueueImport(groupId: normalizedGroupId) {
-        case .alreadyPresent:
-            showOperationAlreadyQueuedToast()
-            return
-        case .enqueued:
-            pendingImportRequestsByGroupId[normalizedGroupId] = PendingImportRequest(
-                locator: locator,
-                selectedSkills: selectedSkills,
-                skillSelectionMode: skillSelectionMode,
-                enabledTargets: enabledTargets
-            )
-            refreshOperationPhases()
-            await drainGroupOperationQueue()
-        }
-    }
-
-    private func performQueuedImport(groupId: String) async {
-        if importLogic.isImportGroupInstalledLocally(groupId) {
-            showImportAlreadyExistsToast()
-            pendingImportRequestsByGroupId.removeValue(forKey: groupId)
-            return
-        }
-
-        guard let request = pendingImportRequestsByGroupId.removeValue(forKey: groupId) else {
-            showToast(style: .neutral, text: localizedText("toast.operation.skipped.missing_group"))
-            return
-        }
-
-        importLogic.importingImportGroupId = groupId
-        defer { importLogic.importingImportGroupId = nil }
-
-        await importLogic.importImportGroup(
+        await groupOperations.enqueueImport(
             groupId: groupId,
-            locator: request.locator,
-            selectedSkills: request.selectedSkills,
-            skillSelectionMode: request.skillSelectionMode,
-            enabledTargets: request.enabledTargets
+            locator: locator,
+            selectedSkills: selectedSkills,
+            skillSelectionMode: skillSelectionMode,
+            enabledTargets: enabledTargets
         )
     }
 
-    private func drainGroupOperationQueue() async {
-        guard !isDrainingGroupOperationQueue else {
+    private func presentBulkUpdateOutcome(requestedCount: Int, payload: Any?, warnings: [BridgeIssue]) {
+        let outcome = Self.parseBulkUpdateOutcome(requestedCount: requestedCount, payload: payload, warnings: warnings)
+
+        if outcome.failedCount == 0 {
+            showToast(style: .success, text: .plain(updateSummaryMessage(from: payload, fallbackCount: outcome.successCount)))
             return
         }
-        isDrainingGroupOperationQueue = true
-        defer {
-            isDrainingGroupOperationQueue = false
-            refreshOperationPhases()
-            // Cover the race where a new item is enqueued after the last startNext() miss
-            // but before the drain flag is cleared.
-            if groupOperationQueue.hasQueuedWork {
-                Task { await self.drainGroupOperationQueue() }
-            }
+        if outcome.successCount == 0 {
+            showToast(
+                style: .error,
+                text: localizedText("toast.update.failed", outcome.firstFailureMessage ?? "update failed")
+            )
+            return
         }
-
-        while let operation = groupOperationQueue.startNext() {
-            refreshOperationPhases()
-            switch operation {
-            case .update(let sourceId):
-                await performQueuedUpdate(sourceId: sourceId)
-            case .bulkUpdate(let sourceIds):
-                await performQueuedBulkUpdate(sourceIds: sourceIds)
-            case .importGroup(let groupId):
-                await performQueuedImport(groupId: groupId)
-            }
-            groupOperationQueue.completeRunning()
-            refreshOperationPhases()
-        }
+        showToast(
+            style: .neutral,
+            text: localizedText(
+                "toast.update.partial",
+                String(outcome.successCount),
+                String(outcome.failedCount)
+            )
+        )
     }
 
-    private func refreshOperationPhases() {
-        updateOperationPhases = groupOperationQueue.snapshotUpdatePhases()
-        var importPhases = groupOperationQueue.snapshotImportPhases()
-        if let seeded = importLogic.importingImportGroupId, importPhases[seeded] == nil {
-            importPhases[seeded] = .running
+    private struct BulkUpdateOutcome {
+        let successCount: Int
+        let failedCount: Int
+        let firstFailureMessage: String?
+    }
+
+    private static func parseBulkUpdateOutcome(
+        requestedCount: Int,
+        payload: Any?,
+        warnings: [BridgeIssue]
+    ) -> BulkUpdateOutcome {
+        let data = payload as? [String: Any]
+        let updatedCount = (data?["updated"] as? [[String: Any]])?.count
+        let failedItems = data?["failed"] as? [[String: Any]] ?? []
+        let failedFromPayload = failedItems.compactMap { item -> String? in
+            (item["message"] as? String)?.nonEmpty ?? (item["code"] as? String)
         }
-        importOperationPhases = importPhases
-        stateManager.setUpdatingSourceIds(Set(updateOperationPhases.keys))
+        let failedFromWarnings = warnings
+            .filter { $0.code == "SOURCE_UPDATE_FAILED" }
+            .map(\.message)
+
+        let failedMessages = failedFromPayload.isEmpty ? failedFromWarnings : failedFromPayload
+        let failedCount = max(failedItems.count, failedFromWarnings.count)
+        let successCount = updatedCount ?? max(0, requestedCount - failedCount)
+        return BulkUpdateOutcome(
+            successCount: successCount,
+            failedCount: failedCount,
+            firstFailureMessage: failedMessages.first
+        )
     }
 
     func uninstallSelectedSource() async {

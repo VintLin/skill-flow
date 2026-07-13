@@ -248,7 +248,13 @@ describe.sequential("SourceAuthorityService", () => {
     if (!updated.ok) {
       return;
     }
+    expect(updated.data.status).toBe("partial");
     expect(updated.data.updated.map((item) => item.sourceId)).toEqual(["good-source"]);
+    expect(updated.data.failed).toEqual([
+      expect.objectContaining({
+        sourceId: "bad-source",
+      }),
+    ]);
     expect(updated.warnings.some((warning) => warning.code === "SOURCE_UPDATE_FAILED")).toBe(true);
 
     const state = await stateStore.readState();

@@ -271,6 +271,7 @@
 "toast.update.summary.single" = "已更新 1 个分组。";
 "toast.update.summary.multiple" = "已更新 %@ 个分组。";
 "toast.update.summary.updated_count" = "已更新 %@";
+"toast.update.partial" = "已更新 %@ 个分组，%@ 个失败。";
 "toast.update.summary.up_to_date_count" = "已最新 %@";
 "toast.update.summary.needs_review_count" = "待复核 %@";
 "toast.uninstall.no_group_selected" = "卸载失败：未选择分组。";

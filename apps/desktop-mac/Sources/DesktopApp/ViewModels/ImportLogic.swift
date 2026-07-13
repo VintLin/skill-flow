@@ -26,8 +26,6 @@ final class ImportLogic {
     var localImportGroups: [ImportGroupItem] = []
     var localImportScanPhase: ImportLoadPhase = .idle
     var searchImportGroups: [ImportGroupItem] = []
-    var importingImportGroupId: String?
-
     private let bridgeClient: BridgeClient
     private let queryFacade: any DesktopQuerying
     private let commandFacade: any DesktopCommanding
@@ -71,10 +69,6 @@ final class ImportLogic {
         case .localScan:
             return localImportGroups
         }
-    }
-
-    func isImportingImportGroup(_ groupId: String) -> Bool {
-        importingImportGroupId == groupId
     }
 
     func isImportGroupInstalledLocally(_ groupId: String) -> Bool {

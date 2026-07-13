@@ -9,6 +9,7 @@ import type {
   SourceKind,
   SourceManifestRecord,
   SourceUpdateDiff,
+  SourceUpdateFailureItem,
   SourceUpdateResult,
   SourceUpdateResultItem,
   Warning,
@@ -286,8 +287,9 @@ export class SourceAuthorityService {
       projections: [...state.lockFile.projections],
     };
     const updated: SourceUpdateResultItem[] = [];
+    const failed: SourceUpdateFailureItem[] = [];
     const warnings: Warning[] = [];
-    const failures: Failure[] = [];
+    const hardFailures: Failure[] = [];
     let appliedCheckoutCount = 0;
 
     for (const sourceId of requestedIds) {
@@ -320,13 +322,13 @@ export class SourceAuthorityService {
         allowEmptyLeafs: true,
       });
       if (!prepared.ok) {
-        failures.push(...prepared.errors);
+        const code = prepared.errors[0]?.code ?? "SOURCE_UPDATE_FAILED";
+        const message = prepared.errors[0]?.message
+          ?? `Unable to update skills group '${sourceId}'.`;
+        hardFailures.push(...prepared.errors);
+        failed.push({ sourceId, code, message });
         warnings.push(...prepared.warnings);
-        warnings.push({
-          code: "SOURCE_UPDATE_FAILED",
-          message: prepared.errors[0]?.message
-            ?? `Unable to update skills group '${sourceId}'.`,
-        });
+        warnings.push({ code: "SOURCE_UPDATE_FAILED", message });
         continue;
       }
       warnings.push(...prepared.warnings);
@@ -350,11 +352,9 @@ export class SourceAuthorityService {
           code: "SOURCE_CHECKOUT_REPLACE_FAILED",
           message: `Unable to replace checkout for '${sourceId}': ${String(error)}`,
         };
-        failures.push(failure);
-        warnings.push({
-          code: "SOURCE_UPDATE_FAILED",
-          message: failure.message,
-        });
+        hardFailures.push(failure);
+        failed.push({ sourceId, code: failure.code, message: failure.message });
+        warnings.push({ code: "SOURCE_UPDATE_FAILED", message: failure.message });
         continue;
       }
 
@@ -393,11 +393,21 @@ export class SourceAuthorityService {
       });
     }
 
-    if (appliedCheckoutCount === 0 && failures.length > 0) {
-      return fail(failures, warnings);
+    if (appliedCheckoutCount === 0 && hardFailures.length > 0) {
+      return fail(hardFailures, warnings);
     }
 
-    return ok({ updated }, warnings);
+    const status: SourceUpdateResult["status"] = failed.length === 0
+      ? "updated"
+      : updated.length === 0
+        ? "failed"
+        : "partial";
+
+    return ok({
+      status,
+      updated,
+      ...(failed.length > 0 ? { failed } : {}),
+    }, warnings);
   }
 
   async reconcileInventory(

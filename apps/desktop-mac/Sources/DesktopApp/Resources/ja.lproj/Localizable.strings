@@ -273,6 +273,7 @@
 "toast.update.summary.updated_count" = "更新済み %@";
 "toast.update.summary.up_to_date_count" = "最新 %@";
 "toast.update.summary.needs_review_count" = "要確認 %@";
+"toast.update.partial" = "%@ グループを更新し、%@ 件は失敗しました。";
 "toast.uninstall.no_group_selected" = "アンインストール失敗: グループが選択されていません。";
 "toast.uninstall.success" = "%@ を削除しました。";
 "toast.uninstall.failed" = "アンインストール失敗: %@";

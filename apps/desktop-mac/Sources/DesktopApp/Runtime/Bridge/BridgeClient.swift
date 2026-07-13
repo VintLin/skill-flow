@@ -494,7 +494,7 @@ final class BridgeClient: @unchecked Sendable {
     }
 
     private func timeoutMilliseconds(for command: BridgeCommand) -> UInt64 {
-        command.usesImportTimeout
+        command.usesExtendedNetworkTimeout
             ? importCommandTimeoutMilliseconds
             : commandTimeoutMilliseconds
     }

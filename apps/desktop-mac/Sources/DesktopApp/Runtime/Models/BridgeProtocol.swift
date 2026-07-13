@@ -29,7 +29,7 @@ enum BridgeCommand: String, Codable, Sendable, CaseIterable {
 extension BridgeCommand {
     /// Longer bridge helper budget for network-heavy work (import, update, add).
     /// Ordinary UI mutations keep the shorter default command timeout.
-    var usesImportTimeout: Bool {
+    var usesExtendedNetworkTimeout: Bool {
         switch self {
         case .searchImportGroups,
              .scanLocalImportGroups,
@@ -57,6 +57,11 @@ extension BridgeCommand {
              .saveSettings:
             return false
         }
+    }
+
+    @available(*, deprecated, renamed: "usesExtendedNetworkTimeout")
+    var usesImportTimeout: Bool {
+        usesExtendedNetworkTimeout
     }
 }
 

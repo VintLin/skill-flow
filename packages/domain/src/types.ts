@@ -1057,10 +1057,18 @@ export type SourceUpdateResultItem = {
   diffs: SourceUpdateDiff[];
 };
 
+export type SourceUpdateFailureItem = {
+  sourceId: SourceId;
+  code: string;
+  message: string;
+};
+
 export type SourceUpdateResult = {
   sourceId?: SourceId;
-  status?: "updated" | "unchanged" | "failed";
+  status?: "updated" | "unchanged" | "failed" | "partial";
   updated: SourceUpdateResultItem[];
+  /** Groups that failed during a multi-source update; disk/lock were left unchanged for these. */
+  failed?: SourceUpdateFailureItem[];
   diffs?: SourceUpdateDiff[];
   diagnostics?: Diagnostic[];
 };
