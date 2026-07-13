@@ -4,6 +4,22 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.5.5 - 2026-07-13
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.5.4` to `1.5.5`.
+- Extended desktop bridge network timeout for `update` and `add` (5 minutes) and raised provider/archive fetch budgets for unstable networks.
+- Multi-source skill-group updates continue when individual groups fail and report typed partial results (`failed[]`, `status: partial`).
+- Extracted desktop `GroupOperationCoordinator` as the sole owner of update/import queue drain and card phase publishing.
+
+### Fixed
+
+- Fixed online skill update/import failures caused by short default timeouts (#10).
+- Fixed multi-group update paths that could leave checkout disk state and lock metadata inconsistent when a later group failed.
+- Fixed bulk update toasts that could claim full success when some groups failed.
+- Added git command timeouts and retries for transient clone/archive network errors.
+
 ## v1.5.4 - 2026-07-13
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "@skill-flow/integration",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "type": "module",
   "private": true,
   "main": "dist/index.js",
@@ -15,7 +15,7 @@
     "test:watch": "vitest --passWithNoTests"
   },
   "dependencies": {
-    "@skill-flow/domain": "1.5.4"
+    "@skill-flow/domain": "1.5.5"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
