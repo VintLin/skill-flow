@@ -29,6 +29,7 @@ enum AgentIconLibrary {
         "amp": "amp.svg",
         "kiro": "kiro-cli.svg",
         "zcode": "zcode.svg",
+        "grok-build": "grok-build.svg",
     ]
 
     private static let cache = NSCache<NSString, NSImage>()
@@ -218,7 +219,7 @@ enum AgentIconLibrary {
 
     private static func symbolAlphaMode(for targetId: String) -> SymbolAlphaMode {
         switch targetId {
-        case "hermes-agent", "minimax-code", "kimi-code", "workbuddy", "codebuddy":
+        case "hermes-agent", "minimax-code", "kimi-code", "workbuddy", "codebuddy", "grok-build":
             return .darkForeground
         default:
             return .brightForeground

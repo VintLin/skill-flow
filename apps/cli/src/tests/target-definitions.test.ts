@@ -52,6 +52,9 @@ describe("target definitions", () => {
     expect(TARGET_PATH_CANDIDATES.zcode).toContain(
       path.join(os.homedir(), ".zcode", "skills"),
     );
+    expect(TARGET_PATH_CANDIDATES["grok-build"]).toContain(
+      path.join(os.homedir(), ".grok", "skills"),
+    );
     expect(TARGET_PATH_CANDIDATES["hermes-agent"]).toContain(
       path.join(os.homedir(), ".hermes", "skills"),
     );
@@ -119,6 +122,7 @@ describe("target definitions", () => {
     expect(TARGET_COMPAT_READ_CANDIDATES.zcode).not.toContain(
       path.join(os.homedir(), ".agents", "skills"),
     );
+    expect(TARGET_COMPAT_READ_CANDIDATES["grok-build"]).toEqual([]);
     expect(TARGET_PATH_CANDIDATES["gemini-cli"]).not.toContain(
       path.join(os.homedir(), ".agents", "skills"),
     );
@@ -154,6 +158,16 @@ describe("target definitions", () => {
     );
     expect(getTargetWriteRootCandidates("zcode")).toEqual([
       path.join(os.homedir(), ".zcode", "skills"),
+    ]);
+
+    expect(getTargetDetectionCandidates("grok-build")).toContain(
+      path.join(os.homedir(), ".grok"),
+    );
+    expect(getTargetDetectionCandidates("grok-build")).toContain(
+      path.join(os.homedir(), ".grok", "skills"),
+    );
+    expect(getTargetWriteRootCandidates("grok-build")).toEqual([
+      path.join(os.homedir(), ".grok", "skills"),
     ]);
 
     expect(getTargetDetectionCandidates("pi")).toContain(
@@ -196,6 +210,8 @@ describe("target definitions", () => {
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.cline).toBe("~/.cline/skills/");
     expect(TARGET_DOCUMENTED_PROJECT_PATHS.zcode).toBe(".zcode/skills/");
     expect(TARGET_DOCUMENTED_GLOBAL_PATHS.zcode).toBe("~/.zcode/skills/");
+    expect(TARGET_DOCUMENTED_PROJECT_PATHS["grok-build"]).toBe(".grok/skills/");
+    expect(TARGET_DOCUMENTED_GLOBAL_PATHS["grok-build"]).toBe("~/.grok/skills/");
   });
 
   test("resolves documented project skill paths from project roots", () => {
@@ -235,6 +251,9 @@ describe("target definitions", () => {
     expect(resolveDocumentedProjectSkillPath("zcode", "/Users/test/src/repo-a")).toBe(
       "/Users/test/src/repo-a/.zcode/skills",
     );
+    expect(resolveDocumentedProjectSkillPath("grok-build", "/Users/test/src/repo-a")).toBe(
+      "/Users/test/src/repo-a/.grok/skills",
+    );
     expect(resolveDocumentedProjectSkillPath("codex", "   ")).toBeNull();
   });
 
@@ -250,11 +269,13 @@ describe("target definitions", () => {
     expect(TARGET_ICON_ASSET_NAMES.trae).toBe("trae.svg");
     expect(TARGET_ICON_ASSET_NAMES["trae-cn"]).toBe("trae.svg");
     expect(TARGET_ICON_ASSET_NAMES.zcode).toBe("zcode.svg");
+    expect(TARGET_ICON_ASSET_NAMES["grok-build"]).toBe("grok-build.svg");
     expect(TARGET_ICON_ASSET_NAMES.pi).toBeUndefined();
     expect(TARGET_DEFINITIONS["roo-code"].documentedAgentIds).toEqual(["roo"]);
     expect(TARGET_DEFINITIONS["hermes-agent"].documentedAgentIds).toEqual(["hermes"]);
     expect(TARGET_DEFINITIONS["minimax-code"].documentedAgentIds).toEqual(["minimax"]);
     expect(TARGET_DEFINITIONS.kiro.documentedAgentIds).toEqual(["kiro-cli"]);
+    expect(TARGET_DEFINITIONS["grok-build"].documentedAgentIds).toEqual(["grok"]);
   });
 
   test("explicit target mode only exposes overridden targets", () => {

@@ -2,6 +2,12 @@
 
 All notable changes to `skill-flow` will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- Added built-in Grok Build deployment target (`grok-build`) with managed global path `~/.grok/skills/` and documented project path `.grok/skills/`.
+
 ## v1.5.3 - 2026-07-01
 
 ### Added

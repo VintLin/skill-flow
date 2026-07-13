@@ -50,6 +50,7 @@ describe.sequential("source lifecycle", () => {
       "codex",
       "zcode",
       "cursor",
+      "grok-build",
       "pi",
       "workbuddy",
       "codebuddy",

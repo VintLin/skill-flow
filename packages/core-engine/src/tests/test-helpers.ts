@@ -45,6 +45,7 @@ export function useSkillFlowSandbox() {
     process.env.SKILL_FLOW_TARGET_AMP = path.join(context.targetsRoot, "amp");
     process.env.SKILL_FLOW_TARGET_KIRO = path.join(context.targetsRoot, "kiro");
     process.env.SKILL_FLOW_TARGET_ZCODE = path.join(context.targetsRoot, "zcode");
+    process.env.SKILL_FLOW_TARGET_GROK_BUILD = path.join(context.targetsRoot, "grok-build");
 
     await Promise.all([
       fs.mkdir(process.env.SKILL_FLOW_TARGET_CLAUDE_CODE!, { recursive: true }),
@@ -68,6 +69,7 @@ export function useSkillFlowSandbox() {
       fs.mkdir(process.env.SKILL_FLOW_TARGET_AMP!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_KIRO!, { recursive: true }),
       fs.mkdir(process.env.SKILL_FLOW_TARGET_ZCODE!, { recursive: true }),
+      fs.mkdir(process.env.SKILL_FLOW_TARGET_GROK_BUILD!, { recursive: true }),
     ]);
   });
 
@@ -95,6 +97,7 @@ export function useSkillFlowSandbox() {
     delete process.env.SKILL_FLOW_TARGET_AMP;
     delete process.env.SKILL_FLOW_TARGET_KIRO;
     delete process.env.SKILL_FLOW_TARGET_ZCODE;
+    delete process.env.SKILL_FLOW_TARGET_GROK_BUILD;
     if (context.sandboxRoot) {
       await fs.rm(context.sandboxRoot, { recursive: true, force: true });
     }

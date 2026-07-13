@@ -14,6 +14,7 @@ enum AgentDisplayCatalog {
         "codex",
         "zcode",
         "cursor",
+        "grok-build",
         "pi",
         "workbuddy",
         "codebuddy",
@@ -37,6 +38,7 @@ enum AgentDisplayCatalog {
         "claude-code": "Claude Code",
         "codex": "Codex",
         "cursor": "Cursor",
+        "grok-build": "Grok Build",
         "github-copilot": "GitHub Copilot",
         "gemini-cli": "Gemini CLI",
         "opencode": "OpenCode",
@@ -61,6 +63,7 @@ enum AgentDisplayCatalog {
         "claude-code": "CC",
         "codex": "CX",
         "cursor": "CU",
+        "grok-build": "GB",
         "github-copilot": "GH",
         "gemini-cli": "GM",
         "opencode": "OP",
@@ -140,6 +143,8 @@ enum AgentDisplayCatalog {
             return homeDirectory.appendingPathComponent(".codex/skills", isDirectory: true).path
         case "cursor":
             return homeDirectory.appendingPathComponent(".cursor/skills", isDirectory: true).path
+        case "grok-build":
+            return homeDirectory.appendingPathComponent(".grok/skills", isDirectory: true).path
         case "github-copilot":
             return homeDirectory.appendingPathComponent(".copilot/skills", isDirectory: true).path
         case "gemini-cli":
@@ -191,6 +196,8 @@ enum AgentDisplayCatalog {
             return ".claude/skills"
         case "codex", "cursor", "github-copilot", "gemini-cli":
             return ".agents/skills"
+        case "grok-build":
+            return ".grok/skills"
         case "opencode":
             return ".opencode/skills"
         case "cline":

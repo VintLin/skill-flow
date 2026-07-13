@@ -2294,6 +2294,7 @@ description: |
       "codex",
       "zcode",
       "cursor",
+      "grok-build",
       "pi",
       "workbuddy",
       "codebuddy",
@@ -2337,6 +2338,7 @@ description: |
       amp: process.env.SKILL_FLOW_TARGET_AMP,
       kiro: process.env.SKILL_FLOW_TARGET_KIRO,
       zcode: process.env.SKILL_FLOW_TARGET_ZCODE,
+      grokBuild: process.env.SKILL_FLOW_TARGET_GROK_BUILD,
     };
     const previousHome = process.env.HOME;
     try {
@@ -2361,6 +2363,7 @@ description: |
       delete process.env.SKILL_FLOW_TARGET_AMP;
       delete process.env.SKILL_FLOW_TARGET_KIRO;
       delete process.env.SKILL_FLOW_TARGET_ZCODE;
+      delete process.env.SKILL_FLOW_TARGET_GROK_BUILD;
       await fs.mkdir(path.join(sandbox.sandboxRoot, ".agents", "skills"), { recursive: true });
 
       const app = new SkillFlowApp();
@@ -2390,6 +2393,7 @@ description: |
       process.env.SKILL_FLOW_TARGET_AMP = previousTargets.amp;
       process.env.SKILL_FLOW_TARGET_KIRO = previousTargets.kiro;
       process.env.SKILL_FLOW_TARGET_ZCODE = previousTargets.zcode;
+      process.env.SKILL_FLOW_TARGET_GROK_BUILD = previousTargets.grokBuild;
     }
   });
 });

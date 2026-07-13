@@ -37,7 +37,8 @@ export type DeploymentTargetName =
   | "cline"
   | "amp"
   | "kiro"
-  | "zcode";
+  | "zcode"
+  | "grok-build";
 
 export type DeploymentTargetId = DeploymentTargetName | (string & {});
 

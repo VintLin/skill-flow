@@ -53,6 +53,7 @@ final class AgentIconTests: XCTestCase {
         XCTAssertEqual(AgentIconLibrary.fileName(for: "codebuddy"), "codebuddy.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "kiro"), "kiro-cli.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "trae"), "trae.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "grok-build"), "grok-build.svg")
         XCTAssertNil(AgentIconLibrary.fileName(for: "pi"))
     }
 
@@ -66,10 +67,11 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.image(for: "workbuddy"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "codebuddy"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "trae"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "grok-build"))
     }
 
     func testCurrentColorAgentIconsLoadAtUsableResolution() {
-        for targetId in ["kimi-code", "workbuddy", "codebuddy"] {
+        for targetId in ["kimi-code", "workbuddy", "codebuddy", "grok-build"] {
             guard
                 let image = AgentIconLibrary.image(for: targetId),
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -142,6 +144,19 @@ final class AgentIconTests: XCTestCase {
 
             XCTAssertTrue(hasVisiblePixels(cgImage), "\(targetId) symbol image should not be fully transparent after recoloring")
         }
+    }
+
+    func testGrokBuildSymbolIconRetainsVisiblePixelsAfterRecoloring() {
+        let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
+
+        guard
+            let image = AgentIconLibrary.symbolImage(for: "grok-build", foreground: foreground),
+            let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else {
+            return XCTFail("Expected Grok Build symbol image to load")
+        }
+
+        XCTAssertTrue(hasVisiblePixels(cgImage), "Grok Build symbol image should not be fully transparent after recoloring")
     }
 
     func testGroupMetadataIconLoaderFindsBundledSvgAssets() {
