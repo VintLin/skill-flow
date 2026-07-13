@@ -34,8 +34,10 @@ enum DesktopCardClickPolicy {
     case importSearch
     case menu
 
+    /// Whole-card open is intentionally disabled: detail navigation is header-scoped only
+    /// (title / byline / stats) to avoid mis-taps on agents, skills, and tags.
     static func allowsWholeCardTap(for policy: DesktopCardClickPolicy) -> Bool {
-        policy == .home
+        false
     }
 
     var allowsWholeCardTap: Bool {

@@ -36,6 +36,20 @@ final class ClickTargetRegressionTests: XCTestCase {
         XCTAssertFalse(source.contains("Button(action: onOpen) {\n                        headerPrimaryContent\n                    }"))
     }
 
+    func testGroupCardDetailOpenIsHeaderScopedNotWholeCard() throws {
+        let card = try sourceText(
+            at: "Sources/DesktopApp/Components/GroupCardComponents.swift"
+        )
+        let policy = try sourceText(
+            at: "Sources/DesktopApp/Components/DesktopInteractionMotion.swift"
+        )
+
+        XCTAssertTrue(card.contains("headerPrimaryButtonLabel"))
+        XCTAssertTrue(card.contains("headerStatsRow"))
+        XCTAssertTrue(card.contains("including: clickPolicy.allowsWholeCardTap ? .gesture : .none"))
+        XCTAssertTrue(policy.contains("static func allowsWholeCardTap(for policy: DesktopCardClickPolicy) -> Bool {\n        false\n    }"))
+    }
+
     func testGroupCardActionMenuOnlyRendersRenameWhenHandlerExists() throws {
         let source = try sourceText(
             at: "Sources/DesktopApp/Components/GroupCardComponents.swift"

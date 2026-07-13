@@ -13,12 +13,15 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains(".desktopMotionButton("))
     }
 
-    func testHomeUsesWholeCardTapButImportAndMenuDoNot() throws {
+    func testHomeUsesHeaderScopedOpenInsteadOfWholeCardTap() throws {
         let home = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
         let card = try sourceText(at: "Sources/DesktopApp/Components/GroupCardComponents.swift")
+        let policy = try sourceText(at: "Sources/DesktopApp/Components/DesktopInteractionMotion.swift")
 
         XCTAssertTrue(home.contains("clickPolicy: .home"))
         XCTAssertTrue(card.contains(".desktopMotionCard("))
+        XCTAssertTrue(card.contains("headerPrimaryButtonLabel"))
+        XCTAssertTrue(policy.contains("static func allowsWholeCardTap(for policy: DesktopCardClickPolicy) -> Bool {\n        false\n    }"))
     }
 
     func testDetailNavigationSurfacesUseSharedMotionHelpers() throws {

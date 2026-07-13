@@ -10,8 +10,9 @@ final class DesktopInteractionMotionTests: XCTestCase {
         XCTAssertEqual(DesktopMotionTokens.pressDuration, 0.10, accuracy: 0.001)
     }
 
-    func testHomeCardClickPolicyAllowsWholeCardOnlyOnHomeRoute() {
-        XCTAssertTrue(DesktopCardClickPolicy.allowsWholeCardTap(for: .home))
+    func testCardClickPolicyNeverAllowsWholeCardTap() {
+        // Detail open is header-scoped (title/byline/stats); whole-card tap caused mis-taps.
+        XCTAssertFalse(DesktopCardClickPolicy.allowsWholeCardTap(for: .home))
         XCTAssertFalse(DesktopCardClickPolicy.allowsWholeCardTap(for: .importSearch))
         XCTAssertFalse(DesktopCardClickPolicy.allowsWholeCardTap(for: .menu))
     }

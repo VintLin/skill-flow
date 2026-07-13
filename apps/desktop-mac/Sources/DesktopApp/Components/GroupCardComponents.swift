@@ -584,11 +584,17 @@ struct SharedGroupCard: View {
                         headerPrimaryButtonLabel
                     }
                     .buttonStyle(.plain)
+                    .disabled(isBusy)
                 } else {
                     headerPrimaryContent
                 }
                 if Self.reservesHeaderStatsRow(card: card, displayMode: displayMode) {
                     headerStatsRow
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard onOpen != nil, !isBusy else { return }
+                            onOpen?()
+                        }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
