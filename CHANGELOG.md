@@ -4,9 +4,26 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.5.4 - 2026-07-13
+
 ### Added
 
 - Added built-in Grok Build deployment target (`grok-build`) with managed global path `~/.grok/skills/` and documented project path `.grok/skills/`.
+- Added a session-scoped desktop Group Operation Queue so users can enqueue multiple skill-group updates and imports without waiting for the current job to finish.
+- Added per-card Queued vs Running feedback for desktop update and import operations.
+- Added Shared Desktop Suite storage for Desktop Workspace Memory (agent display visibility and group tags) so production and dev desktop packages share organization state on one Mac.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.5.3` to `1.5.4`.
+- Changed desktop bridge mutations to serialize instead of rejecting concurrent writes.
+- Changed Home Update All to enqueue as one bulk update that absorbs matching single-group updates already in the queue.
+- Changed desktop group-card detail open to the header region (title / byline / stats) instead of the whole card.
+
+### Fixed
+
+- Fixed multi-group update and import flows that blocked or failed after the first concurrent action.
+- Fixed accidental detail navigation when interacting with agents, skills, or tags on a group card.
 
 ## v1.5.3 - 2026-07-01
 
