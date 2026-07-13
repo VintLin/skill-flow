@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
   DEFAULT_PROVIDER_FETCH_TIMEOUT_MS,
   FetchTimeoutError,
   fetchWithTimeout,
@@ -138,9 +139,10 @@ describe("fetchWithTimeout", () => {
   });
 
   test("exports the default provider timeout and a timeout message containing timed out", () => {
-    const error = new FetchTimeoutError("https://example.com/default", 30_000);
+    const error = new FetchTimeoutError("https://example.com/default", 60_000);
 
-    expect(DEFAULT_PROVIDER_FETCH_TIMEOUT_MS).toBe(30_000);
+    expect(DEFAULT_PROVIDER_FETCH_TIMEOUT_MS).toBe(60_000);
+    expect(DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS).toBe(300_000);
     expect(error.message).toContain("timed out");
   });
 });

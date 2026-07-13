@@ -21,7 +21,10 @@ import {
   removePath,
 } from "@skill-flow/integration/utils/fs";
 import { installClawHubSkill } from "@skill-flow/integration/utils/clawhub";
-import { fetchWithTimeout } from "@skill-flow/integration/utils/fetch-timeout";
+import {
+  DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
+  fetchWithTimeout,
+} from "@skill-flow/integration/utils/fetch-timeout";
 import { git, isGitAvailable } from "@skill-flow/integration/utils/git";
 import { parseGitHubRepo, parseHostedGitRepo } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
@@ -958,6 +961,7 @@ export class SourceCheckoutService {
       `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`,
       {},
       {
+        timeoutMs: DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
         timeoutMessage: `GitHub archive download timed out for '${owner}/${repo}' branch '${branch}'.`,
       },
     );
@@ -985,6 +989,7 @@ export class SourceCheckoutService {
         },
       },
       {
+        timeoutMs: DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
         timeoutMessage: `GitLab archive download timed out for '${host}/${projectPath}' branch '${branch}'.`,
       },
     );

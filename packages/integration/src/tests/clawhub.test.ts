@@ -148,10 +148,10 @@ describe("clawhub utils", () => {
     const assertion = expect(inspected).rejects.toMatchObject({
       name: "FetchTimeoutError",
       code: "FETCH_TIMEOUT",
-      timeoutMs: 30_000,
+      timeoutMs: 60_000,
       url: "https://clawhub.ai/api/v1/skills/find-skills",
     });
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(60_000);
 
     await assertion;
   });

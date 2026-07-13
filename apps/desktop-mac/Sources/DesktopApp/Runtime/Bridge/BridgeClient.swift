@@ -112,7 +112,8 @@ final class BridgeClient: @unchecked Sendable {
 
     init(
         commandTimeoutMilliseconds: UInt64 = 60_000,
-        importCommandTimeoutMilliseconds: UInt64 = 180_000,
+        // Network-heavy import/update/add work often needs more than 3 minutes on unstable links.
+        importCommandTimeoutMilliseconds: UInt64 = 300_000,
         commandTimeoutGraceMilliseconds: UInt64 = 1_000
     ) {
         self.commandTimeoutMilliseconds = commandTimeoutMilliseconds

@@ -1,4 +1,8 @@
-export const DEFAULT_PROVIDER_FETCH_TIMEOUT_MS = 30_000;
+/** Default for provider metadata/search. Large archive downloads should pass a longer timeoutMs. */
+export const DEFAULT_PROVIDER_FETCH_TIMEOUT_MS = 60_000;
+
+/** Budget for skill-group archive downloads and other large body transfers. */
+export const DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS = 300_000;
 
 export type FetchTimeoutOptions = {
   timeoutMs?: number;

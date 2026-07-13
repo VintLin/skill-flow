@@ -19,10 +19,10 @@ describe("source details", () => {
     const assertion = expect(details).rejects.toMatchObject({
       name: "FetchTimeoutError",
       code: "FETCH_TIMEOUT",
-      timeoutMs: 30_000,
+      timeoutMs: 60_000,
       url: "https://skills.sh/anthropics/skills",
     });
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(60_000);
 
     await assertion;
   });

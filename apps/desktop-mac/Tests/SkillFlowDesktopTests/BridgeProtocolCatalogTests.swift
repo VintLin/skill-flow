@@ -25,7 +25,16 @@ final class BridgeProtocolCatalogTests: XCTestCase {
             "preview-import-source",
             "commit-import-source",
             "import-source",
+            "add",
+            "update",
         ])
+    }
+
+    func testUpdateAndAddUseExtendedNetworkTimeoutBudget() {
+        XCTAssertTrue(BridgeCommand.update.usesImportTimeout)
+        XCTAssertTrue(BridgeCommand.add.usesImportTimeout)
+        XCTAssertFalse(BridgeCommand.apply.usesImportTimeout)
+        XCTAssertFalse(BridgeCommand.list.usesImportTimeout)
     }
 
     private func bridgeCommandCatalogFixtureURL() throws -> URL {

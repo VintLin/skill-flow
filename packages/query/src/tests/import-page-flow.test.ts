@@ -492,6 +492,13 @@ describe.sequential("import page flow", () => {
     try {
       vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({});
       vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
+      // Keep GitHub archive fallback fast so this test isolates skills.sh timeouts.
+      vi.spyOn(
+        (await import("@skill-flow/core-engine/services/source-checkout-service")).SourceCheckoutService.prototype as {
+          downloadGitHubArchive: (...args: unknown[]) => Promise<void>;
+        },
+        "downloadGitHubArchive",
+      ).mockRejectedValue(new Error("GitHub archive download timed out for 'anthropics/skills' branch 'main'."));
       vi.stubGlobal("fetch", vi.fn((_input: string | URL | Request, init?: RequestInit) => {
         return new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener("abort", () => {
@@ -511,15 +518,10 @@ describe.sequential("import page flow", () => {
       await vi.waitFor(() => {
         expect(globalThis.fetch).toHaveBeenCalled();
       });
-      await vi.advanceTimersByTimeAsync(30_000);
-      await vi.waitFor(() => {
-        expect(globalThis.fetch).toHaveBeenCalledTimes(3);
-      });
-      await vi.advanceTimersByTimeAsync(30_000);
-      await vi.waitFor(() => {
-        expect(globalThis.fetch).toHaveBeenCalledTimes(4);
-      });
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(60_000);
+      await Promise.resolve();
       const preview = await previewPromise;
 
       expect(preview.ok).toBe(true);
