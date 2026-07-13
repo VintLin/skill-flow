@@ -187,6 +187,19 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     private var cachedSelectedProjectScope: ProjectScopeSelection = .global
     private var cachedRecentProjectScopes: [RecentProjectScopeItem] = []
 
+    private struct PendingImportRequest {
+        let locator: String
+        let selectedSkills: [ImportSkillSelection]
+        let skillSelectionMode: ImportSkillSelectionMode
+        let enabledTargets: [String]
+    }
+
+    private let groupOperationQueue = GroupOperationQueue()
+    private var pendingImportRequestsByGroupId: [String: PendingImportRequest] = [:]
+    private var isDrainingGroupOperationQueue = false
+    private(set) var updateOperationPhases: [String: GroupOperationQueue.Phase] = [:]
+    private(set) var importOperationPhases: [String: GroupOperationQueue.Phase] = [:]
+
     var loadState: LoadState { stateManager.loadState }
     var selectedSection: Section { stateManager.selectedSection }
     var sourceIds: [String] {
@@ -227,8 +240,16 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         set { importLogic.searchImportGroups = newValue }
     }
     var importingImportGroupId: String? {
-        get { importLogic.importingImportGroupId }
-        set { importLogic.importingImportGroupId = newValue }
+        get { groupOperationQueue.runningImportGroupId ?? importLogic.importingImportGroupId }
+        set {
+            // Test hook: seed a running-like import phase via ImportLogic for legacy tests.
+            importLogic.importingImportGroupId = newValue
+            if let newValue {
+                importOperationPhases[newValue] = .running
+            } else {
+                importOperationPhases = groupOperationQueue.snapshotImportPhases()
+            }
+        }
     }
     var healthStatus: HealthStatus { stateManager.healthStatus }
     var latestWarnings: [BridgeIssue] {
@@ -317,7 +338,11 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func showImportAnotherRunningToast() {
-        showToast(style: .neutral, text: localizedText("toast.import.another_running"))
+        showToast(style: .neutral, text: localizedText("toast.operation.already_queued"))
+    }
+
+    func showOperationAlreadyQueuedToast() {
+        showToast(style: .neutral, text: localizedText("toast.operation.already_queued"))
     }
 
     func showImportAlreadyExistsToast() {
@@ -421,7 +446,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     var isUpdatingCurrentGroup: Bool {
         guard let selectedSourceId else { return false }
-        return updatingSourceIds.contains(selectedSourceId)
+        return isUpdatingSource(selectedSourceId)
     }
 
     var visibleTargets: [TargetOption] {
@@ -1087,43 +1112,50 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             return
         }
 
-        stateManager.addUpdatingSourceIds(sourceIds)
-        defer { for id in sourceIds { stateManager.removeUpdatingSourceId(id) } }
-
-        do {
-            let payload = try await sourceManagement.updateSources(sourceIds)
-            await synchronizeState(refreshDoctor: true)
-            registerRecentlyUpdatedSources(from: payload)
-            showToast(style: .success, text: .plain(updateSummaryMessage(from: nil, fallbackCount: sourceIds.count)))
-        } catch {
-            showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
+        switch groupOperationQueue.enqueueBulkUpdate(sourceIds: sourceIds) {
+        case .alreadyPresent:
+            showOperationAlreadyQueuedToast()
+            return
+        case .enqueued:
+            refreshOperationPhases()
+            await drainGroupOperationQueue()
         }
     }
 
     func updateCurrentGroup() async {
-        await submitSelectedUpdate(selectedSourceId, showLoadingToast: true)
+        await updateSource(selectedSourceId ?? "")
     }
 
     func isUpdatingSource(_ sourceId: String) -> Bool {
-        updatingSourceIds.contains(sourceId)
+        updateOperationPhases[sourceId] != nil || updatingSourceIds.contains(sourceId)
+    }
+
+    func isQueuedUpdateSource(_ sourceId: String) -> Bool {
+        updateOperationPhases[sourceId] == .queued
     }
 
     func updateSource(_ sourceId: String) async {
-        await submitSelectedUpdate(sourceId, showLoadingToast: true)
-    }
-
-    private func submitSelectedUpdate(_ requestedSourceId: String?, showLoadingToast: Bool) async {
-        let sourceId = requestedSourceId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !sourceId.isEmpty else {
+        let normalized = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
             showToast(style: .error, text: localizedText("toast.update.no_group_selected"))
             return
         }
 
-        stateManager.addUpdatingSourceId(sourceId)
-        if showLoadingToast {
-            showToast(style: .loading, text: localizedText("toast.update.loading", sourceManagement.summary(for: sourceId)?.sourceDisplayName ?? sourceId))
+        switch groupOperationQueue.enqueueUpdate(sourceId: normalized) {
+        case .alreadyPresent:
+            showOperationAlreadyQueuedToast()
+            return
+        case .enqueued:
+            refreshOperationPhases()
+            await drainGroupOperationQueue()
         }
-        defer { stateManager.removeUpdatingSourceId(sourceId) }
+    }
+
+    private func performQueuedUpdate(sourceId: String) async {
+        guard sourceIds.contains(sourceId) || sourceManagement.summary(for: sourceId) != nil else {
+            showToast(style: .neutral, text: localizedText("toast.operation.skipped.missing_group"))
+            return
+        }
 
         do {
             let response = try await sourceManagement.updateSelectedSource(sourceId)
@@ -1135,12 +1167,37 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         }
     }
 
+    private func performQueuedBulkUpdate(sourceIds: [String]) async {
+        let existing = sourceIds.filter { self.sourceIds.contains($0) || sourceManagement.summary(for: $0) != nil }
+        guard !existing.isEmpty else {
+            showToast(style: .neutral, text: localizedText("toast.operation.skipped.missing_group"))
+            return
+        }
+
+        do {
+            let payload = try await sourceManagement.updateSources(existing)
+            await synchronizeState(refreshDoctor: true)
+            registerRecentlyUpdatedSources(from: payload)
+            showToast(style: .success, text: .plain(updateSummaryMessage(from: nil, fallbackCount: existing.count)))
+        } catch {
+            showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
+        }
+    }
+
     var importDisplayGroups: [ImportGroupItem] {
         importLogic.importDisplayGroups
     }
 
     func isImportingImportGroup(_ groupId: String) -> Bool {
-        importLogic.isImportingImportGroup(groupId)
+        importOperationPhases[groupId] != nil || importLogic.isImportingImportGroup(groupId)
+    }
+
+    func isQueuedImportGroup(_ groupId: String) -> Bool {
+        importOperationPhases[groupId] == .queued
+    }
+
+    func importOperationPhase(for groupId: String) -> GroupOperationQueue.Phase? {
+        importOperationPhases[groupId]
     }
 
     func loadImportPageIfNeeded() async {
@@ -1168,7 +1225,89 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func importImportGroup(groupId: String, locator: String, selectedSkills: [ImportSkillSelection], skillSelectionMode: ImportSkillSelectionMode = .selected, enabledTargets: [String]) async {
-        await importLogic.importImportGroup(groupId: groupId, locator: locator, selectedSkills: selectedSkills, skillSelectionMode: skillSelectionMode, enabledTargets: enabledTargets)
+        let normalizedGroupId = groupId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedGroupId.isEmpty else {
+            return
+        }
+
+        switch groupOperationQueue.enqueueImport(groupId: normalizedGroupId) {
+        case .alreadyPresent:
+            showOperationAlreadyQueuedToast()
+            return
+        case .enqueued:
+            pendingImportRequestsByGroupId[normalizedGroupId] = PendingImportRequest(
+                locator: locator,
+                selectedSkills: selectedSkills,
+                skillSelectionMode: skillSelectionMode,
+                enabledTargets: enabledTargets
+            )
+            refreshOperationPhases()
+            await drainGroupOperationQueue()
+        }
+    }
+
+    private func performQueuedImport(groupId: String) async {
+        if importLogic.isImportGroupInstalledLocally(groupId) {
+            showImportAlreadyExistsToast()
+            pendingImportRequestsByGroupId.removeValue(forKey: groupId)
+            return
+        }
+
+        guard let request = pendingImportRequestsByGroupId.removeValue(forKey: groupId) else {
+            showToast(style: .neutral, text: localizedText("toast.operation.skipped.missing_group"))
+            return
+        }
+
+        importLogic.importingImportGroupId = groupId
+        defer { importLogic.importingImportGroupId = nil }
+
+        await importLogic.importImportGroup(
+            groupId: groupId,
+            locator: request.locator,
+            selectedSkills: request.selectedSkills,
+            skillSelectionMode: request.skillSelectionMode,
+            enabledTargets: request.enabledTargets
+        )
+    }
+
+    private func drainGroupOperationQueue() async {
+        guard !isDrainingGroupOperationQueue else {
+            return
+        }
+        isDrainingGroupOperationQueue = true
+        defer {
+            isDrainingGroupOperationQueue = false
+            refreshOperationPhases()
+            // Cover the race where a new item is enqueued after the last startNext() miss
+            // but before the drain flag is cleared.
+            if groupOperationQueue.hasQueuedWork {
+                Task { await self.drainGroupOperationQueue() }
+            }
+        }
+
+        while let operation = groupOperationQueue.startNext() {
+            refreshOperationPhases()
+            switch operation {
+            case .update(let sourceId):
+                await performQueuedUpdate(sourceId: sourceId)
+            case .bulkUpdate(let sourceIds):
+                await performQueuedBulkUpdate(sourceIds: sourceIds)
+            case .importGroup(let groupId):
+                await performQueuedImport(groupId: groupId)
+            }
+            groupOperationQueue.completeRunning()
+            refreshOperationPhases()
+        }
+    }
+
+    private func refreshOperationPhases() {
+        updateOperationPhases = groupOperationQueue.snapshotUpdatePhases()
+        var importPhases = groupOperationQueue.snapshotImportPhases()
+        if let seeded = importLogic.importingImportGroupId, importPhases[seeded] == nil {
+            importPhases[seeded] = .running
+        }
+        importOperationPhases = importPhases
+        stateManager.setUpdatingSourceIds(Set(updateOperationPhases.keys))
     }
 
     func uninstallSelectedSource() async {

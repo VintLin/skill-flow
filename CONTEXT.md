@@ -38,6 +38,52 @@ _Avoid_: visibility, enabled targets
 A desktop-only label attached to a skill group/card for organization and filtering. Currently stored in UserDefaults, not Shared Skill State.
 _Avoid_: skill metadata tag, import recommendation tag
 
+### Group operation queue (desktop)
+
+**Group Operation Queue**:
+A desktop session FIFO that holds Group Operations so the user can keep requesting updates and imports without waiting for the current one to finish. Operations run one at a time in click order.
+_Avoid_: parallel download pool, batch update coalescer, multi-flight mutation
+
+**Group Operation**:
+One discrete user-requested unit of work on a skill group—today either **Update** (an already-installed group) or **Import** (a not-yet-installed group from the import page). Distinct from card chrome actions such as pin, rename, or tag edit.
+_Avoid_: mutation (bridge-layer term), job (too generic), download (import-only wording)
+
+**Queued / Running**:
+Lifecycle of a Group Operation while it is in the Group Operation Queue: **Queued** means accepted and waiting; **Running** means it is the single operation currently executing against the bridge.
+_Avoid_: busy (card-level overlay only), pending (ambiguous with install state)
+
+**Operation Identity**:
+The dedupe key for a Group Operation: the target skill group plus the operation kind (Update or Import). A second request with the same Operation Identity while Queued or Running does not create another queue slot.
+_Avoid_: request id, click count
+
+**Serial Mutation Channel**:
+The desktop rule that bridge-bound write operations (Group Operations and other mutations such as pin, apply, delete, rename) execute one at a time without concurrent-rejection errors: later requests wait their turn instead of failing immediately.
+_Avoid_: concurrent mutation reject, parallel bridge writes
+
+**Card Operation Feedback**:
+On a skill group card, **Running** uses the existing busy overlay with `Updating` or `Downloading`; **Queued** uses the same overlay structure with a distinct queued label so waiting work is visible without a separate queue panel.
+_Avoid_: global task drawer (out of first-version scope), identical copy for queued and running
+
+**Operation Notification**:
+Toast policy for the Group Operation Queue: no toast on first enqueue; a light toast when a duplicate Operation Identity is requested; per-operation success/failure toasts when each finishes; no end-of-queue summary toast in the first version.
+_Avoid_: toast-on-every-enqueue, summary-only notifications
+
+**Session-Scoped Queue**:
+The Group Operation Queue exists only for the current desktop app session. It is not written to Shared Skill State or Desktop Workspace Memory; quitting discards Queued work and does not auto-resume later.
+_Avoid_: durable download manager, restart resume
+
+**Bulk Update**:
+A single Group Operation that updates many installed groups in one bridge call (Home “Update All”). While it is Queued or Running, every covered group shows Card Operation Feedback; matching single-group Update entries already in the queue are absorbed so they are not run twice.
+_Avoid_: fan-out to N single updates, bypassing the queue
+
+**Desktop-Only Operation Queue**:
+The Group Operation Queue and Card Operation Feedback are macOS desktop product behavior. CLI and TUI keep their existing command-level flows unless later promoted.
+_Avoid_: cross-surface queue protocol in the first version
+
+**Stale Operation Skip**:
+When a Queued Group Operation becomes invalid before it runs (group already removed for Update, or already installed for Import), the queue drops that operation with a light skip toast and continues. This is not treated as a hard failure.
+_Avoid_: hard-fail on missing target, silent drop with no feedback
+
 ### What lives where (this change)
 
 **Suite-scoped keys (Desktop Workspace Memory only)**:

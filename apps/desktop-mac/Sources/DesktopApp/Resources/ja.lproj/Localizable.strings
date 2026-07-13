@@ -214,6 +214,7 @@
 "group_tag.toast.empty" = "先にタグを入力してください。";
 "group_tag.toast.not_found" = "タグは既に存在しません。";
 "group_card.loading.updating" = "更新中...";
+"group_card.loading.queued" = "キュー待ち...";
 "common.meta.from" = "%@ から";
 "common.loading.groups" = "グループを読み込み中";
 "common.status.applying" = "適用中...";
@@ -246,6 +247,8 @@
 "toast.import.preparing" = "この Group のインポートを準備中です。";
 "toast.import.in_progress" = "この Group はインポート中です。";
 "toast.import.another_running" = "別のインポートが実行中です。";
+"toast.operation.already_queued" = "すでにキューに入っています。";
+"toast.operation.skipped.missing_group" = "スキップ：この Group は利用できません。";
 "toast.import.success" = "ソースをインポートしました。";
 "toast.import.warning.selection_not_found" = "ダウンロードした内容から Group をインポートしました。選択した Skill の一部はこの Group にもう存在しません。問題コード: %@。";
 "toast.import.warning.selection_ambiguous" = "ダウンロードした内容から Group をインポートしました。選択した Skill の一部が複数の項目に一致しました。問題コード: %@。";

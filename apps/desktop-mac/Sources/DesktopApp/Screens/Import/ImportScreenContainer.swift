@@ -16,6 +16,7 @@ final class ImportScreenContainer {
         let submittedQuery: String
         let content: [ImportViewModel.Card]
         let importingGroupId: String?
+        let importPhases: [String: GroupOperationQueue.Phase]
     }
 
     private let state: DesktopAppState
@@ -64,7 +65,8 @@ final class ImportScreenContainer {
             searchPhase: mainViewModel.importSearchPhase,
             submittedQuery: mainViewModel.importSubmittedQuery,
             content: viewModel.content,
-            importingGroupId: mainViewModel.importingImportGroupId
+            importingGroupId: mainViewModel.importingImportGroupId,
+            importPhases: mainViewModel.importOperationPhases
         )
     }
 
@@ -135,11 +137,11 @@ final class ImportScreenContainer {
     }
 
     func handleImportAction(for card: ImportViewModel.Card) async {
-        if let importingGroupId = mainViewModel.importingImportGroupId {
-            if importingGroupId == card.id {
-                mainViewModel.showImportInProgressToast()
+        if mainViewModel.isImportingImportGroup(card.id) {
+            if mainViewModel.isQueuedImportGroup(card.id) {
+                mainViewModel.showOperationAlreadyQueuedToast()
             } else {
-                mainViewModel.showImportAnotherRunningToast()
+                mainViewModel.showImportInProgressToast()
             }
             return
         }

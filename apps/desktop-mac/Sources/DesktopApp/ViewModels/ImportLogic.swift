@@ -77,6 +77,10 @@ final class ImportLogic {
         importingImportGroupId == groupId
     }
 
+    func isImportGroupInstalledLocally(_ groupId: String) -> Bool {
+        importGroupItem(id: groupId)?.isInstalledLocally == true
+    }
+
     func loadImportPageIfNeeded() async {
         seedRecommendedImportGroupsIfNeeded()
         await loadLocalImportGroups(path: nil)
@@ -223,10 +227,6 @@ final class ImportLogic {
         skillSelectionMode: ImportSkillSelectionMode = .selected,
         enabledTargets: [String]
     ) async {
-        guard importingImportGroupId == nil else { return }
-        importingImportGroupId = groupId
-        defer { importingImportGroupId = nil }
-
         var finalSelectedSkills = selectedSkills
         var finalEnabledTargets = enabledTargets
 
@@ -344,14 +344,10 @@ final class ImportLogic {
                     targets: item.targets
                 )
             }
-            importingImportGroupId = nil
-            Task { [weak self] in
-                guard let self, let delegate = self.delegate else { return }
-                await delegate.synchronizeState(
-                    refreshDoctor: true,
-                    inspectSourceId: nil
-                )
-            }
+            await delegate?.synchronizeState(
+                refreshDoctor: true,
+                inspectSourceId: nil
+            )
             delegate?.applyWarningsFromApplyResponse(response.warnings)
             if let warningToastText = importWarningToastText(warnings: response.warnings) {
                 delegate?.showToast(style: .neutral, text: warningToastText)

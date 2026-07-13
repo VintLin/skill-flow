@@ -1,15 +1,17 @@
 import Foundation
 
-@MainActor
-final class MutationCoordinator {
-    private var runningMutation = false
+actor MutationCoordinator {
+    private var chain: Task<Void, Never>?
 
     func runMutation(operation: @Sendable @escaping () async throws -> BridgeResponse) async throws -> BridgeResponse {
-        guard !runningMutation else {
-            throw BridgeClientError.concurrentMutationRejected
+        let previous = chain
+        let task = Task {
+            _ = await previous?.value
+            return try await operation()
         }
-        runningMutation = true
-        defer { runningMutation = false }
-        return try await operation()
+        chain = Task {
+            _ = try? await task.value
+        }
+        return try await task.value
     }
 }

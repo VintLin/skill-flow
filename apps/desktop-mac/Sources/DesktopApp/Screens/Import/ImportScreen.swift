@@ -31,7 +31,7 @@ struct ImportScreen: View {
         let displayedCards = snapshot?.content ?? []
         let submittedQuery = snapshot?.submittedQuery ?? ""
         let searchPhase = snapshot?.searchPhase ?? .idle
-        let importingGroupId = snapshot?.importingGroupId
+        let importPhases = snapshot?.importPhases ?? [:]
 
         return Group {
             if Self.usesCenteredStandaloneState(searchPhase: searchPhase, cardCount: displayedCards.count) {
@@ -41,7 +41,7 @@ struct ImportScreen: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        contentBody(cards: displayedCards, importingGroupId: importingGroupId)
+                        contentBody(cards: displayedCards, importPhases: importPhases)
                     }
                     .task(id: Self.skillDetailsPrefetchTaskKey(cards: displayedCards, submittedQuery: submittedQuery)) {
                         await container.prefetchGroupSkillDetailsIfNeeded(
@@ -94,13 +94,13 @@ struct ImportScreen: View {
     @ViewBuilder
     private func contentBody(
         cards: [ImportViewModel.Card],
-        importingGroupId: String?
+        importPhases: [String: GroupOperationQueue.Phase]
     ) -> some View {
         HStack {
             Spacer(minLength: 0)
             LazyVGrid(columns: gridColumns, spacing: 12) {
                 ForEach(cards) { card in
-                    importCard(card, importingGroupId: importingGroupId)
+                    importCard(card, phase: importPhases[card.id])
                 }
             }
             .frame(maxWidth: gridFrameWidth, alignment: .center)
@@ -110,9 +110,10 @@ struct ImportScreen: View {
 
     private func importCard(
         _ card: ImportViewModel.Card,
-        importingGroupId: String?
+        phase: GroupOperationQueue.Phase?
     ) -> some View {
-        let isAnotherImportRunning = importingGroupId != nil && importingGroupId != card.id
+        let isQueued = phase == .queued
+        let isRunning = phase == .running
 
         return VStack(alignment: .leading, spacing: 8) {
             SharedGroupCard(
@@ -122,7 +123,8 @@ struct ImportScreen: View {
                 displayMode: displayMode(for: card),
                 clickPolicy: .importSearch,
                 skillsCollapsed: false,
-                isUpdating: importingGroupId == card.id,
+                isUpdating: isRunning,
+                isQueued: isQueued,
                 onOpen: nil,
                 onUpdate: {},
                 onTogglePinned: {},
@@ -142,15 +144,13 @@ struct ImportScreen: View {
                 actionButtonTitle: Self.importActionTitle(for: card, localized: { key in t(key) }),
                 actionButtonHelpText: Self.importActionHelpText(
                     for: card,
-                    activeImportDisabledReason: isAnotherImportRunning
-                        ? t("import.action.disabled.import_running")
-                        : nil,
+                    activeImportDisabledReason: nil,
                     localized: { key in t(key) }
                 ),
                 actionButtonIcon: ActionIcon.import,
                 isActionButtonDisabled: Self.importActionIsDisabled(
                     for: card,
-                    isAnotherImportRunning: isAnotherImportRunning
+                    isAnotherImportRunning: false
                 ),
                 onActionButton: {
                     Task {
@@ -278,10 +278,11 @@ struct ImportScreen: View {
         draft: ImportDraftState? = nil,
         isAnotherImportRunning: Bool = false
     ) -> Bool {
-        card.isInstalledLocally
+        // isAnotherImportRunning is ignored: Group Operation Queue allows multi-enqueue.
+        _ = isAnotherImportRunning
+        return card.isInstalledLocally
             || card.requiresLocalVariantSelection
             || card.preparationStatus == "preparing"
-            || isAnotherImportRunning
     }
 
     static func importActionTitle(

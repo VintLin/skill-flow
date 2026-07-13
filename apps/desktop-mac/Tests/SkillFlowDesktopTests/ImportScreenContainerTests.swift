@@ -1838,14 +1838,6 @@ final class ImportScreenContainerTests: XCTestCase {
                 importingGroupId: "current",
                 expectedMessage: "This group is already being imported."
             ),
-            Case(
-                card: card(
-                    id: "other",
-                    locator: "owner/other"
-                ),
-                importingGroupId: "current",
-                expectedMessage: "Another import is already running."
-            ),
         ]
 
         for testCase in cases {
@@ -1865,6 +1857,38 @@ final class ImportScreenContainerTests: XCTestCase {
             XCTAssertEqual(commands.importCalls, [])
             XCTAssertEqual(commands.commitCalls, [])
         }
+    }
+
+    func testHandleImportActionAllowsEnqueueWhileAnotherImportIsSeededRunning() async {
+        let state = DesktopAppState()
+        let commands = RecordingImportCommandFacade()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            commandFacade: commands
+        )
+        model.importingImportGroupId = "current"
+        let container = ImportScreenContainer(state: state, mainViewModel: model)
+        let other = ImportViewModel.Card(
+            id: "other",
+            title: "other",
+            locator: "owner/other",
+            canonicalRepo: "owner/other",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @test",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+
+        await container.handleImportAction(for: other)
+
+        // Seeded running import is only a phase marker for tests; another group still enqueues/runs.
+        XCTAssertFalse(commands.importCalls.isEmpty)
+        XCTAssertNotEqual(model.toast?.message, "Another import is already running.")
     }
 
     func testImportActionIsDisabledWhenCardIsAlreadyInstalledLocally() {
@@ -1977,7 +2001,7 @@ final class ImportScreenContainerTests: XCTestCase {
         )
 
         XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card))
-        XCTAssertTrue(ImportScreen.importActionIsDisabled(for: card, isAnotherImportRunning: true))
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card, isAnotherImportRunning: true))
     }
 
     func testImportActionHelpTextUsesActiveImportDisabledReasonOnlyWhenCardHasNoActionTitle() {
@@ -2065,7 +2089,7 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertNil(ImportScreen.importActionHelpText(for: freshCard, activeImportDisabledReason: nil, localized: localized))
     }
 
-    func testImportScreenPassesActiveImportReasonToSharedGroupCard() throws {
+    func testImportScreenUsesPerCardImportPhasesInsteadOfGlobalDisable() throws {
         let source = try String(
             contentsOfFile: sourceRoot()
                 .appendingPathComponent("Sources/DesktopApp/Screens/Import/ImportScreen.swift")
@@ -2073,8 +2097,9 @@ final class ImportScreenContainerTests: XCTestCase {
             encoding: .utf8
         )
 
-        XCTAssertTrue(source.contains("let isAnotherImportRunning = importingGroupId != nil && importingGroupId != card.id"))
-        XCTAssertTrue(source.contains("activeImportDisabledReason: isAnotherImportRunning"))
+        XCTAssertTrue(source.contains("importPhases: [String: GroupOperationQueue.Phase]"))
+        XCTAssertTrue(source.contains("isQueued: isQueued"))
+        XCTAssertTrue(source.contains("isAnotherImportRunning: false"))
         XCTAssertTrue(source.contains("actionButtonHelpText: Self.importActionHelpText("))
     }
 

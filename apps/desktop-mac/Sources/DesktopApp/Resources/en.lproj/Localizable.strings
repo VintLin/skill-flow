@@ -214,6 +214,7 @@
 "group_tag.toast.empty" = "Enter a tag first.";
 "group_tag.toast.not_found" = "Tag no longer exists.";
 "group_card.loading.updating" = "Updating...";
+"group_card.loading.queued" = "Queued...";
 "common.meta.from" = "from %@";
 "common.loading.groups" = "Loading groups";
 "common.status.applying" = "Applying...";
@@ -246,6 +247,8 @@
 "toast.import.preparing" = "Preparing this group for import.";
 "toast.import.in_progress" = "This group is already being imported.";
 "toast.import.another_running" = "Another import is already running.";
+"toast.operation.already_queued" = "Already in the queue.";
+"toast.operation.skipped.missing_group" = "Skipped: this group is no longer available.";
 "toast.import.success" = "Imported source.";
 "toast.import.warning.selection_not_found" = "Imported the group from the downloaded contents. A selected Skill no longer exists in this group. Issue code: %@.";
 "toast.import.warning.selection_ambiguous" = "Imported the group from the downloaded contents. A selected Skill matched more than one item. Issue code: %@.";

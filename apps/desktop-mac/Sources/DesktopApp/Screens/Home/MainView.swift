@@ -1226,7 +1226,8 @@ struct MainView: View {
                                 displayMode: homeCardDisplayMode,
                                 clickPolicy: .home,
                                 skillsCollapsed: false,
-                                isUpdating: viewModel.isUpdatingSource(card.id),
+                                isUpdating: viewModel.isUpdatingSource(card.id) && !viewModel.isQueuedUpdateSource(card.id),
+                                isQueued: viewModel.isQueuedUpdateSource(card.id),
                                 onOpen: {
                                     navigation.showDetail(card.id)
                                 },

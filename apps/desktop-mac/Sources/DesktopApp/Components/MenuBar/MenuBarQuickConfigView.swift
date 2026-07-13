@@ -44,7 +44,8 @@ struct MenuBarQuickConfigView: View {
                             displayMode: cardDisplayMode,
                             clickPolicy: .menu,
                             skillsCollapsed: hoveredGroupId != card.id,
-                            isUpdating: viewModel.isUpdatingSource(card.id),
+                            isUpdating: viewModel.isUpdatingSource(card.id) && !viewModel.isQueuedUpdateSource(card.id),
+                            isQueued: viewModel.isQueuedUpdateSource(card.id),
                             onOpen: nil,
                             onUpdate: {
                                 Task { await viewModel.updateSource(card.id) }

@@ -347,6 +347,7 @@ struct SharedGroupCard: View {
     let clickPolicy: DesktopCardClickPolicy
     let skillsCollapsed: Bool
     let isUpdating: Bool
+    let isQueued: Bool
     let onOpen: (() -> Void)?
     let onRename: (() -> Void)?
     let onUpdate: () -> Void
@@ -389,6 +390,7 @@ struct SharedGroupCard: View {
         clickPolicy: DesktopCardClickPolicy,
         skillsCollapsed: Bool,
         isUpdating: Bool,
+        isQueued: Bool = false,
         onOpen: (() -> Void)?,
         onRename: (() -> Void)? = nil,
         onUpdate: @escaping () -> Void,
@@ -421,6 +423,7 @@ struct SharedGroupCard: View {
         self.clickPolicy = clickPolicy
         self.skillsCollapsed = skillsCollapsed
         self.isUpdating = isUpdating
+        self.isQueued = isQueued
         self.onOpen = onOpen
         self.onRename = onRename
         self.onUpdate = onUpdate
@@ -456,7 +459,7 @@ struct SharedGroupCard: View {
     }
 
     private var isBusy: Bool {
-        isSaving || isUpdating
+        isSaving || isUpdating || isQueued
     }
 
     private var originalNameHelpText: String? {
@@ -895,6 +898,9 @@ struct SharedGroupCard: View {
     private var loadingMessage: String {
         if isSaving {
             return t("common.status.applying")
+        }
+        if isQueued && !isUpdating {
+            return t("group_card.loading.queued")
         }
         if displayMode.busyMessageStyle == .downloading {
             return t("group_card.loading.downloading")

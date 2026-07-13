@@ -214,6 +214,7 @@
 "group_tag.toast.empty" = "请先输入标签。";
 "group_tag.toast.not_found" = "标签已不存在。";
 "group_card.loading.updating" = "正在更新...";
+"group_card.loading.queued" = "排队中...";
 "common.meta.from" = "来自 %@";
 "common.loading.groups" = "正在加载分组";
 "common.status.applying" = "正在应用...";
@@ -246,6 +247,8 @@
 "toast.import.preparing" = "正在准备该组的导入。";
 "toast.import.in_progress" = "该组正在导入。";
 "toast.import.another_running" = "已有导入任务正在进行。";
+"toast.operation.already_queued" = "已在队列中。";
+"toast.operation.skipped.missing_group" = "已跳过：该组已不存在。";
 "toast.import.success" = "已导入来源。";
 "toast.import.warning.selection_not_found" = "已按下载后的内容导入该组，所选 Skill 中有项已不在该组内。问题码：%@。";
 "toast.import.warning.selection_ambiguous" = "已按下载后的内容导入该组，所选 Skill 中有项匹配到了多个条目。问题码：%@。";
