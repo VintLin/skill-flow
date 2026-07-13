@@ -216,6 +216,52 @@ describe.sequential("SourceAuthorityService", () => {
     ]);
   });
 
+  test("updateSources keeps successful groups when another group fails mid-batch", async () => {
+    const goodRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/good/SKILL.md": skillDoc("good", "Good."),
+    });
+    const badRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/bad/SKILL.md": skillDoc("bad", "Bad."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({
+      stateStore,
+      checkoutService,
+    });
+    expect((await service.addSource(goodRepo, { sourceIdOverride: "good-source" })).ok).toBe(true);
+    expect((await service.addSource(badRepo, { sourceIdOverride: "bad-source" })).ok).toBe(true);
+
+    await writeRepoFiles(goodRepo, {
+      "skills/good-two/SKILL.md": skillDoc("good-two", "Good two."),
+    });
+    // Break the bad origin so prepare fails while good origin still works.
+    await fs.rm(badRepo, { recursive: true, force: true });
+
+    const updated = await service.updateSources(["good-source", "bad-source"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated.map((item) => item.sourceId)).toEqual(["good-source"]);
+    expect(updated.warnings.some((warning) => warning.code === "SOURCE_UPDATE_FAILED")).toBe(true);
+
+    const state = await stateStore.readState();
+    expect(state.lockFile.sources["good-source"]?.leafIds).toEqual([
+      "good-source:skills/good",
+      "good-source:skills/good-two",
+    ]);
+    // Failed source retains previous lock metadata.
+    expect(state.lockFile.sources["bad-source"]?.leafIds).toEqual([
+      "bad-source:skills/bad",
+    ]);
+  });
+
   test("reconciles v2 leaf inventory from managed checkout", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/one/SKILL.md": skillDoc("one", "One."),

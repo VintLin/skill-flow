@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
+  Failure,
   LeafRecord,
   LockFile,
   Result,
@@ -286,6 +287,8 @@ export class SourceAuthorityService {
     };
     const updated: SourceUpdateResultItem[] = [];
     const warnings: Warning[] = [];
+    const failures: Failure[] = [];
+    let appliedCheckoutCount = 0;
 
     for (const sourceId of requestedIds) {
       const source = state.manifest.sources.find((item) => item.id === sourceId);
@@ -294,7 +297,7 @@ export class SourceAuthorityService {
         return fail({
           code: "SOURCE_NOT_FOUND",
           message: `Skills group id '${sourceId}' is not registered.`,
-        });
+        }, warnings);
       }
 
       if (source.kind === "collection") {
@@ -317,7 +320,14 @@ export class SourceAuthorityService {
         allowEmptyLeafs: true,
       });
       if (!prepared.ok) {
-        return fail(prepared.errors, [...warnings, ...prepared.warnings]);
+        failures.push(...prepared.errors);
+        warnings.push(...prepared.warnings);
+        warnings.push({
+          code: "SOURCE_UPDATE_FAILED",
+          message: prepared.errors[0]?.message
+            ?? `Unable to update skills group '${sourceId}'.`,
+        });
+        continue;
       }
       warnings.push(...prepared.warnings);
 
@@ -336,12 +346,19 @@ export class SourceAuthorityService {
         if (await pathExists(backupPath)) {
           await fs.rename(backupPath, lock.localPath).catch(() => {});
         }
-        return fail({
+        const failure: Failure = {
           code: "SOURCE_CHECKOUT_REPLACE_FAILED",
           message: `Unable to replace checkout for '${sourceId}': ${String(error)}`,
-        }, warnings);
+        };
+        failures.push(failure);
+        warnings.push({
+          code: "SOURCE_UPDATE_FAILED",
+          message: failure.message,
+        });
+        continue;
       }
 
+      appliedCheckoutCount += 1;
       const nextLeafs = await Promise.all(
         prepared.data.leafs.map((leaf) => this.toLeafRecord(leaf, sourceId, lock.localPath)),
       );
@@ -368,10 +385,17 @@ export class SourceAuthorityService {
       updated.push(diff);
     }
 
-    await this.options.stateStore.writeState({
-      ...state,
-      lockFile: nextLockFile,
-    });
+    // Persist any successful checkout replacements so disk and lock stay aligned.
+    if (appliedCheckoutCount > 0 || updated.length > 0) {
+      await this.options.stateStore.writeState({
+        ...state,
+        lockFile: nextLockFile,
+      });
+    }
+
+    if (appliedCheckoutCount === 0 && failures.length > 0) {
+      return fail(failures, warnings);
+    }
 
     return ok({ updated }, warnings);
   }

@@ -4,6 +4,88 @@ export const DEFAULT_PROVIDER_FETCH_TIMEOUT_MS = 60_000;
 /** Budget for skill-group archive downloads and other large body transfers. */
 export const DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS = 300_000;
 
+/** Transient network attempts for archive / clone fallbacks. */
+export const DEFAULT_NETWORK_RETRY_ATTEMPTS = 3;
+
+export function isTransientNetworkError(error: unknown): boolean {
+  if (error instanceof FetchTimeoutError) {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const code = (error as NodeJS.ErrnoException).code?.toLowerCase();
+  // Explicit non-retryable client failures (missing branch, auth, etc.).
+  if (code === "http_client_error") {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  if (
+    message.includes("timed out")
+    || message.includes("timeout")
+    || message.includes("econnreset")
+    || message.includes("econnrefused")
+    || message.includes("enotfound")
+    || message.includes("eai_again")
+    || message.includes("socket hang up")
+    || message.includes("network")
+    || message.includes("fetch failed")
+    || message.includes("temporarily unavailable")
+    || message.includes(" 429")
+    || message.includes("status 429")
+    || message.includes(" 502")
+    || message.includes("status 502")
+    || message.includes(" 503")
+    || message.includes("status 503")
+    || message.includes(" 504")
+    || message.includes("status 504")
+  ) {
+    return true;
+  }
+  return code === "econnreset"
+    || code === "econnrefused"
+    || code === "enotfound"
+    || code === "eai_again"
+    || code === "etimedout"
+    || code === "und_err_connect_timeout"
+    || code === "und_err_headers_timeout"
+    || code === "und_err_body_timeout";
+}
+
+export async function withNetworkRetries<T>(
+  operation: () => Promise<T>,
+  options: {
+    attempts?: number;
+    baseDelayMs?: number;
+    shouldRetry?: (error: unknown) => boolean;
+  } = {},
+): Promise<T> {
+  const attempts = Math.max(1, options.attempts ?? DEFAULT_NETWORK_RETRY_ATTEMPTS);
+  const baseDelayMs = options.baseDelayMs ?? 400;
+  const shouldRetry = options.shouldRetry ?? isTransientNetworkError;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !shouldRetry(error)) {
+        throw error;
+      }
+      await sleep(baseDelayMs * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export type FetchTimeoutOptions = {
   timeoutMs?: number;
   timeoutMessage?: string;

@@ -24,6 +24,7 @@ import { installClawHubSkill } from "@skill-flow/integration/utils/clawhub";
 import {
   DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
   fetchWithTimeout,
+  withNetworkRetries,
 } from "@skill-flow/integration/utils/fetch-timeout";
 import { git, isGitAvailable } from "@skill-flow/integration/utils/git";
 import { parseGitHubRepo, parseHostedGitRepo } from "@skill-flow/integration/utils/naming";
@@ -456,12 +457,18 @@ export class SourceCheckoutService {
         return;
       }
       try {
-        await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
+        await withNetworkRetries(async () => {
+          await removePath(checkoutPath).catch(() => {});
+          await git(["clone", "--depth", "1", source.gitLocator!, checkoutPath]);
+        }, { attempts: 2 });
       } catch {
         const fallbackLocator = this.resolveGitCloneFallbackLocator(source.gitLocator!);
         if (fallbackLocator) {
           try {
-            await git(["clone", "--depth", "1", fallbackLocator, checkoutPath]);
+            await withNetworkRetries(async () => {
+              await removePath(checkoutPath).catch(() => {});
+              await git(["clone", "--depth", "1", fallbackLocator, checkoutPath]);
+            }, { attempts: 2 });
             return;
           } catch {
             await removePath(checkoutPath);
@@ -957,20 +964,29 @@ export class SourceCheckoutService {
     branch: string,
     archivePath: string,
   ): Promise<void> {
-    const response = await fetchWithTimeout(
-      `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`,
-      {},
-      {
-        timeoutMs: DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
-        timeoutMessage: `GitHub archive download timed out for '${owner}/${repo}' branch '${branch}'.`,
-      },
-    );
-    if (!response.ok) {
-      throw new Error(`GitHub archive download failed with status ${response.status} for branch '${branch}'.`);
-    }
+    await withNetworkRetries(async () => {
+      const response = await fetchWithTimeout(
+        `https://github.com/${owner}/${repo}/archive/refs/heads/${branch}.zip`,
+        {},
+        {
+          timeoutMs: DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
+          timeoutMessage: `GitHub archive download timed out for '${owner}/${repo}' branch '${branch}'.`,
+        },
+      );
+      if (!response.ok) {
+        const error = new Error(
+          `GitHub archive download failed with status ${response.status} for branch '${branch}'.`,
+        );
+        if (response.status >= 500 || response.status === 429) {
+          throw error;
+        }
+        // Non-retryable client errors (missing branch, private repo, etc.).
+        throw Object.assign(error, { code: "HTTP_CLIENT_ERROR" });
+      }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    await fs.writeFile(archivePath, buffer);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await fs.writeFile(archivePath, buffer);
+    });
   }
 
   private async downloadGitLabArchive(
@@ -979,26 +995,34 @@ export class SourceCheckoutService {
     branch: string,
     archivePath: string,
   ): Promise<void> {
-    const response = await fetchWithTimeout(
-      `https://${host}/api/v4/projects/${encodeURIComponent(projectPath)}/repository/archive.zip?sha=${encodeURIComponent(branch)}`,
-      {
-        headers: {
-          ...(process.env.GITLAB_TOKEN
-            ? { "PRIVATE-TOKEN": process.env.GITLAB_TOKEN }
-            : {}),
+    await withNetworkRetries(async () => {
+      const response = await fetchWithTimeout(
+        `https://${host}/api/v4/projects/${encodeURIComponent(projectPath)}/repository/archive.zip?sha=${encodeURIComponent(branch)}`,
+        {
+          headers: {
+            ...(process.env.GITLAB_TOKEN
+              ? { "PRIVATE-TOKEN": process.env.GITLAB_TOKEN }
+              : {}),
+          },
         },
-      },
-      {
-        timeoutMs: DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
-        timeoutMessage: `GitLab archive download timed out for '${host}/${projectPath}' branch '${branch}'.`,
-      },
-    );
-    if (!response.ok) {
-      throw new Error(`GitLab archive download failed with status ${response.status} for branch '${branch}'.`);
-    }
+        {
+          timeoutMs: DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS,
+          timeoutMessage: `GitLab archive download timed out for '${host}/${projectPath}' branch '${branch}'.`,
+        },
+      );
+      if (!response.ok) {
+        const error = new Error(
+          `GitLab archive download failed with status ${response.status} for branch '${branch}'.`,
+        );
+        if (response.status >= 500 || response.status === 429) {
+          throw error;
+        }
+        throw Object.assign(error, { code: "HTTP_CLIENT_ERROR" });
+      }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-    await fs.writeFile(archivePath, buffer);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await fs.writeFile(archivePath, buffer);
+    });
   }
 
   private async extractZipArchive(archivePath: string, extractPath: string): Promise<void> {

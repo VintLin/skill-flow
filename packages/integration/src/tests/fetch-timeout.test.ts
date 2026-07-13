@@ -4,6 +4,8 @@ import {
   DEFAULT_PROVIDER_FETCH_TIMEOUT_MS,
   FetchTimeoutError,
   fetchWithTimeout,
+  isTransientNetworkError,
+  withNetworkRetries,
 } from "../utils/fetch-timeout.js";
 
 describe("fetchWithTimeout", () => {
@@ -144,5 +146,27 @@ describe("fetchWithTimeout", () => {
     expect(DEFAULT_PROVIDER_FETCH_TIMEOUT_MS).toBe(60_000);
     expect(DEFAULT_ARCHIVE_FETCH_TIMEOUT_MS).toBe(300_000);
     expect(error.message).toContain("timed out");
+  });
+
+  test("withNetworkRetries retries transient failures then succeeds", async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const pending = withNetworkRetries(async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        throw new FetchTimeoutError("https://example.com/retry", 10);
+      }
+      return "ok";
+    }, { baseDelayMs: 10 });
+
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(pending).resolves.toBe("ok");
+    expect(attempts).toBe(3);
+  });
+
+  test("isTransientNetworkError treats timeouts as retryable and client errors as terminal", () => {
+    expect(isTransientNetworkError(new FetchTimeoutError("https://example.com", 10))).toBe(true);
+    expect(isTransientNetworkError(Object.assign(new Error("status 404"), { code: "HTTP_CLIENT_ERROR" }))).toBe(false);
+    expect(isTransientNetworkError(new Error("GitHub archive download failed with status 503"))).toBe(true);
   });
 });
