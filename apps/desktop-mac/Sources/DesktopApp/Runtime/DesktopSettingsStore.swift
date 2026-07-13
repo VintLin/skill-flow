@@ -2,11 +2,29 @@ import Foundation
 
 struct DesktopSettingsStore {
     let userDefaults: UserDefaults
+    let workspaceMemory: DesktopWorkspaceMemoryStore
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init(userDefaults: UserDefaults = .standard) {
+    /// - Parameters:
+    ///   - userDefaults: Bundle-scoped chrome settings (`UserDefaults.standard` in production).
+    ///   - workspaceMemory: Shared suite for agent display preferences. When `nil`, production uses
+    ///     the shared suite; injected test suites reuse the same `userDefaults` for isolation.
+    init(
+        userDefaults: UserDefaults = .standard,
+        workspaceMemory: DesktopWorkspaceMemoryStore? = nil
+    ) {
         self.userDefaults = userDefaults
+        if let workspaceMemory {
+            self.workspaceMemory = workspaceMemory
+        } else if userDefaults === UserDefaults.standard {
+            self.workspaceMemory = .makeShared()
+        } else {
+            self.workspaceMemory = DesktopWorkspaceMemoryStore(
+                userDefaults: userDefaults,
+                legacyDomainNames: []
+            )
+        }
     }
 
     func load() -> SettingsState {
@@ -39,8 +57,9 @@ struct DesktopSettingsStore {
         userDefaults.set(encodedProjectScope, forKey: SettingsViewModel.selectedProjectScopeKey)
         let encodedRecentProjectScopes = try? encoder.encode(state.recentProjectScopes)
         userDefaults.set(encodedRecentProjectScopes, forKey: SettingsViewModel.recentProjectScopesKey)
-        let encodedPreferences = try? encoder.encode(AgentDisplayCatalog.normalize(state.agentDisplayPreferences, customAgents: state.customAgents))
-        userDefaults.set(encodedPreferences, forKey: SettingsViewModel.agentDisplayPreferencesKey)
+        workspaceMemory.saveAgentDisplayPreferences(
+            AgentDisplayCatalog.normalize(state.agentDisplayPreferences, customAgents: state.customAgents)
+        )
         let encodedCustomAgents = try? encoder.encode(state.customAgents)
         userDefaults.set(encodedCustomAgents, forKey: SettingsViewModel.customAgentsKey)
     }
@@ -62,10 +81,7 @@ struct DesktopSettingsStore {
     }
 
     private func loadAgentDisplayPreferences() -> [AgentDisplayPreference] {
-        guard let data = userDefaults.data(forKey: SettingsViewModel.agentDisplayPreferencesKey) else {
-            return []
-        }
-        return (try? decoder.decode([AgentDisplayPreference].self, from: data)) ?? []
+        workspaceMemory.loadAgentDisplayPreferences()
     }
 
     private func loadCustomAgents() -> [CustomAgentDefinition] {

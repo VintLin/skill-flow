@@ -1,42 +1,39 @@
 import Foundation
 
 struct DesktopGroupTagStore {
-    static let tagCollectionKey = "desktop.groupTags.v2.tagsByGroupKey"
+    static let tagCollectionKey = DesktopWorkspaceMemoryStore.tagCollectionKey
 
-    let userDefaults: UserDefaults
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
+    let workspaceMemory: DesktopWorkspaceMemoryStore
 
-    init(userDefaults: UserDefaults = .standard) {
-        self.userDefaults = userDefaults
+    /// - Parameters:
+    ///   - userDefaults: When using the production default (`.standard`), tags go to the shared suite.
+    ///     Injected suites are used as-is for test isolation (no multi-domain migration).
+    ///   - workspaceMemory: Explicit shared-suite store; overrides `userDefaults` when provided.
+    init(
+        userDefaults: UserDefaults = .standard,
+        workspaceMemory: DesktopWorkspaceMemoryStore? = nil
+    ) {
+        if let workspaceMemory {
+            self.workspaceMemory = workspaceMemory
+        } else if userDefaults === UserDefaults.standard {
+            self.workspaceMemory = .makeShared()
+        } else {
+            self.workspaceMemory = DesktopWorkspaceMemoryStore(
+                userDefaults: userDefaults,
+                legacyDomainNames: []
+            )
+        }
+    }
+
+    var userDefaults: UserDefaults {
+        workspaceMemory.userDefaults
     }
 
     func loadTagCollection() -> GroupTagCollection {
-        guard let data = userDefaults.data(forKey: Self.tagCollectionKey) else {
-            return migrateLegacyStoredTagsIfNeeded() ?? GroupTagCollection()
-        }
-
-        guard let decoded = try? decoder.decode(GroupTagCollection.self, from: data),
-              decoded.schemaVersion == GroupTagCollection.currentSchemaVersion else {
-            return migrateLegacyStoredTagsIfNeeded() ?? GroupTagCollection()
-        }
-
-        return decoded
+        workspaceMemory.loadTagCollection()
     }
 
     func saveTagCollection(_ tagCollection: GroupTagCollection) {
-        let encoded = try? encoder.encode(tagCollection)
-        userDefaults.set(encoded, forKey: Self.tagCollectionKey)
-    }
-
-    private func migrateLegacyStoredTagsIfNeeded() -> GroupTagCollection? {
-        let collection = GroupTagMigration.migrateLegacyStoredTags(
-            legacyData: userDefaults.data(forKey: GroupTagMigration.legacyCustomTagsKey),
-            decoder: decoder
-        )
-        if let collection {
-            saveTagCollection(collection)
-        }
-        return collection
+        workspaceMemory.saveTagCollection(tagCollection)
     }
 }
