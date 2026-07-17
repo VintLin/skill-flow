@@ -1806,82 +1806,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         return nil
     }
 
-    private func parseSourceSnapshot(_ payload: [String: Any]?) -> SourceSnapshotData? {
-        guard let payload else { return nil }
-
-        let ownerPayload = payload["owner"] as? [String: Any] ?? [:]
-        let owner = SnapshotOwner(
-            slug: ownerPayload["slug"] as? String ?? "",
-            sourceURL: ownerPayload["sourceUrl"] as? String ?? ownerPayload["sourceURL"] as? String ?? "",
-            githubURL: ownerPayload["githubUrl"] as? String ?? ownerPayload["githubURL"] as? String,
-            sourceCount: ownerPayload["sourceCount"] as? Int,
-            skillCount: ownerPayload["skillCount"] as? Int,
-            totalInstalls: ownerPayload["totalInstalls"] as? Int
-        )
-
-        let trustPayload = payload["trust"] as? [String: Any] ?? [:]
-        let trust = SnapshotTrust(
-            official: trustPayload["official"] as? Bool ?? false,
-            trending: trustPayload["trending"] as? Bool ?? false,
-            hot: trustPayload["hot"] as? Bool ?? false,
-            audited: trustPayload["audited"] as? Bool ?? false
-        )
-
-        let skillsPayload = payload["skills"] as? [[String: Any]] ?? []
-        let skills = skillsPayload.compactMap { skillPayload -> SnapshotSkill? in
-            guard let skillId = skillPayload["skillId"] as? String else { return nil }
-
-            let installsPayload = skillPayload["installs"] as? [String: Any] ?? [:]
-            let installedOnPayload = skillPayload["installedOn"] as? [[String: Any]] ?? []
-            let auditsPayload = skillPayload["audits"] as? [String: Any] ?? [:]
-
-            let audits = SnapshotAudits(
-                gen: auditsPayload["gen"] as? String,
-                socket: auditsPayload["socket"] as? String,
-                snyk: auditsPayload["snyk"] as? String,
-                riskLevel: auditsPayload["riskLevel"] as? String
-            )
-
-            return SnapshotSkill(
-                skillId: skillId,
-                title: skillPayload["title"] as? String ?? "",
-                installs: installsPayload["total"] as? Int,
-                weeklyInstalls: installsPayload["weekly"] as? Int,
-                firstSeen: skillPayload["firstSeen"] as? String,
-                summary: skillPayload["summary"] as? String ?? "",
-                installedOn: installedOnPayload.compactMap { item in
-                    guard let agent = item["agent"] as? String else { return nil }
-                    return SnapshotInstalledOn(agent: agent, installs: item["installs"] as? Int)
-                },
-                audits: audits
-            )
-        }
-
-        return SourceSnapshotData(
-            canonicalRepo: payload["canonicalRepo"] as? String ?? "",
-            title: payload["title"] as? String ?? "",
-            provider: payload["provider"] as? String ?? "",
-            sourceURL: payload["sourceUrl"] as? String ?? payload["sourceURL"] as? String ?? "",
-            repoURL: payload["repoUrl"] as? String ?? payload["repoURL"] as? String ?? "",
-            repoLabel: payload["repoLabel"] as? String ?? "",
-            totalInstalls: payload["totalInstalls"] as? Int,
-            skillCount: payload["skillCount"] as? Int,
-            repoStars: payload["repoStars"] as? Int,
-            forkCount: payload["forkCount"] as? Int,
-            description: payload["description"] as? String ?? "",
-            topics: payload["topics"] as? [String] ?? [],
-            language: payload["language"] as? String,
-            defaultBranch: payload["defaultBranch"] as? String,
-            pushedAt: payload["pushedAt"] as? String,
-            owner: owner,
-            skills: skills,
-            trust: trust
-        )
-    }
-
     func groupCardMetadata(sourceId: String, summary: SourceManagement.WorkflowSummary, row: SourceRow) -> (byline: String?, stats: GroupCardStats) {
         let payload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
-        let sourceSnapshot = parseSourceSnapshot(payload["sourceSnapshot"] as? [String: Any])
+        let sourceSnapshot = BridgePayloadDecoder.sourceSnapshot(from: payload["sourceSnapshot"] as? [String: Any])
         let sourceMetadata = (payload["sourceMetadata"] as? [String: Any])?["data"] as? [String: Any]
         let cachedGroupPath = (payload["groupPath"] as? String)?.nonEmpty
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]

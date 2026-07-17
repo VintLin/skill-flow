@@ -40,6 +40,10 @@
 
 完成条件：desktop payload 规则有单一 test surface，字段变化不再需要跨多个 UI module 同步。
 
+**已完成**：`BridgePayloadDecoder` 集中 source snapshot 的动态 payload 解码；`ImportLogic`、`DetailLogic` 与 `MainViewModel` 仅消费 `SourceSnapshotData`。该 decoder 同时兼容 bridge 现行 camelCase URL key 与历史大写 URL key。
+
+**验证**：新增 `BridgePayloadDecoderTests` 覆盖完整 payload、历史 key、缺失 payload 与畸形 skill；`swift test --package-path apps/desktop-mac` 全量通过。
+
 ### 3. 缩小 desktop 查询与命令 interface
 
 **范围**：`Runtime/DesktopQuerying.swift`、`Runtime/DesktopCommanding.swift` 及其消费方。

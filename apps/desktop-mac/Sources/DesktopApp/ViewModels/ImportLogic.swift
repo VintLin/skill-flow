@@ -602,117 +602,6 @@ final class ImportLogic {
         }
     }
 
-    private func parseSourceSnapshot(_ payload: [String: Any]?) -> SourceSnapshotData? {
-        guard let payload,
-              let canonicalRepo = (payload["canonicalRepo"] as? String)?.nonEmpty,
-              let title = (payload["title"] as? String)?.nonEmpty,
-              let provider = (payload["provider"] as? String)?.nonEmpty,
-              let sourceURL = (payload["sourceUrl"] as? String)?.nonEmpty,
-              let repoURL = (payload["repoUrl"] as? String)?.nonEmpty,
-              let repoLabel = (payload["repoLabel"] as? String)?.nonEmpty,
-              let owner = parseSourceOwner(payload["owner"] as? [String: Any]) else {
-            return nil
-        }
-
-        return SourceSnapshotData(
-            canonicalRepo: canonicalRepo,
-            title: title,
-            provider: provider,
-            sourceURL: sourceURL,
-            repoURL: repoURL,
-            repoLabel: repoLabel,
-            totalInstalls: payload["totalInstalls"] as? Int,
-            skillCount: payload["skillCount"] as? Int,
-            repoStars: payload["repoStars"] as? Int,
-            forkCount: payload["forkCount"] as? Int,
-            description: (payload["description"] as? String) ?? "",
-            topics: uniqueSorted(payload["topics"] as? [String] ?? []),
-            language: (payload["language"] as? String)?.nonEmpty,
-            defaultBranch: (payload["defaultBranch"] as? String)?.nonEmpty,
-            pushedAt: (payload["pushedAt"] as? String)?.nonEmpty,
-            owner: owner,
-            skills: parseSnapshotSkills(payload["skills"] as? [[String: Any]]),
-            trust: parseSnapshotTrust(payload["trust"] as? [String: Any])
-        )
-    }
-
-    private func parseSourceOwner(_ payload: [String: Any]?) -> SnapshotOwner? {
-        guard let payload,
-              let slug = (payload["slug"] as? String)?.nonEmpty,
-              let sourceURL = (payload["sourceUrl"] as? String)?.nonEmpty else {
-            return nil
-        }
-
-        return SnapshotOwner(
-            slug: slug,
-            sourceURL: sourceURL,
-            githubURL: (payload["githubUrl"] as? String)?.nonEmpty,
-            sourceCount: payload["sourceCount"] as? Int,
-            skillCount: payload["skillCount"] as? Int,
-            totalInstalls: payload["totalInstalls"] as? Int
-        )
-    }
-
-    private func parseSnapshotSkills(_ payload: [[String: Any]]?) -> [SnapshotSkill] {
-        (payload ?? []).compactMap { skill in
-            guard let skillId = (skill["skillId"] as? String)?.nonEmpty,
-                  let title = (skill["title"] as? String)?.nonEmpty else {
-                return nil
-            }
-
-            return SnapshotSkill(
-                skillId: skillId,
-                title: title,
-                installs: skill["installs"] as? Int,
-                weeklyInstalls: skill["weeklyInstalls"] as? Int,
-                firstSeen: (skill["firstSeen"] as? String)?.nonEmpty,
-                summary: (skill["summary"] as? String) ?? "",
-                installedOn: parseSnapshotInstalledOn(skill["installedOn"] as? [[String: Any]]),
-                audits: parseSnapshotAudits(skill["audits"] as? [String: Any])
-            )
-        }
-    }
-
-    private func parseSnapshotInstalledOn(_ payload: [[String: Any]]?) -> [SnapshotInstalledOn] {
-        (payload ?? []).compactMap { item in
-            guard let agent = (item["agent"] as? String)?.nonEmpty else {
-                return nil
-            }
-            return SnapshotInstalledOn(agent: agent, installs: item["installs"] as? Int)
-        }
-    }
-
-    private func parseSnapshotAudits(_ payload: [String: Any]?) -> SnapshotAudits? {
-        guard let payload else {
-            return nil
-        }
-
-        let audits = SnapshotAudits(
-            gen: (payload["gen"] as? String)?.nonEmpty,
-            socket: (payload["socket"] as? String)?.nonEmpty,
-            snyk: (payload["snyk"] as? String)?.nonEmpty,
-            riskLevel: (payload["riskLevel"] as? String)?.nonEmpty
-        )
-
-        return audits.gen != nil || audits.socket != nil || audits.snyk != nil || audits.riskLevel != nil
-            ? audits
-            : nil
-    }
-
-    private func parseSnapshotTrust(_ payload: [String: Any]?) -> SnapshotTrust? {
-        guard let payload else {
-            return nil
-        }
-
-        let trust = SnapshotTrust(
-            official: payload["official"] as? Bool ?? false,
-            trending: payload["trending"] as? Bool ?? false,
-            hot: payload["hot"] as? Bool ?? false,
-            audited: payload["audited"] as? Bool ?? false
-        )
-        return trust.labels.isEmpty ? nil : trust
-    }
-
     private func parseImportGroupsPayload(payload: [String: Any]) -> [ImportGroupItem] {
         let groups = payload["groups"] as? [[String: Any]] ?? []
         return groups.compactMap { group in
@@ -727,7 +616,7 @@ final class ImportLogic {
             let aliases = uniqueSorted(group["aliases"] as? [String] ?? [])
             let matchedSkillNames = uniqueSorted(group["matchedSkillNames"] as? [String] ?? [])
             let matchedSkills = parseMatchedSkills(group["matchedSkills"] as? [[String: Any]])
-            let snapshot = parseSourceSnapshot(group["snapshot"] as? [String: Any])
+            let snapshot = BridgePayloadDecoder.sourceSnapshot(from: group["snapshot"] as? [String: Any])
             let provider = group["provider"] as? String ?? "skills"
             let localImport = parseLocalImport(group["localImport"] as? [String: Any])
             let summary = (group["summary"] as? String)?.nonEmpty
@@ -1031,7 +920,7 @@ final class ImportLogic {
         let selectedSkillUiIds = Set((payload["selectedSkills"] as? [[String: Any]] ?? [])
             .compactMap { ($0["uiId"] as? String)?.nonEmpty })
         let enabledTargets = Set(payload["enabledTargets"] as? [String] ?? [])
-        let snapshot = parseSourceSnapshot(payload["snapshot"] as? [String: Any])
+        let snapshot = BridgePayloadDecoder.sourceSnapshot(from: payload["snapshot"] as? [String: Any])
 
         let skills = skillsPayload.compactMap { skill -> ImportGroupSkill? in
             parseImportPreviewSkill(skill, selectedSkillUiIds: selectedSkillUiIds)
