@@ -24,7 +24,11 @@
 
 方向：保持外部 interface 不变，按既有领域概念收拢内部 implementation；优先识别 deployment reconciliation 中重复的 plan、apply、state write、cleanup、audit 流程。已有 ChannelAdapter 变体构成真实 seam。
 
-完成条件：调用方行为不变；相关 implementation 的测试面集中，不让 CLI/TUI/bridge 承担内部 orchestration。
+**已确认**：本轮仅深化 deployment reconciliation；不拆分 Import、Collection、Migration，也不改变 `SkillFlowApp` 的外部 interface。
+
+**已完成**：新增 `DeploymentReconciler`，集中 plan、apply、bootstrap-import projection ledger 重建和 detached / orphan symlink cleanup。`SkillFlowApp` 保留 state / preferences 写入、mutation lock 与 audit，调用方行为不变。
+
+**验证**：`deployment-reconciler.test.ts` 覆盖多 source 调和、bootstrap-import cleanup、detached cleanup 与 orphan cleanup；连同 runtime lifecycle、source lifecycle、collections 等 7 个 query 测试文件共 104 项通过。
 
 ### 2. 收拢 desktop bridge 的动态 payload 解码
 
@@ -56,13 +60,13 @@
 
 完成条件：Detail 的行为可用小输入直接测试，修改 Detail 不再要求理解完整 MainViewModel。
 
-### 5. 将 bridge command catalog 作为契约中心（探索项）
+### 5. 将 bridge command catalog 作为契约中心（本轮不实施）
 
 **范围**：`packages/shared-types/src/protocol.ts`、`apps/cli/src/bridge-command.ts`、Swift bridge protocol / facade。
 
 共享 protocol 目前集中 command name，但 payload 规则与 response envelope 仍在多端重复。跨 TypeScript / Swift 的共享形状须先验证，故暂不承诺 implementation。
 
-方向：评估能否以 compatibility fixture 集中 command identity、payload rule 与 response envelope，且不增加不必要的 adapter。
+方向：作为后续评估项，确认跨语言 payload / response 规则出现真实重复维护成本后再决定；本轮四项优化不包含此项。
 
 完成条件：仅在跨语言契约确有重复维护成本时实施；外部 bridge 行为变化必须补兼容检查和文档。
 
@@ -70,5 +74,4 @@
 
 - `packages/query`：deployment planner / applier、runtime lifecycle、project-scoped drafts。
 - desktop：bridge protocol decode、Detail 输入/结果、对应 SwiftUI state 测试。
-- bridge：command catalog 与 request / response compatibility。
 - 每个阶段运行受影响的最小测试；完成候选后再运行对应 package build / test。
