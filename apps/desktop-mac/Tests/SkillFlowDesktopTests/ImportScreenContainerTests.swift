@@ -2822,7 +2822,7 @@ private struct RecordedCommitCall: Equatable {
     let enabledTargets: [String]
 }
 
-private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked Sendable {
+private final class RecordingImportCommandFacade: DesktopCommandTransporting, @unchecked Sendable {
     private(set) var importCalls: [RecordedImportCall] = []
     private(set) var commitCalls: [RecordedCommitCall] = []
     var importWarnings: [BridgeIssue] = []
@@ -2830,18 +2830,6 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
     var commitPayloads: [[String: Any]] = [["status": "ready", "sourceId": "local-skills"]]
     var importError: Error?
     var commitError: Error?
-
-    func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
 
     func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
         try await importSource(
@@ -2905,44 +2893,9 @@ private final class RecordingImportCommandFacade: DesktopCommanding, @unchecked 
         )
     }
 
-    func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func doctor() async throws -> BridgeResponse {
-        BridgeResponse(
-            protocolVersion: "1",
-            requestId: nil,
-            command: .doctor,
-            ok: true,
-            data: AnyCodable(["issues": []]),
-            warnings: [],
-            errors: []
-        )
-    }
 }
 
-private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sendable {
+private final class RecordingPreviewQueryFacade: DesktopQueryTransporting, @unchecked Sendable {
     private let recorder = PreviewConcurrencyRecorder()
     private let blockPrepareUntilReleased: Bool
     private let prepareStatus: String
@@ -3011,10 +2964,6 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
         await recorder.releasePrepare()
     }
 
-    func bootstrap() async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
     func list() async throws -> BridgeResponse {
         listCallCount += 1
         return BridgeResponse(
@@ -3039,18 +2988,6 @@ private final class RecordingPreviewQueryFacade: DesktopQuerying, @unchecked Sen
             warnings: [],
             errors: []
         )
-    }
-
-    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func searchImportGroups(query: String?) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func scanLocalImportGroups(path: String?) async throws -> BridgeResponse {
-        fatalError("unused")
     }
 
     func prepareImportSource(locator: String) async throws -> BridgeResponse {
@@ -3146,7 +3083,7 @@ private actor PreviewConcurrencyRecorder {
 }
 
 @MainActor
-private final class RecordingLocalImportQueryFacade: DesktopQuerying {
+private final class RecordingLocalImportQueryFacade: DesktopQueryTransporting {
     private(set) var scanPaths: [String?] = []
     var localGroups: [[String: Any]] = []
     var localScanPayloads: [[String: Any]] = []
@@ -3162,22 +3099,6 @@ private final class RecordingLocalImportQueryFacade: DesktopQuerying {
             warnings: [],
             errors: []
         )
-    }
-
-    func list() async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func searchImportGroups(query: String?) async throws -> BridgeResponse {
-        fatalError("unused")
     }
 
     func scanLocalImportGroups(path: String?) async throws -> BridgeResponse {
@@ -3202,23 +3123,12 @@ private final class RecordingLocalImportQueryFacade: DesktopQuerying {
         )
     }
 
-    func previewImportSource(locator: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
 }
 
 @MainActor
-private final class RecordingSearchImportQueryFacade: DesktopQuerying {
+private final class RecordingSearchImportQueryFacade: DesktopQueryTransporting {
     var searchError: Error?
     private(set) var searchQueries: [String?] = []
-
-    func bootstrap() async throws -> BridgeResponse { fatalError("unused") }
-    func list() async throws -> BridgeResponse { fatalError("unused") }
-    func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse { fatalError("unused") }
-    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
-    func scanLocalImportGroups(path: String?) async throws -> BridgeResponse { fatalError("unused") }
-    func prepareImportSource(locator: String) async throws -> BridgeResponse { fatalError("unused") }
-    func previewImportSource(locator: String) async throws -> BridgeResponse { fatalError("unused") }
 
     func searchImportGroups(query: String?) async throws -> BridgeResponse {
         if let searchError {

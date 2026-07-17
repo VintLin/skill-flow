@@ -19,9 +19,9 @@ struct RenameSourceMutationResult: Equatable {
 
 @MainActor
 final class DesktopMutationCoordinator {
-    private let commandFacade: any DesktopCommanding
+    private let commandFacade: any DesktopSourceMutationCommanding
 
-    init(commandFacade: any DesktopCommanding) {
+    init(commandFacade: any DesktopSourceMutationCommanding) {
         self.commandFacade = commandFacade
     }
 

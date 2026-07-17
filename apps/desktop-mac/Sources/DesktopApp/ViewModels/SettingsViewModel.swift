@@ -51,7 +51,7 @@ final class SettingsViewModel {
 
     private let state: DesktopAppState
     private let store: DesktopSettingsStore
-    private let commandFacade: (any DesktopCommanding)?
+    private let commandFacade: (any DesktopSettingsCommanding)?
     private let cacheMaintenance: DesktopCacheMaintenance
     private let updateChecker: any DesktopUpdateChecking
     private let currentVersionProvider: () -> String
@@ -132,7 +132,7 @@ final class SettingsViewModel {
     init(
         state: DesktopAppState,
         store: DesktopSettingsStore = DesktopSettingsStore(),
-        commandFacade: (any DesktopCommanding)? = nil,
+        commandFacade: (any DesktopSettingsCommanding)? = nil,
         cacheMaintenance: DesktopCacheMaintenance = DesktopCacheMaintenance(),
         updateChecker: any DesktopUpdateChecking = DesktopGitHubUpdateChecker(),
         currentVersionProvider: @escaping () -> String = {

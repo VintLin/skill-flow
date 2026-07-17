@@ -269,8 +269,8 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     init(
         bridgeClient: BridgeClient,
-        queryFacade: (any DesktopQuerying)? = nil,
-        commandFacade: (any DesktopCommanding)? = nil,
+        queryFacade: (any DesktopQueryTransporting)? = nil,
+        commandFacade: (any DesktopCommandTransporting)? = nil,
         mutationCoordinator: DesktopMutationCoordinator? = nil,
         settingsStore: DesktopSettingsStore = DesktopSettingsStore(),
         recommendationsProvider: @escaping () -> [ImportRecommendationEntry] = { ImportRecommendationLoader.load() }

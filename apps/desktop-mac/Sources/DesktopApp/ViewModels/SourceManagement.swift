@@ -68,8 +68,8 @@ final class SourceManagement {
     }
 
     private let bridgeClient: BridgeClient
-    private let queryFacade: any DesktopQuerying
-    private let commandFacade: any DesktopCommanding
+    private let queryFacade: any DesktopSourceQuerying
+    private let commandFacade: any DesktopSourceApplying
     private let mutationCoordinator: DesktopMutationCoordinator
     private weak var delegate: SourceManagementDelegate?
 
@@ -101,8 +101,8 @@ final class SourceManagement {
 
     init(
         bridgeClient: BridgeClient,
-        queryFacade: any DesktopQuerying,
-        commandFacade: any DesktopCommanding,
+        queryFacade: any DesktopSourceQuerying,
+        commandFacade: any DesktopSourceApplying,
         mutationCoordinator: DesktopMutationCoordinator,
         delegate: SourceManagementDelegate? = nil
     ) {

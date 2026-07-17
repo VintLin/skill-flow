@@ -27,8 +27,8 @@ final class ImportLogic {
     var localImportScanPhase: ImportLoadPhase = .idle
     var searchImportGroups: [ImportGroupItem] = []
     private let bridgeClient: BridgeClient
-    private let queryFacade: any DesktopQuerying
-    private let commandFacade: any DesktopCommanding
+    private let queryFacade: any DesktopImportQuerying
+    private let commandFacade: any DesktopImportCommanding
     private let recommendationsProvider: () -> [ImportRecommendationEntry]
 
     private var allSummaries: [SourceManagement.WorkflowSummary] = []
@@ -37,8 +37,8 @@ final class ImportLogic {
 
     init(
         bridgeClient: BridgeClient,
-        queryFacade: any DesktopQuerying,
-        commandFacade: any DesktopCommanding,
+        queryFacade: any DesktopImportQuerying,
+        commandFacade: any DesktopImportCommanding,
         recommendationsProvider: @escaping () -> [ImportRecommendationEntry],
         delegate: ImportLogicDelegate? = nil
     ) {

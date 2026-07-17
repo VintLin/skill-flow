@@ -535,7 +535,7 @@ final class MainViewModelCollectionTests: XCTestCase {
 }
 
 @MainActor
-private final class CollectionQueryStub: DesktopQuerying {
+private final class CollectionQueryStub: DesktopQueryTransporting {
     private(set) var listCallCount = 0
     var useCollectionLocatorDisplayName = false
     var listError: Error?
@@ -669,7 +669,7 @@ private final class CollectionQueryStub: DesktopQuerying {
 }
 
 @MainActor
-private final class RecordingCollectionCommandFacade: DesktopCommanding {
+private final class RecordingCollectionCommandFacade: DesktopCommandTransporting {
     struct CreateCall: Equatable {
         let displayName: String
         let skills: [CollectionSkillRef]
@@ -683,10 +683,6 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
     var updateError: Error?
     var renameError: Error?
     var applyError: Error?
-
-    func saveSettings(customTargets: [[String: String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
 
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
         if let togglePinnedError {
@@ -702,24 +698,12 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
         return .success(command: .update, payload: ["updated": sourceIds ?? []])
     }
 
-    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
     func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
         if let createError {
             throw createError
         }
         createCalls.append(CreateCall(displayName: displayName, skills: skills, enabledTargets: enabledTargets))
         return createResponse
-    }
-
-    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse {
-        fatalError("unused")
     }
 
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
@@ -737,10 +721,6 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
         )
     }
 
-    func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
     func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
         if let applyError {
             throw applyError
@@ -748,9 +728,6 @@ private final class RecordingCollectionCommandFacade: DesktopCommanding {
         return .success(command: .apply, payload: [:])
     }
 
-    func doctor() async throws -> BridgeResponse {
-        fatalError("unused")
-    }
 }
 
 private extension BridgeResponse {

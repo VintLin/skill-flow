@@ -1,10 +1,10 @@
 import Foundation
 
-protocol DesktopBridgeTransporting: DesktopQuerying, DesktopCommanding {}
+protocol DesktopBridgeTransporting: DesktopQueryTransporting, DesktopCommandTransporting {}
 
 extension BridgeClient: DesktopBridgeTransporting {}
 
-struct DesktopBridgeQueryFacade<Transport: DesktopBridgeTransporting>: DesktopQuerying {
+struct DesktopBridgeQueryFacade<Transport: DesktopBridgeTransporting>: DesktopQueryTransporting {
     let bridgeClient: Transport
 
     func bootstrap() async throws -> BridgeResponse { try await bridgeClient.bootstrap() }

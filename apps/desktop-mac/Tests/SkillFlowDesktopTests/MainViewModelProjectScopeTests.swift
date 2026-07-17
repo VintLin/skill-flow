@@ -391,7 +391,7 @@ final class MainViewModelProjectScopeTests: XCTestCase {
 }
 
 @MainActor
-private final class ProjectScopeQueryStub: DesktopQuerying {
+private final class ProjectScopeQueryStub: DesktopQueryTransporting {
     var bootstrapProjectDrafts: [String: [String: [String: Any]]] = [
         "repo-a": [
             "alpha": [
@@ -581,45 +581,13 @@ private extension ProjectScopeSelection {
 }
 
 @MainActor
-private final class ProjectScopeCommandStub: DesktopCommanding {
+private final class ProjectScopeCommandStub: DesktopCommandTransporting {
     private(set) var recordedScopes: [ProjectScopeSelection] = []
     var applyProjectScopePayload: [String: Any] = [:]
     var applyError: BridgeClientError?
 
     func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse {
         BridgeResponse.success(command: .saveSettings, payload: [:])
-    }
-
-    func togglePinnedSource(sourceId: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
     }
 
     func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
@@ -677,9 +645,6 @@ private final class ProjectScopeCommandStub: DesktopCommanding {
         ].merging(applyProjectScopePayload) { _, updated in updated })
     }
 
-    func doctor() async throws -> BridgeResponse {
-        fatalError("unused")
-    }
 }
 
 private extension BridgeResponse {

@@ -54,6 +54,10 @@
 
 完成条件：测试 adapter 只实现真实使用的行为，且不引入只拥有一个 adapter 的假设 seam。
 
+**已完成**：将宽 `DesktopQuerying` / `DesktopCommanding` 拆分为 Source、Import、Detail enrichment、Settings、Source mutation、Apply 与 Collection 等窄 interface。`DesktopQueryTransporting` 与 `DesktopCommandTransporting` 仅留在 composition root；feature module 只依赖自身所需的 interface。
+
+**验证**：Bridge facade 继续覆盖真实 transport 转发；测试 adapter 已移除全部 `fatalError("unused")` 占位实现。`swift test --package-path apps/desktop-mac` 全量通过。
+
 ### 4. 解除 `DetailLogic` 对完整 `MainViewModel` 的反向依赖
 
 **范围**：`ViewModels/DetailLogic.swift`、`ViewModels/MainViewModel.swift`。

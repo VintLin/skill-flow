@@ -137,22 +137,10 @@ final class DesktopAppContainerTests: XCTestCase {
     }
 }
 
-private struct StubCommandFacade: DesktopCommanding {
-    func saveSettings(customTargets: [[String : String]], agentDisplayOrder: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func togglePinnedSource(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
-    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse { fatalError("unused") }
-    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse { fatalError("unused") }
-    func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse { fatalError("unused") }
-    func uninstall(sourceIds: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse { fatalError("unused") }
-    func doctor() async throws -> BridgeResponse { fatalError("unused") }
-}
+private struct StubCommandFacade: DesktopCommandTransporting {}
 
 @MainActor
-private final class StubQueryFacade: DesktopQuerying {
+private final class StubQueryFacade: DesktopQueryTransporting {
     private(set) var bootstrapCallCount = 0
     private let bootstrapResponse: BridgeResponse
 
@@ -165,9 +153,4 @@ private final class StubQueryFacade: DesktopQuerying {
         return bootstrapResponse
     }
 
-    func list() async throws -> BridgeResponse { fatalError("unused") }
-    func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse { fatalError("unused") }
-    func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { fatalError("unused") }
-    func searchImportGroups(query: String?) async throws -> BridgeResponse { fatalError("unused") }
-    func previewImportSource(locator: String) async throws -> BridgeResponse { fatalError("unused") }
 }

@@ -4,13 +4,13 @@ import Observation
 @MainActor
 @Observable
 final class CollectionLogic {
-    private let commandFacade: any DesktopCommanding
+    private let commandFacade: any DesktopCollectionCommanding
     var onRefreshList: (() async -> Void)?
     var onShowToast: ((ToastStyle, String) -> Void)?
     var onShowBridgeCommandFailure: ((BridgeResponse) -> Void)?
     var groupCardsProvider: () -> [GroupCardModel] = { [] }
 
-    init(commandFacade: any DesktopCommanding) {
+    init(commandFacade: any DesktopCollectionCommanding) {
         self.commandFacade = commandFacade
     }
 

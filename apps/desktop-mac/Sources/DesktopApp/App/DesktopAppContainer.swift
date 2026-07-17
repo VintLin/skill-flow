@@ -22,8 +22,8 @@ final class DesktopAppContainer {
     init(
         runtime: DesktopRuntime? = nil,
         bridgeClient: BridgeClient = BridgeClient(),
-        queryFacade: (any DesktopQuerying)? = nil,
-        commandFacade: (any DesktopCommanding)? = nil
+        queryFacade: (any DesktopQueryTransporting)? = nil,
+        commandFacade: (any DesktopCommandTransporting)? = nil
     ) {
         let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
         let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)

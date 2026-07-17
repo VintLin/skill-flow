@@ -48,7 +48,7 @@ final class DesktopMutationCoordinatorTests: XCTestCase {
     }
 }
 
-private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked Sendable {
+private final class RecordingDesktopCommandFacade: DesktopSourceMutationCommanding, @unchecked Sendable {
     private(set) var recordedMutations: [String] = []
     var renameResponsePayload: [String: Any]?
 
@@ -78,33 +78,6 @@ private final class RecordingDesktopCommandFacade: DesktopCommanding, @unchecked
         return .success(command: .update)
     }
 
-    func importSource(locator: String, selectedSkills: [ImportSkillSelection], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func createCollection(displayName: String, skills: [CollectionSkillRef], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func mergeGroups(displayName: String, sourceIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func restoreCollectionSources(collectionId: String) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func uninstall(sourceIds: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func apply(sourceId: String, scope: ProjectScopeSelection, selectedLeafIds: [String], enabledTargets: [String]) async throws -> BridgeResponse {
-        fatalError("unused")
-    }
-
-    func doctor() async throws -> BridgeResponse {
-        fatalError("unused")
-    }
 }
 
 private extension BridgeResponse {
