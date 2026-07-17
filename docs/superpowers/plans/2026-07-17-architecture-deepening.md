@@ -68,6 +68,10 @@
 
 完成条件：Detail 的行为可用小输入直接测试，修改 Detail 不再要求理解完整 MainViewModel。
 
+**已完成**：`DetailLogic` 以 `DetailInput` 接收详情投影所需的不可变数据，并直接输出 `DetailViewData`；`MainViewModel` 只负责组装输入、路由编排和 warnings sink。`DetailLogic` 不再持有 `mainProvider`，也不再反向依赖 `MainViewModel`。
+
+**验证**：新增 `DetailLogicInputTests`，直接以 typed input 断言详情标题、技能投影名、目标、统计、选择状态和相对更新时间；`swift test --package-path apps/desktop-mac` 全量通过。
+
 ### 5. 将 bridge command catalog 作为契约中心（本轮不实施）
 
 **范围**：`packages/shared-types/src/protocol.ts`、`apps/cli/src/bridge-command.ts`、Swift bridge protocol / facade。

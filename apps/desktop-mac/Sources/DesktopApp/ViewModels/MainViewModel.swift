@@ -138,23 +138,19 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         let enabled: Bool?
     }
 
-    struct GitHubRepoContext: Sendable {
-        let owner: String
-        let repo: String
-        let revision: String
-    }
-
     private let stateManager: AppStateManager
     private let taskCoordinator: TaskCoordinator
     private let sourceManagement: SourceManagement
     private let importLogic: ImportLogic
     private let settingsStore: DesktopSettingsStore
-    @ObservationIgnored private lazy var detailLogic: DetailLogic = DetailLogic(mainProvider: { [weak self] in
-        self ?? MainViewModel.deallocatedFallback
-    })
+    @ObservationIgnored private lazy var detailLogic = DetailLogic(
+        detailEnrichmentQuery: detailEnrichmentQuery,
+        warningsSink: { [weak self] warnings in self?.stateManager.setLatestWarnings(warnings) }
+    )
     private let collectionLogic: CollectionLogic
     private let detailDocumentStore = DetailDocumentStore()
     let bridgeClient: BridgeClient
+    private let detailEnrichmentQuery: any DesktopDetailEnrichmentQuerying
 
     @ObservationIgnored weak var routeState: DesktopAppState?
 
@@ -167,7 +163,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     @MainActor static var currentDateProvider: () -> Date = Date.init
-    private static let deallocatedFallback = MainViewModel(bridgeClient: BridgeClient())
 
     private static var targetOrder: [String] { AgentDisplayCatalog.defaultTargetOrder }
     private static var minimumSaveLoadingDuration: Duration { .milliseconds(200) }
@@ -282,6 +277,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         self.stateManager = AppStateManager()
         self.taskCoordinator = TaskCoordinator()
         self.bridgeClient = bridgeClient
+        self.detailEnrichmentQuery = resolvedQueryFacade
         self.settingsStore = settingsStore
         self.sourceManagement = SourceManagement(
             bridgeClient: bridgeClient,
@@ -732,6 +728,50 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         sourceManagement.draft(for: sourceId, scope: currentProjectScope())
     }
 
+    private func detailInput(for sourceId: String) -> DetailLogic.DetailInput? {
+        guard let summary = summary(for: sourceId), let draft = draft(for: sourceId) else {
+            return nil
+        }
+
+        let payload = scopedSourceKey(sourceId: sourceId).flatMap { inspectedPayloadBySourceId[$0] } ?? [:]
+        let sourcePayload = payload["source"] as? [String: Any] ?? [:]
+        let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
+        let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
+        let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
+        let locator = (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator
+        let updatedAt = (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt
+
+        return DetailLogic.DetailInput(
+            summary: summary,
+            draft: draft,
+            inspectedPayload: payload,
+            groupStats: groupCardMetadata(
+                sourceId: sourceId,
+                summary: summary,
+                row: SourceRow(
+                    id: summary.sourceId,
+                    displayName: summary.sourceDisplayName,
+                    locator: summary.sourceLocator,
+                    kind: summary.sourceKind,
+                    status: summary.health,
+                    lastUpdate: summary.updatedAt,
+                    warningCount: summary.warningCount,
+                    errorCount: summary.errorCount
+                )
+            ).stats,
+            visibleTargetIds: visibleTargetIds(),
+            customAgents: routeState?.settings.customAgents ?? [],
+            projectPath: currentProjectPath(),
+            saveState: saveState(for: sourceId),
+            skillSelection: skillSelectionState(sourceId: sourceId),
+            targetSelection: targetSelectionState(sourceId: sourceId),
+            projectedNamesByLeafId: projectionNameMap(for: sourceId),
+            fallbackGroupPath: preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads),
+            gitHubRepoContext: gitHubRepoContext(locator: locator, lockPayload: lockPayload),
+            updatedRelative: relativeUpdateLabel(updatedAt)
+        )
+    }
+
     func sourceLocator(for sourceId: String) -> String? {
         sourceManagement.summary(for: sourceId)?.sourceLocator
     }
@@ -780,7 +820,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 originalDisplayName: result.originalDisplayName
             )
             scheduleDetailEnrichmentFetch(sourceId: result.sourceId, force: true)
-            detailLogic.scheduleDetailEnrichmentFetch(sourceId: result.sourceId)
+            if let input = detailInput(for: result.sourceId) {
+                detailLogic.scheduleDetailEnrichmentFetch(input: input)
+            }
             let toastKey = result.isResetToOriginal ? "toast.rename.reset_success" : "toast.rename.success"
             showToast(style: .success, text: localizedText(toastKey, result.displayName))
         } catch {
@@ -1099,8 +1141,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                     inspectedPayloadBySourceId[key] = payload
                 }
                 detailLogic.invalidatePreparedDetailContent(for: sourceId)
-                detailLogic.scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
-                detailLogic.scheduleDetailEnrichmentFetch(sourceId: sourceId)
+                if let input = detailInput(for: sourceId) {
+                    detailLogic.scheduleDetailContentWarmupIfNeeded(input: input)
+                    detailLogic.scheduleDetailEnrichmentFetch(input: input)
+                }
             }
             stateManager.setLatestWarnings(response.warnings)
         } catch {
@@ -1326,7 +1370,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func detailViewData(for sourceId: String) -> DetailViewData? {
-        detailLogic.detailViewData(for: sourceId)
+        detailInput(for: sourceId).map { detailLogic.detailViewData(for: $0) }
     }
 
     func detailSnapshot(for sourceId: String) -> DetailViewModel.Snapshot? {
@@ -1335,7 +1379,8 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func groupDocument(for sourceId: String, documentId: String) async -> DocumentTab? {
-        await detailLogic.groupDocument(for: sourceId, documentId: documentId)
+        guard let input = detailInput(for: sourceId) else { return nil }
+        return await detailLogic.groupDocument(for: sourceId, documentId: documentId, input: input)
     }
 
     func hasInspectPayload(for sourceId: String) -> Bool {
@@ -1429,7 +1474,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         return localized("detail.updated.relative", relativeValue)
     }
 
-    func gitHubRepoContext(locator: String, lockPayload: [String: Any]) -> GitHubRepoContext? {
+    func gitHubRepoContext(locator: String, lockPayload: [String: Any]) -> DetailLogic.GitHubRepoContext? {
         let candidates = [
             lockPayload["githubRepo"] as? String,
             lockPayload["canonicalRepo"] as? String,
@@ -1443,7 +1488,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         let owner = String(parts[0])
         let repo = String(parts[1])
         let revision = (lockPayload["commitSha"] as? String)?.nonEmpty ?? "HEAD"
-        return GitHubRepoContext(owner: owner, repo: repo, revision: revision)
+        return DetailLogic.GitHubRepoContext(owner: owner, repo: repo, revision: revision)
     }
 
     func currentProjectPath() -> String? {

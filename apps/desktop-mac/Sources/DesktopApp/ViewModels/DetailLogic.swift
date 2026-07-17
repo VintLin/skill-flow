@@ -6,6 +6,29 @@ import Yams
 @MainActor
 @Observable
 final class DetailLogic {
+    struct GitHubRepoContext: Sendable {
+        let owner: String
+        let repo: String
+        let revision: String
+    }
+
+    struct DetailInput {
+        let summary: SourceManagement.WorkflowSummary
+        let draft: SourceManagement.DraftState
+        let inspectedPayload: [String: Any]
+        let groupStats: GroupCardStats
+        let visibleTargetIds: [String]
+        let customAgents: [CustomAgentDefinition]
+        let projectPath: String?
+        let saveState: SaveState
+        let skillSelection: SelectionState
+        let targetSelection: SelectionState
+        let projectedNamesByLeafId: [String: String]
+        let fallbackGroupPath: String?
+        let gitHubRepoContext: GitHubRepoContext?
+        let updatedRelative: String
+    }
+
     struct PreparedDetailSkillContent: Sendable {
         let title: String
         let version: String?
@@ -39,7 +62,7 @@ final class DetailLogic {
         let sourceLocator: String
         let sourceSnapshot: SourceSnapshotData?
         let groupPath: String?
-        let gitHubRepoContext: MainViewModel.GitHubRepoContext?
+        let gitHubRepoContext: GitHubRepoContext?
         let projectedNamesByLeafId: [String: String]
         let leaves: [PreparedDetailLeafInput]
     }
@@ -74,10 +97,9 @@ final class DetailLogic {
         let version: String?
     }
 
-    private let mainProvider: () -> MainViewModel
+    private let detailEnrichmentQuery: any DesktopDetailEnrichmentQuerying
+    private let warningsSink: ([BridgeIssue]) -> Void
     private let detailDocumentStore: DetailDocumentStore
-
-    private var main: MainViewModel { mainProvider() }
 
     @ObservationIgnored
     private var preparedDetailContentBySourceId: [String: PreparedDetailContent] = [:]
@@ -106,17 +128,21 @@ final class DetailLogic {
     @ObservationIgnored
     private var detailEnrichmentTokenSeed: UInt64 = 0
 
-    init(mainProvider: @escaping () -> MainViewModel) {
-        self.mainProvider = mainProvider
+    init(
+        detailEnrichmentQuery: any DesktopDetailEnrichmentQuerying,
+        warningsSink: @escaping ([BridgeIssue]) -> Void
+    ) {
+        self.detailEnrichmentQuery = detailEnrichmentQuery
+        self.warningsSink = warningsSink
         self.detailDocumentStore = DetailDocumentStore()
     }
 
-    func detailViewData(for sourceId: String) -> DetailViewData? {
-        guard let summary = main.summary(for: sourceId), let draft = main.draft(for: sourceId) else {
-            return nil
-        }
+    func detailViewData(for input: DetailInput) -> DetailViewData {
+        let summary = input.summary
+        let draft = input.draft
+        let sourceId = summary.sourceId
 
-        let payload = mergedDetailPayload(for: sourceId)
+        let payload = mergedDetailPayload(basePayload: input.inspectedPayload, sourceId: sourceId)
         let sourcePayload = payload["source"] as? [String: Any] ?? [:]
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
@@ -127,33 +153,24 @@ final class DetailLogic {
         let preparedDetailContent = preparedDetailContentBySourceId[sourceId]
 
         let selectedLeafIds = Set(draft.selectedLeafIds)
-        let enabledTargetLabels = draft.enabledTargets.map { AgentDisplayCatalog.label(for: $0, customAgents: main.routeState?.settings.customAgents ?? []) }
+        let enabledTargetLabels = draft.enabledTargets.map { AgentDisplayCatalog.label(for: $0, customAgents: input.customAgents) }
         let enabledTargets = Set(draft.enabledTargets)
         let inspectedLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
         let preferredLeafIds = inspectedLeafIds.isEmpty ? summary.leafs.map(\.id) : inspectedLeafIds
-        let groupPath = preparedDetailContent?.groupPath ?? main.preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
+        let groupPath = preparedDetailContent?.groupPath ?? input.fallbackGroupPath
         let author = sourceSnapshot.map { "@\($0.owner.slug)" }
-            ?? main.authorName(
+            ?? Self.authorName(
                 locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
                 kind: summary.sourceKind
             )
         let originLabel = sourceSnapshot.flatMap { Self.displayOriginLabel(from: $0.sourceURL) }
             ?? Self.displayOriginLabel(from: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator)
-        let groupStats = main.groupCardMetadata(sourceId: sourceId, summary: summary, row: SourceRow(
-            id: summary.sourceId,
-            displayName: summary.sourceDisplayName,
-            locator: summary.sourceLocator,
-            kind: summary.sourceKind,
-            status: summary.health,
-            lastUpdate: summary.updatedAt,
-            warningCount: summary.warningCount,
-            errorCount: summary.errorCount
-        )).stats
+        let groupStats = input.groupStats
         let starCount = groupStats.starCount
-        let projectedNamesByLeafId = main.projectionNameMap(for: sourceId)
+        let projectedNamesByLeafId = input.projectedNamesByLeafId
 
         if preparedDetailContent == nil, !payload.isEmpty {
-            scheduleDetailContentWarmupIfNeeded(sourceId: sourceId)
+            scheduleDetailContentWarmupIfNeeded(input: input)
         }
 
         let skills: [DetailSkill] = Self.sortedDetailSkills(preferredLeafIds.compactMap { leafId -> DetailSkill? in
@@ -215,14 +232,18 @@ final class DetailLogic {
         .compactMap { $0?.nonEmpty }
 
         let deploymentFacts = deploymentsPayload.prefix(4).compactMap { deployment -> String? in
-            deploymentFact(from: deployment)
+            deploymentFact(
+                from: deployment,
+                projectPath: input.projectPath,
+                customAgents: input.customAgents
+            )
         }
 
-        let targets = main.visibleTargetIds().map { targetId in
+        let targets = input.visibleTargetIds.map { targetId in
             DetailTarget(
                 id: targetId,
-                label: AgentDisplayCatalog.label(for: targetId, customAgents: main.routeState?.settings.customAgents ?? []),
-                shortLabel: AgentDisplayCatalog.shortLabel(for: targetId, customAgents: main.routeState?.settings.customAgents ?? []),
+                label: AgentDisplayCatalog.label(for: targetId, customAgents: input.customAgents),
+                shortLabel: AgentDisplayCatalog.shortLabel(for: targetId, customAgents: input.customAgents),
                 isEnabled: enabledTargets.contains(targetId)
             )
         }
@@ -245,7 +266,7 @@ final class DetailLogic {
         let subtitle = (sourcePayload["kind"] as? String)?.nonEmpty ?? summary.sourceKind
         let locator = (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator
         let updatedAt = (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt
-        let updatedRelative = main.relativeUpdateLabel(updatedAt)
+        let updatedRelative = input.updatedRelative
         let revision = detailRevision(
             sourceId: summary.sourceId,
             title: title,
@@ -267,9 +288,9 @@ final class DetailLogic {
             enabledSkillCount: draft.selectedLeafIds.count,
             totalSkillCount: skills.count,
             enabledTargetCount: draft.enabledTargets.count,
-            saveState: main.saveState(for: sourceId),
-            skillSelection: main.skillSelectionState(sourceId: sourceId),
-            targetSelection: main.targetSelectionState(sourceId: sourceId),
+            saveState: input.saveState,
+            skillSelection: input.skillSelection,
+            targetSelection: input.targetSelection,
             enabledTargetLabels: enabledTargetLabels,
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
@@ -301,9 +322,9 @@ final class DetailLogic {
             enabledSkillCount: draft.selectedLeafIds.count,
             totalSkillCount: skills.count,
             enabledTargetCount: draft.enabledTargets.count,
-            saveState: main.saveState(for: sourceId),
-            skillSelection: main.skillSelectionState(sourceId: sourceId),
-            targetSelection: main.targetSelectionState(sourceId: sourceId),
+            saveState: input.saveState,
+            skillSelection: input.skillSelection,
+            targetSelection: input.targetSelection,
             enabledTargetLabels: enabledTargetLabels,
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
@@ -314,17 +335,10 @@ final class DetailLogic {
         )
     }
 
-    func detailSnapshot(for sourceId: String) -> DetailViewModel.Snapshot? {
-        guard let detail = detailViewData(for: sourceId) else {
-            return nil
-        }
-        return DetailViewModel.Snapshot(detail: detail)
-    }
-
-    func groupDocument(for sourceId: String, documentId: String) async -> DocumentTab? {
+    func groupDocument(for sourceId: String, documentId: String, input: DetailInput) async -> DocumentTab? {
         let prepared = preparedDetailContentBySourceId[sourceId]
         if prepared == nil {
-            _ = detailSnapshot(for: sourceId)
+            _ = detailViewData(for: input)
         }
 
         guard let preparedContent = preparedDetailContentBySourceId[sourceId]
@@ -387,7 +401,8 @@ final class DetailLogic {
         }
     }
 
-    func scheduleDetailEnrichmentFetch(sourceId: String, force: Bool = false) {
+    func scheduleDetailEnrichmentFetch(input: DetailInput, force: Bool = false) {
+        let sourceId = input.summary.sourceId
         if !force, detailEnrichmentTasksBySourceId[sourceId] != nil {
             return
         }
@@ -403,33 +418,19 @@ final class DetailLogic {
         let task = Task { @MainActor [weak self, sourceId] in
             guard let self else { return }
             do {
-                let response = try await self.main.bridgeClient.inspectEnrichment(sourceId: sourceId)
+                let response = try await self.detailEnrichmentQuery.inspectEnrichment(sourceId: sourceId)
                 guard !Task.isCancelled else { return }
 
                 if let payload = response.data?.value as? [String: Any],
                    self.detailEnrichmentTokensBySourceId[sourceId] == token
                 {
-                    let normalizedPayload: [String: Any]
-                    if let summary = self.main.summary(for: sourceId) {
-                        let displayName = self.main.renamedSourceDisplayNameOverridesBySourceId[sourceId]
-                            ?? summary.sourceDisplayName
-                        let originalDisplayName = self.main.renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId]
-                            ?? summary.sourceOriginalDisplayName
-                        normalizedPayload = self.main.enrichmentPayloadWithDisplayName(
-                            payload,
-                            displayName: displayName,
-                            originalDisplayName: originalDisplayName
-                        )
-                    } else {
-                        normalizedPayload = payload
-                    }
                     self.detailEnrichmentPayloadBySourceId[sourceId] = self.mergedDetailEnrichmentPayload(
                         existing: self.detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
-                        incoming: normalizedPayload
+                        incoming: payload
                     )
                 }
                 if self.detailEnrichmentTokensBySourceId[sourceId] == token {
-                    self.main.latestWarnings = response.warnings
+                    self.warningsSink(response.warnings)
                     self.detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
                     self.detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
                 }
@@ -444,18 +445,15 @@ final class DetailLogic {
         detailEnrichmentTasksBySourceId[sourceId] = task
     }
 
-    func scheduleDetailContentWarmupIfNeeded(sourceId: String) {
+    func scheduleDetailContentWarmupIfNeeded(input: DetailInput) {
+        let sourceId = input.summary.sourceId
         guard detailWarmupTasksBySourceId[sourceId] == nil else {
             return
         }
-        guard let summary = main.summary(for: sourceId),
-              let key = main.scopedSourceKey(sourceId: sourceId),
-              let payload = main.inspectedPayloadBySourceId[key],
-              !payload.isEmpty
-        else {
+        guard !input.inspectedPayload.isEmpty else {
             return
         }
-        let input = buildPreparedDetailWarmupInput(sourceId: sourceId, summary: summary, payload: payload)
+        let warmupInput = buildPreparedDetailWarmupInput(input: input)
         let token: UInt64
         if let currentToken = detailWarmupTokensBySourceId[sourceId] {
             token = currentToken
@@ -466,14 +464,14 @@ final class DetailLogic {
         }
 
         var task: Task<Void, Never>?
-        task = Task { [weak self, sourceId, input] in
+        task = Task { [weak self, sourceId, warmupInput] in
             guard let self else { return }
             let delay = await MainActor.run { self.detailWarmupDelay }
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
 
             let prepared = await Task.detached {
-                Self.prepareDetailContent(input: input)
+                Self.prepareDetailContent(input: warmupInput)
             }.value
 
             await MainActor.run {
@@ -500,9 +498,8 @@ final class DetailLogic {
         detailWarmupTokensBySourceId[sourceId] = detailWarmupTokenSeed
     }
 
-    private func mergedDetailPayload(for sourceId: String) -> [String: Any] {
-        let key = main.scopedSourceKey(sourceId: sourceId)
-        var payload = key.flatMap { main.inspectedPayloadBySourceId[$0] } ?? [:]
+    private func mergedDetailPayload(basePayload: [String: Any], sourceId: String) -> [String: Any] {
+        var payload = basePayload
         let enrichmentPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
         payload = mergedDetailEnrichmentPayload(existing: payload, incoming: enrichmentPayload)
         return payload
@@ -524,25 +521,18 @@ final class DetailLogic {
         return merged
     }
 
-    private func buildPreparedDetailWarmupInput(
-        sourceId: String,
-        summary: SourceManagement.WorkflowSummary,
-        payload: [String: Any]
-    ) -> PreparedDetailWarmupInput {
+    private func buildPreparedDetailWarmupInput(input: DetailInput) -> PreparedDetailWarmupInput {
+        let summary = input.summary
+        let payload = input.inspectedPayload
         let sourcePayload = payload["source"] as? [String: Any] ?? [:]
-        let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
-        let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
         let leafPayloads = payload["leafs"] as? [[String: Any]] ?? []
         let sourceSnapshot = BridgePayloadDecoder.sourceSnapshot(from: payload["sourceSnapshot"] as? [String: Any])
         let preferredLeafIds = uniqueSorted(leafPayloads.compactMap { $0["id"] as? String }).isEmpty
             ? summary.leafs.map(\.id)
             : uniqueSorted(leafPayloads.compactMap { $0["id"] as? String })
-        let groupPath = main.preferredGroupPath(lockPayload: lockPayload, leafPayloads: leafPayloads)
-        let gitHubRepoContext = main.gitHubRepoContext(
-            locator: (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator,
-            lockPayload: lockPayload
-        )
-        let projectedNamesByLeafId = main.projectionNameMap(for: sourceId)
+        let groupPath = input.fallbackGroupPath
+        let gitHubRepoContext = input.gitHubRepoContext
+        let projectedNamesByLeafId = input.projectedNamesByLeafId
         let leaves = preferredLeafIds.compactMap { leafId -> PreparedDetailLeafInput? in
             guard let leaf = summary.leafs.first(where: { $0.id == leafId }) else {
                 return nil
@@ -670,10 +660,10 @@ final class DetailLogic {
         ].compactMap { $0?.nonEmpty }
 
         if let installs = snapshotSkill?.installs {
-            lines.append("Installs: \(main.formattedCount(installs))")
+            lines.append("Installs: \(Self.formattedCount(installs))")
         }
         if let weeklyInstalls = snapshotSkill?.weeklyInstalls {
-            lines.append("Weekly installs: \(main.formattedCount(weeklyInstalls))")
+            lines.append("Weekly installs: \(Self.formattedCount(weeklyInstalls))")
         }
         if let firstSeen = snapshotSkill?.firstSeen {
             lines.append("First seen: \(firstSeen)")
@@ -681,7 +671,7 @@ final class DetailLogic {
         if let snapshotSkill, !snapshotSkill.installedOn.isEmpty {
             let installs = snapshotSkill.installedOn.map { item in
                 if let installs = item.installs {
-                    return "\(item.agent) \(main.formattedCount(installs))"
+                    return "\(item.agent) \(Self.formattedCount(installs))"
                 }
                 return item.agent
             }
@@ -702,22 +692,26 @@ final class DetailLogic {
         return lines
     }
 
-    private func deploymentFact(from deployment: [String: Any]) -> String? {
+    private func deploymentFact(
+        from deployment: [String: Any],
+        projectPath: String?,
+        customAgents: [CustomAgentDefinition]
+    ) -> String? {
         guard let target = deployment["target"] as? String,
               let status = deployment["status"] as? String
         else {
             return nil
         }
 
-        if let projectPath = main.currentProjectPath(),
+        if let projectPath,
            let targetPath = (deployment["targetPath"] as? String)?.nonEmpty,
            let relativeTargetPath = Self.relativePath(from: projectPath, to: targetPath)
         {
-            return "\(AgentDisplayCatalog.label(for: target, customAgents: main.routeState?.settings.customAgents ?? [])) · \(status) · \(relativeTargetPath)"
+            return "\(AgentDisplayCatalog.label(for: target, customAgents: customAgents)) · \(status) · \(relativeTargetPath)"
         }
 
         let leafId = (deployment["leafId"] as? String)?.nonEmpty ?? "unknown"
-        return "\(AgentDisplayCatalog.label(for: target, customAgents: main.routeState?.settings.customAgents ?? [])) · \(status) · \(leafId)"
+        return "\(AgentDisplayCatalog.label(for: target, customAgents: customAgents)) · \(status) · \(leafId)"
     }
 
     nonisolated static func preferredDetailGroupTitle(
@@ -762,6 +756,20 @@ final class DetailLogic {
             return String(lastComponent)
         }
         return sourceId
+    }
+
+    private static func formattedCount(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private static func authorName(locator: String, kind: String) -> String {
+        let normalizedKind = kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalizedKind == "local" { return localizedWarmup("source.author.local") }
+        if normalizedKind == "collection" { return localizedWarmup("source.author.collection") }
+        if let handle = authorHandle(from: locator) { return handle }
+        return normalizedKind
     }
 
     nonisolated func placeholderDocumentTabs(_ descriptors: [DocumentDescriptor]) -> [DocumentTab] {
@@ -952,7 +960,7 @@ final class DetailLogic {
     nonisolated private static func documentPlaceholderTabs(
         for skillFilePath: String,
         groupPath: String?,
-        gitHubRepoContext: MainViewModel.GitHubRepoContext?
+        gitHubRepoContext: GitHubRepoContext?
     ) -> [DocumentTab] {
         var tabs: [DocumentTab] = [
             placeholderDocumentTab(
@@ -1072,7 +1080,7 @@ final class DetailLogic {
 
     nonisolated private static func groupDocumentDescriptors(
         groupPath: String?,
-        gitHubRepoContext: MainViewModel.GitHubRepoContext?
+        gitHubRepoContext: GitHubRepoContext?
     ) -> [DocumentDescriptor] {
         var descriptors: [DocumentDescriptor] = [
             DocumentDescriptor(
@@ -1461,7 +1469,7 @@ final class DetailLogic {
     nonisolated private static func enrichDocumentTabs(
         _ tabs: [DocumentTab],
         groupPath: String?,
-        gitHubRepoContext: MainViewModel.GitHubRepoContext?
+        gitHubRepoContext: GitHubRepoContext?
     ) -> [DocumentTab] {
         tabs.map { document in
             DocumentTab(
@@ -1484,7 +1492,7 @@ final class DetailLogic {
     nonisolated private static func enrichDocumentDescriptors(
         _ descriptors: [DocumentDescriptor],
         groupPath: String?,
-        gitHubRepoContext: MainViewModel.GitHubRepoContext?
+        gitHubRepoContext: GitHubRepoContext?
     ) -> [DocumentDescriptor] {
         descriptors.map { document in
             DocumentDescriptor(
@@ -1505,7 +1513,7 @@ final class DetailLogic {
     nonisolated private static func gitHubDocumentURL(
         path: String,
         groupPath: String?,
-        gitHubRepoContext: MainViewModel.GitHubRepoContext?
+        gitHubRepoContext: GitHubRepoContext?
     ) -> String? {
         guard let groupPath,
               let gitHubRepoContext,
