@@ -4,6 +4,23 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.5.6 - 2026-07-18
+
+### Added
+
+- Added a dedicated deployment reconciler in the shared query runtime, with focused coverage for deployment state coordination.
+- Added centralized bridge payload decoding and tests for the supported desktop payload shapes.
+
+### Changed
+
+- Narrowed desktop query and command facades so runtime dependencies and bridge responsibilities are explicit.
+- Reduced reverse dependencies in desktop detail, import, collection, and main view-model logic while preserving the existing user workflows.
+- Updated the CLI and all internal workspace packages from `1.5.5` to `1.5.6`.
+
+### Fixed
+
+- Improved consistency of desktop deployment reconciliation and bridge-backed state transitions through the refactored runtime seams.
+
 ## v1.5.5 - 2026-07-13
 
 ### Changed
