@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { RecentProject } from "@skill-flow/domain";
 import {
   collectProjectObservations,
@@ -8,57 +9,114 @@ import {
 export function aggregateRecentProjects(
   observations: ProjectObservation[],
 ): RecentProject[] {
-  const merged = new Map<string, RecentProject>();
+  const groups = new Set<ProjectObservationGroup>();
+  const groupsByIdentity = new Map<string, ProjectObservationGroup>();
 
   for (const observation of observations) {
-    const existing = merged.get(observation.projectId);
-    if (!existing) {
-      merged.set(observation.projectId, {
-        projectId: observation.projectId,
-        title: observation.title,
-        lastActivityAt: observation.observedAt,
-        ...(observation.projectPath ? { projectPath: observation.projectPath } : {}),
-        tools: [observation.tool],
-      });
-      continue;
+    const identityKeys = projectIdentityKeys(observation);
+    const matchingGroups = new Set(
+      identityKeys.flatMap((key) => {
+        const group = groupsByIdentity.get(key);
+        return group ? [group] : [];
+      }),
+    );
+
+    const group = matchingGroups.values().next().value ?? {
+      identityKeys: new Set<string>(),
+      observations: [],
+    } satisfies ProjectObservationGroup;
+    groups.add(group);
+
+    for (const duplicateGroup of matchingGroups) {
+      if (duplicateGroup === group) {
+        continue;
+      }
+      group.observations.push(...duplicateGroup.observations);
+      for (const key of duplicateGroup.identityKeys) {
+        group.identityKeys.add(key);
+        groupsByIdentity.set(key, group);
+      }
+      groups.delete(duplicateGroup);
     }
 
-    const latest =
-      new Date(existing.lastActivityAt).getTime() >=
-      new Date(observation.observedAt).getTime()
-        ? existing.lastActivityAt
-        : observation.observedAt;
-
-    const tools = new Set(existing.tools ?? []);
-    tools.add(observation.tool);
-
-    merged.set(observation.projectId, {
-      projectId: existing.projectId,
-      title:
-        latest === observation.observedAt ? observation.title : existing.title,
-      lastActivityAt: latest,
-      ...(
-        (latest === observation.observedAt
-          ? observation.projectPath ?? existing.projectPath
-          : existing.projectPath) ?
-          {
-            projectPath: latest === observation.observedAt
-              ? observation.projectPath ?? existing.projectPath
-              : existing.projectPath,
-          } :
-          {}
-      ),
-      tools: Array.from(tools).sort(),
-    });
+    for (const key of identityKeys) {
+      group.identityKeys.add(key);
+      groupsByIdentity.set(key, group);
+    }
+    group.observations.push(observation);
   }
 
-  return Array.from(merged.values())
+  return Array.from(groups)
+    .map((group) => mergeProjectObservationGroup(group.observations))
     .sort(
       (a, b) =>
         new Date(b.lastActivityAt).getTime() -
         new Date(a.lastActivityAt).getTime(),
     )
     .slice(0, 10);
+}
+
+type ProjectObservationGroup = {
+  identityKeys: Set<string>;
+  observations: ProjectObservation[];
+};
+
+function normalizeProjectPathKey(projectPath: string | undefined): string | null {
+  const trimmedPath = projectPath?.trim();
+  if (!trimmedPath) {
+    return null;
+  }
+
+  const normalizedPath = path.normalize(trimmedPath);
+  if (normalizedPath === path.parse(normalizedPath).root) {
+    return normalizedPath;
+  }
+  return normalizedPath.replace(/[\\/]+$/, "") || null;
+}
+
+function projectIdentityKeys(observation: ProjectObservation): string[] {
+  const keys = [`id:${observation.projectId.trim()}`];
+  const pathKey = normalizeProjectPathKey(observation.projectPath);
+  if (pathKey) {
+    keys.push(`path:${pathKey}`);
+  }
+  return keys;
+}
+
+function isPathProjectId(projectId: string): boolean {
+  return projectId.startsWith("/") || projectId.startsWith("./") || projectId.startsWith("../");
+}
+
+function mergeProjectObservationGroup(observations: ProjectObservation[]): RecentProject {
+  const first = observations[0]!;
+  let projectId = first.projectId;
+  let title = first.title;
+  let lastActivityAt = first.observedAt;
+  let projectPath = first.projectPath;
+  const tools = new Set<string>([first.tool]);
+
+  for (const observation of observations.slice(1)) {
+    const isNewer = new Date(observation.observedAt).getTime() > new Date(lastActivityAt).getTime();
+    if (isNewer) {
+      title = observation.title;
+      lastActivityAt = observation.observedAt;
+    }
+    if (observation.projectPath && (!projectPath || isNewer)) {
+      projectPath = observation.projectPath;
+    }
+    if (isPathProjectId(projectId) && !isPathProjectId(observation.projectId)) {
+      projectId = observation.projectId;
+    }
+    tools.add(observation.tool);
+  }
+
+  return {
+    projectId,
+    title,
+    lastActivityAt,
+    ...(projectPath ? { projectPath } : {}),
+    tools: Array.from(tools).sort(),
+  };
 }
 
 export async function resolveUsableProjectPath(projectPath: string | undefined): Promise<string | null> {

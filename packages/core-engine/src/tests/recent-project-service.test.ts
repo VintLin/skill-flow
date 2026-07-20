@@ -48,6 +48,58 @@ describe("recent project service", () => {
     });
   });
 
+  test("aggregateRecentProjects collapses repository and cwd identities for the same project path", () => {
+    const observations: ProjectObservation[] = [
+      {
+        tool: "codex",
+        projectId: "acme/todo-flow",
+        title: "030_TodoFlow",
+        observedAt: "2026-03-02T00:00:00.000Z",
+        projectPath: "/Users/test/Repos/030_TodoFlow",
+      },
+      {
+        tool: "claude-code",
+        projectId: "/Users/test/Repos/030_TodoFlow",
+        title: "030_TodoFlow",
+        observedAt: "2026-03-01T00:00:00.000Z",
+        projectPath: "/Users/test/Repos/030_TodoFlow/",
+      },
+    ];
+
+    const aggregated = aggregateRecentProjects(observations);
+
+    expect(aggregated).toHaveLength(1);
+    expect(aggregated[0]).toMatchObject({
+      projectId: "acme/todo-flow",
+      projectPath: "/Users/test/Repos/030_TodoFlow",
+      tools: ["claude-code", "codex"],
+    });
+  });
+
+  test("aggregateRecentProjects keeps same-name projects at different paths separate", () => {
+    const aggregated = aggregateRecentProjects([
+      {
+        tool: "codex",
+        projectId: "/Users/test/client-a/app",
+        title: "app",
+        observedAt: "2026-03-02T00:00:00.000Z",
+        projectPath: "/Users/test/client-a/app",
+      },
+      {
+        tool: "codex",
+        projectId: "/Users/test/client-b/app",
+        title: "app",
+        observedAt: "2026-03-01T00:00:00.000Z",
+        projectPath: "/Users/test/client-b/app",
+      },
+    ]);
+
+    expect(aggregated.map((project) => project.projectId)).toEqual([
+      "/Users/test/client-a/app",
+      "/Users/test/client-b/app",
+    ]);
+  });
+
   test("aggregateRecentProjects truncates to ten projects", () => {
     const observations: ProjectObservation[] = Array.from({ length: 12 }, (_, index) => ({
       tool: "codex",
