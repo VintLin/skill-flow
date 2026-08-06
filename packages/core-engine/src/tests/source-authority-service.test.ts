@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { StateStore } from "@skill-flow/storage/state-store";
 import { InventoryService } from "../services/inventory-service.js";
 import { SourceAuthorityService } from "../services/source-authority-service.js";
@@ -213,6 +213,86 @@ describe.sequential("SourceAuthorityService", () => {
     expect(state.lockFile.sources["update-source"]?.leafIds).toEqual([
       "update-source:skills/one",
       "update-source:skills/two",
+    ]);
+  });
+
+  test("updateSources skips git refresh when remote commit is unchanged", async () => {
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({
+      stateStore,
+      checkoutService,
+    });
+
+    const preparedCheckoutPath = path.join(
+      sandbox.stateRoot,
+      "source",
+      "git",
+      ".prepared-git-unchanged",
+    );
+    await fs.mkdir(path.join(preparedCheckoutPath, "skills", "one"), { recursive: true });
+    await fs.writeFile(
+      path.join(preparedCheckoutPath, "skills", "one", "SKILL.md"),
+      skillDoc("one", "One."),
+      "utf8",
+    );
+    const committed = await service.commitPreparedSource({
+      preparedCheckout: {
+        locator: "https://github.com/acme/skills.git",
+        displayName: "Skills",
+        kind: "git",
+        sourceId: "git-unchanged",
+        checkoutPath: preparedCheckoutPath,
+        leafs: [{
+          id: "git-unchanged:skills/one",
+          sourceId: "git-unchanged",
+          name: "one",
+          linkName: "one",
+          title: "one",
+          description: "One.",
+          relativePath: "skills/one",
+          absolutePath: path.join(preparedCheckoutPath, "skills", "one"),
+          skillFilePath: path.join(preparedCheckoutPath, "skills", "one", "SKILL.md"),
+          contentHash: "hash-one",
+          diagnostics: [],
+          valid: true,
+        }],
+        invalidLeafs: [],
+        commitSha: "same-sha",
+      },
+    });
+    expect(committed.ok).toBe(true);
+    if (!committed.ok) {
+      return;
+    }
+
+    checkoutService.readGitRemoteHeadCommit = vi.fn(async () => "same-sha");
+    let prepareCalled = false;
+    checkoutService.prepareSourceCheckout = vi.fn(async () => {
+      prepareCalled = true;
+      throw new Error("prepareSourceCheckout should not be called when commit is unchanged");
+    });
+
+    const updated = await service.updateSources(["git-unchanged"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(prepareCalled).toBe(false);
+    expect(updated.data.updated).toEqual([
+      expect.objectContaining({
+        sourceId: "git-unchanged",
+        changed: false,
+      }),
+    ]);
+    const state = await stateStore.readState();
+    expect(state.lockFile.sources["git-unchanged"]?.leafIds).toEqual([
+      "git-unchanged:skills/one",
     ]);
   });
 
