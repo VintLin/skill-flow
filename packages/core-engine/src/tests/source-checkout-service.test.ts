@@ -37,6 +37,24 @@ describe.sequential("SourceCheckoutService", () => {
       });
   });
 
+  test("reads remote HEAD commit for git locators", async () => {
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
+      if (args[0] === "ls-remote" && args[2] === "HEAD") {
+        return "0123456789abcdef0123456789abcdef01234567\tHEAD";
+      }
+      throw new Error(`Unexpected git call: ${args.join(" ")}`);
+    });
+    const service = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+
+    await expect(
+      service.readGitRemoteHeadCommit("https://github.com/acme/skills.git"),
+    ).resolves.toBe("0123456789abcdef0123456789abcdef01234567");
+  });
+
   test("prepares a checkout snapshot without writing authority files", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
