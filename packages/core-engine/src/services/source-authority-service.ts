@@ -307,6 +307,25 @@ export class SourceAuthorityService {
         continue;
       }
 
+      const lockedCommit = this.readLockedCommitSha(lock.revision);
+      if (source.kind === "git" && lockedCommit) {
+        try {
+          const remoteCommit = await this.options.checkoutService.readGitRemoteHeadCommit(
+            source.locator,
+            lock.originBranch ? { branch: lock.originBranch } : {},
+          );
+          if (remoteCommit && remoteCommit === lockedCommit) {
+            updated.push(this.emptyUpdateResult(sourceId));
+            continue;
+          }
+        } catch (error) {
+          warnings.push({
+            code: "SOURCE_REMOTE_COMMIT_CHECK_FAILED",
+            message: `Unable to verify remote commit for '${sourceId}': ${String(error)}`,
+          });
+        }
+      }
+
       const tempCheckoutPath = path.join(
         this.options.stateStore.rootPath,
         "source",
@@ -532,6 +551,10 @@ export class SourceAuthorityService {
 
   private mapSourceKind(kind: PreparedSourceCheckout["kind"]): SourceKind {
     return kind;
+  }
+
+  private readLockedCommitSha(revision: SourceRevision): string | undefined {
+    return "commit" in revision ? revision.commit : undefined;
   }
 
   private emptyUpdateResult(sourceId: string): SourceUpdateResultItem {
