@@ -130,8 +130,12 @@ export async function isBrokenSymlink(targetPath: string): Promise<boolean> {
   }
 }
 
-export async function hashDirectory(rootPath: string): Promise<string> {
+export async function hashDirectory(
+  rootPath: string,
+  options: { symlinkPolicy?: "ignore" | "preserve-safe" } = {},
+): Promise<string> {
   const hash = crypto.createHash("sha256");
+  const resolvedRootPath = path.resolve(rootPath);
 
   async function walk(currentPath: string): Promise<void> {
     const entries = await fs.readdir(currentPath, { withFileTypes: true });
@@ -152,6 +156,20 @@ export async function hashDirectory(rootPath: string): Promise<string> {
       } else if (entry.isFile()) {
         hash.update("file");
         hash.update(await fs.readFile(entryPath));
+      } else if (entry.isSymbolicLink()) {
+        if (options.symlinkPolicy !== "preserve-safe") {
+          continue;
+        }
+        const target = await fs.readlink(entryPath);
+        const resolvedTarget = path.resolve(path.dirname(entryPath), target);
+        if (
+          path.isAbsolute(target)
+          || (resolvedTarget !== resolvedRootPath && !isPathInside(resolvedRootPath, resolvedTarget))
+        ) {
+          throw new Error(`Unsafe symbolic link '${relativePath}' escapes '${rootPath}'.`);
+        }
+        hash.update("symlink");
+        hash.update(target);
       }
     }
   }

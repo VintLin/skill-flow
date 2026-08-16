@@ -92,6 +92,17 @@ export class InventoryService {
 
       const safeName = slugify(parsed.name) || linkName || sourceId;
 
+      let contentHash: string;
+      try {
+        contentHash = await hashDirectory(leafRoot, { symlinkPolicy: "preserve-safe" });
+      } catch (error) {
+        invalidLeafs.push({
+          path: relativePath,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+
       candidates.push({
         id: `${sourceId}:${relativePath}`,
         sourceId,
@@ -102,7 +113,7 @@ export class InventoryService {
         relativePath,
         absolutePath: leafRoot,
         skillFilePath,
-        contentHash: await hashDirectory(leafRoot),
+        contentHash,
         diagnostics: parsed.metadataWarnings.map((message) => ({
           code: "LEAF_METADATA_WARNING",
           message,

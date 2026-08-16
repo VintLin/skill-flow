@@ -39,7 +39,7 @@ describe.sequential("SourceCheckoutService", () => {
 
   test("reads remote HEAD commit for git locators", async () => {
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
-    vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
+    const git = vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
       if (args[0] === "ls-remote" && args[2] === "HEAD") {
         return "0123456789abcdef0123456789abcdef01234567\tHEAD";
       }
@@ -53,6 +53,24 @@ describe.sequential("SourceCheckoutService", () => {
     await expect(
       service.readGitRemoteHeadCommit("https://github.com/acme/skills.git"),
     ).resolves.toBe("0123456789abcdef0123456789abcdef01234567");
+    expect(git).toHaveBeenCalledWith(
+      ["ls-remote", "https://github.com/acme/skills.git", "HEAD"],
+      { timeoutMs: 5_000 },
+    );
+  });
+
+  test("accepts SHA-256 remote HEAD commits", async () => {
+    const sha256 = "0123456789abcdef".repeat(4);
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    vi.spyOn(gitUtils, "git").mockResolvedValue(`${sha256}\tHEAD`);
+    const service = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+
+    await expect(
+      service.readGitRemoteHeadCommit("https://github.com/acme/skills.git"),
+    ).resolves.toBe(sha256);
   });
 
   test("prepares a checkout snapshot without writing authority files", async () => {
@@ -102,6 +120,30 @@ describe.sequential("SourceCheckoutService", () => {
     await expect(fs.access(path.join(sandbox.stateRoot, "lock.json"))).rejects.toThrow();
     await expect(fs.access(path.join(sandbox.stateRoot, "preferences.json"))).rejects.toThrow();
     await expect(fs.access(path.join(sandbox.stateRoot, "collections.json"))).rejects.toThrow();
+  });
+
+  test("rejects skill leafs with escaping symlinks before they can be deployed", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/unsafe/SKILL.md": skillDoc("unsafe", "Unsafe skill."),
+    });
+    await fs.symlink("../../outside", path.join(repoPath, "skills", "unsafe", "escape"));
+    const service = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+
+    const prepared = await service.prepareSourceCheckout(repoPath, {
+      options: { sourceIdOverride: "unsafe-source" },
+    });
+
+    expect(prepared.ok).toBe(false);
+    if (prepared.ok) {
+      return;
+    }
+    expect(prepared.warnings).toContainEqual(expect.objectContaining({
+      code: "INVALID_LEAF",
+      message: expect.stringContaining("Unsafe symbolic link"),
+    }));
   });
 
   test("prepares GitHub tree locators under the git source root", async () => {

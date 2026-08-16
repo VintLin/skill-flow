@@ -1201,11 +1201,14 @@ export function ConfigApp({
       setTargetCursor(nextFocusState.agentCursor);
       setSkillCursor(nextFocusState.skillCursor);
       setActionCursor(nextFocusState.actionCursor);
+      const sourceUpdate = result.data.updated.find((item) => item.sourceId === sourceId);
       setUpdateStateBySourceId((current) => ({
         ...pruneSourceMap(current, nextIds),
         [sourceId]: {
           phase: "updated",
-          message: "updated",
+          message: sourceUpdate?.repaired
+            ? `repaired (${sourceUpdate.repairReason})`
+            : "updated",
         },
       }));
 

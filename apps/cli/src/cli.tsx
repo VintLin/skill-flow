@@ -284,8 +284,9 @@ program
     for (const item of result.data.updated) {
       const summary = summaries.find((summary) => summary.source.id === item.sourceId);
       const groupRef = summary ? formatGroupRef(summary.source) : item.sourceId;
+      const repair = item.repaired ? `  repaired:${item.repairReason}` : "";
       console.log(
-        `${groupRef}  changed:${item.changed}  +${item.addedLeafIds.length}  -${item.removedLeafIds.length}  invalidated:${item.invalidatedLeafIds.length}`,
+        `${groupRef}  changed:${item.changed}${repair}  +${item.addedLeafIds.length}  -${item.removedLeafIds.length}  invalidated:${item.invalidatedLeafIds.length}`,
       );
     }
     printWarnings(result.warnings.map((warning) => warning.message));

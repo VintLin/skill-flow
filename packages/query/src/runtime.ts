@@ -1711,7 +1711,10 @@ export class SkillFlowApp {
         continue;
       }
 
-      const currentHash = await hashDirectory(originLeaf.absolutePath).catch(() => undefined);
+      const currentHash = await hashDirectory(
+        originLeaf.absolutePath,
+        { symlinkPolicy: "preserve-safe" },
+      ).catch(() => undefined);
       if (!currentHash) {
         diagnostics.push({
           code: "COLLECTION_ORIGIN_UNAVAILABLE",
@@ -1844,7 +1847,7 @@ export class SkillFlowApp {
       path: resolvedPath,
       displayName,
       sourceId: deriveSourceId(resolvedPath),
-      contentHash: await hashDirectory(resolvedPath),
+      contentHash: await hashDirectory(resolvedPath, { symlinkPolicy: "preserve-safe" }),
       importedFromTargets: observedTargets.map((target) => target.target),
       observedTargets,
       title: metadata.title || displayName,
@@ -5079,7 +5082,24 @@ export class SkillFlowApp {
     return this.runAuditedMutation(
       "update-sources",
       { sourceIds: sourceIds ?? [] },
-      () => this.updateSourcesImpl(sourceIds),
+      async () => {
+        const result = await this.updateSourcesImpl(sourceIds);
+        if (!result.ok) {
+          return result;
+        }
+        const repaired = result.data.updated.filter((item) => item.repaired);
+        return {
+          result,
+          auditDetails: {
+            repairedSourceIds: repaired.map((item) => item.sourceId),
+            repairReasons: repaired.map((item) => ({
+              sourceId: item.sourceId,
+              reason: item.repairReason,
+            })),
+            precheckFallbackSourceIds: result.data.precheckFallbackSourceIds ?? [],
+          },
+        };
+      },
     );
   }
 
@@ -7247,7 +7267,7 @@ export class SkillFlowApp {
       if (!stats.isDirectory()) {
         return false;
       }
-      const onDiskHash = await hashDirectory(targetPath);
+      const onDiskHash = await hashDirectory(targetPath, { symlinkPolicy: "preserve-safe" });
       return onDiskHash === leaf.contentHash;
     } catch {
       return false;

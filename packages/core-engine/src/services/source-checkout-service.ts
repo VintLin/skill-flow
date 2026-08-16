@@ -256,10 +256,7 @@ export class SourceCheckoutService {
     }, snapshot.warnings);
   }
 
-  async readGitRemoteHeadCommit(
-    locator: string,
-    options: { branch?: string } = {},
-  ): Promise<string | undefined> {
+  async readGitRemoteHeadCommit(locator: string): Promise<string | undefined> {
     if (!(await isGitAvailable())) {
       return undefined;
     }
@@ -270,25 +267,10 @@ export class SourceCheckoutService {
         .map((entry) => entry.trim())
         .find((entry) => entry.length > 0);
       const sha = line?.split(/\s+/)[0]?.trim();
-      return sha && /^[0-9a-f]{40}$/i.test(sha) ? sha : undefined;
+      return sha && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha) ? sha : undefined;
     };
 
-    if (options.branch) {
-      const branchRef = `refs/heads/${options.branch}`;
-      const branchOutput = await withNetworkRetries(
-        () => git(["ls-remote", locator, branchRef], { timeoutMs: 30_000 }),
-        { attempts: 2 },
-      );
-      const branchCommit = parseCommitSha(branchOutput);
-      if (branchCommit) {
-        return branchCommit;
-      }
-    }
-
-    const headOutput = await withNetworkRetries(
-      () => git(["ls-remote", locator, "HEAD"], { timeoutMs: 30_000 }),
-      { attempts: 2 },
-    );
+    const headOutput = await git(["ls-remote", locator, "HEAD"], { timeoutMs: 5_000 });
     return parseCommitSha(headOutput);
   }
 
