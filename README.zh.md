@@ -174,6 +174,10 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | `find <query>` / `search <query>` | 搜索本地技能、内置 Git 目录与 skills.sh |
 | `config` | 打开交互式配置 UI |
 | `update [sourceId] --all` | 更新单个或全部已注册 source |
+| `adopt <paths...> --name <name>` | 登记由其他安装器管理的已有 skill，不复制也不部署 |
+| `external status [sourceId]` | 刷新外部 source，并比较已配置的版本 |
+| `external update <sourceId> --confirm-external-update` | 运行明确配置的外部更新器 |
+| `remove <sourceIds...>` | 取消登记 group；外部文件保持不动 |
 | `doctor` | 诊断漂移、缺失路径和投影问题 |
 | `migrate-state --to v2 [--dry-run]` | 检查或迁移本地状态目录到 schema v2 |
 | `repair-source [sourceId] --all` | 修复 source checkout 元数据 |
@@ -182,13 +186,15 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | `uninstall <sourceIds...>` | 移除 group 及其部署 |
 | `bridge --json` | 执行机器协议请求 |
 
+外部托管 group 仅用于观察：不能配置目标、不能由常规 `update` 更新，也不能由修复流程接管。
+
 ## 状态如何组织
 
 `skill-flow` 默认把状态放在 `~/.skillflow/`：
 
 - `manifest.json`：你想要什么
 - `lock.json`：系统实际装成了什么
-- `source/local/*`：本地导入或接管的外部 source
+- `source/local/*`：由 Skill Flow 管理的本地 source 缓存
 - `source/git/*`：Git source 缓存
 - `source/clawhub/*`：skills.sh source 缓存
 - `catalog/git/*`：内置 Git catalog 缓存

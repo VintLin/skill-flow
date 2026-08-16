@@ -180,6 +180,10 @@ Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 | `find <query>` / `search <query>` | Search installed skills, built-in Git catalogs, and skills.sh |
 | `config` | Open the interactive configuration UI |
 | `update [sourceId] --all` | Refresh one source or all registered sources |
+| `adopt <paths...> --name <name>` | Catalogue existing skills owned by another installer without copying or deploying them |
+| `external status [sourceId]` | Refresh an external source and compare configured versions |
+| `external update <sourceId> --confirm-external-update` | Run the explicitly configured external updater |
+| `remove <sourceIds...>` | Unregister groups; external files are left untouched |
 | `doctor` | Diagnose drift, missing paths, and projection problems |
 | `migrate-state --to v2 [--dry-run]` | Inspect or migrate the local state root to schema v2 |
 | `repair-source [sourceId] --all` | Rebuild source checkout metadata |
@@ -187,6 +191,9 @@ Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 | `repair-targets [sourceId] --all` | Repair projected target contents |
 | `uninstall <sourceIds...>` | Remove groups and their deployments |
 | `bridge --json` | Execute machine protocol requests |
+
+Externally managed groups are observation-only. They cannot be enabled for
+targets, repaired, or updated by the regular `update` command.
 
 ## How State Works
 

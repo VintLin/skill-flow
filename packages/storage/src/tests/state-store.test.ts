@@ -529,6 +529,32 @@ describe("StateStore", () => {
     });
   });
 
+  test("rejects malformed external source observations before writing authority", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    const state = await store.readState();
+
+    await expect(store.writeManifest({
+      ...state.manifest,
+      sources: [{
+        id: "external-alpha",
+        kind: "local",
+        ownership: "external",
+        locator: "/tmp/external-alpha",
+        canonicalLocator: "/tmp/external-alpha",
+        displayName: "External Alpha",
+        enabled: true,
+        createdAt: "2026-08-16T00:00:00.000Z",
+        updatedAt: "2026-08-16T00:00:00.000Z",
+        observedPaths: [],
+      }],
+      bindings: {},
+    })).rejects.toMatchObject({
+      code: "STATE_MIGRATION_BLOCKED",
+      details: { fieldPath: "sources[0].observedPaths" },
+    });
+  });
+
   test("readLock rejects leaf records missing V2 runtime fields", async () => {
     const cases = ["linkName", "title", "description", "absolutePath"] as const;
 

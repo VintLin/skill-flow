@@ -214,6 +214,48 @@ const bridgeCommandHandlers = {
     ).restoreCollectionSources(collectionId));
   },
   doctor: (app, request) => runBridgeResult(request, () => app.doctor()),
+  "adopt-external-source": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "adopt-external-source");
+    const paths = parseRequiredStringArray(payload.paths, "adopt-external-source.paths");
+    const displayName = expectOptionalString(payload.displayName, "displayName", "adopt-external-source");
+    return runBridgeResult(request, () => app.adoptExternalSource(paths, {
+      ...(displayName !== undefined ? { displayName } : {}),
+    }));
+  },
+  "configure-external-source": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "configure-external-source");
+    const sourceId = expectString(payload.sourceId, "sourceId", "configure-external-source");
+    const updateSteps = payload.updateSteps === undefined
+      ? undefined
+      : parseExternalCommandSteps(payload.updateSteps, "configure-external-source.updateSteps");
+    const versionProbe = payload.versionProbe === undefined
+      ? undefined
+      : parseExternalCommandStep(payload.versionProbe, "configure-external-source.versionProbe");
+    const upstream = payload.upstream === undefined
+      ? undefined
+      : parseExternalUpstream(payload.upstream);
+    if (!updateSteps && !versionProbe && !upstream) {
+      throw new Error("Bridge command 'configure-external-source' requires updateSteps, versionProbe, or upstream.");
+    }
+    return runBridgeResult(request, () => app.configureExternalSource(sourceId, {
+      ...(updateSteps ? { updateSteps } : {}),
+      ...(versionProbe ? { versionProbe } : {}),
+      ...(upstream ? { upstream } : {}),
+    }));
+  },
+  "external-status": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "external-status");
+    const sourceId = expectString(payload.sourceId, "sourceId", "external-status");
+    return runBridgeResult(request, () => app.refreshExternalSource(sourceId));
+  },
+  "external-update": async (app, request) => {
+    const payload = expectObjectPayload(request.payload, "external-update");
+    const sourceId = expectString(payload.sourceId, "sourceId", "external-update");
+    if (payload.confirmExternalUpdate !== true) {
+      throw new Error("Bridge command 'external-update' requires confirmExternalUpdate: true.");
+    }
+    return runBridgeResult(request, () => app.updateExternalSource(sourceId));
+  },
   add: async (app, request) => {
     const payload = expectObjectPayload(request.payload, "add");
     const locator = expectString(payload.locator, "locator", "add");
@@ -395,6 +437,35 @@ function parseOptionalStringArray(value: JsonValue | undefined, field: string): 
     throw new Error(`Field '${field}' must be a string array.`);
   }
   return value as string[];
+}
+
+function parseExternalCommandSteps(value: JsonValue | undefined, field: string) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`Field '${field}' must be a non-empty command-step array.`);
+  }
+  return value.map((entry, index) => parseExternalCommandStep(entry, `${field}[${index}]`));
+}
+
+function parseExternalCommandStep(value: JsonValue | undefined, field: string) {
+  if (!isJsonObject(value)) throw new Error(`Field '${field}' must be an object.`);
+  const executable = expectString(value.executable, `${field}.executable`, "configure-external-source");
+  const args = parseOptionalStringArray(value.args, `${field}.args`);
+  if (!args) throw new Error(`Field '${field}.args' must be a string array.`);
+  const workingDirectory = expectOptionalString(
+    value.workingDirectory,
+    `${field}.workingDirectory`,
+    "configure-external-source",
+  );
+  return { executable, args, ...(workingDirectory !== undefined ? { workingDirectory } : {}) };
+}
+
+function parseExternalUpstream(value: JsonValue | undefined) {
+  if (!isJsonObject(value)) throw new Error("Field 'upstream' must be an object.");
+  const kind = expectString(value.kind, "upstream.kind", "configure-external-source");
+  if (kind !== "github-release") throw new Error("Field 'upstream.kind' must be 'github-release'.");
+  const repository = expectString(value.repository, "upstream.repository", "configure-external-source");
+  const includePrerelease = expectOptionalBoolean(value.includePrerelease, "upstream.includePrerelease", "configure-external-source");
+  return { kind: "github-release" as const, repository, ...(includePrerelease ? { includePrerelease: true } : {}) };
 }
 
 function parseCollectionSkillRefs(value: JsonValue | undefined, command: string): CollectionSkillRef[] {

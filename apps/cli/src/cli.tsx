@@ -80,6 +80,123 @@ program
   });
 
 program
+  .command("adopt")
+  .argument("<paths...>", "Absolute paths owned by another installer")
+  .option("--name <displayName>", "External source display name")
+  .action(async (paths: string[], options: { name?: string }) => {
+    const result = await app.adoptExternalSource(paths, {
+      ...(options.name ? { displayName: options.name } : {}),
+    });
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Adopted external source: ${formatGroupRef(result.data.manifest)}`);
+    printWarnings(result.warnings.map((warning) => warning.message));
+  });
+
+const externalProgram = program
+  .command("external")
+  .description("Inspect and update externally managed skill sources");
+
+externalProgram
+  .command("status")
+  .argument("[sourceId]", "Optional external source id")
+  .action(async (sourceId: string | undefined) => {
+    const listed = sourceId ? undefined : await app.listWorkflows();
+    if (listed && !listed.ok) {
+      printErrors(listed.errors);
+      process.exitCode = 1;
+      return;
+    }
+    const ids = sourceId
+      ? [sourceId]
+      : listed?.data.summaries
+        .filter((summary) => summary.source.ownership === "external")
+        .map((summary) => summary.source.id) ?? [];
+    for (const id of ids) {
+      const result = await app.refreshExternalSource(id);
+      if (!result.ok) {
+        printErrors(result.errors);
+        process.exitCode = 1;
+        continue;
+      }
+      console.log(`${formatGroupRef(result.data.manifest)}  ${result.data.lock.externalStatus}`);
+      if (result.data.lock.externalVersionStatus) {
+        console.log(`  version: ${result.data.lock.installedVersion ?? "unknown"} -> ${result.data.lock.upstreamVersion ?? "unknown"} (${result.data.lock.externalVersionStatus})`);
+      }
+      printWarnings(result.warnings.map((warning) => warning.message));
+    }
+  });
+
+externalProgram
+  .command("update")
+  .argument("<sourceId>", "External source id")
+  .requiredOption("--confirm-external-update", "Confirm execution of the configured external updater")
+  .action(async (sourceId: string) => {
+    const result = await app.updateExternalSource(sourceId);
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Updated external source: ${formatGroupRef(result.data.manifest)}`);
+    printWarnings(result.warnings.map((warning) => warning.message));
+  });
+
+externalProgram
+  .command("configure")
+  .argument("<sourceId>", "External source id")
+  .option("--update-step <json>", "One JSON command step; repeat for multi-step updates", collectOption, [])
+  .option("--version-probe <json>", "JSON command step that prints the installed version")
+  .option("--github-release <owner/repository>", "GitHub repository used for release comparison")
+  .option("--include-prerelease", "Allow prerelease comparison when supported")
+  .action(async (sourceId: string, options: {
+    updateStep: string[];
+    versionProbe?: string;
+    githubRelease?: string;
+    includePrerelease?: boolean;
+  }) => {
+    let updateSteps: Array<{ executable: string; args: string[]; workingDirectory?: string }> | undefined;
+    let versionProbe: { executable: string; args: string[]; workingDirectory?: string } | undefined;
+    try {
+      updateSteps = options.updateStep.length ? options.updateStep.map((step) => JSON.parse(step) as {
+        executable: string;
+        args: string[];
+        workingDirectory?: string;
+      }) : undefined;
+      versionProbe = options.versionProbe ? JSON.parse(options.versionProbe) as {
+        executable: string;
+        args: string[];
+        workingDirectory?: string;
+      } : undefined;
+    } catch (error) {
+      printErrors([{ message: `Invalid --update-step JSON: ${String(error)}` }]);
+      process.exitCode = 1;
+      return;
+    }
+    if (!updateSteps && !versionProbe && !options.githubRelease) {
+      printErrors([{ message: "Provide --update-step, --version-probe, or --github-release." }]);
+      process.exitCode = 1;
+      return;
+    }
+    const result = await app.configureExternalSource(sourceId, {
+      ...(updateSteps ? { updateSteps } : {}),
+      ...(versionProbe ? { versionProbe } : {}),
+      ...(options.githubRelease ? {
+        upstream: { kind: "github-release" as const, repository: options.githubRelease, ...(options.includePrerelease ? { includePrerelease: true } : {}) },
+      } : {}),
+    });
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Configured external source: ${result.data.displayName}`);
+  });
+
+program
   .command("list")
   .option("--ids", "Show source ids next to display names")
   .option("--warnings", "Show warning details under affected groups")
@@ -337,6 +454,20 @@ program
     }
     const removed = result.data.removedRefs.map((source) => formatGroupRef(source));
     console.log(`Removed: ${removed.join(", ")}`);
+    printWarnings(result.data.warnings);
+  });
+
+program
+  .command("remove")
+  .argument("<sourceIds...>", "Skills group ids to unregister")
+  .action(async (sourceIds: string[]) => {
+    const result = await app.uninstall(sourceIds);
+    if (!result.ok) {
+      printErrors(result.errors);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Removed: ${result.data.removedRefs.map((source) => formatGroupRef(source)).join(", ")}`);
     printWarnings(result.data.warnings);
   });
 

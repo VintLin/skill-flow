@@ -4,7 +4,8 @@ import * as githubCatalog from "@skill-flow/integration/utils/github-catalog";
 import { ok } from "@skill-flow/integration/utils/result";
 import { executeBridgeRequest, getBridgeCommandHandlerNames } from "../bridge-command.js";
 import { BRIDGE_COMMAND_NAMES, PROTOCOL_VERSION } from "@skill-flow/shared-types/protocol";
-import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
+import { createRepo, skillDoc, useSkillFlowSandbox, writeRepoFiles } from "./test-helpers.js";
+import path from "node:path";
 
 describe.sequential("bridge command dispatcher", () => {
   const sandbox = useSkillFlowSandbox();
@@ -45,6 +46,55 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.requestId).toBe("r1");
     expect(response.data).toHaveProperty("summaries");
     expect(response.data).toHaveProperty("pinnedSourceIds");
+  });
+
+  test("adopts and refreshes an external source through the bridge without enabling it", async () => {
+    const externalPath = path.join(sandbox.sandboxRoot, "external-bridge");
+    await writeRepoFiles(externalPath, {
+      "SKILL.md": skillDoc("external-bridge", "External bridge skill."),
+    });
+    const app = new SkillFlowApp();
+    const adopted = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "adopt-external-source",
+      payload: { paths: [externalPath], displayName: "External Bridge" },
+    });
+    expect(adopted.ok).toBe(true);
+    const sourceId = (adopted.data as { manifest: { id: string } }).manifest.id;
+
+    const configured = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "configure-external-source",
+      payload: {
+        sourceId,
+        versionProbe: { executable: process.execPath, args: ["-e", "console.log('1.0.0')"] },
+        upstream: { kind: "github-release", repository: "acme/external-bridge" },
+      },
+    });
+    expect(configured.ok).toBe(true);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([
+      { tag_name: "v1.0.0", draft: false },
+    ]), { status: 200 })));
+
+    try {
+      const refreshed = await executeBridgeRequest(app, {
+        protocolVersion: PROTOCOL_VERSION,
+        command: "external-status",
+        payload: { sourceId },
+      });
+      expect(refreshed.ok).toBe(true);
+      expect(refreshed.data).toMatchObject({ lock: { ownership: "external" } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    const unconfirmed = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "external-update",
+      payload: { sourceId },
+    });
+    expect(unconfirmed.ok).toBe(false);
+    expect(unconfirmed.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
   });
 
   test("returns pinned source ids in bootstrap payload", async () => {

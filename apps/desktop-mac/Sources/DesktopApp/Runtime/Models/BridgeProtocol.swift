@@ -19,6 +19,10 @@ enum BridgeCommand: String, Codable, Sendable, CaseIterable {
     case mergeGroups = "merge-groups"
     case restoreCollectionSources = "restore-collection-sources"
     case doctor
+    case adoptExternalSource = "adopt-external-source"
+    case configureExternalSource = "configure-external-source"
+    case externalStatus = "external-status"
+    case externalUpdate = "external-update"
     case add
     case apply
     case update
@@ -37,6 +41,7 @@ extension BridgeCommand {
              .previewImportSource,
              .commitImportSource,
              .importSource,
+             .externalUpdate,
              .add,
              .update:
             return true
@@ -52,6 +57,9 @@ extension BridgeCommand {
              .renameSource,
              .togglePin,
              .doctor,
+             .adoptExternalSource,
+             .configureExternalSource,
+             .externalStatus,
              .apply,
              .uninstall,
              .saveSettings:

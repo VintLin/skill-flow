@@ -222,6 +222,14 @@ export class SourceAuthorityService {
           message: `Skills group id '${sourceId}' is not registered.`,
         });
       }
+      if (source.ownership === "external" || lock.ownership === "external") {
+        delete nextLockSources[sourceId];
+        delete nextBindings[sourceId];
+        nextLeafInventory = nextLeafInventory.filter((leaf) => leaf.sourceId !== sourceId);
+        nextProjections = nextProjections.filter((projection) => projection.sourceId !== sourceId);
+        removed.push(sourceId);
+        continue;
+      }
       const expectedCheckoutPath = path.join(sourceRoot, source.kind, sourceId);
       const normalizedLocalPath = path.resolve(lock.localPath);
       if (
@@ -302,6 +310,16 @@ export class SourceAuthorityService {
           code: "SOURCE_NOT_FOUND",
           message: `Skills group id '${sourceId}' is not registered.`,
         }, warnings);
+      }
+
+      if (source.ownership === "external" || lock.ownership === "external") {
+        if (sourceIds?.length) {
+          return fail({
+            code: "SOURCE_EXTERNAL",
+            message: `Skills group '${sourceId}' is externally managed; use external status or external update.`,
+          }, warnings);
+        }
+        continue;
       }
 
       if (source.kind === "collection") {
@@ -487,6 +505,10 @@ export class SourceAuthorityService {
       const source = nextManifest.sources.find((item) => item.id === sourceId);
       const currentLock = nextLockFile.sources[sourceId];
       if (!source || !currentLock) {
+        continue;
+      }
+
+      if (source.ownership === "external" || currentLock.ownership === "external") {
         continue;
       }
 

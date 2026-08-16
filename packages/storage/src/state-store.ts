@@ -361,6 +361,7 @@ function assertManifestFile(payload: unknown, filePath: string): asserts payload
   assertAuthoritySchema(payload, filePath);
   assertArrayField(payload, filePath, "sources");
   assertRecordField(payload, filePath, "bindings");
+  assertExternalManifestSources(payload.sources as unknown[], filePath);
 }
 
 function assertLockFile(payload: unknown, filePath: string): asserts payload is LockFile {
@@ -370,6 +371,60 @@ function assertLockFile(payload: unknown, filePath: string): asserts payload is 
   assertArrayField(payload, filePath, "projections");
   assertLeafInventory(payload.leafInventory as unknown[], filePath);
   assertProjections(payload.projections as unknown[], filePath);
+  assertExternalLockSources(payload.sources as Record<string, unknown>, filePath);
+}
+
+function assertExternalManifestSources(sources: unknown[], filePath: string): void {
+  sources.forEach((source, index) => {
+    if (!isRecord(source)) {
+      throwInvalidAuthorityField(filePath, `sources[${index}]`, "object");
+    }
+    if (source.ownership === undefined || source.ownership === "managed") return;
+    if (source.ownership !== "external") {
+      throwInvalidAuthorityField(filePath, `sources[${index}].ownership`, "'managed' or 'external'");
+    }
+    if (source.kind !== "local") {
+      throwInvalidAuthorityField(filePath, `sources[${index}].kind`, "'local' for external source");
+    }
+    assertObservedPaths(source.observedPaths, filePath, `sources[${index}].observedPaths`);
+    if (source.updateSteps !== undefined) assertCommandSteps(source.updateSteps, filePath, `sources[${index}].updateSteps`);
+    if (source.versionProbe !== undefined) assertCommandSteps([source.versionProbe], filePath, `sources[${index}].versionProbe`);
+  });
+}
+
+function assertExternalLockSources(sources: Record<string, unknown>, filePath: string): void {
+  Object.entries(sources).forEach(([sourceId, source]) => {
+    if (!isRecord(source) || source.ownership === undefined || source.ownership === "managed") return;
+    if (source.ownership !== "external") {
+      throwInvalidAuthorityField(filePath, `sources.${sourceId}.ownership`, "'managed' or 'external'");
+    }
+    assertObservedPaths(source.observedPaths, filePath, `sources.${sourceId}.observedPaths`);
+  });
+}
+
+function assertObservedPaths(value: unknown, filePath: string, fieldPath: string): void {
+  if (!Array.isArray(value) || value.length === 0) {
+    throwInvalidAuthorityField(filePath, fieldPath, "non-empty array");
+  }
+  value.forEach((item, index) => {
+    if (!isRecord(item) || typeof item.path !== "string" || typeof item.realPath !== "string" || typeof item.observedAt !== "string") {
+      throwInvalidAuthorityField(filePath, `${fieldPath}[${index}]`, "{ path, realPath, observedAt }");
+    }
+  });
+}
+
+function assertCommandSteps(value: unknown, filePath: string, fieldPath: string): void {
+  if (!Array.isArray(value) || value.length === 0) {
+    throwInvalidAuthorityField(filePath, fieldPath, "non-empty command-step array");
+  }
+  value.forEach((item, index) => {
+    if (!isRecord(item) || typeof item.executable !== "string" || !Array.isArray(item.args) || item.args.some((arg) => typeof arg !== "string")) {
+      throwInvalidAuthorityField(filePath, `${fieldPath}[${index}]`, "{ executable, args: string[] }");
+    }
+    if (item.workingDirectory !== undefined && typeof item.workingDirectory !== "string") {
+      throwInvalidAuthorityField(filePath, `${fieldPath}[${index}].workingDirectory`, "string");
+    }
+  });
 }
 
 function normalizeLockFile(lockFile: LockFile): LockFile {

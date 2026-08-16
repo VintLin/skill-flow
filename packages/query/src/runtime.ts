@@ -123,6 +123,12 @@ import {
 } from "@skill-flow/integration/utils/skills-directory";
 import { ConfigCoordinator } from "./config-coordinator.js";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
+import {
+  ExternalSourceLifecycle,
+  type AdoptExternalSourceOptions,
+  type ConfigureExternalSourceOptions,
+  type ExternalSourceSnapshot,
+} from "@skill-flow/core-engine/services/external-source-lifecycle";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
@@ -312,6 +318,8 @@ type AuditMutationName =
   | "import-source"
   | "apply-draft"
   | "update-sources"
+  | "adopt-external-source"
+  | "refresh-external-source"
   | "doctor"
   | "uninstall";
 type AuditEvent = {
@@ -441,6 +449,7 @@ export class SkillFlowApp {
   readonly inventoryService: InventoryService;
   readonly sourceCheckoutService: SourceCheckoutService;
   readonly sourceAuthorityService: SourceAuthorityService;
+  readonly externalSourceLifecycle: ExternalSourceLifecycle;
   readonly importPreparationService: ImportPreparationService;
   readonly doctorService: DoctorService;
   readonly workflowService: WorkflowService;
@@ -470,6 +479,10 @@ export class SkillFlowApp {
     this.sourceAuthorityService = new SourceAuthorityService({
       stateStore: this.stateStore,
       checkoutService: this.sourceCheckoutService,
+    });
+    this.externalSourceLifecycle = new ExternalSourceLifecycle({
+      stateStore: this.stateStore,
+      inventoryService: this.inventoryService,
     });
     this.importPreparationService = new ImportPreparationService({
       cacheStore: this.importPreparationCacheStore,
@@ -645,6 +658,7 @@ export class SkillFlowApp {
       id: source.id,
       locator: source.locator,
       kind: source.kind,
+      ...(source.ownership ? { ownership: source.ownership } : {}),
       displayName: source.displayName,
       originalDisplayName: source.displayName,
       addedAt: source.createdAt,
@@ -663,6 +677,7 @@ export class SkillFlowApp {
       id: source.sourceId,
       locator: source.canonicalLocator,
       kind: source.revision.provider,
+      ...(source.ownership ? { ownership: source.ownership } : {}),
       displayName: manifestSource?.displayName ?? source.sourceId,
       originalDisplayName: manifestSource?.displayName ?? source.sourceId,
       checkoutPath: source.localPath,
@@ -683,6 +698,7 @@ export class SkillFlowApp {
       ...(source.importedFromTargets ? { importedFromTargets: [...source.importedFromTargets] } : {}),
       ...(source.observedTargets ? { observedTargets: source.observedTargets.map((target) => ({ ...target })) } : {}),
       ...(source.importMode ? { importMode: source.importMode } : {}),
+      ...(source.observedPaths ? { observedPaths: source.observedPaths.map((item) => ({ ...item })) } : {}),
     };
   }
 
@@ -1467,6 +1483,44 @@ export class SkillFlowApp {
         enabledTargets: draft?.enabledTargets ?? [],
       },
       () => this.importSourceImpl(locator, draft),
+    );
+  }
+
+  async adoptExternalSource(
+    paths: string[],
+    options: AdoptExternalSourceOptions = {},
+  ): Promise<Result<ExternalSourceSnapshot>> {
+    return this.runAuditedMutation(
+      "adopt-external-source",
+      { paths, displayName: options.displayName ?? "" },
+      () => this.externalSourceLifecycle.adopt(paths, options),
+    );
+  }
+
+  async refreshExternalSource(sourceId: string): Promise<Result<ExternalSourceSnapshot>> {
+    return this.runAuditedMutation(
+      "refresh-external-source",
+      { sourceId },
+      () => this.externalSourceLifecycle.refresh(sourceId, { forceVersionCheck: true }),
+    );
+  }
+
+  async configureExternalSource(
+    sourceId: string,
+    options: ConfigureExternalSourceOptions,
+  ): Promise<Result<SourceManifestRecord>> {
+    return this.runAuditedMutation(
+      "adopt-external-source",
+      { sourceId, configuredUpdateSteps: options.updateSteps?.length ?? 0 },
+      () => this.externalSourceLifecycle.configure(sourceId, options),
+    );
+  }
+
+  async updateExternalSource(sourceId: string): Promise<Result<ExternalSourceSnapshot>> {
+    return this.runAuditedMutation(
+      "refresh-external-source",
+      { sourceId, delegated: true },
+      () => this.externalSourceLifecycle.update(sourceId),
     );
   }
 
@@ -5104,6 +5158,11 @@ export class SkillFlowApp {
   }
 
   private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+    const externalSourceIds = sourceIds?.length
+      ? []
+      : (await this.stateStore.readState()).manifest.sources
+        .filter((source) => source.ownership === "external")
+        .map((source) => source.id);
     const updated = await this.sourceAuthorityService.updateSources(sourceIds);
     if (!updated.ok) {
       return updated;
@@ -5140,7 +5199,19 @@ export class SkillFlowApp {
       manifest,
       lockFile,
     });
-    return ok(updated.data, [...updated.warnings, ...reconciled.warnings]);
+    const externalWarnings: Warning[] = [];
+    for (const sourceId of externalSourceIds) {
+      const refreshed = await this.externalSourceLifecycle.refresh(sourceId);
+      if (!refreshed.ok) {
+        externalWarnings.push(...refreshed.errors.map((error) => ({
+          code: error.code,
+          message: `External source '${sourceId}' was not refreshed: ${error.message}`,
+        })));
+      } else {
+        externalWarnings.push(...refreshed.warnings);
+      }
+    }
+    return ok(updated.data, [...updated.warnings, ...reconciled.warnings, ...externalWarnings]);
   }
 
   async doctor(): Promise<Result<DoctorReport>> {
@@ -5248,10 +5319,17 @@ export class SkillFlowApp {
       ? sourceIds
       : manifest.sources.map((source) => source.id);
     for (const sourceId of requestedIds) {
-      if (!manifest.sources.some((source) => source.id === sourceId)) {
+      const source = manifest.sources.find((item) => item.id === sourceId);
+      if (!source) {
         return fail({
           code: "SOURCE_NOT_FOUND",
           message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+      if (source.ownership === "external" && sourceIds?.length) {
+        return fail({
+          code: "SOURCE_EXTERNAL",
+          message: `Skills group '${sourceId}' is externally managed and cannot be repaired.`,
         });
       }
     }
@@ -5288,12 +5366,13 @@ export class SkillFlowApp {
 
     const planSourceIds = requestedIds.filter(
       (sourceId) =>
-        this.hasActiveTargets(manifest, sourceId) ||
+        manifest.sources.find((source) => source.id === sourceId)?.ownership !== "external" &&
+        (this.hasActiveTargets(manifest, sourceId) ||
         lockFile.projections.some((projection) =>
           projection.sourceId === sourceId &&
           projection.status === "active" &&
           !unknownTargetKeys.has(this.projectionKey(projection.sourceId, projection.leafId, projection.target))
-        ),
+        )),
     );
     const reconciled = await this.deploymentReconciler.reconcile({
       manifest,
@@ -5936,21 +6015,13 @@ export class SkillFlowApp {
         Object.entries(lockFile.sources).map(([sourceId, source]) => [
           sourceId,
           {
-            sourceId: source.sourceId,
-            canonicalLocator: source.canonicalLocator,
+            ...source,
             revision: { ...source.revision },
-            localPath: source.localPath,
             leafIds: [...source.leafIds],
-            ...(source.packageSlug ? { packageSlug: source.packageSlug } : {}),
-            ...(source.resolvedVersion ? { resolvedVersion: source.resolvedVersion } : {}),
-            ...(source.contentHash ? { contentHash: source.contentHash } : {}),
-            ...(source.versionMode ? { versionMode: source.versionMode } : {}),
-            ...(source.originBranch ? { originBranch: source.originBranch } : {}),
-            ...(source.importedFromTargets ? { importedFromTargets: [...source.importedFromTargets] } : {}),
+            ...(source.observedPaths ? { observedPaths: source.observedPaths.map((item) => ({ ...item })) } : {}),
             ...(source.observedTargets
               ? { observedTargets: source.observedTargets.map((target) => ({ ...target })) }
               : {}),
-            ...(source.importMode ? { importMode: source.importMode } : {}),
           },
         ]),
       ),
@@ -5974,6 +6045,13 @@ export class SkillFlowApp {
     for (const source of state.manifest.sources) {
       const lock = state.lockFile.sources[source.id];
       if (!lock || await pathExists(lock.localPath)) {
+        continue;
+      }
+      if (source.ownership === "external" || lock.ownership === "external") {
+        warnings.push({
+          code: "EXTERNAL_SOURCE_PATH_MISSING",
+          message: `External source ${source.displayName} is unavailable at ${lock.localPath}; it was not removed or repaired.`,
+        });
         continue;
       }
 
@@ -6744,10 +6822,17 @@ export class SkillFlowApp {
     sourceId: string,
     draft: DraftBinding,
   ): Result<{ manifest: ManifestFile; draft: DraftBinding; warnings: Warning[] }> {
-    if (!manifest.sources.some((source) => source.id === sourceId)) {
+    const source = manifest.sources.find((item) => item.id === sourceId);
+    if (!source) {
       return fail({
         code: "SOURCE_NOT_FOUND",
         message: `Skills group id '${sourceId}' is not registered.`,
+      });
+    }
+    if (source.ownership === "external") {
+      return fail({
+        code: "SOURCE_EXTERNAL",
+        message: `Skills group '${sourceId}' is externally managed and cannot be deployed.`,
       });
     }
 

@@ -22,6 +22,7 @@ final class SourceManagement {
 
         let sourceId: String
         let sourceKind: String
+        let ownership: String
         let sourceDisplayName: String
         let sourceOriginalDisplayName: String
         let sourceLocator: String
@@ -36,10 +37,47 @@ final class SourceManagement {
         let errorCount: Int
         let updatedAt: String
 
+        init(
+            sourceId: String,
+            sourceKind: String,
+            ownership: String = "managed",
+            sourceDisplayName: String,
+            sourceOriginalDisplayName: String,
+            sourceLocator: String,
+            sourceCanonicalRepo: String?,
+            selectionMode: SelectionMode?,
+            leafs: [LeafSummary],
+            selectedLeafIds: [String],
+            enabledTargets: [String],
+            targetLeafIdsByTarget: [String: [String]],
+            health: String,
+            warningCount: Int,
+            errorCount: Int,
+            updatedAt: String
+        ) {
+            self.sourceId = sourceId
+            self.sourceKind = sourceKind
+            self.ownership = ownership
+            self.sourceDisplayName = sourceDisplayName
+            self.sourceOriginalDisplayName = sourceOriginalDisplayName
+            self.sourceLocator = sourceLocator
+            self.sourceCanonicalRepo = sourceCanonicalRepo
+            self.selectionMode = selectionMode
+            self.leafs = leafs
+            self.selectedLeafIds = selectedLeafIds
+            self.enabledTargets = enabledTargets
+            self.targetLeafIdsByTarget = targetLeafIdsByTarget
+            self.health = health
+            self.warningCount = warningCount
+            self.errorCount = errorCount
+            self.updatedAt = updatedAt
+        }
+
         func renamed(displayName: String, originalDisplayName: String) -> WorkflowSummary {
             WorkflowSummary(
                 sourceId: sourceId,
                 sourceKind: sourceKind,
+                ownership: ownership,
                 sourceDisplayName: displayName,
                 sourceOriginalDisplayName: originalDisplayName,
                 sourceLocator: sourceLocator,
@@ -860,6 +898,7 @@ final class SourceManagement {
             }
 
             let kind = source["kind"] as? String ?? "unknown"
+            let ownership = source["ownership"] as? String == "external" ? "external" : "managed"
             let rawSourceDisplayName = source["displayName"] as? String
             let rawSourceOriginalDisplayName = source["originalDisplayName"] as? String
             let parsedSourceDisplayName = displaySourceName(
@@ -929,6 +968,7 @@ final class SourceManagement {
             return WorkflowSummary(
                 sourceId: sourceId,
                 sourceKind: kind,
+                ownership: ownership,
                 sourceDisplayName: sourceDisplayName,
                 sourceOriginalDisplayName: sourceOriginalDisplayName,
                 sourceLocator: sourceLocator,

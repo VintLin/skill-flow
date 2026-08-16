@@ -25,6 +25,167 @@ const view = async (app: { store: { rootPath: string } }) =>
 describe.sequential("source lifecycle", () => {
   const sandbox = useSkillFlowSandbox();
 
+  test("adopts external skills without copying, linking, or enabling targets", async () => {
+    const externalPath = path.join(sandbox.sandboxRoot, "agent-reach");
+    await writeRepoFiles(externalPath, {
+      "search/SKILL.md": skillDoc("search", "Search through an external installer."),
+    });
+    const before = await fs.lstat(externalPath);
+    const app = new SkillFlowApp();
+
+    const adopted = await app.adoptExternalSource([externalPath], { displayName: "Agent Reach" });
+
+    expect(adopted.ok).toBe(true);
+    if (!adopted.ok) return;
+    expect(adopted.data.manifest).toMatchObject({ kind: "local", ownership: "external" });
+    expect(adopted.data.lock).toMatchObject({ ownership: "external", externalStatus: "current" });
+    expect(adopted.data.lock.observedPaths?.[0]).toMatchObject({ path: externalPath });
+    expect(adopted.data.leafs).toHaveLength(1);
+    expect((await fs.lstat(externalPath)).ino).toBe(before.ino);
+    expect((await fs.lstat(externalPath)).isSymbolicLink()).toBe(false);
+    await expect(fs.stat(app.store.getSourceCheckoutPath("local", adopted.data.manifest.id))).rejects.toThrow();
+
+    const state = await view(app);
+    expect(state.manifest.bindings[adopted.data.manifest.id]?.enabledTargets).toEqual([]);
+    const applied = await app.applyDraft(adopted.data.manifest.id, {
+      selectedLeafIds: adopted.data.lock.leafIds,
+      enabledTargets: ["codex"],
+    });
+    expect(applied.ok).toBe(false);
+    if (!applied.ok) expect(applied.errors[0]?.code).toBe("SOURCE_EXTERNAL");
+  });
+
+  test("refreshes external inventory and rejects duplicate observed paths", async () => {
+    const externalPath = path.join(sandbox.sandboxRoot, "external-refresh");
+    await writeRepoFiles(externalPath, {
+      "one/SKILL.md": skillDoc("one", "One external skill."),
+    });
+    const app = new SkillFlowApp();
+    const adopted = await app.adoptExternalSource([externalPath], { displayName: "Refreshable" });
+    expect(adopted.ok).toBe(true);
+    if (!adopted.ok) return;
+
+    const duplicate = await app.adoptExternalSource([externalPath], { displayName: "Another" });
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) expect(duplicate.errors[0]?.code).toBe("EXTERNAL_PATH_ALREADY_OBSERVED");
+
+    await writeRepoFiles(externalPath, {
+      "two/SKILL.md": skillDoc("two", "Two external skill."),
+    });
+    const refreshed = await app.refreshExternalSource(adopted.data.manifest.id);
+    expect(refreshed.ok).toBe(true);
+    if (refreshed.ok) expect(refreshed.data.leafs.map((leaf) => leaf.name)).toEqual(["one", "two"]);
+  });
+
+  test("runs only explicitly configured external update steps and stops on failure", async () => {
+    const externalPath = path.join(sandbox.sandboxRoot, "external-update");
+    const skillPath = path.join(externalPath, "SKILL.md");
+    const markerPath = path.join(sandbox.sandboxRoot, "unexpected-marker");
+    await writeRepoFiles(externalPath, {
+      "SKILL.md": skillDoc("external-update", "Before external update."),
+    });
+    const app = new SkillFlowApp();
+    const adopted = await app.adoptExternalSource([externalPath], { displayName: "Update Delegate" });
+    expect(adopted.ok).toBe(true);
+    if (!adopted.ok) return;
+
+    const configured = await app.configureExternalSource(adopted.data.manifest.id, {
+      updateSteps: [{
+        executable: process.execPath,
+        args: ["-e", "require('node:fs').writeFileSync(process.argv[1], process.argv[2])", skillPath, skillDoc("external-update", "After external update.")],
+      }],
+    });
+    expect(configured.ok).toBe(true);
+    const updated = await app.updateExternalSource(adopted.data.manifest.id);
+    expect(updated.ok).toBe(true);
+    if (updated.ok) expect(updated.data.leafs[0]?.description).toBe("After external update.");
+
+    const failing = await app.configureExternalSource(adopted.data.manifest.id, {
+      updateSteps: [
+        { executable: process.execPath, args: ["-e", "process.exit(9)"] },
+        { executable: process.execPath, args: ["-e", "require('node:fs').writeFileSync(process.argv[1], 'ran')", markerPath] },
+      ],
+    });
+    expect(failing.ok).toBe(true);
+    const failed = await app.updateExternalSource(adopted.data.manifest.id);
+    expect(failed.ok).toBe(false);
+    expect(await pathExists(markerPath)).toBe(false);
+    const state = await view(app);
+    expect(state.lockFile.sources[adopted.data.manifest.id]?.externalStatus).toBe("unknown");
+    expect(state.lockFile.sources[adopted.data.manifest.id]?.lastExternalUpdateError?.message)
+      .toBe("The configured external command did not complete successfully.");
+  });
+
+  test("compares configured external versions with stable GitHub releases by default", async () => {
+    const externalPath = path.join(sandbox.sandboxRoot, "external-version");
+    await writeRepoFiles(externalPath, { "SKILL.md": skillDoc("external-version", "Versioned skill.") });
+    const app = new SkillFlowApp();
+    const adopted = await app.adoptExternalSource([externalPath], { displayName: "Versioned" });
+    expect(adopted.ok).toBe(true);
+    if (!adopted.ok) return;
+    const configured = await app.configureExternalSource(adopted.data.manifest.id, {
+      versionProbe: { executable: process.execPath, args: ["-e", "console.log('1.0.0')"] },
+      upstream: { kind: "github-release", repository: "acme/versioned" },
+    });
+    expect(configured.ok).toBe(true);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([
+      { tag_name: "v2.0.0-beta.1", draft: false },
+      { tag_name: "v1.2.0", draft: false },
+    ]), { status: 200 })));
+
+    try {
+      const refreshed = await app.refreshExternalSource(adopted.data.manifest.id);
+      expect(refreshed.ok).toBe(true);
+      if (refreshed.ok) {
+        expect(refreshed.data.lock).toMatchObject({
+          installedVersion: "1.0.0",
+          upstreamVersion: "1.2.0",
+          externalVersionStatus: "update-available",
+        });
+      }
+      const prereleaseConfigured = await app.configureExternalSource(adopted.data.manifest.id, {
+        upstream: { kind: "github-release", repository: "acme/versioned", includePrerelease: true },
+      });
+      expect(prereleaseConfigured.ok).toBe(true);
+      const prereleaseRefreshed = await app.refreshExternalSource(adopted.data.manifest.id);
+      expect(prereleaseRefreshed.ok).toBe(true);
+      if (prereleaseRefreshed.ok) {
+        expect(prereleaseRefreshed.data.lock.upstreamVersion).toBe("2.0.0-beta.1");
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("blocks managed deployment paths owned by an external source", async () => {
+    const externalPath = path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "owned-skill");
+    await writeRepoFiles(externalPath, {
+      "SKILL.md": skillDoc("owned-skill", "Owned by an external installer."),
+    });
+    const app = new SkillFlowApp();
+    const adopted = await app.adoptExternalSource([externalPath], { displayName: "External Owner" });
+    expect(adopted.ok).toBe(true);
+    if (!adopted.ok) return;
+
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "owned-skill/SKILL.md": skillDoc("owned-skill", "Managed duplicate."),
+    });
+    const added = await app.addSource(repoPath, { sourceIdOverride: "managed-conflict" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    const applied = await app.applyDraft("managed-conflict", {
+      selectedLeafIds: ["managed-conflict:owned-skill"],
+      enabledTargets: ["codex"],
+    });
+    expect(applied.ok).toBe(true);
+    if (applied.ok) {
+      expect(applied.data.actions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "blocked", targetPath: externalPath }),
+      ]));
+    }
+    expect((await fs.lstat(externalPath)).isSymbolicLink()).toBe(false);
+  });
+
   test("adds a git source and discovers valid skills", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "frontend/SKILL.md": skillDoc("frontend", "Build frontend flows."),

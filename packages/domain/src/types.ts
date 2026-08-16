@@ -16,6 +16,32 @@ export const SOURCE_KINDS = ["git", "local", "clawhub", "collection"] as const;
 
 export type SourceKind = typeof SOURCE_KINDS[number];
 
+/** Who is allowed to modify the source's files. Absent state means managed. */
+export type SourceOwnership = "managed" | "external";
+
+export type ExternalObservedPath = {
+  /** User-selected absolute path, retained for readable diagnostics. */
+  path: string;
+  /** Resolved path used for duplicate and ownership checks. */
+  realPath: string;
+  observedAt: string;
+  contentHash?: string;
+};
+
+export type ExternalCommandStep = {
+  executable: string;
+  args: string[];
+  workingDirectory?: string;
+};
+
+export type ExternalVersionProbe = ExternalCommandStep;
+
+export type ExternalUpstream = {
+  kind: "github-release";
+  repository: string;
+  includePrerelease?: boolean;
+};
+
 export type DeploymentTargetName =
   | "claude-code"
   | "codex"
@@ -207,6 +233,7 @@ export type SourceSummaryRecord = {
   id: SourceId;
   locator: string;
   kind: SourceKind;
+  ownership?: SourceOwnership;
   displayName: string;
   originalDisplayName: string;
   addedAt: string;
@@ -220,6 +247,7 @@ export type SourceLockSummaryRecord = {
   id: SourceId;
   locator: string;
   kind: SourceKind;
+  ownership?: SourceOwnership;
   displayName: string;
   originalDisplayName: string;
   checkoutPath: string;
@@ -239,6 +267,7 @@ export type SourceLockSummaryRecord = {
     targetPath: string;
   }>;
   importMode?: "explicit-add" | "bootstrap-detected";
+  observedPaths?: ExternalObservedPath[];
 };
 
 export type LeafSummaryRecord = {
@@ -727,6 +756,7 @@ export type Diagnostic = {
 export type SourceManifestRecord = {
   id: SourceId;
   kind: SourceKind;
+  ownership?: SourceOwnership;
   locator: string;
   canonicalLocator: string;
   displayName: string;
@@ -735,6 +765,10 @@ export type SourceManifestRecord = {
   updatedAt: string;
   requestedPath?: string;
   originRequestedPath?: string;
+  observedPaths?: ExternalObservedPath[];
+  updateSteps?: ExternalCommandStep[];
+  versionProbe?: ExternalVersionProbe;
+  upstream?: ExternalUpstream;
 };
 
 export type SourceBinding = {
@@ -807,6 +841,7 @@ export type SourceLockRecord = {
   canonicalLocator: string;
   revision: SourceRevision;
   localPath: string;
+  ownership?: SourceOwnership;
   leafIds: SkillLeafId[];
   packageSlug?: string;
   resolvedVersion?: string;
@@ -820,6 +855,19 @@ export type SourceLockRecord = {
     targetPath: string;
   }>;
   importMode?: "explicit-add" | "bootstrap-detected";
+  observedPaths?: ExternalObservedPath[];
+  externalStatus?: "current" | "drifted" | "unknown" | "update-not-configured";
+  externalVersionStatus?: "up-to-date" | "update-available" | "unavailable";
+  installedVersion?: string;
+  upstreamVersion?: string;
+  externalVersionCheckedAt?: string;
+  lastExternalUpdateAt?: string;
+  lastExternalUpdateError?: {
+    step: number;
+    code: string;
+    message: string;
+    at: string;
+  };
 };
 
 export interface LockFile {

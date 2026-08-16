@@ -25,6 +25,7 @@ final class BridgeProtocolCatalogTests: XCTestCase {
             "preview-import-source",
             "commit-import-source",
             "import-source",
+            "external-update",
             "add",
             "update",
         ])

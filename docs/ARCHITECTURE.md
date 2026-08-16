@@ -69,6 +69,10 @@ catalog/*
 
 Target 目录不参与权威状态重建。修复流程只能根据 `manifest` / `lock` 重新投影或清理。
 
+`ownership: "external"` 的 source 是例外：它们只保存用户选择的绝对路径与
+`realpath` 的目录快照，不存在 `source/*` checkout，也永远不会投影、修复或删除
+该路径。外部安装器仍是文件所有者。
+
 ## Runtime Flow
 
 ```text
@@ -112,4 +116,3 @@ swift test
 ```
 
 专题验证矩阵见 [verification/README.md](verification/README.md)。
-

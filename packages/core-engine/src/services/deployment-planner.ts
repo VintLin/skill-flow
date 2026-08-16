@@ -23,6 +23,7 @@ export class DeploymentPlanner {
   constructor(
     private readonly adapters: ChannelAdapter[],
     private readonly projectedLinkNamesByTarget: ReadonlyMap<ChannelAdapter["target"], ReadonlyMap<string, string>> = new Map(),
+    private readonly protectedExternalPaths: readonly string[] = [],
   ) {}
 
   async planForSource(
@@ -158,9 +159,51 @@ export class DeploymentPlanner {
       const preferredTargetPath =
         targetPathCandidates[0]?.targetPath ?? adapter.resolveTargetPath(rootPath, leaf.linkName);
       const targetRootPath = rootPath;
+      const resolvedTargetRootPath = await fs.realpath(rootPath).catch(() => path.resolve(rootPath));
+      const namedExternalPath = this.protectedExternalPaths.find((externalPath) =>
+        path.dirname(externalPath) === resolvedTargetRootPath && path.basename(externalPath) === leaf.linkName,
+      );
+      if (namedExternalPath) {
+        actions.push({
+          kind: "blocked",
+          sourceId,
+          leafId: leaf.id,
+          target: adapter.target,
+          strategy: adapter.strategy,
+          sourcePath: leaf.absolutePath,
+          targetPath: path.join(rootPath, leaf.linkName),
+          targetRootPath,
+          reason: "Target path is owned by an externally managed source.",
+          contentHash: leaf.contentHash,
+        });
+        continue;
+      }
       const containedTargetPathCandidates = targetPathCandidates.filter((candidate) =>
         isPathInside(rootPath, candidate.targetPath),
       );
+
+      const protectedExternalPath = containedTargetPathCandidates.find((candidate) =>
+        this.protectedExternalPaths.some((externalPath) =>
+          candidate.targetPath === externalPath ||
+          isPathInside(externalPath, candidate.targetPath) ||
+          isPathInside(candidate.targetPath, externalPath),
+        )
+      );
+      if (protectedExternalPath) {
+        actions.push({
+          kind: "blocked",
+          sourceId,
+          leafId: leaf.id,
+          target: adapter.target,
+          strategy: adapter.strategy,
+          sourcePath: leaf.absolutePath,
+          targetPath: protectedExternalPath.targetPath,
+          targetRootPath,
+          reason: "Target path is owned by an externally managed source.",
+          contentHash: leaf.contentHash,
+        });
+        continue;
+      }
 
       if (!targetAvailable) {
         actions.push({

@@ -656,6 +656,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
             let enabledLeafIds = Set(draft.selectedLeafIds)
             let enabledTargets = Set(draft.enabledTargets)
+            let isExternal = summary.ownership == "external"
             let metadata = groupCardMetadata(sourceId: row.id, summary: summary, row: row)
             let payload = detailEnrichmentPayloadBySourceId[row.id] ?? [:]
             let cachedGroupPath = (payload["groupPath"] as? String)?.nonEmpty
@@ -672,6 +673,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 showsRecentlyUpdatedIndicator: recentlyUpdatedSourceIds.contains(row.id),
                 originalDisplayName: summary.sourceOriginalDisplayName,
                 byline: metadata.byline,
+                headerMetaLine: isExternal ? "Externally managed · target projection unavailable" : nil,
                 groupPath: groupPath,
                 sourceKind: row.kind,
                 sourceLocator: row.locator,
@@ -680,7 +682,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 warningCount: row.warningCount,
                 errorCount: row.errorCount,
                 skillSelection: skillSelectionState(sourceId: row.id),
-                targetSelection: targetSelectionState(sourceId: row.id),
+                targetSelection: isExternal ? .empty : targetSelectionState(sourceId: row.id),
                 stats: metadata.stats,
                 skillsLoading: false,
                 targetsLoading: false,
@@ -703,7 +705,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                         highlightQuery: matchesQuery ? normalizedQuery : nil
                     )
                 }),
-                targets: visibleTargetIds().map { targetId in
+                targets: isExternal ? [] : visibleTargetIds().map { targetId in
                     GroupCardTarget(
                         id: targetId,
                         label: AgentDisplayCatalog.label(for: targetId, customAgents: routeState?.settings.customAgents ?? []),
@@ -959,6 +961,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func targetSelectionState(sourceId: String? = nil) -> SelectionState {
+        if sourceManagement.summary(for: sourceId)?.ownership == "external" { return .empty }
         guard let sourceId = resolveSourceId(sourceId) else { return .empty }
         let targetIds = visibleTargetIds()
         guard !targetIds.isEmpty else { return .empty }
@@ -1890,7 +1893,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             let reason = (repaired["repairReason"] as? String) ?? "local drift"
             return "Recovered local checkout (\(reason))"
         }
-        fallbackCount == 1 ? localized("toast.update.summary.single") : localized("toast.update.summary.multiple", String(fallbackCount))
+        return fallbackCount == 1
+            ? localized("toast.update.summary.single")
+            : localized("toast.update.summary.multiple", String(fallbackCount))
     }
 
     private func registerRecentlyUpdatedSources(from value: Any?) {

@@ -76,17 +76,38 @@ export class DeploymentReconciler {
     const planner = new DeploymentPlanner(
       input.adapters,
       this.projectedLinkNameMaps(input.manifest, input.lockFile),
+      input.manifest.sources
+        .filter((source) => source.ownership === "external")
+        .flatMap((source) => source.observedPaths ?? [])
+        .map((observed) => observed.realPath),
     );
     const uniqueSourceIds = [...new Set(input.sourceIds)];
     const actions: DeploymentAction[] = [];
     const warnings: DeploymentPlan["warnings"] = [];
+    const externalPaths = input.manifest.sources
+      .filter((source) => source.ownership === "external")
+      .flatMap((source) => source.observedPaths ?? [])
+      .map((observed) => observed.realPath);
 
     for (const sourceId of uniqueSourceIds) {
       const planned = await planner.planForSource(sourceId, input.manifest, input.lockFile);
       if (!planned.ok) {
         return fail(planned.errors, [...warnings, ...planned.warnings]);
       }
-      actions.push(...planned.data.actions);
+      actions.push(...planned.data.actions.map((action) => {
+        const conflictsWithExternalSource = action.kind !== "remove" && externalPaths.some((externalPath) =>
+          action.targetPath === externalPath ||
+          isPathInside(externalPath, action.targetPath) ||
+          isPathInside(action.targetPath, externalPath)
+        );
+        return conflictsWithExternalSource
+          ? {
+              ...action,
+              kind: "blocked" as const,
+              reason: "Target path is owned by an externally managed source.",
+            }
+          : action;
+      }));
       warnings.push(...planned.warnings);
     }
 

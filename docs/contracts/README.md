@@ -39,6 +39,10 @@ create-collection
 merge-groups
 restore-collection-sources
 doctor
+adopt-external-source
+configure-external-source
+external-status
+external-update
 add
 apply
 update
@@ -68,3 +72,9 @@ When adding, removing, or renaming a bridge command:
 State compatibility is implemented in `packages/storage` and domain types live in `packages/domain`.
 
 State shape changes are external changes. Add storage/domain tests and migration or normalizer coverage.
+
+External sources use `ownership: "external"` in manifest/lock state. Their
+paths are observation-only: they cannot receive target bindings, managed
+updates, or repair operations. `external-update` requires
+`confirmExternalUpdate: true` and runs only a locally configured executable
+delegate.
