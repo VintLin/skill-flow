@@ -4,6 +4,23 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.5.8 - 2026-08-16
+
+### Added
+
+- Added externally managed skill sources with explicit adoption, observation, version checks, and confirmation-gated update delegation.
+- Added CLI and bridge commands for adopting, inspecting, configuring, updating, and removing external sources.
+
+### Changed
+
+- External source paths are now kept outside Skill Flow ownership: they are never copied, linked, deployed, repaired, or deleted by managed lifecycle operations.
+- Added collision blocking when a managed projection would overwrite an externally observed path.
+- Updated the CLI and all internal workspace packages from `1.5.7` to `1.5.8`.
+
+### Fixed
+
+- Fixed externally installed skills being treated as Skill Flow-managed sources, which could create a divergent checkout and bypass the tool's official update path (#12).
+
 ## v1.5.7 - 2026-08-16
 
 ### Added
