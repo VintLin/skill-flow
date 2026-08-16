@@ -4,6 +4,23 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.5.7 - 2026-08-16
+
+### Added
+
+- Added a Git source fast path that skips refetching when the remote default HEAD is unchanged and the managed checkout still matches its locked leaf hashes.
+- Added explicit repair results and audit details for missing or drifted managed checkouts, including CLI, TUI, and desktop feedback.
+
+### Changed
+
+- Git remote preflight now uses a single short timeout and falls back conservatively to a full update when verification is unavailable.
+- Managed skill leaf hashing now accounts for safe relative symlinks and rejects absolute or escaping symlinks before deployment.
+- Updated the CLI and all internal workspace packages from `1.5.6` to `1.5.7`.
+
+### Fixed
+
+- Fixed unchanged remote sources being skipped even when their local managed checkout was missing, incomplete, or locally modified.
+
 ## v1.5.6 - 2026-07-18
 
 ### Added
