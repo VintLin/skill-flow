@@ -8,6 +8,7 @@ import type {
   SourceRevision,
   SourceKind,
   SourceManifestRecord,
+  SourceRepairReason,
   SourceUpdateDiff,
   SourceUpdateFailureItem,
   SourceUpdateResult,
@@ -289,6 +290,7 @@ export class SourceAuthorityService {
     const updated: SourceUpdateResultItem[] = [];
     const failed: SourceUpdateFailureItem[] = [];
     const warnings: Warning[] = [];
+    const precheckFallbackSourceIds: string[] = [];
     const hardFailures: Failure[] = [];
     let appliedCheckoutCount = 0;
 
@@ -305,6 +307,43 @@ export class SourceAuthorityService {
       if (source.kind === "collection") {
         updated.push(this.emptyUpdateResult(sourceId));
         continue;
+      }
+
+      const lockedCommit = this.readLockedCommitSha(lock.revision);
+      let repairReason: SourceRepairReason | undefined;
+      if (source.kind === "git" && lockedCommit) {
+        try {
+          const remoteCommit = await this.options.checkoutService.readGitRemoteHeadCommit(
+            source.locator,
+          );
+          if (!remoteCommit) {
+            precheckFallbackSourceIds.push(sourceId);
+            warnings.push({
+              code: "SOURCE_REMOTE_PRECHECK_FALLBACK",
+              message: `Remote HEAD could not be verified for '${sourceId}'; running a full update.`,
+            });
+          }
+          if (
+            remoteCommit
+            && remoteCommit === lockedCommit
+          ) {
+            const integrity = await this.inspectCheckoutIntegrity(
+              lock,
+              nextLockFile.leafInventory,
+            );
+            if (!integrity.repairReason) {
+              updated.push(this.emptyUpdateResult(sourceId));
+              continue;
+            }
+            repairReason = integrity.repairReason;
+          }
+        } catch (error) {
+          precheckFallbackSourceIds.push(sourceId);
+          warnings.push({
+            code: "SOURCE_REMOTE_PRECHECK_FALLBACK",
+            message: `Remote HEAD could not be verified for '${sourceId}'; running a full update: ${String(error)}`,
+          });
+        }
       }
 
       const tempCheckoutPath = path.join(
@@ -368,6 +407,10 @@ export class SourceAuthorityService {
         nextLeafs,
         prepared.data.invalidLeafs ?? [],
       );
+      if (repairReason) {
+        diff.repaired = true;
+        diff.repairReason = repairReason;
+      }
 
       nextLockFile.sources[sourceId] = {
         ...lock,
@@ -407,6 +450,7 @@ export class SourceAuthorityService {
       status,
       updated,
       ...(failed.length > 0 ? { failed } : {}),
+      ...(precheckFallbackSourceIds.length > 0 ? { precheckFallbackSourceIds } : {}),
     }, warnings);
   }
 
@@ -534,6 +578,40 @@ export class SourceAuthorityService {
     return kind;
   }
 
+  private readLockedCommitSha(revision: SourceRevision): string | undefined {
+    return "commit" in revision ? revision.commit : undefined;
+  }
+
+  private async inspectCheckoutIntegrity(
+    lock: LockFile["sources"][string],
+    leafInventory: LeafRecord[],
+  ): Promise<{ repairReason?: SourceRepairReason }> {
+    if (!(await pathExists(lock.localPath))) {
+      return { repairReason: "missing-checkout" };
+    }
+
+    const sourceLeafs = leafInventory.filter((leaf) => leaf.sourceId === lock.sourceId);
+    for (const leaf of sourceLeafs) {
+      const leafPath = path.resolve(lock.localPath, leaf.relativePath);
+      const relativeLeafPath = path.relative(lock.localPath, leafPath);
+      if (relativeLeafPath.startsWith("..") || path.isAbsolute(relativeLeafPath)) {
+        return { repairReason: "content-drift" };
+      }
+      if (!(await pathExists(path.join(leafPath, "SKILL.md")))) {
+        return { repairReason: "missing-skill-file" };
+      }
+      try {
+        if (await hashDirectory(leafPath, { symlinkPolicy: "preserve-safe" }) !== leaf.contentHash) {
+          return { repairReason: "content-drift" };
+        }
+      } catch {
+        return { repairReason: "content-drift" };
+      }
+    }
+
+    return {};
+  }
+
   private emptyUpdateResult(sourceId: string): SourceUpdateResultItem {
     return {
       sourceId,
@@ -621,7 +699,7 @@ export class SourceAuthorityService {
       description: leaf.description ?? "",
       absolutePath,
       skillFilePath: path.join(absolutePath, "SKILL.md"),
-      contentHash: await hashDirectory(absolutePath),
+      contentHash: await hashDirectory(absolutePath, { symlinkPolicy: "preserve-safe" }),
       selectors: {
         aliases: [leaf.id, leaf.relativePath].filter((value, index, values) =>
           value && values.indexOf(value) === index

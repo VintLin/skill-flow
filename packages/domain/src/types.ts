@@ -1046,9 +1046,16 @@ export type SourceUpdateDiff = {
   diagnostics?: Diagnostic[];
 };
 
+export type SourceRepairReason =
+  | "missing-checkout"
+  | "missing-skill-file"
+  | "content-drift";
+
 export type SourceUpdateResultItem = {
   sourceId: SourceId;
   changed: boolean;
+  repaired?: boolean;
+  repairReason?: SourceRepairReason;
   requestedPath?: string;
   selectionMode?: "all" | "selected";
   addedLeafIds: string[];
@@ -1069,6 +1076,8 @@ export type SourceUpdateResult = {
   updated: SourceUpdateResultItem[];
   /** Groups that failed during a multi-source update; disk/lock were left unchanged for these. */
   failed?: SourceUpdateFailureItem[];
+  /** Sources that used the full update path because remote HEAD preflight was unavailable. */
+  precheckFallbackSourceIds?: SourceId[];
   diffs?: SourceUpdateDiff[];
   diagnostics?: Diagnostic[];
 };

@@ -1306,6 +1306,108 @@ description: |
     expect(await fs.readFile(path.join(targetPath, "SKILL.md"), "utf8")).toBe(targetBefore);
   });
 
+  test("update repairs an unchanged git checkout, reconciles its target, and audits the repair", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "browse/SKILL.md": skillDoc("browse", "Browser flow."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "git-repair" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const sourceId = added.data.manifest.id;
+    const leafId = `${sourceId}:browse`;
+    const applied = await app.applyDraft(sourceId, {
+      enabledTargets: ["codex"],
+      selectedLeafIds: [leafId],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) {
+      return;
+    }
+
+    const before = await view(app);
+    const targetPath = before.lockFile.projections.find(
+      (projection) => projection.sourceId === sourceId && projection.target === "codex",
+    )?.targetPath;
+    expect(targetPath).toBeTruthy();
+    if (!targetPath) {
+      return;
+    }
+    const commit = await gitUtils.git(["rev-parse", "HEAD"], { cwd: repoPath });
+    await v2(app).writeState({
+      ...before,
+      manifest: {
+        ...before.manifest,
+        sources: before.manifest.sources.map((source) => source.id === sourceId
+          ? { ...source, kind: "git" }
+          : source),
+      },
+      lockFile: {
+        ...before.lockFile,
+        sources: {
+          ...before.lockFile.sources,
+          [sourceId]: {
+            ...before.lockFile.sources[sourceId]!,
+            revision: { provider: "git", commit, capturedAt: new Date().toISOString() },
+          },
+        },
+      },
+    });
+    await fs.rm(before.lockFile.sources[sourceId]!.localPath, { recursive: true, force: true });
+    await fs.rm(targetPath, { recursive: true, force: true });
+
+    const updated = await app.updateSources([sourceId]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.updated[0]).toMatchObject({
+      sourceId,
+      changed: false,
+      repaired: true,
+      repairReason: "missing-checkout",
+    });
+    await expect(fs.stat(path.join(targetPath, "SKILL.md"))).resolves.toBeTruthy();
+
+    const auditLines = (await fs.readFile(path.join(sandbox.stateRoot, "audit.log.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(auditLines.at(-1)).toMatchObject({
+      mutation: "update-sources",
+      status: "ok",
+      details: {
+        repairedSourceIds: [sourceId],
+        repairReasons: [{ sourceId, reason: "missing-checkout" }],
+        precheckFallbackSourceIds: [],
+      },
+    });
+
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
+    const fallback = await app.updateSources([sourceId]);
+    expect(fallback.ok).toBe(true);
+    if (!fallback.ok) {
+      return;
+    }
+    expect(fallback.warnings).toContainEqual(expect.objectContaining({
+      code: "SOURCE_REMOTE_PRECHECK_FALLBACK",
+    }));
+    const fallbackAuditLines = (await fs.readFile(path.join(sandbox.stateRoot, "audit.log.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(fallbackAuditLines.at(-1)).toMatchObject({
+      details: {
+        repairedSourceIds: [],
+        precheckFallbackSourceIds: [sourceId],
+      },
+    });
+  });
+
   test("applyDraft writes an audit event with selected targets", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),

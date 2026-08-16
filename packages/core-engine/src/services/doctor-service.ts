@@ -150,7 +150,7 @@ export class DoctorService {
               });
             }
           } else {
-            const onDiskHash = await hashDirectory(targetPath);
+            const onDiskHash = await hashDirectory(targetPath, { symlinkPolicy: "preserve-safe" });
             if (onDiskHash !== deployment.contentHash) {
               issues.push({
                 severity: "warning",

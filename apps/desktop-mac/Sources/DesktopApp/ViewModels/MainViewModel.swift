@@ -1210,7 +1210,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             let response = try await sourceManagement.updateSelectedSource(sourceId)
             await synchronizeState(refreshDoctor: true)
             registerRecentlyUpdatedSources(from: response?.data?.value)
-            showToast(style: .success, text: .plain(updateSummaryMessage(from: nil, fallbackCount: 1)))
+            showToast(style: .success, text: .plain(updateSummaryMessage(from: response?.data?.value, fallbackCount: 1)))
         } catch {
             showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
         }
@@ -1884,6 +1884,12 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {
+        if let payload = value as? [String: Any],
+           let items = payload["updated"] as? [[String: Any]],
+           let repaired = items.first(where: { $0["repaired"] as? Bool == true }) {
+            let reason = (repaired["repairReason"] as? String) ?? "local drift"
+            return "Recovered local checkout (\(reason))"
+        }
         fallbackCount == 1 ? localized("toast.update.summary.single") : localized("toast.update.summary.multiple", String(fallbackCount))
     }
 
@@ -1897,6 +1903,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
         for item in items {
             let changed = item["changed"] as? Bool == true
+                || item["repaired"] as? Bool == true
                 || ((item["addedLeafIds"] as? [String])?.isEmpty == false)
                 || ((item["removedLeafIds"] as? [String])?.isEmpty == false)
                 || ((item["invalidatedLeafIds"] as? [String])?.isEmpty == false)

@@ -83,7 +83,7 @@ export async function materializeSkillCollectionMembers(
       const memberPath = path.join(collectionRoot, memberId);
 
       await fs.cp(origin.sourcePath, memberPath, { recursive: true, force: true });
-      const actualHash = await hashDirectory(memberPath);
+      const actualHash = await hashDirectory(memberPath, { symlinkPolicy: "preserve-safe" });
       if (actualHash !== origin.contentHashAtCapture) {
         options.onContentHashMismatch?.({
           collectionRoot,

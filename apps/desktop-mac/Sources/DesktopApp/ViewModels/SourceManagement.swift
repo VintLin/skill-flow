@@ -779,6 +779,7 @@ final class SourceManagement {
                 let sourceId = (item["sourceId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
                 !sourceId.isEmpty,
                 item["changed"] as? Bool == true ||
+                item["repaired"] as? Bool == true ||
                 ((item["addedLeafIds"] as? [String])?.isEmpty == false) ||
                 ((item["removedLeafIds"] as? [String])?.isEmpty == false) ||
                 ((item["invalidatedLeafIds"] as? [String])?.isEmpty == false),

@@ -256,6 +256,24 @@ export class SourceCheckoutService {
     }, snapshot.warnings);
   }
 
+  async readGitRemoteHeadCommit(locator: string): Promise<string | undefined> {
+    if (!(await isGitAvailable())) {
+      return undefined;
+    }
+
+    const parseCommitSha = (raw: string): string | undefined => {
+      const line = raw
+        .split(/\r?\n/)
+        .map((entry) => entry.trim())
+        .find((entry) => entry.length > 0);
+      const sha = line?.split(/\s+/)[0]?.trim();
+      return sha && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha) ? sha : undefined;
+    };
+
+    const headOutput = await git(["ls-remote", locator, "HEAD"], { timeoutMs: 5_000 });
+    return parseCommitSha(headOutput);
+  }
+
   async normalizeLocator(locator: string): Promise<string> {
     const trimmed = locator.trim();
 

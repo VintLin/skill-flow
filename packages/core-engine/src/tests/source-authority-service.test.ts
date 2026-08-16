@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { StateStore } from "@skill-flow/storage/state-store";
+import { hashDirectory } from "@skill-flow/integration/utils/fs";
 import { InventoryService } from "../services/inventory-service.js";
 import { SourceAuthorityService } from "../services/source-authority-service.js";
 import { SourceCheckoutService } from "../services/source-checkout-service.js";
@@ -214,6 +215,204 @@ describe.sequential("SourceAuthorityService", () => {
       "update-source:skills/one",
       "update-source:skills/two",
     ]);
+  });
+
+  test("updateSources skips healthy git sources and repairs local drift", async () => {
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({
+      stateStore,
+      checkoutService,
+    });
+
+    const preparedCheckoutPath = path.join(
+      sandbox.stateRoot,
+      "source",
+      "git",
+      ".prepared-git-unchanged",
+    );
+    await fs.mkdir(path.join(preparedCheckoutPath, "skills", "one"), { recursive: true });
+    await fs.writeFile(
+      path.join(preparedCheckoutPath, "skills", "one", "SKILL.md"),
+      skillDoc("one", "One."),
+      "utf8",
+    );
+    const contentHash = await hashDirectory(path.join(preparedCheckoutPath, "skills", "one"));
+    const committed = await service.commitPreparedSource({
+      preparedCheckout: {
+        locator: "https://github.com/acme/skills.git",
+        displayName: "Skills",
+        kind: "git",
+        sourceId: "git-unchanged",
+        checkoutPath: preparedCheckoutPath,
+        leafs: [{
+          id: "git-unchanged:skills/one",
+          sourceId: "git-unchanged",
+          name: "one",
+          linkName: "one",
+          title: "one",
+          description: "One.",
+          relativePath: "skills/one",
+          absolutePath: path.join(preparedCheckoutPath, "skills", "one"),
+          skillFilePath: path.join(preparedCheckoutPath, "skills", "one", "SKILL.md"),
+          contentHash,
+          diagnostics: [],
+          valid: true,
+        }],
+        invalidLeafs: [],
+        commitSha: "same-sha",
+      },
+    });
+    expect(committed.ok).toBe(true);
+    if (!committed.ok) {
+      return;
+    }
+
+    const recoveryRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    checkoutService.readGitRemoteHeadCommit = vi.fn(async () => "same-sha");
+    const originalPrepareSourceCheckout = checkoutService.prepareSourceCheckout.bind(checkoutService);
+    const prepareSourceCheckout = vi.spyOn(checkoutService, "prepareSourceCheckout")
+      .mockImplementation((_locator, options) => originalPrepareSourceCheckout(recoveryRepo, options));
+
+    const updated = await service.updateSources(["git-unchanged"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(prepareSourceCheckout).not.toHaveBeenCalled();
+    expect(updated.data.updated).toEqual([
+      expect.objectContaining({
+        sourceId: "git-unchanged",
+        changed: false,
+      }),
+    ]);
+    const state = await stateStore.readState();
+    expect(state.lockFile.sources["git-unchanged"]?.leafIds).toEqual([
+      "git-unchanged:skills/one",
+    ]);
+
+    await fs.rm(state.lockFile.sources["git-unchanged"]!.localPath, {
+      recursive: true,
+      force: true,
+    });
+
+    const restored = await service.updateSources(["git-unchanged"]);
+
+    expect(restored.ok).toBe(true);
+    expect(prepareSourceCheckout).toHaveBeenCalledTimes(1);
+    if (!restored.ok) {
+      return;
+    }
+    expect(restored.data.updated[0]).toEqual(expect.objectContaining({
+      sourceId: "git-unchanged",
+      changed: false,
+      repaired: true,
+      repairReason: "missing-checkout",
+    }));
+    await expect(fs.stat(path.join(
+      sandbox.stateRoot,
+      "source",
+      "git",
+      "git-unchanged",
+      "skills",
+      "one",
+      "SKILL.md",
+    ))).resolves.toBeTruthy();
+
+    await fs.rm(path.join(
+      sandbox.stateRoot,
+      "source",
+      "git",
+      "git-unchanged",
+      "skills",
+      "one",
+      "SKILL.md",
+    ));
+    const repairedSkillFile = await service.updateSources(["git-unchanged"]);
+    expect(repairedSkillFile.ok).toBe(true);
+    if (!repairedSkillFile.ok) {
+      return;
+    }
+    expect(repairedSkillFile.data.updated[0]).toEqual(expect.objectContaining({
+      repaired: true,
+      repairReason: "missing-skill-file",
+    }));
+
+    await fs.appendFile(path.join(
+      sandbox.stateRoot,
+      "source",
+      "git",
+      "git-unchanged",
+      "skills",
+      "one",
+      "SKILL.md",
+    ), "\nlocal drift\n");
+    const repairedContent = await service.updateSources(["git-unchanged"]);
+    expect(repairedContent.ok).toBe(true);
+    if (!repairedContent.ok) {
+      return;
+    }
+    expect(repairedContent.data.updated[0]).toEqual(expect.objectContaining({
+      repaired: true,
+      repairReason: "content-drift",
+    }));
+    expect(prepareSourceCheckout).toHaveBeenCalledTimes(3);
+  });
+
+  test("updateSources falls back to a full update when remote HEAD preflight is unavailable", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const added = await service.addSource(repoPath, { sourceIdOverride: "git-fallback" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    const state = await stateStore.readState();
+    state.manifest.sources[0] = {
+      ...state.manifest.sources[0]!,
+      kind: "git",
+      locator: "https://github.com/acme/skills.git",
+    };
+    state.lockFile.sources["git-fallback"] = {
+      ...state.lockFile.sources["git-fallback"]!,
+      revision: { provider: "git", commit: "same-sha", capturedAt: new Date().toISOString() },
+    };
+    await stateStore.writeState(state);
+
+    checkoutService.readGitRemoteHeadCommit = vi.fn(async () => undefined);
+    const originalPrepareSourceCheckout = checkoutService.prepareSourceCheckout.bind(checkoutService);
+    const prepareSourceCheckout = vi.spyOn(checkoutService, "prepareSourceCheckout")
+      .mockImplementation((_locator, options) => originalPrepareSourceCheckout(repoPath, options));
+
+    const updated = await service.updateSources(["git-fallback"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(prepareSourceCheckout).toHaveBeenCalledTimes(1);
+    expect(updated.data.precheckFallbackSourceIds).toEqual(["git-fallback"]);
+    expect(updated.warnings).toContainEqual(expect.objectContaining({
+      code: "SOURCE_REMOTE_PRECHECK_FALLBACK",
+    }));
+    expect(updated.data.updated[0]).toEqual(expect.objectContaining({ changed: false }));
+    expect(updated.data.updated[0]?.repaired).toBeUndefined();
   });
 
   test("updateSources keeps successful groups when another group fails mid-batch", async () => {

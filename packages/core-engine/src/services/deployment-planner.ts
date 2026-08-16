@@ -436,8 +436,8 @@ export class DeploymentPlanner {
   ): Promise<boolean> {
     try {
       const [targetHash, sourceHash] = await Promise.all([
-        hashDirectory(targetPath),
-        hashDirectory(expectedSourcePath),
+        hashDirectory(targetPath, { symlinkPolicy: "preserve-safe" }),
+        hashDirectory(expectedSourcePath, { symlinkPolicy: "preserve-safe" }),
       ]);
       return targetHash === contentHash && sourceHash === contentHash;
     } catch {
