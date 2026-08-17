@@ -85,6 +85,24 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertTrue(response.ok)
     }
 
+    func testUpdateUsesDedicatedLongRunningCommandTimeout() async throws {
+        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 100)
+        self.fixture = fixture
+
+        let bridge = await MainActor.run {
+            BridgeClient(
+                commandTimeoutMilliseconds: 25,
+                importCommandTimeoutMilliseconds: 50,
+                updateCommandTimeoutMilliseconds: 150
+            )
+        }
+
+        let response = try await bridge.updateSources(["hugohe3-ppt-master"])
+
+        XCTAssertEqual(response.command, BridgeCommand.update)
+        XCTAssertTrue(response.ok)
+    }
+
     func testTimedOutHelperIsForceKilledWhenItIgnoresTerminate() async throws {
         let fixture = try StubbornBridgeFixture.install()
         stubbornFixture = fixture
