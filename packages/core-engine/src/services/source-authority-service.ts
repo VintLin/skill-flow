@@ -333,6 +333,7 @@ export class SourceAuthorityService {
         try {
           const remoteCommit = await this.options.checkoutService.readGitRemoteHeadCommit(
             source.locator,
+            lock.originBranch ? { branch: lock.originBranch } : {},
           );
           if (!remoteCommit) {
             precheckFallbackSourceIds.push(sourceId);
@@ -374,8 +375,10 @@ export class SourceAuthorityService {
         options: {
           sourceIdOverride: sourceId,
           displayNameOverride: source.displayName,
+          ...(lock.originBranch ? { originBranch: lock.originBranch } : {}),
         },
         checkoutPath: tempCheckoutPath,
+        existingCheckoutPath: lock.localPath,
         allowEmptyLeafs: true,
       });
       if (!prepared.ok) {

@@ -265,6 +265,7 @@ describe.sequential("SourceAuthorityService", () => {
         }],
         invalidLeafs: [],
         commitSha: "same-sha",
+        originBranch: "release",
       },
     });
     expect(committed.ok).toBe(true);
@@ -287,6 +288,10 @@ describe.sequential("SourceAuthorityService", () => {
       return;
     }
     expect(prepareSourceCheckout).not.toHaveBeenCalled();
+    expect(checkoutService.readGitRemoteHeadCommit).toHaveBeenCalledWith(
+      "https://github.com/acme/skills.git",
+      { branch: "release" },
+    );
     expect(updated.data.updated).toEqual([
       expect.objectContaining({
         sourceId: "git-unchanged",

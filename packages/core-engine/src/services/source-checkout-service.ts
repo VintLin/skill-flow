@@ -97,6 +97,7 @@ type SourceResolution = {
   clawhubSlug?: string;
   requestedVersion?: string;
   versionMode?: "pinned" | "floating";
+  originBranch?: string;
 };
 
 export class SourceCheckoutService {
@@ -154,6 +155,7 @@ export class SourceCheckoutService {
       options?: AddSourceOptions;
       existingSources?: Array<{ id: string; kind?: SourceKind; locator: string; displayName: string }>;
       checkoutPath?: string;
+      existingCheckoutPath?: string;
       suffix?: string;
       allowEmptyLeafs?: boolean;
     } = {},
@@ -171,7 +173,7 @@ export class SourceCheckoutService {
     await ensureDir(path.dirname(checkoutPath));
 
     try {
-      await this.fetchSource(resolved, checkoutPath);
+      await this.fetchSource(resolved, checkoutPath, input.existingCheckoutPath);
     } catch (error) {
       await removePath(checkoutPath);
       return fail({
@@ -187,7 +189,9 @@ export class SourceCheckoutService {
       resolved.displayName,
       checkoutPath,
       resolved.requestedPath,
-      options,
+      resolved.originBranch && !options.originBranch
+        ? { ...options, originBranch: resolved.originBranch }
+        : options,
       input.allowEmptyLeafs === undefined ? {} : { allowEmptyLeafs: input.allowEmptyLeafs },
     );
     if (!snapshot.ok) {
@@ -256,10 +260,15 @@ export class SourceCheckoutService {
     }, snapshot.warnings);
   }
 
-  async readGitRemoteHeadCommit(locator: string): Promise<string | undefined> {
+  async readGitRemoteHeadCommit(
+    locator: string,
+    options: { branch?: string } = {},
+  ): Promise<string | undefined> {
     if (!(await isGitAvailable())) {
       return undefined;
     }
+
+    const gitLocator = await this.normalizeLocator(locator);
 
     const parseCommitSha = (raw: string): string | undefined => {
       const line = raw
@@ -270,7 +279,8 @@ export class SourceCheckoutService {
       return sha && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha) ? sha : undefined;
     };
 
-    const headOutput = await git(["ls-remote", locator, "HEAD"], { timeoutMs: 5_000 });
+    const remoteRef = this.remoteRef(options.branch);
+    const headOutput = await git(["ls-remote", gitLocator, remoteRef], { timeoutMs: 5_000 });
     return parseCommitSha(headOutput);
   }
 
@@ -328,6 +338,7 @@ export class SourceCheckoutService {
         displayName: options.displayNameOverride ?? deriveDisplayName(treeLocator.repoLocator),
         sourceId: options.sourceIdOverride ?? deriveSourceId(treeLocator.repoLocator),
         ...(requestedPath ? { requestedPath } : {}),
+        ...(treeLocator.originBranch ? { originBranch: treeLocator.originBranch } : {}),
       };
     }
 
@@ -344,6 +355,7 @@ export class SourceCheckoutService {
         displayName: options.displayNameOverride ?? deriveDisplayName(shorthandLocator.repoLocator),
         sourceId: options.sourceIdOverride ?? deriveSourceId(shorthandLocator.repoLocator),
         ...(requestedPath ? { requestedPath } : {}),
+        ...(options.originBranch ? { originBranch: options.originBranch } : {}),
       };
     }
 
@@ -376,6 +388,7 @@ export class SourceCheckoutService {
       displayName: options.displayNameOverride ?? deriveDisplayName(locator),
       sourceId: options.sourceIdOverride ?? deriveSourceId(locator),
       ...(requestedPath ? { requestedPath } : {}),
+      ...(options.originBranch ? { originBranch: options.originBranch } : {}),
     };
   }
 
@@ -463,6 +476,7 @@ export class SourceCheckoutService {
   private async fetchSource(
     source: SourceResolution,
     checkoutPath: string,
+    existingCheckoutPath?: string,
   ): Promise<void> {
     if (source.kind === "local") {
       await copyDirectory(source.localPath!, checkoutPath);
@@ -470,7 +484,23 @@ export class SourceCheckoutService {
     }
 
     if (source.kind === "git") {
-      await this.fetchGitSource(source.gitLocator!, checkoutPath);
+      if (
+        existingCheckoutPath
+        && await this.isGitRepositoryPath(existingCheckoutPath)
+      ) {
+        try {
+          await this.refreshGitSourceFromExisting(
+            source.gitLocator!,
+            existingCheckoutPath,
+            checkoutPath,
+            source.originBranch,
+          );
+          return;
+        } catch {
+          await removePath(checkoutPath).catch(() => {});
+        }
+      }
+      await this.fetchGitSource(source.gitLocator!, checkoutPath, source.originBranch);
       return;
     }
 
@@ -483,6 +513,31 @@ export class SourceCheckoutService {
     } finally {
       await removePath(installed.workdir);
     }
+  }
+
+  private async refreshGitSourceFromExisting(
+    locator: string,
+    existingCheckoutPath: string,
+    checkoutPath: string,
+    originBranch?: string,
+  ): Promise<void> {
+    await removePath(checkoutPath).catch(() => {});
+    await git([
+      "clone",
+      "--local",
+      "--no-checkout",
+      existingCheckoutPath,
+      checkoutPath,
+    ]);
+    await git(["remote", "set-url", "origin", locator], { cwd: checkoutPath });
+    const remoteRef = this.remoteRef(originBranch);
+    await git(["fetch", "--depth", "1", "origin", remoteRef], { cwd: checkoutPath });
+    await git(["checkout", "--detach", "--force", "FETCH_HEAD"], { cwd: checkoutPath });
+  }
+
+  private remoteRef(originBranch?: string): string {
+    const branch = originBranch?.trim();
+    return branch ? `refs/heads/${branch}` : "HEAD";
   }
 
   private async buildSnapshot(
@@ -674,7 +729,7 @@ export class SourceCheckoutService {
 
   private parseTreeLocator(
     locator: string,
-  ): { repoLocator: string; requestedPath?: string } | null {
+  ): { repoLocator: string; requestedPath?: string; originBranch?: string } | null {
     try {
       const url = new URL(locator);
 
@@ -686,14 +741,16 @@ export class SourceCheckoutService {
 
         const owner = parts[0];
         const repo = parts[1];
+        const originBranch = parts[3];
         const requestedPath = parts.slice(4).join("/");
-        if (!owner || !repo || !requestedPath) {
+        if (!owner || !repo || !originBranch || !requestedPath) {
           return null;
         }
 
         return {
           repoLocator: `https://github.com/${owner}/${repo}.git`,
           requestedPath,
+          originBranch,
         };
       }
 
@@ -705,11 +762,13 @@ export class SourceCheckoutService {
           return null;
         }
 
+        const originBranch = parts[markerIndex + 2];
         const requestedPath = parts.slice(markerIndex + 3).join("/");
 
         return {
           repoLocator: `https://gitlab.com/${parts.slice(0, markerIndex).join("/")}.git`,
           ...(requestedPath ? { requestedPath } : {}),
+          ...(originBranch ? { originBranch } : {}),
         };
       }
     } catch {
@@ -802,14 +861,18 @@ export class SourceCheckoutService {
     return `${normalizedBase}/${normalizedChild}`;
   }
 
-  private async fetchGitSource(locator: string, checkoutPath: string): Promise<void> {
+  private async fetchGitSource(
+    locator: string,
+    checkoutPath: string,
+    originBranch?: string,
+  ): Promise<void> {
     if (!(await isGitAvailable())) {
-      await this.fetchGitArchive(locator, checkoutPath);
+      await this.fetchGitArchive(locator, checkoutPath, originBranch);
       return;
     }
 
     try {
-      await this.cloneGitWithRetries(locator, checkoutPath);
+      await this.cloneGitWithRetries(locator, checkoutPath, originBranch);
       return;
     } catch {
       // Prefer HTTPS fallback when SSH/clone URL variants fail, then archive.
@@ -818,23 +881,34 @@ export class SourceCheckoutService {
     const fallbackLocator = this.resolveGitCloneFallbackLocator(locator);
     if (fallbackLocator) {
       try {
-        await this.cloneGitWithRetries(fallbackLocator, checkoutPath);
+        await this.cloneGitWithRetries(fallbackLocator, checkoutPath, originBranch);
         return;
       } catch {
         await removePath(checkoutPath);
-        await this.fetchGitArchive(fallbackLocator, checkoutPath);
+        await this.fetchGitArchive(fallbackLocator, checkoutPath, originBranch);
         return;
       }
     }
 
     await removePath(checkoutPath);
-    await this.fetchGitArchive(locator, checkoutPath);
+    await this.fetchGitArchive(locator, checkoutPath, originBranch);
   }
 
-  private async cloneGitWithRetries(locator: string, checkoutPath: string): Promise<void> {
+  private async cloneGitWithRetries(
+    locator: string,
+    checkoutPath: string,
+    originBranch?: string,
+  ): Promise<void> {
     await withNetworkRetries(async () => {
       await removePath(checkoutPath).catch(() => {});
-      await git(["clone", "--depth", "1", locator, checkoutPath]);
+      await git([
+        "clone",
+        "--depth",
+        "1",
+        ...(originBranch ? ["--branch", originBranch] : []),
+        locator,
+        checkoutPath,
+      ]);
     }, { attempts: 2 });
   }
 
@@ -855,11 +929,9 @@ export class SourceCheckoutService {
     try {
       await ensureDir(tempRoot);
 
-      const branchCandidates = [
-        preferredBranch,
-        "main",
-        "master",
-      ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+      const branchCandidates = preferredBranch
+        ? [preferredBranch]
+        : ["main", "master"];
 
       let lastError: Error | undefined;
       for (const branch of branchCandidates) {
