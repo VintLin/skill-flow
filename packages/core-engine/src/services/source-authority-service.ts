@@ -329,14 +329,14 @@ export class SourceAuthorityService {
 
       const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
       const expectedCheckoutPath = path.join(sourceRoot, source.kind, sourceId);
-      const normalizedLocalPath = path.resolve(lock.localPath);
-      if (
-        normalizedLocalPath !== path.resolve(expectedCheckoutPath)
-        || !isPathInside(sourceRoot, normalizedLocalPath)
-      ) {
+      if (!await this.isManagedCheckoutPathValid(
+        sourceRoot,
+        expectedCheckoutPath,
+        lock.localPath,
+      )) {
         return fail({
           code: "SOURCE_CHECKOUT_PATH_INVALID",
-          message: `Refusing to update checkout with mismatched managed path: ${lock.localPath}`,
+          message: `Refusing to update checkout with invalid managed path: ${lock.localPath}`,
         }, warnings);
       }
 
@@ -392,6 +392,7 @@ export class SourceAuthorityService {
         },
         checkoutPath: tempCheckoutPath,
         existingCheckoutPath: lock.localPath,
+        ...(lock.originBranch ? { updateBranch: lock.originBranch } : {}),
         allowEmptyLeafs: true,
       });
       if (!prepared.ok) {
@@ -486,6 +487,56 @@ export class SourceAuthorityService {
       ...(failed.length > 0 ? { failed } : {}),
       ...(precheckFallbackSourceIds.length > 0 ? { precheckFallbackSourceIds } : {}),
     }, warnings);
+  }
+
+  private async isManagedCheckoutPathValid(
+    sourceRoot: string,
+    expectedCheckoutPath: string,
+    localPath: string,
+  ): Promise<boolean> {
+    const normalizedLocalPath = path.resolve(localPath);
+    if (
+      normalizedLocalPath !== path.resolve(expectedCheckoutPath)
+      || !isPathInside(sourceRoot, normalizedLocalPath)
+    ) {
+      return false;
+    }
+
+    const kindRoot = path.dirname(expectedCheckoutPath);
+    for (const managedPath of [sourceRoot, kindRoot]) {
+      try {
+        if ((await fs.lstat(managedPath)).isSymbolicLink()) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    const checkoutExists = await pathExists(expectedCheckoutPath);
+    if (checkoutExists) {
+      try {
+        if ((await fs.lstat(expectedCheckoutPath)).isSymbolicLink()) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    try {
+      const realSourceRoot = await fs.realpath(sourceRoot);
+      const realKindRoot = await fs.realpath(kindRoot);
+      if (!isPathInside(realSourceRoot, realKindRoot)) {
+        return false;
+      }
+      if (!checkoutExists) {
+        return true;
+      }
+      return isPathInside(realSourceRoot, await fs.realpath(expectedCheckoutPath));
+    } catch {
+      return false;
+    }
   }
 
   async reconcileInventory(

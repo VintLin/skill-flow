@@ -256,6 +256,44 @@ describe.sequential("SourceAuthorityService", () => {
       .resolves.toBe("keep");
   });
 
+  test("refuses to update a canonical checkout path that is a symbolic link", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const externalPath = path.join(sandbox.sandboxRoot, "external-symlink-target");
+    await fs.mkdir(externalPath, { recursive: true });
+    await fs.writeFile(path.join(externalPath, "sentinel.txt"), "keep", "utf8");
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const added = await service.addSource(repoPath, {
+      sourceIdOverride: "symlink-update-source",
+    });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+
+    await fs.rm(added.data.lock.localPath, { recursive: true, force: true });
+    await fs.symlink(externalPath, added.data.lock.localPath);
+    const prepareSourceCheckout = vi.spyOn(checkoutService, "prepareSourceCheckout");
+
+    const updated = await service.updateSources(["symlink-update-source"]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) {
+      return;
+    }
+    expect(updated.errors[0]?.code).toBe("SOURCE_CHECKOUT_PATH_INVALID");
+    expect(prepareSourceCheckout).not.toHaveBeenCalled();
+    await expect(fs.readFile(path.join(externalPath, "sentinel.txt"), "utf8"))
+      .resolves.toBe("keep");
+  });
+
   test("updateSources skips healthy git sources and repairs local drift", async () => {
     const stateStore = new StateStore(sandbox.stateRoot);
     await stateStore.init();

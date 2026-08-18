@@ -31,8 +31,7 @@ Skill Flow 用来把分散在不同来源的 AI agent skills 管理成可检查�
 - `lock.json` 记录解析结果、source snapshot 和部署投影。
 - Target 目录是生成输出，不是事实源。
 - macOS 桌面端依赖 CLI bridge 协议，不另建第二套状态模型。
-- GitHub tree URL 的 branch/path 边界通过远端分支确认；无法确认时明确失败，不按路径片段猜测。
-- Managed update 只读写 `~/.skillflow/source/<kind>/<sourceId>` 的规范 checkout；lock 路径不匹配时拒绝更新。
+- Managed update 只读写 `~/.skillflow/source/<kind>/<sourceId>` 的规范 checkout；lock 路径不匹配或 checkout 路径链包含符号链接时拒绝更新。
 - 桌面端更新始终有界：每个明确选择的 source 预算 5 分钟，总上限 15 分钟；全部更新使用 15 分钟。
 
 ## 非目标

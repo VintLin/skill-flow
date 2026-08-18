@@ -26,7 +26,6 @@ import {
   fetchWithTimeout,
   withNetworkRetries,
 } from "@skill-flow/integration/utils/fetch-timeout";
-import { resolveGitHubTreePath } from "@skill-flow/integration/utils/github-catalog";
 import { git, isGitAvailable } from "@skill-flow/integration/utils/git";
 import { parseGitHubRepo, parseHostedGitRepo } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
@@ -98,7 +97,6 @@ type SourceResolution = {
   clawhubSlug?: string;
   requestedVersion?: string;
   versionMode?: "pinned" | "floating";
-  originBranch?: string;
 };
 
 export class SourceCheckoutService {
@@ -157,6 +155,7 @@ export class SourceCheckoutService {
       existingSources?: Array<{ id: string; kind?: SourceKind; locator: string; displayName: string }>;
       checkoutPath?: string;
       existingCheckoutPath?: string;
+      updateBranch?: string;
       suffix?: string;
       allowEmptyLeafs?: boolean;
     } = {},
@@ -174,7 +173,12 @@ export class SourceCheckoutService {
     await ensureDir(path.dirname(checkoutPath));
 
     try {
-      await this.fetchSource(resolved, checkoutPath, input.existingCheckoutPath);
+      await this.fetchSource(
+        resolved,
+        checkoutPath,
+        input.existingCheckoutPath,
+        input.updateBranch,
+      );
     } catch (error) {
       await removePath(checkoutPath);
       return fail({
@@ -190,9 +194,7 @@ export class SourceCheckoutService {
       resolved.displayName,
       checkoutPath,
       resolved.requestedPath,
-      resolved.originBranch && !options.originBranch
-        ? { ...options, originBranch: resolved.originBranch }
-        : options,
+      options,
       input.allowEmptyLeafs === undefined ? {} : { allowEmptyLeafs: input.allowEmptyLeafs },
     );
     if (!snapshot.ok) {
@@ -326,7 +328,7 @@ export class SourceCheckoutService {
       };
     }
 
-    const treeLocator = await this.parseTreeLocator(trimmed);
+    const treeLocator = this.parseTreeLocator(trimmed);
     if (treeLocator) {
       const requestedPath = this.joinRequestedPaths(
         treeLocator.requestedPath,
@@ -339,7 +341,6 @@ export class SourceCheckoutService {
         displayName: options.displayNameOverride ?? deriveDisplayName(treeLocator.repoLocator),
         sourceId: options.sourceIdOverride ?? deriveSourceId(treeLocator.repoLocator),
         ...(requestedPath ? { requestedPath } : {}),
-        ...(treeLocator.originBranch ? { originBranch: treeLocator.originBranch } : {}),
       };
     }
 
@@ -356,7 +357,6 @@ export class SourceCheckoutService {
         displayName: options.displayNameOverride ?? deriveDisplayName(shorthandLocator.repoLocator),
         sourceId: options.sourceIdOverride ?? deriveSourceId(shorthandLocator.repoLocator),
         ...(requestedPath ? { requestedPath } : {}),
-        ...(options.originBranch ? { originBranch: options.originBranch } : {}),
       };
     }
 
@@ -389,7 +389,6 @@ export class SourceCheckoutService {
       displayName: options.displayNameOverride ?? deriveDisplayName(locator),
       sourceId: options.sourceIdOverride ?? deriveSourceId(locator),
       ...(requestedPath ? { requestedPath } : {}),
-      ...(options.originBranch ? { originBranch: options.originBranch } : {}),
     };
   }
 
@@ -478,6 +477,7 @@ export class SourceCheckoutService {
     source: SourceResolution,
     checkoutPath: string,
     existingCheckoutPath?: string,
+    updateBranch?: string,
   ): Promise<void> {
     if (source.kind === "local") {
       await copyDirectory(source.localPath!, checkoutPath);
@@ -494,14 +494,14 @@ export class SourceCheckoutService {
             source.gitLocator!,
             existingCheckoutPath,
             checkoutPath,
-            source.originBranch,
+            updateBranch,
           );
           return;
         } catch {
           await removePath(checkoutPath).catch(() => {});
         }
       }
-      await this.fetchGitSource(source.gitLocator!, checkoutPath, source.originBranch);
+      await this.fetchGitSource(source.gitLocator!, checkoutPath, updateBranch);
       return;
     }
 
@@ -728,55 +728,48 @@ export class SourceCheckoutService {
     return "git";
   }
 
-  private async parseTreeLocator(
+  private parseTreeLocator(
     locator: string,
-  ): Promise<{ repoLocator: string; requestedPath?: string; originBranch?: string } | null> {
-    let url: URL;
+  ): { repoLocator: string; requestedPath?: string } | null {
     try {
-      url = new URL(locator);
+      const url = new URL(locator);
+
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (url.hostname === "github.com") {
+        if (parts.length < 5 || parts[2] !== "tree") {
+          return null;
+        }
+
+        const owner = parts[0];
+        const repo = parts[1];
+        const requestedPath = parts.slice(4).join("/");
+        if (!owner || !repo || !requestedPath) {
+          return null;
+        }
+
+        return {
+          repoLocator: `https://github.com/${owner}/${repo}.git`,
+          requestedPath,
+        };
+      }
+
+      if (url.hostname === "gitlab.com") {
+        const markerIndex = parts.findIndex(
+          (segment, index) => segment === "-" && parts[index + 1] === "tree",
+        );
+        if (markerIndex < 2) {
+          return null;
+        }
+
+        const requestedPath = parts.slice(markerIndex + 3).join("/");
+
+        return {
+          repoLocator: `https://gitlab.com/${parts.slice(0, markerIndex).join("/")}.git`,
+          ...(requestedPath ? { requestedPath } : {}),
+        };
+      }
     } catch {
       return null;
-    }
-
-    const parts = url.pathname.split("/").filter(Boolean);
-    if (url.hostname === "github.com") {
-      if (parts.length < 5 || parts[2] !== "tree") {
-        return null;
-      }
-
-      const owner = parts[0];
-      const repo = parts[1];
-      const treePath = parts.slice(3).join("/");
-      if (!owner || !repo || !treePath) {
-        return null;
-      }
-
-      const repoLocator = `https://github.com/${owner}/${repo}.git`;
-      const resolvedTreePath = await resolveGitHubTreePath(repoLocator, treePath);
-
-      return {
-        repoLocator,
-        requestedPath: resolvedTreePath.requestedPath,
-        originBranch: resolvedTreePath.branch,
-      };
-    }
-
-    if (url.hostname === "gitlab.com") {
-      const markerIndex = parts.findIndex(
-        (segment, index) => segment === "-" && parts[index + 1] === "tree",
-      );
-      if (markerIndex < 2) {
-        return null;
-      }
-
-      const originBranch = parts[markerIndex + 2];
-      const requestedPath = parts.slice(markerIndex + 3).join("/");
-
-      return {
-        repoLocator: `https://gitlab.com/${parts.slice(0, markerIndex).join("/")}.git`,
-        ...(requestedPath ? { requestedPath } : {}),
-        ...(originBranch ? { originBranch } : {}),
-      };
     }
 
     return null;
@@ -913,6 +906,16 @@ export class SourceCheckoutService {
         locator,
         checkoutPath,
       ]);
+      if (originBranch) {
+        await git(
+          ["fetch", "--depth", "1", "origin", this.remoteRef(originBranch)],
+          { cwd: checkoutPath },
+        );
+        await git(
+          ["checkout", "--detach", "--force", "FETCH_HEAD"],
+          { cwd: checkoutPath },
+        );
+      }
     }, { attempts: 2 });
   }
 

@@ -1,6 +1,5 @@
 import type { SourceStats } from "@skill-flow/domain/types";
 import { fetchWithTimeout } from "./fetch-timeout.js";
-import { git, isGitAvailable } from "./git.js";
 import { parseGitHubRepo } from "./naming.js";
 
 type GitHubTreeResponse = {
@@ -20,72 +19,6 @@ type GitHubRepoResponse = {
   default_branch?: string;
   pushed_at?: string;
 };
-
-export type GitHubTreePathResolution = {
-  branch: string;
-  requestedPath: string;
-};
-
-export async function resolveGitHubTreePath(
-  locator: string,
-  treePath: string,
-): Promise<GitHubTreePathResolution> {
-  const repo = parseGitHubRepo(locator);
-  if (!repo) {
-    throw new Error(`Unsupported GitHub locator '${locator}'.`);
-  }
-
-  const segments = treePath
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => decodeURIComponent(segment));
-  const candidates = Array.from(
-    { length: Math.max(segments.length - 1, 0) },
-    (_, index) => {
-      const branchSegmentCount = segments.length - index - 1;
-      return {
-        branch: segments.slice(0, branchSegmentCount).join("/"),
-        requestedPath: segments.slice(branchSegmentCount).join("/"),
-      };
-    },
-  );
-  if (candidates.length === 0) {
-    throw new Error(`GitHub tree URL '${treePath}' must include a branch and repository path.`);
-  }
-
-  if (await isGitAvailable()) {
-    try {
-      const output = await git(["ls-remote", "--heads", locator], { timeoutMs: 5_000 });
-      const branches = new Set(
-        output
-          .split(/\r?\n/)
-          .map((line) => line.trim().match(/\srefs\/heads\/(.+)$/)?.[1])
-          .filter((branch): branch is string => Boolean(branch)),
-      );
-      const matched = candidates.find((candidate) => branches.has(candidate.branch));
-      if (matched) {
-        return matched;
-      }
-    } catch {
-      // GitHub's API keeps tree URL imports available when git probing fails.
-    }
-  }
-
-  for (const candidate of candidates) {
-    const response = await fetchWithTimeout(
-      `https://api.github.com/repos/${repo.owner}/${repo.repo}/branches/${encodeURIComponent(candidate.branch)}`,
-      { headers: buildGitHubHeaders() },
-    );
-    if (response.ok) {
-      return candidate;
-    }
-    if (response.status !== 404) {
-      throw new Error(`GitHub branch request failed with ${response.status}.`);
-    }
-  }
-
-  throw new Error(`Unable to resolve a GitHub branch from tree path '${treePath}'.`);
-}
 
 export async function fetchGitHubSkillPaths(
   locator: string,

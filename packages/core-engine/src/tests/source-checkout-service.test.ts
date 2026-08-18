@@ -59,72 +59,6 @@ describe.sequential("SourceCheckoutService", () => {
     );
   });
 
-  test("resolves the longest matching GitHub branch in a tree URL", async () => {
-    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
-    vi.spyOn(gitUtils, "git").mockResolvedValue([
-      "0123456789abcdef0123456789abcdef01234567\trefs/heads/feature",
-      "89abcdef0123456789abcdef0123456789abcdef\trefs/heads/feature/foo",
-    ].join("\n"));
-    const service = new SourceCheckoutService({
-      sourceRoot: path.join(sandbox.stateRoot, "source"),
-      inventoryService: new InventoryService(),
-    });
-
-    await expect(service.resolveSource(
-      "https://github.com/acme/skills/tree/feature/foo/skills/one",
-      {},
-    )).resolves.toMatchObject({
-      kind: "git",
-      locator: "https://github.com/acme/skills.git",
-      originBranch: "feature/foo",
-      requestedPath: "skills/one",
-    });
-  });
-
-  test("uses the GitHub API to resolve a tree branch when git is unavailable", async () => {
-    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
-    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
-      return new Response("", {
-        status: url.endsWith("/branches/feature%2Ffoo") ? 200 : 404,
-      });
-    });
-    const service = new SourceCheckoutService({
-      sourceRoot: path.join(sandbox.stateRoot, "source"),
-      inventoryService: new InventoryService(),
-    });
-
-    await expect(service.resolveSource(
-      "https://github.com/acme/skills/tree/feature/foo/skills/one",
-      {},
-    )).resolves.toMatchObject({
-      originBranch: "feature/foo",
-      requestedPath: "skills/one",
-    });
-    expect(fetch).toHaveBeenCalledWith(
-      "https://api.github.com/repos/acme/skills/branches/feature%2Ffoo%2Fskills",
-      expect.any(Object),
-    );
-    expect(fetch).toHaveBeenCalledWith(
-      "https://api.github.com/repos/acme/skills/branches/feature%2Ffoo",
-      expect.any(Object),
-    );
-  });
-
-  test("rejects a GitHub tree URL when its branch cannot be resolved", async () => {
-    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 404 }));
-    const service = new SourceCheckoutService({
-      sourceRoot: path.join(sandbox.stateRoot, "source"),
-      inventoryService: new InventoryService(),
-    });
-
-    await expect(service.resolveSource(
-      "https://github.com/acme/skills/tree/missing/skills/one",
-      {},
-    )).rejects.toThrow("Unable to resolve a GitHub branch");
-  });
-
   test("reads remote HEAD commit for GitHub shorthand locators", async () => {
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
     const git = vi.spyOn(gitUtils, "git").mockResolvedValue(
@@ -275,6 +209,7 @@ describe.sequential("SourceCheckoutService", () => {
       {
         checkoutPath,
         existingCheckoutPath,
+        updateBranch: "release",
         options: { sourceIdOverride: "git-existing", originBranch: "release" },
       },
     );
@@ -284,6 +219,10 @@ describe.sequential("SourceCheckoutService", () => {
       return;
     }
     expect(prepared.data.commitSha).toBe("fedcba9876543210fedcba9876543210fedcba98");
+    expect(gitUtils.git).toHaveBeenCalledWith(
+      ["fetch", "--depth", "1", "origin", "refs/heads/release"],
+      { cwd: checkoutPath },
+    );
     await expect(fs.readFile(
       path.join(checkoutPath, "skills", "one", "SKILL.md"),
       "utf8",
@@ -313,6 +252,20 @@ describe.sequential("SourceCheckoutService", () => {
         await fs.cp(upstreamRepo, checkoutPath, { recursive: true });
         return "";
       }
+      if (
+        args[0] === "fetch"
+        && args[4] === "refs/heads/release"
+        && options?.cwd === checkoutPath
+      ) {
+        return "";
+      }
+      if (
+        args[0] === "checkout"
+        && args[1] === "--detach"
+        && options?.cwd === checkoutPath
+      ) {
+        return "";
+      }
       if (args[0] === "rev-parse" && args[1] === "HEAD" && options?.cwd === checkoutPath) {
         return "abcdef0123456789abcdef0123456789abcdef01";
       }
@@ -328,6 +281,7 @@ describe.sequential("SourceCheckoutService", () => {
       {
         checkoutPath,
         existingCheckoutPath,
+        updateBranch: "release",
         options: { sourceIdOverride: "git-fallback", originBranch: "release" },
       },
     );
@@ -342,6 +296,10 @@ describe.sequential("SourceCheckoutService", () => {
       "https://github.com/acme/skills.git",
       checkoutPath,
     ]);
+    expect(git).toHaveBeenCalledWith(
+      ["fetch", "--depth", "1", "origin", "refs/heads/release"],
+      { cwd: checkoutPath },
+    );
     await expect(fs.readFile(
       path.join(checkoutPath, "skills", "one", "SKILL.md"),
       "utf8",
@@ -360,7 +318,10 @@ describe.sequential("SourceCheckoutService", () => {
 
     const prepared = await service.prepareSourceCheckout(
       "https://github.com/acme/skills.git",
-      { options: { sourceIdOverride: "locked-release", originBranch: "release" } },
+      {
+        updateBranch: "release",
+        options: { sourceIdOverride: "locked-release", originBranch: "release" },
+      },
     );
 
     expect(prepared.ok).toBe(false);
@@ -400,16 +361,8 @@ describe.sequential("SourceCheckoutService", () => {
     });
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
     vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
-      if (args[0] === "ls-remote" && args[1] === "--heads") {
-        return "test-commit-sha\trefs/heads/main";
-      }
-      if (
-        args[0] === "clone"
-        && args[3] === "--branch"
-        && args[4] === "main"
-        && args[5] === "https://github.com/vercel-labs/skills.git"
-      ) {
-        await fs.cp(upstreamRepo, args[6]!, { recursive: true });
+      if (args[0] === "clone" && args[3] === "https://github.com/vercel-labs/skills.git") {
+        await fs.cp(upstreamRepo, args[4]!, { recursive: true });
         return "";
       }
 
@@ -434,7 +387,6 @@ describe.sequential("SourceCheckoutService", () => {
       return;
     }
     expect(prepared.data.kind).toBe("git");
-    expect(prepared.data.originBranch).toBe("main");
     expect(prepared.data.requestedPath).toBe("skills/find-skills");
     expect(prepared.data.checkoutPath).toContain(`${path.sep}source${path.sep}git${path.sep}`);
     expect(prepared.data.leafs.map((leaf) => leaf.id)).toEqual([

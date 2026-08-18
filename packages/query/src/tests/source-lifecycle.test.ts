@@ -879,16 +879,8 @@ describe.sequential("source lifecycle", () => {
     });
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
     vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
-      if (args[0] === "ls-remote" && args[1] === "--heads") {
-        return "test-commit-sha\trefs/heads/main";
-      }
-      if (
-        args[0] === "clone"
-        && args[3] === "--branch"
-        && args[4] === "main"
-        && args[5] === "https://github.com/vercel-labs/skills.git"
-      ) {
-        await fs.cp(upstreamRepo, args[6]!, { recursive: true });
+      if (args[0] === "clone" && args[3] === "https://github.com/vercel-labs/skills.git") {
+        await fs.cp(upstreamRepo, args[4]!, { recursive: true });
         return "";
       }
 
@@ -916,7 +908,6 @@ describe.sequential("source lifecycle", () => {
     const lock = state.lockFile.sources[result.data.manifest.id];
     expect(source?.kind).toBe("git");
     expect(lock?.revision.provider).toBe("git");
-    expect(lock?.originBranch).toBe("main");
     expect(lock?.localPath).toBe(
       app.store.getSourceCheckoutPath("git", result.data.manifest.id),
     );
@@ -928,16 +919,8 @@ describe.sequential("source lifecycle", () => {
     });
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
     vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
-      if (args[0] === "ls-remote" && args[1] === "--heads") {
-        return "test-commit-sha\trefs/heads/main";
-      }
-      if (
-        args[0] === "clone"
-        && args[3] === "--branch"
-        && args[4] === "main"
-        && args[5] === "https://github.com/vercel-labs/skills.git"
-      ) {
-        await fs.cp(upstreamRepo, args[6]!, { recursive: true });
+      if (args[0] === "clone" && args[3] === "https://github.com/vercel-labs/skills.git") {
+        await fs.cp(upstreamRepo, args[4]!, { recursive: true });
         return "";
       }
 
