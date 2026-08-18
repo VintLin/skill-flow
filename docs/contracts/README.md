@@ -52,6 +52,12 @@ save-settings
 
 Bridge changes are external changes. Update parser tests, CLI bridge behavior, desktop bridge models, and release/user docs when changing this surface.
 
+Desktop helper execution is always time-bounded. Ordinary commands use 60
+seconds, import/add commands use 5 minutes, and managed update scales by the
+number of explicitly selected sources at 5 minutes each with a 15-minute
+ceiling. Update-all uses the 15-minute ceiling. These budgets are desktop
+process behavior and do not change the protocol payload shape.
+
 When adding, removing, or renaming a bridge command:
 
 1. Update `BRIDGE_COMMAND_NAMES` in `packages/shared-types/src/protocol.ts`.
