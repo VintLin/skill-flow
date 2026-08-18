@@ -85,7 +85,7 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertTrue(response.ok)
     }
 
-    func testUpdateUsesDedicatedLongRunningCommandTimeout() async throws {
+    func testUpdateTimeoutScalesWithSelectedSourceCount() async throws {
         let fixture = try SlowBridgeFixture.install(delayMilliseconds: 100)
         self.fixture = fixture
 
@@ -93,14 +93,70 @@ final class BridgeClientExecutionTests: XCTestCase {
             BridgeClient(
                 commandTimeoutMilliseconds: 25,
                 importCommandTimeoutMilliseconds: 50,
-                updateCommandTimeoutMilliseconds: 150
+                updateSourceTimeoutMilliseconds: 75,
+                updateCommandMaximumTimeoutMilliseconds: 150
             )
         }
 
-        let response = try await bridge.updateSources(["hugohe3-ppt-master"])
+        let response = try await bridge.updateSources(["alpha", "beta"])
 
         XCTAssertEqual(response.command, BridgeCommand.update)
         XCTAssertTrue(response.ok)
+    }
+
+    func testSingleSourceUpdateUsesOneSourceBudget() async throws {
+        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 100)
+        self.fixture = fixture
+
+        let bridge = await MainActor.run {
+            BridgeClient(
+                updateSourceTimeoutMilliseconds: 50,
+                updateCommandMaximumTimeoutMilliseconds: 150
+            )
+        }
+
+        do {
+            _ = try await bridge.updateSources(["alpha"])
+            XCTFail("Expected one source update to use one source budget.")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Operation timed out after 50ms.")
+        }
+    }
+
+    func testUpdateAllUsesMaximumUpdateBudget() async throws {
+        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 100)
+        self.fixture = fixture
+
+        let bridge = await MainActor.run {
+            BridgeClient(
+                updateSourceTimeoutMilliseconds: 50,
+                updateCommandMaximumTimeoutMilliseconds: 150
+            )
+        }
+
+        let response = try await bridge.updateAll()
+
+        XCTAssertEqual(response.command, BridgeCommand.update)
+        XCTAssertTrue(response.ok)
+    }
+
+    func testSelectedUpdateBudgetDoesNotExceedMaximum() async throws {
+        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 150)
+        self.fixture = fixture
+
+        let bridge = await MainActor.run {
+            BridgeClient(
+                updateSourceTimeoutMilliseconds: 50,
+                updateCommandMaximumTimeoutMilliseconds: 100
+            )
+        }
+
+        do {
+            _ = try await bridge.updateSources(["alpha", "beta", "gamma", "delta"])
+            XCTFail("Expected selected update budget to stop at its maximum.")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Operation timed out after 100ms.")
+        }
     }
 
     func testTimedOutHelperIsForceKilledWhenItIgnoresTerminate() async throws {

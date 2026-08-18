@@ -327,6 +327,19 @@ export class SourceAuthorityService {
         continue;
       }
 
+      const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
+      const expectedCheckoutPath = path.join(sourceRoot, source.kind, sourceId);
+      const normalizedLocalPath = path.resolve(lock.localPath);
+      if (
+        normalizedLocalPath !== path.resolve(expectedCheckoutPath)
+        || !isPathInside(sourceRoot, normalizedLocalPath)
+      ) {
+        return fail({
+          code: "SOURCE_CHECKOUT_PATH_INVALID",
+          message: `Refusing to update checkout with mismatched managed path: ${lock.localPath}`,
+        }, warnings);
+      }
+
       const lockedCommit = this.readLockedCommitSha(lock.revision);
       let repairReason: SourceRepairReason | undefined;
       if (source.kind === "git" && lockedCommit) {

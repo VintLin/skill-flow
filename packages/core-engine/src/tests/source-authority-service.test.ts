@@ -217,6 +217,45 @@ describe.sequential("SourceAuthorityService", () => {
     ]);
   });
 
+  test("refuses to update a source whose checkout path does not match its v2 identity", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const externalPath = path.join(sandbox.sandboxRoot, "external-checkout");
+    await fs.mkdir(externalPath, { recursive: true });
+    await fs.writeFile(path.join(externalPath, "sentinel.txt"), "keep", "utf8");
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const added = await service.addSource(repoPath, {
+      sourceIdOverride: "unsafe-update-source",
+    });
+    expect(added.ok).toBe(true);
+
+    const state = await stateStore.readState();
+    state.lockFile.sources["unsafe-update-source"] = {
+      ...state.lockFile.sources["unsafe-update-source"]!,
+      localPath: externalPath,
+    };
+    await stateStore.writeState(state);
+    const prepareSourceCheckout = vi.spyOn(checkoutService, "prepareSourceCheckout");
+
+    const updated = await service.updateSources(["unsafe-update-source"]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) {
+      return;
+    }
+    expect(updated.errors[0]?.code).toBe("SOURCE_CHECKOUT_PATH_INVALID");
+    expect(prepareSourceCheckout).not.toHaveBeenCalled();
+    await expect(fs.readFile(path.join(externalPath, "sentinel.txt"), "utf8"))
+      .resolves.toBe("keep");
+  });
+
   test("updateSources skips healthy git sources and repairs local drift", async () => {
     const stateStore = new StateStore(sandbox.stateRoot);
     await stateStore.init();
@@ -389,6 +428,17 @@ describe.sequential("SourceAuthorityService", () => {
     }
 
     const state = await stateStore.readState();
+    const gitCheckoutPath = path.join(
+      sandbox.stateRoot,
+      "source",
+      "git",
+      "git-fallback",
+    );
+    await fs.mkdir(path.dirname(gitCheckoutPath), { recursive: true });
+    await fs.rename(
+      state.lockFile.sources["git-fallback"]!.localPath,
+      gitCheckoutPath,
+    );
     state.manifest.sources[0] = {
       ...state.manifest.sources[0]!,
       kind: "git",
@@ -396,6 +446,7 @@ describe.sequential("SourceAuthorityService", () => {
     };
     state.lockFile.sources["git-fallback"] = {
       ...state.lockFile.sources["git-fallback"]!,
+      localPath: gitCheckoutPath,
       revision: { provider: "git", commit: "same-sha", capturedAt: new Date().toISOString() },
     };
     await stateStore.writeState(state);

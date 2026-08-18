@@ -26,6 +26,7 @@ import {
   fetchWithTimeout,
   withNetworkRetries,
 } from "@skill-flow/integration/utils/fetch-timeout";
+import { resolveGitHubTreePath } from "@skill-flow/integration/utils/github-catalog";
 import { git, isGitAvailable } from "@skill-flow/integration/utils/git";
 import { parseGitHubRepo, parseHostedGitRepo } from "@skill-flow/integration/utils/naming";
 import { fail, ok } from "@skill-flow/integration/utils/result";
@@ -325,7 +326,7 @@ export class SourceCheckoutService {
       };
     }
 
-    const treeLocator = this.parseTreeLocator(trimmed);
+    const treeLocator = await this.parseTreeLocator(trimmed);
     if (treeLocator) {
       const requestedPath = this.joinRequestedPaths(
         treeLocator.requestedPath,
@@ -727,52 +728,55 @@ export class SourceCheckoutService {
     return "git";
   }
 
-  private parseTreeLocator(
+  private async parseTreeLocator(
     locator: string,
-  ): { repoLocator: string; requestedPath?: string; originBranch?: string } | null {
+  ): Promise<{ repoLocator: string; requestedPath?: string; originBranch?: string } | null> {
+    let url: URL;
     try {
-      const url = new URL(locator);
-
-      const parts = url.pathname.split("/").filter(Boolean);
-      if (url.hostname === "github.com") {
-        if (parts.length < 5 || parts[2] !== "tree") {
-          return null;
-        }
-
-        const owner = parts[0];
-        const repo = parts[1];
-        const originBranch = parts[3];
-        const requestedPath = parts.slice(4).join("/");
-        if (!owner || !repo || !originBranch || !requestedPath) {
-          return null;
-        }
-
-        return {
-          repoLocator: `https://github.com/${owner}/${repo}.git`,
-          requestedPath,
-          originBranch,
-        };
-      }
-
-      if (url.hostname === "gitlab.com") {
-        const markerIndex = parts.findIndex(
-          (segment, index) => segment === "-" && parts[index + 1] === "tree",
-        );
-        if (markerIndex < 2) {
-          return null;
-        }
-
-        const originBranch = parts[markerIndex + 2];
-        const requestedPath = parts.slice(markerIndex + 3).join("/");
-
-        return {
-          repoLocator: `https://gitlab.com/${parts.slice(0, markerIndex).join("/")}.git`,
-          ...(requestedPath ? { requestedPath } : {}),
-          ...(originBranch ? { originBranch } : {}),
-        };
-      }
+      url = new URL(locator);
     } catch {
       return null;
+    }
+
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (url.hostname === "github.com") {
+      if (parts.length < 5 || parts[2] !== "tree") {
+        return null;
+      }
+
+      const owner = parts[0];
+      const repo = parts[1];
+      const treePath = parts.slice(3).join("/");
+      if (!owner || !repo || !treePath) {
+        return null;
+      }
+
+      const repoLocator = `https://github.com/${owner}/${repo}.git`;
+      const resolvedTreePath = await resolveGitHubTreePath(repoLocator, treePath);
+
+      return {
+        repoLocator,
+        requestedPath: resolvedTreePath.requestedPath,
+        originBranch: resolvedTreePath.branch,
+      };
+    }
+
+    if (url.hostname === "gitlab.com") {
+      const markerIndex = parts.findIndex(
+        (segment, index) => segment === "-" && parts[index + 1] === "tree",
+      );
+      if (markerIndex < 2) {
+        return null;
+      }
+
+      const originBranch = parts[markerIndex + 2];
+      const requestedPath = parts.slice(markerIndex + 3).join("/");
+
+      return {
+        repoLocator: `https://gitlab.com/${parts.slice(0, markerIndex).join("/")}.git`,
+        ...(requestedPath ? { requestedPath } : {}),
+        ...(originBranch ? { originBranch } : {}),
+      };
     }
 
     return null;

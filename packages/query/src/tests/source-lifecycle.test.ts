@@ -879,6 +879,9 @@ describe.sequential("source lifecycle", () => {
     });
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
     vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
+      if (args[0] === "ls-remote" && args[1] === "--heads") {
+        return "test-commit-sha\trefs/heads/main";
+      }
       if (
         args[0] === "clone"
         && args[3] === "--branch"
@@ -925,6 +928,9 @@ describe.sequential("source lifecycle", () => {
     });
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
     vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
+      if (args[0] === "ls-remote" && args[1] === "--heads") {
+        return "test-commit-sha\trefs/heads/main";
+      }
       if (
         args[0] === "clone"
         && args[3] === "--branch"
@@ -1509,6 +1515,12 @@ description: |
       return;
     }
     const commit = await gitUtils.git(["rev-parse", "HEAD"], { cwd: repoPath });
+    const gitCheckoutPath = path.join(
+      sandbox.stateRoot,
+      "source",
+      "git",
+      sourceId,
+    );
     await v2(app).writeState({
       ...before,
       manifest: {
@@ -1523,6 +1535,7 @@ description: |
           ...before.lockFile.sources,
           [sourceId]: {
             ...before.lockFile.sources[sourceId]!,
+            localPath: gitCheckoutPath,
             revision: { provider: "git", commit, capturedAt: new Date().toISOString() },
           },
         },

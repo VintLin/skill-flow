@@ -108,20 +108,23 @@ final class BridgeClient: @unchecked Sendable {
     private let mutationCoordinator = MutationCoordinator()
     private let commandTimeoutMilliseconds: UInt64
     private let importCommandTimeoutMilliseconds: UInt64
-    private let updateCommandTimeoutMilliseconds: UInt64?
+    private let updateSourceTimeoutMilliseconds: UInt64
+    private let updateCommandMaximumTimeoutMilliseconds: UInt64
     private let commandTimeoutGraceMilliseconds: UInt64
 
     init(
         commandTimeoutMilliseconds: UInt64 = 60_000,
         // Network-heavy import/add work often needs more than 3 minutes on unstable links.
         importCommandTimeoutMilliseconds: UInt64 = 300_000,
-        // Each update step is bounded by the helper; the source count is not.
-        updateCommandTimeoutMilliseconds: UInt64? = nil,
+        // One source receives five minutes; selected updates scale to a 15-minute ceiling.
+        updateSourceTimeoutMilliseconds: UInt64 = 300_000,
+        updateCommandMaximumTimeoutMilliseconds: UInt64 = 900_000,
         commandTimeoutGraceMilliseconds: UInt64 = 1_000
     ) {
         self.commandTimeoutMilliseconds = commandTimeoutMilliseconds
         self.importCommandTimeoutMilliseconds = importCommandTimeoutMilliseconds
-        self.updateCommandTimeoutMilliseconds = updateCommandTimeoutMilliseconds
+        self.updateSourceTimeoutMilliseconds = updateSourceTimeoutMilliseconds
+        self.updateCommandMaximumTimeoutMilliseconds = updateCommandMaximumTimeoutMilliseconds
         self.commandTimeoutGraceMilliseconds = commandTimeoutGraceMilliseconds
     }
 
@@ -429,7 +432,7 @@ final class BridgeClient: @unchecked Sendable {
         inputPipe.fileHandleForWriting.write(requestData)
         inputPipe.fileHandleForWriting.closeFile()
 
-        let activeTimeoutMilliseconds = timeoutMilliseconds(for: command)
+        let activeTimeoutMilliseconds = timeoutMilliseconds(for: command, payload: payload)
         let didExit = await waitForProcessExit(
             process,
             state: exitWaitState,
@@ -437,9 +440,6 @@ final class BridgeClient: @unchecked Sendable {
         )
 
         if !didExit {
-            guard let activeTimeoutMilliseconds else {
-                preconditionFailure("An unbounded process wait cannot time out")
-            }
             outputPipe.fileHandleForReading.readabilityHandler = nil
             errorPipe.fileHandleForReading.readabilityHandler = nil
             process.terminationHandler = nil
@@ -500,9 +500,24 @@ final class BridgeClient: @unchecked Sendable {
         throw BridgeClientError.commandFailed(message, response: response)
     }
 
-    private func timeoutMilliseconds(for command: BridgeCommand) -> UInt64? {
+    private func timeoutMilliseconds(
+        for command: BridgeCommand,
+        payload: [String: AnyCodable]?
+    ) -> UInt64 {
         if command == .update {
-            return updateCommandTimeoutMilliseconds
+            guard
+                let sourceIds = payload?["sourceIds"]?.value as? [String],
+                !sourceIds.isEmpty
+            else {
+                return updateCommandMaximumTimeoutMilliseconds
+            }
+            let sourceCount = UInt64(Set(sourceIds).count)
+            let (scaledTimeout, overflow) = updateSourceTimeoutMilliseconds
+                .multipliedReportingOverflow(by: sourceCount)
+            return min(
+                overflow ? updateCommandMaximumTimeoutMilliseconds : scaledTimeout,
+                updateCommandMaximumTimeoutMilliseconds
+            )
         }
         return command.usesExtendedNetworkTimeout
             ? importCommandTimeoutMilliseconds
@@ -512,16 +527,8 @@ final class BridgeClient: @unchecked Sendable {
     private func waitForProcessExit(
         _ process: Process,
         state: ProcessExitWaitState,
-        timeoutMilliseconds: UInt64?
+        timeoutMilliseconds: UInt64
     ) async -> Bool {
-        guard let timeoutMilliseconds else {
-            let outcome = await withCheckedContinuation { continuation in
-                state.setContinuation(continuation)
-            }
-            process.terminationHandler = nil
-            return outcome == .exited
-        }
-
         let timeoutTask = Task {
             try? await Task.sleep(nanoseconds: Self.nanoseconds(fromMilliseconds: timeoutMilliseconds))
             state.resolve(.timedOut)

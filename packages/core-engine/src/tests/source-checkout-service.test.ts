@@ -59,6 +59,72 @@ describe.sequential("SourceCheckoutService", () => {
     );
   });
 
+  test("resolves the longest matching GitHub branch in a tree URL", async () => {
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    vi.spyOn(gitUtils, "git").mockResolvedValue([
+      "0123456789abcdef0123456789abcdef01234567\trefs/heads/feature",
+      "89abcdef0123456789abcdef0123456789abcdef\trefs/heads/feature/foo",
+    ].join("\n"));
+    const service = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+
+    await expect(service.resolveSource(
+      "https://github.com/acme/skills/tree/feature/foo/skills/one",
+      {},
+    )).resolves.toMatchObject({
+      kind: "git",
+      locator: "https://github.com/acme/skills.git",
+      originBranch: "feature/foo",
+      requestedPath: "skills/one",
+    });
+  });
+
+  test("uses the GitHub API to resolve a tree branch when git is unavailable", async () => {
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      return new Response("", {
+        status: url.endsWith("/branches/feature%2Ffoo") ? 200 : 404,
+      });
+    });
+    const service = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+
+    await expect(service.resolveSource(
+      "https://github.com/acme/skills/tree/feature/foo/skills/one",
+      {},
+    )).resolves.toMatchObject({
+      originBranch: "feature/foo",
+      requestedPath: "skills/one",
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.github.com/repos/acme/skills/branches/feature%2Ffoo%2Fskills",
+      expect.any(Object),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.github.com/repos/acme/skills/branches/feature%2Ffoo",
+      expect.any(Object),
+    );
+  });
+
+  test("rejects a GitHub tree URL when its branch cannot be resolved", async () => {
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(false);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 404 }));
+    const service = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+
+    await expect(service.resolveSource(
+      "https://github.com/acme/skills/tree/missing/skills/one",
+      {},
+    )).rejects.toThrow("Unable to resolve a GitHub branch");
+  });
+
   test("reads remote HEAD commit for GitHub shorthand locators", async () => {
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
     const git = vi.spyOn(gitUtils, "git").mockResolvedValue(
@@ -334,6 +400,9 @@ describe.sequential("SourceCheckoutService", () => {
     });
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
     vi.spyOn(gitUtils, "git").mockImplementation(async (args) => {
+      if (args[0] === "ls-remote" && args[1] === "--heads") {
+        return "test-commit-sha\trefs/heads/main";
+      }
       if (
         args[0] === "clone"
         && args[3] === "--branch"
