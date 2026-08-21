@@ -4,6 +4,19 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.5.9 - 2026-08-21
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.5.8` to `1.5.9`.
+- Unified managed checkout ownership, canonical path, symlink, and branch identity handling for Git source lifecycle operations.
+
+### Fixed
+
+- Fixed batch Git source updates so each successful source persists its checkout and lock state before later sources continue.
+- Fixed rollback handling so checkout cleanup, lock restoration, and source authority write failures preserve enough context to recover safely.
+- Fixed GitHub source import fallback by trying SSH, HTTPS, and archive download paths consistently.
+
 ## v1.5.8 - 2026-08-16
 
 ### Added
