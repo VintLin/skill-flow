@@ -503,30 +503,40 @@ export class SourceAuthorityService {
     }
 
     const kindRoot = path.dirname(expectedCheckoutPath);
-    for (const managedPath of [sourceRoot, kindRoot]) {
+    const existingManagedPaths = new Set<string>();
+    for (const managedPath of [sourceRoot, kindRoot, expectedCheckoutPath]) {
       try {
-        if ((await fs.lstat(managedPath)).isSymbolicLink()) {
+        const stats = await fs.lstat(managedPath);
+        if (stats.isSymbolicLink()) {
           return false;
         }
-      } catch {
-        return false;
+        existingManagedPaths.add(managedPath);
+      } catch (error) {
+        if (
+          typeof error !== "object"
+          || error === null
+          || !("code" in error)
+          || error.code !== "ENOENT"
+        ) {
+          return false;
+        }
       }
     }
 
-    const checkoutExists = await pathExists(expectedCheckoutPath);
-    if (checkoutExists) {
-      try {
-        if ((await fs.lstat(expectedCheckoutPath)).isSymbolicLink()) {
-          return false;
-        }
-      } catch {
-        return false;
-      }
-    }
+    const sourceRootExists = existingManagedPaths.has(sourceRoot);
+    const kindRootExists = existingManagedPaths.has(kindRoot);
+    const checkoutExists = existingManagedPaths.has(expectedCheckoutPath);
 
     try {
-      const realSourceRoot = await fs.realpath(sourceRoot);
-      const realKindRoot = await fs.realpath(kindRoot);
+      const realSourceRoot = sourceRootExists
+        ? await fs.realpath(sourceRoot)
+        : path.join(
+            await fs.realpath(path.dirname(sourceRoot)),
+            path.basename(sourceRoot),
+          );
+      const realKindRoot = kindRootExists
+        ? await fs.realpath(kindRoot)
+        : path.join(realSourceRoot, path.basename(kindRoot));
       if (!isPathInside(realSourceRoot, realKindRoot)) {
         return false;
       }

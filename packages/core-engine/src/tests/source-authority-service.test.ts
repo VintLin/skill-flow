@@ -294,7 +294,7 @@ describe.sequential("SourceAuthorityService", () => {
       .resolves.toBe("keep");
   });
 
-  test("updateSources skips healthy git sources and repairs local drift", async () => {
+  test("updateSources skips healthy git sources and repairs a missing managed directory or local drift", async () => {
     const stateStore = new StateStore(sandbox.stateRoot);
     await stateStore.init();
     const checkoutService = new SourceCheckoutService({
@@ -380,7 +380,7 @@ describe.sequential("SourceAuthorityService", () => {
       "git-unchanged:skills/one",
     ]);
 
-    await fs.rm(state.lockFile.sources["git-unchanged"]!.localPath, {
+    await fs.rm(path.dirname(state.lockFile.sources["git-unchanged"]!.localPath), {
       recursive: true,
       force: true,
     });
