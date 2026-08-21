@@ -125,6 +125,309 @@ describe.sequential("SourceAuthorityService", () => {
     expect(lockCalls).toBe(1);
   });
 
+  test("restores a prepared checkout when authority persistence fails", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const preparedPath = path.join(sandbox.sandboxRoot, "prepared-persistence-failure");
+    const prepared = await checkoutService.prepareSourceCheckout(repoPath, {
+      options: { sourceIdOverride: "persistence-failure" },
+      checkoutPath: preparedPath,
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const canonicalPath = path.join(
+      sandbox.stateRoot,
+      "source",
+      "local",
+      "persistence-failure",
+    );
+    const realRename = fs.rename.bind(fs);
+    let failureInjected = false;
+    const rename = vi.spyOn(fs, "rename")
+      .mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+        const [, destination] = args;
+        if (!failureInjected && String(destination) === stateStore.manifestPath) {
+          failureInjected = true;
+          throw new Error("injected authority persistence failure");
+        }
+        return realRename(...args);
+      });
+
+    const committed = await service.commitPreparedSource({
+      preparedCheckout: prepared.data,
+      removePreparedOnFailure: false,
+    });
+    rename.mockRestore();
+
+    expect(committed.ok).toBe(false);
+    if (committed.ok) {
+      return;
+    }
+    expect(committed.errors[0]?.code).toBe("SOURCE_COMMIT_STATE_WRITE_FAILED");
+    await expect(fs.stat(preparedPath)).resolves.toBeTruthy();
+    await expect(fs.access(canonicalPath)).rejects.toThrow();
+    expect((await stateStore.readManifest()).sources).toEqual([]);
+  });
+
+  test.each([
+    { rollbackFailure: "restore" as const, removePreparedOnFailure: false },
+    { rollbackFailure: "restore" as const, removePreparedOnFailure: true },
+    { rollbackFailure: "remove" as const, removePreparedOnFailure: false },
+    { rollbackFailure: "remove" as const, removePreparedOnFailure: true },
+  ])(
+    "handles $rollbackFailure authority rollback failure with removePreparedOnFailure=$removePreparedOnFailure",
+    async ({ rollbackFailure, removePreparedOnFailure }) => {
+      const repoPath = await createRepo(sandbox.sandboxRoot, {
+        "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
+      });
+      const stateStore = new StateStore(sandbox.stateRoot);
+      await stateStore.init();
+      const checkoutService = new SourceCheckoutService({
+        sourceRoot: path.join(sandbox.stateRoot, "source"),
+        inventoryService: new InventoryService(),
+      });
+      const sourceId = removePreparedOnFailure
+        ? `authority-${rollbackFailure}-cleanup`
+        : `authority-${rollbackFailure}-restore`;
+      const preparedPath = path.join(sandbox.sandboxRoot, `prepared-${sourceId}`);
+      const prepared = await checkoutService.prepareSourceCheckout(repoPath, {
+        options: { sourceIdOverride: sourceId },
+        checkoutPath: preparedPath,
+      });
+      expect(prepared.ok).toBe(true);
+      if (!prepared.ok) {
+        return;
+      }
+      const service = new SourceAuthorityService({ stateStore, checkoutService });
+      const canonicalPath = path.join(
+        sandbox.stateRoot,
+        "source",
+        "local",
+        sourceId,
+      );
+      const realRename = fs.rename.bind(fs);
+      const realRm = fs.rm.bind(fs);
+      let writeFailureInjected = false;
+      let rollbackFailureInjected = false;
+      const rename = vi.spyOn(fs, "rename")
+        .mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+          const [, destination] = args;
+          if (!writeFailureInjected && String(destination) === stateStore.lockPath) {
+            writeFailureInjected = true;
+            throw new Error("injected state transaction failure");
+          }
+          if (
+            rollbackFailure === "restore"
+            && writeFailureInjected
+            && !rollbackFailureInjected
+            && String(destination) === stateStore.manifestPath
+          ) {
+            rollbackFailureInjected = true;
+            throw new Error("injected authority rollback failure");
+          }
+          return realRename(...args);
+        });
+      const rm = vi.spyOn(fs, "rm")
+        .mockImplementation(async (...args: Parameters<typeof fs.rm>) => {
+          const [targetPath] = args;
+          if (
+            rollbackFailure === "remove"
+            && writeFailureInjected
+            && !rollbackFailureInjected
+            && String(targetPath) === stateStore.manifestPath
+          ) {
+            rollbackFailureInjected = true;
+            throw new Error("injected authority rollback failure");
+          }
+          return realRm(...args);
+        });
+
+      const committed = await service.commitPreparedSource({
+        preparedCheckout: prepared.data,
+        removePreparedOnFailure,
+      });
+      rename.mockRestore();
+      rm.mockRestore();
+
+      expect(committed.ok).toBe(false);
+      if (committed.ok) {
+        return;
+      }
+      expect(committed.errors[0]?.code).toBe("SOURCE_COMMIT_AUTHORITY_ROLLBACK_FAILED");
+      expect(committed.errors[0]?.message).toContain("injected state transaction failure");
+      expect(committed.errors[0]?.message).toContain("injected authority rollback failure");
+      if (rollbackFailure === "remove") {
+        await expect(fs.access(preparedPath)).rejects.toThrow();
+        await expect(fs.stat(canonicalPath)).resolves.toBeTruthy();
+      } else if (removePreparedOnFailure) {
+        await expect(fs.access(preparedPath)).rejects.toThrow();
+        await expect(fs.access(canonicalPath)).rejects.toThrow();
+      } else {
+        await expect(fs.stat(preparedPath)).resolves.toBeTruthy();
+        await expect(fs.access(canonicalPath)).rejects.toThrow();
+      }
+    },
+  );
+
+  test("cleans a transferred prepared checkout when authority persistence fails", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const preparedPath = path.join(sandbox.sandboxRoot, "prepared-cleanup-failure");
+    const prepared = await checkoutService.prepareSourceCheckout(repoPath, {
+      options: { sourceIdOverride: "cleanup-failure" },
+      checkoutPath: preparedPath,
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const canonicalPath = path.join(sandbox.stateRoot, "source", "local", "cleanup-failure");
+    const realRename = fs.rename.bind(fs);
+    let failureInjected = false;
+    const rename = vi.spyOn(fs, "rename")
+      .mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+        const [, destination] = args;
+        if (!failureInjected && String(destination) === stateStore.manifestPath) {
+          failureInjected = true;
+          throw new Error("injected authority persistence failure");
+        }
+        return realRename(...args);
+      });
+
+    const committed = await service.commitPreparedSource({
+      preparedCheckout: prepared.data,
+      removePreparedOnFailure: true,
+    });
+    rename.mockRestore();
+
+    expect(committed.ok).toBe(false);
+    if (committed.ok) {
+      return;
+    }
+    expect(committed.errors[0]?.code).toBe("SOURCE_COMMIT_STATE_WRITE_FAILED");
+    await expect(fs.access(preparedPath)).rejects.toThrow();
+    await expect(fs.access(canonicalPath)).rejects.toThrow();
+    expect((await stateStore.readState()).manifest.sources).toEqual([]);
+  });
+
+  test("reports a severe failure when checkout rollback fails", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const preparedPath = path.join(sandbox.sandboxRoot, "prepared-checkout-rollback-failure");
+    const prepared = await checkoutService.prepareSourceCheckout(repoPath, {
+      options: { sourceIdOverride: "checkout-rollback-failure" },
+      checkoutPath: preparedPath,
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const canonicalPath = path.join(
+      sandbox.stateRoot,
+      "source",
+      "local",
+      "checkout-rollback-failure",
+    );
+    const realRename = fs.rename.bind(fs);
+    let writeFailureInjected = false;
+    const rename = vi.spyOn(fs, "rename")
+      .mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+        const [, destination] = args;
+        if (!writeFailureInjected && String(destination) === stateStore.manifestPath) {
+          writeFailureInjected = true;
+          throw new Error("injected authority persistence failure");
+        }
+        if (writeFailureInjected && String(destination) === preparedPath) {
+          throw new Error("injected checkout rollback failure");
+        }
+        return realRename(...args);
+      });
+
+    const committed = await service.commitPreparedSource({
+      preparedCheckout: prepared.data,
+      removePreparedOnFailure: false,
+    });
+    rename.mockRestore();
+
+    expect(committed.ok).toBe(false);
+    if (committed.ok) {
+      return;
+    }
+    expect(committed.errors[0]?.code).toBe("SOURCE_COMMIT_ROLLBACK_FAILED");
+    expect(committed.errors[0]?.message).toContain("injected authority persistence failure");
+    expect(committed.errors[0]?.message).toContain("injected checkout rollback failure");
+    await expect(fs.stat(canonicalPath)).resolves.toBeTruthy();
+    await expect(fs.access(preparedPath)).rejects.toThrow();
+    expect((await stateStore.readState()).manifest.sources).toEqual([]);
+  });
+
+  test("restores a prepared checkout when leaf inventory hashing fails", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const preparedPath = path.join(sandbox.sandboxRoot, "prepared-hash-failure");
+    const prepared = await checkoutService.prepareSourceCheckout(repoPath, {
+      options: { sourceIdOverride: "hash-failure" },
+      checkoutPath: preparedPath,
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) {
+      return;
+    }
+    await fs.rm(path.join(preparedPath, "skills", "frontend-design"), {
+      recursive: true,
+      force: true,
+    });
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const canonicalPath = path.join(sandbox.stateRoot, "source", "local", "hash-failure");
+
+    const committed = await service.commitPreparedSource({
+      preparedCheckout: prepared.data,
+      removePreparedOnFailure: false,
+    });
+
+    expect(committed.ok).toBe(false);
+    if (committed.ok) {
+      return;
+    }
+    expect(committed.errors[0]?.code).toBe("SOURCE_COMMIT_INVENTORY_FAILED");
+    await expect(fs.stat(preparedPath)).resolves.toBeTruthy();
+    await expect(fs.access(canonicalPath)).rejects.toThrow();
+    expect((await stateStore.readState()).manifest.sources).toEqual([]);
+  });
+
   test.each(["source-root", "kind-root"] as const)(
     "refuses to commit through a managed %s symbolic link",
     async (symlinkLevel) => {

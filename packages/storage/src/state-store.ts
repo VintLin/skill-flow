@@ -40,7 +40,8 @@ export type StateStoreState = {
 export type StateStoreErrorCode =
   | "STATE_MIGRATION_REQUIRED"
   | "STATE_MIGRATION_BLOCKED"
-  | "STATE_SCHEMA_UNSUPPORTED";
+  | "STATE_SCHEMA_UNSUPPORTED"
+  | "STATE_WRITE_ROLLBACK_FAILED";
 
 export class StateStoreError extends Error {
   readonly reasonCode: StateStoreErrorCode;
@@ -199,12 +200,10 @@ export class StateStore {
         state.preferences,
         state.collections,
       );
-      await Promise.all([
-        writeManifest(this.stateRoot, state.manifest),
-        writeLock(this.stateRoot, normalizedLock),
-        writePreferences(this.stateRoot, state.preferences),
-        writeCollections(this.stateRoot, state.collections),
-      ]);
+      await writeAuthorityStateTransaction(this.stateRoot, {
+        ...state,
+        lockFile: normalizedLock,
+      });
     });
   }
 
@@ -329,6 +328,120 @@ export class StateStore {
     );
     return run;
   }
+}
+
+type AuthorityTransactionFile = {
+  targetPath: string;
+  stagedPath: string;
+  backupPath: string;
+  payload: unknown;
+};
+
+async function writeAuthorityStateTransaction(
+  stateRoot: string,
+  state: StateStoreState,
+): Promise<void> {
+  await fs.mkdir(stateRoot, { recursive: true });
+  const transactionId = `${process.pid}.${randomUUID()}`;
+  const payloadByFile: Record<AuthorityFileName, unknown> = {
+    "manifest.json": state.manifest,
+    "lock.json": state.lockFile,
+    "preferences.json": state.preferences,
+    "collections.json": state.collections,
+  };
+  const files: AuthorityTransactionFile[] = AUTHORITY_FILES.map((fileName) => ({
+    targetPath: path.join(stateRoot, fileName),
+    stagedPath: path.join(stateRoot, `.${fileName}.${transactionId}.tmp`),
+    backupPath: path.join(stateRoot, `.${fileName}.${transactionId}.bak`),
+    payload: payloadByFile[fileName],
+  }));
+
+  try {
+    for (const file of files) {
+      await fs.writeFile(
+        file.stagedPath,
+        `${JSON.stringify(file.payload, null, 2)}\n`,
+        "utf8",
+      );
+    }
+  } catch (error) {
+    await cleanupAuthorityTransactionFiles(files);
+    throw error;
+  }
+
+  try {
+    for (const file of files) {
+      await fs.copyFile(file.targetPath, file.backupPath);
+    }
+  } catch (error) {
+    await cleanupAuthorityTransactionFiles(files);
+    throw error;
+  }
+
+  const promoted: AuthorityTransactionFile[] = [];
+  try {
+    for (const file of files) {
+      await fs.rename(file.stagedPath, file.targetPath);
+      promoted.push(file);
+    }
+  } catch (error) {
+    const rollbackErrors: string[] = [];
+    let authorityMayContainNewState = false;
+    for (const file of [...promoted].reverse()) {
+      try {
+        await fs.rm(file.targetPath, { force: true });
+      } catch (rollbackError) {
+        authorityMayContainNewState = true;
+        rollbackErrors.push(
+          `${path.basename(file.targetPath)} remove promoted file: ${String(rollbackError)}`,
+        );
+        continue;
+      }
+      try {
+        await fs.rename(file.backupPath, file.targetPath);
+      } catch (rollbackError) {
+        rollbackErrors.push(
+          `${path.basename(file.targetPath)} restore backup: ${String(rollbackError)}`,
+        );
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      await cleanupStagedAuthorityFiles(files);
+      throw new StateStoreError(
+        "STATE_WRITE_ROLLBACK_FAILED",
+        "Authority state write failed, and the previous authority files could not be fully restored.",
+        stateRoot,
+        {
+          writeError: String(error),
+          rollbackErrors,
+          authorityMayContainNewState,
+        },
+      );
+    }
+    await cleanupAuthorityTransactionFiles(files);
+    throw error;
+  }
+
+  // All authority targets are committed at this point. Cleanup is best-effort:
+  // surfacing a cleanup-only failure would invite callers to roll back data
+  // that has already become authoritative.
+  await cleanupAuthorityTransactionFiles(files);
+}
+
+async function cleanupAuthorityTransactionFiles(
+  files: AuthorityTransactionFile[],
+): Promise<void> {
+  await Promise.all(files.flatMap((file) => [file.stagedPath, file.backupPath]).map(
+    (filePath) => fs.rm(filePath, { force: true }).catch(() => {}),
+  ));
+}
+
+async function cleanupStagedAuthorityFiles(
+  files: AuthorityTransactionFile[],
+): Promise<void> {
+  await Promise.all(files.map((file) =>
+    fs.rm(file.stagedPath, { force: true }).catch(() => {})
+  ));
 }
 
 async function readAuthorityFile<T>(

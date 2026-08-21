@@ -155,9 +155,17 @@ export class SourceAuthorityService {
       });
     }
 
-    const leafs = await Promise.all(
-      prepared.leafs.map((leaf) => this.toLeafRecord(leaf, sourceId, checkoutPath)),
-    );
+    let leafs: LeafRecord[];
+    try {
+      leafs = await Promise.all(
+        prepared.leafs.map((leaf) => this.toLeafRecord(leaf, sourceId, checkoutPath)),
+      );
+    } catch (error) {
+      return this.rollbackPreparedCheckoutFailure(input, checkoutPath, {
+        code: "SOURCE_COMMIT_INVENTORY_FAILED",
+        message: `Unable to build source inventory for '${prepared.locator}': ${String(error)}`,
+      });
+    }
     const now = new Date().toISOString();
     const source: SourceManifestRecord = {
       id: sourceId,
@@ -186,30 +194,50 @@ export class SourceAuthorityService {
       ...(prepared.importMode ? { importMode: prepared.importMode } : {}),
     };
 
-    await this.options.stateStore.writeState({
-      ...state,
-      manifest: {
-        ...state.manifest,
-        sources: [...state.manifest.sources, source],
-        bindings: {
-          ...state.manifest.bindings,
-          [sourceId]: {
-            sourceId,
-            selectionMode: "selected",
-            selectedLeafIds: [],
-            enabledTargets: [],
+    try {
+      await this.options.stateStore.writeState({
+        ...state,
+        manifest: {
+          ...state.manifest,
+          sources: [...state.manifest.sources, source],
+          bindings: {
+            ...state.manifest.bindings,
+            [sourceId]: {
+              sourceId,
+              selectionMode: "selected",
+              selectedLeafIds: [],
+              enabledTargets: [],
+            },
           },
         },
-      },
-      lockFile: {
-        ...state.lockFile,
-        sources: {
-          ...state.lockFile.sources,
-          [sourceId]: lock,
+        lockFile: {
+          ...state.lockFile,
+          sources: {
+            ...state.lockFile.sources,
+            [sourceId]: lock,
+          },
+          leafInventory: [...state.lockFile.leafInventory, ...leafs],
         },
-        leafInventory: [...state.lockFile.leafInventory, ...leafs],
-      },
-    });
+      });
+    } catch (error) {
+      if (isStateWriteRollbackFailure(error)) {
+        const failure: Failure = {
+          code: "SOURCE_COMMIT_AUTHORITY_ROLLBACK_FAILED",
+          message: `Unable to persist source '${prepared.locator}', and authority rollback also failed: ${formatStateWriteRollbackFailure(error)}`,
+        };
+        if (error.details?.authorityMayContainNewState) {
+          return fail({
+            ...failure,
+            message: `${failure.message}. The canonical checkout was preserved because authority may still reference the new source.`,
+          });
+        }
+        return this.rollbackPreparedCheckoutFailure(input, checkoutPath, failure);
+      }
+      return this.rollbackPreparedCheckoutFailure(input, checkoutPath, {
+        code: "SOURCE_COMMIT_STATE_WRITE_FAILED",
+        message: `Unable to persist source '${prepared.locator}': ${String(error)}`,
+      });
+    }
 
     return ok({
       manifest: source,
@@ -218,6 +246,29 @@ export class SourceAuthorityService {
       leafCount: leafs.length,
       invalidLeafCount: (prepared.invalidLeafs ?? []).length,
     });
+  }
+
+  private async rollbackPreparedCheckoutFailure(
+    input: {
+      preparedCheckout: PreparedSourceCheckout;
+      removePreparedOnFailure?: boolean;
+    },
+    checkoutPath: string,
+    failure: Failure,
+  ): Promise<Result<SourceSnapshot>> {
+    try {
+      if (input.removePreparedOnFailure) {
+        await removePath(checkoutPath);
+      } else {
+        await fs.rename(checkoutPath, input.preparedCheckout.checkoutPath);
+      }
+    } catch (rollbackError) {
+      return fail({
+        code: "SOURCE_COMMIT_ROLLBACK_FAILED",
+        message: `${failure.message} Checkout rollback also failed: ${String(rollbackError)}`,
+      });
+    }
+    return fail(failure);
   }
 
   async removeSource(sourceIds: string[]): Promise<Result<{ removed: string[] }>> {
@@ -884,6 +935,37 @@ export class SourceAuthorityService {
       diagnostics: (leaf.diagnostics ?? []).map((diagnostic) => ({ ...diagnostic })),
     };
   }
+}
+
+function isStateWriteRollbackFailure(
+  error: unknown,
+): error is {
+  code: "STATE_WRITE_ROLLBACK_FAILED";
+  details?: {
+    writeError?: unknown;
+    rollbackErrors?: unknown;
+    authorityMayContainNewState?: unknown;
+  };
+} {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "STATE_WRITE_ROLLBACK_FAILED";
+}
+
+function formatStateWriteRollbackFailure(error: {
+  details?: { writeError?: unknown; rollbackErrors?: unknown };
+}): string {
+  const writeError = error.details?.writeError;
+  const rollbackErrors = error.details?.rollbackErrors;
+  return [
+    writeError === undefined ? undefined : `write error: ${String(writeError)}`,
+    Array.isArray(rollbackErrors)
+      ? `rollback errors: ${rollbackErrors.map(String).join("; ")}`
+      : rollbackErrors === undefined
+      ? undefined
+      : `rollback error: ${String(rollbackErrors)}`,
+  ].filter((part): part is string => Boolean(part)).join(". ") || "details unavailable";
 }
 
 function createSourceRevision(

@@ -114,6 +114,194 @@ describe("StateStore", () => {
     expect((await fs.readdir(stateRoot)).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
   });
 
+  test("restores every authority file when a state transaction fails", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    const before = await store.readState();
+    const authorityPaths = [
+      store.manifestPath,
+      store.lockPath,
+      store.preferencesPath,
+      store.collectionsPath,
+    ];
+    const rawBefore = await Promise.all(
+      authorityPaths.map((filePath) => fs.readFile(filePath, "utf8")),
+    );
+    const capturedAt = "2026-08-21T00:00:00.000Z";
+    const next: StateStoreState = {
+      manifest: {
+        ...before.manifest,
+        sources: [{
+          id: "transaction-source",
+          kind: "local",
+          locator: "/tmp/transaction-source",
+          canonicalLocator: "/tmp/transaction-source",
+          displayName: "Transaction Source",
+          enabled: true,
+          createdAt: capturedAt,
+          updatedAt: capturedAt,
+        }],
+        bindings: {
+          "transaction-source": {
+            sourceId: "transaction-source",
+            selectionMode: "selected",
+            selectedLeafIds: [],
+            enabledTargets: [],
+          },
+        },
+      },
+      lockFile: {
+        ...before.lockFile,
+        projections: [{
+          target: "codex",
+          sourceId: "transaction-source",
+          leafId: "transaction-source:skills/one",
+          targetPath: "/tmp/transaction-source/one",
+          strategy: "symlink",
+          contentHash: "transaction-hash",
+          status: "active",
+          updatedAt: capturedAt,
+        }],
+      },
+      preferences: {
+        ...before.preferences,
+        pinnedSourceIds: ["transaction-source"],
+      },
+      collections: {
+        ...before.collections,
+        collections: {
+          "transaction-collection": {
+            id: "transaction-collection",
+            displayName: "Transaction Collection",
+            materializedSourceId: "transaction-collection",
+            members: [],
+            hiddenSourceIds: [],
+            restoreSelections: {},
+            createdAt: capturedAt,
+            updatedAt: capturedAt,
+          },
+        },
+      },
+    };
+    const realRename = fs.rename.bind(fs);
+    let failureInjected = false;
+    const rename = vi.spyOn(fs, "rename")
+      .mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+        const [, destination] = args;
+        if (!failureInjected && String(destination) === store.lockPath) {
+          failureInjected = true;
+          throw new Error("injected state transaction failure");
+        }
+        return realRename(...args);
+      });
+
+    await expect(store.writeState(next)).rejects.toThrow("injected state transaction failure");
+    rename.mockRestore();
+
+    expect(await Promise.all(
+      authorityPaths.map((filePath) => fs.readFile(filePath, "utf8")),
+    )).toEqual(rawBefore);
+    expect((await fs.readdir(stateRoot)).filter((entry) =>
+      entry.endsWith(".tmp") || entry.endsWith(".bak")
+    )).toEqual([]);
+  });
+
+  test("preserves a recoverable backup when authority rollback fails", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    const before = await store.readState();
+    const next: StateStoreState = {
+      ...before,
+      preferences: {
+        ...before.preferences,
+        pinnedSourceIds: ["transaction-source"],
+      },
+    };
+    const realRename = fs.rename.bind(fs);
+    let writeFailureInjected = false;
+    let rollbackFailureInjected = false;
+    const rename = vi.spyOn(fs, "rename")
+      .mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+        const [, destination] = args;
+        if (!writeFailureInjected && String(destination) === store.lockPath) {
+          writeFailureInjected = true;
+          throw new Error("injected state transaction failure");
+        }
+        if (
+          writeFailureInjected
+          && !rollbackFailureInjected
+          && String(destination) === store.manifestPath
+        ) {
+          rollbackFailureInjected = true;
+          throw new Error("injected authority rollback failure");
+        }
+        return realRename(...args);
+      });
+
+    await expect(store.writeState(next)).rejects.toMatchObject({
+      code: "STATE_WRITE_ROLLBACK_FAILED",
+      reasonCode: "STATE_WRITE_ROLLBACK_FAILED",
+      path: stateRoot,
+      details: {
+        writeError: expect.stringContaining("injected state transaction failure"),
+        rollbackErrors: [expect.stringContaining("injected authority rollback failure")],
+        authorityMayContainNewState: false,
+      },
+    });
+    rename.mockRestore();
+
+    const manifestBackups = (await fs.readdir(stateRoot)).filter((entry) =>
+      entry.startsWith(".manifest.json.") && entry.endsWith(".bak")
+    );
+    expect(manifestBackups).toHaveLength(1);
+    expect(await readJsonFile<ManifestFile>(path.join(stateRoot, manifestBackups[0]!)))
+      .toEqual(before.manifest);
+  });
+
+  test("marks authority as possibly new when a promoted file cannot be removed", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    const before = await store.readState();
+    const realRename = fs.rename.bind(fs);
+    const realRm = fs.rm.bind(fs);
+    let writeFailureInjected = false;
+    const rename = vi.spyOn(fs, "rename")
+      .mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+        const [, destination] = args;
+        if (!writeFailureInjected && String(destination) === store.lockPath) {
+          writeFailureInjected = true;
+          throw new Error("injected state transaction failure");
+        }
+        return realRename(...args);
+      });
+    const rm = vi.spyOn(fs, "rm")
+      .mockImplementation(async (...args: Parameters<typeof fs.rm>) => {
+        const [targetPath] = args;
+        if (writeFailureInjected && String(targetPath) === store.manifestPath) {
+          throw new Error("injected promoted authority removal failure");
+        }
+        return realRm(...args);
+      });
+
+    await expect(store.writeState({
+      ...before,
+      preferences: {
+        ...before.preferences,
+        pinnedSourceIds: ["transaction-source"],
+      },
+    })).rejects.toMatchObject({
+      code: "STATE_WRITE_ROLLBACK_FAILED",
+      details: {
+        rollbackErrors: [expect.stringContaining("injected promoted authority removal failure")],
+        authorityMayContainNewState: true,
+      },
+    });
+    rename.mockRestore();
+    rm.mockRestore();
+
+    await expect(fs.stat(store.manifestPath)).resolves.toBeTruthy();
+  });
+
   test("allows nested mutation lock calls on the same store instance", async () => {
     const store = new StateStore(stateRoot);
     await store.init();
