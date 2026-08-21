@@ -18,6 +18,7 @@
 | Desktop DMG update flow | Planned | - | [plan](superpowers/plans/2026-06-24-desktop-dmg-update-flow.md) | - |
 | Local scan import source path policy | Planned | [spec](superpowers/specs/2026-06-24-local-scan-import-source-path-policy-design.md) | [plan](superpowers/plans/2026-06-24-local-scan-import-source-path-policy.md) | - |
 | CLI migration usability | Implemented | [spec](superpowers/specs/2026-06-26-cli-migration-usability-design.md) | [plan](superpowers/plans/2026-06-26-cli-migration-usability.md) | - |
+| Git source update boundaries | Implemented | [spec](superpowers/specs/2026-08-18-git-source-update-boundaries-design.md) | - | Focused source, query, and desktop bridge tests |
 | Plugin assets and target routing | Issue | - | [analysis](issues/ISSUE_8_plugin_assets_and_target_routing.md), [user report](issues/ISSUE_8_plugin_assets_and_target_routing_user_report.md) | - |
 | Group card state matrix | Verification | - | - | [matrix](verification/GROUP_CARD_STATE_MATRIX.md) |
 | Mount lifecycle edge cases | Verification | - | - | [matrix](verification/mount-lifecycle-matrix.md) |
