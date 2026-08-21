@@ -63,9 +63,11 @@ export async function withFileLock<T>(
         throw error;
       }
 
-      const stale = await isLockStale(lockPath, staleMs);
-      if (stale) {
-        await fs.rm(lockPath, { recursive: true, force: true });
+      const ownerState = await readLockOwnerState(lockPath);
+      const reclaimable = ownerState === "dead"
+        || (ownerState === "unknown" && await isLockStale(lockPath, staleMs));
+      if (reclaimable) {
+        await reclaimFileLock(lockPath);
         continue;
       }
 
@@ -193,6 +195,56 @@ async function isLockStale(lockPath: string, staleMs: number) {
   } catch {
     return false;
   }
+}
+
+async function readLockOwnerState(
+  lockPath: string,
+): Promise<"alive" | "dead" | "unknown"> {
+  const owner = await readJsonFile<FileLockMetadata | null>(
+    path.join(lockPath, "owner.json"),
+    null,
+  );
+  const pid = owner?.pid;
+  if (!Number.isSafeInteger(pid) || !pid || pid <= 0) {
+    return "unknown";
+  }
+
+  try {
+    process.kill(pid, 0);
+    return "alive";
+  } catch (error) {
+    if (
+      typeof error === "object"
+      && error !== null
+      && "code" in error
+    ) {
+      if (error.code === "ESRCH") {
+        return "dead";
+      }
+      if (error.code === "EPERM") {
+        return "alive";
+      }
+    }
+    return "unknown";
+  }
+}
+
+async function reclaimFileLock(lockPath: string): Promise<void> {
+  const quarantinePath = `${lockPath}.reclaim-${process.pid}-${crypto.randomUUID()}`;
+  try {
+    await fs.rename(lockPath, quarantinePath);
+  } catch (error) {
+    if (
+      typeof error === "object"
+      && error !== null
+      && "code" in error
+      && (error.code === "ENOENT" || error.code === "EEXIST")
+    ) {
+      return;
+    }
+    throw error;
+  }
+  await fs.rm(quarantinePath, { recursive: true, force: true });
 }
 
 function isAlreadyExistsError(error: unknown) {

@@ -1498,6 +1498,12 @@ description: |
       return;
     }
     const commit = await gitUtils.git(["rev-parse", "HEAD"], { cwd: repoPath });
+    const gitCheckoutPath = path.join(
+      sandbox.stateRoot,
+      "source",
+      "git",
+      sourceId,
+    );
     await v2(app).writeState({
       ...before,
       manifest: {
@@ -1512,6 +1518,7 @@ description: |
           ...before.lockFile.sources,
           [sourceId]: {
             ...before.lockFile.sources[sourceId]!,
+            localPath: gitCheckoutPath,
             revision: { provider: "git", commit, capturedAt: new Date().toISOString() },
           },
         },
