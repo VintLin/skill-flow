@@ -393,7 +393,6 @@ export class SourceAuthorityService {
         },
         checkoutPath: tempCheckoutPath,
         existingCheckoutPath: lock.localPath,
-        ...(lock.originBranch ? { updateBranch: lock.originBranch } : {}),
         allowEmptyLeafs: true,
       });
       if (!prepared.ok) {

@@ -155,7 +155,6 @@ export class SourceCheckoutService {
       existingSources?: Array<{ id: string; kind?: SourceKind; locator: string; displayName: string }>;
       checkoutPath?: string;
       existingCheckoutPath?: string;
-      updateBranch?: string;
       suffix?: string;
       allowEmptyLeafs?: boolean;
     } = {},
@@ -177,7 +176,7 @@ export class SourceCheckoutService {
         resolved,
         checkoutPath,
         input.existingCheckoutPath,
-        input.updateBranch,
+        options.originBranch,
       );
     } catch (error) {
       await removePath(checkoutPath);
@@ -477,7 +476,7 @@ export class SourceCheckoutService {
     source: SourceResolution,
     checkoutPath: string,
     existingCheckoutPath?: string,
-    updateBranch?: string,
+    originBranch?: string,
   ): Promise<void> {
     if (source.kind === "local") {
       await copyDirectory(source.localPath!, checkoutPath);
@@ -494,14 +493,14 @@ export class SourceCheckoutService {
             source.gitLocator!,
             existingCheckoutPath,
             checkoutPath,
-            updateBranch,
+            originBranch,
           );
           return;
         } catch {
           await removePath(checkoutPath).catch(() => {});
         }
       }
-      await this.fetchGitSource(source.gitLocator!, checkoutPath, updateBranch);
+      await this.fetchGitSource(source.gitLocator!, checkoutPath, originBranch);
       return;
     }
 
