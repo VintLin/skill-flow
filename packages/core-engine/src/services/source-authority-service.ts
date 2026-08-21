@@ -19,7 +19,6 @@ import type { StateStore, StateStoreState } from "@skill-flow/storage/state-stor
 import {
   ensureDir,
   hashDirectory,
-  isPathInside,
   pathExists,
   removePath,
 } from "@skill-flow/integration/utils/fs";
@@ -30,6 +29,7 @@ import type {
   SourceCheckoutService,
 } from "./source-checkout-service.js";
 import type { AddSourceOptions } from "./source-types.js";
+import { resolveManagedCheckoutOwnership } from "../internal/managed-checkout-policy.js";
 
 export type SourceAuthorityServiceOptions = {
   stateStore: StateStore;
@@ -117,7 +117,21 @@ export class SourceAuthorityService {
     }
 
     const sourceKind = this.mapSourceKind(prepared.kind);
-    const checkoutPath = path.join(this.options.stateStore.rootPath, "source", sourceKind, sourceId);
+    const ownership = await resolveManagedCheckoutOwnership({
+      stateRoot: this.options.stateStore.rootPath,
+      sourceKind,
+      sourceId,
+    });
+    if (!ownership.ok) {
+      if (input.removePreparedOnFailure) {
+        await removePath(prepared.checkoutPath).catch(() => {});
+      }
+      return fail({
+        code: "SOURCE_CHECKOUT_PATH_INVALID",
+        message: `Refusing to register source '${prepared.locator}' through an invalid managed path.`,
+      });
+    }
+    const checkoutPath = ownership.data.checkoutPath;
     if (await pathExists(checkoutPath)) {
       if (input.removePreparedOnFailure) {
         await removePath(prepared.checkoutPath).catch(() => {});
@@ -213,7 +227,6 @@ export class SourceAuthorityService {
   private async removeSourceUnlocked(sourceIds: string[]): Promise<Result<{ removed: string[] }>> {
     const state = await this.options.stateStore.readState();
     const removed: string[] = [];
-    const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
     const checkoutsToRemove: string[] = [];
     const nextManifestSources = [...state.manifest.sources];
     const nextBindings = { ...state.manifest.bindings };
@@ -238,18 +251,19 @@ export class SourceAuthorityService {
         removed.push(sourceId);
         continue;
       }
-      const expectedCheckoutPath = path.join(sourceRoot, source.kind, sourceId);
-      const normalizedLocalPath = path.resolve(lock.localPath);
-      if (
-        normalizedLocalPath !== path.resolve(expectedCheckoutPath) ||
-        !isPathInside(sourceRoot, normalizedLocalPath)
-      ) {
+      const ownership = await resolveManagedCheckoutOwnership({
+        stateRoot: this.options.stateStore.rootPath,
+        sourceKind: source.kind,
+        sourceId,
+        localPath: lock.localPath,
+      });
+      if (!ownership.ok) {
         return fail({
           code: "SOURCE_CHECKOUT_PATH_INVALID",
-          message: `Refusing to delete checkout with mismatched managed path: ${lock.localPath}`,
+          message: `Refusing to delete checkout with invalid managed path: ${lock.localPath}`,
         });
       }
-      checkoutsToRemove.push(normalizedLocalPath);
+      checkoutsToRemove.push(ownership.data.checkoutPath);
 
       delete nextLockSources[sourceId];
       delete nextBindings[sourceId];
@@ -479,8 +493,6 @@ export class SourceAuthorityService {
     explicitSelection: boolean,
   ): Promise<Result<SourceUpdateTarget[]>> {
     const targets: SourceUpdateTarget[] = [];
-    const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
-
     for (const sourceId of requestedIds) {
       const source = state.manifest.sources.find((item) => item.id === sourceId);
       const lock = state.lockFile.sources[sourceId];
@@ -506,12 +518,13 @@ export class SourceAuthorityService {
         continue;
       }
 
-      const expectedCheckoutPath = path.join(sourceRoot, source.kind, sourceId);
-      if (!await this.isManagedCheckoutPathValid(
-        sourceRoot,
-        expectedCheckoutPath,
-        lock.localPath,
-      )) {
+      const ownership = await resolveManagedCheckoutOwnership({
+        stateRoot: this.options.stateStore.rootPath,
+        sourceKind: source.kind,
+        sourceId,
+        localPath: lock.localPath,
+      });
+      if (!ownership.ok) {
         return fail({
           code: "SOURCE_CHECKOUT_PATH_INVALID",
           message: `Refusing to update checkout with invalid managed path: ${lock.localPath}`,
@@ -608,66 +621,6 @@ export class SourceAuthorityService {
       return undefined;
     } catch (error) {
       return error;
-    }
-  }
-
-  private async isManagedCheckoutPathValid(
-    sourceRoot: string,
-    expectedCheckoutPath: string,
-    localPath: string,
-  ): Promise<boolean> {
-    const normalizedLocalPath = path.resolve(localPath);
-    if (
-      normalizedLocalPath !== path.resolve(expectedCheckoutPath)
-      || !isPathInside(sourceRoot, normalizedLocalPath)
-    ) {
-      return false;
-    }
-
-    const kindRoot = path.dirname(expectedCheckoutPath);
-    const existingManagedPaths = new Set<string>();
-    for (const managedPath of [sourceRoot, kindRoot, expectedCheckoutPath]) {
-      try {
-        const stats = await fs.lstat(managedPath);
-        if (stats.isSymbolicLink()) {
-          return false;
-        }
-        existingManagedPaths.add(managedPath);
-      } catch (error) {
-        if (
-          typeof error !== "object"
-          || error === null
-          || !("code" in error)
-          || error.code !== "ENOENT"
-        ) {
-          return false;
-        }
-      }
-    }
-
-    const sourceRootExists = existingManagedPaths.has(sourceRoot);
-    const kindRootExists = existingManagedPaths.has(kindRoot);
-    const checkoutExists = existingManagedPaths.has(expectedCheckoutPath);
-
-    try {
-      const realSourceRoot = sourceRootExists
-        ? await fs.realpath(sourceRoot)
-        : path.join(
-            await fs.realpath(path.dirname(sourceRoot)),
-            path.basename(sourceRoot),
-          );
-      const realKindRoot = kindRootExists
-        ? await fs.realpath(kindRoot)
-        : path.join(realSourceRoot, path.basename(kindRoot));
-      if (!isPathInside(realSourceRoot, realKindRoot)) {
-        return false;
-      }
-      if (!checkoutExists) {
-        return true;
-      }
-      return isPathInside(realSourceRoot, await fs.realpath(expectedCheckoutPath));
-    } catch {
-      return false;
     }
   }
 
