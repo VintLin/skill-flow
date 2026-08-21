@@ -561,6 +561,157 @@ describe.sequential("SourceAuthorityService", () => {
     ]);
   });
 
+  test("preflights every managed checkout before mutating a batch", async () => {
+    const goodRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/good/SKILL.md": skillDoc("good", "Good."),
+    });
+    const badRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/bad/SKILL.md": skillDoc("bad", "Bad."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    expect((await service.addSource(goodRepo, { sourceIdOverride: "preflight-good" })).ok)
+      .toBe(true);
+    expect((await service.addSource(badRepo, { sourceIdOverride: "preflight-bad" })).ok)
+      .toBe(true);
+
+    await writeRepoFiles(goodRepo, {
+      "skills/good-two/SKILL.md": skillDoc("good-two", "Good two."),
+    });
+    const before = await stateStore.readState();
+    const goodCheckoutPath = before.lockFile.sources["preflight-good"]!.localPath;
+    const externalPath = path.join(sandbox.sandboxRoot, "invalid-managed-checkout");
+    await fs.mkdir(externalPath, { recursive: true });
+    before.lockFile.sources["preflight-bad"] = {
+      ...before.lockFile.sources["preflight-bad"]!,
+      localPath: externalPath,
+    };
+    await stateStore.writeState(before);
+    const prepareSourceCheckout = vi.spyOn(checkoutService, "prepareSourceCheckout");
+
+    const updated = await service.updateSources(["preflight-good", "preflight-bad"]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) {
+      return;
+    }
+    expect(updated.errors[0]?.code).toBe("SOURCE_CHECKOUT_PATH_INVALID");
+    expect(prepareSourceCheckout).not.toHaveBeenCalled();
+    const after = await stateStore.readState();
+    expect(after.lockFile.sources["preflight-good"]?.leafIds).toEqual([
+      "preflight-good:skills/good",
+    ]);
+    await expect(fs.access(path.join(
+      goodCheckoutPath,
+      "skills",
+      "good-two",
+      "SKILL.md",
+    ))).rejects.toThrow();
+  });
+
+  test("persists each successful source before preparing the next batch item", async () => {
+    const goodRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/good/SKILL.md": skillDoc("good", "Good."),
+    });
+    const badRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/bad/SKILL.md": skillDoc("bad", "Bad."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    expect((await service.addSource(goodRepo, { sourceIdOverride: "durable-good" })).ok)
+      .toBe(true);
+    expect((await service.addSource(badRepo, { sourceIdOverride: "durable-bad" })).ok)
+      .toBe(true);
+
+    await writeRepoFiles(goodRepo, {
+      "skills/good-two/SKILL.md": skillDoc("good-two", "Good two."),
+    });
+    await fs.rm(badRepo, { recursive: true, force: true });
+    const originalPrepareSourceCheckout = checkoutService.prepareSourceCheckout
+      .bind(checkoutService);
+    let goodLeafIdsObservedBeforeBadPrepare: string[] | undefined;
+    vi.spyOn(checkoutService, "prepareSourceCheckout")
+      .mockImplementation(async (locator, options) => {
+        if (options?.options?.sourceIdOverride === "durable-bad") {
+          const state = await stateStore.readState();
+          goodLeafIdsObservedBeforeBadPrepare = state.lockFile.sources["durable-good"]?.leafIds;
+        }
+        return originalPrepareSourceCheckout(locator, options);
+      });
+
+    const updated = await service.updateSources(["durable-good", "durable-bad"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) {
+      return;
+    }
+    expect(updated.data.status).toBe("partial");
+    expect(goodLeafIdsObservedBeforeBadPrepare).toEqual([
+      "durable-good:skills/good",
+      "durable-good:skills/good-two",
+    ]);
+  });
+
+  test("rolls back a replaced checkout when lock persistence fails", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const added = await service.addSource(repoPath, { sourceIdOverride: "persist-failure" });
+    expect(added.ok).toBe(true);
+    if (!added.ok) {
+      return;
+    }
+    await writeRepoFiles(repoPath, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+
+    const originalWriteLock = stateStore.writeLock.bind(stateStore);
+    vi.spyOn(stateStore, "writeLock").mockImplementationOnce(async () => {
+      throw new Error("injected lock persistence failure");
+    }).mockImplementation(originalWriteLock);
+
+    const updated = await service.updateSources(["persist-failure"]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) {
+      return;
+    }
+    expect(updated.errors[0]?.code).toBe("SOURCE_UPDATE_STATE_WRITE_FAILED");
+    const after = await stateStore.readState();
+    expect(after.lockFile.sources["persist-failure"]?.leafIds).toEqual([
+      "persist-failure:skills/one",
+    ]);
+    await expect(fs.stat(path.join(
+      added.data.lock.localPath,
+      "skills",
+      "one",
+      "SKILL.md",
+    ))).resolves.toBeTruthy();
+    await expect(fs.access(path.join(
+      added.data.lock.localPath,
+      "skills",
+      "two",
+      "SKILL.md",
+    ))).rejects.toThrow();
+  });
+
   test("reconciles v2 leaf inventory from managed checkout", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/one/SKILL.md": skillDoc("one", "One."),

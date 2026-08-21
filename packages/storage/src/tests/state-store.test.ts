@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type {
   CollectionsFile,
   LockFile,
@@ -78,6 +78,40 @@ describe("StateStore", () => {
       collections: {},
     });
     expect(manifest.migrationGeneration).toMatch(/^mg_/);
+  });
+
+  test("keeps the previous lock file when atomic replacement fails", async () => {
+    const store = new StateStore(stateRoot);
+    await store.init();
+    const before = await store.readLock();
+    const next: LockFile = {
+      ...before,
+      projections: [{
+        target: "codex",
+        sourceId: "source-a",
+        leafId: "source-a:skills/one",
+        targetPath: "/tmp/one",
+        strategy: "symlink",
+        contentHash: "hash-one",
+        status: "active",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+      }],
+    };
+    const realRename = fs.rename.bind(fs);
+    const rename = vi.spyOn(fs, "rename")
+      .mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+        const [, destination] = args;
+        if (String(destination) === store.lockPath) {
+          throw new Error("injected atomic replacement failure");
+        }
+        return realRename(...args);
+      });
+
+    await expect(store.writeLock(next)).rejects.toThrow("injected atomic replacement failure");
+    rename.mockRestore();
+
+    expect(await store.readLock()).toEqual(before);
+    expect((await fs.readdir(stateRoot)).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
   });
 
   test("allows nested mutation lock calls on the same store instance", async () => {

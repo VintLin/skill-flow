@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -44,7 +45,17 @@ export type StateMigrationStatus =
 
 async function writeAuthorityFile(stateRoot: string, fileName: string, payload: unknown): Promise<void> {
   await fs.mkdir(stateRoot, { recursive: true });
-  await fs.writeFile(path.join(stateRoot, fileName), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  const targetPath = path.join(stateRoot, fileName);
+  const tempPath = path.join(
+    stateRoot,
+    `.${fileName}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    await fs.writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    await fs.rename(tempPath, targetPath);
+  } finally {
+    await fs.rm(tempPath, { force: true }).catch(() => {});
+  }
 }
 
 export function writeManifest(stateRoot: string, manifest: ManifestFile): Promise<void> {

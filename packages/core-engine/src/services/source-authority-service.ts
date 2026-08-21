@@ -15,7 +15,7 @@ import type {
   SourceUpdateResultItem,
   Warning,
 } from "@skill-flow/domain/types";
-import type { StateStore } from "@skill-flow/storage/state-store";
+import type { StateStore, StateStoreState } from "@skill-flow/storage/state-store";
 import {
   ensureDir,
   hashDirectory,
@@ -47,6 +47,14 @@ export type SourceSnapshot = {
   leafCount: number;
   invalidLeafCount: number;
 };
+
+type SourceUpdateTarget =
+  | { kind: "collection"; sourceId: string }
+  | {
+      kind: "managed";
+      source: SourceManifestRecord;
+      lock: LockFile["sources"][string];
+    };
 
 export class SourceAuthorityService {
   constructor(private readonly options: SourceAuthorityServiceOptions) {}
@@ -289,7 +297,16 @@ export class SourceAuthorityService {
     const requestedIds = sourceIds?.length
       ? [...new Set(sourceIds)]
       : state.manifest.sources.map((source) => source.id);
-    const nextLockFile: LockFile = {
+    const preflight = await this.preflightSourceUpdates(
+      state,
+      requestedIds,
+      Boolean(sourceIds?.length),
+    );
+    if (!preflight.ok) {
+      return fail(preflight.errors, preflight.warnings);
+    }
+
+    let nextLockFile: LockFile = {
       ...state.lockFile,
       sources: { ...state.lockFile.sources },
       leafInventory: [...state.lockFile.leafInventory],
@@ -302,43 +319,13 @@ export class SourceAuthorityService {
     const hardFailures: Failure[] = [];
     let appliedCheckoutCount = 0;
 
-    for (const sourceId of requestedIds) {
-      const source = state.manifest.sources.find((item) => item.id === sourceId);
-      const lock = nextLockFile.sources[sourceId];
-      if (!source || !lock) {
-        return fail({
-          code: "SOURCE_NOT_FOUND",
-          message: `Skills group id '${sourceId}' is not registered.`,
-        }, warnings);
-      }
-
-      if (source.ownership === "external" || lock.ownership === "external") {
-        if (sourceIds?.length) {
-          return fail({
-            code: "SOURCE_EXTERNAL",
-            message: `Skills group '${sourceId}' is externally managed; use external status or external update.`,
-          }, warnings);
-        }
+    for (const target of preflight.data) {
+      if (target.kind === "collection") {
+        updated.push(this.emptyUpdateResult(target.sourceId));
         continue;
       }
-
-      if (source.kind === "collection") {
-        updated.push(this.emptyUpdateResult(sourceId));
-        continue;
-      }
-
-      const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
-      const expectedCheckoutPath = path.join(sourceRoot, source.kind, sourceId);
-      if (!await this.isManagedCheckoutPathValid(
-        sourceRoot,
-        expectedCheckoutPath,
-        lock.localPath,
-      )) {
-        return fail({
-          code: "SOURCE_CHECKOUT_PATH_INVALID",
-          message: `Refusing to update checkout with invalid managed path: ${lock.localPath}`,
-        }, warnings);
-      }
+      const { source, lock } = target;
+      const sourceId = source.id;
 
       const lockedCommit = this.readLockedCommitSha(lock.revision);
       let repairReason: SourceRepairReason | undefined;
@@ -409,32 +396,13 @@ export class SourceAuthorityService {
 
       const previousLeafs = nextLockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId);
 
-      const backupPath = `${lock.localPath}.${process.pid}.${Date.now()}.backup`;
-      try {
-        if (await pathExists(lock.localPath)) {
-          await fs.rename(lock.localPath, backupPath);
-        }
-        await ensureDir(path.dirname(lock.localPath));
-        await fs.rename(prepared.data.checkoutPath, lock.localPath);
-        await removePath(backupPath).catch(() => {});
-      } catch (error) {
-        await removePath(prepared.data.checkoutPath).catch(() => {});
-        if (await pathExists(backupPath)) {
-          await fs.rename(backupPath, lock.localPath).catch(() => {});
-        }
-        const failure: Failure = {
-          code: "SOURCE_CHECKOUT_REPLACE_FAILED",
-          message: `Unable to replace checkout for '${sourceId}': ${String(error)}`,
-        };
-        hardFailures.push(failure);
-        failed.push({ sourceId, code: failure.code, message: failure.message });
-        warnings.push({ code: "SOURCE_UPDATE_FAILED", message: failure.message });
-        continue;
-      }
-
-      appliedCheckoutCount += 1;
       const nextLeafs = await Promise.all(
-        prepared.data.leafs.map((leaf) => this.toLeafRecord(leaf, sourceId, lock.localPath)),
+        prepared.data.leafs.map((leaf) => this.toLeafRecord(
+          leaf,
+          sourceId,
+          lock.localPath,
+          prepared.data.checkoutPath,
+        )),
       );
       const diff = this.buildSourceUpdateDiff(
         sourceId,
@@ -447,28 +415,44 @@ export class SourceAuthorityService {
         diff.repairReason = repairReason;
       }
 
-      nextLockFile.sources[sourceId] = {
-        ...lock,
-        revision: {
-          ...lock.revision,
-          ...(prepared.data.commitSha ? { commit: prepared.data.commitSha } : {}),
-          capturedAt: new Date().toISOString(),
+      const candidateLockFile: LockFile = {
+        ...nextLockFile,
+        sources: {
+          ...nextLockFile.sources,
+          [sourceId]: {
+            ...lock,
+            revision: {
+              ...lock.revision,
+              ...(prepared.data.commitSha ? { commit: prepared.data.commitSha } : {}),
+              capturedAt: new Date().toISOString(),
+            },
+            leafIds: nextLeafs.map((leaf) => leaf.id),
+          },
         },
-        leafIds: nextLeafs.map((leaf) => leaf.id),
+        leafInventory: [
+          ...nextLockFile.leafInventory.filter((leaf) => leaf.sourceId !== sourceId),
+          ...nextLeafs,
+        ],
       };
-      nextLockFile.leafInventory = [
-        ...nextLockFile.leafInventory.filter((leaf) => leaf.sourceId !== sourceId),
-        ...nextLeafs,
-      ];
-      updated.push(diff);
-    }
-
-    // Persist any successful checkout replacements so disk and lock stay aligned.
-    if (appliedCheckoutCount > 0 || updated.length > 0) {
-      await this.options.stateStore.writeState({
-        ...state,
-        lockFile: nextLockFile,
+      const committed = await this.commitPreparedSourceUpdate({
+        sourceId,
+        checkoutPath: lock.localPath,
+        preparedCheckoutPath: prepared.data.checkoutPath,
+        nextLockFile: candidateLockFile,
       });
+      if (!committed.ok) {
+        hardFailures.push(...committed.errors);
+        const failure = committed.errors[0]!;
+        failed.push({ sourceId, code: failure.code, message: failure.message });
+        warnings.push(...committed.warnings);
+        warnings.push({ code: "SOURCE_UPDATE_FAILED", message: failure.message });
+        continue;
+      }
+
+      appliedCheckoutCount += 1;
+      nextLockFile = candidateLockFile;
+      warnings.push(...committed.warnings);
+      updated.push(diff);
     }
 
     if (appliedCheckoutCount === 0 && hardFailures.length > 0) {
@@ -487,6 +471,144 @@ export class SourceAuthorityService {
       ...(failed.length > 0 ? { failed } : {}),
       ...(precheckFallbackSourceIds.length > 0 ? { precheckFallbackSourceIds } : {}),
     }, warnings);
+  }
+
+  private async preflightSourceUpdates(
+    state: StateStoreState,
+    requestedIds: string[],
+    explicitSelection: boolean,
+  ): Promise<Result<SourceUpdateTarget[]>> {
+    const targets: SourceUpdateTarget[] = [];
+    const sourceRoot = path.join(this.options.stateStore.rootPath, "source");
+
+    for (const sourceId of requestedIds) {
+      const source = state.manifest.sources.find((item) => item.id === sourceId);
+      const lock = state.lockFile.sources[sourceId];
+      if (!source || !lock) {
+        return fail({
+          code: "SOURCE_NOT_FOUND",
+          message: `Skills group id '${sourceId}' is not registered.`,
+        });
+      }
+
+      if (source.ownership === "external" || lock.ownership === "external") {
+        if (explicitSelection) {
+          return fail({
+            code: "SOURCE_EXTERNAL",
+            message: `Skills group '${sourceId}' is externally managed; use external status or external update.`,
+          });
+        }
+        continue;
+      }
+
+      if (source.kind === "collection") {
+        targets.push({ kind: "collection", sourceId });
+        continue;
+      }
+
+      const expectedCheckoutPath = path.join(sourceRoot, source.kind, sourceId);
+      if (!await this.isManagedCheckoutPathValid(
+        sourceRoot,
+        expectedCheckoutPath,
+        lock.localPath,
+      )) {
+        return fail({
+          code: "SOURCE_CHECKOUT_PATH_INVALID",
+          message: `Refusing to update checkout with invalid managed path: ${lock.localPath}`,
+        });
+      }
+      targets.push({ kind: "managed", source, lock });
+    }
+
+    return ok(targets);
+  }
+
+  private async commitPreparedSourceUpdate(input: {
+    sourceId: string;
+    checkoutPath: string;
+    preparedCheckoutPath: string;
+    nextLockFile: LockFile;
+  }): Promise<Result<void>> {
+    const backupPath = `${input.checkoutPath}.${process.pid}.${Date.now()}.backup`;
+    let previousCheckoutMoved = false;
+    let preparedCheckoutMoved = false;
+
+    try {
+      if (await pathExists(input.checkoutPath)) {
+        await fs.rename(input.checkoutPath, backupPath);
+        previousCheckoutMoved = true;
+      }
+      await ensureDir(path.dirname(input.checkoutPath));
+      await fs.rename(input.preparedCheckoutPath, input.checkoutPath);
+      preparedCheckoutMoved = true;
+    } catch (error) {
+      const rollbackError = await this.rollbackPreparedSourceUpdate({
+        checkoutPath: input.checkoutPath,
+        preparedCheckoutPath: input.preparedCheckoutPath,
+        backupPath,
+        previousCheckoutMoved,
+        preparedCheckoutMoved,
+      });
+      const message = rollbackError
+        ? `Unable to replace checkout for '${input.sourceId}': ${String(error)}; rollback failed: ${String(rollbackError)}`
+        : `Unable to replace checkout for '${input.sourceId}': ${String(error)}`;
+      return fail({
+        code: rollbackError ? "SOURCE_UPDATE_ROLLBACK_FAILED" : "SOURCE_CHECKOUT_REPLACE_FAILED",
+        message,
+      });
+    }
+
+    try {
+      await this.options.stateStore.writeLock(input.nextLockFile);
+    } catch (error) {
+      const rollbackError = await this.rollbackPreparedSourceUpdate({
+        checkoutPath: input.checkoutPath,
+        preparedCheckoutPath: input.preparedCheckoutPath,
+        backupPath,
+        previousCheckoutMoved,
+        preparedCheckoutMoved,
+      });
+      const message = rollbackError
+        ? `Unable to persist lock state for '${input.sourceId}': ${String(error)}; rollback failed: ${String(rollbackError)}`
+        : `Unable to persist lock state for '${input.sourceId}': ${String(error)}`;
+      return fail({
+        code: rollbackError ? "SOURCE_UPDATE_ROLLBACK_FAILED" : "SOURCE_UPDATE_STATE_WRITE_FAILED",
+        message,
+      });
+    }
+
+    const warnings: Warning[] = [];
+    try {
+      await removePath(backupPath);
+    } catch (error) {
+      warnings.push({
+        code: "SOURCE_CHECKOUT_BACKUP_CLEANUP_FAILED",
+        message: `Updated '${input.sourceId}', but failed to remove checkout backup at ${backupPath}: ${String(error)}`,
+      });
+    }
+    return ok(undefined, warnings);
+  }
+
+  private async rollbackPreparedSourceUpdate(input: {
+    checkoutPath: string;
+    preparedCheckoutPath: string;
+    backupPath: string;
+    previousCheckoutMoved: boolean;
+    preparedCheckoutMoved: boolean;
+  }): Promise<unknown | undefined> {
+    try {
+      if (input.preparedCheckoutMoved) {
+        await removePath(input.checkoutPath);
+      } else {
+        await removePath(input.preparedCheckoutPath).catch(() => {});
+      }
+      if (input.previousCheckoutMoved && await pathExists(input.backupPath)) {
+        await fs.rename(input.backupPath, input.checkoutPath);
+      }
+      return undefined;
+    } catch (error) {
+      return error;
+    }
   }
 
   private async isManagedCheckoutPathValid(
@@ -787,8 +909,10 @@ export class SourceAuthorityService {
     leaf: LeafRecord,
     sourceId: string,
     checkoutPath: string,
+    contentCheckoutPath = checkoutPath,
   ): Promise<LeafRecord> {
     const absolutePath = path.join(checkoutPath, leaf.relativePath);
+    const contentPath = path.join(contentCheckoutPath, leaf.relativePath);
     return {
       id: `${sourceId}:${leaf.relativePath}`,
       sourceId,
@@ -798,7 +922,7 @@ export class SourceAuthorityService {
       description: leaf.description ?? "",
       absolutePath,
       skillFilePath: path.join(absolutePath, "SKILL.md"),
-      contentHash: await hashDirectory(absolutePath, { symlinkPolicy: "preserve-safe" }),
+      contentHash: await hashDirectory(contentPath, { symlinkPolicy: "preserve-safe" }),
       selectors: {
         aliases: [leaf.id, leaf.relativePath].filter((value, index, values) =>
           value && values.indexOf(value) === index
