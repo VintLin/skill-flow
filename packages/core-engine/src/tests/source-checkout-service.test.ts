@@ -309,17 +309,27 @@ describe.sequential("SourceCheckoutService", () => {
     )).resolves.toContain("Fresh.");
   });
 
-  test("keeps the locked branch when falling back from SSH to HTTPS", async () => {
+  test.each([
+    ["GitHub", "git@github.com:acme/skills.git", "https://github.com/acme/skills.git"],
+    ["GitLab", "git@gitlab.com:acme/skills.git", "https://gitlab.com/acme/skills.git"],
+  ] as const)("keeps the locked branch when falling back from %s SSH to HTTPS", async (
+    _provider,
+    sshLocator,
+    httpsLocator,
+  ) => {
     const upstreamRepo = await createRepo(sandbox.sandboxRoot, {
       "skills/one/SKILL.md": skillDoc("one", "HTTPS fallback."),
     });
     const checkoutPath = path.join(sandbox.stateRoot, "source", "git", ".https-fallback");
     vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("missing", { status: 404 }),
+    );
     const git = vi.spyOn(gitUtils, "git").mockImplementation(async (args, options) => {
-      if (args[0] === "clone" && args[5] === "git@gitlab.com:acme/skills.git") {
+      if (args[0] === "clone" && args[5] === sshLocator) {
         throw new Error("SSH clone failed");
       }
-      if (args[0] === "clone" && args[5] === "https://gitlab.com/acme/skills.git") {
+      if (args[0] === "clone" && args[5] === httpsLocator) {
         await fs.cp(upstreamRepo, checkoutPath, { recursive: true });
         return "";
       }
@@ -340,7 +350,7 @@ describe.sequential("SourceCheckoutService", () => {
     });
 
     const prepared = await service.prepareSourceCheckout(
-      "git@gitlab.com:acme/skills.git",
+      sshLocator,
       {
         checkoutPath,
         options: { sourceIdOverride: "https-fallback", originBranch: "release" },
@@ -351,6 +361,7 @@ describe.sequential("SourceCheckoutService", () => {
     if (!prepared.ok) {
       return;
     }
+    expect(prepared.data.locator).toBe(sshLocator);
     expect(prepared.data.originBranch).toBe("release");
     expect(git).toHaveBeenCalledWith([
       "clone",
@@ -358,12 +369,46 @@ describe.sequential("SourceCheckoutService", () => {
       "1",
       "--branch",
       "release",
-      "https://gitlab.com/acme/skills.git",
+      httpsLocator,
       checkoutPath,
     ]);
     expect(git).toHaveBeenCalledWith(
       ["fetch", "--depth", "1", "origin", "refs/heads/release"],
       { cwd: checkoutPath },
+    );
+  });
+
+  test("uses the locked GitHub archive after SSH and HTTPS clones fail", async () => {
+    vi.spyOn(gitUtils, "isGitAvailable").mockResolvedValue(true);
+    const git = vi.spyOn(gitUtils, "git").mockRejectedValue(new Error("clone failed"));
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("missing", { status: 404 }),
+    );
+    const service = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+
+    const prepared = await service.prepareSourceCheckout(
+      "git@github.com:acme/skills.git",
+      {
+        options: { sourceIdOverride: "github-archive-fallback", originBranch: "release" },
+      },
+    );
+
+    expect(prepared.ok).toBe(false);
+    expect(git).toHaveBeenCalledWith([
+      "clone",
+      "--depth",
+      "1",
+      "--branch",
+      "release",
+      "https://github.com/acme/skills.git",
+      expect.any(String),
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0]?.[0]).toBe(
+      "https://github.com/acme/skills/archive/refs/heads/release.zip",
     );
   });
 

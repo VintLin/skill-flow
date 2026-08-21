@@ -1051,7 +1051,13 @@ export class SourceCheckoutService {
     }
 
     const hostedRepo = parseHostedGitRepo(trimmed);
-    if (!hostedRepo || !this.isGitLabHost(hostedRepo.host)) {
+    if (!hostedRepo) {
+      return undefined;
+    }
+    if (hostedRepo.host === "github.com") {
+      return `https://github.com/${hostedRepo.owner}/${hostedRepo.repo}.git`;
+    }
+    if (!this.isGitLabHost(hostedRepo.host)) {
       return undefined;
     }
 
