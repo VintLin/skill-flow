@@ -95,7 +95,7 @@ export class OperationRecoveryService {
           path: checkoutPath,
           existed: await pathExists(checkoutPath),
           backupName: "checkout",
-          beforeFingerprint: "managed-checkout",
+          beforeFingerprint: await fingerprintPath(checkoutPath),
         }
       : undefined;
     await this.journalStore.write({
@@ -319,6 +319,7 @@ export class OperationRecoveryService {
       if (lock && path.resolve(lock.localPath) !== checkout.data.checkoutPath) {
         throw new Error(`checkout '${journal.checkout.path}' does not match authority`);
       }
+      await this.validateSnapshotBackup(journal, journal.checkout);
     }
 
     if (journal.importPreparationBefore) {
@@ -344,6 +345,30 @@ export class OperationRecoveryService {
       const currentRoot = target.target ? targetRoots.get(target.target) : undefined;
       if (!currentRoot || !isPathInside(currentRoot, target.path)) {
         throw new Error(`target '${target.path}' is outside the current root for '${target.target ?? "unknown"}'`);
+      }
+      await this.validateSnapshotBackup(journal, target);
+    }
+  }
+
+  private async validateSnapshotBackup(
+    journal: RecoveryJournal,
+    snapshot: RecoveryPathSnapshot,
+  ): Promise<void> {
+    if (!snapshot.existed) return;
+    if (!snapshot.backupName) {
+      throw new Error(`recovery backup is missing for '${snapshot.path}'`);
+    }
+    const backupPath = this.journalStore.backupPath(journal.transactionId, snapshot.backupName);
+    if (!(await pathExists(backupPath))) {
+      if (snapshot.beforeFingerprint && await fingerprintPath(snapshot.path) === snapshot.beforeFingerprint) {
+        return;
+      }
+      throw new Error(`recovery backup does not exist for '${snapshot.path}'`);
+    }
+    if (snapshot.beforeFingerprint) {
+      const backupFingerprint = await fingerprintPath(backupPath);
+      if (backupFingerprint !== snapshot.beforeFingerprint) {
+        throw new Error(`recovery backup fingerprint does not match '${snapshot.path}'`);
       }
     }
   }
@@ -402,6 +427,12 @@ export class OperationRecoveryService {
   }
 
   private async restorePath(journal: RecoveryJournal, snapshot: RecoveryPathSnapshot): Promise<void> {
+    const backupPath = snapshot.backupName
+      ? this.journalStore.backupPath(journal.transactionId, snapshot.backupName)
+      : undefined;
+    if (snapshot.existed && backupPath && !(await pathExists(backupPath))) {
+      return;
+    }
     await removePath(snapshot.path);
     if (!snapshot.existed || !snapshot.backupName) return;
     await copyPath(
@@ -420,6 +451,8 @@ export class OperationRecoveryService {
         await removePath(preparedPath);
         await fs.mkdir(path.dirname(preparedPath), { recursive: true });
         await fs.rename(snapshot.path, preparedPath);
+      } else if (!(await pathExists(preparedPath))) {
+        throw new Error(`Prepared import checkout '${preparedPath}' is unavailable for recovery.`);
       }
       return;
     }
@@ -430,6 +463,9 @@ export class OperationRecoveryService {
       await removePath(snapshot.path);
       await fs.mkdir(path.dirname(snapshot.path), { recursive: true });
       await fs.rename(backupPath, snapshot.path);
+      return;
+    }
+    if (backupPath && snapshot.beforeFingerprint && await fingerprintPath(snapshot.path) === snapshot.beforeFingerprint) {
       return;
     }
     if (!snapshot.existed) {

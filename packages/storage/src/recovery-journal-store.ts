@@ -137,6 +137,12 @@ function assertPathSnapshot(value: RecoveryPathSnapshot): void {
     invalidJournal("snapshot path must be absolute");
   }
   if (typeof value.existed !== "boolean") invalidJournal("snapshot existed flag must be boolean");
+  if (typeof value.beforeFingerprint !== "string" || value.beforeFingerprint.length === 0) {
+    invalidJournal("missing snapshot before fingerprint");
+  }
+  if (value.role === "target" && (typeof value.mutationFingerprint !== "string" || value.mutationFingerprint.length === 0)) {
+    invalidJournal("missing target mutation fingerprint");
+  }
   if (value.backupName !== undefined) assertBackupName(value.backupName);
   if (value.allowedMutationFingerprints !== undefined && (
     !Array.isArray(value.allowedMutationFingerprints)

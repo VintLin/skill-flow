@@ -52,4 +52,59 @@ describe("RecoveryJournalStore", () => {
 
     await expect(store.read()).rejects.toThrow(/invalid sourceKind/i);
   });
+
+  test("rejects target snapshots without required fingerprints", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-store-"));
+    roots.push(stateRoot);
+    const store = new RecoveryJournalStore(stateRoot);
+    await fs.mkdir(path.dirname(store.journalPath), { recursive: true });
+    await fs.writeFile(store.journalPath, JSON.stringify({
+      schemaVersion: 1,
+      transactionId: "recovery-123-12345678-1234-4123-8123-123456789abc",
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      phase: "mutated",
+      authorityBefore: {},
+      targets: [{
+        role: "target",
+        sourceId: "repo",
+        target: "codex",
+        path: path.join(stateRoot, "targets", "codex", "review"),
+        existed: true,
+        backupName: "target-0",
+      }],
+    }), "utf8");
+
+    await expect(store.read()).rejects.toThrow(/missing snapshot before fingerprint/i);
+  });
+
+  test("rejects target snapshots without a mutation fingerprint", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-store-"));
+    roots.push(stateRoot);
+    const store = new RecoveryJournalStore(stateRoot);
+    await fs.mkdir(path.dirname(store.journalPath), { recursive: true });
+    await fs.writeFile(store.journalPath, JSON.stringify({
+      schemaVersion: 1,
+      transactionId: "recovery-123-12345678-1234-4123-8123-123456789abc",
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      phase: "mutated",
+      authorityBefore: {},
+      targets: [{
+        role: "target",
+        sourceId: "repo",
+        target: "codex",
+        path: path.join(stateRoot, "targets", "codex", "review"),
+        existed: true,
+        backupName: "target-0",
+        beforeFingerprint: "before",
+      }],
+    }), "utf8");
+
+    await expect(store.read()).rejects.toThrow(/missing target mutation fingerprint/i);
+  });
 });
