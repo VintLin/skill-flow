@@ -419,6 +419,11 @@
 "settings.action.delete" = "削除";
 "settings.action.close" = "閉じる";
 "settings.action.cancel" = "キャンセル";
+"termination.stopping" = "現在の操作を停止し、開始前の状態に復元しています…";
+"termination.failed" = "操作を安全に停止できませんでした。Skill Flow は実行を続けます。";
+"termination.retry" = "復元を再試行";
+"termination.cancel_exit" = "終了をキャンセル";
+"termination.recovery_required" = "復元が必要です。更新とインポートは引き続き無効です。";
 "settings.action.save" = "保存";
 "settings.agent_details.title" = "エージェント詳細";
 "settings.agent_details.read_only_note" = "組み込みエージェントは読み取り専用です。";

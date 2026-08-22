@@ -38,6 +38,7 @@ Installing skills one by one breaks down at scale:
 - **Multi-agent deployment**: deploy one selected skill set to Claude Code, Codex, Cursor, Grok Build, Gemini CLI, OpenCode, OpenClaw, Hermes Agent, MiniMax Code, Kimi Code, WorkBuddy, CodeBuddy, Trae, Trae CN, Windsurf, ZCode, and more.
 - **Interactive config flow**: Ink-based TUI for add/config flows, selection state, review, and repair.
 - **Desktop app on macOS 15+**: SwiftUI main window, import view, detail panel, settings, and menu bar quick config.
+- **Safe desktop quit**: Command-Q cancels a running managed update/import, restores the incomplete group, and recovers interrupted work before the next launch continues.
 - **Explicit state**: `manifest.json` stores intent, `lock.json` stores resolved inventory and deployments.
 - **Bridge protocol**: machine-readable desktop/helper entrypoint via `skill-flow bridge --json`.
 - **Repair and diagnosis**: `doctor`, `repair-source`, `repair-state`, and `repair-targets` cover the parts that usually rot first.

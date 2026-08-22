@@ -74,10 +74,15 @@ When adding, removing, or renaming a bridge command:
 | `manifest.json` | User intent: sources, selected skills, enabled targets, display state. |
 | `lock.json` | Resolved state: inventory snapshots, projections, source metadata. |
 | `preferences.json` | Local preferences, target overrides, desktop-facing settings. |
+| `recovery/active.json` | Internal compensation journal for one interrupted managed Update or final Import; not authority and never resumed as queued work. |
 
 State compatibility is implemented in `packages/storage` and domain types live in `packages/domain`.
 
 State shape changes are external changes. Add storage/domain tests and migration or normalizer coverage.
+
+The recovery journal has its own internal schema validation and must be
+recovered before bootstrap prunes missing checkouts. Invalid journals block
+recovery rather than supplying filesystem paths to cleanup logic.
 
 External sources use `ownership: "external"` in manifest/lock state. Their
 paths are observation-only: they cannot receive target bindings, managed

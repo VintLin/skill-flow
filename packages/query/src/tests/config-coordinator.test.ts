@@ -424,6 +424,10 @@ describe("ConfigCoordinator", () => {
         getSummaries: vi.fn().mockReturnValue(summaries),
       },
       getAvailableTargets: vi.fn().mockResolvedValue(["codex"]),
+      recoverInterruptedOperation: vi.fn().mockImplementation(async () => {
+        calls.push("recover");
+        return { ok: true, data: { recovered: true }, warnings: [], errors: [] };
+      }),
       pruneMissingCheckouts: vi.fn().mockImplementation(async () => {
         calls.push("prune");
         return {
@@ -456,7 +460,7 @@ describe("ConfigCoordinator", () => {
     const result = await coordinator.bootstrapWorkspaceState();
 
     expect(result.ok).toBe(true);
-    expect(calls).toEqual(["prune", "ensure-built-in", "config-data"]);
+    expect(calls).toEqual(["recover", "prune", "ensure-built-in", "config-data"]);
   });
 
   test("restores selected skills from binding even when enabled targets are empty", async () => {

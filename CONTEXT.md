@@ -72,6 +72,18 @@ _Avoid_: toast-on-every-enqueue, summary-only notifications
 The Group Operation Queue exists only for the current desktop app session. It is not written to Shared Skill State or Desktop Workspace Memory; quitting discards Queued work and does not auto-resume later.
 _Avoid_: durable download manager, restart resume
 
+**Quit Shutdown**:
+The desktop queue transition triggered by Command-Q or the application Quit menu while a Group Operation is Running. It rejects new operations, discards Queued work, and preserves the Running identity until cancellation and recovery finish. If the user cancels Quit after a recovery failure, protected operations stay disabled; a later successful recovery may reopen only a fresh empty session queue. Closing the main window does not trigger Quit Shutdown.
+_Avoid_: pause, resumable queue, general cancel action
+
+**Operation Recovery Journal**:
+Internal durable recovery evidence for the single incomplete managed Update or final Import. It records the pre-operation authority state and owned filesystem compensation data; it never records work to resume and is not Shared Skill State.
+_Avoid_: persisted queue, download history, migration marker
+
+**Recovery Required**:
+Desktop state after recovery failed and the user cancelled application termination. The main UI remains available, but Update and Import stay disabled; another Quit or Retry Recovery must attempt recovery again before termination can complete.
+_Avoid_: recovered, idle, ignore-and-quit
+
 **Bulk Update**:
 A single Group Operation that updates many installed groups in one bridge call (Home “Update All”). While it is Queued or Running, every covered group shows Card Operation Feedback; matching single-group Update entries already in the queue are absorbed so they are not run twice.
 _Avoid_: fan-out to N single updates, bypassing the queue

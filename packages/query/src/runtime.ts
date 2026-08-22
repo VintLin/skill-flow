@@ -130,6 +130,7 @@ import {
   type ExternalSourceSnapshot,
 } from "@skill-flow/core-engine/services/external-source-lifecycle";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
+import { OperationRecoveryService } from "@skill-flow/core-engine/services/operation-recovery-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { SourceAuthorityService } from "@skill-flow/core-engine/services/source-authority-service";
@@ -451,6 +452,7 @@ export class SkillFlowApp {
   readonly sourceAuthorityService: SourceAuthorityService;
   readonly externalSourceLifecycle: ExternalSourceLifecycle;
   readonly importPreparationService: ImportPreparationService;
+  readonly operationRecoveryService: OperationRecoveryService;
   readonly doctorService: DoctorService;
   readonly workflowService: WorkflowService;
   readonly recentProjectService: RecentProjectService;
@@ -489,6 +491,10 @@ export class SkillFlowApp {
       sourceAuthority: this.sourceAuthorityService,
       checkoutService: this.sourceCheckoutService,
     });
+    this.operationRecoveryService = new OperationRecoveryService({
+      stateStore: this.stateStore,
+      cacheStore: this.importPreparationCacheStore,
+    });
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
     this.recentProjectService = new RecentProjectService();
@@ -508,6 +514,7 @@ export class SkillFlowApp {
       doctorService: this.doctorService,
       workflowService: this.workflowService,
       getAvailableTargets: () => this.getAvailableTargets(),
+      recoverInterruptedOperation: () => this.operationRecoveryService.recover(),
       pruneMissingCheckouts: () => this.pruneMissingCheckoutsImpl(),
       ensureBuiltInSources: () => this.ensureBuiltInSourcesImpl(),
       getConfigData: async () => {
@@ -2820,11 +2827,31 @@ export class SkillFlowApp {
     canonicalRepo?: string,
     localSkillPath?: string,
   ): Promise<Result<ImportSourceResult>> {
+    const preparation = (await this.importPreparationCacheStore.readImportPreparationCache())
+      .records[preparationId];
+    if (!preparation || preparation.status !== "ready") {
+      return this.importPreparationService.commitPreparedImportSource(preparationId);
+    }
+    const canonicalCheckoutPath = path.join(
+      this.stateStore.rootPath,
+      "source",
+      preparation.sourceKind,
+      preparation.sourceId,
+    );
+    await this.operationRecoveryService.begin({
+      kind: "import",
+      sourceId: preparation.sourceId,
+      checkoutPath: canonicalCheckoutPath,
+      preparationId,
+    });
     const committed = await this.importPreparationService.commitPreparedImportSource(preparationId);
     if (!committed.ok) {
+      const recovered = await this.operationRecoveryService.recover();
+      if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
       return committed;
     }
     if (committed.data.status !== "ready") {
+      await this.operationRecoveryService.commit();
       return ok(committed.data, committed.warnings);
     }
     const committedData = committed.data;
@@ -2839,7 +2866,8 @@ export class SkillFlowApp {
       draft,
     );
     if (!finalDraft.ok) {
-      await this.rollbackPreparedSourceInternal(committedData.sourceId);
+      const recovered = await this.operationRecoveryService.recover();
+      if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
       return ok({
         status: "failed",
         reasonCode: finalDraft.errors[0]?.code ?? "IMPORT_PREVIEW_INVALID",
@@ -2847,9 +2875,15 @@ export class SkillFlowApp {
       }, [...committed.warnings, ...finalDraft.warnings]);
     }
 
-    const applied = await this.applyDraftImpl(committedData.sourceId, finalDraft.data, { kind: "global" });
+    const applied = await this.applyDraftImpl(
+      committedData.sourceId,
+      finalDraft.data,
+      { kind: "global" },
+      { recoverable: true },
+    );
     if (!applied.ok) {
-      await this.rollbackPreparedSourceInternal(committedData.sourceId);
+      const recovered = await this.operationRecoveryService.recover();
+      if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
       return ok({
         status: "failed",
         reasonCode: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
@@ -2857,7 +2891,13 @@ export class SkillFlowApp {
       }, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
     }
 
-    await this.replaceLocalImportWithManagedSymlink(localSkillPath, committedData.sourceId);
+    await this.replaceLocalImportWithManagedSymlink(
+      localSkillPath,
+      committedData.sourceId,
+      { recoverable: true },
+    );
+    await this.operationRecoveryService.checkpoint();
+    await this.operationRecoveryService.commit();
 
     return ok(committedData, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
   }
@@ -3041,6 +3081,7 @@ export class SkillFlowApp {
   private async replaceLocalImportWithManagedSymlink(
     localSkillPath: string | undefined,
     sourceId: string,
+    options: { recoverable?: boolean } = {},
   ): Promise<void> {
     if (!localSkillPath) {
       return;
@@ -3052,6 +3093,12 @@ export class SkillFlowApp {
     const { lockFile } = await this.readRuntimeAuthorityView();
     const source = lockFile.sources[sourceId];
     if (source?.localPath) {
+      if (options.recoverable) {
+        await this.operationRecoveryService.prepareManagedSymlinkMutation(
+          localSkillPath,
+          source.localPath,
+        );
+      }
       await createSymlink(source.localPath, localSkillPath);
     }
   }
@@ -4715,6 +4762,7 @@ export class SkillFlowApp {
     sourceId: string,
     draft: DraftBinding,
     scope: ProjectScope,
+    options: { recoverable?: boolean } = {},
   ): Promise<Result<ApplyDraftResult>> {
     if (scope.kind === "project") {
       const runtimeView = await this.readRuntimeAuthorityView();
@@ -4869,6 +4917,9 @@ export class SkillFlowApp {
       lockFile,
       sourceId,
       preferences,
+      options.recoverable
+        ? (actions) => this.operationRecoveryService.prepareTargetMutations(actions)
+        : undefined,
     );
     if (!reconciled.ok) {
       return fail(
@@ -5158,47 +5209,129 @@ export class SkillFlowApp {
   }
 
   private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+    const initialState = await this.stateStore.readState();
+    const requestedIds = sourceIds?.length
+      ? [...new Set(sourceIds)]
+      : initialState.manifest.sources
+        .filter((source) => source.ownership !== "external")
+        .map((source) => source.id);
     const externalSourceIds = sourceIds?.length
       ? []
-      : (await this.stateStore.readState()).manifest.sources
+      : initialState.manifest.sources
         .filter((source) => source.ownership === "external")
         .map((source) => source.id);
-    const updated = await this.sourceAuthorityService.updateSources(sourceIds);
-    if (!updated.ok) {
-      return updated;
+    const updatedItems: SourceUpdateResultItem[] = [];
+    const failed: NonNullable<SourceUpdateResult["failed"]> = [];
+    const warnings: Warning[] = [];
+    const precheckFallbackSourceIds: string[] = [];
+    const hardErrors: Array<{ code: string; message: string }> = [];
+
+    for (const sourceId of requestedIds) {
+      const currentState = await this.stateStore.readState();
+      const source = currentState.manifest.sources.find((candidate) => candidate.id === sourceId);
+      const lock = currentState.lockFile.sources[sourceId];
+      const managed = source
+        && source.kind !== "collection"
+        && source.ownership !== "external"
+        && lock?.ownership !== "external";
+      let transaction: { checkoutBackupPath?: string } | undefined;
+      try {
+        if (managed) {
+          transaction = await this.operationRecoveryService.begin({ kind: "update", sourceId });
+        }
+        const updated = await this.sourceAuthorityService.updateSources([sourceId], {
+          ...(transaction?.checkoutBackupPath
+            ? { checkoutBackupPath: transaction.checkoutBackupPath, retainCheckoutBackup: true }
+            : {}),
+        });
+        warnings.push(...updated.warnings);
+        if (!updated.ok) {
+          hardErrors.push(...updated.errors);
+          const first = updated.errors[0] ?? {
+            code: "SOURCE_UPDATE_FAILED",
+            message: `Unable to update skills group '${sourceId}'.`,
+          };
+          failed.push({ sourceId, code: first.code, message: first.message });
+          if (transaction) {
+            const recovered = await this.operationRecoveryService.recover();
+            if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
+          }
+          continue;
+        }
+
+        precheckFallbackSourceIds.push(...(updated.data.precheckFallbackSourceIds ?? []));
+        if (!transaction) {
+          updatedItems.push(...updated.data.updated);
+          continue;
+        }
+
+        const state = await this.stateStore.readState();
+        const manifest = this.cloneAuthorityManifest(state.manifest);
+        const lockFile = this.cloneLockFile(state.lockFile);
+        const adapters = this.createAdaptersForPreferences(state.preferences);
+        const projectedSourceIds = new Set(
+          lockFile.projections
+            .filter((projection) => projection.status === "active")
+            .map((projection) => projection.sourceId),
+        );
+        const planSourceIds = manifest.sources
+          .map((candidate) => candidate.id)
+          .filter((candidateId) =>
+            candidateId === sourceId
+            || this.hasActiveTargets(manifest, candidateId)
+            || projectedSourceIds.has(candidateId),
+          );
+        const planned = await this.deploymentReconciler.plan({
+          manifest,
+          lockFile,
+          sourceIds: planSourceIds,
+          adapters,
+        });
+        warnings.push(...planned.warnings);
+        if (!planned.ok) {
+          hardErrors.push(...planned.errors);
+          const first = planned.errors[0]!;
+          failed.push({ sourceId, code: first.code, message: first.message });
+          const recovered = await this.operationRecoveryService.recover();
+          if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
+          continue;
+        }
+        await this.operationRecoveryService.prepareTargetMutations(planned.data.actions);
+        const applied = await this.deploymentReconciler.apply({
+          lockFile,
+          actions: planned.data.actions,
+          adapters,
+        });
+        warnings.push(...applied.warnings);
+        if (!applied.ok) {
+          hardErrors.push(...applied.errors);
+          const first = applied.errors[0]!;
+          failed.push({ sourceId, code: first.code, message: first.message });
+          const recovered = await this.operationRecoveryService.recover();
+          if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
+          continue;
+        }
+        await this.stateStore.writeState({ ...state, manifest, lockFile });
+        await this.operationRecoveryService.checkpoint();
+        await this.operationRecoveryService.commit();
+        updatedItems.push(...updated.data.updated);
+      } catch (error) {
+        if (transaction) {
+          const recovered = await this.operationRecoveryService.recover();
+          if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
+        }
+        const failure = {
+          code: "SOURCE_UPDATE_FAILED",
+          message: `Unable to update skills group '${sourceId}': ${String(error)}`,
+        };
+        hardErrors.push(failure);
+        failed.push({ sourceId, ...failure });
+      }
     }
 
-    const state = await this.stateStore.readState();
-    const manifest = this.cloneAuthorityManifest(state.manifest);
-    const lockFile = this.cloneLockFile(state.lockFile);
-    const preferences = state.preferences;
-    const updatedSourceIds = new Set(updated.data.updated.map((item) => item.sourceId));
-    const projectedSourceIds = new Set(
-      lockFile.projections
-        .filter((projection) => projection.status === "active")
-        .map((projection) => projection.sourceId),
-    );
-    const planSourceIds = manifest.sources
-      .map((source) => source.id)
-      .filter((id) =>
-        updatedSourceIds.has(id) ||
-        this.hasActiveTargets(manifest, id) ||
-        projectedSourceIds.has(id),
-      );
-    const reconciled = await this.deploymentReconciler.reconcile({
-      manifest,
-      lockFile,
-      sourceIds: planSourceIds,
-      adapters: this.createAdaptersForPreferences(preferences),
-    });
-    if (!reconciled.ok) {
-      return fail(reconciled.errors, [...updated.warnings, ...reconciled.warnings]);
+    if (updatedItems.length === 0 && hardErrors.length > 0) {
+      return fail(hardErrors, warnings);
     }
-    await this.stateStore.writeState({
-      ...state,
-      manifest,
-      lockFile,
-    });
     const externalWarnings: Warning[] = [];
     for (const sourceId of externalSourceIds) {
       const refreshed = await this.externalSourceLifecycle.refresh(sourceId);
@@ -5211,7 +5344,17 @@ export class SkillFlowApp {
         externalWarnings.push(...refreshed.warnings);
       }
     }
-    return ok(updated.data, [...updated.warnings, ...reconciled.warnings, ...externalWarnings]);
+    const status: SourceUpdateResult["status"] = failed.length === 0
+      ? "updated"
+      : updatedItems.length === 0
+        ? "failed"
+        : "partial";
+    return ok({
+      status,
+      updated: updatedItems,
+      ...(failed.length > 0 ? { failed } : {}),
+      ...(precheckFallbackSourceIds.length > 0 ? { precheckFallbackSourceIds } : {}),
+    }, [...warnings, ...externalWarnings]);
   }
 
   async doctor(): Promise<Result<DoctorReport>> {
@@ -6986,17 +7129,30 @@ export class SkillFlowApp {
     lockFile: LockFile,
     primarySourceId: string,
     preferences: Pick<PreferencesFile, "customTargets" | "agentDisplayOrder">,
-  ) {
+    beforeApply?: (actions: DeploymentAction[]) => Promise<void>,
+  ): Promise<Result<{ actions: DeploymentAction[] }>> {
     const sourceIds = manifest.sources
       .map((source) => source.id)
       .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
 
-    return this.deploymentReconciler.reconcile({
+    const adapters = this.createAdaptersForPreferences(preferences);
+    const planned = await this.deploymentReconciler.plan({
       manifest,
       lockFile,
       sourceIds,
-      adapters: this.createAdaptersForPreferences(preferences),
+      adapters,
     });
+    if (!planned.ok) return planned;
+    await beforeApply?.(planned.data.actions);
+    const applied = await this.deploymentReconciler.apply({
+      lockFile,
+      actions: planned.data.actions,
+      adapters,
+    });
+    if (!applied.ok) {
+      return fail(applied.errors, [...planned.warnings, ...applied.warnings]);
+    }
+    return ok({ actions: planned.data.actions }, [...planned.warnings, ...applied.warnings]);
   }
 
   private getEnabledTargetsForSource(

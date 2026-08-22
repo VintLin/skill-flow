@@ -31,6 +31,19 @@ enum BridgeCommand: String, Codable, Sendable, CaseIterable {
 }
 
 extension BridgeCommand {
+    var isProtectedGroupOperation: Bool {
+        switch self {
+        case .prepareImportSource,
+             .previewImportSource,
+             .commitImportSource,
+             .importSource,
+             .update:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Longer bridge helper budget for network-heavy work (import, update, add).
     /// Ordinary UI mutations keep the shorter default command timeout.
     var usesExtendedNetworkTimeout: Bool {

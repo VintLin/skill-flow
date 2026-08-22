@@ -65,7 +65,10 @@ budget based on the distinct selected source count:
 - update all: 15 minutes.
 
 Tests may inject shorter budgets. Timeout termination and output handling stay
-the same as other bridge commands.
+the same as other bridge commands. Application Quit is a separate lifecycle:
+the Desktop Quit Operation Recovery design freezes the queue, requests
+cooperative cancellation, and terminates the helper process group after its
+five-second grace period without changing these update budgets.
 
 ## Acceptance tests
 

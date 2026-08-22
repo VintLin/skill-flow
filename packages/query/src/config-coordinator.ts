@@ -44,6 +44,7 @@ type ConfigCoordinatorDeps = {
     ): WorkflowSummary[];
   };
   getAvailableTargets(): Promise<DeploymentTargetId[]>;
+  recoverInterruptedOperation?(): Promise<Result<{ recovered: boolean }>>;
   pruneMissingCheckouts(): Promise<Result<{ removedSourceIds: string[] }>>;
   ensureBuiltInSources?(): Promise<Result<{ sourceIds: string[] }>>;
   getConfigData(): Promise<
@@ -70,6 +71,10 @@ export class ConfigCoordinator {
   async bootstrapWorkspaceState(
     onEvent?: (event: BootstrapEvent) => void,
   ): Promise<Result<ConfigBootstrapData>> {
+    const recovery = await this.deps.recoverInterruptedOperation?.();
+    if (recovery && !recovery.ok) {
+      return fail(recovery.errors, recovery.warnings);
+    }
     onEvent?.({
       phase: "detect-targets",
       level: "info",
@@ -81,7 +86,7 @@ export class ConfigCoordinator {
     if (!pruned.ok) {
       return fail(pruned.errors, pruned.warnings);
     }
-    const warnings: Warning[] = [...pruned.warnings];
+    const warnings: Warning[] = [...(recovery?.warnings ?? []), ...pruned.warnings];
     if (pruned.data.removedSourceIds.length > 0) {
       onEvent?.({
         phase: "refresh-sources",

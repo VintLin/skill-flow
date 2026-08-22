@@ -38,6 +38,7 @@
 - **多 agent 部署**：把同一组选中的 skill 部署到 Claude Code、Codex、Cursor、Grok Build、Gemini CLI、OpenCode、OpenClaw、Hermes Agent、MiniMax Code、Kimi Code、WorkBuddy、CodeBuddy、Trae、Trae CN、Windsurf、ZCode 等目标。
 - **交互式配置流程**：基于 Ink 的 add/config/find TUI，覆盖选择、审阅和修复流程。
 - **macOS 15+ 桌面应用**：SwiftUI 主窗口、导入页、详情页、设置页和菜单栏快速配置。
+- **安全退出桌面端**：按下 Command-Q 时会取消正在运行的托管更新/导入，恢复未完成的组，并在下次启动继续前先处理遗留恢复。
 - **显式状态**：`manifest.json` 记录意图，`lock.json` 记录实际 inventory 与 deployment。
 - **Bridge 协议**：通过 `skill-flow bridge --json` 提供机器可读入口。
 - **修复与诊断**：`doctor`、`repair-source`、`repair-state`、`repair-targets` 负责处理最容易坏掉的地方。

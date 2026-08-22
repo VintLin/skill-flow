@@ -188,6 +188,7 @@ describe.sequential("runtime source v2 write chain", () => {
         status: "active",
       }),
     ]);
+    await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
   });
 
   test("importSource rolls back the v2 source when requested targets are invalid", async () => {
@@ -333,6 +334,7 @@ describe.sequential("runtime source v2 write chain", () => {
         status: "active",
       }),
     ]));
+    await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
   });
 
   test("repairTargets recreates managed target paths from v2 projections", async () => {

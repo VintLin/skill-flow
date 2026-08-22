@@ -7,6 +7,7 @@ import XCTest
 final class BridgeClientExecutionTests: XCTestCase {
     private var fixture: SlowBridgeFixture?
     private var stubbornFixture: StubbornBridgeFixture?
+    private var stubbornProcessGroupFixture: StubbornProcessGroupBridgeFixture?
     private var recordingFixture: RecordingBridgeFixture?
     private var importDraftRetryFixture: ImportDraftRetryBridgeFixture?
     private var savedNodeOverride: String?
@@ -16,6 +17,8 @@ final class BridgeClientExecutionTests: XCTestCase {
         fixture = nil
         try stubbornFixture?.tearDown()
         stubbornFixture = nil
+        try stubbornProcessGroupFixture?.tearDown()
+        stubbornProcessGroupFixture = nil
         try recordingFixture?.tearDown()
         recordingFixture = nil
         try importDraftRetryFixture?.tearDown()
@@ -179,6 +182,37 @@ final class BridgeClientExecutionTests: XCTestCase {
         }
 
         try await waitForProcessToExit(pid: pid, timeoutNanoseconds: 1_000_000_000)
+    }
+
+    func testQuitCancellationKillsTheEntireHelperProcessGroupAfterGracePeriod() async throws {
+        let fixture = try StubbornProcessGroupBridgeFixture.install()
+        stubbornProcessGroupFixture = fixture
+        let bridge = await MainActor.run { BridgeClient(quitCancellationGraceMilliseconds: 50) }
+
+        let updateTask = Task { try await bridge.updateSources(["alpha"]) }
+        let pids = try await fixture.waitForPids()
+
+        let cancelled = await bridge.cancelActiveHelperForTermination()
+        XCTAssertTrue(cancelled)
+        _ = try? await updateTask.value
+
+        try await waitForProcessToExit(pid: pids.helper, timeoutNanoseconds: 1_000_000_000)
+        try await waitForProcessToExit(pid: pids.child, timeoutNanoseconds: 1_000_000_000)
+    }
+
+    func testTerminationLatchCancelsAProtectedOperationBeforeItsHelperLaunches() async {
+        let bridge = await MainActor.run { BridgeClient() }
+
+        XCTAssertTrue(await bridge.cancelActiveHelperForTermination())
+
+        do {
+            _ = try await bridge.updateSources(["alpha"])
+            XCTFail("Expected the queued protected operation to be cancelled before launch.")
+        } catch BridgeClientError.commandFailed(let message, _) {
+            XCTAssertTrue(message.contains("terminating"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testListFailsWithActionableNodeRequirementWhenNodeIsMissing() async throws {
@@ -695,6 +729,62 @@ final class BridgeClientExecutionTests: XCTestCase {
             return true
         }
         return errno == EPERM
+    }
+}
+
+private final class StubbornProcessGroupBridgeFixture {
+    private let rootURL: URL
+    private let pidsURL: URL
+    private let savedHelperOverride: String?
+
+    private init(rootURL: URL, pidsURL: URL, savedHelperOverride: String?) {
+        self.rootURL = rootURL
+        self.pidsURL = pidsURL
+        self.savedHelperOverride = savedHelperOverride
+    }
+
+    static func install() throws -> StubbornProcessGroupBridgeFixture {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("skillflow-desktop-bridge-process-group-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
+        let pidsURL = rootURL.appendingPathComponent("pids.json")
+        let script = """
+        const fs = require("node:fs");
+        const { spawn } = require("node:child_process");
+        const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], { stdio: "ignore" });
+        fs.writeFileSync(\(String(reflecting: pidsURL.path)), JSON.stringify({ helper: process.pid, child: child.pid }));
+        process.on("SIGTERM", () => {});
+        process.stdin.resume();
+        setInterval(() => {}, 1000);
+        """
+        try script.write(to: helperURL, atomically: true, encoding: .utf8)
+        let saved = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_HELPER_OVERRIDE"]
+        setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
+        return StubbornProcessGroupBridgeFixture(rootURL: rootURL, pidsURL: pidsURL, savedHelperOverride: saved)
+    }
+
+    func waitForPids() async throws -> (helper: Int32, child: Int32) {
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            if let data = try? Data(contentsOf: pidsURL),
+               let value = try? JSONSerialization.jsonObject(with: data) as? [String: Int],
+               let helper = value["helper"], let child = value["child"] {
+                return (Int32(helper), Int32(child))
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        throw XCTSkip("Timed out waiting for helper process group PIDs.")
+    }
+
+    func tearDown() throws {
+        if let savedHelperOverride { setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", savedHelperOverride, 1) }
+        else { unsetenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE") }
+        if let data = try? Data(contentsOf: pidsURL),
+           let value = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
+            for pid in value.values { if kill(Int32(pid), 0) == 0 { kill(Int32(pid), SIGKILL) } }
+        }
+        if FileManager.default.fileExists(atPath: rootURL.path) { try FileManager.default.removeItem(at: rootURL) }
     }
 }
 

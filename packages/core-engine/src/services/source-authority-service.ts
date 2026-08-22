@@ -353,11 +353,17 @@ export class SourceAuthorityService {
     return ok({ removed }, warnings);
   }
 
-  async updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
-    return this.withMutationLock(() => this.updateSourcesUnlocked(sourceIds));
+  async updateSources(
+    sourceIds?: string[],
+    options: { checkoutBackupPath?: string; retainCheckoutBackup?: boolean } = {},
+  ): Promise<Result<SourceUpdateResult>> {
+    return this.withMutationLock(() => this.updateSourcesUnlocked(sourceIds, options));
   }
 
-  private async updateSourcesUnlocked(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+  private async updateSourcesUnlocked(
+    sourceIds?: string[],
+    options: { checkoutBackupPath?: string; retainCheckoutBackup?: boolean } = {},
+  ): Promise<Result<SourceUpdateResult>> {
     const state = await this.options.stateStore.readState();
     const requestedIds = sourceIds?.length
       ? [...new Set(sourceIds)]
@@ -503,6 +509,8 @@ export class SourceAuthorityService {
         checkoutPath: lock.localPath,
         preparedCheckoutPath: prepared.data.checkoutPath,
         nextLockFile: candidateLockFile,
+        ...(options.checkoutBackupPath ? { backupPath: options.checkoutBackupPath } : {}),
+        retainBackup: options.retainCheckoutBackup ?? false,
       });
       if (!committed.ok) {
         hardFailures.push(...committed.errors);
@@ -591,8 +599,10 @@ export class SourceAuthorityService {
     checkoutPath: string;
     preparedCheckoutPath: string;
     nextLockFile: LockFile;
+    backupPath?: string;
+    retainBackup?: boolean;
   }): Promise<Result<void>> {
-    const backupPath = `${input.checkoutPath}.${process.pid}.${Date.now()}.backup`;
+    const backupPath = input.backupPath ?? `${input.checkoutPath}.${process.pid}.${Date.now()}.backup`;
     let previousCheckoutMoved = false;
     let preparedCheckoutMoved = false;
 
@@ -641,13 +651,15 @@ export class SourceAuthorityService {
     }
 
     const warnings: Warning[] = [];
-    try {
-      await removePath(backupPath);
-    } catch (error) {
-      warnings.push({
-        code: "SOURCE_CHECKOUT_BACKUP_CLEANUP_FAILED",
-        message: `Updated '${input.sourceId}', but failed to remove checkout backup at ${backupPath}: ${String(error)}`,
-      });
+    if (!input.retainBackup) {
+      try {
+        await removePath(backupPath);
+      } catch (error) {
+        warnings.push({
+          code: "SOURCE_CHECKOUT_BACKUP_CLEANUP_FAILED",
+          message: `Updated '${input.sourceId}', but failed to remove checkout backup at ${backupPath}: ${String(error)}`,
+        });
+      }
     }
     return ok(undefined, warnings);
   }
