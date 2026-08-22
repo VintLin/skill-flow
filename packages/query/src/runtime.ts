@@ -2903,9 +2903,7 @@ export class SkillFlowApp {
     });
     const committed = await this.importPreparationService.commitPreparedImportSource(preparationId);
     if (!committed.ok) {
-      const recovered = await this.operationRecoveryService.recover();
-      if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
-      return committed;
+      return this.recoverInterruptedOperationOrReturn(committed);
     }
     if (committed.data.status !== "ready") {
       await this.operationRecoveryService.commit();
@@ -2923,13 +2921,11 @@ export class SkillFlowApp {
       draft,
     );
     if (!finalDraft.ok) {
-      const recovered = await this.operationRecoveryService.recover();
-      if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
-      return ok({
+      return this.recoverInterruptedOperationOrReturn(ok({
         status: "failed",
         reasonCode: finalDraft.errors[0]?.code ?? "IMPORT_PREVIEW_INVALID",
         retryable: true,
-      }, [...committed.warnings, ...finalDraft.warnings]);
+      }, [...committed.warnings, ...finalDraft.warnings]));
     }
 
     const applied = await this.applyDraftImpl(
@@ -2939,13 +2935,11 @@ export class SkillFlowApp {
       { recoverable: true },
     );
     if (!applied.ok) {
-      const recovered = await this.operationRecoveryService.recover();
-      if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
-      return ok({
+      return this.recoverInterruptedOperationOrReturn(ok({
         status: "failed",
         reasonCode: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
         retryable: true,
-      }, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
+      }, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]));
     }
 
     await this.replaceLocalImportWithManagedSymlink(
@@ -5336,7 +5330,7 @@ export class SkillFlowApp {
           };
           failed.push({ sourceId, code: first.code, message: first.message });
           if (transaction) {
-            const recovered = await this.operationRecoveryService.recover();
+            const recovered = await this.recoverInterruptedOperation();
             if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
           }
           continue;
@@ -5375,7 +5369,7 @@ export class SkillFlowApp {
           hardErrors.push(...planned.errors);
           const first = planned.errors[0]!;
           failed.push({ sourceId, code: first.code, message: first.message });
-          const recovered = await this.operationRecoveryService.recover();
+          const recovered = await this.recoverInterruptedOperation();
           if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
           continue;
         }
@@ -5390,7 +5384,7 @@ export class SkillFlowApp {
           hardErrors.push(...applied.errors);
           const first = applied.errors[0]!;
           failed.push({ sourceId, code: first.code, message: first.message });
-          const recovered = await this.operationRecoveryService.recover();
+          const recovered = await this.recoverInterruptedOperation();
           if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
           continue;
         }
@@ -5400,7 +5394,7 @@ export class SkillFlowApp {
         updatedItems.push(...updated.data.updated);
       } catch (error) {
         if (transaction) {
-          const recovered = await this.operationRecoveryService.recover();
+          const recovered = await this.recoverInterruptedOperation();
           if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
         }
         const failure = {
@@ -6423,6 +6417,22 @@ export class SkillFlowApp {
 
   private async runSerializedMutation<T>(task: () => Promise<T>): Promise<T> {
     return this.runSerializedTask(() => this.stateStore.withMutationLock(task));
+  }
+
+  private async recoverInterruptedOperation(): Promise<Result<void>> {
+    const recovered = await this.operationRecoveryService.recover();
+    return recovered.ok
+      ? ok(undefined, recovered.warnings)
+      : fail(recovered.errors, recovered.warnings);
+  }
+
+  private async recoverInterruptedOperationOrReturn<T>(
+    fallback: Result<T>,
+  ): Promise<Result<T>> {
+    const recovered = await this.operationRecoveryService.recover();
+    return recovered.ok
+      ? fallback
+      : fail(recovered.errors, recovered.warnings);
   }
 
   private async runSerializedTask<T>(task: () => Promise<T>): Promise<T> {

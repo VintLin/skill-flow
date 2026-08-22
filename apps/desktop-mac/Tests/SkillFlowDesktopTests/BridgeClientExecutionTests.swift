@@ -227,6 +227,22 @@ final class BridgeClientExecutionTests: XCTestCase {
         try await waitForProcessToExit(pid: pids.child, timeoutNanoseconds: 1_000_000_000)
     }
 
+    func testQuitCancellationWaitsForDescendantsAfterHelperExits() async throws {
+        let fixture = try StubbornProcessGroupBridgeFixture.install(helperIgnoresTerm: false)
+        stubbornProcessGroupFixture = fixture
+        let bridge = await MainActor.run { BridgeClient(quitCancellationGraceMilliseconds: 50) }
+
+        let updateTask = Task { try await bridge.updateSources(["alpha"]) }
+        let pids = try await fixture.waitForPids()
+
+        let cancelled = await bridge.cancelActiveHelperForTermination()
+        XCTAssertTrue(cancelled)
+        _ = try? await updateTask.value
+
+        try await waitForProcessToExit(pid: pids.helper, timeoutNanoseconds: 1_000_000_000)
+        try await waitForProcessToExit(pid: pids.child, timeoutNanoseconds: 1_000_000_000)
+    }
+
     func testQuitCancellationStopsDurableAndDisposableHelpersWithoutLosingTheUpdate() async throws {
         let fixture = try ConcurrentHelpersBridgeFixture.install()
         concurrentHelpersFixture = fixture
@@ -814,18 +830,19 @@ private final class StubbornProcessGroupBridgeFixture {
         self.savedHelperOverride = savedHelperOverride
     }
 
-    static func install() throws -> StubbornProcessGroupBridgeFixture {
+    static func install(helperIgnoresTerm: Bool = true) throws -> StubbornProcessGroupBridgeFixture {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("skillflow-desktop-bridge-process-group-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
         let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
         let pidsURL = rootURL.appendingPathComponent("pids.json")
+        let helperTermHandler = helperIgnoresTerm ? "process.on(\"SIGTERM\", () => {});" : ""
         let script = """
         const fs = require("node:fs");
         const { spawn } = require("node:child_process");
         const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], { stdio: "ignore" });
         fs.writeFileSync(\(String(reflecting: pidsURL.path)), JSON.stringify({ helper: process.pid, child: child.pid }));
-        process.on("SIGTERM", () => {});
+        \(helperTermHandler)
         process.stdin.resume();
         setInterval(() => {}, 1000);
         """

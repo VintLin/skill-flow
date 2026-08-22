@@ -10,18 +10,27 @@ import { writeJsonFile } from "@skill-flow/integration/utils/fs";
 
 export type RecoveryOperationKind = "update" | "import";
 
-export type RecoveryPathSnapshot = {
-  role: "checkout" | "target";
+type RecoveryPathSnapshotBase = {
   sourceId: string;
-  sourceKind?: SourceKind;
-  target?: DeploymentTargetId;
   path: string;
   existed: boolean;
   backupName?: string;
-  beforeFingerprint?: string;
-  mutationFingerprint?: string;
+  beforeFingerprint: string;
+};
+
+export type RecoveryCheckoutSnapshot = RecoveryPathSnapshotBase & {
+  role: "checkout";
+  sourceKind: SourceKind;
+};
+
+export type RecoveryTargetSnapshot = RecoveryPathSnapshotBase & {
+  role: "target";
+  target: DeploymentTargetId;
+  mutationFingerprint: string;
   allowedMutationFingerprints?: string[];
 };
+
+export type RecoveryPathSnapshot = RecoveryCheckoutSnapshot | RecoveryTargetSnapshot;
 
 export type RecoveryJournal = {
   schemaVersion: 1;
@@ -33,8 +42,8 @@ export type RecoveryJournal = {
   phase: "prepared" | "mutated";
   authorityBefore: StateStoreState;
   importPreparationBefore?: ImportPreparationRecord;
-  checkout?: RecoveryPathSnapshot;
-  targets: RecoveryPathSnapshot[];
+  checkout?: RecoveryCheckoutSnapshot;
+  targets: RecoveryTargetSnapshot[];
 };
 
 export class RecoveryJournalStore {
@@ -108,7 +117,6 @@ function assertRecoveryJournal(value: unknown): asserts value is RecoveryJournal
       journal.checkout.role !== "checkout"
       || journal.checkout.sourceId !== journal.sourceId
       || journal.checkout.sourceKind !== journal.sourceKind
-      || journal.checkout.target !== undefined
     ) {
       invalidJournal("checkout ownership metadata mismatch");
     }
@@ -120,7 +128,6 @@ function assertRecoveryJournal(value: unknown): asserts value is RecoveryJournal
       || target.sourceId !== journal.sourceId
       || typeof target.target !== "string"
       || target.target.trim().length === 0
-      || target.sourceKind !== undefined
     ) {
       invalidJournal("target ownership metadata mismatch");
     }
@@ -144,11 +151,13 @@ function assertPathSnapshot(value: RecoveryPathSnapshot): void {
     invalidJournal("missing target mutation fingerprint");
   }
   if (value.backupName !== undefined) assertBackupName(value.backupName);
-  if (value.allowedMutationFingerprints !== undefined && (
-    !Array.isArray(value.allowedMutationFingerprints)
-    || value.allowedMutationFingerprints.some((entry) => typeof entry !== "string")
-  )) {
-    invalidJournal("invalid allowed mutation fingerprints");
+  if (value.role === "target") {
+    if (value.allowedMutationFingerprints !== undefined && (
+      !Array.isArray(value.allowedMutationFingerprints)
+      || value.allowedMutationFingerprints.some((entry: unknown) => typeof entry !== "string")
+    )) {
+      invalidJournal("invalid allowed mutation fingerprints");
+    }
   }
 }
 

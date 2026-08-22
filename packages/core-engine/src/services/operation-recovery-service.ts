@@ -18,6 +18,7 @@ import {
   RecoveryJournalStore,
   type RecoveryJournal,
   type RecoveryOperationKind,
+  type RecoveryTargetSnapshot,
   type RecoveryPathSnapshot,
 } from "@skill-flow/storage/recovery-journal-store";
 import type { StateStore } from "@skill-flow/storage/state-store";
@@ -35,6 +36,11 @@ export type RecoveryResult = {
   sourceId?: string;
   kind?: RecoveryOperationKind;
 };
+
+type RecoveryTargetSnapshotDraft = Omit<
+  RecoveryTargetSnapshot,
+  "mutationFingerprint" | "allowedMutationFingerprints"
+>;
 
 /**
  * Owns the durable recovery transaction for one managed source operation.
@@ -147,7 +153,7 @@ export class OperationRecoveryService {
         const resolved = path.resolve(transition.targetPath);
         let snapshot = knownTargets.get(resolved);
         if (!snapshot) {
-          snapshot = await this.snapshotPath(
+          const draft = await this.snapshotTargetPath(
             journal.transactionId,
             `target-${knownTargets.size}`,
             transition.targetPath,
@@ -157,6 +163,10 @@ export class OperationRecoveryService {
               target: action.target,
             },
           );
+          snapshot = {
+            ...draft,
+            mutationFingerprint: transition.expected,
+          };
         }
         if (
           snapshot.role !== "target"
@@ -193,7 +203,7 @@ export class OperationRecoveryService {
     if (journal.targets.some((target) => path.resolve(target.path) === path.resolve(targetPath))) {
       return;
     }
-    const snapshot = await this.snapshotPath(
+    const snapshot = await this.snapshotTargetPath(
       journal.transactionId,
       `target-${journal.targets.length}`,
       targetPath,
@@ -298,11 +308,20 @@ export class OperationRecoveryService {
       (candidate) => candidate.id === journal.sourceId,
     );
     const lock = journal.authorityBefore.lockFile.sources[journal.sourceId];
-    if (
-      source?.ownership === "external"
-      || lock?.ownership === "external"
-      || (source && source.kind !== journal.sourceKind)
-    ) {
+    if (journal.kind === "update" && (!source || !lock)) {
+      throw new Error(`update source '${journal.sourceId}' is missing from authority`);
+    }
+    if (journal.kind === "import" && !journal.importPreparationBefore) {
+      throw new Error(`import source '${journal.sourceId}' is missing preparation evidence`);
+    }
+    if (source && (
+      source.kind === "collection"
+      || source.ownership === "external"
+      || source.kind !== journal.sourceKind
+    )) {
+      throw new Error(`source '${journal.sourceId}' is not a matching managed source`);
+    }
+    if (lock?.ownership === "external") {
       throw new Error(`source '${journal.sourceId}' is not a matching managed source`);
     }
 
@@ -360,16 +379,14 @@ export class OperationRecoveryService {
     }
     const backupPath = this.journalStore.backupPath(journal.transactionId, snapshot.backupName);
     if (!(await pathExists(backupPath))) {
-      if (snapshot.beforeFingerprint && await fingerprintPath(snapshot.path) === snapshot.beforeFingerprint) {
+      if (await fingerprintPath(snapshot.path) === snapshot.beforeFingerprint) {
         return;
       }
       throw new Error(`recovery backup does not exist for '${snapshot.path}'`);
     }
-    if (snapshot.beforeFingerprint) {
-      const backupFingerprint = await fingerprintPath(backupPath);
-      if (backupFingerprint !== snapshot.beforeFingerprint) {
-        throw new Error(`recovery backup fingerprint does not match '${snapshot.path}'`);
-      }
+    const backupFingerprint = await fingerprintPath(backupPath);
+    if (backupFingerprint !== snapshot.beforeFingerprint) {
+      throw new Error(`recovery backup fingerprint does not match '${snapshot.path}'`);
     }
   }
 
@@ -404,12 +421,12 @@ export class OperationRecoveryService {
     return undefined;
   }
 
-  private async snapshotPath(
+  private async snapshotTargetPath(
     transactionId: string,
     backupName: string,
     targetPath: string,
-    ownership: Pick<RecoveryPathSnapshot, "role" | "sourceId" | "sourceKind" | "target">,
-  ): Promise<RecoveryPathSnapshot> {
+    ownership: Pick<RecoveryTargetSnapshot, "role" | "sourceId" | "target">,
+  ): Promise<RecoveryTargetSnapshotDraft> {
     const existed = await pathExists(targetPath);
     const beforeFingerprint = await fingerprintPath(targetPath);
     if (existed) {
@@ -465,7 +482,7 @@ export class OperationRecoveryService {
       await fs.rename(backupPath, snapshot.path);
       return;
     }
-    if (backupPath && snapshot.beforeFingerprint && await fingerprintPath(snapshot.path) === snapshot.beforeFingerprint) {
+    if (backupPath && await fingerprintPath(snapshot.path) === snapshot.beforeFingerprint) {
       return;
     }
     if (!snapshot.existed) {

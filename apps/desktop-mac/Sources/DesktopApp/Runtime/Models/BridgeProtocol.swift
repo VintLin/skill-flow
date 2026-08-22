@@ -102,11 +102,6 @@ extension BridgeCommand {
             return false
         }
     }
-
-    @available(*, deprecated, renamed: "usesExtendedNetworkTimeout")
-    var usesImportTimeout: Bool {
-        usesExtendedNetworkTimeout
-    }
 }
 
 struct BridgeRequest: Codable, Sendable {

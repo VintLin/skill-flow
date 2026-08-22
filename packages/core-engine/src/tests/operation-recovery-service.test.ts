@@ -175,6 +175,7 @@ describe.sequential("OperationRecoveryService", () => {
     await stateStore.init();
     const targetPath = path.join(stateRoot, "targets", "review");
     const sourcePath = path.join(stateRoot, "source-next", "review");
+    await seedManagedSource(stateStore);
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     await fs.mkdir(path.dirname(sourcePath), { recursive: true });
     await fs.writeFile(targetPath, "before\n", "utf8");
@@ -227,6 +228,7 @@ describe.sequential("OperationRecoveryService", () => {
     await stateStore.init();
     const targetPath = path.join(stateRoot, "targets", "review");
     const sourcePath = path.join(stateRoot, "source", "git", "repo", "review");
+    await seedManagedSource(stateStore);
     await fs.mkdir(targetPath, { recursive: true });
     await fs.writeFile(path.join(targetPath, "SKILL.md"), "before\n", "utf8");
     await fs.mkdir(sourcePath, { recursive: true });
@@ -265,6 +267,7 @@ describe.sequential("OperationRecoveryService", () => {
     await stateStore.init();
     const targetPath = path.join(stateRoot, "targets", "review");
     const sourcePath = path.join(stateRoot, "source-next", "review");
+    await seedManagedSource(stateStore);
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     await fs.mkdir(path.dirname(sourcePath), { recursive: true });
     await fs.writeFile(targetPath, "before\n", "utf8");
@@ -467,6 +470,62 @@ describe.sequential("OperationRecoveryService", () => {
     expect(recovered.errors[0]?.code).toBe("RECOVERY_JOURNAL_INVALID");
   });
 
+  test("rejects update recovery without matching authority source and lock", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-"));
+    roots.push(stateRoot);
+    const stateStore = new StateStore(stateRoot);
+    await stateStore.init();
+    const authorityBefore = await stateStore.readState();
+    const journalPath = path.join(stateRoot, "recovery", "active.json");
+    await fs.mkdir(path.dirname(journalPath), { recursive: true });
+    await fs.writeFile(journalPath, JSON.stringify({
+      schemaVersion: 1,
+      transactionId: "recovery-123-12345678-1234-4123-8123-123456789abc",
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      phase: "prepared",
+      authorityBefore,
+      targets: [],
+    }), "utf8");
+
+    const recovered = await new OperationRecoveryService({ stateStore }).recover();
+
+    expect(recovered.ok).toBe(false);
+    if (recovered.ok) return;
+    expect(recovered.errors[0]?.code).toBe("RECOVERY_PATH_OWNERSHIP_INVALID");
+    await expect(fs.access(journalPath)).resolves.toBeUndefined();
+  });
+
+  test("rejects import recovery without prior preparation evidence", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-"));
+    roots.push(stateRoot);
+    const stateStore = new StateStore(stateRoot);
+    await stateStore.init();
+    const authorityBefore = await stateStore.readState();
+    const journalPath = path.join(stateRoot, "recovery", "active.json");
+    await fs.mkdir(path.dirname(journalPath), { recursive: true });
+    await fs.writeFile(journalPath, JSON.stringify({
+      schemaVersion: 1,
+      transactionId: "recovery-123-12345678-1234-4123-8123-123456789abc",
+      kind: "import",
+      sourceId: "repo",
+      sourceKind: "git",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      phase: "prepared",
+      authorityBefore,
+      targets: [],
+    }), "utf8");
+
+    const recovered = await new OperationRecoveryService({ stateStore }).recover();
+
+    expect(recovered.ok).toBe(false);
+    if (recovered.ok) return;
+    expect(recovered.errors[0]?.code).toBe("RECOVERY_PATH_OWNERSHIP_INVALID");
+    await expect(fs.access(journalPath)).resolves.toBeUndefined();
+  });
+
   test("rejects a journal target outside its re-detected target root before touching the path", async () => {
     const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-"));
     roots.push(stateRoot);
@@ -476,6 +535,7 @@ describe.sequential("OperationRecoveryService", () => {
     const legitimateTarget = path.join(targetRoot, "review");
     const sourcePath = path.join(stateRoot, "source-next", "review");
     const outsidePath = path.join(stateRoot, "outside", "keep.txt");
+    await seedManagedSource(stateStore);
     await fs.mkdir(path.dirname(legitimateTarget), { recursive: true });
     await fs.mkdir(path.dirname(sourcePath), { recursive: true });
     await fs.mkdir(path.dirname(outsidePath), { recursive: true });
@@ -578,3 +638,37 @@ describe.sequential("OperationRecoveryService", () => {
     await expect(fs.access(journalPath)).resolves.toBeUndefined();
   });
 });
+
+async function seedManagedSource(
+  stateStore: StateStore,
+  sourceId = "repo",
+  checkoutPath = path.join(stateStore.rootPath, "source", "git", sourceId),
+): Promise<void> {
+  const state = await stateStore.readState();
+  if (!state.manifest.sources.some((source) => source.id === sourceId)) {
+    state.manifest.sources.push({
+      id: sourceId,
+      kind: "git",
+      locator: `https://example.test/${sourceId}.git`,
+      canonicalLocator: `https://example.test/${sourceId}.git`,
+      displayName: sourceId,
+      enabled: true,
+      createdAt: "2026-08-22T00:00:00.000Z",
+      updatedAt: "2026-08-22T00:00:00.000Z",
+    });
+  }
+  state.manifest.bindings[sourceId] = {
+    sourceId,
+    selectionMode: "selected",
+    selectedLeafIds: [],
+    enabledTargets: [],
+  };
+  state.lockFile.sources[sourceId] = {
+    sourceId,
+    canonicalLocator: `https://example.test/${sourceId}.git`,
+    revision: { provider: "git", commit: "old", capturedAt: "2026-08-22T00:00:00.000Z" },
+    localPath: checkoutPath,
+    leafIds: [],
+  };
+  await stateStore.writeState(state);
+}

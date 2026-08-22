@@ -64,7 +64,7 @@ When adding, removing, or renaming a bridge command:
 2. Update the golden fixture in `packages/shared-types/src/fixtures/bridge-command-catalog.json`.
 3. Update the CLI handler table in `apps/cli/src/bridge-command.ts`.
 4. Update `BridgeCommand` in `apps/desktop-mac/Sources/DesktopApp/Runtime/Models/BridgeProtocol.swift`.
-5. Update `BridgeCommand.usesImportTimeout` when the command should use the import timeout.
+5. Update `BridgeCommand.usesExtendedNetworkTimeout` when the command should use the extended desktop helper timeout.
 6. Run the TypeScript protocol tests, CLI bridge tests, and Swift bridge catalog tests.
 
 ## State Files

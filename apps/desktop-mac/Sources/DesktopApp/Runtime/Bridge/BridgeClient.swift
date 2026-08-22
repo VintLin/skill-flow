@@ -691,7 +691,12 @@ final class BridgeClient: @unchecked Sendable {
     "$@" <&0 &
     child=$!
     trap 'kill -TERM "$child" 2>/dev/null; wait "$child"' TERM
-    trap 'kill -TERM -$child 2>/dev/null; wait "$child"' INT
+    wait_for_group() {
+      while kill -0 -$child 2>/dev/null; do
+        sleep 0.05
+      done
+    }
+    trap 'kill -TERM -$child 2>/dev/null; wait "$child"; wait_for_group' INT
     trap 'kill -KILL "$child" 2>/dev/null; exit 137' USR2
     trap 'kill -KILL -$child 2>/dev/null; exit 137' USR1
     wait "$child"
