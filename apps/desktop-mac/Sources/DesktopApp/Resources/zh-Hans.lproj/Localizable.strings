@@ -419,6 +419,11 @@
 "settings.action.delete" = "删除";
 "settings.action.close" = "关闭";
 "settings.action.cancel" = "取消";
+"termination.stopping" = "正在中止当前操作并恢复到操作前状态……";
+"termination.failed" = "无法安全中止当前操作，Skill Flow 将保持运行。";
+"termination.retry" = "重试恢复";
+"termination.cancel_exit" = "取消退出";
+"termination.recovery_required" = "仍需完成恢复；更新和导入将保持禁用。";
 "settings.action.save" = "保存";
 "settings.agent_details.title" = "代理详情";
 "settings.agent_details.read_only_note" = "内置代理为只读。";

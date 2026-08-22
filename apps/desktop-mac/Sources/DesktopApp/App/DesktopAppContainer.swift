@@ -18,6 +18,7 @@ final class DesktopAppContainer {
     let detailContainer: DetailScreenContainer
     let homeContainer: HomeScreenContainer
     let navigation: RouteNavigation
+    let terminationCoordinator: ApplicationTerminationCoordinator
 
     init(
         runtime: DesktopRuntime? = nil,
@@ -117,6 +118,46 @@ final class DesktopAppContainer {
             settingsViewModel: settingsViewModel,
             importContainer: importContainer,
             detailContainer: detailContainer
+        )
+        self.terminationCoordinator = ApplicationTerminationCoordinator(
+            hasProtectedOperation: { [weak mainViewModel] in
+                mainViewModel?.hasActiveProtectedOperation ?? false
+            },
+            hasCancellableHelper: { [weak bridgeClient] in
+                bridgeClient?.hasActiveCancellableHelper ?? false
+            },
+            shutdownProtectedOperations: { [weak mainViewModel] in
+                mainViewModel?.shutdownProtectedOperationsForTermination()
+            },
+            cancelActiveHelper: { [weak bridgeClient] in
+                guard let bridgeClient else { return true }
+                return await bridgeClient.cancelActiveHelperForTermination()
+            },
+            recoverInterruptedOperation: { [weak bridgeClient] in
+                guard let bridgeClient else { return false }
+                do {
+                    _ = try await bridgeClient.bootstrap()
+                    return true
+                } catch {
+                    return false
+                }
+            },
+            cleanupInterruptedDisposableWork: { [weak bridgeClient] in
+                guard let bridgeClient else { return false }
+                do {
+                    _ = try await bridgeClient.bootstrap()
+                    return true
+                } catch {
+                    return false
+                }
+            },
+            resumeProtectedOperations: { [weak mainViewModel, weak bridgeClient] in
+                mainViewModel?.resumeProtectedOperationsAfterRecovery()
+                bridgeClient?.resumeProtectedOperationsAfterRecovery()
+            },
+            enterRecoveryRequiredState: { [weak bridgeClient] in
+                bridgeClient?.enterRecoveryRequiredState()
+            }
         )
         self.navigation = RouteNavigation(
             showHome: { [weak state = resolvedRuntime.state] in

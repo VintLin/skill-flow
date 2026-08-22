@@ -30,7 +30,39 @@ enum BridgeCommand: String, Codable, Sendable, CaseIterable {
     case saveSettings = "save-settings"
 }
 
+enum BridgeHelperTerminationRole: Sendable, Equatable {
+    case durableMutation
+    case preparation
+    case disposableQuery
+    case unrelated
+
+    var isCancellableOnQuit: Bool {
+        self != .unrelated
+    }
+
+    var isAllowedDuringRecoveryRequired: Bool {
+        self == .disposableQuery || self == .unrelated
+    }
+}
+
 extension BridgeCommand {
+    var helperTerminationRole: BridgeHelperTerminationRole {
+        switch self {
+        case .commitImportSource,
+             .importSource,
+             .update:
+            return .durableMutation
+        case .prepareImportSource:
+            return .preparation
+        case .searchImportGroups,
+             .scanLocalImportGroups,
+             .previewImportSource:
+            return .disposableQuery
+        default:
+            return .unrelated
+        }
+    }
+
     /// Longer bridge helper budget for network-heavy work (import, update, add).
     /// Ordinary UI mutations keep the shorter default command timeout.
     var usesExtendedNetworkTimeout: Bool {
@@ -65,11 +97,6 @@ extension BridgeCommand {
              .saveSettings:
             return false
         }
-    }
-
-    @available(*, deprecated, renamed: "usesExtendedNetworkTimeout")
-    var usesImportTimeout: Bool {
-        usesExtendedNetworkTimeout
     }
 }
 

@@ -17,6 +17,7 @@ final class GroupOperationQueue {
     enum EnqueueOutcome: Equatable, Sendable {
         case enqueued
         case alreadyPresent
+        case shutDown
     }
 
     private struct Entry: Equatable {
@@ -25,8 +26,10 @@ final class GroupOperationQueue {
     }
 
     private var entries: [Entry] = []
+    private var isShutDown = false
 
     func enqueueUpdate(sourceId: String) -> EnqueueOutcome {
+        guard !isShutDown else { return .shutDown }
         let normalized = Self.normalize(sourceId)
         guard !normalized.isEmpty else {
             return .alreadyPresent
@@ -41,6 +44,7 @@ final class GroupOperationQueue {
     }
 
     func enqueueBulkUpdate(sourceIds: [String]) -> EnqueueOutcome {
+        guard !isShutDown else { return .shutDown }
         let normalized = Self.normalizeList(sourceIds)
         guard !normalized.isEmpty else {
             return .alreadyPresent
@@ -71,6 +75,7 @@ final class GroupOperationQueue {
     }
 
     func enqueueImport(groupId: String) -> EnqueueOutcome {
+        guard !isShutDown else { return .shutDown }
         let normalized = Self.normalize(groupId)
         guard !normalized.isEmpty else {
             return .alreadyPresent
@@ -85,6 +90,7 @@ final class GroupOperationQueue {
     }
 
     func startNext() -> Operation? {
+        guard !isShutDown else { return nil }
         guard !entries.contains(where: { $0.phase == .running }) else {
             return nil
         }
@@ -99,12 +105,36 @@ final class GroupOperationQueue {
         entries.removeAll { $0.phase == .running }
     }
 
+    /// Permanently freezes this session queue, discards work that has not
+    /// started, and returns the protected operation currently in flight.
+    @discardableResult
+    func shutdown() -> Operation? {
+        isShutDown = true
+        let running = entries.first(where: { $0.phase == .running })?.operation
+        entries.removeAll { $0.phase == .queued }
+        return running
+    }
+
+    /// Starts a fresh empty session queue after an interrupted operation has
+    /// been recovered and the user chose to keep the application open.
+    func resumeAfterRecovery() {
+        // Recovery is the commit point for abandoning the interrupted session.
+        // Its original async drain may not have delivered completeRunning yet,
+        // so remove that stale identity here rather than leaving the queue shut.
+        entries.removeAll()
+        isShutDown = false
+    }
+
     var hasQueuedWork: Bool {
         entries.contains { $0.phase == .queued }
     }
 
     var hasWork: Bool {
         !entries.isEmpty
+    }
+
+    var runningOperation: Operation? {
+        entries.first(where: { $0.phase == .running })?.operation
     }
 
     func updatePhase(for sourceId: String) -> Phase? {

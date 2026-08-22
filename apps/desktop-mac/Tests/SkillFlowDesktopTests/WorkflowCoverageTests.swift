@@ -494,11 +494,14 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual(model.toast?.message, "Imported source.")
 
         let importRequests = fixture.loggedRequests().filter { $0.command == "import-source" }
-        XCTAssertEqual(importRequests.count, 1)
+        XCTAssertEqual(importRequests.count, 0)
+        let prepareRequests = fixture.loggedRequests().filter { $0.command == "prepare-import-source" }
+        XCTAssertEqual(prepareRequests.count, 1)
         let commitRequests = fixture.loggedRequests().filter { $0.command == "commit-import-source" }
-        XCTAssertEqual(commitRequests.count, 0)
-        XCTAssertEqual(importRequests.first?.payload?["locator"]?.value as? String, "anthropics/skills")
-        let draft = importRequests.first?.payload?["draft"]?.value as? [String: Any]
+        XCTAssertEqual(commitRequests.count, 1)
+        XCTAssertEqual(prepareRequests.first?.payload?["locator"]?.value as? String, "anthropics/skills")
+        XCTAssertEqual(commitRequests.first?.payload?["preparationId"]?.value as? String, "prep-anthropics-skills")
+        let draft = commitRequests.first?.payload?["draft"]?.value as? [String: Any]
         XCTAssertEqual(draft?["skillSelectionMode"] as? String, "selected")
         let selectedSkills = draft?["selectedSkills"] as? [[String: Any]]
         XCTAssertEqual(selectedSkills?.first?["uiId"] as? String, "research")
@@ -1135,6 +1138,24 @@ private struct TestFixture {
       return `prep-${normalizeRepo(value).replace(/[^a-z0-9]+/g, '-')}`;
     }
 
+    function importFailureForGroup(state, group) {
+      if (!state.importFailures || !group) {
+        return null;
+      }
+      const candidates = [group.canonicalRepo, group.locator].concat(group.aliases || []);
+      for (const candidate of candidates) {
+        const directFailure = state.importFailures[candidate];
+        if (directFailure) {
+          return directFailure;
+        }
+        const normalizedFailure = state.importFailures[normalizeRepo(candidate)];
+        if (normalizedFailure) {
+          return normalizedFailure;
+        }
+      }
+      return null;
+    }
+
     function installedCanonicalRepos(state) {
       return new Set(
         Object.values(state.sources || {})
@@ -1488,15 +1509,6 @@ private struct TestFixture {
 
       if (request.command === 'import-source') {
         const locator = String((request.payload && request.payload.locator) || '');
-        const failureReason = state.importFailures && state.importFailures[locator];
-        if (failureReason) {
-          process.stdout.write(JSON.stringify(responseFor(request, true, {
-            status: 'failed',
-            reasonCode: failureReason
-          }, [], [])));
-          return;
-        }
-
         const normalizedLocator = normalizeRepo(locator);
         const group = (state.importGroups || []).find((candidate) => {
           const aliases = [candidate.canonicalRepo, candidate.locator].concat(candidate.aliases || []).map(normalizeRepo);
@@ -1507,6 +1519,15 @@ private struct TestFixture {
           process.stdout.write(JSON.stringify(responseFor(request, true, {
             status: 'failed',
             reasonCode: 'provider_data_unavailable'
+          }, [], [])));
+          return;
+        }
+
+        const failureReason = importFailureForGroup(state, group);
+        if (failureReason) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            status: 'failed',
+            reasonCode: failureReason
           }, [], [])));
           return;
         }
@@ -1547,6 +1568,15 @@ private struct TestFixture {
           process.stdout.write(JSON.stringify(responseFor(request, true, {
             status: 'failed',
             reasonCode: 'provider_data_unavailable'
+          }, [], [])));
+          return;
+        }
+
+        const failureReason = importFailureForGroup(state, group);
+        if (failureReason) {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            status: 'failed',
+            reasonCode: failureReason
           }, [], [])));
           return;
         }

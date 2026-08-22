@@ -188,6 +188,7 @@ describe.sequential("runtime source v2 write chain", () => {
         status: "active",
       }),
     ]);
+    await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
   });
 
   test("importSource rolls back the v2 source when requested targets are invalid", async () => {
@@ -333,6 +334,39 @@ describe.sequential("runtime source v2 write chain", () => {
         status: "active",
       }),
     ]));
+    await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
+  });
+
+  test("updateSources preflights the complete selection before committing any group", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, {
+      sourceIdOverride: "preflight-source",
+      project: false,
+    });
+    expect(added.ok).toBe(true);
+    await writeRepoFiles(repoPath, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+
+    const updated = await app.updateSources(["preflight-source", "missing-source"]);
+
+    expect(updated.ok).toBe(false);
+    if (updated.ok) return;
+    expect(updated.errors[0]?.code).toBe("SOURCE_NOT_FOUND");
+    const state = await new StateStore(sandbox.stateRoot).readState();
+    expect(state.lockFile.sources["preflight-source"]?.leafIds).toEqual([
+      "preflight-source:skills/one",
+    ]);
+    await expect(fs.access(path.join(
+      state.lockFile.sources["preflight-source"]!.localPath,
+      "skills",
+      "two",
+      "SKILL.md",
+    ))).rejects.toThrow();
+    await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
   });
 
   test("repairTargets recreates managed target paths from v2 projections", async () => {

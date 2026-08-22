@@ -188,23 +188,24 @@ export class StateStore {
   async writeState(state: StateStoreState): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
-      const normalizedLock = normalizeLockFile(state.lockFile);
-      assertManifestFile(state.manifest, this.manifestPath);
-      assertLockFile(normalizedLock, this.lockPath);
-      assertPreferencesFile(state.preferences, this.preferencesPath);
-      assertCollectionsFile(state.collections, this.collectionsPath);
-      assertMigrationGenerationMatch(
-        this.stateRoot,
-        state.manifest,
-        normalizedLock,
-        state.preferences,
-        state.collections,
-      );
-      await writeAuthorityStateTransaction(this.stateRoot, {
-        ...state,
-        lockFile: normalizedLock,
-      });
+      await writeAuthorityStateTransaction(this.stateRoot, this.validateState(state));
     });
+  }
+
+  validateState(state: StateStoreState): StateStoreState {
+    const normalizedLock = normalizeLockFile(state.lockFile);
+    assertManifestFile(state.manifest, this.manifestPath);
+    assertLockFile(normalizedLock, this.lockPath);
+    assertPreferencesFile(state.preferences, this.preferencesPath);
+    assertCollectionsFile(state.collections, this.collectionsPath);
+    assertMigrationGenerationMatch(
+      this.stateRoot,
+      state.manifest,
+      normalizedLock,
+      state.preferences,
+      state.collections,
+    );
+    return { ...state, lockFile: normalizedLock };
   }
 
   async withMutationLock<T>(task: () => Promise<T>): Promise<T> {

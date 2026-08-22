@@ -53,7 +53,11 @@ Implementation detail:
 
 - Race subprocess termination against a sleep task.
 - On timeout, call `process.terminate()`.
-- If the process does not terminate shortly after SIGTERM, still return timeout to the UI and let the OS clean up.
+- If the process does not terminate shortly after SIGTERM, force-kill only the
+  helper and return timeout to the UI; ordinary timeout does not expand to its
+  descendants. During application Quit, the later Desktop Quit Operation
+  Recovery design separately stops every cancellable helper process group,
+  waits five seconds, then kills surviving groups.
 - Keep existing stdout and stderr parsing unchanged for non-timeout exits.
 
 ### Network Request Timeout

@@ -419,6 +419,11 @@
 "settings.action.delete" = "Delete";
 "settings.action.close" = "Close";
 "settings.action.cancel" = "Cancel";
+"termination.stopping" = "Stopping the current operation and restoring its previous state…";
+"termination.failed" = "The operation could not be stopped safely. Skill Flow will remain open.";
+"termination.retry" = "Retry recovery";
+"termination.cancel_exit" = "Cancel exit";
+"termination.recovery_required" = "Recovery is still required. Updates and imports remain disabled.";
 "settings.action.save" = "Save";
 "settings.agent_details.title" = "Agent Details";
 "settings.agent_details.read_only_note" = "Built-in agents are read-only.";

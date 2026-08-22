@@ -187,6 +187,18 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     private(set) var updateOperationPhases: [String: GroupOperationQueue.Phase] = [:]
     private(set) var importOperationPhases: [String: GroupOperationQueue.Phase] = [:]
 
+    var hasActiveProtectedOperation: Bool {
+        groupOperations.activeProtectedOperation != nil
+    }
+
+    func shutdownProtectedOperationsForTermination() {
+        groupOperations.shutdownForTermination()
+    }
+
+    func resumeProtectedOperationsAfterRecovery() {
+        groupOperations.resumeAfterRecovery()
+    }
+
     var loadState: LoadState { stateManager.loadState }
     var selectedSection: Section { stateManager.selectedSection }
     var sourceIds: [String] {
