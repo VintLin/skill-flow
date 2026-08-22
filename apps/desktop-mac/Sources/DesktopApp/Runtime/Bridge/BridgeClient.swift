@@ -481,7 +481,11 @@ final class BridgeClient: @unchecked Sendable {
             ? ["/usr/bin/env", "node", helperURL.path, "bridge", "--json"]
             : [nodeExecutable, helperURL.path, "bridge", "--json"]
         process.arguments = ["-c", Self.processGroupLauncherScript, "skill-flow-helper"] + helperArguments
-        process.environment = Self.bridgeEnvironment(bundledNodeBinDirectory: bundledNodeBinDirectory)
+        var environment = Self.bridgeEnvironment(bundledNodeBinDirectory: bundledNodeBinDirectory)
+        environment["SKILL_FLOW_HELPER_TIMEOUT_GRACE_SECONDS"] = String(
+            Double(commandTimeoutGraceMilliseconds) / 1_000
+        )
+        process.environment = environment
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()
@@ -686,7 +690,14 @@ final class BridgeClient: @unchecked Sendable {
     set -m
     "$@" <&0 &
     child=$!
-    trap 'kill -TERM "$child" 2>/dev/null; wait "$child"' TERM
+    terminate_child_after_timeout_grace() {
+      kill -TERM "$child" 2>/dev/null
+      (
+        sleep "${SKILL_FLOW_HELPER_TIMEOUT_GRACE_SECONDS:-1}"
+        kill -KILL "$child" 2>/dev/null
+      ) &
+    }
+    trap 'terminate_child_after_timeout_grace' TERM
     wait_for_group() {
       while kill -0 -$child 2>/dev/null; do
         sleep 0.05

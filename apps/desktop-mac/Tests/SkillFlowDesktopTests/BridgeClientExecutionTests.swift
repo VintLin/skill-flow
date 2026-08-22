@@ -253,7 +253,8 @@ final class BridgeClientExecutionTests: XCTestCase {
         let previewTask = Task { try await bridge.previewImportSource(locator: "anthropics/skills") }
         let previewPids = try await fixture.waitForCommand("preview-import-source")
 
-        XCTAssertTrue(await bridge.cancelActiveHelperForTermination())
+        let cancelled = await bridge.cancelActiveHelperForTermination()
+        XCTAssertTrue(cancelled)
         _ = try? await updateTask.value
         _ = try? await previewTask.value
 
@@ -265,7 +266,8 @@ final class BridgeClientExecutionTests: XCTestCase {
     func testTerminationLatchCancelsAProtectedOperationBeforeItsHelperLaunches() async {
         let bridge = await MainActor.run { BridgeClient() }
 
-        XCTAssertTrue(await bridge.cancelActiveHelperForTermination())
+        let cancelled = await bridge.cancelActiveHelperForTermination()
+        XCTAssertTrue(cancelled)
 
         do {
             _ = try await bridge.updateSources(["alpha"])
@@ -281,7 +283,8 @@ final class BridgeClientExecutionTests: XCTestCase {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
         let bridge = await MainActor.run { BridgeClient() }
-        XCTAssertTrue(await bridge.cancelActiveHelperForTermination())
+        let cancelled = await bridge.cancelActiveHelperForTermination()
+        XCTAssertTrue(cancelled)
         bridge.enterRecoveryRequiredState()
 
         let preview = try await bridge.previewImportSource(locator: "anthropics/skills")
