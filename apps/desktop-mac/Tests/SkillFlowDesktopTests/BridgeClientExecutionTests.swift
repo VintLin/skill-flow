@@ -8,6 +8,7 @@ final class BridgeClientExecutionTests: XCTestCase {
     private var fixture: SlowBridgeFixture?
     private var stubbornFixture: StubbornBridgeFixture?
     private var stubbornProcessGroupFixture: StubbornProcessGroupBridgeFixture?
+    private var concurrentHelpersFixture: ConcurrentHelpersBridgeFixture?
     private var recordingFixture: RecordingBridgeFixture?
     private var importDraftRetryFixture: ImportDraftRetryBridgeFixture?
     private var savedNodeOverride: String?
@@ -19,6 +20,8 @@ final class BridgeClientExecutionTests: XCTestCase {
         stubbornFixture = nil
         try stubbornProcessGroupFixture?.tearDown()
         stubbornProcessGroupFixture = nil
+        try concurrentHelpersFixture?.tearDown()
+        concurrentHelpersFixture = nil
         try recordingFixture?.tearDown()
         recordingFixture = nil
         try importDraftRetryFixture?.tearDown()
@@ -184,6 +187,30 @@ final class BridgeClientExecutionTests: XCTestCase {
         try await waitForProcessToExit(pid: pid, timeoutNanoseconds: 1_000_000_000)
     }
 
+    func testOrdinaryTimeoutDoesNotKillHelperDescendants() async throws {
+        let fixture = try StubbornProcessGroupBridgeFixture.install()
+        stubbornProcessGroupFixture = fixture
+        let bridge = await MainActor.run {
+            BridgeClient(commandTimeoutMilliseconds: 50, commandTimeoutGraceMilliseconds: 50)
+        }
+
+        let listTask = Task { try await bridge.list() }
+        let pids = try await fixture.waitForPids()
+
+        do {
+            _ = try await listTask.value
+            XCTFail("Expected list to time out before the helper exits.")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Operation timed out after 50ms.")
+        }
+
+        try await waitForProcessToExit(pid: pids.helper, timeoutNanoseconds: 1_000_000_000)
+        XCTAssertTrue(
+            isProcessRunning(pid: pids.child),
+            "Ordinary timeout should preserve the upstream scope and leave helper descendants alone."
+        )
+    }
+
     func testQuitCancellationKillsTheEntireHelperProcessGroupAfterGracePeriod() async throws {
         let fixture = try StubbornProcessGroupBridgeFixture.install()
         stubbornProcessGroupFixture = fixture
@@ -200,6 +227,25 @@ final class BridgeClientExecutionTests: XCTestCase {
         try await waitForProcessToExit(pid: pids.child, timeoutNanoseconds: 1_000_000_000)
     }
 
+    func testQuitCancellationStopsDurableAndDisposableHelpersWithoutLosingTheUpdate() async throws {
+        let fixture = try ConcurrentHelpersBridgeFixture.install()
+        concurrentHelpersFixture = fixture
+        let bridge = await MainActor.run { BridgeClient(quitCancellationGraceMilliseconds: 50) }
+
+        let updateTask = Task { try await bridge.updateSources(["alpha"]) }
+        let updatePids = try await fixture.waitForCommand("update")
+        let previewTask = Task { try await bridge.previewImportSource(locator: "anthropics/skills") }
+        let previewPids = try await fixture.waitForCommand("preview-import-source")
+
+        XCTAssertTrue(await bridge.cancelActiveHelperForTermination())
+        _ = try? await updateTask.value
+        _ = try? await previewTask.value
+
+        for pid in [updatePids.helper, updatePids.child, previewPids.helper, previewPids.child] {
+            try await waitForProcessToExit(pid: pid, timeoutNanoseconds: 1_000_000_000)
+        }
+    }
+
     func testTerminationLatchCancelsAProtectedOperationBeforeItsHelperLaunches() async {
         let bridge = await MainActor.run { BridgeClient() }
 
@@ -212,6 +258,29 @@ final class BridgeClientExecutionTests: XCTestCase {
             XCTAssertTrue(message.contains("terminating"))
         } catch {
             XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testRecoveryRequiredAllowsPreviewButRejectsPreparationAndDurableMutation() async throws {
+        let fixture = try RecordingBridgeFixture.install()
+        recordingFixture = fixture
+        let bridge = await MainActor.run { BridgeClient() }
+        XCTAssertTrue(await bridge.cancelActiveHelperForTermination())
+        bridge.enterRecoveryRequiredState()
+
+        let preview = try await bridge.previewImportSource(locator: "anthropics/skills")
+        XCTAssertTrue(preview.ok)
+
+        for operation in [
+            { try await bridge.prepareImportSource(locator: "anthropics/skills") },
+            { try await bridge.updateSources(["alpha"]) },
+        ] {
+            do {
+                _ = try await operation()
+                XCTFail("Expected Recovery Required to reject preparation and durable mutation.")
+            } catch BridgeClientError.commandFailed(let message, _) {
+                XCTAssertTrue(message.contains("terminating"))
+            }
         }
     }
 
@@ -552,7 +621,7 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertNil(draft["selectedSkillIds"])
     }
 
-    func testImportSourceAlwaysSendsSelectedSkillsPayload() async throws {
+    func testDesktopImportSourcePreparesThenCommitsSelectedSkillsPayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
@@ -567,8 +636,9 @@ final class BridgeClientExecutionTests: XCTestCase {
         )
 
         let payload = try fixture.lastPayload()
-        XCTAssertEqual(try fixture.lastCommand(), "import-source")
-        XCTAssertEqual(payload["locator"] as? String, "anthropics/skills")
+        XCTAssertEqual(try fixture.loggedCommands(), ["prepare-import-source", "commit-import-source"])
+        XCTAssertEqual(try fixture.lastCommand(), "commit-import-source")
+        XCTAssertEqual(payload["preparationId"] as? String, "prep-desktop")
         let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
         XCTAssertEqual(draft["skillSelectionMode"] as? String, "selected")
         let selectedSkills = try XCTUnwrap(draft["selectedSkills"] as? [[String: Any]])
@@ -578,7 +648,7 @@ final class BridgeClientExecutionTests: XCTestCase {
         XCTAssertNil(draft["selectedSkillIds"])
     }
 
-    func testImportSourceCanSendAllSkillSelectionMode() async throws {
+    func testDesktopImportSourceCanCommitAllSkillSelectionMode() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
 
@@ -592,7 +662,8 @@ final class BridgeClientExecutionTests: XCTestCase {
         )
 
         let payload = try fixture.lastPayload()
-        XCTAssertEqual(try fixture.lastCommand(), "import-source")
+        XCTAssertEqual(try fixture.loggedCommands(), ["prepare-import-source", "commit-import-source"])
+        XCTAssertEqual(try fixture.lastCommand(), "commit-import-source")
         let draft = try XCTUnwrap(payload["draft"] as? [String: Any])
         XCTAssertEqual(draft["skillSelectionMode"] as? String, "all")
         XCTAssertEqual((draft["selectedSkills"] as? [[String: Any]])?.count, 0)
@@ -783,6 +854,91 @@ private final class StubbornProcessGroupBridgeFixture {
         if let data = try? Data(contentsOf: pidsURL),
            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Int] {
             for pid in value.values { if kill(Int32(pid), 0) == 0 { kill(Int32(pid), SIGKILL) } }
+        }
+        if FileManager.default.fileExists(atPath: rootURL.path) { try FileManager.default.removeItem(at: rootURL) }
+    }
+}
+
+private final class ConcurrentHelpersBridgeFixture {
+    private let rootURL: URL
+    private let recordsURL: URL
+    private let savedHelperOverride: String?
+
+    private init(rootURL: URL, recordsURL: URL, savedHelperOverride: String?) {
+        self.rootURL = rootURL
+        self.recordsURL = recordsURL
+        self.savedHelperOverride = savedHelperOverride
+    }
+
+    static func install() throws -> ConcurrentHelpersBridgeFixture {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("skillflow-desktop-concurrent-helpers-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let helperURL = rootURL.appendingPathComponent("bridge-helper.js")
+        let recordsURL = rootURL.appendingPathComponent("helpers.jsonl")
+        let script = """
+        const fs = require("node:fs");
+        const { spawn } = require("node:child_process");
+        let input = "";
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", chunk => { input += chunk; });
+        process.stdin.on("end", () => {
+          const request = JSON.parse(input || "{}");
+          const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], { stdio: "ignore" });
+          fs.appendFileSync(
+            \(String(reflecting: recordsURL.path)),
+            JSON.stringify({ command: request.command, helper: process.pid, child: child.pid }) + "\\n"
+          );
+        });
+        process.on("SIGTERM", () => {});
+        process.stdin.resume();
+        setInterval(() => {}, 1000);
+        """
+        try script.write(to: helperURL, atomically: true, encoding: .utf8)
+        let saved = ProcessInfo.processInfo.environment["SKILL_FLOW_DESKTOP_HELPER_OVERRIDE"]
+        setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", helperURL.path, 1)
+        return ConcurrentHelpersBridgeFixture(
+            rootURL: rootURL,
+            recordsURL: recordsURL,
+            savedHelperOverride: saved
+        )
+    }
+
+    func waitForCommand(_ command: String) async throws -> (helper: Int32, child: Int32) {
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            if let contents = try? String(contentsOf: recordsURL, encoding: .utf8) {
+                for line in contents.split(separator: "\n") {
+                    guard
+                        let data = line.data(using: .utf8),
+                        let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                        value["command"] as? String == command,
+                        let helper = value["helper"] as? Int,
+                        let child = value["child"] as? Int
+                    else { continue }
+                    return (Int32(helper), Int32(child))
+                }
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        throw XCTSkip("Timed out waiting for helper command '\(command)'.")
+    }
+
+    func tearDown() throws {
+        if let savedHelperOverride { setenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE", savedHelperOverride, 1) }
+        else { unsetenv("SKILL_FLOW_DESKTOP_HELPER_OVERRIDE") }
+        if let contents = try? String(contentsOf: recordsURL, encoding: .utf8) {
+            for line in contents.split(separator: "\n") {
+                guard
+                    let data = line.data(using: .utf8),
+                    let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                else { continue }
+                for key in ["helper", "child"] {
+                    if let pid = value[key] as? Int, kill(Int32(pid), 0) == 0 {
+                        kill(Int32(pid), SIGKILL)
+                    }
+                }
+            }
         }
         if FileManager.default.fileExists(atPath: rootURL.path) { try FileManager.default.removeItem(at: rootURL) }
     }
@@ -995,7 +1151,9 @@ private final class RecordingBridgeFixture {
           fs.appendFileSync(\(String(reflecting: logPath)), JSON.stringify(request) + "\\n", "utf8");
           const data = request.command === "bootstrap"
             ? { command: request.command ?? "list", capabilities: { importDraftV2: true } }
-            : { command: request.command ?? "list" };
+            : request.command === "prepare-import-source"
+              ? { command: request.command, status: "ready", preparationId: "prep-desktop" }
+              : { command: request.command ?? "list" };
           const response = {
             protocolVersion: "1.0",
             requestId: request.requestId ?? null,

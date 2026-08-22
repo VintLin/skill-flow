@@ -80,9 +80,15 @@ State compatibility is implemented in `packages/storage` and domain types live i
 
 State shape changes are external changes. Add storage/domain tests and migration or normalizer coverage.
 
-The recovery journal has its own internal schema validation and must be
-recovered before bootstrap prunes missing checkouts. Invalid journals block
-recovery rather than supplying filesystem paths to cleanup logic.
+The recovery journal has structural and semantic validation and must be
+recovered before bootstrap prunes missing checkouts. It records source kind,
+checkout/source ownership, and target IDs. Recovery re-detects current target
+roots and validates the entire authority snapshot and every path before any
+fingerprint, cleanup, or restore. Invalid structure returns
+`RECOVERY_JOURNAL_INVALID`; invalid path ownership returns
+`RECOVERY_PATH_OWNERSHIP_INVALID`. Neither supplies filesystem paths to cleanup
+logic. Migration under the schema-independent mutation lock recovers current
+V2 state first, rejects V1 plus an active journal, and leaves dry-run read-only.
 
 External sources use `ownership: "external"` in manifest/lock state. Their
 paths are observation-only: they cannot receive target bindings, managed

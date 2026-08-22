@@ -30,17 +30,40 @@ enum BridgeCommand: String, Codable, Sendable, CaseIterable {
     case saveSettings = "save-settings"
 }
 
+enum BridgeHelperTerminationRole: Sendable, Equatable {
+    case durableMutation
+    case preparation
+    case disposableQuery
+    case unrelated
+
+    var isCancellableOnQuit: Bool {
+        self != .unrelated
+    }
+
+    var isAllowedDuringRecoveryRequired: Bool {
+        self == .disposableQuery || self == .unrelated
+    }
+}
+
 extension BridgeCommand {
     var isProtectedGroupOperation: Bool {
+        helperTerminationRole == .durableMutation
+    }
+
+    var helperTerminationRole: BridgeHelperTerminationRole {
         switch self {
-        case .prepareImportSource,
-             .previewImportSource,
-             .commitImportSource,
+        case .commitImportSource,
              .importSource,
              .update:
-            return true
+            return .durableMutation
+        case .prepareImportSource:
+            return .preparation
+        case .searchImportGroups,
+             .scanLocalImportGroups,
+             .previewImportSource:
+            return .disposableQuery
         default:
-            return false
+            return .unrelated
         }
     }
 

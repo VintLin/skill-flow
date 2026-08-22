@@ -1,12 +1,20 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ImportPreparationRecord } from "@skill-flow/domain/types";
+import type {
+  DeploymentTargetId,
+  ImportPreparationRecord,
+  SourceKind,
+} from "@skill-flow/domain/types";
 import type { StateStoreState } from "./state-store.js";
 import { writeJsonFile } from "@skill-flow/integration/utils/fs";
 
 export type RecoveryOperationKind = "update" | "import";
 
 export type RecoveryPathSnapshot = {
+  role: "checkout" | "target";
+  sourceId: string;
+  sourceKind?: SourceKind;
+  target?: DeploymentTargetId;
   path: string;
   existed: boolean;
   backupName?: string;
@@ -20,6 +28,7 @@ export type RecoveryJournal = {
   transactionId: string;
   kind: RecoveryOperationKind;
   sourceId: string;
+  sourceKind: SourceKind;
   startedAt: string;
   phase: "prepared" | "mutated";
   authorityBefore: StateStoreState;
@@ -57,6 +66,7 @@ export class RecoveryJournalStore {
   }
 
   async write(journal: RecoveryJournal): Promise<void> {
+    assertRecoveryJournal(journal);
     await writeJsonFile(this.journalPath, journal);
   }
 
@@ -83,6 +93,7 @@ function assertRecoveryJournal(value: unknown): asserts value is RecoveryJournal
   if (typeof journal.sourceId !== "string" || journal.sourceId.trim().length === 0) {
     invalidJournal("missing sourceId");
   }
+  if (!isManagedSourceKind(journal.sourceKind)) invalidJournal("invalid sourceKind");
   if (typeof journal.startedAt !== "string" || Number.isNaN(Date.parse(journal.startedAt))) {
     invalidJournal("invalid startedAt");
   }
@@ -91,12 +102,37 @@ function assertRecoveryJournal(value: unknown): asserts value is RecoveryJournal
     invalidJournal("missing authority snapshot");
   }
   if (!Array.isArray(journal.targets)) invalidJournal("targets must be an array");
-  if (journal.checkout) assertPathSnapshot(journal.checkout);
-  for (const target of journal.targets ?? []) assertPathSnapshot(target);
+  if (journal.checkout) {
+    assertPathSnapshot(journal.checkout);
+    if (
+      journal.checkout.role !== "checkout"
+      || journal.checkout.sourceId !== journal.sourceId
+      || journal.checkout.sourceKind !== journal.sourceKind
+      || journal.checkout.target !== undefined
+    ) {
+      invalidJournal("checkout ownership metadata mismatch");
+    }
+  }
+  for (const target of journal.targets ?? []) {
+    assertPathSnapshot(target);
+    if (
+      target.role !== "target"
+      || target.sourceId !== journal.sourceId
+      || typeof target.target !== "string"
+      || target.target.trim().length === 0
+      || target.sourceKind !== undefined
+    ) {
+      invalidJournal("target ownership metadata mismatch");
+    }
+  }
 }
 
 function assertPathSnapshot(value: RecoveryPathSnapshot): void {
   if (!value || typeof value !== "object") invalidJournal("invalid path snapshot");
+  if (value.role !== "checkout" && value.role !== "target") invalidJournal("invalid snapshot role");
+  if (typeof value.sourceId !== "string" || value.sourceId.trim().length === 0) {
+    invalidJournal("missing snapshot sourceId");
+  }
   if (typeof value.path !== "string" || !path.isAbsolute(value.path)) {
     invalidJournal("snapshot path must be absolute");
   }
@@ -108,6 +144,10 @@ function assertPathSnapshot(value: RecoveryPathSnapshot): void {
   )) {
     invalidJournal("invalid allowed mutation fingerprints");
   }
+}
+
+function isManagedSourceKind(value: unknown): value is SourceKind {
+  return value === "git" || value === "local" || value === "clawhub";
 }
 
 function assertTransactionId(value: unknown): asserts value is string {

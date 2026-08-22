@@ -16,6 +16,34 @@ final class ApplicationTerminationCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.phase, .idle)
     }
 
+    func testDisposableHelperDelaysQuitForCancellationButCleanupFailureDoesNotBlockExit() async {
+        var didShutdown = false
+        var didAttemptCleanup = false
+        var reply: Bool?
+        let coordinator = ApplicationTerminationCoordinator(
+            hasProtectedOperation: { false },
+            hasCancellableHelper: { true },
+            shutdownProtectedOperations: { didShutdown = true },
+            cancelActiveHelper: { true },
+            recoverInterruptedOperation: {
+                XCTFail("Disposable-only termination must not require durable recovery.")
+                return false
+            },
+            cleanupInterruptedDisposableWork: {
+                didAttemptCleanup = true
+                return false
+            }
+        )
+
+        XCTAssertEqual(coordinator.requestTermination { reply = $0 }, .terminateLater)
+        XCTAssertTrue(didShutdown)
+        await waitUntil { reply != nil }
+
+        XCTAssertTrue(didAttemptCleanup)
+        XCTAssertEqual(reply, true)
+        XCTAssertEqual(coordinator.phase, .idle)
+    }
+
     func testProtectedTerminationStopsQueueAndRepliesAfterCancellationSucceeds() async {
         var didShutdown = false
         var reply: Bool?
@@ -96,13 +124,15 @@ final class ApplicationTerminationCoordinatorTests: XCTestCase {
     func testSuccessfulRetryAfterCancellingExitResumesProtectedOperations() async {
         var recoverySucceeds = false
         var didResume = false
+        var didEnterRecoveryRequired = false
         var reply: Bool?
         let coordinator = ApplicationTerminationCoordinator(
             hasProtectedOperation: { true },
             shutdownProtectedOperations: {},
             cancelActiveHelper: { true },
             recoverInterruptedOperation: { recoverySucceeds },
-            resumeProtectedOperations: { didResume = true }
+            resumeProtectedOperations: { didResume = true },
+            enterRecoveryRequiredState: { didEnterRecoveryRequired = true }
         )
 
         XCTAssertEqual(coordinator.requestTermination { reply = $0 }, .terminateLater)
@@ -110,6 +140,7 @@ final class ApplicationTerminationCoordinatorTests: XCTestCase {
         coordinator.cancelExit()
         XCTAssertEqual(reply, false)
         XCTAssertEqual(coordinator.phase, .recoveryRequired)
+        XCTAssertTrue(didEnterRecoveryRequired)
 
         recoverySucceeds = true
         coordinator.retryRecovery()

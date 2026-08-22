@@ -123,6 +123,9 @@ final class DesktopAppContainer {
             hasProtectedOperation: { [weak mainViewModel] in
                 mainViewModel?.hasActiveProtectedOperation ?? false
             },
+            hasCancellableHelper: { [weak bridgeClient] in
+                bridgeClient?.hasActiveCancellableHelper ?? false
+            },
             shutdownProtectedOperations: { [weak mainViewModel] in
                 mainViewModel?.shutdownProtectedOperationsForTermination()
             },
@@ -139,9 +142,21 @@ final class DesktopAppContainer {
                     return false
                 }
             },
+            cleanupInterruptedDisposableWork: { [weak bridgeClient] in
+                guard let bridgeClient else { return false }
+                do {
+                    _ = try await bridgeClient.bootstrap()
+                    return true
+                } catch {
+                    return false
+                }
+            },
             resumeProtectedOperations: { [weak mainViewModel, weak bridgeClient] in
                 mainViewModel?.resumeProtectedOperationsAfterRecovery()
                 bridgeClient?.resumeProtectedOperationsAfterRecovery()
+            },
+            enterRecoveryRequiredState: { [weak bridgeClient] in
+                bridgeClient?.enterRecoveryRequiredState()
             }
         )
         self.navigation = RouteNavigation(

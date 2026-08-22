@@ -33,4 +33,23 @@ describe("RecoveryJournalStore", () => {
     await expect(store.read()).rejects.toThrow(/invalid recovery journal/i);
     await expect(fs.readFile(sentinel, "utf8")).resolves.toBe("keep\n");
   });
+
+  test("rejects an experimental v1 journal that lacks semantic ownership fields", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-store-"));
+    roots.push(stateRoot);
+    const store = new RecoveryJournalStore(stateRoot);
+    await fs.mkdir(path.dirname(store.journalPath), { recursive: true });
+    await fs.writeFile(store.journalPath, JSON.stringify({
+      schemaVersion: 1,
+      transactionId: "recovery-123-12345678-1234-4123-8123-123456789abc",
+      kind: "update",
+      sourceId: "repo",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      phase: "prepared",
+      authorityBefore: {},
+      targets: [],
+    }), "utf8");
+
+    await expect(store.read()).rejects.toThrow(/invalid sourceKind/i);
+  });
 });

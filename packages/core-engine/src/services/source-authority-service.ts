@@ -360,6 +360,21 @@ export class SourceAuthorityService {
     return this.withMutationLock(() => this.updateSourcesUnlocked(sourceIds, options));
   }
 
+  async preflightUpdateSources(sourceIds?: string[]): Promise<Result<void>> {
+    const state = await this.options.stateStore.readState();
+    const requestedIds = sourceIds?.length
+      ? [...new Set(sourceIds)]
+      : state.manifest.sources.map((source) => source.id);
+    const preflight = await this.preflightSourceUpdates(
+      state,
+      requestedIds,
+      Boolean(sourceIds?.length),
+    );
+    return preflight.ok
+      ? ok(undefined, preflight.warnings)
+      : fail(preflight.errors, preflight.warnings);
+  }
+
   private async updateSourcesUnlocked(
     sourceIds?: string[],
     options: { checkoutBackupPath?: string; retainCheckoutBackup?: boolean } = {},

@@ -24,17 +24,19 @@ Cancel action.
   incomplete group is recovered.
 - A group reaches its commit point only after its managed checkout, authority
   state, and owned target projections are mutually consistent.
-- Import discovery and preparation remain disposable cache work. Final import
-  commit and managed update use durable operation recovery.
-- The helper receives cooperative termination first. The desktop waits five
-  seconds, then terminates the helper process group if it is still running.
+- Import search, local scan, preview, and preparation remain disposable work.
+  Final import commit and managed update use durable operation recovery.
+- Quit first stops all active durable and disposable helper process groups. It
+  waits five seconds after cooperative termination, then kills survivors.
+  Ordinary command timeout retains the upstream helper-only behavior.
 - A recovery journal is written before protected mutation. It records recovery
   evidence, not work to resume. No Queued or Running operation is replayed.
 - Bootstrap recovers an unfinished journal before checkout pruning or new
   mutations. Normal quit and process-crash recovery are supported; sudden
   power loss remains best effort and does not carry an fsync-level guarantee.
-- Recovery restores authority and managed checkout state, then restores or
-  reconciles only Skill Flow-owned target projections. It never adopts,
+- Recovery validates every journal path and its semantic ownership before path
+  I/O, then restores managed checkout, authority state, and only Skill
+  Flow-owned target projections in that order. It never adopts,
   overwrites, or removes externally owned source paths.
 - If an owned target no longer matches the fingerprint written by the running
   operation, recovery reports a conflict instead of overwriting the external
@@ -46,6 +48,14 @@ Cancel action.
   discarded or interrupted work.
 - Cancellation uses process signals and bootstrap recovery. The public bridge
   protocol gains no cancel or recover command.
+- Bulk Update validates the complete selected source list before starting its
+  existing per-group transactions.
+- Recovery Required permits import discovery queries but blocks preparation,
+  final Import, and Update. Disposable-only cleanup failure does not block Quit
+  and is retried during bootstrap.
+- Migration is recovery-aware under the schema-independent mutation lock:
+  current V2 recovers first, V1 plus an active journal is rejected, and dry-run
+  remains read-only.
 
 ## Consequences
 
@@ -57,7 +67,6 @@ Cancel action.
   Memory.
 - Managed update and final import require a per-group transaction seam that
   keeps checkout backups until authority and deployment commit together.
-- The previous timeout guidance that allowed the operating system to clean up
-  an unresponsive helper is superseded for protected desktop operations: the
-  complete helper process group is terminated after the grace period.
+- Process-group termination applies only to application Quit. Ordinary timeout
+  continues to terminate only the helper process.
 - CLI and TUI behavior and external-source lifecycle rules remain unchanged.

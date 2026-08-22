@@ -77,11 +77,11 @@ The desktop queue transition triggered by Command-Q or the application Quit menu
 _Avoid_: pause, resumable queue, general cancel action
 
 **Operation Recovery Journal**:
-Internal durable recovery evidence for the single incomplete managed Update or final Import. It records the pre-operation authority state and owned filesystem compensation data; it never records work to resume and is not Shared Skill State.
+Internal durable recovery evidence for the single incomplete managed Update or final Import. It records the pre-operation authority state plus explicit source, checkout, preparation, and target ownership metadata. Recovery validates the whole record against current managed roots before touching a recorded path; it never records work to resume and is not Shared Skill State.
 _Avoid_: persisted queue, download history, migration marker
 
 **Recovery Required**:
-Desktop state after recovery failed and the user cancelled application termination. The main UI remains available, but Update and Import stay disabled; another Quit or Retry Recovery must attempt recovery again before termination can complete.
+Desktop state after recovery failed and the user cancelled application termination. The main UI and import discovery (search, local scan, preview) remain available, but preparation, final Import, and Update stay disabled; another Quit or Retry Recovery must attempt recovery again before termination can complete.
 _Avoid_: recovered, idle, ignore-and-quit
 
 **Bulk Update**:

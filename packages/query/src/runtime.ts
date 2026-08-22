@@ -80,6 +80,7 @@ import {
   pathExists,
   readJsonFile,
   removePath,
+  withFileLock,
   writeJsonFile,
 } from "@skill-flow/integration/utils/fs";
 import { getBuiltinGitSources } from "@skill-flow/integration/utils/builtin-git-sources";
@@ -137,6 +138,7 @@ import { SourceAuthorityService } from "@skill-flow/core-engine/services/source-
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
 import {
   StateMigrationService,
+  StateMigrationError,
   type StateMigrationOptions,
   type StateMigrationResult,
 } from "@skill-flow/core-engine/services/state-migration-service";
@@ -494,6 +496,16 @@ export class SkillFlowApp {
     this.operationRecoveryService = new OperationRecoveryService({
       stateStore: this.stateStore,
       cacheStore: this.importPreparationCacheStore,
+      resolveTargetRoots: async () => {
+        const { preferences } = await this.stateStore.readState();
+        const detected = await Promise.all(
+          this.createAdaptersForPreferences(preferences).map(async (adapter) => {
+            const target = await adapter.detect();
+            return [adapter.target, target.rootPath] as const;
+          }),
+        );
+        return new Map(detected);
+      },
     });
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
@@ -1537,7 +1549,51 @@ export class SkillFlowApp {
 
   migrateState(options: StateMigrationOptions): Promise<StateMigrationResult> {
     return this.runSerializedTask(async () => {
-      const result = await new StateMigrationService({ stateRoot: this.store.rootPath }).migrate(options);
+      const migration = new StateMigrationService({ stateRoot: this.store.rootPath });
+      if (options.dryRun) {
+        return migration.migrate(options);
+      }
+      const result = await withFileLock(
+        path.join(this.store.rootPath, ".mutation.lock"),
+        async () => {
+          const status = await migration.inspect();
+          const hasRecoveryJournal = await pathExists(
+            path.join(this.store.rootPath, "recovery", "active.json"),
+          );
+          if (status.status === "migration-required" && hasRecoveryJournal) {
+            throw new StateMigrationError({
+              reasonCode: "RECOVERY_STATE_INCONSISTENT",
+              diagnostics: [{
+                code: "RECOVERY_STATE_INCONSISTENT",
+                message: "State migration is blocked because a recovery journal exists beside V1 authority.",
+                path: path.join(this.store.rootPath, "recovery", "active.json"),
+                retryable: false,
+              }],
+            });
+          }
+          if (status.status === "current") {
+            const recovered = await this.operationRecoveryService.recover();
+            if (!recovered.ok) {
+              throw new StateMigrationError({
+                reasonCode: recovered.errors[0]?.code ?? "OPERATION_RECOVERY_FAILED",
+                diagnostics: recovered.errors.map((error) => ({
+                  code: error.code,
+                  message: error.message,
+                  retryable: true,
+                })),
+              });
+            }
+          }
+          return migration.migrate(options);
+        },
+        {
+          metadata: {
+            command: "migrate-state",
+            pid: process.pid,
+            startedAt: new Date().toISOString(),
+          },
+        },
+      );
       if (result.status === "migrated") {
         await this.warmRebuildableCacheAfterMigration();
       }
@@ -2841,6 +2897,7 @@ export class SkillFlowApp {
     await this.operationRecoveryService.begin({
       kind: "import",
       sourceId: preparation.sourceId,
+      sourceKind: preparation.sourceKind,
       checkoutPath: canonicalCheckoutPath,
       preparationId,
     });
@@ -3086,8 +3143,8 @@ export class SkillFlowApp {
     if (!localSkillPath) {
       return;
     }
-    const isManagedByTargetRoot = await this.isLocalImportTargetPath(localSkillPath);
-    if (!isManagedByTargetRoot) {
+    const targetOwnership = await this.resolveLocalImportTargetOwnership(localSkillPath);
+    if (!targetOwnership) {
       return;
     }
     const { lockFile } = await this.readRuntimeAuthorityView();
@@ -3097,26 +3154,44 @@ export class SkillFlowApp {
         await this.operationRecoveryService.prepareManagedSymlinkMutation(
           localSkillPath,
           source.localPath,
+          { sourceId, target: targetOwnership.target },
         );
       }
       await createSymlink(source.localPath, localSkillPath);
     }
   }
 
-  private async isLocalImportTargetPath(localSkillPath: string): Promise<boolean> {
-    for (const target of TARGET_ORDER) {
-      for (const root of getTargetScanRoots(target).map((root) => path.resolve(root))) {
-        if (isPathInside(root, localSkillPath)) {
-          return true;
-        }
-        const resolvedRoot = await fs.realpath(root).catch(() => root);
-        const resolvedLocalSkillPath = await fs.realpath(localSkillPath).catch(() => localSkillPath);
-        if (isPathInside(resolvedRoot, resolvedLocalSkillPath)) {
-          return true;
-        }
+  private async resolveLocalImportTargetOwnership(
+    localSkillPath: string,
+  ): Promise<{ target: DeploymentTargetId; rootPath: string } | undefined> {
+    const { preferences } = await this.stateStore.readState();
+    const detectedRoots = await Promise.all(
+      this.createAdaptersForPreferences(preferences).map(async (adapter) => {
+        const detection = await adapter.detect();
+        return { target: adapter.target, rootPath: path.resolve(detection.rootPath) };
+      }),
+    );
+    const candidates = [
+      ...detectedRoots,
+      ...TARGET_ORDER.flatMap((target) =>
+        getTargetScanRoots(target).map((rootPath) => ({
+          target,
+          rootPath: path.resolve(rootPath),
+        })),
+      ),
+    ];
+    for (const candidate of candidates) {
+      const root = candidate.rootPath;
+      if (isPathInside(root, localSkillPath)) {
+        return candidate;
+      }
+      const resolvedRoot = await fs.realpath(root).catch(() => root);
+      const resolvedLocalSkillPath = await fs.realpath(localSkillPath).catch(() => localSkillPath);
+      if (isPathInside(resolvedRoot, resolvedLocalSkillPath)) {
+        return candidate;
       }
     }
-    return false;
+    return undefined;
   }
 
   private async resolveSourceMetadata(
@@ -5209,6 +5284,10 @@ export class SkillFlowApp {
   }
 
   private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+    const preflight = await this.sourceAuthorityService.preflightUpdateSources(sourceIds);
+    if (!preflight.ok) {
+      return fail(preflight.errors, preflight.warnings);
+    }
     const initialState = await this.stateStore.readState();
     const requestedIds = sourceIds?.length
       ? [...new Set(sourceIds)]
@@ -5222,7 +5301,7 @@ export class SkillFlowApp {
         .map((source) => source.id);
     const updatedItems: SourceUpdateResultItem[] = [];
     const failed: NonNullable<SourceUpdateResult["failed"]> = [];
-    const warnings: Warning[] = [];
+    const warnings: Warning[] = [...preflight.warnings];
     const precheckFallbackSourceIds: string[] = [];
     const hardErrors: Array<{ code: string; message: string }> = [];
 
@@ -5237,7 +5316,11 @@ export class SkillFlowApp {
       let transaction: { checkoutBackupPath?: string } | undefined;
       try {
         if (managed) {
-          transaction = await this.operationRecoveryService.begin({ kind: "update", sourceId });
+          transaction = await this.operationRecoveryService.begin({
+            kind: "update",
+            sourceId,
+            sourceKind: source.kind,
+          });
         }
         const updated = await this.sourceAuthorityService.updateSources([sourceId], {
           ...(transaction?.checkoutBackupPath

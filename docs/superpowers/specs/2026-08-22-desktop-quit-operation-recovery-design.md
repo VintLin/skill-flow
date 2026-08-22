@@ -2,157 +2,160 @@
 
 ## Goal
 
-Make quitting the macOS application safe while a managed group Update, Bulk
-Update, or final Import is running. A later launch must either observe the last
-completed group state or finish recovering the one incomplete group before new
-protected mutations begin.
+Make macOS application Quit safe while managed Update or final Import work is
+running. A later launch observes the last committed group state or completes
+compensation for the one incomplete group before another protected mutation.
 
-## Scope
+## Operation classes
 
-Protected operations:
+- **Durable mutations:** managed single/Bulk Update and final Import commit.
+  These use the recovery journal.
+- **Preparation:** import checkout preparation. It is disposable and does not
+  use the durable journal.
+- **Disposable queries:** import search, local scan, and preview. Their helper
+  work may be stopped and their interrupted temporary data cleaned.
+- Other commands retain their existing behavior and serial-mutation rules.
 
-- managed single-group Update;
-- managed Bulk Update, with a commit point per group;
-- final Import commit.
+The public CLI/TUI command surface is unchanged. The desktop always performs
+final Import as `prepare-import-source` followed by `commit-import-source` so
+the durable boundary is explicit. The existing public `import-source` direct
+fallback remains available to non-desktop callers.
 
-Import search, preview, and preparation may be cancelled and their interrupted
-temporary data cleaned without a full transaction. Pin, rename, apply,
-uninstall, collection, settings, migration, doctor, and external-source
-operations retain their existing behavior.
+## Desktop queue and helper shutdown
 
-## Interfaces And Seams
+Quit is Command-Q or the application Quit menu, not main-window closure. It
+atomically refuses new Group Operations, discards Queued work, and retains the
+Running identity until cancellation and recovery finish. Work is never resumed
+or replayed.
 
-### Desktop queue shutdown
+`BridgeClient` tracks all active helpers, not only one process. Each helper is
+registered with its operation class before launch can cross the termination
+latch. On Quit, all active durable, preparation, and disposable-query helpers
+are stopped before recovery begins. Cooperative shutdown sends TERM to each
+helper process group; after five seconds, any surviving group is killed.
 
-The Group Operation Queue remains a session FIFO with one running slot. Its
-shutdown interface atomically:
+This process-group behavior is Quit-only. An ordinary command timeout preserves
+the upstream helper-only contract: terminate the helper, wait its existing
+grace period, then force-kill that helper if needed. Ordinary timeout does not
+newly kill descendant processes.
 
-1. refuses new operations;
-2. removes Queued operations;
-3. exposes the Running operation until cancellation and recovery finish;
-4. prevents `drain()` from scheduling more work.
+Quit is delayed whenever protected queue work or any cancellable helper is
+active. Disposable-only cleanup is best effort: cleanup failure does not block
+Quit and bootstrap retries it next launch. Durable recovery failure keeps the
+application open. If the user cancels Quit, the app enters **Recovery
+Required**: search, local scan, and preview remain available; preparation,
+final Import, and Update are rejected until recovery succeeds.
 
-Queued and Running work is never resumed. If Quit was cancelled after recovery
-failed, protected operations remain disabled. A later successful in-app
-recovery may reopen a fresh empty session queue.
+## Durable transaction contract
 
-### Operation recovery module
-
-One deep module owns the durable journal and recovery state machine. Callers
-can begin a protected group mutation, advance durable stages, commit it, or
-recover the unfinished operation. Callers do not read or edit journal files.
-
-The journal is stored separately from authority files and
-`.skillflow-migration.json`. It contains an operation identifier, operation
-kind, source identifier, phase, managed checkout recovery paths, the authority
-snapshot needed for compensation, and owned-target fingerprints and recovery
-paths.
-
-Journal writes use the repository's normal atomic file replacement guarantees.
-They do not promise file-and-directory fsync durability across sudden power
-loss.
-
-### Helper cancellation
-
-BridgeClient owns a registry of the active helper for protected operations.
-Application termination sends cooperative termination and waits up to five
-seconds. If the helper remains alive, the whole process group is killed so Git
-or archive grandchildren do not continue after the desktop exits.
-
-The registry also latches termination before a protected helper starts. If a
-short non-protected mutation currently owns the Serial Mutation Channel, it is
-allowed to finish normally; the queued Update or Import is then rejected before
-launch instead of killing the unrelated helper.
-
-There is no public bridge command change. The Node bridge handles termination
-inside the running helper; bootstrap invokes recovery before normal workspace
-cleanup.
-
-### Application termination
-
-An AppKit termination coordinator returns `terminateLater` only when a
-protected Group Operation is active. It freezes the queue, presents a stopping
-and recovery state, and replies to the pending termination request after
-recovery succeeds. Failure keeps the application open with Retry Recovery and
-Cancel Quit actions. Cancel Quit leaves a visible Recovery Required state and
-keeps Update and Import disabled; a later Quit cannot bypass the unfinished
-journal.
-
-## Per-group commit contract
-
-A managed group is committed only when all of the following describe the same
-version:
+A managed group commits only when these describe the same version:
 
 1. canonical managed checkout;
 2. manifest and lock authority state;
 3. Skill Flow-owned target projections.
 
-Bulk Update remains one bridge command and one desktop Group Operation. The
-runtime advances one source through the complete per-group transaction before
-starting the next source. On cancellation, earlier committed sources remain;
-the current source is recovered.
+Bulk Update performs one complete transaction per source. Before the first
+transaction, the runtime preflights the entire selected source list. Therefore
+an invalid later source cannot leave earlier sources updated. Once preflight
+succeeds, earlier committed sources remain committed if a later source is
+interrupted; only the current source is recovered.
 
-Final Import uses the same commit contract. If no source existed before the
-operation, recovery removes the incomplete managed source registration and its
-owned projections while restoring any managed path moved aside by the import.
+Final Import has the same contract. Recovery removes an incomplete new source
+registration and owned projections while restoring the prepared checkout.
 
-## Ownership and conflicts
+## Journal ownership and validation
 
-- Managed checkout validation from the Git source update boundary remains
-  mandatory before staging, replacement, or recovery.
-- `ownership: "external"` sources never enter this transaction path.
-- Target directories are projections, not authority. Recovery evidence covers
-  only paths the planner classified as Skill Flow-owned.
-- Before restoring an owned target, recovery compares its current fingerprint
-  with the value produced by the interrupted operation. A mismatch is a
-  recovery conflict and is never overwritten automatically.
+The private `recovery/active.json` journal is separate from authority files and
+`.skillflow-migration.json`. It records an operation/source identity, managed
+source kind, phase, validated authority snapshot, checkout ownership, target
+IDs and ownership, fingerprints, backups, and any prior import-preparation
+record. It stores compensation evidence, never resumable work.
 
-## Bootstrap ordering
+Before reading fingerprints, deleting, moving, or restoring any journal path,
+recovery validates the complete journal:
 
-Bootstrap performs these steps in order:
+- the authority snapshot satisfies current state invariants;
+- source kind is managed (`git`, `local`, or `clawhub`), matches the source, and
+  is not external or a collection;
+- checkout identity resolves to the canonical managed checkout and agrees with
+  lock authority;
+- every target belongs to its recorded target ID and is inside that target's
+  currently re-detected built-in or custom root;
+- an import-preparation checkout equals the cache path assigned to its
+  preparation ID and matches the journal source identity.
 
-1. acquire the mutation lock, reclaiming a dead helper's lock by the existing
-   PID rules;
-2. inspect and recover any unfinished operation journal;
-3. stop with a structured recovery conflict if compensation cannot complete;
-4. only then run missing-checkout pruning and ordinary bootstrap reconciliation.
+Invalid structure returns `RECOVERY_JOURNAL_INVALID`; invalid semantic path
+ownership returns `RECOVERY_PATH_OWNERSHIP_INVALID`. Neither case supplies a
+path to cleanup code. Target fingerprints are then checked as a second guard;
+an external mismatch returns `RECOVERY_TARGET_CONFLICT` and is not overwritten.
+Journal replacement is atomic but does not claim file-and-directory fsync
+durability across sudden power loss.
 
-Successful recovery deletes operation backups and the journal. It never
-re-enqueues or resumes the interrupted operation. When the user previously
-cancelled Quit, success also clears the desktop cancellation latch and opens a
-fresh empty queue so new work can be requested normally.
+## Recovery and migration ordering
 
-## Compatibility updates
+Under the schema-independent mutation lock, bootstrap/recovery performs:
 
-- ADR 0002's v1 `no cancel` decision is superseded only for application Quit.
-- The import timeout design's OS-cleanup fallback is superseded by process-group
-  termination for protected operations.
-- Git update time budgets remain unchanged; application Quit has its own
-  five-second cooperative cancellation grace period.
-- Bridge protocol 1.0 command names and payloads remain unchanged.
+1. read and validate the whole journal and authority snapshot;
+2. stop/clean interrupted disposable preparations;
+3. verify every owned-target fingerprint;
+4. restore the managed checkout;
+5. restore authority state;
+6. restore owned targets and any prior preparation record;
+7. clear backups and journal;
+8. only then prune missing checkouts and reconcile normally.
+
+State migration follows the same boundary. Dry-run migration is strictly
+read-only and does not acquire the lock or recover. For current V2 state,
+migration entry first recovers an active journal before reporting that state is
+current. A V1 state plus an active journal is an inconsistent unsupported
+combination and migration stops without changing either file. Normal bootstrap
+still performs its recovery check, making recovery idempotent across entry
+points.
+
+## Compatibility
+
+- ADR 0002's `no cancel` decision is superseded only for application Quit.
+- Existing timeout budgets stay unchanged; Quit has its own five-second group
+  cancellation grace period.
+- Bridge protocol command names and payload shapes remain unchanged.
+- CLI/TUI flows and external-source lifecycle behavior remain unchanged, while
+  shared managed transaction and recovery invariants apply wherever invoked.
 
 ## Acceptance tests
 
-1. Queue shutdown drops Queued operations and cannot restart draining until a
-   recovery succeeds after the user has cancelled Quit; reopening starts with
-   an empty queue and never replays the interrupted work.
-2. Quit with no protected operation terminates immediately.
-3. Quit with a Running operation enters delayed termination and displays
-   stopping/recovery feedback.
-4. A cooperative helper exits during the grace period without forced kill.
-5. An unresponsive helper and its descendant process are terminated after the
-   grace period.
-6. Cancellation before and after every checkout replacement stage restores the
-   previous managed group.
-7. Cancellation during authority promotion or target deployment restores the
-   previous managed group.
-8. Bulk Update preserves previously committed groups and restores only the
-   current incomplete group.
-9. Final Import recovery removes an incomplete new group and restores owned
-   target paths.
-10. Import preparation cancellation cleans interrupted preparation while
-    preserving reusable Ready preparation records.
-11. A target fingerprint mismatch blocks recovery without overwriting the path.
-12. Bootstrap recovers an unfinished journal before missing-checkout pruning.
-13. Recovery success clears backups and journal; failure keeps protected
-    mutations disabled and supports retry.
+1. Queue shutdown drops Queued work and cannot restart until durable recovery
+   succeeds; no interrupted work is replayed.
+2. Quit is immediate with no protected queue work or cancellable helper.
+3. Durable, preparation, preview, search, and local-scan helpers delay Quit and
+   are all terminated, including descendants, before durable recovery.
+4. Disposable-only cleanup failure still permits Quit and is retried by the
+   next bootstrap.
+5. Ordinary helper timeout retains helper-only termination semantics.
+6. Whole-list Bulk Update preflight occurs before the first journal/mutation;
+   after it passes, compensation remains per group.
+7. Cancellation at checkout, authority, or deployment stages restores only the
+   incomplete managed group.
+8. Final Import restores its Ready preparation and removes incomplete managed
+   state.
+9. Recovery rejects invalid authority, checkout, preparation, or target
+   ownership before touching any recorded path.
+10. A target fingerprint conflict is retained for explicit recovery.
+11. V2 migration entry recovers first; V1 plus journal is blocked; dry-run is
+    read-only.
+12. Recovery Required permits search/scan/preview but blocks preparation,
+    final Import, and Update.
+
+## Confirmed decision record
+
+- Q13-A: restore checkout, authority, then owned targets.
+- Q14-A: recovery runs before ordinary bootstrap pruning/reconciliation.
+- Q15-A: ordinary timeout remains helper-only; process-group kill is Quit-only.
+- Q16-A: Bulk Update preflights the complete selection before per-group work.
+- Q17-A: helpers are classified as durable, preparation, disposable query, or
+  unrelated.
+- Q18-A: disposable helpers also delay Quit and are cancelled/cleaned first.
+- Q19-A: Quit uses TERM, a five-second grace period, then group kill.
+- Q20-A: Recovery Required allows discovery queries but blocks preparation and
+  durable mutations.
+- Q21-A: disposable cleanup failure does not block Quit.
+- Q22-A: all cancellable helpers stop before durable recovery.

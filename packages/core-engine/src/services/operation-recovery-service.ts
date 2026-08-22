@@ -1,8 +1,18 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { DeploymentAction, Result } from "@skill-flow/domain/types";
-import { copyDirectory, pathExists, removePath } from "@skill-flow/integration/utils/fs";
+import type {
+  DeploymentAction,
+  DeploymentTargetId,
+  Result,
+  SourceKind,
+} from "@skill-flow/domain/types";
+import {
+  copyDirectory,
+  isPathInside,
+  pathExists,
+  removePath,
+} from "@skill-flow/integration/utils/fs";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import {
   RecoveryJournalStore,
@@ -12,10 +22,12 @@ import {
 } from "@skill-flow/storage/recovery-journal-store";
 import type { StateStore } from "@skill-flow/storage/state-store";
 import type { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
+import { resolveManagedCheckoutOwnership } from "../internal/managed-checkout-policy.js";
 
 export type OperationRecoveryServiceOptions = {
   stateStore: StateStore;
   cacheStore?: ImportPreparationCacheStore;
+  resolveTargetRoots?: () => Promise<Map<DeploymentTargetId, string>>;
 };
 
 export type RecoveryResult = {
@@ -38,6 +50,7 @@ export class OperationRecoveryService {
   async begin(input: {
     kind: RecoveryOperationKind;
     sourceId: string;
+    sourceKind: SourceKind;
     checkoutPath?: string;
     preparationId?: string;
   }): Promise<{ checkoutBackupPath?: string }> {
@@ -52,6 +65,13 @@ export class OperationRecoveryService {
       ? (await this.options.cacheStore.readImportPreparationCache()).records[input.preparationId]
       : undefined;
     const sourceLock = authorityBefore.lockFile.sources[input.sourceId];
+    const sourceManifest = authorityBefore.manifest.sources.find((source) => source.id === input.sourceId);
+    if (
+      input.sourceKind === "collection"
+      || (sourceManifest && sourceManifest.kind !== input.sourceKind)
+    ) {
+      throw new Error(`Refusing to create a recovery transaction with invalid source ownership for '${input.sourceId}'.`);
+    }
     if (
       authorityBefore.manifest.sources.find((source) => source.id === input.sourceId)?.ownership === "external"
       || sourceLock?.ownership === "external"
@@ -69,6 +89,9 @@ export class OperationRecoveryService {
     }
     const checkout = checkoutPath
       ? {
+          role: "checkout" as const,
+          sourceId: input.sourceId,
+          sourceKind: input.sourceKind,
           path: checkoutPath,
           existed: await pathExists(checkoutPath),
           backupName: "checkout",
@@ -80,6 +103,7 @@ export class OperationRecoveryService {
       transactionId,
       kind: input.kind,
       sourceId: input.sourceId,
+      sourceKind: input.sourceKind,
       startedAt: new Date().toISOString(),
       phase: "prepared",
       authorityBefore,
@@ -127,7 +151,19 @@ export class OperationRecoveryService {
             journal.transactionId,
             `target-${knownTargets.size}`,
             transition.targetPath,
+            {
+              role: "target",
+              sourceId: action.sourceId,
+              target: action.target,
+            },
           );
+        }
+        if (
+          snapshot.role !== "target"
+          || snapshot.sourceId !== action.sourceId
+          || snapshot.target !== action.target
+        ) {
+          throw new Error(`Conflicting recovery ownership for managed target '${transition.targetPath}'.`);
         }
         knownTargets.set(resolved, {
           ...snapshot,
@@ -148,7 +184,11 @@ export class OperationRecoveryService {
     });
   }
 
-  async prepareManagedSymlinkMutation(targetPath: string, sourcePath: string): Promise<void> {
+  async prepareManagedSymlinkMutation(
+    targetPath: string,
+    sourcePath: string,
+    ownership: { sourceId: string; target: DeploymentTargetId },
+  ): Promise<void> {
     const journal = await this.requireJournal();
     if (journal.targets.some((target) => path.resolve(target.path) === path.resolve(targetPath))) {
       return;
@@ -157,6 +197,7 @@ export class OperationRecoveryService {
       journal.transactionId,
       `target-${journal.targets.length}`,
       targetPath,
+      { role: "target", sourceId: ownership.sourceId, target: ownership.target },
     );
     await this.journalStore.write({
       ...journal,
@@ -186,14 +227,6 @@ export class OperationRecoveryService {
   }
 
   async recover(): Promise<Result<RecoveryResult>> {
-    try {
-      await this.cleanupInterruptedPreparations();
-    } catch (error) {
-      return fail({
-        code: "IMPORT_PREPARATION_RECOVERY_FAILED",
-        message: `Unable to clean interrupted import preparation: ${String(error)}`,
-      });
-    }
     let journal: RecoveryJournal | undefined;
     try {
       journal = await this.journalStore.read();
@@ -201,6 +234,33 @@ export class OperationRecoveryService {
       return fail({
         code: "RECOVERY_JOURNAL_INVALID",
         message: `Unable to read the interrupted-operation recovery journal safely: ${String(error)}`,
+      });
+    }
+    if (journal) {
+      try {
+        this.options.stateStore.validateState(journal.authorityBefore);
+      } catch (error) {
+        return fail({
+          code: "RECOVERY_JOURNAL_INVALID",
+          message: `Recovery stopped because the authority snapshot is invalid: ${String(error)}`,
+        });
+      }
+      try {
+        await this.validateRecoveryPathOwnership(journal);
+      } catch (error) {
+        return fail({
+          code: "RECOVERY_PATH_OWNERSHIP_INVALID",
+          message: `Recovery stopped because journal path ownership could not be verified: ${String(error)}`,
+        });
+      }
+    }
+
+    try {
+      await this.cleanupInterruptedPreparations();
+    } catch (error) {
+      return fail({
+        code: "IMPORT_PREPARATION_RECOVERY_FAILED",
+        message: `Unable to clean interrupted import preparation: ${String(error)}`,
       });
     }
     if (!journal) return ok({ recovered: false });
@@ -215,8 +275,8 @@ export class OperationRecoveryService {
 
     try {
       if (journal.checkout) await this.restoreCheckout(journal, journal.checkout);
-      for (const target of journal.targets) await this.restorePath(journal, target);
       await this.options.stateStore.writeState(journal.authorityBefore);
+      for (const target of journal.targets) await this.restorePath(journal, target);
       if (journal.importPreparationBefore && this.options.cacheStore) {
         await this.options.cacheStore.writeImportPreparationRecord({
           ...journal.importPreparationBefore,
@@ -233,11 +293,70 @@ export class OperationRecoveryService {
     }
   }
 
+  private async validateRecoveryPathOwnership(journal: RecoveryJournal): Promise<void> {
+    const source = journal.authorityBefore.manifest.sources.find(
+      (candidate) => candidate.id === journal.sourceId,
+    );
+    const lock = journal.authorityBefore.lockFile.sources[journal.sourceId];
+    if (
+      source?.ownership === "external"
+      || lock?.ownership === "external"
+      || (source && source.kind !== journal.sourceKind)
+    ) {
+      throw new Error(`source '${journal.sourceId}' is not a matching managed source`);
+    }
+
+    if (journal.checkout) {
+      const checkout = await resolveManagedCheckoutOwnership({
+        stateRoot: this.options.stateStore.rootPath,
+        sourceKind: journal.sourceKind,
+        sourceId: journal.sourceId,
+        localPath: journal.checkout.path,
+      });
+      if (!checkout.ok) {
+        throw new Error(`checkout '${journal.checkout.path}' is not canonically managed`);
+      }
+      if (lock && path.resolve(lock.localPath) !== checkout.data.checkoutPath) {
+        throw new Error(`checkout '${journal.checkout.path}' does not match authority`);
+      }
+    }
+
+    if (journal.importPreparationBefore) {
+      if (!this.options.cacheStore) {
+        throw new Error("import preparation cache is unavailable");
+      }
+      const preparation = journal.importPreparationBefore;
+      const expectedPath = this.options.cacheStore.getImportPreparationCheckoutPath(preparation.id);
+      if (
+        journal.kind !== "import"
+        || preparation.sourceId !== journal.sourceId
+        || preparation.sourceKind !== journal.sourceKind
+        || path.resolve(preparation.checkoutPath) !== path.resolve(expectedPath)
+      ) {
+        throw new Error(`import preparation '${preparation.id}' has invalid ownership metadata`);
+      }
+    }
+
+    if (journal.targets.length === 0) return;
+    const targetRoots = await this.options.resolveTargetRoots?.();
+    if (!targetRoots) throw new Error("current target roots are unavailable");
+    for (const target of journal.targets) {
+      const currentRoot = target.target ? targetRoots.get(target.target) : undefined;
+      if (!currentRoot || !isPathInside(currentRoot, target.path)) {
+        throw new Error(`target '${target.path}' is outside the current root for '${target.target ?? "unknown"}'`);
+      }
+    }
+  }
+
   private async cleanupInterruptedPreparations(): Promise<void> {
     if (!this.options.cacheStore) return;
     const cache = await this.options.cacheStore.readImportPreparationCache();
     const interrupted = Object.values(cache.records).filter((record) => record.status === "preparing");
     for (const record of interrupted) {
+      const expectedPath = this.options.cacheStore.getImportPreparationCheckoutPath(record.id);
+      if (path.resolve(record.checkoutPath) !== path.resolve(expectedPath)) {
+        throw new Error(`Preparation '${record.id}' has an invalid checkout path.`);
+      }
       await removePath(record.checkoutPath);
       delete cache.records[record.id];
     }
@@ -264,6 +383,7 @@ export class OperationRecoveryService {
     transactionId: string,
     backupName: string,
     targetPath: string,
+    ownership: Pick<RecoveryPathSnapshot, "role" | "sourceId" | "sourceKind" | "target">,
   ): Promise<RecoveryPathSnapshot> {
     const existed = await pathExists(targetPath);
     const beforeFingerprint = await fingerprintPath(targetPath);
@@ -273,6 +393,7 @@ export class OperationRecoveryService {
       await copyPath(targetPath, backupPath);
     }
     return {
+      ...ownership,
       path: targetPath,
       existed,
       ...(existed ? { backupName } : {}),
