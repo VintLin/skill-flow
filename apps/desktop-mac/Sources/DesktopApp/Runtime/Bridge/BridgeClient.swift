@@ -657,10 +657,6 @@ final class BridgeClient: @unchecked Sendable {
         activeHelper.clearTerminationCancellation()
     }
 
-    private func terminateManagedHelper(_ process: Process, graceMilliseconds: UInt64) async -> Bool {
-        await terminateProcessGroups([process], graceMilliseconds: graceMilliseconds)
-    }
-
     private func terminateProcessGroups(_ processes: [Process], graceMilliseconds: UInt64) async -> Bool {
         let running = processes.filter(\.isRunning)
         guard !running.isEmpty else { return true }

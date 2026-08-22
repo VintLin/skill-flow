@@ -46,10 +46,6 @@ enum BridgeHelperTerminationRole: Sendable, Equatable {
 }
 
 extension BridgeCommand {
-    var isProtectedGroupOperation: Bool {
-        helperTerminationRole == .durableMutation
-    }
-
     var helperTerminationRole: BridgeHelperTerminationRole {
         switch self {
         case .commitImportSource,

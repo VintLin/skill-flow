@@ -487,6 +487,7 @@ describe.sequential("OperationRecoveryService", () => {
       startedAt: "2026-08-22T00:00:00.000Z",
       phase: "prepared",
       authorityBefore,
+      checkout: recoveryCheckoutSnapshot(stateRoot),
       targets: [],
     }), "utf8");
 
@@ -515,6 +516,7 @@ describe.sequential("OperationRecoveryService", () => {
       startedAt: "2026-08-22T00:00:00.000Z",
       phase: "prepared",
       authorityBefore,
+      checkout: recoveryCheckoutSnapshot(stateRoot),
       targets: [],
     }), "utf8");
 
@@ -522,7 +524,7 @@ describe.sequential("OperationRecoveryService", () => {
 
     expect(recovered.ok).toBe(false);
     if (recovered.ok) return;
-    expect(recovered.errors[0]?.code).toBe("RECOVERY_PATH_OWNERSHIP_INVALID");
+    expect(recovered.errors[0]?.code).toBe("RECOVERY_JOURNAL_INVALID");
     await expect(fs.access(journalPath)).resolves.toBeUndefined();
   });
 
@@ -671,4 +673,16 @@ async function seedManagedSource(
     leafIds: [],
   };
   await stateStore.writeState(state);
+}
+
+function recoveryCheckoutSnapshot(stateRoot: string): Record<string, unknown> {
+  return {
+    role: "checkout",
+    sourceId: "repo",
+    sourceKind: "git",
+    path: path.join(stateRoot, "source", "git", "repo"),
+    existed: true,
+    backupName: "checkout",
+    beforeFingerprint: "before",
+  };
 }

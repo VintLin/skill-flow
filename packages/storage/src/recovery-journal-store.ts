@@ -32,19 +32,29 @@ export type RecoveryTargetSnapshot = RecoveryPathSnapshotBase & {
 
 export type RecoveryPathSnapshot = RecoveryCheckoutSnapshot | RecoveryTargetSnapshot;
 
-export type RecoveryJournal = {
+type RecoveryJournalBase = {
   schemaVersion: 1;
   transactionId: string;
-  kind: RecoveryOperationKind;
   sourceId: string;
   sourceKind: SourceKind;
   startedAt: string;
   phase: "prepared" | "mutated";
   authorityBefore: StateStoreState;
-  importPreparationBefore?: ImportPreparationRecord;
-  checkout?: RecoveryCheckoutSnapshot;
+  checkout: RecoveryCheckoutSnapshot;
   targets: RecoveryTargetSnapshot[];
 };
+
+export type RecoveryUpdateJournal = RecoveryJournalBase & {
+  kind: "update";
+  importPreparationBefore?: never;
+};
+
+export type RecoveryImportJournal = RecoveryJournalBase & {
+  kind: "import";
+  importPreparationBefore: ImportPreparationRecord;
+};
+
+export type RecoveryJournal = RecoveryUpdateJournal | RecoveryImportJournal;
 
 export class RecoveryJournalStore {
   constructor(private readonly stateRoot: string) {}
@@ -111,15 +121,19 @@ function assertRecoveryJournal(value: unknown): asserts value is RecoveryJournal
     invalidJournal("missing authority snapshot");
   }
   if (!Array.isArray(journal.targets)) invalidJournal("targets must be an array");
-  if (journal.checkout) {
-    assertPathSnapshot(journal.checkout);
-    if (
-      journal.checkout.role !== "checkout"
-      || journal.checkout.sourceId !== journal.sourceId
-      || journal.checkout.sourceKind !== journal.sourceKind
-    ) {
-      invalidJournal("checkout ownership metadata mismatch");
-    }
+  if (!journal.checkout) invalidJournal("missing checkout snapshot");
+  assertPathSnapshot(journal.checkout);
+  if (
+    journal.checkout.role !== "checkout"
+    || journal.checkout.sourceId !== journal.sourceId
+    || journal.checkout.sourceKind !== journal.sourceKind
+  ) {
+    invalidJournal("checkout ownership metadata mismatch");
+  }
+  if (journal.kind === "import") {
+    if (!journal.importPreparationBefore) invalidJournal("missing import preparation snapshot");
+  } else if (journal.importPreparationBefore !== undefined) {
+    invalidJournal("update journal cannot contain import preparation snapshot");
   }
   for (const target of journal.targets ?? []) {
     assertPathSnapshot(target);

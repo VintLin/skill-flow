@@ -5298,16 +5298,32 @@ export class SkillFlowApp {
     const warnings: Warning[] = [...preflight.warnings];
     const precheckFallbackSourceIds: string[] = [];
     const hardErrors: Array<{ code: string; message: string }> = [];
+    const recordFailureAndRecover = async (
+      sourceId: string,
+      failureErrors: Array<{ code: string; message: string }>,
+      fallback: { code: string; message: string },
+      shouldRecover: boolean,
+    ): Promise<Result<void>> => {
+      const primary = failureErrors[0] ?? fallback;
+      hardErrors.push(...(failureErrors.length > 0 ? failureErrors : [fallback]));
+      failed.push({ sourceId, code: primary.code, message: primary.message });
+      if (!shouldRecover) return ok(undefined);
+      const recovered = await this.recoverInterruptedOperation();
+      if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
+      warnings.push(...recovered.warnings);
+      return ok(undefined);
+    };
 
     for (const sourceId of requestedIds) {
       const currentState = await this.stateStore.readState();
       const source = currentState.manifest.sources.find((candidate) => candidate.id === sourceId);
       const lock = currentState.lockFile.sources[sourceId];
       const managed = source
+        && lock
         && source.kind !== "collection"
         && source.ownership !== "external"
-        && lock?.ownership !== "external";
-      let transaction: { checkoutBackupPath?: string } | undefined;
+        && lock.ownership !== "external";
+      let transaction: { checkoutBackupPath: string } | undefined;
       try {
         if (managed) {
           transaction = await this.operationRecoveryService.begin({
@@ -5317,22 +5333,17 @@ export class SkillFlowApp {
           });
         }
         const updated = await this.sourceAuthorityService.updateSources([sourceId], {
-          ...(transaction?.checkoutBackupPath
+          ...(transaction
             ? { checkoutBackupPath: transaction.checkoutBackupPath, retainCheckoutBackup: true }
             : {}),
         });
         warnings.push(...updated.warnings);
         if (!updated.ok) {
-          hardErrors.push(...updated.errors);
-          const first = updated.errors[0] ?? {
+          const handled = await recordFailureAndRecover(sourceId, updated.errors, {
             code: "SOURCE_UPDATE_FAILED",
             message: `Unable to update skills group '${sourceId}'.`,
-          };
-          failed.push({ sourceId, code: first.code, message: first.message });
-          if (transaction) {
-            const recovered = await this.recoverInterruptedOperation();
-            if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
-          }
+          }, transaction !== undefined);
+          if (!handled.ok) return fail(handled.errors, handled.warnings);
           continue;
         }
 
@@ -5366,11 +5377,11 @@ export class SkillFlowApp {
         });
         warnings.push(...planned.warnings);
         if (!planned.ok) {
-          hardErrors.push(...planned.errors);
-          const first = planned.errors[0]!;
-          failed.push({ sourceId, code: first.code, message: first.message });
-          const recovered = await this.recoverInterruptedOperation();
-          if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
+          const handled = await recordFailureAndRecover(sourceId, planned.errors, {
+            code: "DEPLOYMENT_PLAN_FAILED",
+            message: `Unable to plan deployment for '${sourceId}'.`,
+          }, true);
+          if (!handled.ok) return fail(handled.errors, handled.warnings);
           continue;
         }
         await this.operationRecoveryService.prepareTargetMutations(planned.data.actions);
@@ -5381,11 +5392,11 @@ export class SkillFlowApp {
         });
         warnings.push(...applied.warnings);
         if (!applied.ok) {
-          hardErrors.push(...applied.errors);
-          const first = applied.errors[0]!;
-          failed.push({ sourceId, code: first.code, message: first.message });
-          const recovered = await this.recoverInterruptedOperation();
-          if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
+          const handled = await recordFailureAndRecover(sourceId, applied.errors, {
+            code: "DEPLOYMENT_APPLY_FAILED",
+            message: `Unable to apply deployment for '${sourceId}'.`,
+          }, true);
+          if (!handled.ok) return fail(handled.errors, handled.warnings);
           continue;
         }
         await this.stateStore.writeState({ ...state, manifest, lockFile });
@@ -5393,16 +5404,12 @@ export class SkillFlowApp {
         await this.operationRecoveryService.commit();
         updatedItems.push(...updated.data.updated);
       } catch (error) {
-        if (transaction) {
-          const recovered = await this.recoverInterruptedOperation();
-          if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
-        }
         const failure = {
           code: "SOURCE_UPDATE_FAILED",
           message: `Unable to update skills group '${sourceId}': ${String(error)}`,
         };
-        hardErrors.push(failure);
-        failed.push({ sourceId, ...failure });
+        const handled = await recordFailureAndRecover(sourceId, [failure], failure, transaction !== undefined);
+        if (!handled.ok) return fail(handled.errors, handled.warnings);
       }
     }
 

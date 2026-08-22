@@ -59,7 +59,7 @@ export class OperationRecoveryService {
     sourceKind: SourceKind;
     checkoutPath?: string;
     preparationId?: string;
-  }): Promise<{ checkoutBackupPath?: string }> {
+  }): Promise<{ checkoutBackupPath: string }> {
     const existing = await this.journalStore.read();
     if (existing) {
       throw new Error(
@@ -87,39 +87,40 @@ export class OperationRecoveryService {
 
     const transactionId = `recovery-${process.pid}-${crypto.randomUUID()}`;
     const checkoutPath = input.checkoutPath ?? sourceLock?.localPath;
-    const checkoutBackupPath = checkoutPath
-      ? this.journalStore.backupPath(transactionId, "checkout")
-      : undefined;
-    if (checkoutBackupPath) {
-      await fs.mkdir(path.dirname(checkoutBackupPath), { recursive: true });
+    if (!checkoutPath) {
+      throw new Error(`Refusing to create a recovery transaction without a managed checkout for '${input.sourceId}'.`);
     }
-    const checkout = checkoutPath
-      ? {
-          role: "checkout" as const,
-          sourceId: input.sourceId,
-          sourceKind: input.sourceKind,
-          path: checkoutPath,
-          existed: await pathExists(checkoutPath),
-          backupName: "checkout",
-          beforeFingerprint: await fingerprintPath(checkoutPath),
-        }
-      : undefined;
-    await this.journalStore.write({
-      schemaVersion: 1,
+    const checkoutBackupPath = this.journalStore.backupPath(transactionId, "checkout");
+    await fs.mkdir(path.dirname(checkoutBackupPath), { recursive: true });
+    const checkout = {
+      role: "checkout" as const,
+      sourceId: input.sourceId,
+      sourceKind: input.sourceKind,
+      path: checkoutPath,
+      existed: await pathExists(checkoutPath),
+      backupName: "checkout",
+      beforeFingerprint: await fingerprintPath(checkoutPath),
+    };
+    const journalBase = {
+      schemaVersion: 1 as const,
       transactionId,
-      kind: input.kind,
       sourceId: input.sourceId,
       sourceKind: input.sourceKind,
       startedAt: new Date().toISOString(),
-      phase: "prepared",
+      phase: "prepared" as const,
       authorityBefore,
-      ...(importPreparationBefore ? { importPreparationBefore } : {}),
-      ...(checkout ? { checkout } : {}),
+      checkout,
       targets: [],
-    });
-    return checkout && checkoutBackupPath
-      ? { checkoutBackupPath }
-      : {};
+    };
+    if (input.kind === "import") {
+      if (!importPreparationBefore) {
+        throw new Error(`Refusing to create an import recovery transaction without preparation evidence for '${input.sourceId}'.`);
+      }
+      await this.journalStore.write({ ...journalBase, kind: "import", importPreparationBefore });
+    } else {
+      await this.journalStore.write({ ...journalBase, kind: "update" });
+    }
+    return { checkoutBackupPath };
   }
 
   async prepareTargetMutations(actions: DeploymentAction[]): Promise<void> {
@@ -304,15 +305,13 @@ export class OperationRecoveryService {
   }
 
   private async validateRecoveryPathOwnership(journal: RecoveryJournal): Promise<void> {
+    const backupSnapshots: RecoveryPathSnapshot[] = [];
     const source = journal.authorityBefore.manifest.sources.find(
       (candidate) => candidate.id === journal.sourceId,
     );
     const lock = journal.authorityBefore.lockFile.sources[journal.sourceId];
     if (journal.kind === "update" && (!source || !lock)) {
       throw new Error(`update source '${journal.sourceId}' is missing from authority`);
-    }
-    if (journal.kind === "import" && !journal.importPreparationBefore) {
-      throw new Error(`import source '${journal.sourceId}' is missing preparation evidence`);
     }
     if (source && (
       source.kind === "collection"
@@ -325,21 +324,19 @@ export class OperationRecoveryService {
       throw new Error(`source '${journal.sourceId}' is not a matching managed source`);
     }
 
-    if (journal.checkout) {
-      const checkout = await resolveManagedCheckoutOwnership({
-        stateRoot: this.options.stateStore.rootPath,
-        sourceKind: journal.sourceKind,
-        sourceId: journal.sourceId,
-        localPath: journal.checkout.path,
-      });
-      if (!checkout.ok) {
-        throw new Error(`checkout '${journal.checkout.path}' is not canonically managed`);
-      }
-      if (lock && path.resolve(lock.localPath) !== checkout.data.checkoutPath) {
-        throw new Error(`checkout '${journal.checkout.path}' does not match authority`);
-      }
-      await this.validateSnapshotBackup(journal, journal.checkout);
+    const checkout = await resolveManagedCheckoutOwnership({
+      stateRoot: this.options.stateStore.rootPath,
+      sourceKind: journal.sourceKind,
+      sourceId: journal.sourceId,
+      localPath: journal.checkout.path,
+    });
+    if (!checkout.ok) {
+      throw new Error(`checkout '${journal.checkout.path}' is not canonically managed`);
     }
+    if (lock && path.resolve(lock.localPath) !== checkout.data.checkoutPath) {
+      throw new Error(`checkout '${journal.checkout.path}' does not match authority`);
+    }
+    backupSnapshots.push(journal.checkout);
 
     if (journal.importPreparationBefore) {
       if (!this.options.cacheStore) {
@@ -357,16 +354,18 @@ export class OperationRecoveryService {
       }
     }
 
-    if (journal.targets.length === 0) return;
-    const targetRoots = await this.options.resolveTargetRoots?.();
-    if (!targetRoots) throw new Error("current target roots are unavailable");
-    for (const target of journal.targets) {
-      const currentRoot = target.target ? targetRoots.get(target.target) : undefined;
-      if (!currentRoot || !isPathInside(currentRoot, target.path)) {
-        throw new Error(`target '${target.path}' is outside the current root for '${target.target ?? "unknown"}'`);
+    if (journal.targets.length > 0) {
+      const targetRoots = await this.options.resolveTargetRoots?.();
+      if (!targetRoots) throw new Error("current target roots are unavailable");
+      for (const target of journal.targets) {
+        const currentRoot = target.target ? targetRoots.get(target.target) : undefined;
+        if (!currentRoot || !isPathInside(currentRoot, target.path)) {
+          throw new Error(`target '${target.path}' is outside the current root for '${target.target ?? "unknown"}'`);
+        }
+        backupSnapshots.push(target);
       }
-      await this.validateSnapshotBackup(journal, target);
     }
+    for (const snapshot of backupSnapshots) await this.validateSnapshotBackup(journal, snapshot);
   }
 
   private async validateSnapshotBackup(
@@ -443,19 +442,23 @@ export class OperationRecoveryService {
     };
   }
 
-  private async restorePath(journal: RecoveryJournal, snapshot: RecoveryPathSnapshot): Promise<void> {
-    const backupPath = snapshot.backupName
-      ? this.journalStore.backupPath(journal.transactionId, snapshot.backupName)
-      : undefined;
-    if (snapshot.existed && backupPath && !(await pathExists(backupPath))) {
+  private async restorePath(journal: RecoveryJournal, snapshot: RecoveryTargetSnapshot): Promise<void> {
+    if (!snapshot.existed) {
+      await removePath(snapshot.path);
       return;
     }
+    if (!snapshot.backupName) {
+      throw new Error(`recovery backup is missing for '${snapshot.path}'`);
+    }
+    const backupPath = this.journalStore.backupPath(journal.transactionId, snapshot.backupName);
+    if (!(await pathExists(backupPath))) {
+      if (await fingerprintPath(snapshot.path) === snapshot.beforeFingerprint) {
+        return;
+      }
+      throw new Error(`recovery backup does not exist for '${snapshot.path}'`);
+    }
     await removePath(snapshot.path);
-    if (!snapshot.existed || !snapshot.backupName) return;
-    await copyPath(
-      this.journalStore.backupPath(journal.transactionId, snapshot.backupName),
-      snapshot.path,
-    );
+    await copyPath(backupPath, snapshot.path);
   }
 
   private async restoreCheckout(

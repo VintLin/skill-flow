@@ -67,6 +67,7 @@ describe("RecoveryJournalStore", () => {
       startedAt: "2026-08-22T00:00:00.000Z",
       phase: "mutated",
       authorityBefore: {},
+      checkout: checkoutSnapshot(stateRoot),
       targets: [{
         role: "target",
         sourceId: "repo",
@@ -94,6 +95,7 @@ describe("RecoveryJournalStore", () => {
       startedAt: "2026-08-22T00:00:00.000Z",
       phase: "mutated",
       authorityBefore: {},
+      checkout: checkoutSnapshot(stateRoot),
       targets: [{
         role: "target",
         sourceId: "repo",
@@ -107,4 +109,57 @@ describe("RecoveryJournalStore", () => {
 
     await expect(store.read()).rejects.toThrow(/missing target mutation fingerprint/i);
   });
+
+  test("rejects update journals without a checkout snapshot", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-store-"));
+    roots.push(stateRoot);
+    const store = new RecoveryJournalStore(stateRoot);
+    await fs.mkdir(path.dirname(store.journalPath), { recursive: true });
+    await fs.writeFile(store.journalPath, JSON.stringify({
+      schemaVersion: 1,
+      transactionId: "recovery-123-12345678-1234-4123-8123-123456789abc",
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      phase: "prepared",
+      authorityBefore: {},
+      targets: [],
+    }), "utf8");
+
+    await expect(store.read()).rejects.toThrow(/missing checkout snapshot/i);
+  });
+
+  test("rejects import journals without a preparation snapshot", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-store-"));
+    roots.push(stateRoot);
+    const store = new RecoveryJournalStore(stateRoot);
+    await fs.mkdir(path.dirname(store.journalPath), { recursive: true });
+    await fs.writeFile(store.journalPath, JSON.stringify({
+      schemaVersion: 1,
+      transactionId: "recovery-123-12345678-1234-4123-8123-123456789abc",
+      kind: "import",
+      sourceId: "repo",
+      sourceKind: "git",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      phase: "prepared",
+      authorityBefore: {},
+      checkout: checkoutSnapshot(stateRoot),
+      targets: [],
+    }), "utf8");
+
+    await expect(store.read()).rejects.toThrow(/missing import preparation snapshot/i);
+  });
 });
+
+function checkoutSnapshot(stateRoot: string): Record<string, unknown> {
+  return {
+    role: "checkout",
+    sourceId: "repo",
+    sourceKind: "git",
+    path: path.join(stateRoot, "source", "git", "repo"),
+    existed: true,
+    backupName: "checkout",
+    beforeFingerprint: "before",
+  };
+}
