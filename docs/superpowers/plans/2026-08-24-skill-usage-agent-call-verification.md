@@ -155,6 +155,25 @@
 - 对未实现 collector：
   - 只做目录或配置探测，不读取原始 conversation / memory / history。
 
+#### 2026-08-24 剩余 Agent 本机 probe 结果
+
+本轮只做路径存在性、文件数量和顶层结构探测；不读取 prompt、response、tool output、memory、VS Code 全局数据库或 task history 原文。结论：以下 12 个未实现 Agent 在默认路径下均未发现可进入字段级 parser 的本机数据源，因此继续按 policy 显示 `parser_unsupported`，不能显示为“已扫描 0 次使用”。
+
+| Agent id | Probe 路径族 | 本机结果 | 处理结论 |
+| --- | --- | --- | --- |
+| `codebuddy` | `~/.codebuddy`、`~/.codebuddy/skills`、`~/.codebuddy/projects`、`~/.codebuddy/logs`、`~/.codebuddy/hooks` | 均不存在 | 保持 `candidate`；等待 OTel/hook 中明确 skill identity 字段 |
+| `trae` | `~/.trae`、`~/.trae/skills`、`~/.trae/sessions`、`~/.trae/logs` | 均不存在 | 保持 `unsupported` / lifecycle only；不推断使用次数 |
+| `trae-cn` | `~/.trae-cn`、`~/.trae-cn/skills`、`~/.trae-cn/sessions`、`~/.trae-cn/logs` | 均不存在 | 保持 `unsupported` / lifecycle only；不推断使用次数 |
+| `minimax-code` | `~/.minimax`、`~/.mavis`、`~/.minimax/logs`、`~/.mavis/logs` | 均不存在 | 保持 `unsupported`；Mini-Agent 示例日志不等同产品 target |
+| `hermes-agent` | `~/.hermes`、`~/.hermes/skills`、`~/.hermes/conversations`、`~/.hermes/sessions` | 均不存在 | 保持 `candidate`；没有 conversation schema 样本不实现 parser |
+| `openclaw` | `~/.openclaw`、`~/.openclaw/skills`、`~/.openclaw/logs`、`~/.openclaw/sessions` | 均不存在 | 保持 `candidate`；无 dispatch/name 字段样本不实现 parser |
+| `github-copilot` | `~/.copilot`、`~/.copilot/session-state`、VS Code `globalStorage/github.copilot-chat` | 均不存在 | 保持 `candidate`；CLI/VS Code OTel 需分别验证 |
+| `windsurf` | `~/.codeium`、`~/.codeium/windsurf`、`skills`、`memories` | 均不存在 | 保持 `unsupported` / lifecycle only；不读取 memories |
+| `amp` | `~/.config/agents`、`~/.config/agents/skills`、`~/.config/agents/logs`、`~/.amp` | 均不存在 | 保持 `candidate`；需要 plugin event sink 样本 |
+| `kiro` | `~/.kiro`、`~/.kiro/skills`、`~/.kiro/hooks`、`~/.kiro/logs` | 均不存在 | 保持 `candidate`；默认不安装 hook |
+| `roo-code` | `~/.roo`、`~/.roo/tasks`、VS Code `globalStorage/rooveterinaryinc.roo-cline` | 均不存在 | 保持 `unsupported` / diagnostic only；不泛读 `state.vscdb` |
+| `cline` | `~/.cline`、`~/.cline/tasks`、VS Code `globalStorage/saoudrizwan.claude-dev` | 均不存在 | 保持 `unsupported` / diagnostic only；匿名 telemetry 不映射 skill 名 |
+
 ### 3. 字段级核对
 
 - JSONL parser：

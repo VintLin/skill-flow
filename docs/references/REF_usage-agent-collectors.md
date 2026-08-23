@@ -150,6 +150,25 @@
 
 Codex 单项补充验证：collector 原始命中 401 条，时间范围 `2026-07-19T14:25:00.240Z` 到 `2026-08-23T18:09:08.670Z`；服务层 accepted 359 条，diagnostics 0。默认 refresh budget 为 `globalBudgetMs=60000`、`perSourceBudgetMs=15000`、`maxFiles=2500`、`maxBytes=8589934592`，本机完整扫描耗时约 15 秒。
 
+### 剩余 Agent 本机 probe（2026-08-24）
+
+未实现 collector 的 Agent 只做路径存在性和结构探测，不读取 conversation、memory、task history、prompt、response、tool output 或 VS Code 全局数据库内容。当前本机默认路径结果如下：
+
+| Agent | 默认 probe 路径族 | 本机结果 | 主计数结论 |
+| --- | --- | --- | --- |
+| `codebuddy` | `~/.codebuddy/{skills,projects,logs,hooks}` | 不存在 | 保持 `candidate`；等待 OTel/hook 明确 skill identity |
+| `trae` | `~/.trae/{skills,sessions,logs}` | 不存在 | 保持 lifecycle only / `parser_unsupported` |
+| `trae-cn` | `~/.trae-cn/{skills,sessions,logs}` | 不存在 | 保持 lifecycle only / `parser_unsupported` |
+| `minimax-code` | `~/.minimax`、`~/.mavis`、logs | 不存在 | 保持 `unsupported`；不套用 Mini-Agent 示例 |
+| `hermes-agent` | `~/.hermes/{skills,conversations,sessions}` | 不存在 | 保持 `candidate`；无 conversation schema 不解析 |
+| `openclaw` | `~/.openclaw/{skills,logs,sessions}` | 不存在 | 保持 `candidate`；无 dispatch/name 字段不解析 |
+| `github-copilot` | `~/.copilot/session-state`、VS Code `globalStorage/github.copilot-chat` | 不存在 | 保持 `candidate`；CLI/VS Code OTel 需分别验证 |
+| `windsurf` | `~/.codeium/windsurf/{skills,memories}` | 不存在 | 保持 lifecycle only；不读取 memories |
+| `amp` | `~/.config/agents/{skills,logs}`、`~/.amp` | 不存在 | 保持 `candidate`；需要 plugin event sink |
+| `kiro` | `~/.kiro/{skills,hooks,logs}` | 不存在 | 保持 `candidate`；默认不安装 hook |
+| `roo-code` | `~/.roo/{skills,tasks}`、VS Code `globalStorage/rooveterinaryinc.roo-cline` | 不存在 | 保持 diagnostic only；不泛读 `state.vscdb` |
+| `cline` | `~/.cline/{skills,tasks}`、VS Code `globalStorage/saoudrizwan.claude-dev` | 不存在 | 保持 diagnostic only；匿名 telemetry 不映射 skill 名 |
+
 ## 参考链接
 
 - Claude Code Monitoring: https://code.claude.com/docs/en/monitoring-usage
