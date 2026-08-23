@@ -45,6 +45,7 @@ export function createDefaultUsageCollectors(): UsageCollector[] {
     new PiUsageCollector(),
     new OpenCodeUsageCollector(),
     new KimiCodeUsageCollector(),
+    new ZCodeUsageCollector(),
   ];
 }
 
@@ -622,7 +623,7 @@ export class OpenCodeUsageCollector implements UsageCollector {
         partial = true;
         break;
       }
-      const rows = await readOpenCodeSkillToolRows(dbPath, input.budget.maxFiles).catch(() => undefined);
+      const rows = await readSqliteSkillToolRows(dbPath, input.budget.maxFiles).catch(() => undefined);
       if (!rows) {
         readFailed += 1;
         continue;
@@ -646,7 +647,7 @@ export class OpenCodeUsageCollector implements UsageCollector {
           rawSkillName,
           evidenceKind: "tool_call",
           confidence: "observed",
-          outcome: "unknown",
+          outcome: "completed",
           sourceKind: "local-session",
           parserRevision: this.parserRevision,
           projectRef: null,
@@ -720,6 +721,149 @@ export class OpenCodeUsageCollector implements UsageCollector {
 function defaultOpenCodeUsageDbPaths(): string[] {
   const override = process.env.SKILL_FLOW_USAGE_OPENCODE_DB_PATH?.trim();
   return [override || path.join(os.homedir(), ".local", "share", "opencode", "opencode.db")];
+}
+
+export class ZCodeUsageCollector implements UsageCollector {
+  readonly agent = "zcode" as const;
+  readonly parserRevision = "zcode-sqlite@1";
+
+  constructor(private readonly dbPaths = defaultZCodeUsageDbPaths()) {}
+
+  async locateSources(): Promise<string[]> {
+    const existing: string[] = [];
+    for (const dbPath of this.dbPaths) {
+      if (await pathExists(dbPath)) {
+        existing.push(dbPath);
+      }
+    }
+    return existing;
+  }
+
+  async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
+    const scannedAt = input.now.toISOString();
+    const dbPaths = await this.locateSources();
+    if (dbPaths.length === 0) {
+      return {
+        observations: [],
+        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
+        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
+      };
+    }
+
+    const startedAt = Date.now();
+    const observations: UsageCollectorObservation[] = [];
+    let sourcesScanned = 0;
+    let partial = false;
+    let invalidRecords = 0;
+    let readFailed = 0;
+
+    for (const dbPath of dbPaths) {
+      if (sourcesScanned >= input.budget.maxFiles) {
+        partial = true;
+        break;
+      }
+      if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
+        partial = true;
+        break;
+      }
+      const rows = await readSqliteSkillToolRows(dbPath, input.budget.maxFiles).catch(() => undefined);
+      if (!rows) {
+        readFailed += 1;
+        continue;
+      }
+      sourcesScanned += 1;
+      for (const row of rows) {
+        const parsed = parseJsonObject(row.data);
+        if (!parsed) {
+          invalidRecords += 1;
+          continue;
+        }
+        const rawSkillName = extractRawSkillFromToolCall(parsed);
+        if (!rawSkillName) {
+          continue;
+        }
+        const observedAt = openCodeTimestamp(row.timeCreated, parsed) ?? scannedAt;
+        observations.push({
+          sourceEventId: sha256(`${dbPath}:${row.sessionId}:${row.partId}:${observedAt}:${rawSkillName}`),
+          observedAt,
+          agent: "zcode",
+          rawSkillName,
+          evidenceKind: "tool_call",
+          confidence: "observed",
+          outcome: "completed",
+          sourceKind: "local-session",
+          parserRevision: this.parserRevision,
+          projectRef: null,
+          projectLabel: "Unknown project",
+          ...(row.directory ? { rawProjectPath: row.directory } : {}),
+        });
+      }
+    }
+
+    const status = readFailed > 0 && sourcesScanned === 0
+      ? "read_failed"
+      : partial
+        ? "partial"
+        : observations.length > 0
+          ? "scanned"
+          : sourcesScanned > 0
+            ? "no_skill_signals"
+            : "no_records";
+    const diagnostics: UsageDiagnostic[] = [];
+    if (readFailed > 0) {
+      diagnostics.push(diagnostic("READ_FAILED", this.agent, "warning", scannedAt, readFailed));
+    }
+    if (invalidRecords > 0) {
+      diagnostics.push(diagnostic("INVALID_RECORD_DROPPED", this.agent, "warning", scannedAt, invalidRecords));
+    }
+    if (status === "no_records") {
+      diagnostics.push(diagnostic("NO_RECORDS", this.agent, "info", scannedAt));
+    }
+    if (status === "no_skill_signals") {
+      diagnostics.push(diagnostic("NO_SKILL_SIGNALS", this.agent, "info", scannedAt));
+    }
+    if (partial) {
+      diagnostics.push(diagnostic("BUDGET_EXHAUSTED", this.agent, "warning", scannedAt));
+    }
+
+    return {
+      observations,
+      coverage: this.coverage(
+        status,
+        scannedAt,
+        observations.filter((item) => item.confidence === "observed").length,
+        observations.filter((item) => item.confidence === "inferred").length,
+        diagnostics.length,
+      ),
+      diagnostics,
+    };
+  }
+
+  private coverage(
+    status: UsageAgentCoverage["status"],
+    scannedAt: string,
+    observedUses: number,
+    inferredSignals: number,
+    diagnosticsCount = 0,
+  ): UsageAgentCoverage {
+    return {
+      agent: this.agent,
+      sourceKind: "local-session",
+      parserRevision: this.parserRevision,
+      status,
+      lastScannedAt: scannedAt,
+      coverageFrom: null,
+      coverageTo: null,
+      observedUses,
+      inferredSignals,
+      diagnosticsCount,
+    };
+  }
+}
+
+function defaultZCodeUsageDbPaths(): string[] {
+  const override = process.env.SKILL_FLOW_USAGE_ZCODE_DB_PATH?.trim();
+  return [override || path.join(os.homedir(), ".zcode", "cli", "db", "db.sqlite")];
 }
 
 export class KimiCodeUsageCollector implements UsageCollector {
@@ -887,6 +1031,7 @@ function extractClaudeSkillUses(value: unknown, filePath: string, lineIndex: num
     cwd?: unknown;
     projectPath?: unknown;
     message?: {
+      role?: unknown;
       content?: unknown;
     };
   };
@@ -898,7 +1043,21 @@ function extractClaudeSkillUses(value: unknown, filePath: string, lineIndex: num
       ? record.projectPath
       : undefined;
 
-  return blocks.flatMap((block, blockIndex) => {
+  const observations: UsageCollectorObservation[] = [];
+  if (record.message?.role === "user") {
+    observations.push(...extractExplicitSkillCommands({
+      agent: "claude-code",
+      parserRevision: "claude-code-session@1",
+      sourceKind: "local-session",
+      filePath,
+      lineIndex,
+      observedAt,
+      rawProjectPath,
+      texts: collectTextValues(record.message.content),
+    }));
+  }
+
+  observations.push(...blocks.flatMap((block, blockIndex) => {
     if (typeof block !== "object" || block === null) {
       return [];
     }
@@ -933,7 +1092,8 @@ function extractClaudeSkillUses(value: unknown, filePath: string, lineIndex: num
       projectLabel: "Unknown project",
       ...(rawProjectPath ? { rawProjectPath } : {}),
     }];
-  });
+  }));
+  return observations;
 }
 
 function extractCodexSkillUses(
@@ -961,30 +1121,46 @@ function extractCodexSkillUses(
     objectField(payload, "createdAt"),
   ]) ?? fallbackTimestamp;
   const blocks = collectPotentialToolCallBlocks(payload);
+  const observations: UsageCollectorObservation[] = [];
+  if (objectField(payload, "role") === "user") {
+    observations.push(...extractExplicitSkillCommands({
+      agent: "codex",
+      parserRevision: "codex-session@1",
+      sourceKind: "local-session",
+      filePath,
+      lineIndex,
+      observedAt,
+      rawProjectPath: nextProjectPath,
+      texts: collectTextValues(objectField(payload, "content")),
+    }));
+  }
 
   return {
     currentProjectPath: nextProjectPath,
-    observations: blocks.flatMap((block, blockIndex) => {
-      const rawSkillName = extractRawSkillFromToolCall(block);
-      if (!rawSkillName) {
-        return [];
-      }
-      const sourceEventId = sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`);
-      return [{
-        sourceEventId,
-        observedAt,
-        agent: "codex" as const,
-        rawSkillName,
-        evidenceKind: "tool_call" as const,
-        confidence: "observed" as const,
-        outcome: "unknown" as const,
-        sourceKind: "local-session" as const,
-        parserRevision: "codex-session@1",
-        projectRef: null,
-        projectLabel: "Unknown project",
-        ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
-      }];
-    }),
+    observations: [
+      ...observations,
+      ...blocks.flatMap((block, blockIndex) => {
+        const rawSkillName = extractRawSkillFromToolCall(block);
+        if (!rawSkillName) {
+          return [];
+        }
+        const sourceEventId = sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`);
+        return [{
+          sourceEventId,
+          observedAt,
+          agent: "codex" as const,
+          rawSkillName,
+          evidenceKind: "tool_call" as const,
+          confidence: "observed" as const,
+          outcome: "unknown" as const,
+          sourceKind: "local-session" as const,
+          parserRevision: "codex-session@1",
+          projectRef: null,
+          projectLabel: "Unknown project",
+          ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
+        }];
+      }),
+    ],
   };
 }
 
@@ -1052,29 +1228,46 @@ function extractPiSkillUses(
     objectField(objectField(value, "message"), "timestamp"),
   ]) ?? fallbackTimestamp;
   const blocks = collectPotentialToolCallBlocks(value);
+  const observations: UsageCollectorObservation[] = [];
+  const message = objectField(value, "message");
+  if (typeof message === "object" && message !== null && objectField(message, "role") === "user") {
+    observations.push(...extractExplicitSkillCommands({
+      agent: "pi",
+      parserRevision: "pi-session@1",
+      sourceKind: "local-session",
+      filePath,
+      lineIndex,
+      observedAt,
+      rawProjectPath: nextProjectPath,
+      texts: collectTextValues(objectField(message, "content")),
+    }));
+  }
 
   return {
     currentProjectPath: nextProjectPath,
-    observations: blocks.flatMap((block, blockIndex) => {
-      const rawSkillName = extractRawSkillFromToolCall(block);
-      if (!rawSkillName) {
-        return [];
-      }
-      return [{
-        sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
-        observedAt,
-        agent: "pi" as const,
-        rawSkillName,
-        evidenceKind: "tool_call" as const,
-        confidence: "observed" as const,
-        outcome: "unknown" as const,
-        sourceKind: "local-session" as const,
-        parserRevision: "pi-session@1",
-        projectRef: null,
-        projectLabel: "Unknown project",
-        ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
-      }];
-    }),
+    observations: [
+      ...observations,
+      ...blocks.flatMap((block, blockIndex) => {
+        const rawSkillName = extractRawSkillFromToolCall(block);
+        if (!rawSkillName) {
+          return [];
+        }
+        return [{
+          sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
+          observedAt,
+          agent: "pi" as const,
+          rawSkillName,
+          evidenceKind: "tool_call" as const,
+          confidence: "observed" as const,
+          outcome: "unknown" as const,
+          sourceKind: "local-session" as const,
+          parserRevision: "pi-session@1",
+          projectRef: null,
+          projectLabel: "Unknown project",
+          ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
+        }];
+      }),
+    ],
   };
 }
 
@@ -1100,29 +1293,46 @@ function extractKimiCodeSkillUses(
     objectField(objectField(value, "message"), "timestamp"),
   ]) ?? fallbackTimestamp;
   const blocks = collectPotentialToolCallBlocks(value);
+  const observations: UsageCollectorObservation[] = [];
+  const message = objectField(value, "message");
+  if (typeof message === "object" && message !== null && objectField(message, "role") === "user") {
+    observations.push(...extractExplicitSkillCommands({
+      agent: "kimi-code",
+      parserRevision: "kimi-code-session@1",
+      sourceKind: "local-session",
+      filePath,
+      lineIndex,
+      observedAt,
+      rawProjectPath: nextProjectPath,
+      texts: collectTextValues(objectField(message, "content")),
+    }));
+  }
 
   return {
     currentProjectPath: nextProjectPath,
-    observations: blocks.flatMap((block, blockIndex) => {
-      const rawSkillName = extractRawSkillFromToolCall(block);
-      if (!rawSkillName) {
-        return [];
-      }
-      return [{
-        sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
-        observedAt,
-        agent: "kimi-code" as const,
-        rawSkillName,
-        evidenceKind: "tool_call" as const,
-        confidence: "observed" as const,
-        outcome: "unknown" as const,
-        sourceKind: "local-session" as const,
-        parserRevision: "kimi-code-session@1",
-        projectRef: null,
-        projectLabel: "Unknown project",
-        ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
-      }];
-    }),
+    observations: [
+      ...observations,
+      ...blocks.flatMap((block, blockIndex) => {
+        const rawSkillName = extractRawSkillFromToolCall(block);
+        if (!rawSkillName) {
+          return [];
+        }
+        return [{
+          sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
+          observedAt,
+          agent: "kimi-code" as const,
+          rawSkillName,
+          evidenceKind: "tool_call" as const,
+          confidence: "observed" as const,
+          outcome: "unknown" as const,
+          sourceKind: "local-session" as const,
+          parserRevision: "kimi-code-session@1",
+          projectRef: null,
+          projectLabel: "Unknown project",
+          ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
+        }];
+      }),
+    ],
   };
 }
 
@@ -1155,6 +1365,65 @@ function collectPotentialToolCallBlocks(value: unknown): unknown[] {
     }
   }
   return blocks;
+}
+
+function collectTextValues(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (typeof item === "string") {
+      return [item];
+    }
+    if (typeof item === "object" && item !== null) {
+      const text = objectField(item, "text");
+      return typeof text === "string" ? [text] : [];
+    }
+    return [];
+  });
+}
+
+function extractExplicitSkillCommands(args: {
+  agent: UsageAgent;
+  parserRevision: string;
+  sourceKind: "local-session";
+  filePath: string;
+  lineIndex: number;
+  observedAt: string;
+  rawProjectPath?: string | undefined;
+  texts: string[];
+}): UsageCollectorObservation[] {
+  const observations: UsageCollectorObservation[] = [];
+  const commandPattern = /(^|[\s([{])([$/])([a-zA-Z0-9][a-zA-Z0-9._:-]{1,120})(?=$|[\s\])}>.,;:!?])/g;
+  for (let textIndex = 0; textIndex < args.texts.length; textIndex += 1) {
+    const text = args.texts[textIndex] ?? "";
+    let match: RegExpExecArray | null;
+    while ((match = commandPattern.exec(text))) {
+      const rawSkillName = match[3]?.replace(/[.,;!?]+$/, "");
+      if (!rawSkillName) {
+        continue;
+      }
+      observations.push({
+        sourceEventId: sha256(`${args.filePath}:${args.lineIndex}:${textIndex}:${match.index}:${args.observedAt}:${rawSkillName}`),
+        observedAt: args.observedAt,
+        agent: args.agent,
+        rawSkillName,
+        evidenceKind: "explicit_command",
+        confidence: "observed",
+        outcome: "unknown",
+        sourceKind: args.sourceKind,
+        parserRevision: args.parserRevision,
+        projectRef: null,
+        projectLabel: "Unknown project",
+        requiresKnownSkillMatch: true,
+        ...(args.rawProjectPath ? { rawProjectPath: args.rawProjectPath } : {}),
+      });
+    }
+  }
+  return observations;
 }
 
 function extractRawSkillFromToolCall(value: unknown): string | null {
@@ -1273,7 +1542,7 @@ function parseTelemetryTimestamp(value: unknown): string | undefined {
   return new Date(milliseconds).toISOString();
 }
 
-type OpenCodeSkillToolRow = {
+type SqliteSkillToolRow = {
   sessionId: string;
   directory: string | null;
   partId: string;
@@ -1281,7 +1550,7 @@ type OpenCodeSkillToolRow = {
   data: string;
 };
 
-async function readOpenCodeSkillToolRows(dbPath: string, limit: number): Promise<OpenCodeSkillToolRow[]> {
+async function readSqliteSkillToolRows(dbPath: string, limit: number): Promise<SqliteSkillToolRow[]> {
   const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 5000));
   const query = `
 SELECT
@@ -1294,6 +1563,11 @@ FROM part p
 LEFT JOIN session s ON s.id = p.session_id
 WHERE json_extract(p.data, '$.type') = 'tool'
   AND lower(json_extract(p.data, '$.tool')) IN ('skill', 'activate_skill')
+  AND json_extract(p.data, '$.state.status') = 'completed'
+  AND (
+    json_extract(p.data, '$.state.input.skill') IS NOT NULL
+    OR json_extract(p.data, '$.state.input.name') IS NOT NULL
+  )
 LIMIT ${safeLimit};
 `;
   const { stdout } = await execFileAsync("sqlite3", ["-json", dbPath, query], {

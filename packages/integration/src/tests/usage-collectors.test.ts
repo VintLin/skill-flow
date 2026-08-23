@@ -10,6 +10,7 @@ import {
   KimiCodeUsageCollector,
   OpenCodeUsageCollector,
   PiUsageCollector,
+  ZCodeUsageCollector,
   createDefaultSupportedUsageAgents,
   createDefaultUsageCollectors,
 } from "../utils/usage-collectors.js";
@@ -26,6 +27,7 @@ describe("usage collectors", () => {
           timestamp: "2026-08-23T00:00:00.000Z",
           cwd: projectPath,
           message: {
+            role: "assistant",
             content: [
               { type: "text", text: "Use /Users/test/skills/wayfinder/SKILL.md" },
               { type: "tool_use", name: "Skill", input: { skill: "mattpocock-skills:wayfinder" } },
@@ -121,6 +123,71 @@ describe("usage collectors", () => {
     });
   });
 
+  test("extracts explicit skill commands from user-authored Codex text only as inventory-match candidates", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-codex-explicit-collector-"));
+    const projectPath = path.join(root, "project");
+    await fs.mkdir(path.join(root, "2026", "08", "23"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "2026", "08", "23", "rollout-test.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-08-23T00:00:00.000Z",
+          type: "session_meta",
+          payload: { cwd: projectPath },
+        }),
+        JSON.stringify({
+          timestamp: "2026-08-23T00:01:00.000Z",
+          type: "response_item",
+          payload: {
+            role: "user",
+            content: [{ type: "input_text", text: "Run $wayfinder and /mattpocock-skills:tdd." }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-08-23T00:02:00.000Z",
+          type: "response_item",
+          payload: {
+            role: "assistant",
+            content: [{ type: "output_text", text: "Mentioned $impeccable in assistant output." }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-08-23T00:03:00.000Z",
+          type: "response_item",
+          payload: {
+            role: "user",
+            content: [{ type: "input_text", text: "Do not match /tmp/SKILL.md or paths/with/slash." }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await new CodexUsageCollector([root]).scan({
+      now: new Date("2026-08-23T00:04:00.000Z"),
+      budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
+    });
+
+    expect(result.coverage.status).toBe("scanned");
+    expect(result.observations).toHaveLength(2);
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agent: "codex",
+        rawSkillName: "wayfinder",
+        evidenceKind: "explicit_command",
+        requiresKnownSkillMatch: true,
+        rawProjectPath: projectPath,
+      }),
+      expect.objectContaining({
+        agent: "codex",
+        rawSkillName: "mattpocock-skills:tdd",
+        evidenceKind: "explicit_command",
+        requiresKnownSkillMatch: true,
+        rawProjectPath: projectPath,
+      }),
+    ]));
+  });
+
   test("default collectors scan implemented sources while supported agents mirrors builtin targets", () => {
     expect(createDefaultUsageCollectors().map((collector) => collector.agent)).toEqual([
       "claude-code",
@@ -129,6 +196,7 @@ describe("usage collectors", () => {
       "pi",
       "opencode",
       "kimi-code",
+      "zcode",
     ]);
     expect(createDefaultSupportedUsageAgents()).toEqual(expect.arrayContaining([
       "claude-code",
@@ -237,6 +305,7 @@ describe("usage collectors", () => {
       callID: "call-1",
       tool: "skill",
       state: {
+        status: "completed",
         input: { skill: "mattpocock-skills:wayfinder" },
         time: { start: 1787443200000 },
       },
@@ -246,8 +315,19 @@ describe("usage collectors", () => {
       callID: "call-2",
       tool: "read",
       state: {
+        status: "completed",
         input: { filePath: "/tmp/SKILL.md" },
         time: { start: 1787443200001 },
+      },
+    });
+    const failedSkillPart = JSON.stringify({
+      type: "tool",
+      callID: "call-3",
+      tool: "skill",
+      state: {
+        status: "error",
+        input: { skill: "mattpocock-skills:tdd" },
+        time: { start: 1787443200002 },
       },
     });
     execFileSync("sqlite3", [dbPath, `
@@ -256,6 +336,7 @@ CREATE TABLE part (id text PRIMARY KEY, session_id text NOT NULL, time_created i
 INSERT INTO session (id, directory) VALUES ('session-1', '${projectPath.replaceAll("'", "''")}');
 INSERT INTO part (id, session_id, time_created, data) VALUES ('part-1', 'session-1', 1787443200000, '${skillPart.replaceAll("'", "''")}');
 INSERT INTO part (id, session_id, time_created, data) VALUES ('part-2', 'session-1', 1787443200001, '${readPart.replaceAll("'", "''")}');
+INSERT INTO part (id, session_id, time_created, data) VALUES ('part-3', 'session-1', 1787443200002, '${failedSkillPart.replaceAll("'", "''")}');
 `]);
 
     const result = await new OpenCodeUsageCollector([dbPath]).scan({
@@ -270,6 +351,56 @@ INSERT INTO part (id, session_id, time_created, data) VALUES ('part-2', 'session
       rawSkillName: "mattpocock-skills:wayfinder",
       evidenceKind: "tool_call",
       confidence: "observed",
+      outcome: "completed",
+      rawProjectPath: projectPath,
+    });
+  });
+
+  test.skipIf(!hasSqlite3())("extracts ZCode completed skill tool calls from sqlite part rows", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-zcode-collector-"));
+    const dbPath = path.join(root, "zcode.db");
+    const projectPath = path.join(root, "project");
+    const skillPart = JSON.stringify({
+      type: "tool",
+      callID: "call-1",
+      tool: "Skill",
+      state: {
+        status: "completed",
+        input: { name: "mattpocock-skills:wayfinder" },
+        time: { start: 1787443200000 },
+      },
+    });
+    const failedSkillPart = JSON.stringify({
+      type: "tool",
+      callID: "call-2",
+      tool: "Skill",
+      state: {
+        status: "error",
+        input: { skill: "mattpocock-skills:tdd" },
+        time: { start: 1787443200001 },
+      },
+    });
+    execFileSync("sqlite3", [dbPath, `
+CREATE TABLE session (id text PRIMARY KEY, directory text);
+CREATE TABLE part (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, data text NOT NULL);
+INSERT INTO session (id, directory) VALUES ('session-1', '${projectPath.replaceAll("'", "''")}');
+INSERT INTO part (id, session_id, time_created, data) VALUES ('part-1', 'session-1', 1787443200000, '${skillPart.replaceAll("'", "''")}');
+INSERT INTO part (id, session_id, time_created, data) VALUES ('part-2', 'session-1', 1787443200001, '${failedSkillPart.replaceAll("'", "''")}');
+`]);
+
+    const result = await new ZCodeUsageCollector([dbPath]).scan({
+      now: new Date("2026-08-23T00:02:00.000Z"),
+      budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
+    });
+
+    expect(result.coverage.status).toBe("scanned");
+    expect(result.observations).toHaveLength(1);
+    expect(result.observations[0]).toMatchObject({
+      agent: "zcode",
+      rawSkillName: "mattpocock-skills:wayfinder",
+      evidenceKind: "tool_call",
+      confidence: "observed",
+      outcome: "completed",
       rawProjectPath: projectPath,
     });
   });

@@ -117,8 +117,9 @@ export class SkillUsageService {
       const mappedObservations = await Promise.all(
         result.observations.map((observation) => this.toStoredObservation(observation, skillIndex)),
       );
-      collected.push(...mappedObservations);
-      coverage.push(withCoverageRange(result.coverage, mappedObservations));
+      const acceptedMappedObservations = mappedObservations.filter((item): item is UsageObservationV1 => Boolean(item));
+      collected.push(...acceptedMappedObservations);
+      coverage.push(withCoverageRange(result.coverage, acceptedMappedObservations));
       diagnostics.push(...result.diagnostics);
       diagnostics.push(...buildUnmatchedSkillDiagnostics(result.observations, mappedObservations, refreshedAt));
     }
@@ -186,8 +187,11 @@ export class SkillUsageService {
   private async toStoredObservation(
     observation: UsageCollectorObservation,
     skillIndex: Map<string, LeafRecord>,
-  ): Promise<UsageObservationV1> {
+  ): Promise<UsageObservationV1 | null> {
     const skill = observation.rawSkillName ? findSkill(skillIndex, observation.rawSkillName) : null;
+    if (observation.requiresKnownSkillMatch && !skill) {
+      return null;
+    }
     const skillLabel = sanitizedSkillLabel(observation.rawSkillName);
     const project = await anonymizeProject(observation.rawProjectPath, this.options.localSalt);
     const observationId = hashStable([
@@ -337,11 +341,11 @@ function withCoverageRange(
 
 function buildUnmatchedSkillDiagnostics(
   rawObservations: UsageCollectorObservation[],
-  storedObservations: UsageObservationV1[],
+  storedObservations: Array<UsageObservationV1 | null>,
   timestamp: string,
 ): UsageDiagnostic[] {
   const unmatchedCount = storedObservations.filter((item, index) =>
-    !item.skillRef && Boolean(rawObservations[index]?.rawSkillName)
+    item && !item.skillRef && Boolean(rawObservations[index]?.rawSkillName)
   ).length;
   return unmatchedCount > 0
     ? [diagnostic("UNMATCHED_SKILL", rawObservations[0]?.agent ?? "unknown", "warning", timestamp, unmatchedCount)]

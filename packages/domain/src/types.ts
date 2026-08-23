@@ -225,6 +225,7 @@ export type UsageCollectorObservation = Omit<
   sourceEventId: string;
   rawSkillName: string | null;
   rawProjectPath?: string;
+  requiresKnownSkillMatch?: boolean;
 };
 
 export type UsageRefreshBudget = {

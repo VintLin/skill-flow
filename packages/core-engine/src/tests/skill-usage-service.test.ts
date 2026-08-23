@@ -109,6 +109,83 @@ describe("SkillUsageService", () => {
     });
   });
 
+  test("drops explicit skill commands that do not match installed inventory", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-explicit-drop-"));
+    const store = new UsageStore(stateRoot);
+    const service = new SkillUsageService({
+      store,
+      collectors: [
+        new StaticUsageCollector([{
+          sourceEventId: "event-1",
+          observedAt: "2026-08-23T00:00:00.000Z",
+          agent: "codex",
+          rawSkillName: "not-a-known-skill",
+          evidenceKind: "explicit_command",
+          confidence: "observed",
+          outcome: "unknown",
+          sourceKind: "local-session",
+          parserRevision: "test@1",
+          projectRef: null,
+          projectLabel: "Unknown project",
+          requiresKnownSkillMatch: true,
+        }], "codex"),
+      ],
+      readLeafInventory: async () => [leaf("leaf-wayfinder", "wayfinder", "Wayfinder")],
+      localSalt: stateRoot,
+    });
+
+    const summary = await service.refreshUsageObservations({
+      trigger: "scheduled",
+      now: new Date("2026-08-23T00:01:00.000Z"),
+    });
+    const snapshot = await service.getUsageSnapshot({ range: { preset: "available" } });
+
+    expect(summary.totals.observedAccepted).toBe(0);
+    expect(summary.coverage[0]).toMatchObject({ agent: "codex", observedUses: 0 });
+    expect(summary.diagnostics).not.toContainEqual(expect.objectContaining({ code: "UNMATCHED_SKILL" }));
+    expect(snapshot.kpis.observedUses).toBe(0);
+  });
+
+  test("accepts explicit skill commands that match installed inventory", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-explicit-accept-"));
+    const store = new UsageStore(stateRoot);
+    const service = new SkillUsageService({
+      store,
+      collectors: [
+        new StaticUsageCollector([{
+          sourceEventId: "event-1",
+          observedAt: "2026-08-23T00:00:00.000Z",
+          agent: "codex",
+          rawSkillName: "$wayfinder",
+          evidenceKind: "explicit_command",
+          confidence: "observed",
+          outcome: "unknown",
+          sourceKind: "local-session",
+          parserRevision: "test@1",
+          projectRef: null,
+          projectLabel: "Unknown project",
+          requiresKnownSkillMatch: true,
+        }], "codex"),
+      ],
+      readLeafInventory: async () => [leaf("leaf-wayfinder", "wayfinder", "Wayfinder")],
+      localSalt: stateRoot,
+    });
+
+    const summary = await service.refreshUsageObservations({
+      trigger: "scheduled",
+      now: new Date("2026-08-23T00:01:00.000Z"),
+    });
+    const snapshot = await service.getUsageSnapshot({ range: { preset: "available" } });
+
+    expect(summary.totals.observedAccepted).toBe(1);
+    expect(snapshot.kpis.observedUses).toBe(1);
+    expect(snapshot.topSkills[0]).toMatchObject({
+      skillRef: "leaf-wayfinder",
+      skillLabel: "Wayfinder",
+      inventoryStatus: "installed",
+    });
+  });
+
   test("does not report expired observations as accepted after retention pruning", async () => {
     const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-retention-"));
     const store = new UsageStore(stateRoot);
