@@ -124,13 +124,15 @@ export class SkillUsageService {
       diagnostics.push(...buildUnmatchedSkillDiagnostics(result.observations, mappedObservations, refreshedAt));
     }
 
+    const supportedAgents = this.options.supportedAgents ?? [];
     appendUnsupportedAgentCoverage({
       coverage,
       diagnostics,
-      supportedAgents: this.options.supportedAgents ?? [],
+      supportedAgents,
       implementedAgents: this.options.collectors.map((collector) => collector.agent),
       timestamp: refreshedAt,
     });
+    const orderedCoverage = orderCoverage(coverage, supportedAgents);
 
     const retainedObservations = collected.filter((observation) => isWithinRetentionWindow(observation, now));
     const writeResult = await this.options.store.appendObservations(retainedObservations);
@@ -138,7 +140,7 @@ export class SkillUsageService {
     await this.options.store.writeCoverageState({
       schemaVersion: USAGE_SCHEMA_VERSION,
       updatedAt: refreshedAt,
-      coverage,
+      coverage: orderedCoverage,
       diagnostics: storedDiagnostics,
     });
     await this.options.store.pruneIfDue(now);
@@ -160,7 +162,7 @@ export class SkillUsageService {
         droppedInvalid: writeResult.droppedInvalid,
         diagnosticsCount: storedDiagnostics.length,
       },
-      coverage,
+      coverage: orderedCoverage,
       diagnostics: storedDiagnostics,
     };
   }
@@ -247,6 +249,24 @@ function appendUnsupportedAgentCoverage(args: {
     });
     args.diagnostics.push(diagnostic("PARSER_UNSUPPORTED", agent, "info", args.timestamp));
   }
+}
+
+function orderCoverage(
+  coverage: UsageAgentCoverage[],
+  supportedAgents: UsageAgent[],
+): UsageAgentCoverage[] {
+  if (supportedAgents.length === 0) {
+    return coverage;
+  }
+  const order = new Map(supportedAgents.map((agent, index) => [agent, index]));
+  return [...coverage].sort((left, right) => {
+    const leftOrder = order.get(left.agent) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = order.get(right.agent) ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+    return left.agent.localeCompare(right.agent);
+  });
 }
 
 function sanitizedSkillLabel(value: string | null): string | null {

@@ -13,6 +13,7 @@ import type {
   UsageCollectorScanInput,
   UsageCollectorScanResult,
 } from "@skill-flow/integration/utils/usage-collectors";
+import { TARGET_ORDER } from "@skill-flow/integration/utils/constants";
 import { UsageStore } from "@skill-flow/storage/usage-store";
 import { SkillUsageService } from "../services/skill-usage-service.js";
 
@@ -272,6 +273,53 @@ describe("SkillUsageService", () => {
       expect.objectContaining({ agent: "zcode", code: "PARSER_UNSUPPORTED" }),
     ]));
     expect(summary.totals.observedAccepted).toBe(1);
+  });
+
+  test("reports every supported agent without a collector as parser_unsupported", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-all-coverage-"));
+    const store = new UsageStore(stateRoot);
+    const service = new SkillUsageService({
+      store,
+      collectors: [
+        new StaticUsageCollector([{
+          sourceEventId: "event-1",
+          observedAt: "2026-08-23T00:00:00.000Z",
+          agent: "codex",
+          rawSkillName: "wayfinder",
+          evidenceKind: "tool_call",
+          confidence: "observed",
+          outcome: "unknown",
+          sourceKind: "local-session",
+          parserRevision: "test@1",
+          projectRef: null,
+          projectLabel: "Unknown project",
+        }], "codex"),
+      ],
+      supportedAgents: TARGET_ORDER,
+      readLeafInventory: async () => [leaf("leaf-wayfinder", "wayfinder", "Wayfinder")],
+      localSalt: stateRoot,
+    });
+
+    const summary = await service.refreshUsageObservations({
+      trigger: "scheduled",
+      now: new Date("2026-08-23T00:01:00.000Z"),
+    });
+    const coverageByAgent = new Map(summary.coverage.map((item) => [item.agent, item]));
+    const unsupportedCoverage = summary.coverage.filter((item) => item.agent !== "codex");
+
+    expect(summary.coverage.map((item) => item.agent)).toEqual(TARGET_ORDER);
+    expect(coverageByAgent.get("codex")).toMatchObject({ status: "scanned", observedUses: 1 });
+    expect(unsupportedCoverage).toHaveLength(TARGET_ORDER.length - 1);
+    expect(unsupportedCoverage.every((item) =>
+      item.status === "parser_unsupported"
+      && item.sourceKind === null
+      && item.parserRevision === null
+      && item.observedUses === 0
+      && item.inferredSignals === 0
+    )).toBe(true);
+    expect(summary.diagnostics.filter((item) => item.code === "PARSER_UNSUPPORTED")).toHaveLength(
+      TARGET_ORDER.length - 1,
+    );
   });
 });
 

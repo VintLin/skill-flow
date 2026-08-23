@@ -235,3 +235,17 @@
 - 未实现或 unsupported Agent 不显示为“已扫描 0 次使用”，而是显示 parser 状态。
 - 真实本机 refresh 后，主计数只包含结构化 Skill 执行或 inventory 匹配的显式命令。
 - 派生 usage store 不包含原始 prompt、response、tool output 或绝对路径。
+
+## 完成审计（2026-08-24）
+
+| 要求 | 当前证据 | 状态 |
+| --- | --- | --- |
+| 逐一覆盖当前可配置 Agent | `TARGET_ORDER` 22 个 Agent 与本文件“当前可配置 Agent 清单”“代码层处理确认”“各 Agent Skill 调用识别方式”逐项对应；`usage-collectors.test.ts` 校验 `USAGE_AGENT_POLICIES` 覆盖 `TARGET_ORDER` | 已满足 |
+| 统一标准和边界 | 主判定规则明确区分结构化 Skill 执行、user-role 显式命令、普通 tool call、lifecycle、安装/同步/导入；`USAGE_AGENT_POLICIES` 为代码层唯一边界表 | 已满足 |
+| 已有可证明字段的 Agent 能读取 skill 调用记录 | 默认 collector 覆盖 `claude-code`、`codex`、`zcode`、`cursor`、`grok-build`、`pi`、`workbuddy`、`kimi-code`、`opencode`、`gemini-cli`；每个 implemented policy 有 parserRevision 与 collector 匹配测试 | 已满足 |
+| 不能证明 skill identity 的 Agent 不误计数 | `candidate` / `unsupported` Agent 不进入默认 collector；`SkillUsageService` 全量 supportedAgents 测试证明无 collector 的 Agent 输出 `parser_unsupported`，不显示 `scanned/no_skill_signals` | 已满足 |
+| 显式 `$skill` / `/skill` 不产生 unknown 误报 | `extractExplicitSkillCommands` 标记 `requiresKnownSkillMatch`；service 测试覆盖 unknown explicit command 被丢弃、known explicit command 入库 | 已满足 |
+| 普通 toolCalls 不等于 skill 调用 | parser 只接受 `Skill` / `skill` / `activate_skill` 且有 skill/name；OpenCode/ZCode 只收 completed skill part；Grok 严格限制开头命令，广义误报被禁止 | 已满足 |
+| Codex 覆盖 active + archived 会话 | `CodexUsageCollector` 默认读取 `sessions` 与 `archived_sessions`；本机验证 active 58 个、archived 207 个 JSONL 均已扫描，accepted 359 条 | 已满足 |
+| 不保存原始敏感内容 | service 持久化测试确认不保存原始 project path、`sourceEventId`、`rawSkillName`；collector 只输出派生 observation；文档禁止保存 prompt/response/tool output/tool args | 已满足 |
+| 后续维护不漂移 | `createDefaultSupportedUsageAgents()` 从 policy 派生；测试校验 policy、collector parserRevision、TARGET_ORDER 三者关系；coverage 按 supportedAgents 顺序输出 | 已满足 |
