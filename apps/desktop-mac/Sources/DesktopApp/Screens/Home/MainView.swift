@@ -425,7 +425,7 @@ struct MainView: View {
                     HStack(spacing: 8) {
                         searchField
                         importButton
-                        usageButton
+                        usageEntryButton
                         groupEditorButton
                         homeUpdateButton
                         settingsButton
@@ -441,7 +441,7 @@ struct MainView: View {
                     searchField
                     Spacer(minLength: 0)
                     importButton
-                    usageButton
+                    usageEntryButton
                     groupEditorButton
                     homeUpdateButton
                     settingsButton
@@ -722,6 +722,31 @@ struct MainView: View {
 
     private var usageButton: some View {
         toolbarIconButton(.usage) { navigation.showUsage() }
+    }
+
+    private var usageEntryButton: some View {
+        Button {
+            navigation.showUsage()
+        } label: {
+            HStack(spacing: 6) {
+                actionIcon(.usage, size: 13)
+                Text("Usage")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(AppTheme.textPrimary(for: theme))
+            .frame(width: Self.homeUsageEntryButtonWidth, height: Self.toolbarButtonSize)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .desktopMotionButton(kind: .icon, theme: theme, accent: accent, isEnabled: true)
+        .background(AppTheme.headerControlFill(for: theme))
+        .shadow(color: AppTheme.controlShadow(for: theme), radius: 4, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
+        .accessibilityLabel("Usage")
     }
 
     private func importHeaderActions(forWindowWidth width: CGFloat) -> some View {
@@ -1189,6 +1214,7 @@ struct MainView: View {
             homeSearchField(width: searchWidth)
             Spacer(minLength: 0)
             importButton
+            usageEntryButton
             groupEditorButton
             homeUpdateButton
             settingsButton
@@ -2070,6 +2096,26 @@ struct MainView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
         }
+        .accessibilityLabel(toolbarIconLabel(icon))
+    }
+
+    private func toolbarIconLabel(_ icon: ActionIcon) -> String {
+        switch icon {
+        case .back:
+            return "Back"
+        case .groupEditor:
+            return "Group Editor"
+        case .import:
+            return "Import"
+        case .settings:
+            return "Settings"
+        case .update:
+            return "Refresh"
+        case .usage:
+            return "Usage"
+        default:
+            return icon.rawValue
+        }
     }
 
     @ViewBuilder
@@ -2093,6 +2139,7 @@ struct MainView: View {
 
 extension MainView {
     nonisolated static let toolbarButtonSize: CGFloat = 34
+    nonisolated static let homeUsageEntryButtonWidth: CGFloat = 74
     nonisolated static let headerLeadingWidth: CGFloat = 220
     nonisolated static let nonHomeHeaderLeadingPadding: CGFloat = homeSidebarTrafficLightLeadingInset + homeCollapsedHeaderButtonGap
     nonisolated static let nonHomeHeaderTrailingPadding: CGFloat = homeMainHeaderSidePadding
@@ -2236,9 +2283,10 @@ extension MainView {
         includesSidebarToggle: Bool
     ) -> CGFloat {
         let toggleWidth = includesSidebarToggle ? homeSidebarToggleButtonSize : 0
-        let spacingCount: CGFloat = includesSidebarToggle ? 7 : 6
+        let spacingCount: CGFloat = includesSidebarToggle ? 8 : 7
         let itemSpacing = homeMainHeaderItemSpacing(includesSidebarToggle: includesSidebarToggle)
         return (toolbarButtonSize * 4)
+            + homeUsageEntryButtonWidth
             + toggleWidth
             + homeMainHeaderBrandWidth
             + reservedHorizontalPadding
