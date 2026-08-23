@@ -9,7 +9,6 @@ import type {
   UsageCollectorObservation,
   UsageDiagnostic,
 } from "@skill-flow/domain/types";
-import { TARGET_ORDER } from "./constants.js";
 import { pathExists } from "./fs.js";
 import {
   createCodexSessionState,
@@ -19,6 +18,7 @@ import {
   extractKimiCodeSkillUses,
   extractPiSkillUses,
 } from "./usage/agent-jsonl-parsers.js";
+import { createDefaultUsagePolicyAgents } from "./usage/agent-usage-policies.js";
 import { scanJsonlSessionRoots } from "./usage/jsonl-session-scanner.js";
 import {
   extractRawSkillFromToolCall,
@@ -59,16 +59,16 @@ export function createDefaultUsageCollectors(): UsageCollector[] {
   return [
     new ClaudeCodeUsageCollector(),
     new CodexUsageCollector(),
-    new GeminiTelemetryUsageCollector(),
-    new PiUsageCollector(),
-    new OpenCodeUsageCollector(),
-    new KimiCodeUsageCollector(),
     new ZCodeUsageCollector(),
+    new PiUsageCollector(),
+    new KimiCodeUsageCollector(),
+    new OpenCodeUsageCollector(),
+    new GeminiTelemetryUsageCollector(),
   ];
 }
 
 export function createDefaultSupportedUsageAgents(): UsageAgent[] {
-  return [...TARGET_ORDER];
+  return createDefaultUsagePolicyAgents();
 }
 
 export class ClaudeCodeUsageCollector implements UsageCollector {

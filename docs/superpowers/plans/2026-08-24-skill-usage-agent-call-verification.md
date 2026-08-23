@@ -11,6 +11,7 @@
 ## 事实源
 
 - 可配置 Agent 清单：`packages/integration/src/utils/constants.ts` 中的 `TARGET_ORDER` 与 `TARGET_DEFINITIONS`。
+- Usage 边界清单：`packages/integration/src/utils/usage/agent-usage-policies.ts` 中的 `USAGE_AGENT_POLICIES`。
 - 当前已实现 Usage collector：`packages/integration/src/utils/usage-collectors.ts` 中的 `createDefaultUsageCollectors()`。
 - 使用记录调研结论：`docs/references/REF_usage-agent-collectors.md`。
 - 入库口径：`packages/core-engine/src/services/skill-usage-service.ts`。
@@ -66,6 +67,35 @@
 | 22 | `cline` | Cline | `SKILL_FLOW_TARGET_CLINE` | `~/.cline/skills/` | symlink |
 
 补充：除内置 Agent 外，SkillFlow 也支持 custom target；custom target 可以配置 skill 写入路径，但当前没有通用 usage parser，不能默认推断 Skill 调用次数。
+
+## 代码层处理确认
+
+`USAGE_AGENT_POLICIES` 是当前 22 个内置 Agent 的统一边界表；`createDefaultSupportedUsageAgents()` 从该表派生，测试会阻止 `TARGET_ORDER`、policy 与默认 collector 漂移。`implemented` 表示已经进入默认 collector；`candidate` 表示有候选一手数据源但缺少当前可安全默认读取的字段样本；`unsupported` / `lifecycle only` 表示不得进入主使用次数，只能显示 `parser_unsupported` 或后续 lifecycle/diagnostic。
+
+| Agent id | Policy 状态 | 默认 collector | 代码层边界确认 |
+| --- | --- | --- | --- |
+| `claude-code` | `implemented` | `claude-code-session@1` | 只统计结构化 `Skill` tool_use 与 inventory 匹配的用户显式命令 |
+| `codex` | `implemented` | `codex-session@1` | 扫描 active + archived rollout；只统计结构化 Skill/activate_skill 与去重后的用户显式命令 |
+| `zcode` | `implemented` | `zcode-sqlite@1` | 只统计 completed SQLite skill part；`tool_usage` 不单独计数 |
+| `cursor` | `candidate` | 无 | 仅 OTel 明确 skill event/name 后可实现；当前 `parser_unsupported` |
+| `grok-build` | `candidate` | 无 | 仅 `skill_activated` 且能取得 `skill.name` 后可实现；当前 `parser_unsupported` |
+| `pi` | `implemented` | `pi-session@1` | 只统计 JSONL 中明确 Skill/activate_skill 或 inventory 匹配的用户显式命令 |
+| `workbuddy` | `unsupported` | 无 | 无一手字段证据，不套用 CodeBuddy；当前 `parser_unsupported` |
+| `codebuddy` | `candidate` | 无 | 仅 explicit/fork skill lifecycle 或 trace 明确 skill 名后可实现；当前 `parser_unsupported` |
+| `trae` | `unsupported` | 无 | 只有 lifecycle/inventory 证据；当前 `parser_unsupported` |
+| `trae-cn` | `unsupported` | 无 | 只有 lifecycle/inventory 证据；当前 `parser_unsupported` |
+| `kimi-code` | `implemented` | `kimi-code-session@1` | 只统计 sessions 中明确 Skill/activate_skill 或 inventory 匹配的用户显式命令；不读 user-history |
+| `opencode` | `implemented` | `opencode-sqlite@1` | 只统计 completed SQLite skill part |
+| `minimax-code` | `unsupported` | 无 | Mini-Agent 日志不等同产品 target；当前 `parser_unsupported` |
+| `hermes-agent` | `candidate` | 无 | 仅 conversation schema 明确 Skill tool/activation/name 后可实现；当前 `parser_unsupported` |
+| `openclaw` | `candidate` | 无 | 仅 log/session 明确 skill dispatch/name 后可实现；当前 `parser_unsupported` |
+| `github-copilot` | `candidate` | 无 | 需分别验证 CLI session 或 VS Code OTel 中明确 skill identity；当前 `parser_unsupported` |
+| `gemini-cli` | `implemented` | `gemini-telemetry@1` | 只统计 telemetry 中 activate_skill 且 args 含 skill/name 的事件 |
+| `windsurf` | `unsupported` | 无 | 只有 lifecycle/inventory 证据；不读 memories；当前 `parser_unsupported` |
+| `amp` | `candidate` | 无 | 仅 plugin event 明确 skill/bundled skill 名后可实现；当前 `parser_unsupported` |
+| `kiro` | `candidate` | 无 | 仅用户安装 hook 且 payload 明确 skill identity 后可实现；当前 `parser_unsupported` |
+| `roo-code` | `unsupported` | 无 | 不泛读 VS Code storage/state.vscdb；当前 `parser_unsupported` |
+| `cline` | `unsupported` | 无 | 匿名 telemetry 不能映射 skill 名；当前 `parser_unsupported` |
 
 ## 各 Agent Skill 调用识别方式
 

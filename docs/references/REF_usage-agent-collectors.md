@@ -51,6 +51,16 @@
 
 ## 实现建议
 
+### 0. 代码层统一边界
+
+当前实现以 `packages/integration/src/utils/usage/agent-usage-policies.ts` 的 `USAGE_AGENT_POLICIES` 作为 22 个内置 Agent 的代码层边界表：
+
+- `implemented`：进入 `createDefaultUsageCollectors()`，并有 parser revision、source kind、evidence kind 单测校验。
+- `candidate`：存在候选一手数据源，但缺少当前可安全默认读取的字段样本；不进入默认 collector，coverage 显示 `parser_unsupported`。
+- `unsupported` / `lifecycle only`：不得进入主使用次数；不把安装、同步、目录存在、匿名 telemetry、普通 tool call 或 history/memory 当作 skill 调用。
+
+`createDefaultSupportedUsageAgents()` 从 policy 派生；测试要求 `TARGET_ORDER`、`USAGE_AGENT_POLICIES` 与默认 collectors 不漂移。
+
 ### 1. 数据模型
 
 建议新增或复用以下字段，不把第三方格式直接泄漏到 domain：

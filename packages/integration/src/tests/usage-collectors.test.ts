@@ -3,6 +3,12 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
+import { TARGET_ORDER } from "../utils/constants.js";
+import {
+  USAGE_AGENT_POLICIES,
+  createDefaultUsageAgentPolicies,
+  createImplementedUsageAgentPolicies,
+} from "../utils/usage/agent-usage-policies.js";
 import {
   ClaudeCodeUsageCollector,
   CodexUsageCollector,
@@ -309,25 +315,51 @@ describe("usage collectors", () => {
   });
 
   test("default collectors scan implemented sources while supported agents mirrors builtin targets", () => {
-    expect(createDefaultUsageCollectors().map((collector) => collector.agent)).toEqual([
+    const collectorAgents = createDefaultUsageCollectors().map((collector) => collector.agent);
+    expect(collectorAgents).toEqual([
       "claude-code",
       "codex",
-      "gemini-cli",
-      "pi",
-      "opencode",
-      "kimi-code",
       "zcode",
+      "pi",
+      "kimi-code",
+      "opencode",
+      "gemini-cli",
     ]);
-    expect(createDefaultSupportedUsageAgents()).toEqual(expect.arrayContaining([
-      "claude-code",
-      "codex",
-      "gemini-cli",
-      "pi",
-      "opencode",
-      "kimi-code",
-      "zcode",
-      "grok-build",
+    expect(createDefaultSupportedUsageAgents()).toEqual(TARGET_ORDER);
+    expect(createImplementedUsageAgentPolicies().map((policy) => policy.agent)).toEqual(collectorAgents);
+  });
+
+  test("usage agent policies cover every builtin target with explicit counting boundaries", () => {
+    expect(Object.keys(USAGE_AGENT_POLICIES).sort()).toEqual([...TARGET_ORDER].sort());
+    expect(createDefaultUsageAgentPolicies().map((policy) => policy.agent)).toEqual(TARGET_ORDER);
+
+    for (const policy of createDefaultUsageAgentPolicies()) {
+      expect(policy.sourceCandidates.length, `${policy.agent} sourceCandidates`).toBeGreaterThan(0);
+      expect(policy.acceptedSignals.length, `${policy.agent} acceptedSignals`).toBeGreaterThan(0);
+      expect(policy.rejectedSignals.length, `${policy.agent} rejectedSignals`).toBeGreaterThan(0);
+      expect(policy.privacyBoundary.length, `${policy.agent} privacyBoundary`).toBeGreaterThan(0);
+      expect(policy.planNote.length, `${policy.agent} planNote`).toBeGreaterThan(0);
+      if (policy.status === "implemented") {
+        expect(policy.collector, `${policy.agent} collector`).toBeDefined();
+      } else {
+        expect(policy.collector, `${policy.agent} collector`).toBeUndefined();
+      }
+    }
+  });
+
+  test("implemented usage policies match default collector parser revisions", () => {
+    const collectorsByAgent = new Map(createDefaultUsageCollectors().map((collector) => [
+      collector.agent,
+      collector.parserRevision,
     ]));
+
+    for (const policy of createDefaultUsageAgentPolicies()) {
+      if (policy.status !== "implemented") {
+        expect(collectorsByAgent.has(policy.agent), `${policy.agent} should not have default collector`).toBe(false);
+        continue;
+      }
+      expect(collectorsByAgent.get(policy.agent)).toBe(policy.collector?.parserRevision);
+    }
   });
 
   test("extracts Gemini activate_skill calls from local telemetry outfile", async () => {
