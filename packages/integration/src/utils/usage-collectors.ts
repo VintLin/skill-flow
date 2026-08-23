@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -12,6 +11,25 @@ import type {
 } from "@skill-flow/domain/types";
 import { TARGET_ORDER } from "./constants.js";
 import { pathExists } from "./fs.js";
+import {
+  createCodexSessionState,
+  createProjectSessionState,
+  extractClaudeSkillUses,
+  extractCodexSkillUses,
+  extractKimiCodeSkillUses,
+  extractPiSkillUses,
+} from "./usage/agent-jsonl-parsers.js";
+import { scanJsonlSessionRoots } from "./usage/jsonl-session-scanner.js";
+import {
+  extractRawSkillFromToolCall,
+  findField,
+  findStringField,
+  firstString,
+  isSkillToolName,
+  objectField,
+  parseJsonObject,
+  sha256,
+} from "./usage/skill-signal-parser.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -80,46 +98,17 @@ export class ClaudeCodeUsageCollector implements UsageCollector {
       };
     }
 
-    const startedAt = Date.now();
-    const observations: UsageCollectorObservation[] = [];
-    let filesScanned = 0;
-    let bytesScanned = 0;
-    let partial = false;
-    let invalidRecords = 0;
-
-    for (const root of roots) {
-      const files = await collectJsonlFiles(root, input.budget.maxFiles);
-      for (const filePath of files) {
-        if (filesScanned >= input.budget.maxFiles || bytesScanned >= input.budget.maxBytes) {
-          partial = true;
-          break;
-        }
-        if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
-          partial = true;
-          break;
-        }
-        const raw = await fs.readFile(filePath, "utf8").catch(() => undefined);
-        if (raw === undefined) {
-          invalidRecords += 1;
-          continue;
-        }
-        filesScanned += 1;
-        bytesScanned += Buffer.byteLength(raw, "utf8");
-        const lines = raw.split("\n");
-        for (let index = 0; index < lines.length; index += 1) {
-          const line = lines[index]?.trim();
-          if (!line) {
-            continue;
-          }
-          try {
-            const parsed = JSON.parse(line) as unknown;
-            observations.push(...extractClaudeSkillUses(parsed, filePath, index));
-          } catch {
-            invalidRecords += 1;
-          }
-        }
-      }
-    }
+    const scan = await scanJsonlSessionRoots({
+      roots,
+      budget: input.budget,
+      scannedAt,
+      createInitialState: () => undefined,
+      parseRecord: ({ value, filePath, lineIndex, state }) => ({
+        state,
+        observations: extractClaudeSkillUses(value, filePath, lineIndex),
+      }),
+    });
+    const { observations, filesScanned, partial, invalidRecords } = scan;
 
     const status = partial
       ? "partial"
@@ -209,49 +198,20 @@ export class CodexUsageCollector implements UsageCollector {
       };
     }
 
-    const startedAt = Date.now();
-    const observations: UsageCollectorObservation[] = [];
-    let filesScanned = 0;
-    let bytesScanned = 0;
-    let partial = false;
-    let invalidRecords = 0;
-
-    for (const root of roots) {
-      const files = await collectJsonlFiles(root, input.budget.maxFiles);
-      for (const filePath of files) {
-        if (filesScanned >= input.budget.maxFiles || bytesScanned >= input.budget.maxBytes) {
-          partial = true;
-          break;
-        }
-        if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
-          partial = true;
-          break;
-        }
-        const raw = await fs.readFile(filePath, "utf8").catch(() => undefined);
-        if (raw === undefined) {
-          invalidRecords += 1;
-          continue;
-        }
-        filesScanned += 1;
-        bytesScanned += Buffer.byteLength(raw, "utf8");
-        const lines = raw.split("\n");
-        let currentProjectPath: string | undefined;
-        for (let index = 0; index < lines.length; index += 1) {
-          const line = lines[index]?.trim();
-          if (!line) {
-            continue;
-          }
-          try {
-            const parsed = JSON.parse(line) as unknown;
-            const result = extractCodexSkillUses(parsed, filePath, index, currentProjectPath, scannedAt);
-            currentProjectPath = result.currentProjectPath;
-            observations.push(...result.observations);
-          } catch {
-            invalidRecords += 1;
-          }
-        }
-      }
-    }
+    const scan = await scanJsonlSessionRoots({
+      roots,
+      budget: input.budget,
+      scannedAt,
+      createInitialState: createCodexSessionState,
+      parseRecord: ({ value, filePath, lineIndex, state, fallbackTimestamp }) => extractCodexSkillUses(
+        value,
+        filePath,
+        lineIndex,
+        state,
+        fallbackTimestamp,
+      ),
+    });
+    const { observations, filesScanned, partial, invalidRecords } = scan;
 
     const status = partial
       ? "partial"
@@ -316,9 +276,9 @@ function defaultCodexUsageRoots(): string[] {
   }
   const codexHome = process.env.CODEX_HOME?.trim();
   if (codexHome) {
-    return [path.join(codexHome, "sessions")];
+    return [path.join(codexHome, "sessions"), path.join(codexHome, "archived_sessions")];
   }
-  return [path.join(os.homedir(), ".codex", "sessions")];
+  return [path.join(os.homedir(), ".codex", "sessions"), path.join(os.homedir(), ".codex", "archived_sessions")];
 }
 
 export class GeminiTelemetryUsageCollector implements UsageCollector {
@@ -475,49 +435,20 @@ export class PiUsageCollector implements UsageCollector {
       };
     }
 
-    const startedAt = Date.now();
-    const observations: UsageCollectorObservation[] = [];
-    let filesScanned = 0;
-    let bytesScanned = 0;
-    let partial = false;
-    let invalidRecords = 0;
-
-    for (const root of roots) {
-      const files = await collectJsonlFiles(root, input.budget.maxFiles);
-      for (const filePath of files) {
-        if (filesScanned >= input.budget.maxFiles || bytesScanned >= input.budget.maxBytes) {
-          partial = true;
-          break;
-        }
-        if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
-          partial = true;
-          break;
-        }
-        const raw = await fs.readFile(filePath, "utf8").catch(() => undefined);
-        if (raw === undefined) {
-          invalidRecords += 1;
-          continue;
-        }
-        filesScanned += 1;
-        bytesScanned += Buffer.byteLength(raw, "utf8");
-        const lines = raw.split("\n");
-        let currentProjectPath: string | undefined;
-        for (let index = 0; index < lines.length; index += 1) {
-          const line = lines[index]?.trim();
-          if (!line) {
-            continue;
-          }
-          try {
-            const parsed = JSON.parse(line) as unknown;
-            const result = extractPiSkillUses(parsed, filePath, index, currentProjectPath, scannedAt);
-            currentProjectPath = result.currentProjectPath;
-            observations.push(...result.observations);
-          } catch {
-            invalidRecords += 1;
-          }
-        }
-      }
-    }
+    const scan = await scanJsonlSessionRoots({
+      roots,
+      budget: input.budget,
+      scannedAt,
+      createInitialState: createProjectSessionState,
+      parseRecord: ({ value, filePath, lineIndex, state, fallbackTimestamp }) => extractPiSkillUses(
+        value,
+        filePath,
+        lineIndex,
+        state,
+        fallbackTimestamp,
+      ),
+    });
+    const { observations, filesScanned, partial, invalidRecords } = scan;
 
     const status = partial
       ? "partial"
@@ -893,49 +824,20 @@ export class KimiCodeUsageCollector implements UsageCollector {
       };
     }
 
-    const startedAt = Date.now();
-    const observations: UsageCollectorObservation[] = [];
-    let filesScanned = 0;
-    let bytesScanned = 0;
-    let partial = false;
-    let invalidRecords = 0;
-
-    for (const root of roots) {
-      const files = await collectJsonlFiles(root, input.budget.maxFiles);
-      for (const filePath of files) {
-        if (filesScanned >= input.budget.maxFiles || bytesScanned >= input.budget.maxBytes) {
-          partial = true;
-          break;
-        }
-        if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
-          partial = true;
-          break;
-        }
-        const raw = await fs.readFile(filePath, "utf8").catch(() => undefined);
-        if (raw === undefined) {
-          invalidRecords += 1;
-          continue;
-        }
-        filesScanned += 1;
-        bytesScanned += Buffer.byteLength(raw, "utf8");
-        const lines = raw.split("\n");
-        let currentProjectPath: string | undefined;
-        for (let index = 0; index < lines.length; index += 1) {
-          const line = lines[index]?.trim();
-          if (!line) {
-            continue;
-          }
-          try {
-            const parsed = JSON.parse(line) as unknown;
-            const result = extractKimiCodeSkillUses(parsed, filePath, index, currentProjectPath, scannedAt);
-            currentProjectPath = result.currentProjectPath;
-            observations.push(...result.observations);
-          } catch {
-            invalidRecords += 1;
-          }
-        }
-      }
-    }
+    const scan = await scanJsonlSessionRoots({
+      roots,
+      budget: input.budget,
+      scannedAt,
+      createInitialState: createProjectSessionState,
+      parseRecord: ({ value, filePath, lineIndex, state, fallbackTimestamp }) => extractKimiCodeSkillUses(
+        value,
+        filePath,
+        lineIndex,
+        state,
+        fallbackTimestamp,
+      ),
+    });
+    const { observations, filesScanned, partial, invalidRecords } = scan;
 
     const status = partial
       ? "partial"
@@ -998,172 +900,6 @@ function defaultKimiCodeUsageRoots(): string[] {
   return [override || path.join(os.homedir(), ".kimi-code", "sessions")];
 }
 
-async function collectJsonlFiles(root: string, maxFiles: number): Promise<string[]> {
-  const results: string[] = [];
-  async function walk(current: string): Promise<void> {
-    if (results.length >= maxFiles) {
-      return;
-    }
-    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => []);
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-    for (const entry of entries) {
-      if (results.length >= maxFiles) {
-        return;
-      }
-      const entryPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        await walk(entryPath);
-      } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-        results.push(entryPath);
-      }
-    }
-  }
-  await walk(root);
-  return results;
-}
-
-function extractClaudeSkillUses(value: unknown, filePath: string, lineIndex: number): UsageCollectorObservation[] {
-  if (typeof value !== "object" || value === null) {
-    return [];
-  }
-  const record = value as {
-    timestamp?: unknown;
-    cwd?: unknown;
-    projectPath?: unknown;
-    message?: {
-      role?: unknown;
-      content?: unknown;
-    };
-  };
-  const blocks = Array.isArray(record.message?.content) ? record.message.content : [];
-  const observedAt = typeof record.timestamp === "string" ? record.timestamp : new Date().toISOString();
-  const rawProjectPath = typeof record.cwd === "string"
-    ? record.cwd
-    : typeof record.projectPath === "string"
-      ? record.projectPath
-      : undefined;
-
-  const observations: UsageCollectorObservation[] = [];
-  if (record.message?.role === "user") {
-    observations.push(...extractExplicitSkillCommands({
-      agent: "claude-code",
-      parserRevision: "claude-code-session@1",
-      sourceKind: "local-session",
-      filePath,
-      lineIndex,
-      observedAt,
-      rawProjectPath,
-      texts: collectTextValues(record.message.content),
-    }));
-  }
-
-  observations.push(...blocks.flatMap((block, blockIndex) => {
-    if (typeof block !== "object" || block === null) {
-      return [];
-    }
-    const candidate = block as {
-      type?: unknown;
-      name?: unknown;
-      input?: {
-        skill?: unknown;
-      };
-    };
-    if (candidate.type !== "tool_use" || candidate.name !== "Skill") {
-      return [];
-    }
-    const rawSkillName = typeof candidate.input?.skill === "string" && candidate.input.skill.length > 0
-      ? candidate.input.skill
-      : null;
-    if (!rawSkillName) {
-      return [];
-    }
-    const sourceEventId = sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`);
-    return [{
-      sourceEventId,
-      observedAt,
-      agent: "claude-code" as const,
-      rawSkillName,
-      evidenceKind: "tool_call" as const,
-      confidence: "observed" as const,
-      outcome: "unknown" as const,
-      sourceKind: "local-session" as const,
-      parserRevision: "claude-code-session@1",
-      projectRef: null,
-      projectLabel: "Unknown project",
-      ...(rawProjectPath ? { rawProjectPath } : {}),
-    }];
-  }));
-  return observations;
-}
-
-function extractCodexSkillUses(
-  value: unknown,
-  filePath: string,
-  lineIndex: number,
-  currentProjectPath: string | undefined,
-  fallbackTimestamp: string,
-): { observations: UsageCollectorObservation[]; currentProjectPath: string | undefined } {
-  if (typeof value !== "object" || value === null) {
-    return { observations: [], currentProjectPath };
-  }
-  const record = value as {
-    timestamp?: unknown;
-    type?: unknown;
-    payload?: unknown;
-  };
-  const payload = typeof record.payload === "object" && record.payload !== null ? record.payload : value;
-  const sessionProjectPath = extractCodexProjectPath(record, payload);
-  const nextProjectPath = sessionProjectPath ?? currentProjectPath;
-  const observedAt = firstString([
-    record.timestamp,
-    objectField(payload, "timestamp"),
-    objectField(payload, "created_at"),
-    objectField(payload, "createdAt"),
-  ]) ?? fallbackTimestamp;
-  const blocks = collectPotentialToolCallBlocks(payload);
-  const observations: UsageCollectorObservation[] = [];
-  if (objectField(payload, "role") === "user") {
-    observations.push(...extractExplicitSkillCommands({
-      agent: "codex",
-      parserRevision: "codex-session@1",
-      sourceKind: "local-session",
-      filePath,
-      lineIndex,
-      observedAt,
-      rawProjectPath: nextProjectPath,
-      texts: collectTextValues(objectField(payload, "content")),
-    }));
-  }
-
-  return {
-    currentProjectPath: nextProjectPath,
-    observations: [
-      ...observations,
-      ...blocks.flatMap((block, blockIndex) => {
-        const rawSkillName = extractRawSkillFromToolCall(block);
-        if (!rawSkillName) {
-          return [];
-        }
-        const sourceEventId = sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`);
-        return [{
-          sourceEventId,
-          observedAt,
-          agent: "codex" as const,
-          rawSkillName,
-          evidenceKind: "tool_call" as const,
-          confidence: "observed" as const,
-          outcome: "unknown" as const,
-          sourceKind: "local-session" as const,
-          parserRevision: "codex-session@1",
-          projectRef: null,
-          projectLabel: "Unknown project",
-          ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
-        }];
-      }),
-    ],
-  };
-}
-
 function extractGeminiSkillUses(
   value: unknown,
   filePath: string,
@@ -1206,323 +942,6 @@ function extractGeminiSkillUses(
     projectRef: null,
     projectLabel: "Unknown project",
   }];
-}
-
-function extractPiSkillUses(
-  value: unknown,
-  filePath: string,
-  lineIndex: number,
-  currentProjectPath: string | undefined,
-  fallbackTimestamp: string,
-): { observations: UsageCollectorObservation[]; currentProjectPath: string | undefined } {
-  if (typeof value !== "object" || value === null) {
-    return { observations: [], currentProjectPath };
-  }
-  const nextProjectPath = firstString([
-    objectField(value, "cwd"),
-    objectField(value, "projectPath"),
-    objectField(value, "workspaceRoot"),
-  ]) ?? currentProjectPath;
-  const observedAt = firstString([
-    objectField(value, "timestamp"),
-    objectField(objectField(value, "message"), "timestamp"),
-  ]) ?? fallbackTimestamp;
-  const blocks = collectPotentialToolCallBlocks(value);
-  const observations: UsageCollectorObservation[] = [];
-  const message = objectField(value, "message");
-  if (typeof message === "object" && message !== null && objectField(message, "role") === "user") {
-    observations.push(...extractExplicitSkillCommands({
-      agent: "pi",
-      parserRevision: "pi-session@1",
-      sourceKind: "local-session",
-      filePath,
-      lineIndex,
-      observedAt,
-      rawProjectPath: nextProjectPath,
-      texts: collectTextValues(objectField(message, "content")),
-    }));
-  }
-
-  return {
-    currentProjectPath: nextProjectPath,
-    observations: [
-      ...observations,
-      ...blocks.flatMap((block, blockIndex) => {
-        const rawSkillName = extractRawSkillFromToolCall(block);
-        if (!rawSkillName) {
-          return [];
-        }
-        return [{
-          sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
-          observedAt,
-          agent: "pi" as const,
-          rawSkillName,
-          evidenceKind: "tool_call" as const,
-          confidence: "observed" as const,
-          outcome: "unknown" as const,
-          sourceKind: "local-session" as const,
-          parserRevision: "pi-session@1",
-          projectRef: null,
-          projectLabel: "Unknown project",
-          ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
-        }];
-      }),
-    ],
-  };
-}
-
-function extractKimiCodeSkillUses(
-  value: unknown,
-  filePath: string,
-  lineIndex: number,
-  currentProjectPath: string | undefined,
-  fallbackTimestamp: string,
-): { observations: UsageCollectorObservation[]; currentProjectPath: string | undefined } {
-  if (typeof value !== "object" || value === null) {
-    return { observations: [], currentProjectPath };
-  }
-  const nextProjectPath = firstString([
-    objectField(value, "cwd"),
-    objectField(value, "projectPath"),
-    objectField(value, "workspaceRoot"),
-    objectField(value, "workingDirectory"),
-  ]) ?? currentProjectPath;
-  const observedAt = firstString([
-    objectField(value, "timestamp"),
-    objectField(value, "createdAt"),
-    objectField(objectField(value, "message"), "timestamp"),
-  ]) ?? fallbackTimestamp;
-  const blocks = collectPotentialToolCallBlocks(value);
-  const observations: UsageCollectorObservation[] = [];
-  const message = objectField(value, "message");
-  if (typeof message === "object" && message !== null && objectField(message, "role") === "user") {
-    observations.push(...extractExplicitSkillCommands({
-      agent: "kimi-code",
-      parserRevision: "kimi-code-session@1",
-      sourceKind: "local-session",
-      filePath,
-      lineIndex,
-      observedAt,
-      rawProjectPath: nextProjectPath,
-      texts: collectTextValues(objectField(message, "content")),
-    }));
-  }
-
-  return {
-    currentProjectPath: nextProjectPath,
-    observations: [
-      ...observations,
-      ...blocks.flatMap((block, blockIndex) => {
-        const rawSkillName = extractRawSkillFromToolCall(block);
-        if (!rawSkillName) {
-          return [];
-        }
-        return [{
-          sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
-          observedAt,
-          agent: "kimi-code" as const,
-          rawSkillName,
-          evidenceKind: "tool_call" as const,
-          confidence: "observed" as const,
-          outcome: "unknown" as const,
-          sourceKind: "local-session" as const,
-          parserRevision: "kimi-code-session@1",
-          projectRef: null,
-          projectLabel: "Unknown project",
-          ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
-        }];
-      }),
-    ],
-  };
-}
-
-function extractCodexProjectPath(record: { type?: unknown }, payload: unknown): string | undefined {
-  if (record.type !== "session_meta" || typeof payload !== "object" || payload === null) {
-    return undefined;
-  }
-  return firstString([
-    objectField(payload, "cwd"),
-    objectField(payload, "projectPath"),
-    objectField(payload, "workspaceRoot"),
-  ]);
-}
-
-function collectPotentialToolCallBlocks(value: unknown): unknown[] {
-  const blocks: unknown[] = [];
-  if (typeof value !== "object" || value === null) {
-    return blocks;
-  }
-  blocks.push(value);
-  const content = objectField(value, "content");
-  if (Array.isArray(content)) {
-    blocks.push(...content);
-  }
-  const message = objectField(value, "message");
-  if (typeof message === "object" && message !== null) {
-    const messageContent = objectField(message, "content");
-    if (Array.isArray(messageContent)) {
-      blocks.push(...messageContent);
-    }
-  }
-  return blocks;
-}
-
-function collectTextValues(value: unknown): string[] {
-  if (typeof value === "string") {
-    return [value];
-  }
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((item) => {
-    if (typeof item === "string") {
-      return [item];
-    }
-    if (typeof item === "object" && item !== null) {
-      const text = objectField(item, "text");
-      return typeof text === "string" ? [text] : [];
-    }
-    return [];
-  });
-}
-
-function extractExplicitSkillCommands(args: {
-  agent: UsageAgent;
-  parserRevision: string;
-  sourceKind: "local-session";
-  filePath: string;
-  lineIndex: number;
-  observedAt: string;
-  rawProjectPath?: string | undefined;
-  texts: string[];
-}): UsageCollectorObservation[] {
-  const observations: UsageCollectorObservation[] = [];
-  const commandPattern = /(^|[\s([{])([$/])([a-zA-Z0-9][a-zA-Z0-9._:-]{1,120})(?=$|[\s\])}>.,;:!?])/g;
-  for (let textIndex = 0; textIndex < args.texts.length; textIndex += 1) {
-    const text = args.texts[textIndex] ?? "";
-    let match: RegExpExecArray | null;
-    while ((match = commandPattern.exec(text))) {
-      const rawSkillName = match[3]?.replace(/[.,;!?]+$/, "");
-      if (!rawSkillName) {
-        continue;
-      }
-      observations.push({
-        sourceEventId: sha256(`${args.filePath}:${args.lineIndex}:${textIndex}:${match.index}:${args.observedAt}:${rawSkillName}`),
-        observedAt: args.observedAt,
-        agent: args.agent,
-        rawSkillName,
-        evidenceKind: "explicit_command",
-        confidence: "observed",
-        outcome: "unknown",
-        sourceKind: args.sourceKind,
-        parserRevision: args.parserRevision,
-        projectRef: null,
-        projectLabel: "Unknown project",
-        requiresKnownSkillMatch: true,
-        ...(args.rawProjectPath ? { rawProjectPath: args.rawProjectPath } : {}),
-      });
-    }
-  }
-  return observations;
-}
-
-function extractRawSkillFromToolCall(value: unknown): string | null {
-  if (typeof value !== "object" || value === null) {
-    return null;
-  }
-  const toolName = firstString([
-    objectField(value, "name"),
-    objectField(value, "tool"),
-    objectField(value, "toolName"),
-    objectField(value, "function_name"),
-  ]);
-  if (!toolName || !isSkillToolName(toolName)) {
-    return null;
-  }
-
-  const state = objectField(value, "state");
-  const input = firstObject([
-    objectField(value, "input"),
-    objectField(value, "arguments"),
-    objectField(value, "args"),
-    objectField(value, "parameters"),
-    objectField(state, "input"),
-    objectField(state, "metadata"),
-    state,
-  ]);
-  const parsedInput = typeof input === "string" ? parseJsonObject(input) : input;
-  if (!parsedInput) {
-    return null;
-  }
-  return firstString([
-    objectField(parsedInput, "skill"),
-    objectField(parsedInput, "skillName"),
-    objectField(parsedInput, "skill_name"),
-    objectField(parsedInput, "name"),
-  ]) ?? null;
-}
-
-function isSkillToolName(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return normalized === "skill" || normalized === "activate_skill" || normalized.endsWith(".activate_skill");
-}
-
-function firstString(values: unknown[]): string | undefined {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-function firstObject(values: unknown[]): Record<string, unknown> | string | undefined {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value;
-    }
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
-  }
-  return undefined;
-}
-
-function objectField(value: unknown, key: string): unknown {
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
-}
-
-function parseJsonObject(value: string): Record<string, unknown> | null {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function findStringField(value: unknown, fieldName: string): string | undefined {
-  const field = findField(value, fieldName);
-  return typeof field === "string" && field.trim().length > 0 ? field : undefined;
-}
-
-function findField(value: unknown, fieldName: string, depth = 0): unknown {
-  if (depth > 8 || typeof value !== "object" || value === null) {
-    return undefined;
-  }
-  if (!Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, fieldName)) {
-    return (value as Record<string, unknown>)[fieldName];
-  }
-  const children = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>);
-  for (const child of children) {
-    const matched = findField(child, fieldName, depth + 1);
-    if (matched !== undefined) {
-      return matched;
-    }
-  }
-  return undefined;
 }
 
 function parseTelemetryTimestamp(value: unknown): string | undefined {
@@ -1631,8 +1050,4 @@ function diagnostic(
     firstSeenAt: timestamp,
     lastSeenAt: timestamp,
   };
-}
-
-function sha256(value: string): string {
-  return crypto.createHash("sha256").update(value).digest("hex");
 }

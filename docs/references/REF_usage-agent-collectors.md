@@ -109,7 +109,7 @@
 | `kiro` | Hooks 可在工具调用、文件修改、任务完成时运行；examples 有 user prompt logging | 只有用户安装 hook 且字段中明确 skill/tool 时能 | `KiroHookCollector` opt-in；默认 lifecycle |
 | `roo-code` | VS Code extension storage / custom storage path；task history 还涉及 VS Code `state.vscdb` | 不能。公开资料未确认 skill 调用字段 | `RooStorageProbe` diagnostic only |
 | `cline` | 匿名 telemetry 包含 features/tools/commands、task completion、errors、performance | 不能映射具体 skill 名；task history schema 未稳定 | `ClineTelemetryProbe` diagnostic only |
-| `codex` | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`、`session_index.jsonl`、`state_5.sqlite` 等本地状态；skills 可用 `/skills` 或 `$` 显式提及 | 能。结构化 tool call 只有明确 skill input 才算；用户 role 文本中的 `$skill` / `/skill` 作为 `explicit_command` 候选，必须匹配当前 SkillFlow inventory 才入库；assistant/system 文本和 XML tag 不计数 | `CodexSessionJsonlCollector` |
+| `codex` | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME/archived_sessions/YYYY/MM/DD/rollout-*.jsonl`、`session_index.jsonl`、`state_5.sqlite` 等本地状态；skills 可用 `/skills` 或 `$` 显式提及 | 能。结构化 tool call 只有明确 skill input 才算；用户 role 文本和 `payload.type=user_message` 中的 `$skill` / `/skill` 作为 `explicit_command` 候选，必须匹配当前 SkillFlow inventory 才入库；assistant/system 文本和 XML tag 不计数；同一用户消息的 mirrored projection 去重 | `CodexSessionJsonlCollector` |
 | `pi` | `~/.pi/agent/sessions/` JSONL tree；skills on-demand loaded | 能，限 session tree 中明确 tool/skill 节点 | `PiSessionJsonlCollector` opt-in |
 | `gemini` | OTel / `.gemini/telemetry.log` 事件 `gemini_cli.tool_call`，字段 `function_name`、`function_args`；skill 调用为 `activate_skill` tool | 能，`function_name=activate_skill` 是真实 skill 激活 | `GeminiTelemetryCollector` |
 | `kimi` | `~/.kimi-code/sessions/`、`session_index.jsonl`、global/session logs、`user-history/<md5(workDir)>.jsonl` | 能，限 sessions/logs 中明确 skill/tool 节点；不读 user-history | `KimiCodeSessionCollector` opt-in |
@@ -125,14 +125,16 @@
 | Agent | 数据源 | 原始命中 | 服务层 accepted | 说明 |
 | --- | --- | ---: | ---: | --- |
 | `claude-code` | `~/.claude/projects/**/*.jsonl` | 77 | 11 | 7 条结构化 `Skill` tool_use；其余为显式命令候选，未匹配 inventory 的候选被丢弃 |
-| `codex` | `~/.codex/sessions/**/*.jsonl` | 102 | 96 | accepted 全部来自 user-role 显式 `$skill` / `/skill`；普通 response toolCalls 未作为 skill 调用计数 |
+| `codex` | `~/.codex/sessions/**/*.jsonl`、`~/.codex/archived_sessions/**/*.jsonl` | 401 | 359 | accepted 全部来自 user-role 或 `user_message` 显式 `$skill` / `/skill`；普通 response toolCalls 未作为 skill 调用计数；active 与 archived 均已扫描 |
 | `opencode` | `~/.local/share/opencode/opencode.db` | 5 | 5 | 只统计 completed `tool=skill` SQLite part；本机另有 error 状态已排除 |
 | `zcode` | `~/.zcode/cli/db/db.sqlite` | 242 | 242 | 只统计 completed `tool=Skill` SQLite part；`tool_usage` 仅旁证，不用于取 skill 名 |
 | `pi` | `~/.pi/agent/sessions/**/*.jsonl` | 0 | 0 | 数据源存在但无明确 skill 信号 |
 | `gemini-cli` | `.gemini/telemetry.log` | 0 | 0 | 本机未找到 telemetry 文件 |
 | `kimi-code` | `~/.kimi-code/sessions/**/*.jsonl` | 0 | 0 | 本机未找到 sessions 目录 |
 
-临时服务层总计：`observedAccepted=354`、`activeSkills=57`、`activeAgents=4`、`activeProjects=28`。其中部分结构化执行记录无法匹配当前 inventory，会保留 `skillLabel` 并标记 `inventoryStatus=unknown`；显式命令不允许 unknown 入库。
+临时服务层总计：`observedAccepted=617`、`activeSkills=59`、`activeAgents=4`、`activeProjects=30`。其中部分结构化执行记录无法匹配当前 inventory，会保留 `skillLabel` 并标记 `inventoryStatus=unknown`；显式命令不允许 unknown 入库。
+
+Codex 单项补充验证：collector 原始命中 401 条，时间范围 `2026-07-19T14:25:00.240Z` 到 `2026-08-23T18:09:08.670Z`；服务层 accepted 359 条，active skill 20 个，active project 12 个，diagnostics 0。
 
 ## 参考链接
 

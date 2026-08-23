@@ -188,6 +188,126 @@ describe("usage collectors", () => {
     ]));
   });
 
+  test("extracts Codex explicit commands from active and archived rollout roots", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-codex-archived-collector-"));
+    const activeRoot = path.join(root, "sessions");
+    const archivedRoot = path.join(root, "archived_sessions");
+    const projectPath = path.join(root, "project");
+    await fs.mkdir(path.join(activeRoot, "2026", "08", "23"), { recursive: true });
+    await fs.mkdir(path.join(archivedRoot, "2026", "08", "22"), { recursive: true });
+    await fs.writeFile(
+      path.join(activeRoot, "2026", "08", "23", "rollout-active.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-08-23T00:00:00.000Z",
+          type: "session_meta",
+          payload: { cwd: projectPath },
+        }),
+        JSON.stringify({
+          timestamp: "2026-08-23T00:01:00.000Z",
+          type: "response_item",
+          payload: {
+            role: "user",
+            content: [{ type: "input_text", text: "Run $wayfinder." }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(archivedRoot, "2026", "08", "22", "rollout-archived.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-08-22T00:00:00.000Z",
+          type: "session_meta",
+          payload: { cwd: projectPath },
+        }),
+        JSON.stringify({
+          timestamp: "2026-08-22T00:01:00.000Z",
+          type: "response_item",
+          payload: {
+            role: "user",
+            content: [{ type: "input_text", text: "Run /mattpocock-skills:tdd." }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await new CodexUsageCollector([activeRoot, archivedRoot]).scan({
+      now: new Date("2026-08-23T00:04:00.000Z"),
+      budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
+    });
+
+    expect(result.coverage.status).toBe("scanned");
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rawSkillName: "wayfinder",
+        evidenceKind: "explicit_command",
+        rawProjectPath: projectPath,
+      }),
+      expect.objectContaining({
+        rawSkillName: "mattpocock-skills:tdd",
+        evidenceKind: "explicit_command",
+        rawProjectPath: projectPath,
+      }),
+    ]));
+  });
+
+  test("extracts Codex explicit commands from user_message payloads without double-counting mirrored user records", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-codex-user-message-collector-"));
+    const projectPath = path.join(root, "project");
+    await fs.mkdir(path.join(root, "2026", "08", "23"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "2026", "08", "23", "rollout-test.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-08-23T00:00:00.000Z",
+          type: "session_meta",
+          payload: { cwd: projectPath },
+        }),
+        JSON.stringify({
+          timestamp: "2026-08-23T00:01:00.000Z",
+          type: "response_item",
+          payload: {
+            role: "user",
+            content: [{ type: "input_text", text: "Use $wayfinder now." }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-08-23T00:01:00.000Z",
+          type: "event_msg",
+          payload: {
+            type: "user_message",
+            message: "Use $wayfinder now.",
+            text_elements: [{ type: "text", text: "Use $wayfinder now." }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-08-23T00:02:00.000Z",
+          type: "event_msg",
+          payload: {
+            type: "user_message",
+            message: "Now invoke /mattpocock-skills:tdd.",
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await new CodexUsageCollector([root]).scan({
+      now: new Date("2026-08-23T00:04:00.000Z"),
+      budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
+    });
+
+    expect(result.coverage.status).toBe("scanned");
+    expect(result.observations).toHaveLength(2);
+    expect(result.observations.map((observation) => observation.rawSkillName).sort()).toEqual([
+      "mattpocock-skills:tdd",
+      "wayfinder",
+    ]);
+  });
+
   test("default collectors scan implemented sources while supported agents mirrors builtin targets", () => {
     expect(createDefaultUsageCollectors().map((collector) => collector.agent)).toEqual([
       "claude-code",

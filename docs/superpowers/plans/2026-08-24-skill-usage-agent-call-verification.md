@@ -72,7 +72,7 @@
 | Agent id | 当前识别状态 | 数据源 | Skill 调用识别规则 | 不计数内容 | 核对动作 |
 | --- | --- | --- | --- | --- | --- |
 | `claude-code` | 已实现 local parser；OTel 待接入 | `~/.claude/projects/**/*.jsonl`；未来可接 Claude Code OTel | 结构化：`message.content[]` 中 `type=tool_use`、`name=Skill`、`input.skill` 有值；显式：user-role 文本中的 `$skill` / `/skill` 且匹配 inventory | `SKILL.md` 路径、Read/Edit tool、assistant 文本、未匹配 inventory 的显式命令 | 用真实 JSONL 抽样核对字段；补 OTel `skill.name` collector 时只收字段白名单 |
-| `codex` | 已实现 local parser | `~/.codex/sessions/**/*.jsonl` | 结构化：payload 或 content block 中 tool/function 名为 `Skill` / `activate_skill` 且参数含 `skill/name`；显式：user-role 文本 `$skill` / `/skill` 且匹配 inventory；project 从 `session_meta.cwd` 继承 | response 普通 `toolCalls`、assistant/system 文本、XML tag、路径文本 | 核对 rollout JSONL 中 user role 与 session_meta 的路径继承；确认 `$skill` 去重与 inventory 匹配 |
+| `codex` | 已实现 local parser | `~/.codex/sessions/**/*.jsonl`、`~/.codex/archived_sessions/**/*.jsonl` | 结构化：payload 或 content block 中 tool/function 名为 `Skill` / `activate_skill` 且参数含 `skill/name`；显式：user-role 文本和 `payload.type=user_message` 中的 `$skill` / `/skill` 且匹配 inventory；project 从 `session_meta.cwd` 继承；同一用户消息的 mirrored projection 去重 | response 普通 `toolCalls`、assistant/system 文本、XML tag、路径文本 | 核对 active 与 archived rollout JSONL；确认 user role、`user_message`、session_meta 路径继承与显式命令去重 |
 | `zcode` | 已实现 SQLite parser | `~/.zcode/cli/db/db.sqlite` | `part.data` JSON 满足 `type=tool`、`tool=Skill/skill/activate_skill`、`state.status=completed`、`state.input.skill/name` 有值；project 从 `session.directory` 读取后 hash | `tool_usage` 单独记录、error 状态、hook lifecycle、`$skill` 文本但无结构执行旁证 | 核对 `part` 与 `tool_usage` 的 call id / session id 对应关系；确认是否需要额外解析用户显式 `$skill` |
 | `cursor` | 未实现；候选 direct event | Cursor Enterprise OTel logs；Analytics API 只作团队汇总 | 仅当 OTel log/event 明确包含 skill event 或 skill 名称时计数 | 本地 `.cursor` 配置、plans、普通聊天状态、团队 analytics 汇总 | 调研 Enterprise OTel 实际字段；无字段样本前保持 `parser_unsupported` |
 | `grok-build` | 未实现；候选 OTel / hook / session parser | Grok Build OTel、hooks、`~/.grok/sessions/` | OTel event `grok_code.skill_activated` 且能取得 `skill.name`；或 hook/session 明确提供 skill activation/name | 只有 `tool.usage` 但无 skill 名、普通 hook、session 存在 | 先实现 OTel probe；details gate 打开时核对是否泄露 tool args |
@@ -113,7 +113,7 @@
 
 - 对已实现 collector：
   - `claude-code`：检查 `~/.claude/projects` 是否存在。
-  - `codex`：检查 `CODEX_HOME/sessions` 或 `~/.codex/sessions` 是否存在。
+  - `codex`：检查 `CODEX_HOME/sessions`、`CODEX_HOME/archived_sessions` 或 `~/.codex/sessions`、`~/.codex/archived_sessions` 是否存在。
   - `gemini-cli`：检查 `SKILL_FLOW_USAGE_GEMINI_TELEMETRY_FILE`、`GEMINI_TELEMETRY_OUTFILE` 或 `~/.gemini/telemetry.log`。
   - `pi`：检查 `~/.pi/agent/sessions` 是否存在。
   - `opencode`：检查 `SKILL_FLOW_USAGE_OPENCODE_DB_PATH` 或 `~/.local/share/opencode/opencode.db`。
@@ -154,6 +154,7 @@
 - collector 单测：
   - 每个已实现 Agent 至少有一条正例。
   - 至少覆盖 `SKILL.md` 路径不计数。
+  - Codex 覆盖 active + archived root、`payload.type=user_message`、mirrored user projection 去重。
   - OpenCode / ZCode 覆盖 `state.status=error` 不计数。
   - 显式命令覆盖 user-role 正例、assistant-role 反例、XML tag 反例、路径反例。
 - service 单测：
