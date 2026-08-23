@@ -12,10 +12,13 @@ import {
 import {
   ClaudeCodeUsageCollector,
   CodexUsageCollector,
+  CursorUsageCollector,
   GeminiTelemetryUsageCollector,
+  GrokBuildUsageCollector,
   KimiCodeUsageCollector,
   OpenCodeUsageCollector,
   PiUsageCollector,
+  WorkBuddyUsageCollector,
   ZCodeUsageCollector,
   createDefaultSupportedUsageAgents,
   createDefaultUsageCollectors,
@@ -314,13 +317,151 @@ describe("usage collectors", () => {
     ]);
   });
 
+  test("extracts Cursor explicit skill commands from agent transcripts only", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-cursor-collector-"));
+    const transcriptDir = path.join(root, "project-a", "agent-transcripts", "session-1");
+    await fs.mkdir(transcriptDir, { recursive: true });
+    await fs.writeFile(
+      path.join(transcriptDir, "session-1.jsonl"),
+      [
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [{ type: "text", text: "Use $wayfinder and /mattpocock-skills:tdd." }],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: {
+            content: [{ type: "text", text: "Assistant mentions $impeccable but it must not count." }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await new CursorUsageCollector([root]).scan({
+      now: new Date("2026-08-23T00:04:00.000Z"),
+      budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
+    });
+
+    expect(result.coverage.status).toBe("scanned");
+    expect(result.observations).toHaveLength(2);
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ agent: "cursor", rawSkillName: "wayfinder", evidenceKind: "explicit_command" }),
+      expect.objectContaining({ agent: "cursor", rawSkillName: "mattpocock-skills:tdd", evidenceKind: "explicit_command" }),
+    ]));
+  });
+
+  test("extracts Grok Build explicit skill commands from chat history with project context", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-grok-collector-"));
+    const sessionsRoot = path.join(root, "sessions");
+    const projectPath = path.join(root, "project");
+    const encodedProject = encodeURIComponent(projectPath);
+    const sessionDir = path.join(sessionsRoot, encodedProject, "session-1");
+    await fs.mkdir(sessionDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionDir, "chat_history.jsonl"),
+      [
+        JSON.stringify({
+          type: "user",
+          content: [{ type: "text", text: "$wayfinder run this." }],
+        }),
+        JSON.stringify({
+          type: "user",
+          content: [{ type: "text", text: "Run $mattpocock-skills:tdd inline and inspect /tmp/project." }],
+        }),
+        JSON.stringify({
+          type: "assistant",
+          content: [{ type: "text", text: "Assistant mentions /mattpocock-skills:tdd but it must not count." }],
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sessionDir, "events.jsonl"),
+      JSON.stringify({ type: "tool_completed", tool_name: "read_file" }),
+      "utf8",
+    );
+
+    const result = await new GrokBuildUsageCollector([sessionsRoot]).scan({
+      now: new Date("2026-08-23T00:04:00.000Z"),
+      budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
+    });
+
+    expect(result.coverage.status).toBe("scanned");
+    expect(result.observations).toHaveLength(1);
+    expect(result.observations[0]).toMatchObject({
+      agent: "grok-build",
+      rawSkillName: "wayfinder",
+      evidenceKind: "explicit_command",
+      rawProjectPath: projectPath,
+    });
+  });
+
+  test("extracts WorkBuddy skill usage dates from usage-log without reading trace text", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-workbuddy-collector-"));
+    const usageLog = path.join(root, "usage-log.json");
+    await fs.writeFile(
+      usageLog,
+      JSON.stringify({
+        version: 1,
+        skills: {
+          wayfinder: {
+            id: "wayfinder",
+            type: "skill",
+            firstSeenDate: "2026-08-21",
+            lastUsedDate: "2026-08-23",
+            recentDates: ["2026-08-22", "2026-08-23", "2026-08-23"],
+          },
+          connector: {
+            id: "connector",
+            type: "mcp",
+            recentDates: ["2026-08-23"],
+          },
+        },
+        mcps: {
+          browser: { lastUsedDate: "2026-08-23" },
+        },
+      }),
+      "utf8",
+    );
+
+    const result = await new WorkBuddyUsageCollector([usageLog]).scan({
+      now: new Date("2026-08-24T00:04:00.000Z"),
+      budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
+    });
+
+    expect(result.coverage.status).toBe("scanned");
+    expect(result.observations).toHaveLength(2);
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agent: "workbuddy",
+        rawSkillName: "wayfinder",
+        observedAt: "2026-08-22T00:00:00.000Z",
+        evidenceKind: "selected",
+        sourceKind: "direct-event",
+      }),
+      expect.objectContaining({
+        agent: "workbuddy",
+        rawSkillName: "wayfinder",
+        observedAt: "2026-08-23T00:00:00.000Z",
+        evidenceKind: "selected",
+        sourceKind: "direct-event",
+      }),
+    ]));
+  });
+
   test("default collectors scan implemented sources while supported agents mirrors builtin targets", () => {
     const collectorAgents = createDefaultUsageCollectors().map((collector) => collector.agent);
     expect(collectorAgents).toEqual([
       "claude-code",
       "codex",
       "zcode",
+      "cursor",
+      "grok-build",
       "pi",
+      "workbuddy",
       "kimi-code",
       "opencode",
       "gemini-cli",

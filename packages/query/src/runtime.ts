@@ -4328,7 +4328,9 @@ export class SkillFlowApp {
       boot.data.manifest,
       boot.data.lockFile,
     );
-    await this.refreshUsageObservations({ trigger: "bootstrap" }).catch(() => undefined);
+    if (process.env.VITEST !== "true") {
+      void this.refreshUsageObservations({ trigger: "bootstrap" }).catch(() => undefined);
+    }
 
     return ok({
       availableTargets: boot.data.availableTargets,

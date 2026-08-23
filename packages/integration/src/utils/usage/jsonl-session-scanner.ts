@@ -30,6 +30,7 @@ export async function scanJsonlSessionRoots<TState>(args: {
   scannedAt: string;
   createInitialState: () => TState;
   parseRecord: JsonlRecordParser<TState>;
+  includeFile?: (filePath: string) => boolean;
 }): Promise<JsonlSessionScanResult> {
   const startedAt = Date.now();
   const observations: UsageCollectorObservation[] = [];
@@ -40,7 +41,7 @@ export async function scanJsonlSessionRoots<TState>(args: {
 
   rootLoop:
   for (const root of args.roots) {
-    const files = await collectJsonlFiles(root, args.budget.maxFiles);
+    const files = await collectJsonlFiles(root, args.budget.maxFiles, args.includeFile);
     for (const filePath of files) {
       if (filesScanned >= args.budget.maxFiles || bytesScanned >= args.budget.maxBytes) {
         partial = true;
@@ -67,6 +68,7 @@ export async function scanJsonlSessionRoots<TState>(args: {
         partial = true;
       }
 
+      const fileFallbackTimestamp = stat.mtime.toISOString();
       let state = args.createInitialState();
       let lineIndex = 0;
       const input = createReadStream(filePath, { encoding: "utf8" });
@@ -91,7 +93,7 @@ export async function scanJsonlSessionRoots<TState>(args: {
               filePath,
               lineIndex: currentLineIndex,
               state,
-              fallbackTimestamp: args.scannedAt,
+              fallbackTimestamp: fileFallbackTimestamp,
             });
             state = result.state;
             observations.push(...result.observations);
@@ -117,7 +119,11 @@ export async function scanJsonlSessionRoots<TState>(args: {
   };
 }
 
-async function collectJsonlFiles(root: string, maxFiles: number): Promise<string[]> {
+async function collectJsonlFiles(
+  root: string,
+  maxFiles: number,
+  includeFile: ((filePath: string) => boolean) | undefined,
+): Promise<string[]> {
   const results: string[] = [];
   async function walk(current: string): Promise<void> {
     if (results.length >= maxFiles) {
@@ -132,7 +138,7 @@ async function collectJsonlFiles(root: string, maxFiles: number): Promise<string
       const entryPath = path.join(current, entry.name);
       if (entry.isDirectory()) {
         await walk(entryPath);
-      } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+      } else if (entry.isFile() && entry.name.endsWith(".jsonl") && (!includeFile || includeFile(entryPath))) {
         results.push(entryPath);
       }
     }

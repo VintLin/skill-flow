@@ -8,8 +8,9 @@
 可优先落地的来源分三类：
 
 1. **直接事件优先**：Claude Code OTel、Gemini CLI OTel、Cursor Enterprise OTel、VS Code Copilot OTel、Amp plugin event、Grok Build OTel/Hook、CodeBuddy OTel/Hook。这些能把 skill/tool 调用作为运行期事件读取，误报最少。
-2. **本地会话解析次之**：Claude Code、Codex、OpenCode、ZCode、Copilot CLI、Kimi Code、Pi、Hermes、可能的 OpenClaw。它们有本地会话或日志，但格式稳定性差异很大；必须标 parser revision，并只抽取最小 observation。
-3. **仅生命周期或不支持**：Windsurf、Roo/Cline、Kiro、Trae、WorkBuddy、Minimax Code 等公开资料未确认可稳定读取“skill 被实际调用”。这些只能展示安装、启用、导入、hook 或会话存在，不能显示“0 次使用”这类误导性统计。
+2. **本地会话解析次之**：Claude Code、Codex、Cursor agent transcripts、Grok Build chat history、OpenCode、ZCode、Copilot CLI、Kimi Code、Pi、Hermes、可能的 OpenClaw。它们有本地会话或日志，但格式稳定性差异很大；必须标 parser revision，并只抽取最小 observation。
+3. **聚合事件可作为受限 direct event**：WorkBuddy 本机 `usage-log.json` 的 `skills` 聚合日期能证明某个 skill 在某天至少使用一次，但不能恢复单日精确次数或项目。
+4. **仅生命周期或不支持**：Windsurf、Roo/Cline、Kiro、Trae、Minimax Code 等公开资料未确认可稳定读取“skill 被实际调用”。这些只能展示安装、启用、导入、hook 或会话存在，不能显示“0 次使用”这类误导性统计。
 
 建议 SkillFlow 的主计数只纳入 `direct observed` 和经版本化 parser 明确命中的 `local session parser`；安装、同步、导入、更新、启用、hook 触发、普通工具调用都单独作为 `Lifecycle Event`。普通 `toolCalls` 不是 skill 调用；只有 tool 名明确为 `Skill` / `skill` / `activate_skill`，且能取到 skill 名称时才算。
 
@@ -29,7 +30,7 @@
 | Claude Code | 官方监控文档说明 Claude Code 通过 OTel 导出 metrics、events、traces，并在 cost/token 事件属性中包含 `skill.name`；官方 session 文档说明 CLI transcript 写入 `~/.claude/projects/<project>/<session-id>.jsonl`，但 entry format 是内部格式、版本间会变 | `direct observed`；备选 `local session parser` | `ClaudeCodeOtelCollector` 优先；`ClaudeCodeSessionJsonlCollector` 只做 opt-in 备选 | OTel 已有第三方 skill 名称脱敏规则；本地 JSONL 含完整对话、工具调用和结果，默认不得扫描 | P0 |
 | Codex | OpenAI Learn 文档说明 Codex 支持 standalone skills，CLI/IDE 可用 `/skills` 或 `$` 显式提及，且选中 skill 时读取完整 `SKILL.md`；OpenAI Codex 官方 repo issue 多处确认 `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`、`session_index.jsonl`、`state_5.sqlite` 等本地状态，但公开文档未承诺 transcript schema | `local session parser`；受控 app-server 可做 `direct observed` | `CodexSessionJsonlCollector`，仅识别明确 skill input / response item；如 SkillFlow 后续嵌入 Codex app-server，再做 direct collector | rollout JSONL 可能包含完整 prompts、tool outputs、reasoning 和路径；只读流式解析，绝不回显原文 | P0 |
 | Gemini CLI | 官方 skills 文档说明 Gemini CLI 在匹配 skill 时调用 `activate_skill` tool；官方 OTel 文档说明可本地写 `.gemini/telemetry.log`，日志包含 `gemini_cli.tool_call`、`function_name`、`function_args` | `direct observed` | `GeminiTelemetryCollector`，从 OTLP 或 `.gemini/telemetry.log` 识别 `function_name=activate_skill` | `function_args` 可能含路径或参数；`log_prompts_enabled` 可能记录 prompt，collector 必须字段白名单 | P0 |
-| Cursor | Cursor Enterprise OTel Export beta 官方文档说明服务端导出 metrics 和 logs，logs 覆盖 API requests、errors、corrections、skills、hooks、plugins、cloud agent lifecycle；Analytics API 提供团队级使用指标但不是 skill 调用 | `direct observed`，Enterprise beta only | `CursorOtelCollector`，接 OTLP/log stream；不做本地 DB parser | 服务端团队数据，需管理员配置；beta wire surface 可能变 | P1 |
+| Cursor | Cursor Enterprise OTel Export beta 官方文档说明服务端导出 metrics 和 logs，logs 覆盖 API requests、errors、corrections、skills、hooks、plugins、cloud agent lifecycle；Analytics API 提供团队级使用指标但不是 skill 调用；本机 `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` 可读取 user/assistant transcript | `local session parser`；Enterprise OTel 可升级为 `direct observed` | `CursorAgentTranscriptCollector` 默认只读 `agent-transcripts`；`CursorOtelCollector` 后续接 OTLP/log stream | 本地 transcript 含对话文本；只抽 user-role `$skill` / `/skill` 候选和结构化 Skill tool call，不读 plans/config | P1 |
 | GitHub Copilot CLI | GitHub 官方 Copilot CLI session data 文档说明每次 CLI session 记录在本机，含 prompts、responses、tools used、modified files；文件位于 `~/.copilot/session-state/`，另有本地 SQLite session store；官方 Copilot CLI skills 文档确认 agent skills | `local session parser` | `CopilotCliSessionCollector`，解析 session-state + SQLite 中的 tool/skill 记录 | 默认会同步到 GitHub 账号；本地记录含 prompts、responses、文件修改详情 | P1 |
 | GitHub Copilot / VS Code | VS Code 官方文档说明 Copilot Chat agent interactions 可通过 OTel 导出 traces、metrics、events，覆盖 LLM calls、tool executions、token usage；GitHub metrics API 只适合汇总 adoption/usage | `direct observed` | `VsCodeCopilotOtelCollector` | 需要用户/企业启用 OTel；事件可能包含工具参数或 workspace 元数据 | P1 |
 | OpenCode | OpenCode 官方 skills 文档说明 skills 通过 native `skill` tool on-demand 加载；本机 SQLite `~/.local/share/opencode/opencode.db` 的 `part.data` 可解析 `type=tool`、`tool=skill`、`state.status=completed`、`state.input.skill/name`、`session.directory` | `local session parser`；plugin 可升级为 `direct observed` | `OpenCodeSqliteCollector` 只读 SQLite completed skill parts；插件 collector 作为后续增强 | SQLite 属于本地会话状态，只读取字段白名单；不读取普通 read/edit/tool output | P1 |
@@ -38,7 +39,7 @@
 | Amp | Amp manual 说明 agent skills；plugin API 说明可注册 bundled skill，并有 `session.start -> agent.start -> tool.call -> tool.result -> agent.end` 事件链，`tool.call` 在工具运行前触发 | `direct observed` if plugin installed | `AmpPluginCollector`，监听 `tool.call` 中 skill/bundled-skill 工具 | 插件事件可见工具输入；只保留 skill 名称、时间、thread id hash | P2 |
 | Pi | Pi 官方 sessions 文档说明 session 自动保存到 `~/.pi/agent/sessions/`，按 working directory 组织，每个 session 是 JSONL tree；skills 文档说明 skills on-demand loaded | `local session parser` | `PiSessionJsonlCollector`，解析 session-format 中明确 tool/skill 节点 | JSONL session 是完整会话树，含 tokens/cost/工具；读取需单独授权 | P2 |
 | Hermes Agent | Hermes FAQ 说明不收集 telemetry/analytics，conversations、memory、skills 本地存 `~/.hermes/`；skills 文档说明 skills 主要目录为 `~/.hermes/skills/` | `local session parser`，无 direct telemetry | `HermesLocalCollector`，仅在开源 schema 确认后解析 conversations；第三方 OTel plugin 只作为用户自选 | 本地包含 conversations、memory、skills；不得读取 memory 作为 usage 证据 | P2 |
-| Grok Build | xAI 官方 docs/source 确认 skills 目录、`~/.grok/sessions/` 会话、hooks，以及外部 OTel v1：metrics `grok_code.tool.usage` / `grok_code.tool.decision`，events `grok_code.skill_activated`，字段含 `skill_source`、`trigger`、`skill.name`（需 `OTEL_LOG_TOOL_DETAILS=1` 才暴露名称） | `direct observed`；默认 OTel 只能到 skill/plugin 类别，精确 skill 名需 details gate、hook 或 opt-in session parser | `GrokBuildOtelCollector` 读取 OTel event；`GrokBuildHookCollector` 读取 `hookEventName`、`sessionId`、`toolName`；session parser 仅用户授权后读取 `~/.grok/sessions/` | 默认不读 `~/.grok` 原始会话；OTel details gate 可能带工具参数/路径，collector 必须字段白名单 | P2 |
+| Grok Build | xAI 官方 docs/source 确认 skills 目录、`~/.grok/sessions/` 会话、hooks，以及外部 OTel v1：metrics `grok_code.tool.usage` / `grok_code.tool.decision`，events `grok_code.skill_activated`，字段含 `skill_source`、`trigger`、`skill.name`（需 `OTEL_LOG_TOOL_DETAILS=1` 才暴露名称）；本机 `chat_history.jsonl` 存 user/assistant 文本 | `local session parser`；OTel/hook 可升级为 `direct observed` | `GrokBuildSessionCollector` 默认只读 `chat_history.jsonl`，且只接受用户消息开头 `$skill` / `/skill`；`GrokBuildOtelCollector` / hook 后续接 direct event | 广义扫描会把普通 `/path` 和 catalog 命令误算；因此禁止句中匹配，events/updates lifecycle 不计数 | P2 |
 | ZCode | ZCode 官方 skill 文档说明 user skills 在 `~/.zcode/skills/<skill-name>/SKILL.md`，聊天可用 `$skill-name`；Usage Stats 读取本机 local session records；本机 SQLite `~/.zcode/cli/db/db.sqlite` 与 OpenCode 同构，`part.data` 可解析 `type=tool`、`tool=Skill`、`state.status=completed`、`state.input.skill/name`、`session.directory`；`tool_usage.tool_name=Skill` 可旁证完成状态但单独缺少 skill 名 | `local session parser` | `ZCodeSqliteCollector` 只读 completed skill parts；hook collector 作为后续旁路 | SQLite 属于本地会话状态，只读取字段白名单；不读取 `transcript_path`、prompt、response、tool output | P1 |
 | Kiro | Kiro 官方 hooks 文档说明 hooks 可在 session 中 agent 修改文件、调用工具、完成任务时运行 shell command 或 agent prompt；examples 包含 centralized user prompt logging | `direct observed` only if user-created hook captures skill/tool event；默认 `lifecycle only` | `KiroHookCollector`，由用户显式安装 hook，把 tool event 最小化写入 SkillFlow | Hook 可能记录 prompt；默认模板不得保存 prompt 文本 | P3 |
 | Roo Code | Roo 官方 settings 文档说明 task history/settings 默认存 VS Code extension storage，可配置 custom storage path；GitHub issue 显示 task history 还涉及 VS Code `state.vscdb`；Roo skills 公开信息多来自社区/issue | `lifecycle only` | `RooStorageProbe` 只探测 task history 位置；不进入主 usage | VS Code global storage 可能混有所有任务内容和 secrets-adjacent state | P3 |
@@ -46,7 +47,7 @@
 | Windsurf / Cascade | Devin/Windsurf Cascade skills 文档说明 skill 可 model decision 或 `@mention` 调用，enterprise system skills 有固定目录；memories 文档仅确认 `~/.codeium/windsurf/memories/`，不是会话/skill usage | `lifecycle only` | `WindsurfSkillInventoryCollector`，只记录可见 skill 目录和启用状态 | 不读取 memories 作为 usage；没有官方会话格式前不解析本地 app data | P4 |
 | Trae / Trae CN | Trae CN 官方 skills 文档确认 skill 由 `SKILL.md` 定义，项目目录 `<project>/.trae/skills/`，全局目录 macOS/Linux `~/.trae-cn/skills`，字段 `name`、`description`；skill 仅在任务高度相关时按需加载；未找到官方 usage event、本地 session path 或 telemetry schema | `lifecycle only` | `TraeSkillInventoryCollector`，Trae 国际版与 CN 分开识别目录 | 仅技能库存，不推断使用次数 | P4 |
 | CodeBuddy | CodeBuddy 官方 skills 文档确认 `.codebuddy/skills/`、`~/.codebuddy/skills/`，字段 `name`、`description`、`allowed-tools`、`disable-model-invocation`、`user-invocable`、`context: fork`、`hooks`；hooks 有 `SessionStart`、`PreToolUse`、`PostToolUse`、`SubagentStart` 等，stdin 字段含 `session_id`、`transcript_path`、`hook_event_name`、`tool_name`、`tool_input`；OTel spans 有 `codebuddy_code.interaction` / `codebuddy_code.tool`，字段含 `span.type`、`conversation.id`、`tool_name`、`tool.call_id`、`tool_input`（details gate） | `direct observed` for tool/hook；真实 skill identity 仅在 explicit skill/fork skill lifecycle 或 trace 明确标识时计数，普通注入式 skill 不能只靠工具 span 判定 | `CodeBuddyOtelCollector` + `CodeBuddyHookCollector`；HTTP `/api/v1/stats`、`/api/v1/traces` 只做 diagnostic | 不读 `~/.codebuddy/projects/...` transcript/tool-results；OTel 默认只保留工具名和 call id，details/content gate 默认不打开 | P2 |
-| WorkBuddy | 官方 WorkBuddy docs 入口未公开可解析的 skill/session/telemetry/local log schema；同域 CLI 页面属于 CodeBuddy Code，不应自动等同 WorkBuddy 产品 | `unsupported` | 暂不实现；若运行时 fingerprint 明确是 CodeBuddy CLI，可复用 CodeBuddy collector | 无 WorkBuddy 一手字段证据，不扫描 | P4 |
+| WorkBuddy | 本机 `~/.workbuddy/usage-log.json` 含 `skills`、`mcps`、`activeDays` 聚合字段；`skills.<name>` 包含 `id`、`type`、`firstSeenDate`、`lastUsedDate`、`recentDates` | `direct observed`，但粒度仅为 skill/date 至少一次 | `WorkBuddyUsageLogCollector` 只读 `skills` 聚合日期；不读取 traces/tasks 原文 | 不能恢复项目和单日多次调用；`mcps` 不计数；不套用 CodeBuddy schema | P3 |
 | Minimax Code / Mini-Agent | MiniMax 官方 Mini-Agent 页面/GitHub 说明 Claude Skills integration 和 detailed logs for request/response/tool execution；但这更像示例 agent 项目，不等同于 SkillFlow `minimax-code` 产品级 target | `local session parser` for Mini-Agent only；目标默认 `unsupported` | `MiniAgentLogCollector` 作为实验性 custom collector；`minimax-code` 保守不做主计数 | logs 可能含请求、响应、工具执行细节 | P4 |
 
 ## 实现建议
@@ -93,20 +94,20 @@
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
-| P0 | Claude OTel + Claude local parser；Gemini OTel；Codex local parser | 能产出 observed usage，parser 有 revision、offset 和隐私白名单测试 |
-| P1 | OpenCode SQLite；ZCode SQLite；Cursor Enterprise OTel；GitHub Copilot CLI parser；VS Code Copilot OTel | SQLite collector 必须只收 completed skill part；无企业配置时显示 unsupported/needs config，不显示 0 |
-| P2 | OpenCode plugin；Amp plugin；Grok Build OTel/Hook；CodeBuddy OTel/Hook；Kimi/Pi/Hermes parser；OpenClaw probe | plugin/OTel collector 有最小事件 schema；parser 默认 opt-in |
+| P0 | Claude local/OTel；Codex local；OpenCode/ZCode SQLite；Gemini OTel；Cursor transcript；Grok chat history；WorkBuddy usage-log | 能产出 observed usage，parser 有 revision、字段白名单和误计数反例测试 |
+| P1 | Cursor Enterprise OTel；GitHub Copilot CLI parser；VS Code Copilot OTel；Grok Build OTel/Hook；CodeBuddy OTel/Hook | Direct event collector 必须有最小事件 schema；无配置时显示 unsupported/needs config，不显示 0 |
+| P2 | OpenCode plugin；Amp plugin；Kimi/Pi/Hermes parser；OpenClaw probe | plugin/OTel collector 有最小事件 schema；parser 默认 opt-in |
 | P3 | Kiro hook、Roo/Cline storage probe | 仅 lifecycle/diagnostic，除非一手事件确认 |
-| P4 | Trae、WorkBuddy、Minimax Code | 维持 unsupported 或 custom collector，不进入主计数 |
+| P4 | Trae、Minimax Code | 维持 unsupported 或 custom collector，不进入主计数 |
 
 ## 字段级结论（2026-08-23 补充）
 
 | Target | 可获取记录与字段 | 能否区分真实 skill 调用 | Collector 结论 |
 | --- | --- | --- | --- |
 | `zcode` | 本地 skill 库 `~/.zcode/skills/<skill-name>/SKILL.md`；Usage Stats 读取 local session records；本机 `~/.zcode/cli/db/db.sqlite` 表含 `session`、`part`、`tool_usage`。`part.data` JSON 中可字段级命中 `type=tool`、`tool=Skill`、`state.status=completed`、`state.input.skill/name`、`state.time.start`；`session.directory` 提供项目路径；`tool_usage` 可验证 `tool_name=Skill` completed，但单独缺 skill 名称 | 能。本机验证严格 completed skill part 可提取 242 条；另有 error 状态不计数 | `ZCodeSqliteCollector` 进主计数；hook 仅作为后续旁证 |
-| `cursor` | Enterprise OTel logs 覆盖 skills/hooks/plugins/cloud agent lifecycle；Analytics API 是团队汇总 | 能，限 Enterprise OTel logs 中明确的 skill event | `CursorOtelCollector` |
-| `grok-build` | OTel metrics `grok_code.tool.usage`、`grok_code.tool.decision`；OTel event `grok_code.skill_activated`，字段 `skill_source`、`trigger`、`skill.name`；hooks 字段 `hookEventName`、`sessionId`、`toolName`；sessions 在 `~/.grok/sessions/` | 能。`grok_code.skill_activated` 是真实调用；但默认隐藏具体 `skill.name`，需 details gate 或 session parser 才能归因到名称 | `GrokBuildOtelCollector` 优先；hook/session 作为 opt-in |
-| `workbuddy` | 未找到 WorkBuddy 产品的一手 skill/session/telemetry/local log schema | 不能 | `unsupported`；不得套用 CodeBuddy，除非产品 fingerprint 明确 |
+| `cursor` | Enterprise OTel logs 覆盖 skills/hooks/plugins/cloud agent lifecycle；Analytics API 是团队汇总；本机 `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` 有 user/assistant transcript，字段为 `role`、`message.content[].text` | 能，限 Enterprise OTel logs 明确 skill event，或 transcript user-role 显式 `$skill` / `/skill` 且匹配 inventory；本机验证原始候选 28 条、accepted 0 | `CursorAgentTranscriptCollector` 已进默认 collector；`CursorOtelCollector` 后续接入 |
+| `grok-build` | OTel metrics `grok_code.tool.usage`、`grok_code.tool.decision`；OTel event `grok_code.skill_activated`，字段 `skill_source`、`trigger`、`skill.name`；hooks 字段 `hookEventName`、`sessionId`、`toolName`；sessions 在 `~/.grok/sessions/`，`chat_history.jsonl` 有 user/assistant text | 能。`grok_code.skill_activated` 是真实调用；本机 chat history 只能接受用户消息开头显式 `$skill` / `/skill`，否则会误报普通 `/path`/catalog command | `GrokBuildSessionCollector` 已进默认 collector，严格规则 dry-run 为 0；OTel/hook 后续接入 |
+| `workbuddy` | `~/.workbuddy/usage-log.json` 顶层含 `skills`、`mcps`、`activeDays`；`skills.<name>` 含 `id`、`type`、`firstSeenDate`、`lastUsedDate`、`recentDates` | 能证明 skill/date 至少一次。本机验证 5 个 skill、8 个日期；无法恢复项目和单日多次调用 | `WorkBuddyUsageLogCollector` 已进默认 collector；只读聚合字段，不读 traces/tasks |
 | `codebuddy` | skill 库 `.codebuddy/skills/`、`~/.codebuddy/skills/`；skill fields `name`、`description`、`allowed-tools`、`disable-model-invocation`、`user-invocable`、`context: fork`、`hooks`；hooks 字段 `hook_event_name`、`tool_name`、`tool_input`、`session_id`；OTel span `codebuddy_code.tool` 字段 `span.type`、`conversation.id`、`tool_name`、`tool.call_id`、`tool_input` | 部分能。fork skill lifecycle 或 explicit skill trace 可计数；普通注入式 skill 只产生下游工具 span 时不能判定是 skill 调用 | `CodeBuddyOtelCollector` + `CodeBuddyHookCollector`；精确 skill 只在明确标识时入主计数 |
 | `trae` | 未找到国际版可公开解析的 usage event/session/telemetry schema；按 CN 文档仅可确定 skill 目录族 | 不能 | `TraeSkillInventoryCollector` only |
 | `trae-cn` | `<project>/.trae/skills/`、`~/.trae-cn/skills`；`SKILL.md` fields `name`、`description` | 不能。官方只说明按需加载，没有公开调用事件 | `TraeSkillInventoryCollector` only |
@@ -119,7 +120,7 @@
 | `kiro` | Hooks 可在工具调用、文件修改、任务完成时运行；examples 有 user prompt logging | 只有用户安装 hook 且字段中明确 skill/tool 时能 | `KiroHookCollector` opt-in；默认 lifecycle |
 | `roo-code` | VS Code extension storage / custom storage path；task history 还涉及 VS Code `state.vscdb` | 不能。公开资料未确认 skill 调用字段 | `RooStorageProbe` diagnostic only |
 | `cline` | 匿名 telemetry 包含 features/tools/commands、task completion、errors、performance | 不能映射具体 skill 名；task history schema 未稳定 | `ClineTelemetryProbe` diagnostic only |
-| `codex` | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME/archived_sessions/YYYY/MM/DD/rollout-*.jsonl`、`session_index.jsonl`、`state_5.sqlite` 等本地状态；skills 可用 `/skills` 或 `$` 显式提及 | 能。结构化 tool call 只有明确 skill input 才算；用户 role 文本和 `payload.type=user_message` 中的 `$skill` / `/skill` 作为 `explicit_command` 候选，必须匹配当前 SkillFlow inventory 才入库；assistant/system 文本和 XML tag 不计数；同一用户消息的 mirrored projection 去重 | `CodexSessionJsonlCollector` |
+| `codex` | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME/archived_sessions/YYYY/MM/DD/rollout-*.jsonl`、`session_index.jsonl`、`state_5.sqlite` 等本地状态；skills 可用 `/skills` 或 `$` 显式提及；本机 active 58 个 JSONL 约 1.62GB，archived 207 个 JSONL 约 2.13GB | 能。结构化 tool call 只有明确 skill input 才算；用户 role 文本和 `payload.type=user_message` 中的 `$skill` / `/skill` 作为 `explicit_command` 候选，必须匹配当前 SkillFlow inventory 才入库；assistant/system 文本和 XML tag 不计数；同一用户消息的 mirrored projection 去重 | `CodexSessionJsonlCollector`；默认 refresh budget 已提高到能完整读取当前本机 active + archived |
 | `pi` | `~/.pi/agent/sessions/` JSONL tree；skills on-demand loaded | 能，限 session tree 中明确 tool/skill 节点 | `PiSessionJsonlCollector` opt-in |
 | `gemini` | OTel / `.gemini/telemetry.log` 事件 `gemini_cli.tool_call`，字段 `function_name`、`function_args`；skill 调用为 `activate_skill` tool | 能，`function_name=activate_skill` 是真实 skill 激活 | `GeminiTelemetryCollector` |
 | `kimi` | `~/.kimi-code/sessions/`、`session_index.jsonl`、global/session logs、`user-history/<md5(workDir)>.jsonl` | 能，限 sessions/logs 中明确 skill/tool 节点；不读 user-history | `KimiCodeSessionCollector` opt-in |
@@ -135,16 +136,19 @@
 | Agent | 数据源 | 原始命中 | 服务层 accepted | 说明 |
 | --- | --- | ---: | ---: | --- |
 | `claude-code` | `~/.claude/projects/**/*.jsonl` | 77 | 11 | 7 条结构化 `Skill` tool_use；其余为显式命令候选，未匹配 inventory 的候选被丢弃 |
-| `codex` | `~/.codex/sessions/**/*.jsonl`、`~/.codex/archived_sessions/**/*.jsonl` | 401 | 359 | accepted 全部来自 user-role 或 `user_message` 显式 `$skill` / `/skill`；普通 response toolCalls 未作为 skill 调用计数；active 与 archived 均已扫描 |
+| `codex` | `~/.codex/sessions/**/*.jsonl`、`~/.codex/archived_sessions/**/*.jsonl` | 401 | 359 | accepted 全部来自 user-role 或 `user_message` 显式 `$skill` / `/skill`；普通 response toolCalls 未作为 skill 调用计数；active 58 个与 archived 207 个 JSONL 均已扫描 |
+| `cursor` | `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` | 28 | 0 | 原始候选来自 user-role 显式 `$skill` / `/skill`，但均未匹配当前 inventory，因此不入主计数 |
+| `grok-build` | `~/.grok/sessions/**/chat_history.jsonl` | 0 | 0 | 严格开头命令规则下无 skill 信号；广义匹配曾产生 740 个误报候选，已禁止 |
 | `opencode` | `~/.local/share/opencode/opencode.db` | 5 | 5 | 只统计 completed `tool=skill` SQLite part；本机另有 error 状态已排除 |
 | `zcode` | `~/.zcode/cli/db/db.sqlite` | 242 | 242 | 只统计 completed `tool=Skill` SQLite part；`tool_usage` 仅旁证，不用于取 skill 名 |
 | `pi` | `~/.pi/agent/sessions/**/*.jsonl` | 0 | 0 | 数据源存在但无明确 skill 信号 |
+| `workbuddy` | `~/.workbuddy/usage-log.json` | 8 | 8 | 只按 `skills` 聚合日期记录至少一次使用；本机 5 个 skill、8 个日期，项目未知 |
 | `gemini-cli` | `.gemini/telemetry.log` | 0 | 0 | 本机未找到 telemetry 文件 |
 | `kimi-code` | `~/.kimi-code/sessions/**/*.jsonl` | 0 | 0 | 本机未找到 sessions 目录 |
 
-临时服务层总计：`observedAccepted=617`、`activeSkills=59`、`activeAgents=4`、`activeProjects=30`。其中部分结构化执行记录无法匹配当前 inventory，会保留 `skillLabel` 并标记 `inventoryStatus=unknown`；显式命令不允许 unknown 入库。
+临时服务层 refresh 总计：`status=completed`、`sourcesFound=9`、`sourcesScanned=8`、`observedAccepted=625`、`inferredAccepted=0`、`diagnosticsCount=21`。默认 90 天 snapshot 为 `observedUses=525`、`activeSkills=41`、`activeAgents=3`、`activeProjects=18`。其中部分结构化或聚合记录无法匹配当前 inventory，会保留 `skillLabel` 并标记 `inventoryStatus=unknown`；显式命令不允许 unknown 入库。
 
-Codex 单项补充验证：collector 原始命中 401 条，时间范围 `2026-07-19T14:25:00.240Z` 到 `2026-08-23T18:09:08.670Z`；服务层 accepted 359 条，active skill 20 个，active project 12 个，diagnostics 0。
+Codex 单项补充验证：collector 原始命中 401 条，时间范围 `2026-07-19T14:25:00.240Z` 到 `2026-08-23T18:09:08.670Z`；服务层 accepted 359 条，diagnostics 0。默认 refresh budget 为 `globalBudgetMs=60000`、`perSourceBudgetMs=15000`、`maxFiles=2500`、`maxBytes=8589934592`，本机完整扫描耗时约 15 秒。
 
 ## 参考链接
 

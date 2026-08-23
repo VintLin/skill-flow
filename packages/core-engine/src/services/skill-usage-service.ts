@@ -22,10 +22,10 @@ const DEFAULT_PROJECT_LABEL = "Unknown project";
 const USAGE_OBSERVATION_RETENTION_DAYS = 365;
 
 export const DEFAULT_USAGE_REFRESH_BUDGET: UsageRefreshBudget = {
-  globalBudgetMs: 30000,
-  perSourceBudgetMs: 5000,
-  maxFiles: 500,
-  maxBytes: 536870912,
+  globalBudgetMs: 60000,
+  perSourceBudgetMs: 15000,
+  maxFiles: 2500,
+  maxBytes: 8589934592,
   cooldownSeconds: 900,
 };
 

@@ -229,11 +229,11 @@ export type UsageCollectorObservation = Omit<
 };
 
 export type UsageRefreshBudget = {
-  globalBudgetMs: 30000;
-  perSourceBudgetMs: 5000;
-  maxFiles: 500;
-  maxBytes: 536870912;
-  cooldownSeconds: 900;
+  globalBudgetMs: number;
+  perSourceBudgetMs: number;
+  maxFiles: number;
+  maxBytes: number;
+  cooldownSeconds: number;
 };
 
 export type UsageAgentCoverage = {

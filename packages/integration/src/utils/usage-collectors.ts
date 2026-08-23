@@ -15,6 +15,8 @@ import {
   createProjectSessionState,
   extractClaudeSkillUses,
   extractCodexSkillUses,
+  extractCursorSkillUses,
+  extractGrokBuildSkillUses,
   extractKimiCodeSkillUses,
   extractPiSkillUses,
 } from "./usage/agent-jsonl-parsers.js";
@@ -60,7 +62,10 @@ export function createDefaultUsageCollectors(): UsageCollector[] {
     new ClaudeCodeUsageCollector(),
     new CodexUsageCollector(),
     new ZCodeUsageCollector(),
+    new CursorUsageCollector(),
+    new GrokBuildUsageCollector(),
     new PiUsageCollector(),
+    new WorkBuddyUsageCollector(),
     new KimiCodeUsageCollector(),
     new OpenCodeUsageCollector(),
     new GeminiTelemetryUsageCollector(),
@@ -71,6 +76,135 @@ export function createDefaultSupportedUsageAgents(): UsageAgent[] {
   return createDefaultUsagePolicyAgents();
 }
 
+type JsonlUsageCollectorConfig<TState> = {
+  agent: UsageAgent;
+  parserRevision: string;
+  roots: string[];
+  includeFile?: (filePath: string) => boolean;
+  createInitialState: () => TState;
+  parseRecord: Parameters<typeof scanJsonlSessionRoots<TState>>[0]["parseRecord"];
+};
+
+async function locateExistingPaths(paths: string[]): Promise<string[]> {
+  const existing: string[] = [];
+  for (const candidate of paths) {
+    if (await pathExists(candidate)) {
+      existing.push(candidate);
+    }
+  }
+  return existing;
+}
+
+async function scanJsonlUsageCollector<TState>(
+  config: JsonlUsageCollectorConfig<TState>,
+  input: UsageCollectorScanInput,
+): Promise<UsageCollectorScanResult> {
+  const scannedAt = input.now.toISOString();
+  const roots = await locateExistingPaths(config.roots);
+  if (roots.length === 0) {
+    return {
+      observations: [],
+      coverage: usageCoverage(config.agent, "local-session", config.parserRevision, "not_found", scannedAt, 0, 0, 1),
+      diagnostics: [diagnostic("SOURCE_NOT_FOUND", config.agent, "info", scannedAt)],
+    };
+  }
+
+  const scanArgs = {
+    roots,
+    budget: input.budget,
+    scannedAt,
+    createInitialState: config.createInitialState,
+    parseRecord: config.parseRecord,
+    ...(config.includeFile ? { includeFile: config.includeFile } : {}),
+  };
+  const scan = await scanJsonlSessionRoots(scanArgs);
+  const { observations, filesScanned, partial, invalidRecords } = scan;
+  const status = jsonlScanStatus(partial, observations.length, filesScanned);
+  const diagnostics = scanDiagnostics(config.agent, scannedAt, {
+    invalidRecords,
+    partial,
+    status,
+  });
+
+  return {
+    observations,
+    coverage: usageCoverage(
+      config.agent,
+      "local-session",
+      config.parserRevision,
+      status,
+      scannedAt,
+      observations.filter((item) => item.confidence === "observed").length,
+      observations.filter((item) => item.confidence === "inferred").length,
+      diagnostics.length,
+    ),
+    diagnostics,
+  };
+}
+
+function jsonlScanStatus(
+  partial: boolean,
+  observationsCount: number,
+  filesScanned: number,
+): UsageAgentCoverage["status"] {
+  return partial
+    ? "partial"
+    : observationsCount > 0
+      ? "scanned"
+      : filesScanned > 0
+        ? "no_skill_signals"
+        : "no_records";
+}
+
+function scanDiagnostics(
+  agent: UsageAgent,
+  scannedAt: string,
+  input: {
+    invalidRecords: number;
+    partial: boolean;
+    status: UsageAgentCoverage["status"];
+  },
+): UsageDiagnostic[] {
+  const diagnostics: UsageDiagnostic[] = [];
+  if (input.invalidRecords > 0) {
+    diagnostics.push(diagnostic("INVALID_RECORD_DROPPED", agent, "warning", scannedAt, input.invalidRecords));
+  }
+  if (input.status === "no_records") {
+    diagnostics.push(diagnostic("NO_RECORDS", agent, "info", scannedAt));
+  }
+  if (input.status === "no_skill_signals") {
+    diagnostics.push(diagnostic("NO_SKILL_SIGNALS", agent, "info", scannedAt));
+  }
+  if (input.partial) {
+    diagnostics.push(diagnostic("BUDGET_EXHAUSTED", agent, "warning", scannedAt));
+  }
+  return diagnostics;
+}
+
+function usageCoverage(
+  agent: UsageAgent,
+  sourceKind: UsageAgentCoverage["sourceKind"],
+  parserRevision: string,
+  status: UsageAgentCoverage["status"],
+  scannedAt: string,
+  observedUses: number,
+  inferredSignals: number,
+  diagnosticsCount = 0,
+): UsageAgentCoverage {
+  return {
+    agent,
+    sourceKind,
+    parserRevision,
+    status,
+    lastScannedAt: scannedAt,
+    coverageFrom: null,
+    coverageTo: null,
+    observedUses,
+    inferredSignals,
+    diagnosticsCount,
+  };
+}
+
 export class ClaudeCodeUsageCollector implements UsageCollector {
   readonly agent = "claude-code" as const;
   readonly parserRevision = "claude-code-session@1";
@@ -78,91 +212,20 @@ export class ClaudeCodeUsageCollector implements UsageCollector {
   constructor(private readonly roots = defaultClaudeCodeUsageRoots()) {}
 
   async locateSources(): Promise<string[]> {
-    const existing: string[] = [];
-    for (const root of this.roots) {
-      if (await pathExists(root)) {
-        existing.push(root);
-      }
-    }
-    return existing;
+    return locateExistingPaths(this.roots);
   }
 
   async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
-    const scannedAt = input.now.toISOString();
-    const roots = await this.locateSources();
-    if (roots.length === 0) {
-      return {
-        observations: [],
-        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
-        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
-      };
-    }
-
-    const scan = await scanJsonlSessionRoots({
-      roots,
-      budget: input.budget,
-      scannedAt,
+    return scanJsonlUsageCollector({
+      agent: this.agent,
+      parserRevision: this.parserRevision,
+      roots: this.roots,
       createInitialState: () => undefined,
       parseRecord: ({ value, filePath, lineIndex, state }) => ({
         state,
         observations: extractClaudeSkillUses(value, filePath, lineIndex),
       }),
-    });
-    const { observations, filesScanned, partial, invalidRecords } = scan;
-
-    const status = partial
-      ? "partial"
-      : observations.length > 0
-        ? "scanned"
-        : filesScanned > 0
-          ? "no_skill_signals"
-          : "no_records";
-    const diagnostics: UsageDiagnostic[] = [];
-    if (invalidRecords > 0) {
-      diagnostics.push(diagnostic("INVALID_RECORD_DROPPED", this.agent, "warning", scannedAt, invalidRecords));
-    }
-    if (status === "no_records") {
-      diagnostics.push(diagnostic("NO_RECORDS", this.agent, "info", scannedAt));
-    }
-    if (status === "no_skill_signals") {
-      diagnostics.push(diagnostic("NO_SKILL_SIGNALS", this.agent, "info", scannedAt));
-    }
-    if (partial) {
-      diagnostics.push(diagnostic("BUDGET_EXHAUSTED", this.agent, "warning", scannedAt));
-    }
-
-    return {
-      observations,
-      coverage: this.coverage(
-        status,
-        scannedAt,
-        observations.filter((item) => item.confidence === "observed").length,
-        observations.filter((item) => item.confidence === "inferred").length,
-        diagnostics.length,
-      ),
-      diagnostics,
-    };
-  }
-
-  private coverage(
-    status: UsageAgentCoverage["status"],
-    scannedAt: string,
-    observedUses: number,
-    inferredSignals: number,
-    diagnosticsCount = 0,
-  ): UsageAgentCoverage {
-    return {
-      agent: this.agent,
-      sourceKind: "local-session",
-      parserRevision: this.parserRevision,
-      status,
-      lastScannedAt: scannedAt,
-      coverageFrom: null,
-      coverageTo: null,
-      observedUses,
-      inferredSignals,
-      diagnosticsCount,
-    };
+    }, input);
   }
 }
 
@@ -178,30 +241,14 @@ export class CodexUsageCollector implements UsageCollector {
   constructor(private readonly roots = defaultCodexUsageRoots()) {}
 
   async locateSources(): Promise<string[]> {
-    const existing: string[] = [];
-    for (const root of this.roots) {
-      if (await pathExists(root)) {
-        existing.push(root);
-      }
-    }
-    return existing;
+    return locateExistingPaths(this.roots);
   }
 
   async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
-    const scannedAt = input.now.toISOString();
-    const roots = await this.locateSources();
-    if (roots.length === 0) {
-      return {
-        observations: [],
-        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
-        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
-      };
-    }
-
-    const scan = await scanJsonlSessionRoots({
-      roots,
-      budget: input.budget,
-      scannedAt,
+    return scanJsonlUsageCollector({
+      agent: this.agent,
+      parserRevision: this.parserRevision,
+      roots: this.roots,
       createInitialState: createCodexSessionState,
       parseRecord: ({ value, filePath, lineIndex, state, fallbackTimestamp }) => extractCodexSkillUses(
         value,
@@ -210,62 +257,7 @@ export class CodexUsageCollector implements UsageCollector {
         state,
         fallbackTimestamp,
       ),
-    });
-    const { observations, filesScanned, partial, invalidRecords } = scan;
-
-    const status = partial
-      ? "partial"
-      : observations.length > 0
-        ? "scanned"
-        : filesScanned > 0
-          ? "no_skill_signals"
-          : "no_records";
-    const diagnostics: UsageDiagnostic[] = [];
-    if (invalidRecords > 0) {
-      diagnostics.push(diagnostic("INVALID_RECORD_DROPPED", this.agent, "warning", scannedAt, invalidRecords));
-    }
-    if (status === "no_records") {
-      diagnostics.push(diagnostic("NO_RECORDS", this.agent, "info", scannedAt));
-    }
-    if (status === "no_skill_signals") {
-      diagnostics.push(diagnostic("NO_SKILL_SIGNALS", this.agent, "info", scannedAt));
-    }
-    if (partial) {
-      diagnostics.push(diagnostic("BUDGET_EXHAUSTED", this.agent, "warning", scannedAt));
-    }
-
-    return {
-      observations,
-      coverage: this.coverage(
-        status,
-        scannedAt,
-        observations.filter((item) => item.confidence === "observed").length,
-        observations.filter((item) => item.confidence === "inferred").length,
-        diagnostics.length,
-      ),
-      diagnostics,
-    };
-  }
-
-  private coverage(
-    status: UsageAgentCoverage["status"],
-    scannedAt: string,
-    observedUses: number,
-    inferredSignals: number,
-    diagnosticsCount = 0,
-  ): UsageAgentCoverage {
-    return {
-      agent: this.agent,
-      sourceKind: "local-session",
-      parserRevision: this.parserRevision,
-      status,
-      lastScannedAt: scannedAt,
-      coverageFrom: null,
-      coverageTo: null,
-      observedUses,
-      inferredSignals,
-      diagnosticsCount,
-    };
+    }, input);
   }
 }
 
@@ -279,6 +271,66 @@ function defaultCodexUsageRoots(): string[] {
     return [path.join(codexHome, "sessions"), path.join(codexHome, "archived_sessions")];
   }
   return [path.join(os.homedir(), ".codex", "sessions"), path.join(os.homedir(), ".codex", "archived_sessions")];
+}
+
+export class CursorUsageCollector implements UsageCollector {
+  readonly agent = "cursor" as const;
+  readonly parserRevision = "cursor-agent-transcript@1";
+
+  constructor(private readonly roots = defaultCursorUsageRoots()) {}
+
+  async locateSources(): Promise<string[]> {
+    return locateExistingPaths(this.roots);
+  }
+
+  async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
+    return scanJsonlUsageCollector({
+      agent: this.agent,
+      parserRevision: this.parserRevision,
+      roots: this.roots,
+      includeFile: (filePath) => filePath.includes(`${path.sep}agent-transcripts${path.sep}`),
+      createInitialState: () => undefined,
+      parseRecord: ({ value, filePath, lineIndex, state, fallbackTimestamp }) => ({
+        state,
+        observations: extractCursorSkillUses(value, filePath, lineIndex, fallbackTimestamp),
+      }),
+    }, input);
+  }
+}
+
+function defaultCursorUsageRoots(): string[] {
+  const override = process.env.SKILL_FLOW_USAGE_CURSOR_PROJECTS_ROOT?.trim();
+  return [override || path.join(os.homedir(), ".cursor", "projects")];
+}
+
+export class GrokBuildUsageCollector implements UsageCollector {
+  readonly agent = "grok-build" as const;
+  readonly parserRevision = "grok-build-session@1";
+
+  constructor(private readonly roots = defaultGrokBuildUsageRoots()) {}
+
+  async locateSources(): Promise<string[]> {
+    return locateExistingPaths(this.roots);
+  }
+
+  async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
+    return scanJsonlUsageCollector({
+      agent: this.agent,
+      parserRevision: this.parserRevision,
+      roots: this.roots,
+      includeFile: (filePath) => filePath.endsWith(`${path.sep}chat_history.jsonl`),
+      createInitialState: () => undefined,
+      parseRecord: ({ value, filePath, lineIndex, state, fallbackTimestamp }) => ({
+        state,
+        observations: extractGrokBuildSkillUses(value, filePath, lineIndex, fallbackTimestamp),
+      }),
+    }, input);
+  }
+}
+
+function defaultGrokBuildUsageRoots(): string[] {
+  const override = process.env.SKILL_FLOW_USAGE_GROK_BUILD_SESSIONS_ROOT?.trim();
+  return [override || path.join(os.homedir(), ".grok", "sessions")];
 }
 
 export class GeminiTelemetryUsageCollector implements UsageCollector {
@@ -415,30 +467,14 @@ export class PiUsageCollector implements UsageCollector {
   constructor(private readonly roots = defaultPiUsageRoots()) {}
 
   async locateSources(): Promise<string[]> {
-    const existing: string[] = [];
-    for (const root of this.roots) {
-      if (await pathExists(root)) {
-        existing.push(root);
-      }
-    }
-    return existing;
+    return locateExistingPaths(this.roots);
   }
 
   async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
-    const scannedAt = input.now.toISOString();
-    const roots = await this.locateSources();
-    if (roots.length === 0) {
-      return {
-        observations: [],
-        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
-        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
-      };
-    }
-
-    const scan = await scanJsonlSessionRoots({
-      roots,
-      budget: input.budget,
-      scannedAt,
+    return scanJsonlUsageCollector({
+      agent: this.agent,
+      parserRevision: this.parserRevision,
+      roots: this.roots,
       createInitialState: createProjectSessionState,
       parseRecord: ({ value, filePath, lineIndex, state, fallbackTimestamp }) => extractPiSkillUses(
         value,
@@ -447,8 +483,74 @@ export class PiUsageCollector implements UsageCollector {
         state,
         fallbackTimestamp,
       ),
-    });
-    const { observations, filesScanned, partial, invalidRecords } = scan;
+    }, input);
+  }
+}
+
+function defaultPiUsageRoots(): string[] {
+  const override = process.env.SKILL_FLOW_USAGE_PI_SESSIONS_ROOT?.trim();
+  return [override || path.join(os.homedir(), ".pi", "agent", "sessions")];
+}
+
+export class WorkBuddyUsageCollector implements UsageCollector {
+  readonly agent = "workbuddy" as const;
+  readonly parserRevision = "workbuddy-usage-log@1";
+
+  constructor(private readonly files = defaultWorkBuddyUsageLogFiles()) {}
+
+  async locateSources(): Promise<string[]> {
+    const existing: string[] = [];
+    for (const filePath of this.files) {
+      if (await pathExists(filePath)) {
+        existing.push(filePath);
+      }
+    }
+    return existing;
+  }
+
+  async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
+    const scannedAt = input.now.toISOString();
+    const files = await this.locateSources();
+    if (files.length === 0) {
+      return {
+        observations: [],
+        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
+        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
+      };
+    }
+
+    const startedAt = Date.now();
+    const observations: UsageCollectorObservation[] = [];
+    let filesScanned = 0;
+    let partial = false;
+    let invalidRecords = 0;
+
+    for (const filePath of files) {
+      if (filesScanned >= input.budget.maxFiles) {
+        partial = true;
+        break;
+      }
+      if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
+        partial = true;
+        break;
+      }
+      const raw = await fs.readFile(filePath, "utf8").catch(() => undefined);
+      if (!raw) {
+        invalidRecords += 1;
+        continue;
+      }
+      if (Buffer.byteLength(raw, "utf8") > input.budget.maxBytes) {
+        partial = true;
+        break;
+      }
+      filesScanned += 1;
+      const parsed = parseJsonObject(raw);
+      if (!parsed) {
+        invalidRecords += 1;
+        continue;
+      }
+      observations.push(...extractWorkBuddyUsageLogSkillUses(parsed, filePath));
+    }
 
     const status = partial
       ? "partial"
@@ -493,7 +595,7 @@ export class PiUsageCollector implements UsageCollector {
   ): UsageAgentCoverage {
     return {
       agent: this.agent,
-      sourceKind: "local-session",
+      sourceKind: "direct-event",
       parserRevision: this.parserRevision,
       status,
       lastScannedAt: scannedAt,
@@ -506,9 +608,9 @@ export class PiUsageCollector implements UsageCollector {
   }
 }
 
-function defaultPiUsageRoots(): string[] {
-  const override = process.env.SKILL_FLOW_USAGE_PI_SESSIONS_ROOT?.trim();
-  return [override || path.join(os.homedir(), ".pi", "agent", "sessions")];
+function defaultWorkBuddyUsageLogFiles(): string[] {
+  const override = process.env.SKILL_FLOW_USAGE_WORKBUDDY_USAGE_LOG_FILE?.trim();
+  return [override || path.join(os.homedir(), ".workbuddy", "usage-log.json")];
 }
 
 export class OpenCodeUsageCollector implements UsageCollector {
@@ -804,30 +906,14 @@ export class KimiCodeUsageCollector implements UsageCollector {
   constructor(private readonly roots = defaultKimiCodeUsageRoots()) {}
 
   async locateSources(): Promise<string[]> {
-    const existing: string[] = [];
-    for (const root of this.roots) {
-      if (await pathExists(root)) {
-        existing.push(root);
-      }
-    }
-    return existing;
+    return locateExistingPaths(this.roots);
   }
 
   async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
-    const scannedAt = input.now.toISOString();
-    const roots = await this.locateSources();
-    if (roots.length === 0) {
-      return {
-        observations: [],
-        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
-        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
-      };
-    }
-
-    const scan = await scanJsonlSessionRoots({
-      roots,
-      budget: input.budget,
-      scannedAt,
+    return scanJsonlUsageCollector({
+      agent: this.agent,
+      parserRevision: this.parserRevision,
+      roots: this.roots,
       createInitialState: createProjectSessionState,
       parseRecord: ({ value, filePath, lineIndex, state, fallbackTimestamp }) => extractKimiCodeSkillUses(
         value,
@@ -836,68 +922,70 @@ export class KimiCodeUsageCollector implements UsageCollector {
         state,
         fallbackTimestamp,
       ),
-    });
-    const { observations, filesScanned, partial, invalidRecords } = scan;
-
-    const status = partial
-      ? "partial"
-      : observations.length > 0
-        ? "scanned"
-        : filesScanned > 0
-          ? "no_skill_signals"
-          : "no_records";
-    const diagnostics: UsageDiagnostic[] = [];
-    if (invalidRecords > 0) {
-      diagnostics.push(diagnostic("INVALID_RECORD_DROPPED", this.agent, "warning", scannedAt, invalidRecords));
-    }
-    if (status === "no_records") {
-      diagnostics.push(diagnostic("NO_RECORDS", this.agent, "info", scannedAt));
-    }
-    if (status === "no_skill_signals") {
-      diagnostics.push(diagnostic("NO_SKILL_SIGNALS", this.agent, "info", scannedAt));
-    }
-    if (partial) {
-      diagnostics.push(diagnostic("BUDGET_EXHAUSTED", this.agent, "warning", scannedAt));
-    }
-
-    return {
-      observations,
-      coverage: this.coverage(
-        status,
-        scannedAt,
-        observations.filter((item) => item.confidence === "observed").length,
-        observations.filter((item) => item.confidence === "inferred").length,
-        diagnostics.length,
-      ),
-      diagnostics,
-    };
-  }
-
-  private coverage(
-    status: UsageAgentCoverage["status"],
-    scannedAt: string,
-    observedUses: number,
-    inferredSignals: number,
-    diagnosticsCount = 0,
-  ): UsageAgentCoverage {
-    return {
-      agent: this.agent,
-      sourceKind: "local-session",
-      parserRevision: this.parserRevision,
-      status,
-      lastScannedAt: scannedAt,
-      coverageFrom: null,
-      coverageTo: null,
-      observedUses,
-      inferredSignals,
-      diagnosticsCount,
-    };
+    }, input);
   }
 }
 
 function defaultKimiCodeUsageRoots(): string[] {
   const override = process.env.SKILL_FLOW_USAGE_KIMI_CODE_SESSIONS_ROOT?.trim();
   return [override || path.join(os.homedir(), ".kimi-code", "sessions")];
+}
+
+function extractWorkBuddyUsageLogSkillUses(
+  value: Record<string, unknown>,
+  filePath: string,
+): UsageCollectorObservation[] {
+  const skills = objectField(value, "skills");
+  if (typeof skills !== "object" || skills === null || Array.isArray(skills)) {
+    return [];
+  }
+  const observations: UsageCollectorObservation[] = [];
+  for (const [skillName, rawEntry] of Object.entries(skills as Record<string, unknown>)) {
+    if (typeof rawEntry !== "object" || rawEntry === null || Array.isArray(rawEntry)) {
+      continue;
+    }
+    const entry = rawEntry as Record<string, unknown>;
+    if (objectField(entry, "type") !== "skill") {
+      continue;
+    }
+    const rawSkillName = firstString([objectField(entry, "id"), skillName]);
+    if (!rawSkillName) {
+      continue;
+    }
+    const dates = uniqueIsoDateStrings(objectField(entry, "recentDates"));
+    const observedDates = dates.length > 0
+      ? dates
+      : uniqueIsoDateStrings([objectField(entry, "lastUsedDate"), objectField(entry, "firstSeenDate")]);
+    for (const date of observedDates) {
+      const observedAt = `${date}T00:00:00.000Z`;
+      observations.push({
+        sourceEventId: sha256(`${filePath}:${rawSkillName}:${date}`),
+        observedAt,
+        agent: "workbuddy",
+        rawSkillName,
+        evidenceKind: "selected",
+        confidence: "observed",
+        outcome: "unknown",
+        sourceKind: "direct-event",
+        parserRevision: "workbuddy-usage-log@1",
+        projectRef: null,
+        projectLabel: "Unknown project",
+      });
+    }
+  }
+  return observations;
+}
+
+function uniqueIsoDateStrings(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : [value];
+  const seen = new Set<string>();
+  for (const item of values) {
+    if (typeof item !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item)) {
+      continue;
+    }
+    seen.add(item);
+  }
+  return [...seen].sort();
 }
 
 function extractGeminiSkillUses(

@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { UsageCollectorObservation } from "@skill-flow/domain/types";
 import {
   collectCodexUserMessageTextValues,
@@ -194,6 +195,121 @@ export function extractCodexSkillUses(
   };
 }
 
+export function extractCursorSkillUses(
+  value: unknown,
+  filePath: string,
+  lineIndex: number,
+  fallbackTimestamp: string,
+): UsageCollectorObservation[] {
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  const message = objectField(value, "message");
+  const role = firstString([objectField(value, "role"), objectField(message, "role")]);
+  const observedAt = firstString([
+    objectField(value, "timestamp"),
+    objectField(value, "createdAt"),
+    objectField(message, "timestamp"),
+  ]) ?? fallbackTimestamp;
+  const observations: UsageCollectorObservation[] = [];
+  if (role === "user") {
+    observations.push(...extractExplicitSkillCommands({
+      agent: "cursor",
+      parserRevision: "cursor-agent-transcript@1",
+      sourceKind: "local-session",
+      filePath,
+      lineIndex,
+      observedAt,
+      texts: [
+        ...collectTextValues(objectField(value, "content")),
+        ...collectTextValues(objectField(message, "content")),
+      ],
+    }));
+  }
+
+  return [
+    ...observations,
+    ...collectPotentialToolCallBlocks(value).flatMap((block, blockIndex) => {
+      const rawSkillName = extractRawSkillFromToolCall(block);
+      if (!rawSkillName) {
+        return [];
+      }
+      return [{
+        sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
+        observedAt,
+        agent: "cursor" as const,
+        rawSkillName,
+        evidenceKind: "tool_call" as const,
+        confidence: "observed" as const,
+        outcome: "unknown" as const,
+        sourceKind: "local-session" as const,
+        parserRevision: "cursor-agent-transcript@1",
+        projectRef: null,
+        projectLabel: "Unknown project",
+      }];
+    }),
+  ];
+}
+
+export function extractGrokBuildSkillUses(
+  value: unknown,
+  filePath: string,
+  lineIndex: number,
+  fallbackTimestamp: string,
+): UsageCollectorObservation[] {
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  const role = firstString([objectField(value, "role"), objectField(value, "type")]);
+  const observedAt = firstString([
+    objectField(value, "timestamp"),
+    objectField(value, "createdAt"),
+    objectField(value, "ts"),
+  ]) ?? fallbackTimestamp;
+  const rawProjectPath = extractGrokProjectPath(filePath);
+  const observations: UsageCollectorObservation[] = [];
+  if (role === "user" || role === "user_message") {
+    observations.push(...extractExplicitSkillCommands({
+      agent: "grok-build",
+      parserRevision: "grok-build-session@1",
+      sourceKind: "local-session",
+      filePath,
+      lineIndex,
+      observedAt,
+      rawProjectPath,
+      position: "leading",
+      texts: [
+        ...collectTextValues(objectField(value, "content")),
+        ...collectTextValues(objectField(value, "message")),
+      ],
+    }));
+  }
+
+  return [
+    ...observations,
+    ...collectPotentialToolCallBlocks(value).flatMap((block, blockIndex) => {
+      const rawSkillName = extractRawSkillFromToolCall(block);
+      if (!rawSkillName) {
+        return [];
+      }
+      return [{
+        sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
+        observedAt,
+        agent: "grok-build" as const,
+        rawSkillName,
+        evidenceKind: "tool_call" as const,
+        confidence: "observed" as const,
+        outcome: "unknown" as const,
+        sourceKind: "local-session" as const,
+        parserRevision: "grok-build-session@1",
+        projectRef: null,
+        projectLabel: "Unknown project",
+        ...(rawProjectPath ? { rawProjectPath } : {}),
+      }];
+    }),
+  ];
+}
+
 export function extractPiSkillUses(
   value: unknown,
   filePath: string,
@@ -333,4 +449,22 @@ function extractCodexProjectPath(record: { type?: unknown }, payload: unknown): 
     objectField(payload, "projectPath"),
     objectField(payload, "workspaceRoot"),
   ]);
+}
+
+function extractGrokProjectPath(filePath: string): string | undefined {
+  const marker = `${path.sep}sessions${path.sep}`;
+  const markerIndex = filePath.indexOf(marker);
+  if (markerIndex < 0) {
+    return undefined;
+  }
+  const remainder = filePath.slice(markerIndex + marker.length);
+  const [encodedProject] = remainder.split(path.sep);
+  if (!encodedProject || !encodedProject.startsWith("%2F")) {
+    return undefined;
+  }
+  try {
+    return decodeURIComponent(encodedProject);
+  } catch {
+    return undefined;
+  }
 }

@@ -21,6 +21,10 @@ export function collectPotentialToolCallBlocks(value: unknown): unknown[] {
       blocks.push(...messageContent);
     }
   }
+  const toolCalls = objectField(value, "tool_calls");
+  if (Array.isArray(toolCalls)) {
+    blocks.push(...toolCalls);
+  }
   return blocks;
 }
 
@@ -75,14 +79,17 @@ export function extractExplicitSkillCommands(args: {
   rawProjectPath?: string | undefined;
   texts: string[];
   seenDedupeKeys?: Set<string>;
+  position?: "anywhere" | "leading";
 }): UsageCollectorObservation[] {
   const observations: UsageCollectorObservation[] = [];
-  const commandPattern = /(^|[\s([{])([$/])([a-zA-Z0-9][a-zA-Z0-9._:-]{1,120})(?=$|[\s\])}>.,;:!?])/g;
+  const commandPattern = args.position === "leading"
+    ? /^\s*([$/])([a-zA-Z0-9][a-zA-Z0-9._:-]{1,120})(?=$|[\s\])}>.,;:!?])/
+    : /(^|[\s([{])([$/])([a-zA-Z0-9][a-zA-Z0-9._:-]{1,120})(?=$|[\s\])}>.,;:!?])/g;
   for (let textIndex = 0; textIndex < args.texts.length; textIndex += 1) {
     const text = args.texts[textIndex] ?? "";
     let match: RegExpExecArray | null;
     while ((match = commandPattern.exec(text))) {
-      const rawSkillName = match[3]?.replace(/[.,;!?]+$/, "");
+      const rawSkillName = (args.position === "leading" ? match[2] : match[3])?.replace(/[.,;!?]+$/, "");
       if (!rawSkillName) {
         continue;
       }
@@ -106,6 +113,9 @@ export function extractExplicitSkillCommands(args: {
         requiresKnownSkillMatch: true,
         ...(args.rawProjectPath ? { rawProjectPath: args.rawProjectPath } : {}),
       });
+      if (args.position === "leading") {
+        break;
+      }
     }
   }
   return observations;

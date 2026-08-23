@@ -75,12 +75,12 @@
 | Agent id | Policy 状态 | 默认 collector | 代码层边界确认 |
 | --- | --- | --- | --- |
 | `claude-code` | `implemented` | `claude-code-session@1` | 只统计结构化 `Skill` tool_use 与 inventory 匹配的用户显式命令 |
-| `codex` | `implemented` | `codex-session@1` | 扫描 active + archived rollout；只统计结构化 Skill/activate_skill 与去重后的用户显式命令 |
+| `codex` | `implemented` | `codex-session@1` | 扫描 active + archived rollout；只统计结构化 Skill/activate_skill 与去重后的用户显式命令；默认 refresh budget 覆盖当前本机全量 Codex 历史 |
 | `zcode` | `implemented` | `zcode-sqlite@1` | 只统计 completed SQLite skill part；`tool_usage` 不单独计数 |
-| `cursor` | `candidate` | 无 | 仅 OTel 明确 skill event/name 后可实现；当前 `parser_unsupported` |
-| `grok-build` | `candidate` | 无 | 仅 `skill_activated` 且能取得 `skill.name` 后可实现；当前 `parser_unsupported` |
+| `cursor` | `implemented` | `cursor-agent-transcript@1` | 只扫描 `agent-transcripts` JSONL；user-role 显式命令必须匹配 inventory；普通 plans/config 不计数 |
+| `grok-build` | `implemented` | `grok-build-session@1` | 只扫描 `chat_history.jsonl`；仅用户消息开头 `$skill` / `/skill` 进入候选并必须匹配 inventory；events/updates lifecycle 不计数 |
 | `pi` | `implemented` | `pi-session@1` | 只统计 JSONL 中明确 Skill/activate_skill 或 inventory 匹配的用户显式命令 |
-| `workbuddy` | `unsupported` | 无 | 无一手字段证据，不套用 CodeBuddy；当前 `parser_unsupported` |
+| `workbuddy` | `implemented` | `workbuddy-usage-log@1` | 只读 `usage-log.json` 的 `skills` 聚合日期；按 skill/date 记录至少一次使用，不伪造精确次数或项目 |
 | `codebuddy` | `candidate` | 无 | 仅 explicit/fork skill lifecycle 或 trace 明确 skill 名后可实现；当前 `parser_unsupported` |
 | `trae` | `unsupported` | 无 | 只有 lifecycle/inventory 证据；当前 `parser_unsupported` |
 | `trae-cn` | `unsupported` | 无 | 只有 lifecycle/inventory 证据；当前 `parser_unsupported` |
@@ -104,10 +104,10 @@
 | `claude-code` | 已实现 local parser；OTel 待接入 | `~/.claude/projects/**/*.jsonl`；未来可接 Claude Code OTel | 结构化：`message.content[]` 中 `type=tool_use`、`name=Skill`、`input.skill` 有值；显式：user-role 文本中的 `$skill` / `/skill` 且匹配 inventory | `SKILL.md` 路径、Read/Edit tool、assistant 文本、未匹配 inventory 的显式命令 | 用真实 JSONL 抽样核对字段；补 OTel `skill.name` collector 时只收字段白名单 |
 | `codex` | 已实现 local parser | `~/.codex/sessions/**/*.jsonl`、`~/.codex/archived_sessions/**/*.jsonl` | 结构化：payload 或 content block 中 tool/function 名为 `Skill` / `activate_skill` 且参数含 `skill/name`；显式：user-role 文本和 `payload.type=user_message` 中的 `$skill` / `/skill` 且匹配 inventory；project 从 `session_meta.cwd` 继承；同一用户消息的 mirrored projection 去重 | response 普通 `toolCalls`、assistant/system 文本、XML tag、路径文本 | 核对 active 与 archived rollout JSONL；确认 user role、`user_message`、session_meta 路径继承与显式命令去重 |
 | `zcode` | 已实现 SQLite parser | `~/.zcode/cli/db/db.sqlite` | `part.data` JSON 满足 `type=tool`、`tool=Skill/skill/activate_skill`、`state.status=completed`、`state.input.skill/name` 有值；project 从 `session.directory` 读取后 hash | `tool_usage` 单独记录、error 状态、hook lifecycle、`$skill` 文本但无结构执行旁证 | 核对 `part` 与 `tool_usage` 的 call id / session id 对应关系；确认是否需要额外解析用户显式 `$skill` |
-| `cursor` | 未实现；候选 direct event | Cursor Enterprise OTel logs；Analytics API 只作团队汇总 | 仅当 OTel log/event 明确包含 skill event 或 skill 名称时计数 | 本地 `.cursor` 配置、plans、普通聊天状态、团队 analytics 汇总 | 调研 Enterprise OTel 实际字段；无字段样本前保持 `parser_unsupported` |
-| `grok-build` | 未实现；候选 OTel / hook / session parser | Grok Build OTel、hooks、`~/.grok/sessions/` | OTel event `grok_code.skill_activated` 且能取得 `skill.name`；或 hook/session 明确提供 skill activation/name | 只有 `tool.usage` 但无 skill 名、普通 hook、session 存在 | 先实现 OTel probe；details gate 打开时核对是否泄露 tool args |
+| `cursor` | 已实现 local parser；OTel 待接入 | `~/.cursor/projects/**/agent-transcripts/**/*.jsonl`；Cursor Enterprise OTel logs | agent transcript user-role 文本中的 `$skill` / `/skill` 且匹配 inventory；结构化 Skill/activate_skill tool call 需能取得 skill/name | 本地 `.cursor` 配置、plans、assistant 文本、普通聊天状态、团队 analytics 汇总、MCP/tool metadata | 本机 transcript 原始候选均未匹配 inventory，服务层 accepted=0；后续接 Enterprise OTel direct event |
+| `grok-build` | 已实现 conservative local parser；OTel / hook 待接入 | `~/.grok/sessions/**/chat_history.jsonl`；Grok Build OTel、hooks | chat history 中 user 类型文本必须以 `$skill` / `/skill` 开头，且匹配 inventory；OTel event `grok_code.skill_activated` 未来可作为 direct event | 句中 `$skill`、普通 `/path`、events/updates lifecycle、只有 `tool.usage` 但无 skill 名、普通 hook、session 存在 | 本机严格规则 dry-run 为 `no_skill_signals`；广义匹配会误报，已禁止 |
 | `pi` | 已实现 local parser | `~/.pi/agent/sessions/**/*.jsonl` | 结构化：session JSONL 中 tool block 名为 `Skill` / `activate_skill` 且参数含 `skill/name`；显式：user-role 文本 `$skill` / `/skill` 且匹配 inventory；project 从 `cwd/projectPath/workspaceRoot` 继承 | session tree 普通节点、工具结果、assistant 文本、未匹配 inventory 的显式命令 | 用真实 Pi session 样本核对 content block shape；无 skill 信号时返回 `no_skill_signals` |
-| `workbuddy` | 未实现；unsupported | 未找到稳定 skill/session/telemetry schema | 暂无可进入主计数的规则 | 不把同域 CodeBuddy 文档套用于 WorkBuddy | 查运行时 fingerprint；无一手字段前保持 unsupported |
+| `workbuddy` | 已实现 direct aggregate parser | `~/.workbuddy/usage-log.json` | `skills.<name>.type=skill` 且 `recentDates` / `lastUsedDate` / `firstSeenDate` 为 ISO date；每个 skill/date 记录至少一次使用 | traces/tasks 原文、普通 span/tool 信息、`mcps` 聚合字段、同域 CodeBuddy 文档 | 本机 `usage-log.json` 可读取 5 个 skill、8 个日期；项目未知，不读取 trace 文本 |
 | `codebuddy` | 未实现；候选 OTel / hook | CodeBuddy OTel spans、hooks | 只有 explicit skill / fork skill lifecycle / trace 明确标识 skill 名时计数；普通 `tool_name` 只能作下游工具，不等同 skill | 普通 tool span、HTTP stats/traces 汇总、transcript_path 原文 | 获取最小 hook/OTel 样本；确认 skill identity 字段后再实现 |
 | `trae` | 未实现；lifecycle only | `.trae/skills/`、`~/.trae/skills/` | 暂无 usage 计数规则；只能识别 skill inventory | skill 目录存在、按需加载说明、普通会话 | 继续找国际版 usage/session schema；无字段前不计数 |
 | `trae-cn` | 未实现；lifecycle only | `<project>/.trae/skills/`、`~/.trae-cn/skills/` | 暂无 usage 计数规则；只能识别 skill inventory | skill 目录存在、`SKILL.md` 元数据 | 继续找 CN usage/session schema；无字段前不计数 |
@@ -146,6 +146,9 @@
   - `codex`：检查 `CODEX_HOME/sessions`、`CODEX_HOME/archived_sessions` 或 `~/.codex/sessions`、`~/.codex/archived_sessions` 是否存在。
   - `gemini-cli`：检查 `SKILL_FLOW_USAGE_GEMINI_TELEMETRY_FILE`、`GEMINI_TELEMETRY_OUTFILE` 或 `~/.gemini/telemetry.log`。
   - `pi`：检查 `~/.pi/agent/sessions` 是否存在。
+  - `cursor`：检查 `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` 是否存在。
+  - `grok-build`：检查 `~/.grok/sessions/**/chat_history.jsonl` 是否存在。
+  - `workbuddy`：检查 `~/.workbuddy/usage-log.json` 是否存在。
   - `opencode`：检查 `SKILL_FLOW_USAGE_OPENCODE_DB_PATH` 或 `~/.local/share/opencode/opencode.db`。
   - `kimi-code`：检查 `~/.kimi-code/sessions` 是否存在。
   - `zcode`：检查 `SKILL_FLOW_USAGE_ZCODE_DB_PATH` 或 `~/.zcode/cli/db/db.sqlite`。
@@ -187,6 +190,7 @@
   - Codex 覆盖 active + archived root、`payload.type=user_message`、mirrored user projection 去重。
   - OpenCode / ZCode 覆盖 `state.status=error` 不计数。
   - 显式命令覆盖 user-role 正例、assistant-role 反例、XML tag 反例、路径反例。
+  - Grok 覆盖“用户消息开头命令才计数，句中 `$skill` 和 `/tmp/...` 不计数”。
 - service 单测：
   - 结构化 unknown skill 可入库并产生 unmatched diagnostic。
   - 显式 unknown skill 必须被丢弃。
@@ -200,10 +204,10 @@
 
 | 优先级 | 内容 | 原因 |
 | --- | --- | --- |
-| P0 | 稳定现有 `claude-code`、`codex`、`opencode`、`zcode`、`gemini-cli`、`pi`、`kimi-code` parser | 已有实现或明确本机数据源，能快速防止误计数 |
-| P1 | 补 Cursor / Grok Build / CodeBuddy 的 OTel 或 hook proof | 公开资料显示可能有 direct observed 事件，但需要真实字段样本 |
+| P0 | 稳定现有 `claude-code`、`codex`、`opencode`、`zcode`、`gemini-cli`、`pi`、`kimi-code`、`cursor`、`grok-build`、`workbuddy` parser | 已有实现或明确本机数据源，能快速防止误计数 |
+| P1 | 补 Cursor / Grok Build / CodeBuddy 的 OTel 或 hook proof | Cursor/Grok 已有 conservative local parser；direct event 仍需真实字段样本 |
 | P2 | 调研 GitHub Copilot CLI / VS Code Copilot、Amp、Hermes、OpenClaw | 有潜在 session 或 event 来源，但隐私和 schema 风险更高 |
-| P3 | Trae / Trae CN / Windsurf / Roo / Cline / Kiro / WorkBuddy / MiniMax Code | 当前主要是 lifecycle、diagnostic 或 unsupported，不能进入主计数 |
+| P3 | Trae / Trae CN / Windsurf / Roo / Cline / Kiro / MiniMax Code | 当前主要是 lifecycle、diagnostic 或 unsupported，不能进入主计数 |
 
 ## 验收标准
 
