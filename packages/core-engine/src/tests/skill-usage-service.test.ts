@@ -116,7 +116,7 @@ describe("SkillUsageService", () => {
       collectors: [
         new StaticUsageCollector([{
           sourceEventId: "event-old",
-          observedAt: "2026-03-03T00:00:00.000Z",
+          observedAt: "2025-03-03T00:00:00.000Z",
           agent: "claude-code",
           rawSkillName: "wayfinder",
           evidenceKind: "tool_call",
@@ -141,13 +141,72 @@ describe("SkillUsageService", () => {
     expect(summary.totals.observedAccepted).toBe(0);
     expect(await store.readObservations()).toEqual([]);
   });
+
+  test("reports unsupported agents in coverage without treating them as zero-use scans", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-coverage-"));
+    const store = new UsageStore(stateRoot);
+    const service = new SkillUsageService({
+      store,
+      collectors: [
+        new StaticUsageCollector([{
+          sourceEventId: "event-1",
+          observedAt: "2026-08-23T00:00:00.000Z",
+          agent: "codex",
+          rawSkillName: "wayfinder",
+          evidenceKind: "tool_call",
+          confidence: "observed",
+          outcome: "unknown",
+          sourceKind: "local-session",
+          parserRevision: "test@1",
+          projectRef: null,
+          projectLabel: "Unknown project",
+        }], "codex"),
+      ],
+      supportedAgents: ["codex", "opencode", "zcode"],
+      readLeafInventory: async () => [leaf("leaf-wayfinder", "wayfinder", "Wayfinder")],
+      localSalt: stateRoot,
+    });
+
+    const summary = await service.refreshUsageObservations({
+      trigger: "scheduled",
+      now: new Date("2026-08-23T00:01:00.000Z"),
+    });
+
+    expect(summary.coverage).toEqual(expect.arrayContaining([
+      expect.objectContaining({ agent: "codex", status: "scanned", observedUses: 1 }),
+      expect.objectContaining({
+        agent: "opencode",
+        status: "parser_unsupported",
+        sourceKind: null,
+        parserRevision: null,
+        observedUses: 0,
+      }),
+      expect.objectContaining({
+        agent: "zcode",
+        status: "parser_unsupported",
+        sourceKind: null,
+        parserRevision: null,
+        observedUses: 0,
+      }),
+    ]));
+    expect(summary.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ agent: "opencode", code: "PARSER_UNSUPPORTED" }),
+      expect.objectContaining({ agent: "zcode", code: "PARSER_UNSUPPORTED" }),
+    ]));
+    expect(summary.totals.observedAccepted).toBe(1);
+  });
 });
 
 class StaticUsageCollector implements UsageCollector {
-  readonly agent = "claude-code" as const;
+  readonly agent: UsageCollector["agent"];
   readonly parserRevision = "test@1";
 
-  constructor(private readonly observations: UsageCollectorObservation[]) {}
+  constructor(
+    private readonly observations: UsageCollectorObservation[],
+    agent: UsageCollector["agent"] = "claude-code",
+  ) {
+    this.agent = agent;
+  }
 
   async locateSources(): Promise<string[]> {
     return ["/tmp/fake-claude"];
@@ -156,15 +215,19 @@ class StaticUsageCollector implements UsageCollector {
   async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
     return {
       observations: this.observations,
-      coverage: coverage(input.now.toISOString(), this.observations.length),
+      coverage: coverage(input.now.toISOString(), this.observations.length, this.agent),
       diagnostics: [],
     };
   }
 }
 
-function coverage(scannedAt: string, observedUses: number): UsageAgentCoverage {
+function coverage(
+  scannedAt: string,
+  observedUses: number,
+  agent: UsageCollector["agent"] = "claude-code",
+): UsageAgentCoverage {
   return {
-    agent: "claude-code",
+    agent,
     sourceKind: "local-session",
     parserRevision: "test@1",
     status: "scanned",

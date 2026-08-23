@@ -8,16 +8,19 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@skill-flow/shared-types/protocol";
-import type {
-  DraftBinding,
-  ImportDraft,
-  ProjectScope,
-  UsageAgent,
-  UsageConfidence,
-  UsageRefreshTrigger,
-  UsageSnapshotFilters,
+import {
+  USAGE_AGENTS,
+  type DraftBinding,
+  type ImportDraft,
+  type ProjectScope,
+  type UsageAgent,
+  type UsageConfidence,
+  type UsageRefreshTrigger,
+  type UsageSnapshotFilters,
 } from "@skill-flow/domain/types";
-import type { SkillFlowApp } from "@skill-flow/query/runtime";
+import type {
+  SkillFlowApp,
+} from "@skill-flow/query/runtime";
 
 type BridgeFailure = {
   code: string;
@@ -705,16 +708,7 @@ function parseOptionalUsageAgents(value: JsonValue | undefined): UsageAgent[] | 
     return undefined;
   }
   const agents = parseOptionalStringArray(value, "filters.agents");
-  const allowed = new Set<UsageAgent>([
-    "claude-code",
-    "codex",
-    "gemini-cli",
-    "openclaw",
-    "pi",
-    "copilot-cli",
-    "kimi-code",
-    "unknown",
-  ]);
+  const allowed = new Set<UsageAgent>(USAGE_AGENTS);
   if (!agents?.every((agent): agent is UsageAgent => allowed.has(agent as UsageAgent))) {
     throw new Error("Field 'filters.agents' contains an unsupported usage agent.");
   }

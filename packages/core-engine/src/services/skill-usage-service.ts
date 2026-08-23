@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   LeafRecord,
+  UsageAgent,
   UsageAgentCoverage,
   UsageCollectorObservation,
   UsageDiagnostic,
@@ -18,6 +19,7 @@ import type { UsageCollector } from "@skill-flow/integration/utils/usage-collect
 
 const USAGE_SCHEMA_VERSION = 1 as const;
 const DEFAULT_PROJECT_LABEL = "Unknown project";
+const USAGE_OBSERVATION_RETENTION_DAYS = 365;
 
 export const DEFAULT_USAGE_REFRESH_BUDGET: UsageRefreshBudget = {
   globalBudgetMs: 30000,
@@ -30,6 +32,7 @@ export const DEFAULT_USAGE_REFRESH_BUDGET: UsageRefreshBudget = {
 export type SkillUsageServiceOptions = {
   store: UsageStore;
   collectors: UsageCollector[];
+  supportedAgents?: UsageAgent[];
   readLeafInventory: () => Promise<LeafRecord[]>;
   localSalt: string;
   budget?: UsageRefreshBudget;
@@ -120,6 +123,14 @@ export class SkillUsageService {
       diagnostics.push(...buildUnmatchedSkillDiagnostics(result.observations, mappedObservations, refreshedAt));
     }
 
+    appendUnsupportedAgentCoverage({
+      coverage,
+      diagnostics,
+      supportedAgents: this.options.supportedAgents ?? [],
+      implementedAgents: this.options.collectors.map((collector) => collector.agent),
+      timestamp: refreshedAt,
+    });
+
     const retainedObservations = collected.filter((observation) => isWithinRetentionWindow(observation, now));
     const writeResult = await this.options.store.appendObservations(retainedObservations);
     const storedDiagnostics = compactDiagnostics(diagnostics);
@@ -200,6 +211,35 @@ export class SkillUsageService {
       projectRef: project.projectRef,
       projectLabel: project.projectLabel,
     };
+  }
+}
+
+function appendUnsupportedAgentCoverage(args: {
+  coverage: UsageAgentCoverage[];
+  diagnostics: UsageDiagnostic[];
+  supportedAgents: UsageAgent[];
+  implementedAgents: UsageAgent[];
+  timestamp: string;
+}): void {
+  const coveredAgents = new Set(args.coverage.map((item) => item.agent));
+  const implementedAgents = new Set(args.implementedAgents);
+  for (const agent of args.supportedAgents) {
+    if (coveredAgents.has(agent) || implementedAgents.has(agent)) {
+      continue;
+    }
+    args.coverage.push({
+      agent,
+      sourceKind: null,
+      parserRevision: null,
+      status: "parser_unsupported",
+      lastScannedAt: args.timestamp,
+      coverageFrom: null,
+      coverageTo: null,
+      observedUses: 0,
+      inferredSignals: 0,
+      diagnosticsCount: 1,
+    });
+    args.diagnostics.push(diagnostic("PARSER_UNSUPPORTED", agent, "info", args.timestamp));
   }
 }
 
@@ -300,7 +340,7 @@ function buildUnmatchedSkillDiagnostics(
 
 function isWithinRetentionWindow(observation: UsageObservationV1, now: Date): boolean {
   const cutoff = new Date(now);
-  cutoff.setUTCDate(cutoff.getUTCDate() - 90);
+  cutoff.setUTCDate(cutoff.getUTCDate() - USAGE_OBSERVATION_RETENTION_DAYS);
   return observation.observedAt.slice(0, 10) >= cutoff.toISOString().slice(0, 10);
 }
 

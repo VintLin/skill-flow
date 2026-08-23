@@ -265,7 +265,7 @@ describe.sequential("bridge command dispatcher", () => {
           preset: "7d",
         },
         appliedFilters: {
-          agents: ["claude-code"],
+          agents: ["claude-code", "zcode"],
           skillRefs: [],
           projectRefs: [],
           confidence: ["observed"],
@@ -298,14 +298,14 @@ describe.sequential("bridge command dispatcher", () => {
       command: "usage-snapshot",
       payload: {
         range: { preset: "7d" },
-        filters: { agents: ["claude-code"], confidence: ["observed"], includeInferred: false },
+        filters: { agents: ["claude-code", "zcode"], confidence: ["observed"], includeInferred: false },
         limits: { topSkills: 10, projects: 10, recentObservations: 20 },
       },
     });
 
     expect(app.getUsageSnapshot).toHaveBeenCalledWith({
       range: { preset: "7d" },
-      filters: { agents: ["claude-code"], confidence: ["observed"], includeInferred: false },
+      filters: { agents: ["claude-code", "zcode"], confidence: ["observed"], includeInferred: false },
       limits: { topSkills: 10, projects: 10, recentObservations: 20 },
     });
     expect(response.ok).toBe(true);

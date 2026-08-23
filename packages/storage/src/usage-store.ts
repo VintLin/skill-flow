@@ -32,6 +32,7 @@ export type UsageCoverageState = {
 
 const USAGE_SCHEMA_VERSION = 1 as const;
 const DEFAULT_PROJECT_LABEL = "Unknown project";
+const USAGE_OBSERVATION_RETENTION_DAYS = 365;
 
 export class UsageStore {
   constructor(private readonly stateRoot = getStateRoot()) {}
@@ -130,7 +131,7 @@ export class UsageStore {
   async pruneIfDue(now = new Date()): Promise<{ removedFiles: number }> {
     await this.init();
     const cutoff = new Date(now);
-    cutoff.setUTCDate(cutoff.getUTCDate() - 90);
+    cutoff.setUTCDate(cutoff.getUTCDate() - USAGE_OBSERVATION_RETENTION_DAYS);
     const cutoffDate = cutoff.toISOString().slice(0, 10);
     let removedFiles = 0;
 

@@ -121,15 +121,34 @@ export type RecentProject = {
   tools?: string[];
 };
 
-export type UsageAgent =
-  | "claude-code"
-  | "codex"
-  | "gemini-cli"
-  | "openclaw"
-  | "pi"
-  | "copilot-cli"
-  | "kimi-code"
-  | "unknown";
+export const USAGE_AGENTS = [
+  "claude-code",
+  "codex",
+  "cursor",
+  "github-copilot",
+  "gemini-cli",
+  "opencode",
+  "openclaw",
+  "hermes-agent",
+  "minimax-code",
+  "kimi-code",
+  "workbuddy",
+  "codebuddy",
+  "pi",
+  "trae",
+  "trae-cn",
+  "windsurf",
+  "roo-code",
+  "cline",
+  "amp",
+  "kiro",
+  "zcode",
+  "grok-build",
+  "copilot-cli",
+  "unknown",
+] as const;
+
+export type UsageAgent = typeof USAGE_AGENTS[number];
 
 export type UsageEvidenceKind =
   | "skill_activated"

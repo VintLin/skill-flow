@@ -164,7 +164,10 @@ import {
   SkillCollectionMemberOriginMissingError,
   materializeSkillCollectionMembers,
 } from "@skill-flow/core-engine/services/skill-collection-materializer";
-import { createDefaultUsageCollectors } from "@skill-flow/integration/utils/usage-collectors";
+import {
+  createDefaultSupportedUsageAgents,
+  createDefaultUsageCollectors,
+} from "@skill-flow/integration/utils/usage-collectors";
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
 const BUILT_IN_SKILL_SOURCE_ID = "skill-flow";
@@ -507,6 +510,7 @@ export class SkillFlowApp {
     this.usageService = new SkillUsageService({
       store: new UsageStore(this.store.rootPath),
       collectors: createDefaultUsageCollectors(),
+      supportedAgents: createDefaultSupportedUsageAgents(),
       readLeafInventory: async () => (await this.stateStore.readState()).lockFile.leafInventory,
       localSalt: this.store.rootPath,
     });
