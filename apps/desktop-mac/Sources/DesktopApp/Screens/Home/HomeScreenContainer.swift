@@ -37,6 +37,9 @@ final class HomeScreenContainer {
             showImportPage: { [weak state] in
                 state?.view.currentRoute = .importPage
             },
+            showUsage: { [weak state] in
+                state?.view.currentRoute = .usage
+            },
             showSettings: { [weak state] in
                 state?.view.currentRoute = .settings
             }

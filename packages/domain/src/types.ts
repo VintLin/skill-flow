@@ -121,6 +121,243 @@ export type RecentProject = {
   tools?: string[];
 };
 
+export type UsageAgent =
+  | "claude-code"
+  | "codex"
+  | "gemini-cli"
+  | "openclaw"
+  | "pi"
+  | "copilot-cli"
+  | "kimi-code"
+  | "unknown";
+
+export type UsageEvidenceKind =
+  | "skill_activated"
+  | "selected"
+  | "explicit_command"
+  | "tool_call";
+
+export type UsageConfidence = "observed" | "inferred";
+
+export type UsageOutcome = "completed" | "aborted" | "unknown";
+
+export type UsageSourceKind = "direct-event" | "local-session";
+
+export type UsageCoverageStatus =
+  | "scanned"
+  | "not_found"
+  | "no_records"
+  | "no_skill_signals"
+  | "partial"
+  | "parser_unsupported"
+  | "read_failed"
+  | "budget_exhausted";
+
+export type UsageSkillInventoryStatus =
+  | "installed"
+  | "not_installed"
+  | "unknown";
+
+export type UsageRefreshTrigger = "bootstrap" | "scheduled";
+
+export type UsageRefreshStatus = "completed" | "partial" | "skipped";
+
+export type UsageDiagnosticCode =
+  | "SOURCE_NOT_FOUND"
+  | "NO_RECORDS"
+  | "NO_SKILL_SIGNALS"
+  | "PARSER_UNSUPPORTED"
+  | "READ_FAILED"
+  | "BUDGET_EXHAUSTED"
+  | "INVALID_RECORD_DROPPED"
+  | "UNMATCHED_SKILL"
+  | "STORAGE_WRITE_FAILED"
+  | "USAGE_SCHEMA_UNSUPPORTED";
+
+export type UsageDiagnostic = {
+  code: UsageDiagnosticCode;
+  agent: UsageAgent | null;
+  severity: "info" | "warning" | "error";
+  count: number;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+};
+
+export type UsageObservationV1 = {
+  schemaVersion: 1;
+  observationId: string;
+  observedAt: string;
+  agent: UsageAgent;
+  skillRef: SkillLeafId | null;
+  evidenceKind: UsageEvidenceKind;
+  confidence: UsageConfidence;
+  outcome: UsageOutcome;
+  sourceKind: UsageSourceKind;
+  parserRevision: string;
+  projectRef: string | null;
+  projectLabel: string;
+};
+
+export type UsageCollectorObservation = Omit<
+  UsageObservationV1,
+  "schemaVersion" | "observationId" | "skillRef"
+> & {
+  sourceEventId: string;
+  rawSkillName: string | null;
+  rawProjectPath?: string;
+};
+
+export type UsageRefreshBudget = {
+  globalBudgetMs: 30000;
+  perSourceBudgetMs: 5000;
+  maxFiles: 500;
+  maxBytes: 536870912;
+  cooldownSeconds: 900;
+};
+
+export type UsageAgentCoverage = {
+  agent: UsageAgent;
+  sourceKind: UsageSourceKind | null;
+  parserRevision: string | null;
+  status: UsageCoverageStatus;
+  lastScannedAt: string | null;
+  coverageFrom: string | null;
+  coverageTo: string | null;
+  observedUses: number;
+  inferredSignals: number;
+  diagnosticsCount: number;
+};
+
+export type UsageRefreshSummary = {
+  schemaVersion: 1;
+  refreshedAt: string;
+  trigger: UsageRefreshTrigger;
+  status: UsageRefreshStatus;
+  skippedReason?: "cooldown_active" | "usage_schema_unsupported";
+  budget: UsageRefreshBudget;
+  totals: {
+    sourcesFound: number;
+    sourcesScanned: number;
+    observedAccepted: number;
+    inferredAccepted: number;
+    duplicateSkipped: number;
+    droppedInvalid: number;
+    diagnosticsCount: number;
+  };
+  coverage: UsageAgentCoverage[];
+  diagnostics: UsageDiagnostic[];
+};
+
+export type UsageSnapshotFilters = {
+  range?: {
+    preset?: "7d" | "30d" | "90d" | "available";
+    from?: string;
+    to?: string;
+  };
+  filters?: {
+    agents?: UsageAgent[];
+    skillRefs?: SkillLeafId[];
+    projectRefs?: string[];
+    confidence?: UsageConfidence[];
+    includeInferred?: boolean;
+  };
+  limits?: {
+    topSkills?: number;
+    projects?: number;
+    recentObservations?: number;
+  };
+};
+
+export type UsageKpis = {
+  observedUses: number;
+  activeSkills: number;
+  activeAgents: number;
+  activeProjects: number;
+  lastObservedAt: string | null;
+  inferredSignals: number;
+};
+
+export type UsageDailyBucket = {
+  date: string;
+  observedUses: number;
+  inferredSignals: number;
+  byAgent: Array<{
+    agent: UsageAgent;
+    observedUses: number;
+    inferredSignals: number;
+  }>;
+};
+
+export type UsageTopSkill = {
+  skillRef: SkillLeafId | null;
+  skillLabel: string;
+  inventoryStatus: UsageSkillInventoryStatus;
+  observedUses: number;
+  inferredSignals: number;
+  lastObservedAt: string | null;
+  agents: UsageAgent[];
+  projects: Array<{
+    projectRef: string | null;
+    projectLabel: string;
+  }>;
+};
+
+export type UsageProjectBreakdown = {
+  projectRef: string | null;
+  projectLabel: string;
+  observedUses: number;
+  inferredSignals: number;
+  activeSkills: number;
+  activeAgents: number;
+  lastObservedAt: string | null;
+};
+
+export type UsageRecentObservation = {
+  observedAt: string;
+  agent: UsageAgent;
+  skillRef: SkillLeafId | null;
+  skillLabel: string;
+  projectRef: string | null;
+  projectLabel: string;
+  evidenceKind: UsageEvidenceKind;
+  confidence: UsageConfidence;
+  outcome: UsageOutcome;
+  sourceKind: UsageSourceKind;
+};
+
+export type UsageSnapshotTruncation = {
+  topSkillsTruncated: boolean;
+  projectsTruncated: boolean;
+  recentObservationsTruncated: boolean;
+};
+
+export type UsageSnapshot = {
+  schemaVersion: 1;
+  generatedAt: string;
+  range: {
+    from: string;
+    to: string;
+    coverageFrom: string | null;
+    coverageTo: string | null;
+    preset: "7d" | "30d" | "90d" | "available" | "custom";
+  };
+  appliedFilters: {
+    agents: UsageAgent[];
+    skillRefs: SkillLeafId[];
+    projectRefs: string[];
+    confidence: UsageConfidence[];
+    includeInferred: boolean;
+  };
+  kpis: UsageKpis;
+  dailySeries: UsageDailyBucket[];
+  topSkills: UsageTopSkill[];
+  projectBreakdown: UsageProjectBreakdown[];
+  agentCoverage: UsageAgentCoverage[];
+  recentObservations: UsageRecentObservation[];
+  diagnostics: UsageDiagnostic[];
+  truncation: UsageSnapshotTruncation;
+};
+
 export type ScopedSourceDrafts = Record<string, Record<string, DraftBinding>>;
 
 export type CollectionSkillRef = {

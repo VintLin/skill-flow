@@ -17,9 +17,14 @@ protocol DesktopDetailEnrichmentQuerying: Sendable {
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse
 }
 
+protocol DesktopUsageQuerying: Sendable {
+    func refreshUsage(trigger: String) async throws -> BridgeResponse
+    func usageSnapshot() async throws -> BridgeResponse
+}
+
 /// Composition-root transport. Feature modules depend only on one of the
 /// narrow query interfaces above.
-protocol DesktopQueryTransporting: DesktopSourceQuerying, DesktopImportQuerying, DesktopDetailEnrichmentQuerying {}
+protocol DesktopQueryTransporting: DesktopSourceQuerying, DesktopImportQuerying, DesktopDetailEnrichmentQuerying, DesktopUsageQuerying {}
 
 extension DesktopSourceQuerying {
     func bootstrap() async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
@@ -38,4 +43,9 @@ extension DesktopImportQuerying {
 
 extension DesktopDetailEnrichmentQuerying {
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
+}
+
+extension DesktopUsageQuerying {
+    func refreshUsage(trigger: String) async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
+    func usageSnapshot() async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
 }

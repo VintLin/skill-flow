@@ -28,6 +28,7 @@ enum ActionIcon: String {
     case tagAdd = "tag-add"
     case tagDelete = "tag-delete"
     case update
+    case usage
 
     func image(size: CGFloat? = nil, isTemplate: Bool = true) -> NSImage? {
         if self == .searchSubmitEnter,
@@ -36,6 +37,10 @@ enum ActionIcon: String {
         }
         if self == .rename,
            let fallback = Self.systemSymbolImage("pencil", size: size, isTemplate: isTemplate) {
+            return fallback
+        }
+        if self == .usage,
+           let fallback = Self.systemSymbolImage("chart.bar.xaxis", size: size, isTemplate: isTemplate) {
             return fallback
         }
 

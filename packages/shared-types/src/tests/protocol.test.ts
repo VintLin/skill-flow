@@ -42,6 +42,8 @@ describe("bridge protocol", () => {
       "configure-external-source",
       "external-status",
       "external-update",
+      "refresh-usage",
+      "usage-snapshot",
       "add",
       "apply",
       "update",
@@ -182,6 +184,8 @@ describe("bridge protocol", () => {
     expect(isBridgeCommandName("inspect-enrichment")).toBe(true);
     expect(isBridgeCommandName("prepare-import-source")).toBe(true);
     expect(isBridgeCommandName("commit-import-source")).toBe(true);
+    expect(isBridgeCommandName("refresh-usage")).toBe(true);
+    expect(isBridgeCommandName("usage-snapshot")).toBe(true);
     expect(isBridgeCommandName("save-settings")).toBe(true);
     expect(isBridgeCommandName("not-real")).toBe(false);
 

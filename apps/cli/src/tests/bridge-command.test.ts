@@ -213,6 +213,118 @@ describe.sequential("bridge command dispatcher", () => {
     });
   });
 
+  test("refresh-usage forwards trigger and returns value envelope", async () => {
+    const app = {
+      refreshUsageObservations: vi.fn(async () => ({
+        schemaVersion: 1,
+        refreshedAt: "2026-08-23T00:00:00.000Z",
+        trigger: "scheduled",
+        status: "completed",
+        budget: {
+          globalBudgetMs: 30000,
+          perSourceBudgetMs: 5000,
+          maxFiles: 500,
+          maxBytes: 536870912,
+          cooldownSeconds: 900,
+        },
+        totals: {
+          sourcesFound: 1,
+          sourcesScanned: 1,
+          observedAccepted: 1,
+          inferredAccepted: 0,
+          duplicateSkipped: 0,
+          droppedInvalid: 0,
+          diagnosticsCount: 0,
+        },
+        coverage: [],
+        diagnostics: [],
+      })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "refresh-usage",
+      payload: { trigger: "scheduled" },
+    });
+
+    expect(app.refreshUsageObservations).toHaveBeenCalledWith({ trigger: "scheduled" });
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("schemaVersion", 1);
+  });
+
+  test("usage-snapshot forwards sanitized filters", async () => {
+    const app = {
+      getUsageSnapshot: vi.fn(async () => ({
+        schemaVersion: 1,
+        generatedAt: "2026-08-23T00:00:00.000Z",
+        range: {
+          from: "2026-08-17",
+          to: "2026-08-23",
+          coverageFrom: null,
+          coverageTo: null,
+          preset: "7d",
+        },
+        appliedFilters: {
+          agents: ["claude-code"],
+          skillRefs: [],
+          projectRefs: [],
+          confidence: ["observed"],
+          includeInferred: false,
+        },
+        kpis: {
+          observedUses: 0,
+          activeSkills: 0,
+          activeAgents: 0,
+          activeProjects: 0,
+          lastObservedAt: null,
+          inferredSignals: 0,
+        },
+        dailySeries: [],
+        topSkills: [],
+        projectBreakdown: [],
+        agentCoverage: [],
+        recentObservations: [],
+        diagnostics: [],
+        truncation: {
+          topSkillsTruncated: false,
+          projectsTruncated: false,
+          recentObservationsTruncated: false,
+        },
+      })),
+    } as unknown as SkillFlowApp;
+
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "usage-snapshot",
+      payload: {
+        range: { preset: "7d" },
+        filters: { agents: ["claude-code"], confidence: ["observed"], includeInferred: false },
+        limits: { topSkills: 10, projects: 10, recentObservations: 20 },
+      },
+    });
+
+    expect(app.getUsageSnapshot).toHaveBeenCalledWith({
+      range: { preset: "7d" },
+      filters: { agents: ["claude-code"], confidence: ["observed"], includeInferred: false },
+      limits: { topSkills: 10, projects: 10, recentObservations: 20 },
+    });
+    expect(response.ok).toBe(true);
+  });
+
+  test("rejects invalid usage-snapshot filters", async () => {
+    const app = new SkillFlowApp();
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "usage-snapshot",
+      payload: {
+        filters: { agents: ["unsupported-agent"] },
+      },
+    });
+
+    expect(response.ok).toBe(false);
+    expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+  });
+
   test("rejects invalid apply payload", async () => {
     const app = new SkillFlowApp();
     const response = await executeBridgeRequest(app, {

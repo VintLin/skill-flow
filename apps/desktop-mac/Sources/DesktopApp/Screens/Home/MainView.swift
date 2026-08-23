@@ -136,6 +136,7 @@ struct MainView: View {
         let showHome: () -> Void
         let showDetail: (String) -> Void
         let showImportPage: () -> Void
+        let showUsage: () -> Void
         let showSettings: () -> Void
     }
 
@@ -365,6 +366,10 @@ struct MainView: View {
                 Task {
                     await viewModel.loadImportPageIfNeeded()
                 }
+            case .usage:
+                Task {
+                    await viewModel.loadUsageSnapshot()
+                }
             default:
                 break
             }
@@ -420,6 +425,7 @@ struct MainView: View {
                     HStack(spacing: 8) {
                         searchField
                         importButton
+                        usageButton
                         groupEditorButton
                         homeUpdateButton
                         settingsButton
@@ -435,6 +441,7 @@ struct MainView: View {
                     searchField
                     Spacer(minLength: 0)
                     importButton
+                    usageButton
                     groupEditorButton
                     homeUpdateButton
                     settingsButton
@@ -470,6 +477,18 @@ struct MainView: View {
                         .frame(width: Self.headerLeadingWidth, alignment: .leading)
                     Spacer(minLength: 0)
                     settingsHeaderActions
+                    settingsButton
+                }
+                .padding(.leading, Self.nonHomeHeaderLeadingPadding)
+                .padding(.trailing, Self.nonHomeHeaderTrailingPadding)
+                .frame(height: 52)
+                .background(AppTheme.headerBackground(for: theme))
+            } else if isUsagePage {
+                HStack(spacing: 10) {
+                    topBarTitleRow
+                        .frame(width: Self.headerLeadingWidth, alignment: .leading)
+                    Spacer(minLength: 0)
+                    usageRefreshButton
                     settingsButton
                 }
                 .padding(.leading, Self.nonHomeHeaderLeadingPadding)
@@ -522,6 +541,10 @@ struct MainView: View {
 
     private var isSettingsPage: Bool {
         homeViewModel.currentRoute == .settings
+    }
+
+    private var isUsagePage: Bool {
+        homeViewModel.currentRoute == .usage
     }
 
     private var headerLogoRow: some View {
@@ -697,6 +720,10 @@ struct MainView: View {
         toolbarIconButton(.import) { navigation.showImportPage() }
     }
 
+    private var usageButton: some View {
+        toolbarIconButton(.usage) { navigation.showUsage() }
+    }
+
     private func importHeaderActions(forWindowWidth width: CGFloat) -> some View {
         HStack(spacing: Self.importHeaderItemSpacing(forWindowWidth: width)) {
             importModeButton(.recommended, titleKey: "import.mode.recommended", icon: .importRecommended)
@@ -857,6 +884,30 @@ struct MainView: View {
 
     private var settingsButton: some View {
         toolbarIconButton(.settings) { navigation.showSettings() }
+    }
+
+    private var usageRefreshButton: some View {
+        Button {
+            Task { await viewModel.refreshUsageAnalytics() }
+        } label: {
+            HStack(spacing: 7) {
+                actionIcon(.update, size: 13)
+                Text("Refresh")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(AppTheme.textPrimary(for: theme))
+            .padding(.horizontal, 11)
+            .frame(height: 32)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .desktopMotionButton(kind: .primary, theme: theme, accent: accent, isEnabled: true)
+        .background(AppTheme.headerControlFill(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
+        }
     }
 
     private var settingsHeaderActions: some View {
@@ -1048,6 +1099,12 @@ struct MainView: View {
                 screenState: importScreenState,
                 gridColumnCount: layout.gridColumnCount,
                 gridFrameWidth: layout.gridFrameWidth,
+                theme: theme,
+                accent: accent
+            )
+        case .usage:
+            UsageScreen(
+                viewModel: viewModel,
                 theme: theme,
                 accent: accent
             )
@@ -1309,6 +1366,8 @@ struct MainView: View {
             return t("page.home.title")
         case .importPage:
             return t("page.import.title")
+        case .usage:
+            return "Usage"
         case .settings:
             return t("page.settings.title")
         case .detail:
@@ -1320,14 +1379,14 @@ struct MainView: View {
         switch route {
         case .home, .importPage:
             return true
-        case .settings, .detail:
+        case .usage, .settings, .detail:
             return false
         }
     }
 
     static func shouldAutofocusSearchField(for route: DesktopRoute) -> Bool {
         switch route {
-        case .home, .importPage, .settings, .detail:
+        case .home, .importPage, .usage, .settings, .detail:
             return false
         }
     }

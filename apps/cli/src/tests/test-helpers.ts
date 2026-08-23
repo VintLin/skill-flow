@@ -27,6 +27,7 @@ export function useSkillFlowSandbox() {
     await fs.mkdir(context.targetsRoot, { recursive: true });
 
     process.env.SKILL_FLOW_STATE_ROOT = context.stateRoot;
+    process.env.SKILL_FLOW_USAGE_CLAUDE_PROJECTS_ROOT = path.join(context.sandboxRoot, ".claude", "projects");
     process.env.SKILL_FLOW_TARGET_CLAUDE_CODE = path.join(context.targetsRoot, "claude");
     process.env.SKILL_FLOW_TARGET_CODEX = path.join(context.targetsRoot, "codex");
     process.env.SKILL_FLOW_TARGET_CURSOR = path.join(context.targetsRoot, "cursor");
@@ -79,6 +80,7 @@ export function useSkillFlowSandbox() {
   afterEach(async () => {
     vi.restoreAllMocks();
     delete process.env.SKILL_FLOW_STATE_ROOT;
+    delete process.env.SKILL_FLOW_USAGE_CLAUDE_PROJECTS_ROOT;
     delete process.env.SKILL_FLOW_TARGET_CLAUDE_CODE;
     delete process.env.SKILL_FLOW_TARGET_CODEX;
     delete process.env.SKILL_FLOW_TARGET_CURSOR;

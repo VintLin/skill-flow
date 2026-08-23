@@ -22,6 +22,30 @@ _Avoid_: App Group container (unless later required), preferences.json for these
 Authoritative skill-flow state under `~/.skillflow` (manifest, lock, preferences, sources). Shared across CLI, TUI, and desktop bridge. Distinct from Desktop Workspace Memory unless a later decision elevates specific fields into it.
 _Avoid_: UserDefaults, desktop-only store
 
+### AI assistance
+
+**Model Provider**:
+An external or local model service selected to perform Skill-derived AI work such as tag suggestions and document translation. It is distinct from providers that locate or describe import sources.
+_Avoid_: AI provider (ambiguous), import provider, source provider
+
+### Skill usage analytics
+
+**Skill Usage Observation**:
+A local, explainable record that an Agent explicitly activated, selected, invoked by name, or invoked through a named tool a Skill. It carries the Agent, evidence source, confidence, and optional observed terminal state; it does not imply business success.
+_Avoid_: install count, deployment status, inferred file read, skill success
+
+**Lifecycle Event**:
+A local record of a Skill management operation such as install, update, sync, deployment, or removal. It is distinct from a Skill Usage Observation and is never included in usage counts.
+_Avoid_: usage, activation, invocation
+
+**Automatic Local Collection**:
+Skill Flow automatically reads known local session or event roots for detected Agent targets and derives minimal Skill Usage Observations without a user confirmation, directory picker, remote connection, or write-back to the Agent. Missing sources, read failures, and parser drift lower coverage rather than triggering a collection gate.
+_Avoid_: opt-in connector, manual import, consent flow, remote telemetry
+
+**Usage Retention**:
+The automatic lifecycle for Skill Usage Observations: raw observations remain for 90 days within fixed record and disk caps, while daily aggregates remain for 365 days. It is isolated from management audit history and never deletes Agent session data.
+_Avoid_: audit rotation, source cleanup, Agent session cleanup
+
 ### Agent presentation (desktop)
 
 **Agent Display Visibility**:

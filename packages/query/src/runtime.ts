@@ -58,11 +58,16 @@ import type {
   UnifiedSourceTrust,
   CollectionViewRecord,
   CollectionSkillRef,
+  UsageRefreshSummary,
+  UsageRefreshTrigger,
+  UsageSnapshot,
+  UsageSnapshotFilters,
   Warning,
   WorkflowSummary,
 } from "@skill-flow/domain/types";
 import { RuntimeStore } from "@skill-flow/storage/runtime-store";
 import { StateStore } from "@skill-flow/storage/state-store";
+import { UsageStore } from "@skill-flow/storage/usage-store";
 import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
 import {
   isImportDataCacheExpired,
@@ -132,6 +137,7 @@ import {
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
+import { SkillUsageService } from "@skill-flow/core-engine/services/skill-usage-service";
 import { SourceAuthorityService } from "@skill-flow/core-engine/services/source-authority-service";
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
 import {
@@ -158,6 +164,7 @@ import {
   SkillCollectionMemberOriginMissingError,
   materializeSkillCollectionMembers,
 } from "@skill-flow/core-engine/services/skill-collection-materializer";
+import { createDefaultUsageCollectors } from "@skill-flow/integration/utils/usage-collectors";
 
 const EMPTY_DRAFT: DraftBinding = { enabledTargets: [], selectedLeafIds: [] };
 const BUILT_IN_SKILL_SOURCE_ID = "skill-flow";
@@ -456,6 +463,7 @@ export class SkillFlowApp {
   readonly recentProjectService: RecentProjectService;
   readonly workspaceBootstrapService: WorkspaceBootstrapService;
   readonly configCoordinator: ConfigCoordinator;
+  readonly usageService: SkillUsageService;
   private readonly deploymentReconciler: DeploymentReconciler;
   private readonly builtInSkillsRoot: string | undefined;
   private mutationQueue: Promise<void> = Promise.resolve();
@@ -495,6 +503,12 @@ export class SkillFlowApp {
     this.workspaceBootstrapService = new WorkspaceBootstrapService({
       stateRoot: this.stateStore.rootPath,
       ...(options.agentsOriginReader ? { agentsOriginReader: options.agentsOriginReader } : {}),
+    });
+    this.usageService = new SkillUsageService({
+      store: new UsageStore(this.store.rootPath),
+      collectors: createDefaultUsageCollectors(),
+      readLeafInventory: async () => (await this.stateStore.readState()).lockFile.leafInventory,
+      localSalt: this.store.rootPath,
     });
     this.configCoordinator = new ConfigCoordinator({
       store: {
@@ -4268,6 +4282,18 @@ export class SkillFlowApp {
     );
   }
 
+  async refreshUsageObservations(options: {
+    trigger?: UsageRefreshTrigger;
+  } = {}): Promise<UsageRefreshSummary> {
+    return this.usageService.refreshUsageObservations({
+      trigger: options.trigger ?? "scheduled",
+    });
+  }
+
+  async getUsageSnapshot(filters: UsageSnapshotFilters = {}): Promise<UsageSnapshot> {
+    return this.usageService.getUsageSnapshot(filters);
+  }
+
   private async bootstrapWorkspaceStateImpl(
     onEvent?: (event: BootstrapEvent) => void,
   ): Promise<
@@ -4298,6 +4324,7 @@ export class SkillFlowApp {
       boot.data.manifest,
       boot.data.lockFile,
     );
+    await this.refreshUsageObservations({ trigger: "bootstrap" }).catch(() => undefined);
 
     return ok({
       availableTargets: boot.data.availableTargets,

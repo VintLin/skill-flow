@@ -13,6 +13,8 @@ struct DesktopBridgeQueryFacade<Transport: DesktopBridgeTransporting>: DesktopQu
         try await bridgeClient.inspect(sourceId: sourceId, scope: scope)
     }
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { try await bridgeClient.inspectEnrichment(sourceId: sourceId) }
+    func refreshUsage(trigger: String) async throws -> BridgeResponse { try await bridgeClient.refreshUsage(trigger: trigger) }
+    func usageSnapshot() async throws -> BridgeResponse { try await bridgeClient.usageSnapshot() }
     func searchImportGroups(query: String?) async throws -> BridgeResponse { try await bridgeClient.searchImportGroups(query: query) }
     func scanLocalImportGroups(path: String?) async throws -> BridgeResponse { try await bridgeClient.scanLocalImportGroups(path: path) }
     func prepareImportSource(locator: String) async throws -> BridgeResponse { try await bridgeClient.prepareImportSource(locator: locator) }

@@ -4,6 +4,7 @@ export * from "./services/doctor-service.js";
 export * from "./services/external-source-lifecycle.js";
 export * from "./services/inventory-service.js";
 export * from "./services/recent-project-service.js";
+export * from "./services/skill-usage-service.js";
 export * from "./services/state-migration-service.js";
 export * from "./services/source-types.js";
 export * from "./services/workspace-bootstrap-service.js";

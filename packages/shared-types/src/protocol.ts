@@ -23,6 +23,8 @@ export const BRIDGE_COMMAND_NAMES = [
   "configure-external-source",
   "external-status",
   "external-update",
+  "refresh-usage",
+  "usage-snapshot",
   "add",
   "apply",
   "update",

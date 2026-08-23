@@ -3,6 +3,7 @@ import Foundation
 enum Page: Equatable {
     case home
     case importPage
+    case usage
     case settings
     case detail(sourceId: String)
 }
@@ -160,6 +161,52 @@ struct CollectionEditorOptions: Equatable {
     let skillOptions: [CollectionSkillOption]
     let mergeSourceOptions: [CollectionSourceOption]
     let restoreSourceOptions: [CollectionSourceOption]
+}
+
+struct UsageSnapshotViewData: Equatable {
+    let generatedAt: String
+    let rangeLabel: String
+    let kpis: UsageKpisViewData
+    let topSkills: [UsageTopSkillViewData]
+    let recentObservations: [UsageRecentObservationViewData]
+    let agentCoverage: [UsageAgentCoverageViewData]
+}
+
+struct UsageKpisViewData: Equatable {
+    let observedUses: Int
+    let activeSkills: Int
+    let activeAgents: Int
+    let activeProjects: Int
+    let lastObservedAt: String?
+    let inferredSignals: Int
+}
+
+struct UsageTopSkillViewData: Identifiable, Equatable {
+    let id: String
+    let skillLabel: String
+    let observedUses: Int
+    let activeAgentCount: Int
+    let activeProjectCount: Int
+    let lastObservedAt: String?
+}
+
+struct UsageRecentObservationViewData: Identifiable, Equatable {
+    let id: String
+    let observedAt: String
+    let agent: String
+    let skillLabel: String
+    let projectLabel: String
+    let evidenceKind: String
+    let confidence: String
+}
+
+struct UsageAgentCoverageViewData: Identifiable, Equatable {
+    let id: String
+    let agent: String
+    let status: String
+    let observedUses: Int
+    let inferredSignals: Int
+    let lastScannedAt: String?
 }
 
 struct SourceRow: Identifiable {

@@ -5,6 +5,60 @@ import Foundation
 /// The bridge protocol intentionally transports arbitrary JSON. Keeping the
 /// casts here gives ViewModels one typed interface for each decoded shape.
 enum BridgePayloadDecoder {
+    static func usageSnapshot(from payload: [String: Any]?) -> UsageSnapshotViewData? {
+        guard let payload else { return nil }
+
+        let range = object(payload["range"])
+        let kpis = object(payload["kpis"])
+        return UsageSnapshotViewData(
+            generatedAt: string(payload["generatedAt"]) ?? "",
+            rangeLabel: usageRangeLabel(range),
+            kpis: UsageKpisViewData(
+                observedUses: integer(kpis["observedUses"]) ?? 0,
+                activeSkills: integer(kpis["activeSkills"]) ?? 0,
+                activeAgents: integer(kpis["activeAgents"]) ?? 0,
+                activeProjects: integer(kpis["activeProjects"]) ?? 0,
+                lastObservedAt: string(kpis["lastObservedAt"]),
+                inferredSignals: integer(kpis["inferredSignals"]) ?? 0
+            ),
+            topSkills: objects(payload["topSkills"]).enumerated().map { index, item in
+                let skillRef = string(item["skillRef"]) ?? "unmatched-\(index)"
+                let projects = objects(item["projects"])
+                let agents = strings(item["agents"])
+                return UsageTopSkillViewData(
+                    id: skillRef,
+                    skillLabel: string(item["skillLabel"]) ?? "Unmatched skill",
+                    observedUses: integer(item["observedUses"]) ?? 0,
+                    activeAgentCount: agents.count,
+                    activeProjectCount: projects.count,
+                    lastObservedAt: string(item["lastObservedAt"])
+                )
+            },
+            recentObservations: objects(payload["recentObservations"]).enumerated().map { index, item in
+                UsageRecentObservationViewData(
+                    id: "\(string(item["observedAt"]) ?? "\(index)"):\(string(item["agent"]) ?? "unknown"):\(string(item["skillLabel"]) ?? "skill")",
+                    observedAt: string(item["observedAt"]) ?? "",
+                    agent: string(item["agent"]) ?? "unknown",
+                    skillLabel: string(item["skillLabel"]) ?? "Unmatched skill",
+                    projectLabel: string(item["projectLabel"]) ?? "Unknown project",
+                    evidenceKind: string(item["evidenceKind"]) ?? "unknown",
+                    confidence: string(item["confidence"]) ?? "observed"
+                )
+            },
+            agentCoverage: objects(payload["agentCoverage"]).map { item in
+                let agent = string(item["agent"]) ?? "unknown"
+                return UsageAgentCoverageViewData(
+                    id: agent,
+                    agent: agent,
+                    status: string(item["status"]) ?? "unknown",
+                    observedUses: integer(item["observedUses"]) ?? 0,
+                    inferredSignals: integer(item["inferredSignals"]) ?? 0,
+                    lastScannedAt: string(item["lastScannedAt"])
+                )
+            }
+        )
+    }
+
     static func sourceSnapshot(from payload: [String: Any]?) -> SourceSnapshotData? {
         guard let payload else { return nil }
 
@@ -99,5 +153,15 @@ enum BridgePayloadDecoder {
 
     private static func boolean(_ value: Any?) -> Bool {
         value as? Bool ?? false
+    }
+
+    private static func usageRangeLabel(_ range: [String: Any]) -> String {
+        let from = string(range["from"]) ?? "unknown"
+        let to = string(range["to"]) ?? "unknown"
+        let preset = string(range["preset"])
+        if let preset, preset != "custom" {
+            return "\(preset) · \(from) → \(to)"
+        }
+        return "\(from) → \(to)"
     }
 }

@@ -35,6 +35,10 @@ final class DesktopNavigator {
         currentRoute = .importPage
     }
 
+    func showUsage() {
+        currentRoute = .usage
+    }
+
     func showSettings() {
         currentRoute = .settings
     }

@@ -23,6 +23,8 @@ enum BridgeCommand: String, Codable, Sendable, CaseIterable {
     case configureExternalSource = "configure-external-source"
     case externalStatus = "external-status"
     case externalUpdate = "external-update"
+    case refreshUsage = "refresh-usage"
+    case usageSnapshot = "usage-snapshot"
     case add
     case apply
     case update
@@ -60,6 +62,8 @@ extension BridgeCommand {
              .adoptExternalSource,
              .configureExternalSource,
              .externalStatus,
+             .refreshUsage,
+             .usageSnapshot,
              .apply,
              .uninstall,
              .saveSettings:

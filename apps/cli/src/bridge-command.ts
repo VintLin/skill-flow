@@ -8,7 +8,15 @@ import {
   type JsonObject,
   type JsonValue,
 } from "@skill-flow/shared-types/protocol";
-import type { DraftBinding, ImportDraft, ProjectScope } from "@skill-flow/domain/types";
+import type {
+  DraftBinding,
+  ImportDraft,
+  ProjectScope,
+  UsageAgent,
+  UsageConfidence,
+  UsageRefreshTrigger,
+  UsageSnapshotFilters,
+} from "@skill-flow/domain/types";
 import type { SkillFlowApp } from "@skill-flow/query/runtime";
 
 type BridgeFailure = {
@@ -255,6 +263,17 @@ const bridgeCommandHandlers = {
       throw new Error("Bridge command 'external-update' requires confirmExternalUpdate: true.");
     }
     return runBridgeResult(request, () => app.updateExternalSource(sourceId));
+  },
+  "refresh-usage": async (app, request) => {
+    const payload = expectOptionalObject(request.payload, "refresh-usage");
+    const trigger = expectOptionalUsageRefreshTrigger(payload?.trigger);
+    return runBridgeValue(request, () => app.refreshUsageObservations({
+      trigger: trigger ?? "scheduled",
+    }));
+  },
+  "usage-snapshot": async (app, request) => {
+    const payload = expectOptionalObject(request.payload, "usage-snapshot");
+    return runBridgeValue(request, () => app.getUsageSnapshot(parseUsageSnapshotFilters(payload)));
   },
   add: async (app, request) => {
     const payload = expectObjectPayload(request.payload, "add");
@@ -614,6 +633,127 @@ function expectProjectScope(value: JsonValue | undefined): ProjectScope {
   }
 
   throw new Error("Field 'scope.kind' must be either 'global' or 'project'.");
+}
+
+function expectOptionalUsageRefreshTrigger(value: JsonValue | undefined): UsageRefreshTrigger | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value !== "bootstrap" && value !== "scheduled") {
+    throw new Error("Field 'trigger' must be 'bootstrap' or 'scheduled'.");
+  }
+  return value;
+}
+
+function parseUsageSnapshotFilters(payload: JsonObject | undefined): UsageSnapshotFilters {
+  if (!payload) {
+    return {};
+  }
+  const range = payload.range === undefined ? undefined : parseUsageRange(payload.range);
+  const filters = payload.filters === undefined ? undefined : parseUsageFilters(payload.filters);
+  const limits = payload.limits === undefined ? undefined : parseUsageLimits(payload.limits);
+  return {
+    ...(range ? { range } : {}),
+    ...(filters ? { filters } : {}),
+    ...(limits ? { limits } : {}),
+  };
+}
+
+function parseUsageRange(value: JsonValue | undefined): NonNullable<UsageSnapshotFilters["range"]> {
+  if (!isJsonObject(value)) {
+    throw new Error("Field 'range' must be an object when provided.");
+  }
+  const preset = value.preset;
+  if (
+    preset !== undefined &&
+    preset !== "7d" &&
+    preset !== "30d" &&
+    preset !== "90d" &&
+    preset !== "available"
+  ) {
+    throw new Error("Field 'range.preset' must be '7d', '30d', '90d', or 'available'.");
+  }
+  const from = expectOptionalString(value.from, "range.from", "usage-snapshot");
+  const to = expectOptionalString(value.to, "range.to", "usage-snapshot");
+  return {
+    ...(preset ? { preset } : {}),
+    ...(from !== undefined ? { from } : {}),
+    ...(to !== undefined ? { to } : {}),
+  };
+}
+
+function parseUsageFilters(value: JsonValue | undefined): NonNullable<UsageSnapshotFilters["filters"]> {
+  if (!isJsonObject(value)) {
+    throw new Error("Field 'filters' must be an object when provided.");
+  }
+  const agents = parseOptionalUsageAgents(value.agents);
+  const skillRefs = parseOptionalStringArray(value.skillRefs, "filters.skillRefs");
+  const projectRefs = parseOptionalStringArray(value.projectRefs, "filters.projectRefs");
+  const confidence = parseOptionalUsageConfidence(value.confidence);
+  const includeInferred = expectOptionalBoolean(value.includeInferred, "filters.includeInferred", "usage-snapshot");
+  return {
+    ...(agents ? { agents } : {}),
+    ...(skillRefs ? { skillRefs } : {}),
+    ...(projectRefs ? { projectRefs } : {}),
+    ...(confidence ? { confidence } : {}),
+    ...(includeInferred !== undefined ? { includeInferred } : {}),
+  };
+}
+
+function parseOptionalUsageAgents(value: JsonValue | undefined): UsageAgent[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const agents = parseOptionalStringArray(value, "filters.agents");
+  const allowed = new Set<UsageAgent>([
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "openclaw",
+    "pi",
+    "copilot-cli",
+    "kimi-code",
+    "unknown",
+  ]);
+  if (!agents?.every((agent): agent is UsageAgent => allowed.has(agent as UsageAgent))) {
+    throw new Error("Field 'filters.agents' contains an unsupported usage agent.");
+  }
+  return agents;
+}
+
+function parseOptionalUsageConfidence(value: JsonValue | undefined): UsageConfidence[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const confidence = parseOptionalStringArray(value, "filters.confidence");
+  if (!confidence?.every((item): item is UsageConfidence => item === "observed" || item === "inferred")) {
+    throw new Error("Field 'filters.confidence' must contain only 'observed' or 'inferred'.");
+  }
+  return confidence;
+}
+
+function parseUsageLimits(value: JsonValue | undefined): NonNullable<UsageSnapshotFilters["limits"]> {
+  if (!isJsonObject(value)) {
+    throw new Error("Field 'limits' must be an object when provided.");
+  }
+  const topSkills = expectOptionalSafeInteger(value.topSkills, "limits.topSkills");
+  const projects = expectOptionalSafeInteger(value.projects, "limits.projects");
+  const recentObservations = expectOptionalSafeInteger(value.recentObservations, "limits.recentObservations");
+  return {
+    ...(topSkills !== undefined ? { topSkills } : {}),
+    ...(projects !== undefined ? { projects } : {}),
+    ...(recentObservations !== undefined ? { recentObservations } : {}),
+  };
+}
+
+function expectOptionalSafeInteger(value: JsonValue | undefined, field: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Field '${field}' must be a non-negative safe integer when provided.`);
+  }
+  return value;
 }
 
 function sanitizeForJson<T>(value: T): JsonValue {
