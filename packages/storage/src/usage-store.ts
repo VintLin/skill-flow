@@ -240,7 +240,7 @@ function buildUsageSnapshot(input: {
     },
     kpis: {
       observedUses: observed.length,
-      activeSkills: new Set(observed.map((item) => item.skillRef).filter(Boolean)).size,
+      activeSkills: new Set(observed.map(skillGroupKey).filter((item) => item !== "__unmatched__")).size,
       activeAgents: new Set(observed.map((item) => item.agent)).size,
       activeProjects: new Set(observed.map((item) => item.projectRef).filter(Boolean)).size,
       lastObservedAt: observed.at(-1)?.observedAt ?? null,
@@ -257,7 +257,7 @@ function buildUsageSnapshot(input: {
         observedAt: observation.observedAt,
         agent: observation.agent,
         skillRef: observation.skillRef,
-        skillLabel: observation.skillRef ?? "Unmatched skill",
+        skillLabel: observation.skillLabel ?? observation.skillRef ?? "Unmatched skill",
         projectRef: observation.projectRef,
         projectLabel: observation.projectLabel || DEFAULT_PROJECT_LABEL,
         evidenceKind: observation.evidenceKind,
@@ -302,13 +302,13 @@ function buildDailySeries(observations: UsageObservationV1[]): UsageSnapshot["da
 function buildTopSkills(observations: UsageObservationV1[]): UsageSnapshot["topSkills"] {
   const buckets = new Map<string, UsageObservationV1[]>();
   for (const observation of observations) {
-    const key = observation.skillRef ?? "__unmatched__";
+    const key = skillGroupKey(observation);
     buckets.set(key, [...(buckets.get(key) ?? []), observation]);
   }
   return [...buckets.entries()].map(([key, items]) => ({
-    skillRef: key === "__unmatched__" ? null : key,
-    skillLabel: key === "__unmatched__" ? "Unmatched skill" : key,
-    inventoryStatus: key === "__unmatched__" ? "unknown" as const : "installed" as const,
+    skillRef: items[0]?.skillRef ?? null,
+    skillLabel: skillGroupLabel(items[0]),
+    inventoryStatus: items[0]?.skillRef ? "installed" as const : "unknown" as const,
     observedUses: items.filter((item) => item.confidence === "observed").length,
     inferredSignals: items.filter((item) => item.confidence === "inferred").length,
     lastObservedAt: items.filter((item) => item.confidence === "observed").at(-1)?.observedAt ?? null,
@@ -328,10 +328,25 @@ function buildProjectBreakdown(observations: UsageObservationV1[]): UsageSnapsho
     projectLabel: items[0]?.projectLabel || DEFAULT_PROJECT_LABEL,
     observedUses: items.filter((item) => item.confidence === "observed").length,
     inferredSignals: items.filter((item) => item.confidence === "inferred").length,
-    activeSkills: new Set(items.filter((item) => item.confidence === "observed").map((item) => item.skillRef).filter(Boolean)).size,
+    activeSkills: new Set(items.filter((item) => item.confidence === "observed").map(skillGroupKey).filter((item) => item !== "__unmatched__")).size,
     activeAgents: new Set(items.filter((item) => item.confidence === "observed").map((item) => item.agent)).size,
     lastObservedAt: items.filter((item) => item.confidence === "observed").at(-1)?.observedAt ?? null,
   })).sort((left, right) => right.observedUses - left.observedUses || right.inferredSignals - left.inferredSignals);
+}
+
+function skillGroupKey(observation: UsageObservationV1): string {
+  if (observation.skillRef) {
+    return `ref:${observation.skillRef}`;
+  }
+  const label = observation.skillLabel?.trim();
+  return label ? `label:${label.toLowerCase()}` : "__unmatched__";
+}
+
+function skillGroupLabel(observation: UsageObservationV1 | undefined): string {
+  if (!observation) {
+    return "Unmatched skill";
+  }
+  return observation.skillLabel ?? observation.skillRef ?? "Unmatched skill";
 }
 
 function uniqueProjects(observations: UsageObservationV1[]) {
@@ -409,6 +424,7 @@ function isValidObservation(value: unknown): value is UsageObservationV1 {
     typeof candidate.observedAt === "string" &&
     typeof candidate.agent === "string" &&
     (typeof candidate.skillRef === "string" || candidate.skillRef === null) &&
+    (candidate.skillLabel === undefined || typeof candidate.skillLabel === "string") &&
     typeof candidate.evidenceKind === "string" &&
     (candidate.confidence === "observed" || candidate.confidence === "inferred") &&
     typeof candidate.outcome === "string" &&

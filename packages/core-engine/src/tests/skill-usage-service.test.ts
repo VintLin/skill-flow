@@ -58,6 +58,7 @@ describe("SkillUsageService", () => {
     });
     expect(observations[0]).toMatchObject({
       skillRef: "leaf-wayfinder",
+      skillLabel: "$wayfinder",
       projectLabel: "client-project",
     });
     expect(observations[0]?.projectRef).toMatch(/^[a-f0-9]{64}$/);
@@ -103,7 +104,7 @@ describe("SkillUsageService", () => {
     expect(snapshot.kpis.observedUses).toBe(1);
     expect(snapshot.topSkills[0]).toMatchObject({
       skillRef: null,
-      skillLabel: "Unmatched skill",
+      skillLabel: "missing-skill",
       inventoryStatus: "unknown",
     });
   });

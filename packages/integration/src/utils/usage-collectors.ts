@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import type {
   UsageAgent,
   UsageAgentCoverage,
@@ -10,6 +12,8 @@ import type {
 } from "@skill-flow/domain/types";
 import { TARGET_ORDER } from "./constants.js";
 import { pathExists } from "./fs.js";
+
+const execFileAsync = promisify(execFile);
 
 export type UsageCollectorScanInput = {
   now: Date;
@@ -38,6 +42,9 @@ export function createDefaultUsageCollectors(): UsageCollector[] {
     new ClaudeCodeUsageCollector(),
     new CodexUsageCollector(),
     new GeminiTelemetryUsageCollector(),
+    new PiUsageCollector(),
+    new OpenCodeUsageCollector(),
+    new KimiCodeUsageCollector(),
   ];
 }
 
@@ -440,6 +447,413 @@ function defaultGeminiTelemetryFiles(): string[] {
   return [override || path.join(os.homedir(), ".gemini", "telemetry.log")];
 }
 
+export class PiUsageCollector implements UsageCollector {
+  readonly agent = "pi" as const;
+  readonly parserRevision = "pi-session@1";
+
+  constructor(private readonly roots = defaultPiUsageRoots()) {}
+
+  async locateSources(): Promise<string[]> {
+    const existing: string[] = [];
+    for (const root of this.roots) {
+      if (await pathExists(root)) {
+        existing.push(root);
+      }
+    }
+    return existing;
+  }
+
+  async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
+    const scannedAt = input.now.toISOString();
+    const roots = await this.locateSources();
+    if (roots.length === 0) {
+      return {
+        observations: [],
+        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
+        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
+      };
+    }
+
+    const startedAt = Date.now();
+    const observations: UsageCollectorObservation[] = [];
+    let filesScanned = 0;
+    let bytesScanned = 0;
+    let partial = false;
+    let invalidRecords = 0;
+
+    for (const root of roots) {
+      const files = await collectJsonlFiles(root, input.budget.maxFiles);
+      for (const filePath of files) {
+        if (filesScanned >= input.budget.maxFiles || bytesScanned >= input.budget.maxBytes) {
+          partial = true;
+          break;
+        }
+        if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
+          partial = true;
+          break;
+        }
+        const raw = await fs.readFile(filePath, "utf8").catch(() => undefined);
+        if (raw === undefined) {
+          invalidRecords += 1;
+          continue;
+        }
+        filesScanned += 1;
+        bytesScanned += Buffer.byteLength(raw, "utf8");
+        const lines = raw.split("\n");
+        let currentProjectPath: string | undefined;
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index]?.trim();
+          if (!line) {
+            continue;
+          }
+          try {
+            const parsed = JSON.parse(line) as unknown;
+            const result = extractPiSkillUses(parsed, filePath, index, currentProjectPath, scannedAt);
+            currentProjectPath = result.currentProjectPath;
+            observations.push(...result.observations);
+          } catch {
+            invalidRecords += 1;
+          }
+        }
+      }
+    }
+
+    const status = partial
+      ? "partial"
+      : observations.length > 0
+        ? "scanned"
+        : filesScanned > 0
+          ? "no_skill_signals"
+          : "no_records";
+    const diagnostics: UsageDiagnostic[] = [];
+    if (invalidRecords > 0) {
+      diagnostics.push(diagnostic("INVALID_RECORD_DROPPED", this.agent, "warning", scannedAt, invalidRecords));
+    }
+    if (status === "no_records") {
+      diagnostics.push(diagnostic("NO_RECORDS", this.agent, "info", scannedAt));
+    }
+    if (status === "no_skill_signals") {
+      diagnostics.push(diagnostic("NO_SKILL_SIGNALS", this.agent, "info", scannedAt));
+    }
+    if (partial) {
+      diagnostics.push(diagnostic("BUDGET_EXHAUSTED", this.agent, "warning", scannedAt));
+    }
+
+    return {
+      observations,
+      coverage: this.coverage(
+        status,
+        scannedAt,
+        observations.filter((item) => item.confidence === "observed").length,
+        observations.filter((item) => item.confidence === "inferred").length,
+        diagnostics.length,
+      ),
+      diagnostics,
+    };
+  }
+
+  private coverage(
+    status: UsageAgentCoverage["status"],
+    scannedAt: string,
+    observedUses: number,
+    inferredSignals: number,
+    diagnosticsCount = 0,
+  ): UsageAgentCoverage {
+    return {
+      agent: this.agent,
+      sourceKind: "local-session",
+      parserRevision: this.parserRevision,
+      status,
+      lastScannedAt: scannedAt,
+      coverageFrom: null,
+      coverageTo: null,
+      observedUses,
+      inferredSignals,
+      diagnosticsCount,
+    };
+  }
+}
+
+function defaultPiUsageRoots(): string[] {
+  const override = process.env.SKILL_FLOW_USAGE_PI_SESSIONS_ROOT?.trim();
+  return [override || path.join(os.homedir(), ".pi", "agent", "sessions")];
+}
+
+export class OpenCodeUsageCollector implements UsageCollector {
+  readonly agent = "opencode" as const;
+  readonly parserRevision = "opencode-sqlite@1";
+
+  constructor(private readonly dbPaths = defaultOpenCodeUsageDbPaths()) {}
+
+  async locateSources(): Promise<string[]> {
+    const existing: string[] = [];
+    for (const dbPath of this.dbPaths) {
+      if (await pathExists(dbPath)) {
+        existing.push(dbPath);
+      }
+    }
+    return existing;
+  }
+
+  async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
+    const scannedAt = input.now.toISOString();
+    const dbPaths = await this.locateSources();
+    if (dbPaths.length === 0) {
+      return {
+        observations: [],
+        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
+        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
+      };
+    }
+
+    const startedAt = Date.now();
+    const observations: UsageCollectorObservation[] = [];
+    let sourcesScanned = 0;
+    let partial = false;
+    let invalidRecords = 0;
+    let readFailed = 0;
+
+    for (const dbPath of dbPaths) {
+      if (sourcesScanned >= input.budget.maxFiles) {
+        partial = true;
+        break;
+      }
+      if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
+        partial = true;
+        break;
+      }
+      const rows = await readOpenCodeSkillToolRows(dbPath, input.budget.maxFiles).catch(() => undefined);
+      if (!rows) {
+        readFailed += 1;
+        continue;
+      }
+      sourcesScanned += 1;
+      for (const row of rows) {
+        const parsed = parseJsonObject(row.data);
+        if (!parsed) {
+          invalidRecords += 1;
+          continue;
+        }
+        const rawSkillName = extractRawSkillFromToolCall(parsed);
+        if (!rawSkillName) {
+          continue;
+        }
+        const observedAt = openCodeTimestamp(row.timeCreated, parsed) ?? scannedAt;
+        observations.push({
+          sourceEventId: sha256(`${dbPath}:${row.sessionId}:${row.partId}:${observedAt}:${rawSkillName}`),
+          observedAt,
+          agent: "opencode",
+          rawSkillName,
+          evidenceKind: "tool_call",
+          confidence: "observed",
+          outcome: "unknown",
+          sourceKind: "local-session",
+          parserRevision: this.parserRevision,
+          projectRef: null,
+          projectLabel: "Unknown project",
+          ...(row.directory ? { rawProjectPath: row.directory } : {}),
+        });
+      }
+    }
+
+    const status = readFailed > 0 && sourcesScanned === 0
+      ? "read_failed"
+      : partial
+        ? "partial"
+        : observations.length > 0
+          ? "scanned"
+          : sourcesScanned > 0
+            ? "no_skill_signals"
+            : "no_records";
+    const diagnostics: UsageDiagnostic[] = [];
+    if (readFailed > 0) {
+      diagnostics.push(diagnostic("READ_FAILED", this.agent, "warning", scannedAt, readFailed));
+    }
+    if (invalidRecords > 0) {
+      diagnostics.push(diagnostic("INVALID_RECORD_DROPPED", this.agent, "warning", scannedAt, invalidRecords));
+    }
+    if (status === "no_records") {
+      diagnostics.push(diagnostic("NO_RECORDS", this.agent, "info", scannedAt));
+    }
+    if (status === "no_skill_signals") {
+      diagnostics.push(diagnostic("NO_SKILL_SIGNALS", this.agent, "info", scannedAt));
+    }
+    if (partial) {
+      diagnostics.push(diagnostic("BUDGET_EXHAUSTED", this.agent, "warning", scannedAt));
+    }
+
+    return {
+      observations,
+      coverage: this.coverage(
+        status,
+        scannedAt,
+        observations.filter((item) => item.confidence === "observed").length,
+        observations.filter((item) => item.confidence === "inferred").length,
+        diagnostics.length,
+      ),
+      diagnostics,
+    };
+  }
+
+  private coverage(
+    status: UsageAgentCoverage["status"],
+    scannedAt: string,
+    observedUses: number,
+    inferredSignals: number,
+    diagnosticsCount = 0,
+  ): UsageAgentCoverage {
+    return {
+      agent: this.agent,
+      sourceKind: "local-session",
+      parserRevision: this.parserRevision,
+      status,
+      lastScannedAt: scannedAt,
+      coverageFrom: null,
+      coverageTo: null,
+      observedUses,
+      inferredSignals,
+      diagnosticsCount,
+    };
+  }
+}
+
+function defaultOpenCodeUsageDbPaths(): string[] {
+  const override = process.env.SKILL_FLOW_USAGE_OPENCODE_DB_PATH?.trim();
+  return [override || path.join(os.homedir(), ".local", "share", "opencode", "opencode.db")];
+}
+
+export class KimiCodeUsageCollector implements UsageCollector {
+  readonly agent = "kimi-code" as const;
+  readonly parserRevision = "kimi-code-session@1";
+
+  constructor(private readonly roots = defaultKimiCodeUsageRoots()) {}
+
+  async locateSources(): Promise<string[]> {
+    const existing: string[] = [];
+    for (const root of this.roots) {
+      if (await pathExists(root)) {
+        existing.push(root);
+      }
+    }
+    return existing;
+  }
+
+  async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
+    const scannedAt = input.now.toISOString();
+    const roots = await this.locateSources();
+    if (roots.length === 0) {
+      return {
+        observations: [],
+        coverage: this.coverage("not_found", scannedAt, 0, 0, 1),
+        diagnostics: [diagnostic("SOURCE_NOT_FOUND", this.agent, "info", scannedAt)],
+      };
+    }
+
+    const startedAt = Date.now();
+    const observations: UsageCollectorObservation[] = [];
+    let filesScanned = 0;
+    let bytesScanned = 0;
+    let partial = false;
+    let invalidRecords = 0;
+
+    for (const root of roots) {
+      const files = await collectJsonlFiles(root, input.budget.maxFiles);
+      for (const filePath of files) {
+        if (filesScanned >= input.budget.maxFiles || bytesScanned >= input.budget.maxBytes) {
+          partial = true;
+          break;
+        }
+        if (Date.now() - startedAt >= input.budget.perSourceBudgetMs) {
+          partial = true;
+          break;
+        }
+        const raw = await fs.readFile(filePath, "utf8").catch(() => undefined);
+        if (raw === undefined) {
+          invalidRecords += 1;
+          continue;
+        }
+        filesScanned += 1;
+        bytesScanned += Buffer.byteLength(raw, "utf8");
+        const lines = raw.split("\n");
+        let currentProjectPath: string | undefined;
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index]?.trim();
+          if (!line) {
+            continue;
+          }
+          try {
+            const parsed = JSON.parse(line) as unknown;
+            const result = extractKimiCodeSkillUses(parsed, filePath, index, currentProjectPath, scannedAt);
+            currentProjectPath = result.currentProjectPath;
+            observations.push(...result.observations);
+          } catch {
+            invalidRecords += 1;
+          }
+        }
+      }
+    }
+
+    const status = partial
+      ? "partial"
+      : observations.length > 0
+        ? "scanned"
+        : filesScanned > 0
+          ? "no_skill_signals"
+          : "no_records";
+    const diagnostics: UsageDiagnostic[] = [];
+    if (invalidRecords > 0) {
+      diagnostics.push(diagnostic("INVALID_RECORD_DROPPED", this.agent, "warning", scannedAt, invalidRecords));
+    }
+    if (status === "no_records") {
+      diagnostics.push(diagnostic("NO_RECORDS", this.agent, "info", scannedAt));
+    }
+    if (status === "no_skill_signals") {
+      diagnostics.push(diagnostic("NO_SKILL_SIGNALS", this.agent, "info", scannedAt));
+    }
+    if (partial) {
+      diagnostics.push(diagnostic("BUDGET_EXHAUSTED", this.agent, "warning", scannedAt));
+    }
+
+    return {
+      observations,
+      coverage: this.coverage(
+        status,
+        scannedAt,
+        observations.filter((item) => item.confidence === "observed").length,
+        observations.filter((item) => item.confidence === "inferred").length,
+        diagnostics.length,
+      ),
+      diagnostics,
+    };
+  }
+
+  private coverage(
+    status: UsageAgentCoverage["status"],
+    scannedAt: string,
+    observedUses: number,
+    inferredSignals: number,
+    diagnosticsCount = 0,
+  ): UsageAgentCoverage {
+    return {
+      agent: this.agent,
+      sourceKind: "local-session",
+      parserRevision: this.parserRevision,
+      status,
+      lastScannedAt: scannedAt,
+      coverageFrom: null,
+      coverageTo: null,
+      observedUses,
+      inferredSignals,
+      diagnosticsCount,
+    };
+  }
+}
+
+function defaultKimiCodeUsageRoots(): string[] {
+  const override = process.env.SKILL_FLOW_USAGE_KIMI_CODE_SESSIONS_ROOT?.trim();
+  return [override || path.join(os.homedir(), ".kimi-code", "sessions")];
+}
+
 async function collectJsonlFiles(root: string, maxFiles: number): Promise<string[]> {
   const results: string[] = [];
   async function walk(current: string): Promise<void> {
@@ -618,6 +1032,100 @@ function extractGeminiSkillUses(
   }];
 }
 
+function extractPiSkillUses(
+  value: unknown,
+  filePath: string,
+  lineIndex: number,
+  currentProjectPath: string | undefined,
+  fallbackTimestamp: string,
+): { observations: UsageCollectorObservation[]; currentProjectPath: string | undefined } {
+  if (typeof value !== "object" || value === null) {
+    return { observations: [], currentProjectPath };
+  }
+  const nextProjectPath = firstString([
+    objectField(value, "cwd"),
+    objectField(value, "projectPath"),
+    objectField(value, "workspaceRoot"),
+  ]) ?? currentProjectPath;
+  const observedAt = firstString([
+    objectField(value, "timestamp"),
+    objectField(objectField(value, "message"), "timestamp"),
+  ]) ?? fallbackTimestamp;
+  const blocks = collectPotentialToolCallBlocks(value);
+
+  return {
+    currentProjectPath: nextProjectPath,
+    observations: blocks.flatMap((block, blockIndex) => {
+      const rawSkillName = extractRawSkillFromToolCall(block);
+      if (!rawSkillName) {
+        return [];
+      }
+      return [{
+        sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
+        observedAt,
+        agent: "pi" as const,
+        rawSkillName,
+        evidenceKind: "tool_call" as const,
+        confidence: "observed" as const,
+        outcome: "unknown" as const,
+        sourceKind: "local-session" as const,
+        parserRevision: "pi-session@1",
+        projectRef: null,
+        projectLabel: "Unknown project",
+        ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
+      }];
+    }),
+  };
+}
+
+function extractKimiCodeSkillUses(
+  value: unknown,
+  filePath: string,
+  lineIndex: number,
+  currentProjectPath: string | undefined,
+  fallbackTimestamp: string,
+): { observations: UsageCollectorObservation[]; currentProjectPath: string | undefined } {
+  if (typeof value !== "object" || value === null) {
+    return { observations: [], currentProjectPath };
+  }
+  const nextProjectPath = firstString([
+    objectField(value, "cwd"),
+    objectField(value, "projectPath"),
+    objectField(value, "workspaceRoot"),
+    objectField(value, "workingDirectory"),
+  ]) ?? currentProjectPath;
+  const observedAt = firstString([
+    objectField(value, "timestamp"),
+    objectField(value, "createdAt"),
+    objectField(objectField(value, "message"), "timestamp"),
+  ]) ?? fallbackTimestamp;
+  const blocks = collectPotentialToolCallBlocks(value);
+
+  return {
+    currentProjectPath: nextProjectPath,
+    observations: blocks.flatMap((block, blockIndex) => {
+      const rawSkillName = extractRawSkillFromToolCall(block);
+      if (!rawSkillName) {
+        return [];
+      }
+      return [{
+        sourceEventId: sha256(`${filePath}:${lineIndex}:${blockIndex}:${observedAt}:${rawSkillName}`),
+        observedAt,
+        agent: "kimi-code" as const,
+        rawSkillName,
+        evidenceKind: "tool_call" as const,
+        confidence: "observed" as const,
+        outcome: "unknown" as const,
+        sourceKind: "local-session" as const,
+        parserRevision: "kimi-code-session@1",
+        projectRef: null,
+        projectLabel: "Unknown project",
+        ...(nextProjectPath ? { rawProjectPath: nextProjectPath } : {}),
+      }];
+    }),
+  };
+}
+
 function extractCodexProjectPath(record: { type?: unknown }, payload: unknown): string | undefined {
   if (record.type !== "session_meta" || typeof payload !== "object" || payload === null) {
     return undefined;
@@ -663,12 +1171,15 @@ function extractRawSkillFromToolCall(value: unknown): string | null {
     return null;
   }
 
+  const state = objectField(value, "state");
   const input = firstObject([
     objectField(value, "input"),
     objectField(value, "arguments"),
     objectField(value, "args"),
     objectField(value, "parameters"),
-    objectField(value, "state"),
+    objectField(state, "input"),
+    objectField(state, "metadata"),
+    state,
   ]);
   const parsedInput = typeof input === "string" ? parseJsonObject(input) : input;
   if (!parsedInput) {
@@ -759,6 +1270,75 @@ function parseTelemetryTimestamp(value: unknown): string | undefined {
     return undefined;
   }
   const milliseconds = startTime > 1_000_000_000_000 ? startTime : startTime * 1000;
+  return new Date(milliseconds).toISOString();
+}
+
+type OpenCodeSkillToolRow = {
+  sessionId: string;
+  directory: string | null;
+  partId: string;
+  timeCreated: number | null;
+  data: string;
+};
+
+async function readOpenCodeSkillToolRows(dbPath: string, limit: number): Promise<OpenCodeSkillToolRow[]> {
+  const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 5000));
+  const query = `
+SELECT
+  p.session_id AS sessionId,
+  s.directory AS directory,
+  p.id AS partId,
+  p.time_created AS timeCreated,
+  p.data AS data
+FROM part p
+LEFT JOIN session s ON s.id = p.session_id
+WHERE json_extract(p.data, '$.type') = 'tool'
+  AND lower(json_extract(p.data, '$.tool')) IN ('skill', 'activate_skill')
+LIMIT ${safeLimit};
+`;
+  const { stdout } = await execFileAsync("sqlite3", ["-json", dbPath, query], {
+    timeout: 5000,
+    maxBuffer: 1024 * 1024 * 16,
+  });
+  const parsed = JSON.parse(stdout.trim() || "[]") as unknown;
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.flatMap((row) => {
+    if (typeof row !== "object" || row === null) {
+      return [];
+    }
+    const candidate = row as Record<string, unknown>;
+    const sessionId = firstString([candidate.sessionId, candidate.session_id]);
+    const partId = firstString([candidate.partId, candidate.id]);
+    const data = firstString([candidate.data]);
+    if (!sessionId || !partId || !data) {
+      return [];
+    }
+    const timeCreated = typeof candidate.timeCreated === "number"
+      ? candidate.timeCreated
+      : typeof candidate.time_created === "number"
+        ? candidate.time_created
+        : null;
+    return [{
+      sessionId,
+      directory: firstString([candidate.directory]) ?? null,
+      partId,
+      timeCreated,
+      data,
+    }];
+  });
+}
+
+function openCodeTimestamp(timeCreated: number | null, payload: Record<string, unknown>): string | undefined {
+  const nestedStart = findField(payload, "start");
+  const candidate = typeof nestedStart === "number" && Number.isFinite(nestedStart)
+    ? nestedStart
+    : timeCreated;
+  if (typeof candidate !== "number" || !Number.isFinite(candidate)) {
+    return undefined;
+  }
+  const milliseconds = candidate > 1_000_000_000_000 ? candidate : candidate * 1000;
   return new Date(milliseconds).toISOString();
 }
 

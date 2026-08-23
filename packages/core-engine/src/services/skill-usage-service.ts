@@ -188,6 +188,7 @@ export class SkillUsageService {
     skillIndex: Map<string, LeafRecord>,
   ): Promise<UsageObservationV1> {
     const skill = observation.rawSkillName ? findSkill(skillIndex, observation.rawSkillName) : null;
+    const skillLabel = sanitizedSkillLabel(observation.rawSkillName);
     const project = await anonymizeProject(observation.rawProjectPath, this.options.localSalt);
     const observationId = hashStable([
       this.options.localSalt,
@@ -203,6 +204,7 @@ export class SkillUsageService {
       observedAt: observation.observedAt,
       agent: observation.agent,
       skillRef: skill?.id ?? null,
+      ...(skillLabel ? { skillLabel } : {}),
       evidenceKind: observation.evidenceKind,
       confidence: observation.confidence,
       outcome: observation.outcome,
@@ -241,6 +243,14 @@ function appendUnsupportedAgentCoverage(args: {
     });
     args.diagnostics.push(diagnostic("PARSER_UNSUPPORTED", agent, "info", args.timestamp));
   }
+}
+
+function sanitizedSkillLabel(value: string | null): string | null {
+  const normalized = value?.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return null;
+  }
+  return normalized.slice(0, 120);
 }
 
 function buildSkillIndex(leafInventory: LeafRecord[]): Map<string, LeafRecord> {

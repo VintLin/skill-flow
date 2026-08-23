@@ -208,6 +208,7 @@ export type UsageObservationV1 = {
   observedAt: string;
   agent: UsageAgent;
   skillRef: SkillLeafId | null;
+  skillLabel?: string;
   evidenceKind: UsageEvidenceKind;
   confidence: UsageConfidence;
   outcome: UsageOutcome;
