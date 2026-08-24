@@ -390,6 +390,14 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(image?.size, NSSize(width: 14, height: 14))
     }
 
+    func testUsageActionIconLoadsChartSplineSvg() {
+        let image = ActionIcon.usage.image(size: 14)
+
+        XCTAssertNotNil(image)
+        XCTAssertEqual(image?.size, NSSize(width: 14, height: 14))
+        XCTAssertEqual(image?.isTemplate, true)
+    }
+
     func testAppInitializationKeepsDockIconAtSystemSize() {
         _ = SkillFlowDesktopApp()
 

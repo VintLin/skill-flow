@@ -19,6 +19,16 @@ final class DesktopResourceLocatorTests: XCTestCase {
                 )
             }
         )
+        XCTAssertTrue(
+            directories.contains { directory in
+                guard let svg = try? String(
+                    contentsOf: directory.appendingPathComponent("usage.svg"),
+                    encoding: .utf8
+                ) else { return false }
+                return svg.contains("lucide-chart-spline")
+                    && svg.contains("M7 16c.5-2 1.5-7 4-7")
+            }
+        )
     }
 
     func testResourceLocatorFindsMenuBarAssetsInsideDesktopResourceBundle() throws {

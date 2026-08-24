@@ -39,11 +39,6 @@ enum ActionIcon: String {
            let fallback = Self.systemSymbolImage("pencil", size: size, isTemplate: isTemplate) {
             return fallback
         }
-        if self == .usage,
-           let fallback = Self.systemSymbolImage("chart.bar.xaxis", size: size, isTemplate: isTemplate) {
-            return fallback
-        }
-
         for directory in Self.resourceDirectories() {
             let url = directory.appendingPathComponent("\(rawValue).svg")
             if let image = NSImage(contentsOf: url) {
