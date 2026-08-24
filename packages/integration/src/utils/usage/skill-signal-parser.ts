@@ -110,7 +110,6 @@ export function extractExplicitSkillCommands(args: {
         parserRevision: args.parserRevision,
         projectRef: null,
         projectLabel: "Unknown project",
-        requiresKnownSkillMatch: true,
         ...(args.rawProjectPath ? { rawProjectPath: args.rawProjectPath } : {}),
       });
       if (args.position === "leading") {

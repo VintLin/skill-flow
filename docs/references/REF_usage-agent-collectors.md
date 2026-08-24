@@ -105,7 +105,7 @@
 | Target | 可获取记录与字段 | 能否区分真实 skill 调用 | Collector 结论 |
 | --- | --- | --- | --- |
 | `zcode` | 本地 skill 库 `~/.zcode/skills/<skill-name>/SKILL.md`；Usage Stats 读取 local session records；本机 `~/.zcode/cli/db/db.sqlite` 表含 `session`、`part`、`tool_usage`。`part.data` JSON 中可字段级命中 `type=tool`、`tool=Skill`、`state.status=completed`、`state.input.skill/name`、`state.time.start`；`session.directory` 提供项目路径；`tool_usage` 可验证 `tool_name=Skill` completed，但单独缺 skill 名称 | 能。本机验证严格 completed skill part 可提取 242 条；另有 error 状态不计数 | `ZCodeSqliteCollector` 进主计数；hook 仅作为后续旁证 |
-| `cursor` | Enterprise OTel logs 覆盖 skills/hooks/plugins/cloud agent lifecycle；Analytics API 是团队汇总；本机 `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` 有 user/assistant transcript，字段为 `role`、`message.content[].text` | 能，限 Enterprise OTel logs 明确 skill event，或 transcript user-role 显式 `$skill` / `/skill` 且匹配 inventory；本机验证原始候选 28 条、accepted 0 | `CursorAgentTranscriptCollector` 已进默认 collector；`CursorOtelCollector` 后续接入 |
+| `cursor` | Enterprise OTel logs 覆盖 skills/hooks/plugins/cloud agent lifecycle；Analytics API 是团队汇总；本机 `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` 有 user/assistant transcript，字段为 `role`、`message.content[].text` | 能，限 Enterprise OTel logs 明确 skill event，或 transcript user-role 显式 `$skill` / `/skill`；匹配 inventory 时补 ref，未知命令保留 label-only；本机旧快照原始候选 28 条、accepted 0 | `CursorAgentTranscriptCollector` 已进默认 collector；`CursorOtelCollector` 后续接入 |
 | `grok-build` | OTel metrics `grok_code.tool.usage`、`grok_code.tool.decision`；OTel event `grok_code.skill_activated`，字段 `skill_source`、`trigger`、`skill.name`；hooks 字段 `hookEventName`、`sessionId`、`toolName`；sessions 在 `~/.grok/sessions/`，`chat_history.jsonl` 有 user/assistant text | 能。`grok_code.skill_activated` 是真实调用；本机 chat history 只能接受用户消息开头显式 `$skill` / `/skill`，否则会误报普通 `/path`/catalog command | `GrokBuildSessionCollector` 已进默认 collector，严格规则 dry-run 为 0；OTel/hook 后续接入 |
 | `workbuddy` | `~/.workbuddy/traces/**/trace_*.json` 的 `spans[]` 中存在结构化 `toolName=Skill` function span，`toolInput` JSON 含 `skill`；`~/.workbuddy/app/sessions.json` 含 `conversationId`、`workDir`、`startedAt/resumedAt`；`usage-log.json` 仍含 `skills` 聚合日期 | 能。trace span 可恢复真实调用次数和精确时间；sessions 文件能补部分项目；usage-log 只能兜底证明 skill/date 至少一次 | `WorkBuddyUsageLogCollector` 已改为 trace 优先、usage-log 兜底；只读 span 字段白名单，不读取 generation 正文、不从任务清单推断 |
 | `codebuddy` | skill 库 `.codebuddy/skills/`、`~/.codebuddy/skills/`；skill fields `name`、`description`、`allowed-tools`、`disable-model-invocation`、`user-invocable`、`context: fork`、`hooks`；hooks 字段 `hook_event_name`、`tool_name`、`tool_input`、`session_id`；OTel span `codebuddy_code.tool` 字段 `span.type`、`conversation.id`、`tool_name`、`tool.call_id`、`tool_input` | 部分能。fork skill lifecycle 或 explicit skill trace 可计数；普通注入式 skill 只产生下游工具 span 时不能判定是 skill 调用 | `CodeBuddyOtelCollector` + `CodeBuddyHookCollector`；精确 skill 只在明确标识时入主计数 |
@@ -120,7 +120,7 @@
 | `kiro` | Hooks 可在工具调用、文件修改、任务完成时运行；examples 有 user prompt logging | 只有用户安装 hook 且字段中明确 skill/tool 时能 | `KiroHookCollector` opt-in；默认 lifecycle |
 | `roo-code` | VS Code extension storage / custom storage path；task history 还涉及 VS Code `state.vscdb` | 不能。公开资料未确认 skill 调用字段 | `RooStorageProbe` diagnostic only |
 | `cline` | 匿名 telemetry 包含 features/tools/commands、task completion、errors、performance | 不能映射具体 skill 名；task history schema 未稳定 | `ClineTelemetryProbe` diagnostic only |
-| `codex` | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME/archived_sessions/YYYY/MM/DD/rollout-*.jsonl`、`session_index.jsonl`、`state_5.sqlite` 等本地状态；skills 可用 `/skills` 或 `$` 显式提及；本机 active 58 个 JSONL 约 1.62GB，archived 207 个 JSONL 约 2.13GB | 能。结构化 tool call 只有明确 skill input 才算；用户 role 文本和 `payload.type=user_message` 中的 `$skill` / `/skill` 作为 `explicit_command` 候选，必须匹配当前 SkillFlow inventory 才入库；assistant/system 文本和 XML tag 不计数；同一用户消息的 mirrored projection 去重 | `CodexSessionJsonlCollector`；默认 refresh budget 已提高到能完整读取当前本机 active + archived |
+| `codex` | `CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME/archived_sessions/YYYY/MM/DD/rollout-*.jsonl`、`session_index.jsonl`、`state_5.sqlite` 等本地状态；skills 可用 `/skills` 或 `$` 显式提及；本机 active 58 个 JSONL 约 1.62GB，archived 207 个 JSONL 约 2.13GB | 能。结构化 tool call 只有明确 skill input 才算；用户 role 文本和 `payload.type=user_message` 中的 `$skill` / `/skill` 作为 `explicit_command` 候选；匹配 inventory 时补 ref，未知命令保留 label-only；assistant/system 文本和 XML tag 不计数；同一用户消息的 mirrored projection 去重 | `CodexSessionJsonlCollector`；默认 refresh budget 已提高到能完整读取当前本机 active + archived |
 | `pi` | `~/.pi/agent/sessions/` JSONL tree；skills on-demand loaded | 能，限 session tree 中明确 tool/skill 节点 | `PiSessionJsonlCollector` opt-in |
 | `gemini` | OTel / `.gemini/telemetry.log` 事件 `gemini_cli.tool_call`，字段 `function_name`、`function_args`；skill 调用为 `activate_skill` tool | 能，`function_name=activate_skill` 是真实 skill 激活 | `GeminiTelemetryCollector` |
 | `kimi` | `~/.kimi-code/sessions/`、`session_index.jsonl`、global/session logs、`user-history/<md5(workDir)>.jsonl` | 能，限 sessions/logs 中明确 skill/tool 节点；不读 user-history | `KimiCodeSessionCollector` opt-in |
@@ -131,23 +131,23 @@
 
 - `tool_call`：只接受结构化 Skill 执行记录；OpenCode/ZCode 额外要求 `state.status=completed`。
 - `skill_activated`：OpenCode 额外识别 user-role `part.type=text` 中由 runtime 注入的本地 `SKILL.md` 正文；通过 `~/.config/opencode/skills/<skill>/SKILL.md` 正文前缀匹配，不扫描普通 tool output。
-- `explicit_command`：只从 user-role 文本解析 `$skill` / `/skill`；OpenCode/Grok Build 等高误报来源只接受行首命令，且必须匹配当前 SkillFlow inventory。
+- `explicit_command`：只从 user-role 文本解析 `$skill` / `/skill`；OpenCode/Grok Build 等高误报来源只接受行首命令。匹配当前 SkillFlow inventory 时补 `skillRef`，未匹配时保留受限 label 并标记 unmatched diagnostic。
 - 普通 toolCalls、文件路径、`SKILL.md` 文本、assistant 输出、XML closing tag、lifecycle 事件不计数。
 
 | Agent | 数据源 | 原始命中 | 服务层 accepted | 说明 |
 | --- | --- | ---: | ---: | --- |
-| `claude-code` | `~/.claude/projects/**/*.jsonl` | 77 | 11 | 7 条结构化 `Skill` tool_use；其余为显式命令候选，未匹配 inventory 的候选被丢弃 |
+| `claude-code` | `~/.claude/projects/**/*.jsonl` | 77 | 11 | 7 条结构化 `Skill` tool_use；其余为显式命令候选。该表为旧快照，当前规则对未匹配候选保留 label-only 并记录 unmatched diagnostic |
 | `codex` | `~/.codex/sessions/**/*.jsonl`、`~/.codex/archived_sessions/**/*.jsonl` | 401 | 359 | accepted 全部来自 user-role 或 `user_message` 显式 `$skill` / `/skill`；普通 response toolCalls 未作为 skill 调用计数；active 58 个与 archived 207 个 JSONL 均已扫描 |
-| `cursor` | `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` | 28 | 0 | 原始候选来自 user-role 显式 `$skill` / `/skill`，但均未匹配当前 inventory，因此不入主计数 |
+| `cursor` | `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` | 28 | 0 | 该表为旧快照；原始候选来自 user-role 显式 `$skill` / `/skill`，当前规则会保留未匹配候选为 label-only 并记录诊断 |
 | `grok-build` | `~/.grok/sessions/**/chat_history.jsonl` | 0 | 0 | 严格开头命令规则下无 skill 信号；广义匹配曾产生 740 个误报候选，已禁止 |
-| `opencode` | `~/.local/share/opencode/opencode.db` + `~/.config/opencode/skills/*/SKILL.md` | 13 | 9 | 5 条 completed `tool=skill`；3 条 `impeccable` skill-content injection；5 条行首显式命令候选，其中 4 条未匹配 inventory 被丢弃；`prompt-history.jsonl` 仅作旁证，不计入主数据 |
+| `opencode` | `~/.local/share/opencode/opencode.db` + `~/.config/opencode/skills/*/SKILL.md` | 13 | 9 | 5 条 completed `tool=skill`；3 条 `impeccable` skill-content injection；5 条行首显式命令候选，其中 4 条旧规则未匹配 inventory；当前规则保留这些 label-only 并记录诊断；`prompt-history.jsonl` 仅作旁证，不计入主数据 |
 | `zcode` | `~/.zcode/cli/db/db.sqlite` | 242 | 242 | 只统计 completed `tool=Skill` SQLite part；`tool_usage` 仅旁证，不用于取 skill 名 |
 | `pi` | `~/.pi/agent/sessions/**/*.jsonl` | 0 | 0 | 数据源存在但无明确 skill 信号 |
 | `workbuddy` | `~/.workbuddy/traces/**/*.json` + `~/.workbuddy/app/sessions.json`；无 trace 信号时兜底 `~/.workbuddy/usage-log.json` | 14 | 14 | 只统计结构化 `toolName=Skill` span 的 `toolInput.skill`；本机 5 个 skill、14 次调用、7 个日期，其中 6 条可由 sessions 映射项目，8 条项目未知；`usage-log.json` 的 8 个 skill/date 聚合不再与 trace 重复计数 |
 | `gemini-cli` | `.gemini/telemetry.log` | 0 | 0 | 本机未找到 telemetry 文件 |
 | `kimi-code` | `~/.kimi-code/sessions/**/*.jsonl` | 0 | 0 | 本机未找到 sessions 目录 |
 
-临时服务层 refresh 总计：`status=completed`、`sourcesFound=9`、`sourcesScanned=8`、`observedAccepted=625`、`inferredAccepted=0`、`diagnosticsCount=21`。默认 90 天 snapshot 为 `observedUses=525`、`activeSkills=41`、`activeAgents=3`、`activeProjects=18`。其中部分结构化或聚合记录无法匹配当前 inventory，会保留 `skillLabel` 并标记 `inventoryStatus=unknown`；显式命令不允许 unknown 入库。
+临时服务层 refresh 总计：`status=completed`、`sourcesFound=9`、`sourcesScanned=8`、`observedAccepted=625`、`inferredAccepted=0`、`diagnosticsCount=21`。默认 90 天 snapshot 为 `observedUses=525`、`activeSkills=41`、`activeAgents=3`、`activeProjects=18`。其中部分结构化或聚合记录无法匹配当前 inventory，会保留 `skillLabel` 并标记 `inventoryStatus=unknown`；显式命令也遵循相同的 label-only 规则。
 
 Codex 单项补充验证：collector 原始命中 401 条，时间范围 `2026-07-19T14:25:00.240Z` 到 `2026-08-23T18:09:08.670Z`；服务层 accepted 359 条，diagnostics 0。默认 refresh budget 为 `globalBudgetMs=60000`、`perSourceBudgetMs=15000`、`maxFiles=2500`、`maxBytes=8589934592`，本机完整扫描耗时约 15 秒。
 

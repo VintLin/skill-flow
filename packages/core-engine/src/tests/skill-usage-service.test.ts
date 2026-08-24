@@ -110,8 +110,8 @@ describe("SkillUsageService", () => {
     });
   });
 
-  test("drops explicit skill commands that do not match installed inventory", async () => {
-    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-explicit-drop-"));
+  test("keeps explicit skill commands that do not match installed inventory as label-only usage", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-explicit-label-only-"));
     const store = new UsageStore(stateRoot);
     const service = new SkillUsageService({
       store,
@@ -128,7 +128,6 @@ describe("SkillUsageService", () => {
           parserRevision: "test@1",
           projectRef: null,
           projectLabel: "Unknown project",
-          requiresKnownSkillMatch: true,
         }], "codex"),
       ],
       readLeafInventory: async () => [leaf("leaf-wayfinder", "wayfinder", "Wayfinder")],
@@ -141,10 +140,11 @@ describe("SkillUsageService", () => {
     });
     const snapshot = await service.getUsageSnapshot({ range: { preset: "available" } });
 
-    expect(summary.totals.observedAccepted).toBe(0);
-    expect(summary.coverage[0]).toMatchObject({ agent: "codex", observedUses: 0 });
-    expect(summary.diagnostics).not.toContainEqual(expect.objectContaining({ code: "UNMATCHED_SKILL" }));
-    expect(snapshot.kpis.observedUses).toBe(0);
+    expect(summary.totals.observedAccepted).toBe(1);
+    expect(summary.coverage[0]).toMatchObject({ agent: "codex", observedUses: 1 });
+    expect(summary.diagnostics).toContainEqual(expect.objectContaining({ code: "UNMATCHED_SKILL" }));
+    expect(snapshot.kpis.observedUses).toBe(1);
+    expect(snapshot.topSkills[0]).toMatchObject({ skillRef: null, skillLabel: "not-a-known-skill" });
   });
 
   test("accepts explicit skill commands that match installed inventory", async () => {
@@ -165,7 +165,6 @@ describe("SkillUsageService", () => {
           parserRevision: "test@1",
           projectRef: null,
           projectLabel: "Unknown project",
-          requiresKnownSkillMatch: true,
         }], "codex"),
       ],
       readLeafInventory: async () => [leaf("leaf-wayfinder", "wayfinder", "Wayfinder")],

@@ -738,12 +738,14 @@ function parseUsageLimits(value: JsonValue | undefined): NonNullable<UsageSnapsh
   }
   const topSkills = expectOptionalSafeInteger(value.topSkills, "limits.topSkills");
   const topAgents = expectOptionalSafeInteger(value.topAgents, "limits.topAgents");
+  const chartSkills = expectOptionalSafeInteger(value.chartSkills, "limits.chartSkills");
   const projects = expectOptionalSafeInteger(value.projects, "limits.projects");
   const matrixEntries = expectOptionalSafeInteger(value.matrixEntries, "limits.matrixEntries");
   const recentObservations = expectOptionalSafeInteger(value.recentObservations, "limits.recentObservations");
   return {
     ...(topSkills !== undefined ? { topSkills } : {}),
     ...(topAgents !== undefined ? { topAgents } : {}),
+    ...(chartSkills !== undefined ? { chartSkills } : {}),
     ...(projects !== undefined ? { projects } : {}),
     ...(matrixEntries !== undefined ? { matrixEntries } : {}),
     ...(recentObservations !== undefined ? { recentObservations } : {}),

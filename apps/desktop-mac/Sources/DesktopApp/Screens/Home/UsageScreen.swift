@@ -27,7 +27,7 @@ struct UsageScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.pageBackground(for: theme))
-        .task { await viewModel.refreshUsageAnalytics() }
+        .task { await viewModel.loadUsageSnapshot(rangePreset: selectedRange.rawValue) }
         .onChange(of: selectedRange) { _, newValue in
             guard newValue != .custom else { return }
             selection = .all
@@ -125,9 +125,12 @@ struct UsageScreen: View {
 
     private func dashboard(_ snapshot: UsageSnapshotViewData) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            heatmap(snapshot)
             let chart = snapshot.chartData(for: selection)
-            sectionCard(title: nil) { UsageAreaChart(data: chart, theme: theme, accent: accent).frame(height: 300) }
+            if snapshot.chartSkillsTruncated || chart.seriesTruncated || snapshot.matrixTruncated || !snapshot.coverageWarnings.isEmpty {
+                coverageNotice(snapshot, chartSeriesTruncated: chart.seriesTruncated)
+            }
+            heatmap(snapshot)
+            sectionCard(title: nil) { UsageAreaChart(data: chart, theme: theme).frame(height: 300) }
             statistics(snapshot)
         }
     }
@@ -174,6 +177,48 @@ struct UsageScreen: View {
         }
     }
 
+    private func coverageNotice(_ snapshot: UsageSnapshotViewData, chartSeriesTruncated: Bool) -> some View {
+        sectionCard(title: nil) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("数据来源提示")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary(for: theme))
+                    if snapshot.matrixTruncated {
+                        Text("Skill–Agent 关联记录已达到返回上限，筛选后的明细可能不完整。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                    }
+                    if snapshot.chartSkillsTruncated {
+                        Text("图表 Skill 数量已达到返回上限，未展示的 Skill 仍计入总运行次数。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                    } else if chartSeriesTruncated {
+                        Text("当前筛选的图表最多展示 100 个 series，未展示的明细仍计入总运行次数。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                    }
+                    if !snapshot.coverageWarnings.isEmpty {
+                        Text(snapshot.coverageWarnings.map { coverageSummary($0) }.joined(separator: " · "))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                    }
+                }
+            }
+        }
+    }
+
+    private func coverageSummary(_ coverage: UsageAgentCoverageViewData) -> String {
+        var parts = ["\(coverage.agent)：\(coverage.status)"]
+        if coverage.diagnosticsCount > 0 { parts.append("诊断 \(coverage.diagnosticsCount)") }
+        if let sourcesFound = coverage.sourcesFound { parts.append("源 \(sourcesFound)") }
+        if let sourceFilesScanned = coverage.sourceFilesScanned { parts.append("文件 \(sourceFilesScanned)") }
+        if let parserRevision = coverage.parserRevision, !parserRevision.isEmpty { parts.append(parserRevision) }
+        return parts.joined(separator: " · ")
+    }
+
     private func statistics(_ snapshot: UsageSnapshotViewData) -> some View {
         HStack(alignment: .top, spacing: 0) {
             kpiColumn(snapshot).frame(maxWidth: .infinity, alignment: .topLeading)
@@ -212,7 +257,7 @@ struct UsageScreen: View {
                         if case .skill(let current) = selection, current == item.id { selection = .all }
                         else { selection = .skill(item.id) }
                     } label: {
-                        rankingRow(label: item.skillLabel, value: item.observedUses, colorIndex: colorIndex(for: item.id, in: snapshot.topSkills), selected: selection == .skill(item.id))
+                        rankingRow(label: item.skillLabel, value: item.observedUses, colorIndex: colorIndex(for: item.id), selected: selection == .skill(item.id))
                     }
                     .buttonStyle(.plain)
                 }
@@ -234,7 +279,7 @@ struct UsageScreen: View {
                         if case .agent(let current) = selection, current == item.id { selection = .all }
                         else { selection = .agent(item.id) }
                     } label: {
-                        rankingRow(label: item.agent, value: item.observedUses, colorIndex: stableColorIndex(item.id), selected: selection == .agent(item.id))
+                        rankingRow(label: item.agent, value: item.observedUses, colorIndex: colorIndex(for: item.id), selected: selection == .agent(item.id))
                     }
                     .buttonStyle(.plain)
                 }
@@ -264,9 +309,7 @@ struct UsageScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 
-    private func colorIndex(for id: String, in skills: [UsageTopSkillViewData]) -> Int { stableColorIndex(id) }
-
-    private func stableColorIndex(_ value: String) -> Int { abs(value.unicodeScalars.reduce(0) { ($0 * 31) + Int($1.value) }) }
+    private func colorIndex(for id: String) -> Int { usageColorIndex(for: id) }
 
     private func heatmapColor(_ value: Int, maximum: Int) -> Color {
         guard value > 0, maximum > 0 else { return AppTheme.pageBackground(for: theme).opacity(0.52) }
@@ -303,7 +346,6 @@ private struct UsageAreaChart: View {
 
     let data: UsageChartViewData
     let theme: DesktopThemeMode
-    let accent: DesktopAccentColor
     @State private var hoveredIndex: Int?
 
     var body: some View {
@@ -337,7 +379,7 @@ private struct UsageAreaChart: View {
                 }
                 Spacer().frame(width: 10)
             }
-            HStack(spacing: 14) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)], alignment: .leading, spacing: 8) {
                 ForEach(data.series) { series in
                     HStack(spacing: 5) {
                         Capsule().fill(Self.palette[series.colorIndex % Self.palette.count]).frame(width: 14, height: 3)
@@ -345,7 +387,7 @@ private struct UsageAreaChart: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

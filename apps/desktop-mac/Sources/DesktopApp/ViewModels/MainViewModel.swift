@@ -1384,7 +1384,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         from: String? = nil,
         to: String? = nil
     ) async {
-        guard force || usageSnapshot == nil else { return }
+        guard force || usageSnapshot?.rangePreset.rawValue != rangePreset else { return }
         usageLoadState = .loading
         do {
             let response = try await usageQuery.usageSnapshot(rangePreset: rangePreset, from: from, to: to)

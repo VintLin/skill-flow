@@ -135,7 +135,8 @@ This shape came from the prototype/data investigation because WorkBuddy, OpenCod
 - The heatmap uses weekday × hour buckets in local time.
 - The bridge accepts range and limit options for `usage-snapshot`.
 - The bridge output includes bounded dashboard-ready structures: KPIs, time buckets, top Skills, top Agents, Skill-Agent matrix, hourly activity, coverage diagnostics, and recent observations.
-- Limits default to the UI needs: 20 visible Skills, 20 visible Agents, and bounded matrix data sufficient for click interactions.
+- Limits default to the UI needs: 20 visible Skills, 20 visible Agents, up to 100 chart Skill series, and bounded matrix data sufficient for click interactions. If the chart Skill cap is reached, the snapshot exposes `chartSkillsTruncated` and the UI keeps the KPI total unchanged while warning that some series are omitted.
+- Matrix rows are prioritized for the visible top Skills and top Agents before the hard row cap, so normal click-through views remain reconcilable even when long-tail combinations are truncated.
 - The desktop may keep selection state locally. It should not request or persist a separate import/export step.
 - Automatic Local Collection remains read-only against Agent data roots. It does not write back to Agent session stores.
 - Existing Agent collectors remain modular. Each collector owns how it recognizes Skill calls for one Agent family.

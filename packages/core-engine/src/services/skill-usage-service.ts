@@ -206,9 +206,6 @@ export class SkillUsageService {
     skillIndex: Map<string, LeafRecord>,
   ): Promise<UsageObservationV1 | null> {
     const skill = observation.rawSkillName ? findSkill(skillIndex, observation.rawSkillName) : null;
-    if (observation.requiresKnownSkillMatch && !skill) {
-      return null;
-    }
     const skillLabel = sanitizedSkillLabel(observation.rawSkillName);
     const project = await anonymizeProject(observation.rawProjectPath, this.options.localSalt);
     const observationId = hashStable([

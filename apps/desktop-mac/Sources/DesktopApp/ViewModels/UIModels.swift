@@ -1,5 +1,14 @@
 import Foundation
 
+func usageColorIndex(for value: String) -> Int {
+    var hash: UInt64 = 2_166_136_261
+    for scalar in value.unicodeScalars {
+        hash ^= UInt64(scalar.value)
+        hash &*= 16_777_619
+    }
+    return Int(hash & UInt64(Int.max))
+}
+
 enum Page: Equatable {
     case home
     case importPage
@@ -203,18 +212,25 @@ struct UsageSnapshotViewData: Equatable {
     let skillAgentMatrix: [UsageSkillAgentMatrixViewData]
     let recentObservations: [UsageRecentObservationViewData]
     let agentCoverage: [UsageAgentCoverageViewData]
+    let chartSkillsTruncated: Bool
+    let matrixTruncated: Bool
+
+    var coverageWarnings: [UsageAgentCoverageViewData] {
+        agentCoverage.filter { $0.status != "scanned" || $0.diagnosticsCount > 0 }
+    }
 
     func chartData(for selection: UsageChartSelectionViewData) -> UsageChartViewData {
         let labels = timeBuckets.map(\.label)
-        let rows: [(id: String, label: String, count: Int)]
+        let candidateRows: [(id: String, label: String, count: Int)]
         switch selection {
         case .all:
-            rows = topSkills.map { (id: $0.id, label: $0.skillLabel, count: $0.observedUses) }
+            candidateRows = allChartSkillRows()
         case .skill(let skillKey):
-            rows = agentRows(for: skillKey).map { (id: $0.id, label: $0.agent, count: $0.observedUses) }
+            candidateRows = agentRows(for: skillKey).map { (id: $0.id, label: $0.agent, count: $0.observedUses) }
         case .agent(let agent):
-            rows = skillRows(for: agent).map { (id: $0.id, label: $0.skillLabel, count: $0.observedUses) }
+            candidateRows = skillRows(for: agent).map { (id: $0.id, label: $0.skillLabel, count: $0.observedUses) }
         }
+        let rows = Array(candidateRows.prefix(100))
 
         let series = rows.enumerated().map { index, row in
             let values = timeBuckets.map { bucket -> Int in
@@ -231,7 +247,7 @@ struct UsageSnapshotViewData: Equatable {
                 id: row.id,
                 label: row.label,
                 values: values,
-                colorIndex: usageColorIndex(row.id)
+                colorIndex: usageColorIndex(for: row.id)
             )
         }
         let totals = timeBuckets.indices.map { index in
@@ -239,11 +255,24 @@ struct UsageSnapshotViewData: Equatable {
                 total + (index < item.values.count ? item.values[index] : 0)
             }
         }
-        return UsageChartViewData(labels: labels, series: series, totals: totals)
+        return UsageChartViewData(labels: labels, series: series, totals: totals, seriesTruncated: rows.count < candidateRows.count)
     }
 
-    private func usageColorIndex(_ value: String) -> Int {
-        abs(value.unicodeScalars.reduce(0) { ($0 * 31) + Int($1.value) })
+    private func allChartSkillRows() -> [(id: String, label: String, count: Int)] {
+        var counts: [String: (label: String, count: Int)] = [:]
+        for bucket in timeBuckets {
+            for item in bucket.bySkill {
+                let current = counts[item.id]
+                counts[item.id] = (label: current?.label ?? item.skillLabel, count: (current?.count ?? 0) + item.observedUses)
+            }
+        }
+        let ranked = counts.map { (id: $0.key, label: $0.value.label, count: $0.value.count) }
+            .sorted { $0.count > $1.count || ($0.count == $1.count && $0.label < $1.label) }
+        let topIds = Set(topSkills.map(\.id))
+        let topRows = topSkills.compactMap { skill in
+            counts[skill.id].map { (id: skill.id, label: skill.skillLabel, count: $0.count) }
+        }
+        return topRows + ranked.filter { !topIds.contains($0.id) }
     }
 
     func skillRows(for agent: String? = nil) -> [UsageTopSkillViewData] {
@@ -366,6 +395,7 @@ struct UsageChartViewData: Equatable {
     let labels: [String]
     let series: [UsageChartSeriesViewData]
     let totals: [Int]
+    let seriesTruncated: Bool
 }
 
 struct UsageRecentObservationViewData: Identifiable, Equatable {

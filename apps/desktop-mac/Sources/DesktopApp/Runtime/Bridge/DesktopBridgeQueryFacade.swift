@@ -14,7 +14,6 @@ struct DesktopBridgeQueryFacade<Transport: DesktopBridgeTransporting>: DesktopQu
     }
     func inspectEnrichment(sourceId: String) async throws -> BridgeResponse { try await bridgeClient.inspectEnrichment(sourceId: sourceId) }
     func refreshUsage(trigger: String) async throws -> BridgeResponse { try await bridgeClient.refreshUsage(trigger: trigger) }
-    func usageSnapshot() async throws -> BridgeResponse { try await bridgeClient.usageSnapshot() }
     func usageSnapshot(rangePreset: String, from: String?, to: String?) async throws -> BridgeResponse {
         try await bridgeClient.usageSnapshot(rangePreset: rangePreset, from: from, to: to)
     }

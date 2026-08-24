@@ -171,10 +171,6 @@ final class BridgeClient: @unchecked Sendable {
         try await send(command: .refreshUsage, payload: ["trigger": AnyCodable(trigger)])
     }
 
-    func usageSnapshot() async throws -> BridgeResponse {
-        try await usageSnapshot(rangePreset: "30d", from: nil, to: nil)
-    }
-
     func usageSnapshot(rangePreset: String, from: String?, to: String?) async throws -> BridgeResponse {
         var range: [String: Any] = ["preset": rangePreset]
         if let from { range["from"] = from }

@@ -134,6 +134,7 @@ final class BridgePayloadDecoderTests: XCTestCase {
                 "sourceFilesScanned": 272,
                 "sourceBytesScanned": 3970587501,
             ]],
+            "truncation": ["chartSkillsTruncated": true, "matrixTruncated": true],
         ])
 
         XCTAssertEqual(snapshot?.agentCoverage, [UsageAgentCoverageViewData(
@@ -157,6 +158,8 @@ final class BridgePayloadDecoderTests: XCTestCase {
         XCTAssertEqual(snapshot?.topAgents.first?.observedUses, 12)
         XCTAssertEqual(snapshot?.timeBuckets.first?.bySkill.first?.observedUses, 12)
         XCTAssertEqual(snapshot?.skillAgentMatrix.first?.skillKey, "ref:leaf-wayfinder")
+        XCTAssertEqual(snapshot?.chartSkillsTruncated, true)
+        XCTAssertEqual(snapshot?.matrixTruncated, true)
 
         let skillChart = snapshot?.chartData(for: .skill("ref:leaf-wayfinder"))
         XCTAssertEqual(skillChart?.series.map(\.id), ["codex"])

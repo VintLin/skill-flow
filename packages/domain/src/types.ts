@@ -225,7 +225,6 @@ export type UsageCollectorObservation = Omit<
   sourceEventId: string;
   rawSkillName: string | null;
   rawProjectPath?: string;
-  requiresKnownSkillMatch?: boolean;
 };
 
 export type UsageRefreshBudget = {
@@ -288,6 +287,7 @@ export type UsageSnapshotFilters = {
   limits?: {
     topSkills?: number;
     topAgents?: number;
+    chartSkills?: number;
     projects?: number;
     matrixEntries?: number;
     recentObservations?: number;
@@ -419,6 +419,7 @@ export type UsageRecentObservation = {
 export type UsageSnapshotTruncation = {
   topSkillsTruncated: boolean;
   topAgentsTruncated: boolean;
+  chartSkillsTruncated: boolean;
   projectsTruncated: boolean;
   matrixTruncated: boolean;
   recentObservationsTruncated: boolean;

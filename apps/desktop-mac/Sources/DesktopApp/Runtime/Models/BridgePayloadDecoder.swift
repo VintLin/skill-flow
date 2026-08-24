@@ -10,6 +10,7 @@ enum BridgePayloadDecoder {
 
         let range = object(payload["range"])
         let kpis = object(payload["kpis"])
+        let truncation = object(payload["truncation"])
         let rangePreset = UsageRangePresetViewData(rawValue: string(range["preset"]) ?? "30d") ?? .thirtyDays
         return UsageSnapshotViewData(
             generatedAt: string(payload["generatedAt"]) ?? "",
@@ -129,7 +130,9 @@ enum BridgePayloadDecoder {
                     sourceFilesScanned: integer(item["sourceFilesScanned"]),
                     sourceBytesScanned: integer(item["sourceBytesScanned"])
                 )
-            }
+            },
+            chartSkillsTruncated: boolean(truncation["chartSkillsTruncated"]),
+            matrixTruncated: boolean(truncation["matrixTruncated"])
         )
     }
 

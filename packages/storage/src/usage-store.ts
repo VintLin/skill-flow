@@ -301,8 +301,8 @@ function buildUsageSnapshot(input: {
   const coverageDates = input.observations.map((item) => item.observedAt.slice(0, 10)).sort();
   const allTopSkills = buildTopSkills(observed);
   const allTopAgents = buildTopAgents(observed);
-  const matrix = buildSkillAgentMatrix(observed);
-  const chartSkillKeys = new Set(allTopSkills.slice(0, limits.topSkills).map((item) => item.key));
+  const matrix = prioritizeMatrixEntries(buildSkillAgentMatrix(observed), allTopSkills, allTopAgents, limits);
+  const chartSkillKeys = new Set(allTopSkills.slice(0, limits.chartSkills).map((item) => item.key));
 
   return {
     schemaVersion: USAGE_SCHEMA_VERSION,
@@ -333,17 +333,17 @@ function buildUsageSnapshot(input: {
       totalSkills: 0,
       usedSkills: new Set(observed.map(skillGroupKey).filter((item) => item !== "__unmatched__")).size,
       skillRuns: observed.length,
-      chatRecords: filtered.length,
+      chatRecords: observed.length,
     },
-    dailySeries: buildDailySeries(filtered),
+    dailySeries: buildDailySeries(observed),
     topSkills: allTopSkills.slice(0, limits.topSkills),
     topAgents: allTopAgents.slice(0, limits.topAgents),
     timeBuckets: buildTimeBuckets(observed, range, chartSkillKeys),
     hourlyActivity: buildHourlyActivity(observed),
     skillAgentMatrix: matrix.slice(0, limits.matrixEntries),
-    projectBreakdown: buildProjectBreakdown(filtered).slice(0, limits.projects),
+    projectBreakdown: buildProjectBreakdown(observed).slice(0, limits.projects),
     agentCoverage: input.coverage,
-    recentObservations: [...filtered]
+    recentObservations: [...observed]
       .sort((left, right) => right.observedAt.localeCompare(left.observedAt))
       .slice(0, limits.recentObservations)
       .map((observation) => ({
@@ -362,9 +362,10 @@ function buildUsageSnapshot(input: {
     truncation: {
       topSkillsTruncated: allTopSkills.length > limits.topSkills,
       topAgentsTruncated: allTopAgents.length > limits.topAgents,
-      projectsTruncated: buildProjectBreakdown(filtered).length > limits.projects,
+      chartSkillsTruncated: allTopSkills.length > limits.chartSkills,
+      projectsTruncated: buildProjectBreakdown(observed).length > limits.projects,
       matrixTruncated: matrix.length > limits.matrixEntries,
-      recentObservationsTruncated: filtered.length > limits.recentObservations,
+      recentObservationsTruncated: observed.length > limits.recentObservations,
     },
   };
 }
@@ -448,6 +449,26 @@ function buildSkillAgentMatrix(observations: UsageObservationV1[]): UsageSnapsho
     .map(({ _sortKey: _ignored, ...entry }) => entry);
 }
 
+function prioritizeMatrixEntries(
+  entries: UsageSnapshot["skillAgentMatrix"],
+  skills: UsageSnapshot["topSkills"],
+  agents: UsageSnapshot["topAgents"],
+  limits: ReturnType<typeof normalizeLimits>,
+): UsageSnapshot["skillAgentMatrix"] {
+  const skillKeys = new Set(skills.slice(0, limits.topSkills).map((item) => item.key));
+  const agentKeys = new Set(agents.slice(0, limits.topAgents).map((item) => item.agent));
+  return [...entries].sort((left, right) => {
+    const leftPriority = skillKeys.has(left.skillKey) || agentKeys.has(left.agent) ? 0 : 1;
+    const rightPriority = skillKeys.has(right.skillKey) || agentKeys.has(right.agent) ? 0 : 1;
+    return (
+      leftPriority - rightPriority ||
+      right.observedUses - left.observedUses ||
+      left.skillKey.localeCompare(right.skillKey) ||
+      left.agent.localeCompare(right.agent)
+    );
+  });
+}
+
 type NormalizedUsageRange = {
   from: string;
   to: string;
@@ -475,8 +496,8 @@ function buildTimeBuckets(
   }
 
   return starts.map((start, index) => {
-    const nextStart = starts[index + 1] ?? new Date(range.endAt);
-    const bucketEnd = new Date(Math.min(nextStart.getTime(), Date.parse(range.endAt)));
+    const nextStart = starts[index + 1] ?? new Date(Date.parse(range.endAt) + 1);
+    const bucketEnd = new Date(Math.min(nextStart.getTime(), Date.parse(range.endAt) + 1));
     const items = observations.filter((observation) => {
       const timestamp = Date.parse(observation.observedAt);
       return timestamp >= start.getTime() && timestamp < bucketEnd.getTime();
@@ -660,7 +681,7 @@ function normalizeRange(
       from: localDateKey(startHour),
       to: today,
       startAt: startHour.toISOString(),
-      endAt: now.toISOString(),
+      endAt: endHour.toISOString(),
       preset,
       unit: "hour",
     };
@@ -683,8 +704,9 @@ function normalizeLimits(limits: UsageSnapshotFilters["limits"]) {
   return {
     topSkills: clampLimit(limits?.topSkills, 20, 100),
     topAgents: clampLimit(limits?.topAgents, 20, 100),
+    chartSkills: clampLimit(limits?.chartSkills, 100, 200),
     projects: clampLimit(limits?.projects, 20, 100),
-    matrixEntries: clampLimit(limits?.matrixEntries, 400, 5000),
+    matrixEntries: clampLimit(limits?.matrixEntries, 5000, 5000),
     recentObservations: clampLimit(limits?.recentObservations, 50, 200),
   };
 }

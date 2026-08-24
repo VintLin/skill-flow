@@ -170,6 +170,7 @@ describe("UsageStore", () => {
     await store.appendObservations([
       observation({ observationId: "codex-1", observedAt: today(8), agent: "codex" }),
       observation({ observationId: "zcode-1", observedAt: today(9), agent: "zcode" }),
+      observation({ observationId: "other-skill-1", observedAt: today(9), agent: "zcode", skillRef: "leaf-other", skillLabel: "Other" }),
       observation({
         observationId: "browse-1",
         observedAt: new Date(2026, 7, 23, 9, 0, 0, 0).toISOString(),
@@ -179,32 +180,38 @@ describe("UsageStore", () => {
       }),
     ]);
 
-    const snapshot = await store.readSnapshot({ range: { preset: "today" } });
+    const snapshot = await store.readSnapshot({ range: { preset: "today" }, limits: { topSkills: 1 } });
 
     expect(snapshot.kpis).toMatchObject({
-      observedUses: 2,
-      usedSkills: 1,
-      skillRuns: 2,
-      chatRecords: 2,
+      observedUses: 3,
+      usedSkills: 2,
+      skillRuns: 3,
+      chatRecords: 3,
     });
     expect(snapshot.range.preset).toBe("today");
     expect(snapshot.timeBuckets).toHaveLength(1);
-    expect(snapshot.timeBuckets[0]).toMatchObject({ observedUses: 2 });
+    expect(snapshot.timeBuckets[0]).toMatchObject({ observedUses: 3 });
     expect(snapshot.topAgents.map((item) => [item.agent, item.observedUses])).toEqual([
+      ["zcode", 2],
       ["codex", 1],
-      ["zcode", 1],
     ]);
-    expect(snapshot.skillAgentMatrix).toEqual([
+    expect(snapshot.skillAgentMatrix).toEqual(expect.arrayContaining([
       expect.objectContaining({ skillKey: "ref:leaf-wayfinder", agent: "codex", observedUses: 1 }),
       expect.objectContaining({ skillKey: "ref:leaf-wayfinder", agent: "zcode", observedUses: 1 }),
-    ]);
-    expect(snapshot.timeBuckets[0]?.bySkillAgent).toEqual([
+      expect.objectContaining({ skillKey: "ref:leaf-other", agent: "zcode", observedUses: 1 }),
+    ]));
+    expect(snapshot.skillAgentMatrix).toHaveLength(3);
+    expect(snapshot.timeBuckets[0]?.bySkillAgent).toEqual(expect.arrayContaining([
       { skillKey: "ref:leaf-wayfinder", agent: "codex", observedUses: 1 },
       { skillKey: "ref:leaf-wayfinder", agent: "zcode", observedUses: 1 },
-    ]);
+      { skillKey: "ref:leaf-other", agent: "zcode", observedUses: 1 },
+    ]));
+    expect(snapshot.timeBuckets[0]?.bySkillAgent).toHaveLength(3);
+    expect(snapshot.topSkills).toHaveLength(1);
+    expect(snapshot.timeBuckets[0]?.bySkill.map((item) => item.key)).toEqual(expect.arrayContaining(["ref:leaf-wayfinder", "ref:leaf-other"]));
     expect(snapshot.hourlyActivity.filter((item) => item.observedUses > 0)).toEqual([
       expect.objectContaining({ hour: 8, observedUses: 1 }),
-      expect.objectContaining({ hour: 9, observedUses: 1 }),
+      expect.objectContaining({ hour: 9, observedUses: 2 }),
     ]);
   });
 
@@ -216,7 +223,7 @@ describe("UsageStore", () => {
     const observation: UsageObservationV1 = {
       schemaVersion: 1,
       observationId: "obs-24h",
-      observedAt: new Date(2026, 7, 24, 10, 10, 0, 0).toISOString(),
+      observedAt: new Date(2026, 7, 24, 10, 0, 0, 0).toISOString(),
       agent: "codex",
       skillRef: "leaf-wayfinder",
       skillLabel: "Wayfinder",
@@ -235,6 +242,35 @@ describe("UsageStore", () => {
     expect(snapshot.timeBuckets).toHaveLength(24);
     expect(snapshot.timeBuckets[0]?.label).toMatch(/^\d{2}:00$/);
     expect(snapshot.timeBuckets.at(-1)?.label).toBe("10:00");
+    expect(snapshot.timeBuckets.at(-1)?.observedUses).toBe(1);
+    expect(snapshot.range.endAt).toBe(new Date(2026, 7, 24, 10, 0, 0, 0).toISOString());
     expect(snapshot.timeBuckets.some((item) => item.label.startsWith("-"))).toBe(false);
+  });
+
+  test("bounds chart skill series without changing the raw run total", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-store-chart-limit-"));
+    const store = new UsageStore(stateRoot);
+    const observations: UsageObservationV1[] = Array.from({ length: 101 }, (_, index) => ({
+      schemaVersion: 1,
+      observationId: `chart-skill-${index}`,
+      observedAt: `2026-08-23T00:${String(index % 60).padStart(2, "0")}:00.000Z`,
+      agent: "codex",
+      skillRef: `leaf-chart-${index}`,
+      skillLabel: `Chart skill ${index}`,
+      evidenceKind: "explicit_command",
+      confidence: "observed",
+      outcome: "unknown",
+      sourceKind: "local-session",
+      parserRevision: "test@1",
+      projectRef: null,
+      projectLabel: "Unknown project",
+    }));
+
+    await store.appendObservations(observations);
+    const snapshot = await store.readSnapshot({ range: { preset: "available" }, limits: { chartSkills: 100 } });
+
+    expect(snapshot.kpis.skillRuns).toBe(101);
+    expect(snapshot.timeBuckets.flatMap((bucket) => bucket.bySkill)).toHaveLength(100);
+    expect(snapshot.truncation.chartSkillsTruncated).toBe(true);
   });
 });

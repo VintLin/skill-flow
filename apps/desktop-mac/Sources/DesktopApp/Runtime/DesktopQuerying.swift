@@ -19,7 +19,6 @@ protocol DesktopDetailEnrichmentQuerying: Sendable {
 
 protocol DesktopUsageQuerying: Sendable {
     func refreshUsage(trigger: String) async throws -> BridgeResponse
-    func usageSnapshot() async throws -> BridgeResponse
     func usageSnapshot(rangePreset: String, from: String?, to: String?) async throws -> BridgeResponse
 }
 
@@ -48,8 +47,7 @@ extension DesktopDetailEnrichmentQuerying {
 
 extension DesktopUsageQuerying {
     func refreshUsage(trigger: String) async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
-    func usageSnapshot() async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
     func usageSnapshot(rangePreset: String, from: String?, to: String?) async throws -> BridgeResponse {
-        try await usageSnapshot()
+        throw BridgeClientError.invalidResponse
     }
 }

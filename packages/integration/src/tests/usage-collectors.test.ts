@@ -189,14 +189,12 @@ describe("usage collectors", () => {
         agent: "codex",
         rawSkillName: "wayfinder",
         evidenceKind: "explicit_command",
-        requiresKnownSkillMatch: true,
         rawProjectPath: projectPath,
       }),
       expect.objectContaining({
         agent: "codex",
         rawSkillName: "mattpocock-skills:tdd",
         evidenceKind: "explicit_command",
-        requiresKnownSkillMatch: true,
         rawProjectPath: projectPath,
       }),
     ]));
@@ -833,7 +831,6 @@ INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('part-
         evidenceKind: "explicit_command",
         confidence: "observed",
         outcome: "unknown",
-        requiresKnownSkillMatch: true,
         rawProjectPath: projectPath,
       }),
     ]));

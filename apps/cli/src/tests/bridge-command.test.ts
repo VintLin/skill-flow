@@ -287,6 +287,7 @@ describe.sequential("bridge command dispatcher", () => {
         diagnostics: [],
         truncation: {
           topSkillsTruncated: false,
+          chartSkillsTruncated: false,
           projectsTruncated: false,
           recentObservationsTruncated: false,
         },
@@ -299,14 +300,14 @@ describe.sequential("bridge command dispatcher", () => {
       payload: {
         range: { preset: "7d" },
         filters: { agents: ["claude-code", "zcode"], confidence: ["observed"], includeInferred: false },
-        limits: { topSkills: 10, topAgents: 10, projects: 10, matrixEntries: 100, recentObservations: 20 },
+        limits: { topSkills: 10, topAgents: 10, chartSkills: 100, projects: 10, matrixEntries: 100, recentObservations: 20 },
       },
     });
 
     expect(app.getUsageSnapshot).toHaveBeenCalledWith({
       range: { preset: "7d" },
       filters: { agents: ["claude-code", "zcode"], confidence: ["observed"], includeInferred: false },
-      limits: { topSkills: 10, topAgents: 10, projects: 10, matrixEntries: 100, recentObservations: 20 },
+      limits: { topSkills: 10, topAgents: 10, chartSkills: 100, projects: 10, matrixEntries: 100, recentObservations: 20 },
     });
     expect(response.ok).toBe(true);
   });
