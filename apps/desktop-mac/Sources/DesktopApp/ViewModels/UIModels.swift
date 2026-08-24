@@ -163,13 +163,121 @@ struct CollectionEditorOptions: Equatable {
     let restoreSourceOptions: [CollectionSourceOption]
 }
 
+enum UsageRangePresetViewData: String, CaseIterable, Identifiable {
+    case today
+    case twentyFourHours = "24h"
+    case sevenDays = "7d"
+    case thirtyDays = "30d"
+    case ninetyDays = "90d"
+    case custom
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .today: return "今天"
+        case .twentyFourHours: return "24H"
+        case .sevenDays: return "7D"
+        case .thirtyDays: return "30D"
+        case .ninetyDays: return "90D"
+        case .custom: return "自定义"
+        }
+    }
+}
+
+enum UsageChartSelectionViewData: Equatable {
+    case all
+    case skill(String)
+    case agent(String)
+}
+
 struct UsageSnapshotViewData: Equatable {
     let generatedAt: String
     let rangeLabel: String
+    let rangePreset: UsageRangePresetViewData
     let kpis: UsageKpisViewData
     let topSkills: [UsageTopSkillViewData]
+    let topAgents: [UsageTopAgentViewData]
+    let timeBuckets: [UsageTimeBucketViewData]
+    let hourlyActivity: [UsageHourlyActivityViewData]
+    let skillAgentMatrix: [UsageSkillAgentMatrixViewData]
     let recentObservations: [UsageRecentObservationViewData]
     let agentCoverage: [UsageAgentCoverageViewData]
+
+    func chartData(for selection: UsageChartSelectionViewData) -> UsageChartViewData {
+        let labels = timeBuckets.map(\.label)
+        let rows: [(id: String, label: String, count: Int)]
+        switch selection {
+        case .all:
+            rows = topSkills.map { (id: $0.id, label: $0.skillLabel, count: $0.observedUses) }
+        case .skill(let skillKey):
+            rows = agentRows(for: skillKey).map { (id: $0.id, label: $0.agent, count: $0.observedUses) }
+        case .agent(let agent):
+            rows = skillRows(for: agent).map { (id: $0.id, label: $0.skillLabel, count: $0.observedUses) }
+        }
+
+        let series = rows.enumerated().map { index, row in
+            let values = timeBuckets.map { bucket -> Int in
+                switch selection {
+                case .all:
+                    return bucket.bySkill.first(where: { $0.id == row.id })?.observedUses ?? 0
+                case .skill(let skillKey):
+                    return bucket.bySkillAgent.first(where: { $0.skillKey == skillKey && $0.agent == row.id })?.observedUses ?? 0
+                case .agent(let agent):
+                    return bucket.bySkillAgent.first(where: { $0.skillKey == row.id && $0.agent == agent })?.observedUses ?? 0
+                }
+            }
+            return UsageChartSeriesViewData(
+                id: row.id,
+                label: row.label,
+                values: values,
+                colorIndex: usageColorIndex(row.id)
+            )
+        }
+        let totals = timeBuckets.indices.map { index in
+            series.reduce(0) { total, item in
+                total + (index < item.values.count ? item.values[index] : 0)
+            }
+        }
+        return UsageChartViewData(labels: labels, series: series, totals: totals)
+    }
+
+    private func usageColorIndex(_ value: String) -> Int {
+        abs(value.unicodeScalars.reduce(0) { ($0 * 31) + Int($1.value) })
+    }
+
+    func skillRows(for agent: String? = nil) -> [UsageTopSkillViewData] {
+        guard let agent else { return topSkills }
+        let grouped = Dictionary(grouping: skillAgentMatrix.filter { $0.agent == agent }, by: \.skillKey)
+        return grouped.map { key, entries in
+            let source = topSkills.first(where: { $0.id == key })
+            return UsageTopSkillViewData(
+                id: key,
+                skillLabel: source?.skillLabel ?? entries.first?.skillLabel ?? "Unmatched skill",
+                observedUses: entries.reduce(0) { $0 + $1.observedUses },
+                activeAgentCount: 1,
+                activeProjectCount: source?.activeProjectCount ?? 0,
+                lastObservedAt: source?.lastObservedAt,
+                inventoryStatus: source?.inventoryStatus ?? "unknown"
+            )
+        }.sorted { $0.observedUses > $1.observedUses || ($0.observedUses == $1.observedUses && $0.skillLabel < $1.skillLabel) }
+    }
+
+    func agentRows(for skillKey: String? = nil) -> [UsageTopAgentViewData] {
+        guard let skillKey else { return topAgents }
+        let grouped = Dictionary(grouping: skillAgentMatrix.filter { $0.skillKey == skillKey }, by: \.agent)
+        return grouped.map { agent, entries in
+            let source = topAgents.first(where: { $0.id == agent })
+            return UsageTopAgentViewData(
+                id: agent,
+                agent: agent,
+                observedUses: entries.reduce(0) { $0 + $1.observedUses },
+                activeSkills: 1,
+                activeProjects: source?.activeProjects ?? 0,
+                lastObservedAt: source?.lastObservedAt
+            )
+        }.sorted { $0.observedUses > $1.observedUses || ($0.observedUses == $1.observedUses && $0.agent < $1.agent) }
+    }
 }
 
 struct UsageKpisViewData: Equatable {
@@ -179,6 +287,10 @@ struct UsageKpisViewData: Equatable {
     let activeProjects: Int
     let lastObservedAt: String?
     let inferredSignals: Int
+    let totalSkills: Int
+    let usedSkills: Int
+    let skillRuns: Int
+    let chatRecords: Int
 }
 
 struct UsageTopSkillViewData: Identifiable, Equatable {
@@ -188,6 +300,72 @@ struct UsageTopSkillViewData: Identifiable, Equatable {
     let activeAgentCount: Int
     let activeProjectCount: Int
     let lastObservedAt: String?
+    let inventoryStatus: String
+}
+
+struct UsageTopAgentViewData: Identifiable, Equatable {
+    let id: String
+    let agent: String
+    let observedUses: Int
+    let activeSkills: Int
+    let activeProjects: Int
+    let lastObservedAt: String?
+}
+
+struct UsageSkillSeriesViewData: Identifiable, Equatable {
+    let id: String
+    let skillLabel: String
+    let observedUses: Int
+}
+
+struct UsageAgentSeriesViewData: Identifiable, Equatable {
+    let id: String
+    let agent: String
+    let observedUses: Int
+}
+
+struct UsageSkillAgentSeriesViewData: Equatable {
+    let skillKey: String
+    let agent: String
+    let observedUses: Int
+}
+
+struct UsageTimeBucketViewData: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let startAt: String
+    let endAt: String
+    let observedUses: Int
+    let bySkill: [UsageSkillSeriesViewData]
+    let byAgent: [UsageAgentSeriesViewData]
+    let bySkillAgent: [UsageSkillAgentSeriesViewData]
+}
+
+struct UsageHourlyActivityViewData: Equatable {
+    let weekday: Int
+    let hour: Int
+    let observedUses: Int
+}
+
+struct UsageSkillAgentMatrixViewData: Equatable {
+    let skillKey: String
+    let skillRef: String?
+    let skillLabel: String
+    let agent: String
+    let observedUses: Int
+}
+
+struct UsageChartSeriesViewData: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let values: [Int]
+    let colorIndex: Int
+}
+
+struct UsageChartViewData: Equatable {
+    let labels: [String]
+    let series: [UsageChartSeriesViewData]
+    let totals: [Int]
 }
 
 struct UsageRecentObservationViewData: Identifiable, Equatable {
@@ -204,9 +382,17 @@ struct UsageAgentCoverageViewData: Identifiable, Equatable {
     let id: String
     let agent: String
     let status: String
+    let sourceKind: String?
+    let parserRevision: String?
     let observedUses: Int
     let inferredSignals: Int
     let lastScannedAt: String?
+    let coverageFrom: String?
+    let coverageTo: String?
+    let diagnosticsCount: Int
+    let sourcesFound: Int?
+    let sourceFilesScanned: Int?
+    let sourceBytesScanned: Int?
 }
 
 struct SourceRow: Identifiable {

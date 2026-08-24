@@ -1378,11 +1378,16 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         }
     }
 
-    func loadUsageSnapshot(force: Bool = false) async {
+    func loadUsageSnapshot(
+        force: Bool = false,
+        rangePreset: String = "30d",
+        from: String? = nil,
+        to: String? = nil
+    ) async {
         guard force || usageSnapshot == nil else { return }
         usageLoadState = .loading
         do {
-            let response = try await usageQuery.usageSnapshot()
+            let response = try await usageQuery.usageSnapshot(rangePreset: rangePreset, from: from, to: to)
             guard response.ok,
                   let snapshot = BridgePayloadDecoder.usageSnapshot(from: response.data?.value as? [String: Any])
             else {
@@ -1399,12 +1404,12 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     func refreshUsageAnalytics() async {
         usageLoadState = .loading
         do {
-            let response = try await usageQuery.refreshUsage(trigger: "scheduled")
+            let response = try await usageQuery.refreshUsage(trigger: "manual")
             guard response.ok else {
                 usageLoadState = .failed(response.errors.first?.message ?? "Unable to refresh usage analytics.")
                 return
             }
-            await loadUsageSnapshot(force: true)
+            await loadUsageSnapshot(force: true, rangePreset: "30d")
         } catch {
             usageLoadState = .failed(error.localizedDescription)
         }

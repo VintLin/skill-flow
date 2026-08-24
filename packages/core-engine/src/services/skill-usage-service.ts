@@ -14,7 +14,11 @@ import type {
   UsageSnapshot,
   UsageSnapshotFilters,
 } from "@skill-flow/domain/types";
-import type { UsageCoverageState, UsageStore } from "@skill-flow/storage/usage-store";
+import type {
+  UsageCoverageState,
+  UsageObservationReplacementScope,
+  UsageStore,
+} from "@skill-flow/storage/usage-store";
 import type { UsageCollector } from "@skill-flow/integration/utils/usage-collectors";
 
 const USAGE_SCHEMA_VERSION = 1 as const;
@@ -53,7 +57,7 @@ export class SkillUsageService {
     const refreshedAt = now.toISOString();
     const trigger = args.trigger ?? "scheduled";
     const existingCoverage = await this.options.store.readCoverageState();
-    if (this.isCooldownActive(existingCoverage, now)) {
+    if (trigger !== "manual" && this.isCooldownActive(existingCoverage, now)) {
       return {
         schemaVersion: USAGE_SCHEMA_VERSION,
         refreshedAt,
@@ -80,6 +84,7 @@ export class SkillUsageService {
     const coverage: UsageAgentCoverage[] = [];
     const diagnostics: UsageDiagnostic[] = [];
     const collected: UsageObservationV1[] = [];
+    const replacementScopes: UsageObservationReplacementScope[] = [];
     let sourcesFound = 0;
     let sourcesScanned = 0;
 
@@ -119,7 +124,15 @@ export class SkillUsageService {
       );
       const acceptedMappedObservations = mappedObservations.filter((item): item is UsageObservationV1 => Boolean(item));
       collected.push(...acceptedMappedObservations);
-      coverage.push(withCoverageRange(result.coverage, acceptedMappedObservations));
+      const coverageWithRange = withCoverageRange(result.coverage, acceptedMappedObservations);
+      coverage.push(coverageWithRange);
+      if (isReplacementSafeCoverage(coverageWithRange)) {
+        replacementScopes.push({
+          agent: coverageWithRange.agent,
+          sourceKind: coverageWithRange.sourceKind,
+          parserRevision: coverageWithRange.parserRevision,
+        });
+      }
       diagnostics.push(...result.diagnostics);
       diagnostics.push(...buildUnmatchedSkillDiagnostics(result.observations, mappedObservations, refreshedAt));
     }
@@ -135,7 +148,9 @@ export class SkillUsageService {
     const orderedCoverage = orderCoverage(coverage, supportedAgents);
 
     const retainedObservations = collected.filter((observation) => isWithinRetentionWindow(observation, now));
-    const writeResult = await this.options.store.appendObservations(retainedObservations);
+    const writeResult = replacementScopes.length > 0
+      ? await this.options.store.replaceObservationsForScopes(replacementScopes, retainedObservations)
+      : await this.options.store.appendObservations(retainedObservations);
     const storedDiagnostics = compactDiagnostics(diagnostics);
     await this.options.store.writeCoverageState({
       schemaVersion: USAGE_SCHEMA_VERSION,
@@ -359,6 +374,18 @@ function withCoverageRange(
   };
 }
 
+function isReplacementSafeCoverage(
+  coverage: UsageAgentCoverage,
+): coverage is UsageAgentCoverage & { sourceKind: "local-session"; parserRevision: string } {
+  return Boolean(
+    coverage.sourceKind &&
+      coverage.parserRevision &&
+      (coverage.status === "scanned" ||
+        coverage.status === "no_skill_signals" ||
+        coverage.status === "no_records"),
+  );
+}
+
 function buildUnmatchedSkillDiagnostics(
   rawObservations: UsageCollectorObservation[],
   storedObservations: Array<UsageObservationV1 | null>,
@@ -407,7 +434,13 @@ function maxNullableIso(left: string | null, right: string | null): string | nul
 }
 
 function applySkillLabels(snapshot: UsageSnapshot, leafInventory: LeafRecord[]): UsageSnapshot {
-  const leafsById = new Map(leafInventory.map((leaf) => [leaf.id, leaf]));
+  const validLeafs = leafInventory.filter((leaf) => leaf.valid !== false);
+  const leafsById = new Map<string, LeafRecord>();
+  for (const leaf of validLeafs) {
+    if (!leafsById.has(leaf.id)) {
+      leafsById.set(leaf.id, leaf);
+    }
+  }
   const labelFor = (skillRef: string | null, fallback: string) => {
     if (!skillRef) return fallback;
     const leaf = leafsById.get(skillRef);
@@ -415,10 +448,25 @@ function applySkillLabels(snapshot: UsageSnapshot, leafInventory: LeafRecord[]):
   };
   return {
     ...snapshot,
+    kpis: {
+      ...snapshot.kpis,
+      totalSkills: leafsById.size,
+    },
     topSkills: snapshot.topSkills.map((item) => ({
       ...item,
       skillLabel: labelFor(item.skillRef, item.skillLabel),
       inventoryStatus: item.skillRef && leafsById.has(item.skillRef) ? "installed" : item.inventoryStatus,
+    })),
+    timeBuckets: snapshot.timeBuckets.map((bucket) => ({
+      ...bucket,
+      bySkill: bucket.bySkill.map((item) => ({
+        ...item,
+        skillLabel: labelFor(item.skillRef, item.skillLabel),
+      })),
+    })),
+    skillAgentMatrix: snapshot.skillAgentMatrix.map((item) => ({
+      ...item,
+      skillLabel: labelFor(item.skillRef, item.skillLabel),
     })),
     recentObservations: snapshot.recentObservations.map((item) => ({
       ...item,

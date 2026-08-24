@@ -213,12 +213,12 @@ describe.sequential("bridge command dispatcher", () => {
     });
   });
 
-  test("refresh-usage forwards trigger and returns value envelope", async () => {
+  test("refresh-usage forwards manual trigger and returns value envelope", async () => {
     const app = {
       refreshUsageObservations: vi.fn(async () => ({
         schemaVersion: 1,
         refreshedAt: "2026-08-23T00:00:00.000Z",
-        trigger: "scheduled",
+        trigger: "manual",
         status: "completed",
         budget: {
           globalBudgetMs: 30000,
@@ -244,10 +244,10 @@ describe.sequential("bridge command dispatcher", () => {
     const response = await executeBridgeRequest(app, {
       protocolVersion: PROTOCOL_VERSION,
       command: "refresh-usage",
-      payload: { trigger: "scheduled" },
+      payload: { trigger: "manual" },
     });
 
-    expect(app.refreshUsageObservations).toHaveBeenCalledWith({ trigger: "scheduled" });
+    expect(app.refreshUsageObservations).toHaveBeenCalledWith({ trigger: "manual" });
     expect(response.ok).toBe(true);
     expect(response.data).toHaveProperty("schemaVersion", 1);
   });
@@ -299,14 +299,14 @@ describe.sequential("bridge command dispatcher", () => {
       payload: {
         range: { preset: "7d" },
         filters: { agents: ["claude-code", "zcode"], confidence: ["observed"], includeInferred: false },
-        limits: { topSkills: 10, projects: 10, recentObservations: 20 },
+        limits: { topSkills: 10, topAgents: 10, projects: 10, matrixEntries: 100, recentObservations: 20 },
       },
     });
 
     expect(app.getUsageSnapshot).toHaveBeenCalledWith({
       range: { preset: "7d" },
       filters: { agents: ["claude-code", "zcode"], confidence: ["observed"], includeInferred: false },
-      limits: { topSkills: 10, projects: 10, recentObservations: 20 },
+      limits: { topSkills: 10, topAgents: 10, projects: 10, matrixEntries: 100, recentObservations: 20 },
     });
     expect(response.ok).toBe(true);
   });
@@ -323,6 +323,48 @@ describe.sequential("bridge command dispatcher", () => {
 
     expect(response.ok).toBe(false);
     expect(response.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
+  });
+
+  test.each(["today", "24h", "7d", "30d", "90d", "available"] as const)(
+    "accepts usage range preset %s",
+    async (preset) => {
+      const app = {
+        getUsageSnapshot: vi.fn(async () => ({ ok: true, data: { range: { preset } }, warnings: [], errors: [] })),
+      } as unknown as SkillFlowApp;
+
+      const response = await executeBridgeRequest(app, {
+        protocolVersion: PROTOCOL_VERSION,
+        command: "usage-snapshot",
+        payload: { range: { preset } },
+      });
+
+      expect(response.ok).toBe(true);
+      expect(app.getUsageSnapshot).toHaveBeenCalledWith({ range: { preset } });
+    },
+  );
+
+  test("accepts custom usage range and rejects incomplete endpoints", async () => {
+    const app = {
+      getUsageSnapshot: vi.fn(async () => ({ ok: true, data: {}, warnings: [], errors: [] })),
+    } as unknown as SkillFlowApp;
+
+    const valid = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "usage-snapshot",
+      payload: { range: { preset: "custom", from: "2026-08-01", to: "2026-08-24" } },
+    });
+    expect(valid.ok).toBe(true);
+    expect(app.getUsageSnapshot).toHaveBeenCalledWith({
+      range: { preset: "custom", from: "2026-08-01", to: "2026-08-24" },
+    });
+
+    const invalid = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "usage-snapshot",
+      payload: { range: { preset: "custom", from: "2026-08-01" } },
+    });
+    expect(invalid.ok).toBe(false);
+    expect(invalid.errors[0]?.code).toBe("BRIDGE_REQUEST_INVALID");
   });
 
   test("rejects invalid apply payload", async () => {

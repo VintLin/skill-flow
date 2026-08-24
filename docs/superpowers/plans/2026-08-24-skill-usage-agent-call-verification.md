@@ -80,7 +80,7 @@
 | `cursor` | `implemented` | `cursor-agent-transcript@1` | 只扫描 `agent-transcripts` JSONL；user-role 显式命令必须匹配 inventory；普通 plans/config 不计数 |
 | `grok-build` | `implemented` | `grok-build-session@1` | 只扫描 `chat_history.jsonl`；仅用户消息开头 `$skill` / `/skill` 进入候选并必须匹配 inventory；events/updates lifecycle 不计数 |
 | `pi` | `implemented` | `pi-session@1` | 只统计 JSONL 中明确 Skill/activate_skill 或 inventory 匹配的用户显式命令 |
-| `workbuddy` | `implemented` | `workbuddy-usage-log@1` | 只读 `usage-log.json` 的 `skills` 聚合日期；按 skill/date 记录至少一次使用，不伪造精确次数或项目 |
+| `workbuddy` | `implemented` | `workbuddy-usage-log@1` | 保留旧 parser revision 用于替换历史派生数据；实际读取 `traces` 中结构化 `toolName=Skill` span，`usage-log.json` 仅无 trace 信号时兜底 |
 | `codebuddy` | `candidate` | 无 | 仅 explicit/fork skill lifecycle 或 trace 明确 skill 名后可实现；当前 `parser_unsupported` |
 | `trae` | `unsupported` | 无 | 只有 lifecycle/inventory 证据；当前 `parser_unsupported` |
 | `trae-cn` | `unsupported` | 无 | 只有 lifecycle/inventory 证据；当前 `parser_unsupported` |
@@ -107,7 +107,7 @@
 | `cursor` | 已实现 local parser；OTel 待接入 | `~/.cursor/projects/**/agent-transcripts/**/*.jsonl`；Cursor Enterprise OTel logs | agent transcript user-role 文本中的 `$skill` / `/skill` 且匹配 inventory；结构化 Skill/activate_skill tool call 需能取得 skill/name | 本地 `.cursor` 配置、plans、assistant 文本、普通聊天状态、团队 analytics 汇总、MCP/tool metadata | 本机 transcript 原始候选均未匹配 inventory，服务层 accepted=0；后续接 Enterprise OTel direct event |
 | `grok-build` | 已实现 conservative local parser；OTel / hook 待接入 | `~/.grok/sessions/**/chat_history.jsonl`；Grok Build OTel、hooks | chat history 中 user 类型文本必须以 `$skill` / `/skill` 开头，且匹配 inventory；OTel event `grok_code.skill_activated` 未来可作为 direct event | 句中 `$skill`、普通 `/path`、events/updates lifecycle、只有 `tool.usage` 但无 skill 名、普通 hook、session 存在 | 本机严格规则 dry-run 为 `no_skill_signals`；广义匹配会误报，已禁止 |
 | `pi` | 已实现 local parser | `~/.pi/agent/sessions/**/*.jsonl` | 结构化：session JSONL 中 tool block 名为 `Skill` / `activate_skill` 且参数含 `skill/name`；显式：user-role 文本 `$skill` / `/skill` 且匹配 inventory；project 从 `cwd/projectPath/workspaceRoot` 继承 | session tree 普通节点、工具结果、assistant 文本、未匹配 inventory 的显式命令 | 用真实 Pi session 样本核对 content block shape；无 skill 信号时返回 `no_skill_signals` |
-| `workbuddy` | 已实现 direct aggregate parser | `~/.workbuddy/usage-log.json` | `skills.<name>.type=skill` 且 `recentDates` / `lastUsedDate` / `firstSeenDate` 为 ISO date；每个 skill/date 记录至少一次使用 | traces/tasks 原文、普通 span/tool 信息、`mcps` 聚合字段、同域 CodeBuddy 文档 | 本机 `usage-log.json` 可读取 5 个 skill、8 个日期；项目未知，不读取 trace 文本 |
+| `workbuddy` | 已实现 direct trace parser，aggregate 兜底 | `~/.workbuddy/traces/**/*.json`、`~/.workbuddy/app/sessions.json`、`~/.workbuddy/usage-log.json` | trace `spans[]` 中 `name/toolName=Skill`、`type=function`、`toolInput.skill`、`startedAt`；`status=ok/completed` 记 completed；`sessions.json` 用 `trace.sessionId` 映射项目 | generation prompt/response/tool output、tasks 原文、普通 span/tool 信息、`mcps` 聚合字段、同域 CodeBuddy 文档；有 trace 命中时不再叠加 usage-log | 本机 trace 可读取 5 个 skill、14 次调用、7 个日期；6 条可映射项目，8 条项目未知；usage-log 只有 8 个 skill/date 聚合，作为兜底 |
 | `codebuddy` | 未实现；候选 OTel / hook | CodeBuddy OTel spans、hooks | 只有 explicit skill / fork skill lifecycle / trace 明确标识 skill 名时计数；普通 `tool_name` 只能作下游工具，不等同 skill | 普通 tool span、HTTP stats/traces 汇总、transcript_path 原文 | 获取最小 hook/OTel 样本；确认 skill identity 字段后再实现 |
 | `trae` | 未实现；lifecycle only | `.trae/skills/`、`~/.trae/skills/` | 暂无 usage 计数规则；只能识别 skill inventory | skill 目录存在、按需加载说明、普通会话 | 继续找国际版 usage/session schema；无字段前不计数 |
 | `trae-cn` | 未实现；lifecycle only | `<project>/.trae/skills/`、`~/.trae-cn/skills/` | 暂无 usage 计数规则；只能识别 skill inventory | skill 目录存在、`SKILL.md` 元数据 | 继续找 CN usage/session schema；无字段前不计数 |
@@ -148,7 +148,7 @@
   - `pi`：检查 `~/.pi/agent/sessions` 是否存在。
   - `cursor`：检查 `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` 是否存在。
   - `grok-build`：检查 `~/.grok/sessions/**/chat_history.jsonl` 是否存在。
-  - `workbuddy`：检查 `~/.workbuddy/usage-log.json` 是否存在。
+  - `workbuddy`：检查 `~/.workbuddy/traces`、`~/.workbuddy/app/sessions.json`、`~/.workbuddy/usage-log.json` 是否存在。
   - `opencode`：检查 `SKILL_FLOW_USAGE_OPENCODE_DB_PATH` 或 `~/.local/share/opencode/opencode.db`。
   - `kimi-code`：检查 `~/.kimi-code/sessions` 是否存在。
   - `zcode`：检查 `SKILL_FLOW_USAGE_ZCODE_DB_PATH` 或 `~/.zcode/cli/db/db.sqlite`。

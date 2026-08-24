@@ -69,4 +69,103 @@ final class BridgePayloadDecoderTests: XCTestCase {
     func testSourceSnapshotReturnsNilForAbsentPayload() {
         XCTAssertNil(BridgePayloadDecoder.sourceSnapshot(from: nil))
     }
+
+    func testUsageSnapshotDecodesAgentCoverageScanDetails() {
+        let snapshot = BridgePayloadDecoder.usageSnapshot(from: [
+            "generatedAt": "2026-08-24T03:00:00.000Z",
+            "range": ["preset": "30d", "from": "2026-07-26", "to": "2026-08-24"],
+            "kpis": [
+                "observedUses": 341,
+                "activeSkills": 21,
+                "activeAgents": 1,
+                "activeProjects": 9,
+                "inferredSignals": 0,
+                "totalSkills": 57,
+                "usedSkills": 21,
+                "skillRuns": 341,
+                "chatRecords": 341,
+            ],
+            "topSkills": [[
+                "key": "ref:leaf-wayfinder",
+                "skillRef": "leaf-wayfinder",
+                "skillLabel": "Wayfinder",
+                "inventoryStatus": "installed",
+                "observedUses": 12,
+                "agents": ["codex"],
+                "projects": [],
+            ]],
+            "topAgents": [[
+                "agent": "codex",
+                "observedUses": 12,
+                "activeSkills": 1,
+                "activeProjects": 1,
+            ]],
+            "timeBuckets": [[
+                "key": "2026-08-24",
+                "label": "8/24",
+                "startAt": "2026-08-24T00:00:00.000Z",
+                "endAt": "2026-08-24T23:59:59.999Z",
+                "observedUses": 12,
+                "bySkill": [["key": "ref:leaf-wayfinder", "skillLabel": "Wayfinder", "observedUses": 12]],
+                "byAgent": [["agent": "codex", "observedUses": 12]],
+                "bySkillAgent": [["skillKey": "ref:leaf-wayfinder", "agent": "codex", "observedUses": 12]],
+            ]],
+            "hourlyActivity": [["weekday": 1, "hour": 9, "observedUses": 12]],
+            "skillAgentMatrix": [[
+                "skillKey": "ref:leaf-wayfinder",
+                "skillRef": "leaf-wayfinder",
+                "skillLabel": "Wayfinder",
+                "agent": "codex",
+                "observedUses": 12,
+            ]],
+            "recentObservations": [],
+            "agentCoverage": [[
+                "agent": "codex",
+                "status": "scanned",
+                "sourceKind": "local-session",
+                "parserRevision": "codex-session@1",
+                "observedUses": 367,
+                "inferredSignals": 0,
+                "lastScannedAt": "2026-08-24T03:00:00.000Z",
+                "coverageFrom": "2026-07-19T14:25:00.240Z",
+                "coverageTo": "2026-08-24T02:59:16.545Z",
+                "diagnosticsCount": 0,
+                "sourcesFound": 2,
+                "sourceFilesScanned": 272,
+                "sourceBytesScanned": 3970587501,
+            ]],
+        ])
+
+        XCTAssertEqual(snapshot?.agentCoverage, [UsageAgentCoverageViewData(
+            id: "codex",
+            agent: "codex",
+            status: "scanned",
+            sourceKind: "local-session",
+            parserRevision: "codex-session@1",
+            observedUses: 367,
+            inferredSignals: 0,
+            lastScannedAt: "2026-08-24T03:00:00.000Z",
+            coverageFrom: "2026-07-19T14:25:00.240Z",
+            coverageTo: "2026-08-24T02:59:16.545Z",
+            diagnosticsCount: 0,
+            sourcesFound: 2,
+            sourceFilesScanned: 272,
+            sourceBytesScanned: 3970587501
+        )])
+        XCTAssertEqual(snapshot?.kpis.totalSkills, 57)
+        XCTAssertEqual(snapshot?.kpis.skillRuns, 341)
+        XCTAssertEqual(snapshot?.topAgents.first?.observedUses, 12)
+        XCTAssertEqual(snapshot?.timeBuckets.first?.bySkill.first?.observedUses, 12)
+        XCTAssertEqual(snapshot?.skillAgentMatrix.first?.skillKey, "ref:leaf-wayfinder")
+
+        let skillChart = snapshot?.chartData(for: .skill("ref:leaf-wayfinder"))
+        XCTAssertEqual(skillChart?.series.map(\.id), ["codex"])
+        XCTAssertEqual(skillChart?.series.first?.values, [12])
+        XCTAssertEqual(snapshot?.agentRows(for: "ref:leaf-wayfinder").first?.observedUses, 12)
+
+        let agentChart = snapshot?.chartData(for: .agent("codex"))
+        XCTAssertEqual(agentChart?.series.map(\.id), ["ref:leaf-wayfinder"])
+        XCTAssertEqual(agentChart?.series.first?.values, [12])
+        XCTAssertEqual(snapshot?.skillRows(for: "codex").first?.observedUses, 12)
+    }
 }

@@ -10,28 +10,94 @@ enum BridgePayloadDecoder {
 
         let range = object(payload["range"])
         let kpis = object(payload["kpis"])
+        let rangePreset = UsageRangePresetViewData(rawValue: string(range["preset"]) ?? "30d") ?? .thirtyDays
         return UsageSnapshotViewData(
             generatedAt: string(payload["generatedAt"]) ?? "",
             rangeLabel: usageRangeLabel(range),
+            rangePreset: rangePreset,
             kpis: UsageKpisViewData(
                 observedUses: integer(kpis["observedUses"]) ?? 0,
                 activeSkills: integer(kpis["activeSkills"]) ?? 0,
                 activeAgents: integer(kpis["activeAgents"]) ?? 0,
                 activeProjects: integer(kpis["activeProjects"]) ?? 0,
                 lastObservedAt: string(kpis["lastObservedAt"]),
-                inferredSignals: integer(kpis["inferredSignals"]) ?? 0
+                inferredSignals: integer(kpis["inferredSignals"]) ?? 0,
+                totalSkills: integer(kpis["totalSkills"]) ?? 0,
+                usedSkills: integer(kpis["usedSkills"]) ?? integer(kpis["activeSkills"]) ?? 0,
+                skillRuns: integer(kpis["skillRuns"]) ?? integer(kpis["observedUses"]) ?? 0,
+                chatRecords: integer(kpis["chatRecords"]) ?? integer(kpis["observedUses"]) ?? 0
             ),
             topSkills: objects(payload["topSkills"]).enumerated().map { index, item in
-                let skillRef = string(item["skillRef"]) ?? "unmatched-\(index)"
+                let skillKey = string(item["key"]) ?? string(item["skillRef"]) ?? "unmatched-\(index)"
                 let projects = objects(item["projects"])
                 let agents = strings(item["agents"])
                 return UsageTopSkillViewData(
-                    id: skillRef,
+                    id: skillKey,
                     skillLabel: string(item["skillLabel"]) ?? "Unmatched skill",
                     observedUses: integer(item["observedUses"]) ?? 0,
                     activeAgentCount: agents.count,
                     activeProjectCount: projects.count,
+                    lastObservedAt: string(item["lastObservedAt"]),
+                    inventoryStatus: string(item["inventoryStatus"]) ?? "unknown"
+                )
+            },
+            topAgents: objects(payload["topAgents"]).enumerated().map { index, item in
+                let agent = string(item["agent"]) ?? "unknown-\(index)"
+                return UsageTopAgentViewData(
+                    id: agent,
+                    agent: agent,
+                    observedUses: integer(item["observedUses"]) ?? 0,
+                    activeSkills: integer(item["activeSkills"]) ?? 0,
+                    activeProjects: integer(item["activeProjects"]) ?? 0,
                     lastObservedAt: string(item["lastObservedAt"])
+                )
+            },
+            timeBuckets: objects(payload["timeBuckets"]).enumerated().map { index, item in
+                let bucketKey = string(item["key"]) ?? "bucket-\(index)"
+                return UsageTimeBucketViewData(
+                    id: bucketKey,
+                    label: string(item["label"]) ?? bucketKey,
+                    startAt: string(item["startAt"]) ?? "",
+                    endAt: string(item["endAt"]) ?? "",
+                    observedUses: integer(item["observedUses"]) ?? 0,
+                    bySkill: objects(item["bySkill"]).map { series in
+                        UsageSkillSeriesViewData(
+                            id: string(series["key"]) ?? "unknown",
+                            skillLabel: string(series["skillLabel"]) ?? "Unmatched skill",
+                            observedUses: integer(series["observedUses"]) ?? 0
+                        )
+                    },
+                    byAgent: objects(item["byAgent"]).map { series in
+                        let agent = string(series["agent"]) ?? "unknown"
+                        return UsageAgentSeriesViewData(
+                            id: agent,
+                            agent: agent,
+                            observedUses: integer(series["observedUses"]) ?? 0
+                        )
+                    },
+                    bySkillAgent: objects(item["bySkillAgent"]).map { series in
+                        UsageSkillAgentSeriesViewData(
+                            skillKey: string(series["skillKey"]) ?? "unknown",
+                            agent: string(series["agent"]) ?? "unknown",
+                            observedUses: integer(series["observedUses"]) ?? 0
+                        )
+                    }
+                )
+            },
+            hourlyActivity: objects(payload["hourlyActivity"]).map { item in
+                UsageHourlyActivityViewData(
+                    weekday: integer(item["weekday"]) ?? 0,
+                    hour: integer(item["hour"]) ?? 0,
+                    observedUses: integer(item["observedUses"]) ?? 0
+                )
+            },
+            skillAgentMatrix: objects(payload["skillAgentMatrix"]).map { item in
+                UsageSkillAgentMatrixViewData(
+                    skillKey: string(item["skillKey"]) ?? "unknown",
+                    skillRef: string(item["skillRef"]),
+                    skillLabel: string(item["skillLabel"]) ?? "Unmatched skill",
+                    agent: string(item["agent"]) ?? "unknown",
+                    observedUses: integer(item["observedUses"]) ?? 0
                 )
             },
             recentObservations: objects(payload["recentObservations"]).enumerated().map { index, item in
@@ -51,9 +117,17 @@ enum BridgePayloadDecoder {
                     id: agent,
                     agent: agent,
                     status: string(item["status"]) ?? "unknown",
+                    sourceKind: string(item["sourceKind"]),
+                    parserRevision: string(item["parserRevision"]),
                     observedUses: integer(item["observedUses"]) ?? 0,
                     inferredSignals: integer(item["inferredSignals"]) ?? 0,
-                    lastScannedAt: string(item["lastScannedAt"])
+                    lastScannedAt: string(item["lastScannedAt"]),
+                    coverageFrom: string(item["coverageFrom"]),
+                    coverageTo: string(item["coverageTo"]),
+                    diagnosticsCount: integer(item["diagnosticsCount"]) ?? 0,
+                    sourcesFound: integer(item["sourcesFound"]),
+                    sourceFilesScanned: integer(item["sourceFilesScanned"]),
+                    sourceBytesScanned: integer(item["sourceBytesScanned"])
                 )
             }
         )

@@ -177,7 +177,7 @@ export type UsageSkillInventoryStatus =
   | "not_installed"
   | "unknown";
 
-export type UsageRefreshTrigger = "bootstrap" | "scheduled";
+export type UsageRefreshTrigger = "bootstrap" | "scheduled" | "manual";
 
 export type UsageRefreshStatus = "completed" | "partial" | "skipped";
 
@@ -247,6 +247,9 @@ export type UsageAgentCoverage = {
   observedUses: number;
   inferredSignals: number;
   diagnosticsCount: number;
+  sourcesFound?: number;
+  sourceFilesScanned?: number;
+  sourceBytesScanned?: number;
 };
 
 export type UsageRefreshSummary = {
@@ -271,7 +274,7 @@ export type UsageRefreshSummary = {
 
 export type UsageSnapshotFilters = {
   range?: {
-    preset?: "7d" | "30d" | "90d" | "available";
+    preset?: UsageRangePreset;
     from?: string;
     to?: string;
   };
@@ -284,9 +287,20 @@ export type UsageSnapshotFilters = {
   };
   limits?: {
     topSkills?: number;
+    topAgents?: number;
     projects?: number;
+    matrixEntries?: number;
     recentObservations?: number;
   };
+};
+
+export type UsageRangePreset = "today" | "24h" | "7d" | "30d" | "90d" | "available" | "custom";
+
+export type UsageSkillIdentity = {
+  kind: "ref" | "label";
+  key: string;
+  skillRef: SkillLeafId | null;
+  skillLabel: string;
 };
 
 export type UsageKpis = {
@@ -296,6 +310,10 @@ export type UsageKpis = {
   activeProjects: number;
   lastObservedAt: string | null;
   inferredSignals: number;
+  totalSkills: number;
+  usedSkills: number;
+  skillRuns: number;
+  chatRecords: number;
 };
 
 export type UsageDailyBucket = {
@@ -310,6 +328,7 @@ export type UsageDailyBucket = {
 };
 
 export type UsageTopSkill = {
+  key: string;
   skillRef: SkillLeafId | null;
   skillLabel: string;
   inventoryStatus: UsageSkillInventoryStatus;
@@ -321,6 +340,57 @@ export type UsageTopSkill = {
     projectRef: string | null;
     projectLabel: string;
   }>;
+};
+
+export type UsageTopAgent = {
+  agent: UsageAgent;
+  observedUses: number;
+  activeSkills: number;
+  activeProjects: number;
+  lastObservedAt: string | null;
+};
+
+export type UsageSkillSeriesValue = {
+  key: string;
+  skillRef: SkillLeafId | null;
+  skillLabel: string;
+  observedUses: number;
+};
+
+export type UsageAgentSeriesValue = {
+  agent: UsageAgent;
+  observedUses: number;
+};
+
+export type UsageSkillAgentSeriesValue = {
+  skillKey: string;
+  agent: UsageAgent;
+  observedUses: number;
+};
+
+export type UsageTimeBucket = {
+  key: string;
+  label: string;
+  startAt: string;
+  endAt: string;
+  observedUses: number;
+  bySkill: UsageSkillSeriesValue[];
+  byAgent: UsageAgentSeriesValue[];
+  bySkillAgent: UsageSkillAgentSeriesValue[];
+};
+
+export type UsageHourlyActivityBucket = {
+  weekday: number;
+  hour: number;
+  observedUses: number;
+};
+
+export type UsageSkillAgentMatrixEntry = {
+  skillKey: string;
+  skillRef: SkillLeafId | null;
+  skillLabel: string;
+  agent: UsageAgent;
+  observedUses: number;
 };
 
 export type UsageProjectBreakdown = {
@@ -348,7 +418,9 @@ export type UsageRecentObservation = {
 
 export type UsageSnapshotTruncation = {
   topSkillsTruncated: boolean;
+  topAgentsTruncated: boolean;
   projectsTruncated: boolean;
+  matrixTruncated: boolean;
   recentObservationsTruncated: boolean;
 };
 
@@ -360,7 +432,9 @@ export type UsageSnapshot = {
     to: string;
     coverageFrom: string | null;
     coverageTo: string | null;
-    preset: "7d" | "30d" | "90d" | "available" | "custom";
+    startAt: string;
+    endAt: string;
+    preset: UsageRangePreset;
   };
   appliedFilters: {
     agents: UsageAgent[];
@@ -372,6 +446,10 @@ export type UsageSnapshot = {
   kpis: UsageKpis;
   dailySeries: UsageDailyBucket[];
   topSkills: UsageTopSkill[];
+  topAgents: UsageTopAgent[];
+  timeBuckets: UsageTimeBucket[];
+  hourlyActivity: UsageHourlyActivityBucket[];
+  skillAgentMatrix: UsageSkillAgentMatrixEntry[];
   projectBreakdown: UsageProjectBreakdown[];
   agentCoverage: UsageAgentCoverage[];
   recentObservations: UsageRecentObservation[];

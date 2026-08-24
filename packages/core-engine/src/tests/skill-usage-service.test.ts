@@ -187,6 +187,66 @@ describe("SkillUsageService", () => {
     });
   });
 
+  test("uses a de-duplicated valid inventory count without changing usage totals", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-kpis-"));
+    const store = new UsageStore(stateRoot);
+    const service = new SkillUsageService({
+      store,
+      collectors: [
+        new StaticUsageCollector([
+          {
+            sourceEventId: "event-1",
+            observedAt: "2026-08-23T00:00:00.000Z",
+            agent: "codex",
+            rawSkillName: "wayfinder",
+            evidenceKind: "explicit_command",
+            confidence: "observed",
+            outcome: "unknown",
+            sourceKind: "local-session",
+            parserRevision: "test@1",
+            projectRef: null,
+            projectLabel: "Unknown project",
+          },
+          {
+            sourceEventId: "event-2",
+            observedAt: "2026-08-23T00:01:00.000Z",
+            agent: "codex",
+            rawSkillName: "wayfinder",
+            evidenceKind: "explicit_command",
+            confidence: "observed",
+            outcome: "unknown",
+            sourceKind: "local-session",
+            parserRevision: "test@1",
+            projectRef: null,
+            projectLabel: "Unknown project",
+          },
+        ]),
+      ],
+      readLeafInventory: async () => [
+        leaf("leaf-wayfinder", "wayfinder", "Wayfinder"),
+        leaf("leaf-wayfinder", "wayfinder-copy", "Wayfinder duplicate"),
+        { ...leaf("leaf-invalid", "invalid", "Invalid"), valid: false },
+      ],
+      localSalt: stateRoot,
+    });
+
+    await service.refreshUsageObservations({
+      trigger: "bootstrap",
+      now: new Date("2026-08-23T00:02:00.000Z"),
+    });
+    const snapshot = await service.getUsageSnapshot({ range: { preset: "available" } });
+
+    expect(snapshot.kpis).toMatchObject({
+      totalSkills: 1,
+      usedSkills: 1,
+      skillRuns: 2,
+      observedUses: 2,
+    });
+    expect(snapshot.timeBuckets.flatMap((bucket) => bucket.bySkill)).toEqual([
+      expect.objectContaining({ skillRef: "leaf-wayfinder", skillLabel: "Wayfinder", observedUses: 2 }),
+    ]);
+  });
+
   test("does not report expired observations as accepted after retention pruning", async () => {
     const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-retention-"));
     const store = new UsageStore(stateRoot);
@@ -321,6 +381,57 @@ describe("SkillUsageService", () => {
       TARGET_ORDER.length - 1,
     );
   });
+
+  test("manual refresh bypasses cooldown and scans latest local usage", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-usage-service-manual-refresh-"));
+    const store = new UsageStore(stateRoot);
+    const collector = new MutableUsageCollector([{
+      sourceEventId: "event-1",
+      observedAt: "2026-08-23T00:00:00.000Z",
+      agent: "codex",
+      rawSkillName: "wayfinder",
+      evidenceKind: "tool_call",
+      confidence: "observed",
+      outcome: "unknown",
+      sourceKind: "local-session",
+      parserRevision: "test@1",
+      projectRef: null,
+      projectLabel: "Unknown project",
+    }]);
+    const service = new SkillUsageService({
+      store,
+      collectors: [collector],
+      readLeafInventory: async () => [leaf("leaf-wayfinder", "wayfinder", "Wayfinder")],
+      localSalt: stateRoot,
+    });
+
+    await service.refreshUsageObservations({
+      trigger: "scheduled",
+      now: new Date("2026-08-23T00:01:00.000Z"),
+    });
+    collector.observations = [{
+      ...collector.observations[0]!,
+      sourceEventId: "event-2",
+      observedAt: "2026-08-23T00:02:00.000Z",
+    }];
+
+    const scheduled = await service.refreshUsageObservations({
+      trigger: "scheduled",
+      now: new Date("2026-08-23T00:02:30.000Z"),
+    });
+    const manual = await service.refreshUsageObservations({
+      trigger: "manual",
+      now: new Date("2026-08-23T00:03:00.000Z"),
+    });
+
+    expect(scheduled.status).toBe("skipped");
+    expect(scheduled.skippedReason).toBe("cooldown_active");
+    expect(manual.status).toBe("completed");
+    expect(manual.totals.observedAccepted).toBe(1);
+    expect(await store.readObservations()).toEqual([
+      expect.objectContaining({ observedAt: "2026-08-23T00:02:00.000Z" }),
+    ]);
+  });
 });
 
 class StaticUsageCollector implements UsageCollector {
@@ -336,6 +447,25 @@ class StaticUsageCollector implements UsageCollector {
 
   async locateSources(): Promise<string[]> {
     return ["/tmp/fake-claude"];
+  }
+
+  async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {
+    return {
+      observations: this.observations,
+      coverage: coverage(input.now.toISOString(), this.observations.length, this.agent),
+      diagnostics: [],
+    };
+  }
+}
+
+class MutableUsageCollector implements UsageCollector {
+  readonly agent = "codex" as const;
+  readonly parserRevision = "test@1";
+
+  constructor(public observations: UsageCollectorObservation[]) {}
+
+  async locateSources(): Promise<string[]> {
+    return ["/tmp/fake-codex"];
   }
 
   async scan(input: UsageCollectorScanInput): Promise<UsageCollectorScanResult> {

@@ -1,0 +1,1425 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Skill Flow · Usage Activity Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f2f2f2;
+      --surface: #fdfdfd;
+      --surface-nested: #f9f9f9;
+      --surface-strong: #e6e6e6;
+      --text: #262626;
+      --muted: rgba(38, 38, 38, .62);
+      --faint: rgba(38, 38, 38, .42);
+      --border: rgba(0, 0, 0, .12);
+      --border-soft: rgba(0, 0, 0, .08);
+      --accent: #8b5cf6;
+      --radius-card: 10px;
+      --radius-section: 12px;
+      --radius-control: 8px;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--page);
+      color: var(--text);
+      font-family: var(--font);
+      letter-spacing: -.012em;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+    }
+
+    .app {
+      width: min(1320px, calc(100vw - 56px));
+      margin: 0 auto;
+      padding: 28px 0 34px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 21px;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    .range-button:focus-visible,
+    .count-row:focus-visible {
+      outline: 2px solid rgba(139, 92, 246, .7);
+      outline-offset: 2px;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-section);
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .chart-panel {
+      position: relative;
+      padding: 20px 22px 16px;
+    }
+
+    .chart-heading {
+      position: relative;
+      text-align: left;
+      margin: 0 0 8px;
+    }
+
+    .chart-ranges {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-control);
+      background: var(--surface-nested);
+    }
+
+    .range-button {
+      height: 24px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      padding: 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .range-button[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px var(--border-soft);
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 390px;
+      margin-top: 8px;
+    }
+
+    .hourly-panel {
+      margin-bottom: 12px;
+      padding: 18px 22px 16px;
+    }
+
+    .hourly-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .hourly-title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 500;
+      line-height: 1.25;
+    }
+
+    .hourly-context {
+      color: var(--faint);
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .hourly-grid {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 8px 12px;
+      align-items: center;
+    }
+
+    .weekday-label {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .hour-row,
+    .hour-axis {
+      display: grid;
+      grid-template-columns: repeat(24, minmax(0, 1fr));
+      gap: 6px;
+      align-items: center;
+    }
+
+    .hour-cell {
+      width: 100%;
+      aspect-ratio: 1.12;
+      border-radius: 6px;
+      background: rgba(38, 38, 38, .06);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .025);
+    }
+
+    .hour-cell[data-level="1"] { background: rgba(34, 197, 94, .18); }
+    .hour-cell[data-level="2"] { background: rgba(34, 197, 94, .28); }
+    .hour-cell[data-level="3"] { background: rgba(34, 197, 94, .42); }
+    .hour-cell[data-level="4"] { background: rgba(34, 197, 94, .58); }
+    .hour-cell[data-level="5"] { background: rgba(34, 197, 94, .72); }
+    .hour-cell[data-level="6"] { background: rgba(34, 197, 94, .86); }
+
+    .hour-axis {
+      grid-column: 2;
+      margin-top: 2px;
+    }
+
+    .hour-axis span {
+      color: var(--faint);
+      font-size: 12px;
+      line-height: 1;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .heat-legend {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+      margin-top: 13px;
+      color: var(--faint);
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .legend-cell {
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      background: rgba(38, 38, 38, .06);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .025);
+    }
+
+    .legend-cell[data-level="1"] { background: rgba(34, 197, 94, .18); }
+    .legend-cell[data-level="2"] { background: rgba(34, 197, 94, .28); }
+    .legend-cell[data-level="3"] { background: rgba(34, 197, 94, .42); }
+    .legend-cell[data-level="4"] { background: rgba(34, 197, 94, .58); }
+    .legend-cell[data-level="5"] { background: rgba(34, 197, 94, .72); }
+    .legend-cell[data-level="6"] { background: rgba(34, 197, 94, .86); }
+
+    svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .axis text {
+      fill: var(--text);
+      font-size: 12px;
+      font-family: var(--font);
+    }
+
+    .grid {
+      stroke: rgba(0, 0, 0, .11);
+      stroke-width: 1;
+    }
+
+    .area-line {
+      fill: none;
+      stroke-width: 2.5;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+
+    .chart-hover-line {
+      stroke: rgba(38, 38, 38, .62);
+      stroke-width: 1.2;
+      stroke-dasharray: 2 3;
+      pointer-events: none;
+    }
+
+    .chart-hitarea {
+      fill: transparent;
+      cursor: crosshair;
+    }
+
+    .chart-tooltip {
+      position: absolute;
+      z-index: 4;
+      width: min(280px, calc(100vw - 64px));
+      border: 1px solid rgba(0, 0, 0, .14);
+      border-radius: var(--radius-card);
+      background: rgba(253, 253, 253, .98);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, .14);
+      padding: 12px;
+      color: var(--text);
+      opacity: 0;
+      pointer-events: none;
+      transform: translate3d(0, 4px, 0);
+      transition: opacity 120ms ease-out, transform 120ms ease-out;
+    }
+
+    .chart-tooltip[data-visible="true"] {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+
+    .tooltip-date {
+      margin: 0 0 7px;
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    .tooltip-total {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .tooltip-total strong {
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tooltip-caption {
+      margin-bottom: 6px;
+      color: var(--faint);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    .tooltip-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .tooltip-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .tooltip-name {
+      min-width: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .tooltip-value {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .tooltip-empty {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .legend {
+      min-height: 32px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 14px 22px;
+      padding-top: 9px;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .legend-line {
+      width: 24px;
+      height: 4px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .stats-panel {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: .9fr 1.22fr 1.05fr;
+      min-height: 430px;
+    }
+
+    .stats-col {
+      padding: 20px 22px 22px;
+      border-left: 1px solid var(--border-soft);
+    }
+
+    .stats-col:first-child {
+      border-left: 0;
+    }
+
+    .col-title {
+      margin: 0 0 20px;
+      font-size: 17px;
+      font-weight: 500;
+      line-height: 1.25;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 21px;
+      padding-top: 6px;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: baseline;
+      gap: 20px;
+    }
+
+    .summary-label {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .summary-value {
+      font-size: 21px;
+      line-height: 1.1;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .list {
+      display: grid;
+      gap: 2px;
+      max-height: 620px;
+      overflow: auto;
+      scrollbar-color: rgba(0,0,0,.22) transparent;
+    }
+
+    .count-row {
+      width: 100%;
+      min-height: 31px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 18px;
+      border: 0;
+      border-radius: var(--radius-control);
+      background: transparent;
+      padding: 5px 8px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .count-row:hover {
+      background: var(--surface-nested);
+    }
+
+    .count-row[aria-selected="true"] {
+      background: var(--surface-strong);
+    }
+
+    .name-cell {
+      min-width: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.2;
+    }
+
+    .name-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--dot);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
+      flex: 0 0 auto;
+    }
+
+    .count {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.2;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .agent-note {
+      margin-top: -11px;
+      margin-bottom: 12px;
+      color: var(--faint);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    @media (max-width: 980px) {
+      .app { width: min(760px, calc(100vw - 32px)); }
+      .topbar { flex-direction: column; }
+      .stats-panel { grid-template-columns: 1fr; }
+      .stats-col { border-left: 0; border-top: 1px solid var(--border-soft); }
+      .stats-col:first-child { border-top: 0; }
+      .chart-wrap { height: 330px; }
+      .hourly-panel { padding: 16px 16px 14px; }
+      .hourly-grid { grid-template-columns: 28px minmax(0, 1fr); gap: 7px 7px; }
+      .hour-row,
+      .hour-axis { gap: 3px; }
+      .hour-cell {
+        border-radius: 4px;
+        aspect-ratio: 1;
+      }
+      .weekday-label,
+      .hour-axis span,
+      .heat-legend { font-size: 11px; }
+      .legend-cell {
+        width: 16px;
+        height: 16px;
+        border-radius: 5px;
+      }
+      .hourly-head { align-items: flex-start; flex-direction: column; gap: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1>Skills Usage</h1>
+      </div>
+    </header>
+
+    <div class="chart-heading">
+      <div class="chart-ranges" aria-label="时间范围">
+        <button class="range-button" type="button" data-range="today" aria-pressed="false">今天</button>
+        <button class="range-button" type="button" data-range="24h" aria-pressed="false">24H</button>
+        <button class="range-button" type="button" data-range="7d" aria-pressed="false">7D</button>
+        <button class="range-button" type="button" data-range="30d" aria-pressed="true">30D</button>
+        <button class="range-button" type="button" data-range="90d" aria-pressed="false">90D</button>
+        <button class="range-button" type="button" data-range="custom" aria-pressed="false">自定义</button>
+      </div>
+    </div>
+
+    <section class="panel hourly-panel" aria-label="分时活跃">
+      <div class="hourly-head">
+        <h2 class="hourly-title">分时活跃</h2>
+        <div class="hourly-context" id="hourlyContext">30D · 本地时间</div>
+      </div>
+      <div class="hourly-grid" id="hourlyGrid"></div>
+      <div class="heat-legend" id="hourlyLegend" aria-label="活跃度图例"></div>
+    </section>
+
+    <section class="panel chart-panel" aria-label="Skill 使用面积图">
+      <div class="chart-wrap">
+        <svg id="areaChart" role="img" aria-label="Skill 使用面积图"></svg>
+        <div class="chart-tooltip" id="chartTooltip" role="tooltip" data-visible="false"></div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <section class="panel stats-panel" aria-label="Usage counts">
+      <div class="stats-col">
+        <h2 class="col-title">活动洞察</h2>
+        <div class="summary-list" aria-label="总计">
+          <div class="summary-row">
+            <div class="summary-label">技能总数</div>
+            <div class="summary-value" id="totalSkillValue">57</div>
+          </div>
+          <div class="summary-row">
+            <div class="summary-label">使用技能总数</div>
+            <div class="summary-value" id="usedSkillValue">37</div>
+          </div>
+          <div class="summary-row">
+            <div class="summary-label">技能运行总数</div>
+            <div class="summary-value" id="skillRunValue">266</div>
+          </div>
+          <div class="summary-row">
+            <div class="summary-label">聊天/调用记录</div>
+            <div class="summary-value" id="recordValue">266</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-col">
+        <h2 class="col-title" id="skillColumnTitle">最常用的技能</h2>
+        <div class="agent-note" id="skillColumnNote">前 20 个 Skill。圆点颜色与面积图对应。</div>
+        <div class="list" id="skillList"></div>
+      </div>
+
+      <div class="stats-col">
+        <h2 class="col-title">最常用的 Agent</h2>
+        <div class="agent-note" id="agentColumnNote">默认展示所有 Skill 在 Agent 中的运行次数。</div>
+        <div class="list" id="agentList"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./REF_usage-dashboard-demo-data.js"></script>
+  <script>
+    const TOTAL_SKILL_IDENTITIES = 57;
+    const TOTAL_OBSERVATIONS = 354;
+    const rangeConfigs = {
+      today: {
+        label: "今天",
+        dates: ["Aug 24"],
+        usedSkills: 0,
+        records: 0
+      },
+      "24h": {
+        label: "24H",
+        dates: ["Aug 23 00", "Aug 23 06", "Aug 23 12", "Aug 23 18", "Aug 24 00"],
+        usedSkills: 8,
+        records: 24
+      },
+      "7d": {
+        label: "7D",
+        dates: ["Aug 17", "Aug 18", "Aug 19", "Aug 20", "Aug 21", "Aug 22", "Aug 23"],
+        usedSkills: 15,
+        records: 93
+      },
+      "30d": {
+        label: "30D",
+        dates: ["Jul 25", "Jul 29", "Aug 03", "Aug 08", "Aug 13", "Aug 18", "Aug 23"],
+        usedSkills: 37,
+        records: 266
+      },
+      "90d": {
+        label: "90D",
+        dates: ["May 26", "Jun 06", "Jun 20", "Jul 01", "Jul 15", "Jul 29", "Aug 13", "Aug 23"],
+        usedSkills: 50,
+        records: 343
+      },
+      custom: {
+        label: "自定义",
+        dates: ["Mar 03", "Mar 19", "Mar 28", "Jun 06", "Jun 20", "Jul 15", "Aug 03", "Aug 23"],
+        usedSkills: 57,
+        records: 354
+      }
+    };
+
+    const palette = [
+      "#3b82f6", "#8b5cf6", "#22c55e", "#eab308", "#ec4899",
+      "#f97316", "#7db0ff", "#a78bfa", "#4ade80", "#facc15",
+      "#f472b6", "#fb923c", "#3b82f6", "#8b5cf6", "#22c55e",
+      "#eab308", "#ec4899", "#f97316", "#7db0ff", "#a78bfa"
+    ];
+
+    const agentColors = {
+      "zcode": "#3b82f6",
+      "codex": "#8b5cf6",
+      "claude-code": "#eab308",
+      "opencode": "#22c55e"
+    };
+
+    const baseSkills = [
+      ["listed-company-reply-min", 35],
+      ["code-review", 32],
+      ["implement", 28],
+      ["script-scene-expander", 24],
+      ["action-browser", 21],
+      ["mattpocock-skills:wayfinder", 19],
+      ["lower-ai-score", 17],
+      ["impeccable", 15],
+      ["to-spec", 13],
+      ["find-skills", 13],
+      ["wayfinder", 11],
+      ["listed-company-reply", 11],
+      ["mattpocock-skills:to-spec", 7],
+      ["ktv-story-video", 6],
+      ["document-skills:docx", 6],
+      ["tdd", 6],
+      ["improve-codebase-architecture", 5],
+      ["codebase-design", 5],
+      ["diagnosing-bugs", 5],
+      ["mattpocock-skills:implement", 5]
+    ].map(([name, count], index) => ({ name, count, color: palette[index] }));
+
+    const agents = [
+      { name: "zcode", count: 242, color: agentColors["zcode"] },
+      { name: "codex", count: 96, color: agentColors["codex"] },
+      { name: "claude-code", count: 11, color: agentColors["claude-code"] },
+      { name: "opencode", count: 5, color: agentColors["opencode"] }
+    ];
+
+    const agentMix = {
+      "listed-company-reply-min": { "zcode": 35 },
+      "code-review": { "codex": 24, "zcode": 6, "claude-code": 2 },
+      "implement": { "codex": 28 },
+      "script-scene-expander": { "zcode": 24 },
+      "action-browser": { "codex": 14, "zcode": 7 },
+      "mattpocock-skills:wayfinder": { "codex": 19 },
+      "lower-ai-score": { "zcode": 17 },
+      "impeccable": { "codex": 10, "zcode": 5 },
+      "to-spec": { "codex": 9, "zcode": 4 },
+      "find-skills": { "codex": 8, "zcode": 5 },
+      "wayfinder": { "zcode": 8, "claude-code": 3 },
+      "listed-company-reply": { "zcode": 11 },
+      "mattpocock-skills:to-spec": { "codex": 7 },
+      "ktv-story-video": { "zcode": 6 },
+      "document-skills:docx": { "claude-code": 4, "codex": 2 },
+      "tdd": { "codex": 6 },
+      "improve-codebase-architecture": { "zcode": 5 },
+      "codebase-design": { "codex": 5 },
+      "diagnosing-bugs": { "codex": 5 },
+      "mattpocock-skills:implement": { "codex": 5 }
+    };
+
+    let selectedSkill = null;
+    let selectedAgent = null;
+    let selectedRange = "30d";
+
+    function applyInitialStateFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const skill = params.get("skill");
+      const agent = params.get("agent");
+      const range = params.get("range");
+      if (range && rangeConfigs[range]) selectedRange = range;
+      if (skill && baseSkills.some((item) => item.name === skill)) selectedSkill = skill;
+      if (agent && agents.some((item) => item.name === agent)) {
+        selectedAgent = agent;
+        selectedSkill = null;
+      }
+      document.querySelectorAll("[data-range]").forEach((rangeButton) => {
+        rangeButton.setAttribute("aria-pressed", rangeButton.dataset.range === selectedRange ? "true" : "false");
+      });
+    }
+
+    function currentRange() {
+      return rangeConfigs[selectedRange];
+    }
+
+    function currentDates() {
+      return currentRange().dates;
+    }
+
+    function rangeFactor() {
+      return TOTAL_OBSERVATIONS === 0 ? 0 : currentRange().records / TOTAL_OBSERVATIONS;
+    }
+
+    function scaledCount(rawCount) {
+      return Math.round(rawCount * rangeFactor());
+    }
+
+    function scaledMixForSkill(skillName) {
+      const rawEntries = Object.entries(agentMix[skillName] || {});
+      const rawTotal = rawEntries.reduce((sum, [, count]) => sum + count, 0);
+      if (!rawTotal) return {};
+      const scaledTotal = scaledCount(rawTotal);
+      let assigned = 0;
+      const rows = rawEntries.map(([agentName, rawCount]) => {
+        const exact = rawCount / rawTotal * scaledTotal;
+        const count = Math.floor(exact);
+        assigned += count;
+        return { agentName, count, fraction: exact - count };
+      });
+      let remainder = scaledTotal - assigned;
+      rows.sort((left, right) => right.fraction - left.fraction);
+      for (const row of rows) {
+        if (remainder <= 0) break;
+        row.count += 1;
+        remainder -= 1;
+      }
+      return Object.fromEntries(rows.map((row) => [row.agentName, row.count]));
+    }
+
+    function distributedValues(total, key) {
+      const dates = currentDates();
+      if (dates.length === 0) return [];
+      if (dates.length === 1) return [total];
+      if (total <= 0) return dates.map(() => 0);
+
+      const seed = [...key].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+      const center = ((seed % 100) / 100) * (dates.length - 1);
+      const width = Math.max(1.35, dates.length / (2.8 + (seed % 4) * .35));
+      const skew = ((seed % 7) - 3) / 18;
+      const rawWeights = dates.map((_, index) => {
+        const distance = (index - center) / width;
+        const bell = Math.exp(-distance * distance);
+        const trend = 1 + skew * (index - (dates.length - 1) / 2);
+        const floor = .18 + ((seed + index * 17) % 5) * .035;
+        return Math.max(.04, bell * Math.max(.42, trend) + floor);
+      });
+      const weightTotal = rawWeights.reduce((sum, value) => sum + value, 0);
+      let assigned = 0;
+      const buckets = rawWeights.map((weight, index) => {
+        const exact = weight / weightTotal * total;
+        const value = Math.floor(exact);
+        assigned += value;
+        return { index, value, fraction: exact - value };
+      });
+      let remainder = total - assigned;
+      buckets.sort((left, right) => right.fraction - left.fraction);
+      for (const bucket of buckets) {
+        if (remainder <= 0) break;
+        bucket.value += 1;
+        remainder -= 1;
+      }
+      buckets.sort((left, right) => left.index - right.index);
+      return buckets.map((bucket) => bucket.value);
+    }
+
+    function seriesForSkill(skillName) {
+      const total = scaledCount(baseSkills.find((item) => item.name === skillName)?.count || 0);
+      return distributedValues(total, skillName);
+    }
+
+    function splitByAgent(skillName) {
+      const mix = scaledMixForSkill(skillName);
+      return Object.entries(mix).map(([agentName, count]) => {
+        return {
+          name: agentName,
+          color: agentColors[agentName] || "#3b82f6",
+          count,
+          values: distributedValues(count, `${skillName}:${agentName}`)
+        };
+      });
+    }
+
+    function seriesForAgent(agentName) {
+      return baseSkills
+        .map((skill) => {
+          const count = scaledCount(agentMix[skill.name]?.[agentName] || 0);
+          if (!count) return null;
+          return {
+            name: skill.name,
+            color: skill.color,
+            count,
+            values: distributedValues(count, `${agentName}:${skill.name}`)
+          };
+        })
+        .filter(Boolean)
+        .sort((left, right) => right.count - left.count);
+    }
+
+    function defaultSeries() {
+      return baseSkills.slice(0, 8).map((skill) => ({
+        name: skill.name,
+        color: skill.color,
+        count: scaledCount(skill.count),
+        values: seriesForSkill(skill.name)
+      }));
+    }
+
+    function clampNumber(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function chartTooltipScope() {
+      if (selectedSkill) return "Agent 分布";
+      if (selectedAgent) return `${selectedAgent} Skill 分布`;
+      return "Skill 分布";
+    }
+
+    function renderChartTooltipContent(dateLabel, rows) {
+      const total = rows.reduce((sum, row) => sum + row.value, 0);
+      const visibleRows = rows.slice(0, 8);
+      const hiddenRows = rows.slice(8);
+      const hiddenTotal = hiddenRows.reduce((sum, row) => sum + row.value, 0);
+      const rowHtml = visibleRows.map((row) => `
+        <div class="tooltip-row">
+          <span class="tooltip-name">
+            <span class="dot" style="--dot:${row.color}"></span>
+            <span class="name-text">${escapeHtml(row.name)}</span>
+          </span>
+          <span class="tooltip-value">${row.value.toLocaleString("en-US")} 次</span>
+        </div>
+      `).join("");
+      const hiddenHtml = hiddenRows.length ? `
+        <div class="tooltip-row">
+          <span class="tooltip-name">
+            <span class="dot" style="--dot:rgba(38,38,38,.32)"></span>
+            <span class="name-text">其余 ${hiddenRows.length} 项</span>
+          </span>
+          <span class="tooltip-value">${hiddenTotal.toLocaleString("en-US")} 次</span>
+        </div>
+      ` : "";
+
+      return `
+        <div class="tooltip-date">${escapeHtml(dateLabel)}</div>
+        <div class="tooltip-total">
+          <span>总运行</span>
+          <strong>${total.toLocaleString("en-US")} 次</strong>
+        </div>
+        ${total > 0 ? `<div class="tooltip-caption">${escapeHtml(chartTooltipScope())}</div><div class="tooltip-list">${rowHtml}${hiddenHtml}</div>` : `<div class="tooltip-empty">当前时间点没有 Skill 调用。</div>`}
+      `;
+    }
+
+    function renderChart(series) {
+      const svg = document.getElementById("areaChart");
+      const legend = document.getElementById("legend");
+      const tooltip = document.getElementById("chartTooltip");
+      const dates = currentDates();
+      assertSeriesTotals(series);
+      svg.innerHTML = "";
+      if (tooltip) {
+        tooltip.setAttribute("data-visible", "false");
+      }
+
+      const width = Math.max(360, Math.round(svg.clientWidth || 1040));
+      const height = Math.max(220, Math.round(svg.clientHeight || 390));
+      const margin = { top: 22, right: 28, bottom: 42, left: 50 };
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+      const stackedSeries = stackSeries(series);
+      const maxY = Math.max(5, ...stackedSeries.flatMap((item) => item.upper));
+      const tickMax = Math.ceil(maxY / 5) * 5;
+      const x = (index) => margin.left + (index / Math.max(1, dates.length - 1)) * innerWidth;
+      const y = (value) => margin.top + innerHeight - (value / tickMax) * innerHeight;
+
+      for (let tick = 0; tick <= tickMax; tick += Math.max(1, tickMax / 5)) {
+        const yy = y(tick);
+        svg.insertAdjacentHTML("beforeend", `<line class="grid" x1="${margin.left}" y1="${yy}" x2="${width - margin.right}" y2="${yy}"></line>`);
+        svg.insertAdjacentHTML("beforeend", `<text class="axis" x="${margin.left - 12}" y="${yy + 4}" text-anchor="end">${Math.round(tick)}</text>`);
+      }
+
+      const shownDates = dates.map((_, index) => index).filter((index) => {
+        if (width < 520) return index === 0 || index === dates.length - 1 || index === Math.floor((dates.length - 1) / 2);
+        if (dates.length <= 7) return true;
+        return index === 0 || index === dates.length - 1 || index % Math.ceil(dates.length / 5) === 0;
+      });
+      for (const index of shownDates) {
+        svg.insertAdjacentHTML("beforeend", `<text class="axis" x="${x(index)}" y="${height - 12}" text-anchor="middle">${dates[index]}</text>`);
+      }
+      svg.insertAdjacentHTML("beforeend", `<line x1="${margin.left}" y1="${margin.top + innerHeight}" x2="${width - margin.right}" y2="${margin.top + innerHeight}" stroke="#262626" stroke-width="1"></line>`);
+
+      for (const item of stackedSeries) {
+        const upper = item.upper.map((value, index) => [x(index), y(value)]);
+        const lower = item.lower.map((value, index) => [x(index), y(value)]);
+        const upperPath = smoothPath(upper);
+        const lowerPath = smoothPath([...lower].reverse());
+        const area = `${upperPath} L ${lowerPath.slice(2)} Z`;
+        svg.insertAdjacentHTML("beforeend", `<path d="${area}" fill="${item.color}" fill-opacity=".58"></path>`);
+        svg.insertAdjacentHTML("beforeend", `<path class="area-line" d="${upperPath}" stroke="${item.color}"></path>`);
+      }
+
+      svg.insertAdjacentHTML("beforeend", `
+        <line class="chart-hover-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + innerHeight}" visibility="hidden"></line>
+        <rect class="chart-hitarea" x="${margin.left}" y="${margin.top}" width="${innerWidth}" height="${innerHeight}" tabindex="0"></rect>
+      `);
+
+      const guide = svg.querySelector(".chart-hover-line");
+      const hitarea = svg.querySelector(".chart-hitarea");
+
+      function hideTooltip() {
+        guide?.setAttribute("visibility", "hidden");
+        tooltip?.setAttribute("data-visible", "false");
+      }
+
+      function showTooltip(event, forcedIndex = null) {
+        if (!tooltip || !guide) return;
+        const svgRect = svg.getBoundingClientRect();
+        if (!svgRect.width || !svgRect.height) return;
+        const pointerX = event ? (event.clientX - svgRect.left) * (width / svgRect.width) : margin.left;
+        const normalized = (clampNumber(pointerX, margin.left, width - margin.right) - margin.left) / Math.max(1, innerWidth);
+        const index = forcedIndex ?? clampNumber(Math.round(normalized * Math.max(0, dates.length - 1)), 0, dates.length - 1);
+        const guideX = x(index);
+        const rows = series
+          .map((item) => ({
+            name: item.name,
+            color: item.color,
+            value: item.values[index] || 0
+          }))
+          .filter((row) => row.value > 0)
+          .sort((left, right) => right.value - left.value || left.name.localeCompare(right.name));
+        const totalAtIndex = stackedSeries.length ? stackedSeries[stackedSeries.length - 1].upper[index] : 0;
+        const cssX = guideX / width * svgRect.width;
+        const cssY = y(totalAtIndex) / height * svgRect.height;
+
+        guide.setAttribute("x1", guideX);
+        guide.setAttribute("x2", guideX);
+        guide.setAttribute("visibility", "visible");
+        tooltip.innerHTML = renderChartTooltipContent(dates[index], rows);
+        tooltip.setAttribute("data-visible", "true");
+
+        requestAnimationFrame(() => {
+          const tooltipWidth = tooltip.offsetWidth;
+          const tooltipHeight = tooltip.offsetHeight;
+          const leftCandidate = cssX > svgRect.width / 2 ? cssX - tooltipWidth - 14 : cssX + 14;
+          const left = clampNumber(leftCandidate, 8, Math.max(8, svgRect.width - tooltipWidth - 8));
+          const top = clampNumber(cssY - tooltipHeight - 10, 8, Math.max(8, svgRect.height - tooltipHeight - 8));
+          tooltip.style.left = `${left}px`;
+          tooltip.style.top = `${top}px`;
+        });
+      }
+
+      hitarea?.addEventListener("pointermove", showTooltip);
+      hitarea?.addEventListener("pointerdown", showTooltip);
+      hitarea?.addEventListener("pointerleave", hideTooltip);
+      hitarea?.addEventListener("blur", hideTooltip);
+      hitarea?.addEventListener("focus", () => showTooltip(null, Math.floor((dates.length - 1) / 2)));
+
+      legend.innerHTML = series.slice(0, 8).map((item) => `
+        <span class="legend-item" style="color:${item.color}">
+          <span class="legend-line"></span>
+          <span>${item.name}</span>
+        </span>
+      `).join("");
+    }
+
+    function countForSkillInCurrentMode(skill) {
+      if (!selectedAgent) return scaledCount(skill.count);
+      return scaledCount(agentMix[skill.name]?.[selectedAgent] || 0);
+    }
+
+    function countForAgentInCurrentMode(agent) {
+      if (!selectedSkill) return scaledCount(agent.count);
+      return scaledMixForSkill(selectedSkill)[agent.name] || 0;
+    }
+
+    function renderSkillList() {
+      const list = document.getElementById("skillList");
+      const title = document.getElementById("skillColumnTitle");
+      const note = document.getElementById("skillColumnNote");
+      const rows = baseSkills
+        .map((skill) => ({ ...skill, visibleCount: countForSkillInCurrentMode(skill) }))
+        .filter((skill) => skill.visibleCount > 0)
+        .sort((left, right) => right.visibleCount - left.visibleCount)
+        .slice(0, 20);
+
+      title.textContent = selectedAgent ? `${selectedAgent} 调用过的 Skill` : "最常用的技能";
+      note.textContent = selectedAgent ? "点击 Agent 后，这里只列出该 Agent 下的 Skill 调用记录。" : "前 20 个 Skill。圆点颜色与面积图对应。";
+      list.innerHTML = rows.map((skill) => `
+        <button class="count-row" type="button" data-skill="${escapeAttr(skill.name)}" aria-selected="${selectedSkill === skill.name}">
+          <span class="name-cell">
+            <span class="name-text">${escapeHtml(skill.name)}</span>
+            <span class="dot" style="--dot:${skill.color}"></span>
+          </span>
+          <span class="count">${skill.visibleCount.toLocaleString("en-US")} 次运行</span>
+        </button>
+      `).join("");
+
+      list.querySelectorAll("[data-skill]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedSkill = button.dataset.skill;
+          selectedAgent = null;
+          update();
+        });
+      });
+    }
+
+    function renderAgentList() {
+      const list = document.getElementById("agentList");
+      const note = document.getElementById("agentColumnNote");
+      note.textContent = selectedSkill
+        ? "当前显示该 Skill 在不同 Agent 中的运行次数。"
+        : "默认展示所有 Skill 在 Agent 中的运行次数。";
+
+      list.innerHTML = agents.map((agent) => {
+        const count = countForAgentInCurrentMode(agent);
+        return `
+          <button class="count-row" type="button" data-agent="${escapeAttr(agent.name)}" aria-selected="${selectedAgent === agent.name}">
+            <span class="name-cell">
+              <span class="name-text">${escapeHtml(agent.name)}</span>
+              <span class="dot" style="--dot:${agent.color}"></span>
+            </span>
+            <span class="count">${count.toLocaleString("en-US")} 次运行</span>
+          </button>
+        `;
+      }).join("");
+
+      list.querySelectorAll("[data-agent]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedAgent = button.dataset.agent;
+          selectedSkill = null;
+          update();
+        });
+      });
+    }
+
+    function update() {
+      const range = currentRange();
+      document.getElementById("totalSkillValue").textContent = TOTAL_SKILL_IDENTITIES.toLocaleString("en-US");
+      document.getElementById("usedSkillValue").textContent = range.usedSkills.toLocaleString("en-US");
+      document.getElementById("recordValue").textContent = range.records.toLocaleString("en-US");
+      renderSkillList();
+      renderAgentList();
+      if (selectedSkill) {
+        renderChart(
+          splitByAgent(selectedSkill)
+        );
+      } else if (selectedAgent) {
+        renderChart(
+          seriesForAgent(selectedAgent).slice(0, 8)
+        );
+      } else {
+        renderChart(
+          defaultSeries()
+        );
+      }
+    }
+
+    function smoothPath(points) {
+      if (points.length === 0) return "";
+      if (points.length === 1) return `M ${points[0][0]} ${points[0][1]}`;
+      let path = `M ${points[0][0]} ${points[0][1]}`;
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const p0 = points[index - 1] || points[index];
+        const p1 = points[index];
+        const p2 = points[index + 1];
+        const p3 = points[index + 2] || p2;
+        const cp1 = [
+          p1[0] + (p2[0] - p0[0]) / 10,
+          p1[1] + (p2[1] - p0[1]) / 10
+        ];
+        const cp2 = [
+          p2[0] - (p3[0] - p1[0]) / 10,
+          p2[1] - (p3[1] - p1[1]) / 10
+        ];
+        const minY = Math.min(p1[1], p2[1]);
+        const maxY = Math.max(p1[1], p2[1]);
+        cp1[1] = Math.max(minY, Math.min(maxY, cp1[1]));
+        cp2[1] = Math.max(minY, Math.min(maxY, cp2[1]));
+        path += ` C ${cp1[0]} ${cp1[1]} ${cp2[0]} ${cp2[1]} ${p2[0]} ${p2[1]}`;
+      }
+      return path;
+    }
+
+    function stackSeries(series) {
+      const dates = currentDates();
+      const baseline = Array.from({ length: dates.length }, () => 0);
+      return series.map((item) => {
+        const lower = [...baseline];
+        const upper = item.values.map((value, index) => {
+          baseline[index] += value;
+          return baseline[index];
+        });
+        return { ...item, lower, upper };
+      });
+    }
+
+    function assertSeriesTotals(series) {
+      for (const item of series) {
+        const total = item.values.reduce((sum, value) => sum + value, 0);
+        if (Number.isFinite(item.count) && total !== item.count) {
+          console.error("Usage demo series mismatch", {
+            name: item.name,
+            listCount: item.count,
+            chartTotal: total
+          });
+        }
+      }
+    }
+
+    const usageData = window.USAGE_DEMO_DATA;
+    const allAgentKeys = usageData.custom.agents.map((agent) => agent.key);
+    const skillColorByKey = new Map(
+      usageData.custom.skills.map((skill, index) => [skill.key, palette[index % palette.length]])
+    );
+
+    function skillColor(key) {
+      if (!skillColorByKey.has(key)) {
+        skillColorByKey.set(key, palette[skillColorByKey.size % palette.length]);
+      }
+      return skillColorByKey.get(key);
+    }
+
+    function agentColor(key) {
+      return agentColors[key] || palette[(allAgentKeys.indexOf(key) + 1) % palette.length];
+    }
+
+    function rangeData() {
+      return usageData[selectedRange] || usageData["30d"];
+    }
+
+    function currentRange() {
+      return rangeData();
+    }
+
+    function roundedCurrentHour() {
+      const date = new Date();
+      if (date.getMinutes() >= 30) {
+        date.setHours(date.getHours() + 1);
+      }
+      date.setMinutes(0, 0, 0);
+      return date;
+    }
+
+    function formatHourTick(date) {
+      return `${String(date.getHours()).padStart(2, "0")}:00`;
+    }
+
+    function rolling24HourLabels() {
+      const end = roundedCurrentHour();
+      return Array.from({ length: rangeData().labels.length }, (_, index) => {
+        const offset = (rangeData().labels.length - index - 1) * 4;
+        const tick = new Date(end.getTime() - offset * 60 * 60 * 1000);
+        return formatHourTick(tick);
+      });
+    }
+
+    function currentDates() {
+      if (selectedRange === "24h") return rolling24HourLabels();
+      return rangeData().labels;
+    }
+
+    function applyInitialStateFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const skill = params.get("skill");
+      const agent = params.get("agent");
+      const range = params.get("range");
+      if (range && usageData[range]) selectedRange = range;
+      if (skill && usageData.custom.skills.some((item) => item.key === skill || item.label === skill)) {
+        selectedSkill = usageData.custom.skills.find((item) => item.key === skill || item.label === skill).key;
+      }
+      if (agent && allAgentKeys.includes(agent)) {
+        selectedAgent = agent;
+        selectedSkill = null;
+      }
+      document.querySelectorAll("[data-range]").forEach((rangeButton) => {
+        rangeButton.setAttribute("aria-pressed", rangeButton.dataset.range === selectedRange ? "true" : "false");
+      });
+    }
+
+    function seriesForSkill(skillKey) {
+      const data = rangeData();
+      const agentsForSkill = data.matrix[skillKey] || {};
+      return data.labels.map((_, index) => {
+        return Object.values(agentsForSkill).reduce((sum, values) => sum + (values[index] || 0), 0);
+      });
+    }
+
+    function splitByAgent(skillKey) {
+      const data = rangeData();
+      const agentsForSkill = data.skillAgent[skillKey] || {};
+      return Object.entries(agentsForSkill)
+        .sort((left, right) => right[1] - left[1])
+        .map(([agentKey, count]) => ({
+          name: agentKey,
+          color: agentColor(agentKey),
+          count,
+          values: data.matrix[skillKey]?.[agentKey] || data.labels.map(() => 0)
+        }));
+    }
+
+    function seriesForAgent(agentKey) {
+      const data = rangeData();
+      return data.skills
+        .map((skill) => {
+          const values = data.matrix[skill.key]?.[agentKey] || data.labels.map(() => 0);
+          const count = values.reduce((sum, value) => sum + value, 0);
+          if (!count) return null;
+          return {
+            name: skill.label,
+            key: skill.key,
+            color: skillColor(skill.key),
+            count,
+            values
+          };
+        })
+        .filter(Boolean)
+        .sort((left, right) => right.count - left.count);
+    }
+
+    function defaultSeries() {
+      return rangeData().skills.slice(0, 20).map((skill) => ({
+        name: skill.label,
+        key: skill.key,
+        color: skillColor(skill.key),
+        count: skill.count,
+        values: seriesForSkill(skill.key)
+      }));
+    }
+
+    const heatAxisLabels = new Set([0, 3, 6, 9, 12, 15, 18, 21]);
+
+    function heatLevel(value, max) {
+      if (!value || !max) return 0;
+      return Math.max(1, Math.min(6, Math.ceil(value / max * 6)));
+    }
+
+    function renderHourlyActivity() {
+      const data = rangeData();
+      const hourly = data.hourly || {
+        max: 0,
+        rows: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"].map((day) => ({
+          day,
+          values: Array(24).fill(0)
+        }))
+      };
+      const grid = document.getElementById("hourlyGrid");
+      const context = document.getElementById("hourlyContext");
+      const legend = document.getElementById("hourlyLegend");
+      const max = hourly.max || 0;
+
+      context.textContent = `${data.label} · 本地时间`;
+      grid.innerHTML = hourly.rows.map((row) => `
+        <div class="weekday-label">${escapeHtml(row.day)}</div>
+        <div class="hour-row">
+          ${row.values.map((value, hour) => `
+            <span class="hour-cell" data-level="${heatLevel(value, max)}" title="${escapeAttr(`${row.day} ${String(hour).padStart(2, "0")}:00 · ${value} 次`)}"></span>
+          `).join("")}
+        </div>
+      `).join("") + `
+        <div></div>
+        <div class="hour-axis" aria-hidden="true">
+          ${Array.from({ length: 24 }, (_, hour) => `<span>${heatAxisLabels.has(hour) ? String(hour).padStart(2, "0") : ""}</span>`).join("")}
+        </div>
+      `;
+      legend.innerHTML = `
+        <span>少</span>
+        ${Array.from({ length: 7 }, (_, level) => `<span class="legend-cell" data-level="${level}"></span>`).join("")}
+        <span>多</span>
+      `;
+    }
+
+    function countForSkillInCurrentMode(skill) {
+      if (!selectedAgent) return skill.count;
+      return (rangeData().matrix[skill.key]?.[selectedAgent] || []).reduce((sum, value) => sum + value, 0);
+    }
+
+    function countForAgentInCurrentMode(agentKey) {
+      if (!selectedSkill) {
+        return rangeData().agents.find((agent) => agent.key === agentKey)?.count || 0;
+      }
+      return rangeData().skillAgent[selectedSkill]?.[agentKey] || 0;
+    }
+
+    function renderSkillList() {
+      const list = document.getElementById("skillList");
+      const title = document.getElementById("skillColumnTitle");
+      const note = document.getElementById("skillColumnNote");
+      const data = rangeData();
+      const rows = data.skills
+        .map((skill) => ({ ...skill, visibleCount: countForSkillInCurrentMode(skill) }))
+        .filter((skill) => skill.visibleCount > 0)
+        .sort((left, right) => right.visibleCount - left.visibleCount)
+        .slice(0, 20);
+
+      title.textContent = selectedAgent ? `${selectedAgent} 调用过的 Skill` : "最常用的技能";
+      note.textContent = selectedAgent ? "点击 Agent 后，这里只列出该 Agent 下的真实 Skill 调用记录。" : "前 20 个 Skill。圆点颜色与面积图对应。";
+      list.innerHTML = rows.map((skill) => `
+        <button class="count-row" type="button" data-skill="${escapeAttr(skill.key)}" aria-selected="${selectedSkill === skill.key}">
+          <span class="name-cell">
+            <span class="name-text">${escapeHtml(skill.label)}</span>
+            <span class="dot" style="--dot:${skillColor(skill.key)}"></span>
+          </span>
+          <span class="count">${skill.visibleCount.toLocaleString("en-US")} 次运行</span>
+        </button>
+      `).join("");
+
+      list.querySelectorAll("[data-skill]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedSkill = button.dataset.skill;
+          selectedAgent = null;
+          update();
+        });
+      });
+    }
+
+    function renderAgentList() {
+      const list = document.getElementById("agentList");
+      const note = document.getElementById("agentColumnNote");
+      note.textContent = selectedSkill
+        ? "当前显示该 Skill 在不同 Agent 中的真实运行次数。"
+        : "默认展示所有 Skill 在 Agent 中的真实运行次数。";
+
+      const rows = allAgentKeys
+        .map((agentKey) => ({ key: agentKey, count: countForAgentInCurrentMode(agentKey) }))
+        .sort((left, right) => right.count - left.count)
+        .slice(0, 20);
+
+      list.innerHTML = rows.map((agent) => `
+        <button class="count-row" type="button" data-agent="${escapeAttr(agent.key)}" aria-selected="${selectedAgent === agent.key}">
+          <span class="name-cell">
+            <span class="name-text">${escapeHtml(agent.key)}</span>
+            <span class="dot" style="--dot:${agentColor(agent.key)}"></span>
+          </span>
+          <span class="count">${agent.count.toLocaleString("en-US")} 次运行</span>
+        </button>
+      `).join("");
+
+      list.querySelectorAll("[data-agent]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedAgent = button.dataset.agent;
+          selectedSkill = null;
+          update();
+        });
+      });
+    }
+
+    function update() {
+      const data = rangeData();
+      document.getElementById("totalSkillValue").textContent = data.totalSkills.toLocaleString("en-US");
+      document.getElementById("usedSkillValue").textContent = data.usedSkills.toLocaleString("en-US");
+      document.getElementById("skillRunValue").textContent = (data.skillRuns ?? data.skills.reduce((sum, skill) => sum + skill.count, 0)).toLocaleString("en-US");
+      document.getElementById("recordValue").textContent = data.records.toLocaleString("en-US");
+      renderHourlyActivity();
+      renderSkillList();
+      renderAgentList();
+      if (selectedSkill) {
+        renderChart(
+          splitByAgent(selectedSkill)
+        );
+      } else if (selectedAgent) {
+        renderChart(
+          seriesForAgent(selectedAgent).slice(0, 20)
+        );
+      } else {
+        renderChart(
+          defaultSeries()
+        );
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      })[char]);
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#096;");
+    }
+
+    document.querySelectorAll("[data-range]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedRange = button.dataset.range;
+        document.querySelectorAll("[data-range]").forEach((rangeButton) => {
+          rangeButton.setAttribute("aria-pressed", rangeButton === button ? "true" : "false");
+        });
+        update();
+      });
+    });
+
+    applyInitialStateFromUrl();
+    update();
+  </script>
+</body>
+</html>

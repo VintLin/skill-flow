@@ -5,10 +5,20 @@ struct UsageScreen: View {
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
 
+    @State private var selectedRange: UsageRangePresetViewData = .thirtyDays
+    @State private var selection: UsageChartSelectionViewData = .all
+    @State private var showingCustomRange = false
+    @State private var customFrom = Calendar.current.date(byAdding: .day, value: -29, to: Date()) ?? Date()
+    @State private var customTo = Date()
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Skills Usage")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+
+                rangePicker
                 content
             }
             .padding(.horizontal, 28)
@@ -17,19 +27,66 @@ struct UsageScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.pageBackground(for: theme))
-        .task {
-            await viewModel.loadUsageSnapshot()
+        .task { await viewModel.refreshUsageAnalytics() }
+        .onChange(of: selectedRange) { _, newValue in
+            guard newValue != .custom else { return }
+            selection = .all
+            Task { await viewModel.loadUsageSnapshot(force: true, rangePreset: newValue.rawValue) }
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Skill Usage")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(AppTheme.textPrimary(for: theme))
-            Text("Observed local skill activations by agent, project, and time range.")
-                .font(.system(size: 13))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
+    private var rangePicker: some View {
+        HStack(spacing: 0) {
+            ForEach(UsageRangePresetViewData.allCases) { range in
+                Button {
+                    if range == .custom { showingCustomRange = true } else { selectedRange = range }
+                } label: {
+                    Text(range.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(range == selectedRange ? AppTheme.textPrimary(for: theme) : AppTheme.textMuted(for: theme))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background {
+                            if range == selectedRange {
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(AppTheme.surface(for: theme))
+                                    .overlay { RoundedRectangle(cornerRadius: 7).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(AppTheme.surface(for: theme).opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .overlay { RoundedRectangle(cornerRadius: 9).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
+        .popover(isPresented: $showingCustomRange, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("自定义时间范围").font(.system(size: 14, weight: .semibold))
+                DatePicker("开始", selection: $customFrom, displayedComponents: .date)
+                DatePicker("结束", selection: $customTo, displayedComponents: .date)
+                HStack {
+                    Spacer()
+                    Button("应用") {
+                        guard customFrom <= customTo else { return }
+                        selectedRange = .custom
+                        showingCustomRange = false
+                        selection = .all
+                        Task {
+                            await viewModel.loadUsageSnapshot(
+                                force: true,
+                                rangePreset: "custom",
+                                from: customDateString(customFrom),
+                                to: customDateString(customTo)
+                            )
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(16)
+            .frame(width: 250)
         }
     }
 
@@ -37,204 +94,348 @@ struct UsageScreen: View {
     private var content: some View {
         switch viewModel.usageLoadState {
         case .idle, .loading:
-            loadingCard
-        case .failed(let message):
-            messageCard(title: "Unable to load usage", detail: message)
-        case .ready:
-            if let snapshot = viewModel.usageSnapshot {
-                snapshotContent(snapshot)
-            } else {
-                messageCard(title: "No usage snapshot", detail: "Run refresh to scan local agent records.")
-            }
-        }
-    }
-
-    private func snapshotContent(_ snapshot: UsageSnapshotViewData) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                metricCard(title: "Observed uses", value: "\(snapshot.kpis.observedUses)")
-                metricCard(title: "Active skills", value: "\(snapshot.kpis.activeSkills)")
-                metricCard(title: "Agents", value: "\(snapshot.kpis.activeAgents)")
-                metricCard(title: "Projects", value: "\(snapshot.kpis.activeProjects)")
-            }
-
-            HStack(alignment: .top, spacing: 18) {
-                sectionCard(title: "Top skills", subtitle: snapshot.rangeLabel) {
-                    VStack(spacing: 0) {
-                        if snapshot.topSkills.isEmpty {
-                            emptyRow("No observed skill usage in this range.")
-                        } else {
-                            ForEach(snapshot.topSkills.prefix(12)) { item in
-                                usageSkillRow(item)
-                            }
-                        }
-                    }
-                }
-
-                sectionCard(title: "Agent coverage", subtitle: "Last local scan") {
-                    VStack(spacing: 0) {
-                        if snapshot.agentCoverage.isEmpty {
-                            emptyRow("No agent sources have been scanned yet.")
-                        } else {
-                            ForEach(snapshot.agentCoverage) { item in
-                                coverageRow(item)
-                            }
-                        }
-                    }
-                }
-            }
-
-            sectionCard(title: "Recent observations", subtitle: snapshot.generatedAt) {
-                VStack(spacing: 0) {
-                    if snapshot.recentObservations.isEmpty {
-                        emptyRow("No recent observed activations.")
-                    } else {
-                        ForEach(snapshot.recentObservations.prefix(20)) { item in
-                            recentObservationRow(item)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var loadingCard: some View {
-        sectionCard(title: "Loading usage", subtitle: nil) {
-            HStack(spacing: 10) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Reading local usage snapshot…")
-                    .font(.system(size: 13))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-            }
-            .padding(.vertical, 8)
-        }
-    }
-
-    private func messageCard(title: String, detail: String) -> some View {
-        sectionCard(title: title, subtitle: nil) {
-            Text(detail)
-                .font(.system(size: 13))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-                .padding(.vertical, 8)
-        }
-    }
-
-    private func metricCard(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-            Text(value)
-                .font(.system(size: 28, weight: .semibold, design: .rounded))
-                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppTheme.surface(for: theme))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-        }
-    }
-
-    private func sectionCard<Content: View>(
-        title: String,
-        subtitle: String?,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: 12))
+            sectionCard(title: "正在读取 Skill 使用记录") {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("正在扫描本地 Agent 会话…")
+                        .font(.system(size: 13))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                 }
+                .padding(.vertical, 12)
             }
+        case .failed(let message):
+            sectionCard(title: "无法加载 Skill 使用记录") {
+                Text(message)
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .padding(.vertical, 12)
+            }
+        case .ready:
+            if let snapshot = viewModel.usageSnapshot { dashboard(snapshot) }
+            else {
+                sectionCard(title: "暂无 Skill 使用记录") {
+                    Text("本地 Agent 尚未产生可识别的 Skill 调用记录。")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .padding(.vertical, 12)
+                }
+            }
+        }
+    }
+
+    private func dashboard(_ snapshot: UsageSnapshotViewData) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            heatmap(snapshot)
+            let chart = snapshot.chartData(for: selection)
+            sectionCard(title: nil) { UsageAreaChart(data: chart, theme: theme, accent: accent).frame(height: 300) }
+            statistics(snapshot)
+        }
+    }
+
+    private func heatmap(_ snapshot: UsageSnapshotViewData) -> some View {
+        sectionCard(title: nil) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("分时活跃", systemImage: "calendar")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                Spacer()
+                Text(snapshot.rangeLabel)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+            }
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(["周日", "周一", "周二", "周三", "周四", "周五", "周六"], id: \.self) { day in
+                        Text(day)
+                            .font(.system(size: 10))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .frame(width: 28, height: 16, alignment: .leading)
+                    }
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 24), spacing: 5) {
+                    ForEach(snapshot.hourlyActivity.indices, id: \.self) { index in
+                        let item = snapshot.hourlyActivity[index]
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(heatmapColor(item.observedUses, maximum: snapshot.hourlyActivity.map(\.observedUses).max() ?? 0))
+                            .frame(height: 16)
+                            .help("周\(item.weekday) \(String(format: "%02d:00", item.hour)) · \(item.observedUses) 次")
+                    }
+                }
+            }
+            HStack {
+                Spacer().frame(width: 36)
+                ForEach([0, 3, 6, 9, 12, 15, 18, 21], id: \.self) { hour in
+                    Text(String(format: "%02d", hour))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func statistics(_ snapshot: UsageSnapshotViewData) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            kpiColumn(snapshot).frame(maxWidth: .infinity, alignment: .topLeading)
+            Divider()
+            skillColumn(snapshot).frame(maxWidth: .infinity, alignment: .topLeading)
+            Divider()
+            agentColumn(snapshot).frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .padding(18)
+        .background(AppTheme.surface(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay { RoundedRectangle(cornerRadius: 16).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
+    }
+
+    private func kpiColumn(_ snapshot: UsageSnapshotViewData) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("活动洞察").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            kpiRow("技能总数", value: snapshot.kpis.totalSkills)
+            kpiRow("使用技能总数", value: snapshot.kpis.usedSkills)
+            kpiRow("技能运行总数", value: snapshot.kpis.skillRuns)
+            kpiRow("聊天/调用记录", value: snapshot.kpis.chatRecords)
+        }
+        .padding(.trailing, 18)
+    }
+
+    private func skillColumn(_ snapshot: UsageSnapshotViewData) -> some View {
+        let selectedAgent: String? = { if case .agent(let agent) = selection { return agent }; return nil }()
+        let rows = snapshot.skillRows(for: selectedAgent)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("最常用的技能").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            Text("前 20 个 Skill · 点击查看 Agent 分布").font(.system(size: 11)).foregroundStyle(AppTheme.textMuted(for: theme))
+            if rows.isEmpty { emptyRow("当前范围没有 Skill 调用") }
+            else {
+                ForEach(rows.prefix(20)) { item in
+                    Button {
+                        if case .skill(let current) = selection, current == item.id { selection = .all }
+                        else { selection = .skill(item.id) }
+                    } label: {
+                        rankingRow(label: item.skillLabel, value: item.observedUses, colorIndex: colorIndex(for: item.id, in: snapshot.topSkills), selected: selection == .skill(item.id))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+    }
+
+    private func agentColumn(_ snapshot: UsageSnapshotViewData) -> some View {
+        let selectedSkill: String? = { if case .skill(let skill) = selection { return skill }; return nil }()
+        let rows = snapshot.agentRows(for: selectedSkill)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("最常用的 Agent").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            Text("当前范围内的真实 Skill 运行次数").font(.system(size: 11)).foregroundStyle(AppTheme.textMuted(for: theme))
+            if rows.isEmpty { emptyRow("当前范围没有 Agent 调用") }
+            else {
+                ForEach(rows.prefix(20)) { item in
+                    Button {
+                        if case .agent(let current) = selection, current == item.id { selection = .all }
+                        else { selection = .agent(item.id) }
+                    } label: {
+                        rankingRow(label: item.agent, value: item.observedUses, colorIndex: stableColorIndex(item.id), selected: selection == .agent(item.id))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.leading, 18)
+    }
+
+    private func kpiRow(_ title: String, value: Int) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(.system(size: 12)).foregroundStyle(AppTheme.textMuted(for: theme))
+            Spacer()
+            Text("\(value)").font(.system(size: 22, weight: .semibold, design: .rounded)).foregroundStyle(AppTheme.textPrimary(for: theme))
+        }
+    }
+
+    private func rankingRow(label: String, value: Int, colorIndex: Int, selected: Bool) -> some View {
+        HStack(spacing: 8) {
+            Circle().fill(UsageAreaChart.palette[colorIndex % UsageAreaChart.palette.count]).frame(width: 7, height: 7)
+            Text(label).font(.system(size: 12)).foregroundStyle(AppTheme.textPrimary(for: theme)).lineLimit(1)
+            Spacer(minLength: 6)
+            Text("\(value) 次运行").font(.system(size: 11, design: .rounded)).foregroundStyle(AppTheme.textMuted(for: theme))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(selected ? AppTheme.cardBorder(for: theme).opacity(0.22) : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+
+    private func colorIndex(for id: String, in skills: [UsageTopSkillViewData]) -> Int { stableColorIndex(id) }
+
+    private func stableColorIndex(_ value: String) -> Int { abs(value.unicodeScalars.reduce(0) { ($0 * 31) + Int($1.value) }) }
+
+    private func heatmapColor(_ value: Int, maximum: Int) -> Color {
+        guard value > 0, maximum > 0 else { return AppTheme.pageBackground(for: theme).opacity(0.52) }
+        return AppTheme.brand(for: accent, in: theme).opacity(0.18 + (0.72 * Double(value) / Double(maximum)))
+    }
+
+    private func sectionCard<Content: View>(title: String?, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let title { Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme)) }
             content()
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
-        }
-    }
-
-    private func usageSkillRow(_ item: UsageTopSkillViewData) -> some View {
-        row {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.skillLabel)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text("\(item.activeAgentCount) agents · \(item.activeProjectCount) projects")
-                    .font(.system(size: 12))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-            }
-            Spacer()
-            Text("\(item.observedUses)")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-        }
-    }
-
-    private func coverageRow(_ item: UsageAgentCoverageViewData) -> some View {
-        row {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.agent)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text(item.status)
-                    .font(.system(size: 12))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-            }
-            Spacer()
-            Text("\(item.observedUses)")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-        }
-    }
-
-    private func recentObservationRow(_ item: UsageRecentObservationViewData) -> some View {
-        row {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.skillLabel)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Text("\(item.agent) · \(item.projectLabel) · \(item.evidenceKind)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-            }
-            Spacer()
-            Text(item.observedAt)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(AppTheme.textMuted(for: theme))
-        }
+        .overlay { RoundedRectangle(cornerRadius: 16).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
     }
 
     private func emptyRow(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 13))
-            .foregroundStyle(AppTheme.textMuted(for: theme))
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        Text(text).font(.system(size: 12)).foregroundStyle(AppTheme.textMuted(for: theme)).padding(.vertical, 8)
     }
 
-    private func row<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            content()
-        }
-        .padding(.vertical, 10)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AppTheme.cardBorder(for: theme))
-                .frame(height: 0.5)
+    private func customDateString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar.current
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+}
+
+private struct UsageAreaChart: View {
+    static let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
+
+    let data: UsageChartViewData
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    @State private var hoveredIndex: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { proxy in
+                ZStack(alignment: .topLeading) {
+                    Canvas { context, size in drawChart(context: &context, size: size) }
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location): hoveredIndex = nearestIndex(for: location.x, width: proxy.size.width)
+                            case .ended: hoveredIndex = nil
+                            }
+                        }
+                    if let hoveredIndex, let bucket = data.labels[safe: hoveredIndex] {
+                        tooltip(bucket: bucket, index: hoveredIndex)
+                            .allowsHitTesting(false)
+                            .padding(.leading, tooltipOffset(for: hoveredIndex, width: proxy.size.width))
+                            .padding(.top, 8)
+                    }
+                }
+            }
+            .frame(height: 260)
+            HStack(spacing: 0) {
+                Spacer().frame(width: 38)
+                ForEach(axisLabelIndices, id: \.self) { index in
+                    Text(data.labels[index])
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(AppTheme.textMuted(for: theme))
+                        .frame(maxWidth: .infinity, alignment: index == axisLabelIndices.last ? .trailing : .leading)
+                }
+                Spacer().frame(width: 10)
+            }
+            HStack(spacing: 14) {
+                ForEach(data.series) { series in
+                    HStack(spacing: 5) {
+                        Capsule().fill(Self.palette[series.colorIndex % Self.palette.count]).frame(width: 14, height: 3)
+                        Text(series.label).font(.system(size: 10)).foregroundStyle(AppTheme.textMuted(for: theme)).lineLimit(1)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
+
+    private var axisLabelIndices: [Int] {
+        guard !data.labels.isEmpty else { return [] }
+        let step = max(1, Int(ceil(Double(data.labels.count) / 6.0)))
+        var indices = Array(stride(from: 0, to: data.labels.count, by: step))
+        if indices.last != data.labels.count - 1 { indices.append(data.labels.count - 1) }
+        return indices
+    }
+
+    private func drawChart(context: inout GraphicsContext, size: CGSize) {
+        let plot = CGRect(x: 38, y: 8, width: max(1, size.width - 48), height: max(1, size.height - 30))
+        let maximum = max(1, data.series.flatMap(\.values).max() ?? 0)
+        for tick in 0...4 {
+            let ratio = CGFloat(tick) / 4
+            let y = plot.maxY - (plot.height * ratio)
+            var line = Path(); line.move(to: CGPoint(x: plot.minX, y: y)); line.addLine(to: CGPoint(x: plot.maxX, y: y))
+            context.stroke(line, with: .color(AppTheme.cardBorder(for: theme).opacity(0.55)), lineWidth: 0.5)
+            context.draw(Text("\(Int(Double(maximum) * Double(tick) / 4.0))").font(.system(size: 10, design: .rounded)).foregroundStyle(AppTheme.textMuted(for: theme)), at: CGPoint(x: 14, y: y))
+        }
+        for series in data.series {
+            let points = series.values.enumerated().map { index, value in
+                CGPoint(x: plot.minX + (plot.width * CGFloat(index) / CGFloat(max(data.labels.count - 1, 1))), y: plot.maxY - (plot.height * CGFloat(value) / CGFloat(maximum)))
+            }
+            guard let first = points.first, let last = points.last else { continue }
+            let curve = smoothPath(points)
+            var area = curve; area.addLine(to: CGPoint(x: last.x, y: plot.maxY)); area.addLine(to: CGPoint(x: first.x, y: plot.maxY)); area.closeSubpath()
+            context.fill(area, with: .color(Self.palette[series.colorIndex % Self.palette.count].opacity(0.15)))
+            context.stroke(curve, with: .color(Self.palette[series.colorIndex % Self.palette.count]), lineWidth: 1.8)
+        }
+        if let hoveredIndex, hoveredIndex < data.labels.count {
+            let x = plot.minX + (plot.width * CGFloat(hoveredIndex) / CGFloat(max(data.labels.count - 1, 1)))
+            var line = Path(); line.move(to: CGPoint(x: x, y: plot.minY)); line.addLine(to: CGPoint(x: x, y: plot.maxY))
+            context.stroke(line, with: .color(AppTheme.textMuted(for: theme).opacity(0.55)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+        }
+    }
+
+    private func tooltip(bucket: String, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(bucket).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            Text("总调用：\(data.totals[safe: index] ?? 0)").font(.system(size: 11, weight: .medium)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            ForEach(data.series.compactMap { series -> (String, Int, Int)? in
+                guard let value = series.values[safe: index], value > 0 else { return nil }
+                return (series.label, value, series.colorIndex)
+            }, id: \.0) { label, value, colorIndex in
+                HStack(spacing: 5) {
+                    Circle().fill(Self.palette[colorIndex % Self.palette.count]).frame(width: 6, height: 6)
+                    Text(label).lineLimit(1); Spacer(minLength: 12); Text("\(value)").fontDesign(.rounded)
+                }
+                .font(.system(size: 10)).foregroundStyle(AppTheme.textMuted(for: theme))
+            }
+        }
+        .padding(10)
+        .frame(minWidth: 150, alignment: .leading)
+        .background(AppTheme.pageBackground(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .overlay { RoundedRectangle(cornerRadius: 9).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+    }
+
+    private func nearestIndex(for x: CGFloat, width: CGFloat) -> Int {
+        guard !data.labels.isEmpty else { return 0 }
+        let ratio = min(1, max(0, (x - 38) / max(1, width - 48)))
+        return Int((ratio * CGFloat(max(data.labels.count - 1, 0))).rounded())
+    }
+
+    private func tooltipOffset(for index: Int, width: CGFloat) -> CGFloat {
+        guard data.labels.count > 1 else { return 44 }
+        let x = 38 + (width - 48) * CGFloat(index) / CGFloat(data.labels.count - 1)
+        return min(max(44, x - 30), max(44, width - 190))
+    }
+
+    private func smoothPath(_ points: [CGPoint]) -> Path {
+        guard let first = points.first else { return Path() }
+        var path = Path(); path.move(to: first)
+        guard points.count > 1 else { return path }
+        for index in 0..<(points.count - 1) {
+            let previous = points[max(0, index - 1)]
+            let current = points[index]
+            let next = points[index + 1]
+            let afterNext = points[min(points.count - 1, index + 2)]
+            let control1 = CGPoint(x: current.x + (next.x - previous.x) / 6, y: current.y + (next.y - previous.y) / 6)
+            let control2 = CGPoint(x: next.x - (afterNext.x - current.x) / 6, y: next.y - (afterNext.y - current.y) / 6)
+            path.addCurve(to: next, control1: control1, control2: control2)
+        }
+        return path
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }

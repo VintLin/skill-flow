@@ -642,8 +642,8 @@ function expectOptionalUsageRefreshTrigger(value: JsonValue | undefined): UsageR
   if (value === undefined) {
     return undefined;
   }
-  if (value !== "bootstrap" && value !== "scheduled") {
-    throw new Error("Field 'trigger' must be 'bootstrap' or 'scheduled'.");
+  if (value !== "bootstrap" && value !== "scheduled" && value !== "manual") {
+    throw new Error("Field 'trigger' must be 'bootstrap', 'scheduled', or 'manual'.");
   }
   return value;
 }
@@ -669,15 +669,21 @@ function parseUsageRange(value: JsonValue | undefined): NonNullable<UsageSnapsho
   const preset = value.preset;
   if (
     preset !== undefined &&
+    preset !== "today" &&
+    preset !== "24h" &&
     preset !== "7d" &&
     preset !== "30d" &&
     preset !== "90d" &&
-    preset !== "available"
+    preset !== "available" &&
+    preset !== "custom"
   ) {
-    throw new Error("Field 'range.preset' must be '7d', '30d', '90d', or 'available'.");
+    throw new Error("Field 'range.preset' must be 'today', '24h', '7d', '30d', '90d', 'available', or 'custom'.");
   }
   const from = expectOptionalString(value.from, "range.from", "usage-snapshot");
   const to = expectOptionalString(value.to, "range.to", "usage-snapshot");
+  if ((preset === "custom" || from !== undefined || to !== undefined) && (!from || !to)) {
+    throw new Error("Fields 'range.from' and 'range.to' must be provided together for a custom usage range.");
+  }
   return {
     ...(preset ? { preset } : {}),
     ...(from !== undefined ? { from } : {}),
@@ -731,11 +737,15 @@ function parseUsageLimits(value: JsonValue | undefined): NonNullable<UsageSnapsh
     throw new Error("Field 'limits' must be an object when provided.");
   }
   const topSkills = expectOptionalSafeInteger(value.topSkills, "limits.topSkills");
+  const topAgents = expectOptionalSafeInteger(value.topAgents, "limits.topAgents");
   const projects = expectOptionalSafeInteger(value.projects, "limits.projects");
+  const matrixEntries = expectOptionalSafeInteger(value.matrixEntries, "limits.matrixEntries");
   const recentObservations = expectOptionalSafeInteger(value.recentObservations, "limits.recentObservations");
   return {
     ...(topSkills !== undefined ? { topSkills } : {}),
+    ...(topAgents !== undefined ? { topAgents } : {}),
     ...(projects !== undefined ? { projects } : {}),
+    ...(matrixEntries !== undefined ? { matrixEntries } : {}),
     ...(recentObservations !== undefined ? { recentObservations } : {}),
   };
 }

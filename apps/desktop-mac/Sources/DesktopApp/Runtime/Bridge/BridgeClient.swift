@@ -172,7 +172,14 @@ final class BridgeClient: @unchecked Sendable {
     }
 
     func usageSnapshot() async throws -> BridgeResponse {
-        try await send(command: .usageSnapshot)
+        try await usageSnapshot(rangePreset: "30d", from: nil, to: nil)
+    }
+
+    func usageSnapshot(rangePreset: String, from: String?, to: String?) async throws -> BridgeResponse {
+        var range: [String: Any] = ["preset": rangePreset]
+        if let from { range["from"] = from }
+        if let to { range["to"] = to }
+        return try await send(command: .usageSnapshot, payload: ["range": AnyCodable(range)])
     }
 
     func searchImportGroups(query: String?) async throws -> BridgeResponse {

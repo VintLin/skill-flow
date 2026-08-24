@@ -122,6 +122,11 @@ describe("usage collectors", () => {
     });
 
     expect(result.coverage.status).toBe("scanned");
+    expect(result.coverage).toMatchObject({
+      sourcesFound: 1,
+      sourceFilesScanned: 1,
+    });
+    expect(result.coverage.sourceBytesScanned).toBeGreaterThan(0);
     expect(result.observations).toHaveLength(1);
     expect(result.observations[0]).toMatchObject({
       agent: "codex",
@@ -390,6 +395,11 @@ describe("usage collectors", () => {
     });
 
     expect(result.coverage.status).toBe("scanned");
+    expect(result.coverage).toMatchObject({
+      sourcesFound: 1,
+      sourceFilesScanned: 1,
+    });
+    expect(result.coverage.sourceBytesScanned).toBeGreaterThan(0);
     expect(result.observations).toHaveLength(1);
     expect(result.observations[0]).toMatchObject({
       agent: "grok-build",
@@ -399,9 +409,118 @@ describe("usage collectors", () => {
     });
   });
 
-  test("extracts WorkBuddy skill usage dates from usage-log without reading trace text", async () => {
+  test("extracts WorkBuddy Skill tool spans from traces with session project mapping", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-workbuddy-collector-"));
+    const traceRoot = path.join(root, "traces");
+    const sessionFile = path.join(root, "app", "sessions.json");
+    const traceDir = path.join(traceRoot, "12345");
     const usageLog = path.join(root, "usage-log.json");
+    const projectPath = path.join(root, "project");
+    await fs.mkdir(traceDir, { recursive: true });
+    await fs.mkdir(path.dirname(sessionFile), { recursive: true });
+    await fs.writeFile(
+      sessionFile,
+      JSON.stringify({
+        version: 1,
+        sessions: [{
+          conversationId: "session-1",
+          workDir: projectPath,
+          startedAt: "2026-08-23T00:00:00.000Z",
+        }],
+      }),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(traceDir, "trace-1.json"),
+      JSON.stringify({
+        trace: {
+          traceId: "trace-1",
+          sessionId: "session-1",
+          startedAt: "2026-08-23T00:00:00.000Z",
+        },
+        spans: [
+          {
+            spanId: "span-1",
+            name: "Skill",
+            type: "function",
+            toolName: "Skill",
+            status: "ok",
+            startedAt: "2026-08-23T00:01:00.000Z",
+            toolInput: JSON.stringify({ skill: "wayfinder" }),
+          },
+          {
+            spanId: "span-2",
+            name: "Skill",
+            type: "function",
+            toolName: "Skill",
+            status: "error",
+            startedAt: "2026-08-23T00:02:00.000Z",
+            toolInput: { skill: "code-review" },
+          },
+          {
+            spanId: "span-3",
+            name: "Read",
+            type: "function",
+            toolName: "Read",
+            status: "ok",
+            startedAt: "2026-08-23T00:03:00.000Z",
+            toolInput: JSON.stringify({ file_path: "/tmp/SKILL.md" }),
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await fs.writeFile(
+      usageLog,
+      JSON.stringify({
+        version: 1,
+        skills: {
+          stale: {
+            id: "stale",
+            type: "skill",
+            recentDates: ["2026-08-22"],
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const result = await new WorkBuddyUsageCollector({
+      traceRoots: [traceRoot],
+      sessionFiles: [sessionFile],
+      usageLogFiles: [usageLog],
+    }).scan({
+      now: new Date("2026-08-24T00:04:00.000Z"),
+      budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
+    });
+
+    expect(result.coverage.status).toBe("scanned");
+    expect(result.coverage).toMatchObject({
+      sourcesFound: 3,
+      sourceFilesScanned: 2,
+    });
+    expect(result.coverage.sourceBytesScanned).toBeGreaterThan(0);
+    expect(result.observations).toHaveLength(1);
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agent: "workbuddy",
+        rawSkillName: "wayfinder",
+        observedAt: "2026-08-23T00:01:00.000Z",
+        evidenceKind: "tool_call",
+        outcome: "completed",
+        sourceKind: "direct-event",
+        rawProjectPath: projectPath,
+      }),
+    ]));
+    expect(result.observations.map((item) => item.rawSkillName)).not.toContain("stale");
+    expect(result.observations.map((item) => item.rawSkillName)).not.toContain("code-review");
+  });
+
+  test("falls back to WorkBuddy usage-log aggregate dates when traces have no Skill spans", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-workbuddy-collector-"));
+    const traceRoot = path.join(root, "traces");
+    const usageLog = path.join(root, "usage-log.json");
+    await fs.mkdir(traceRoot, { recursive: true });
     await fs.writeFile(
       usageLog,
       JSON.stringify({
@@ -427,12 +546,21 @@ describe("usage collectors", () => {
       "utf8",
     );
 
-    const result = await new WorkBuddyUsageCollector([usageLog]).scan({
+    const result = await new WorkBuddyUsageCollector({
+      traceRoots: [traceRoot],
+      sessionFiles: [],
+      usageLogFiles: [usageLog],
+    }).scan({
       now: new Date("2026-08-24T00:04:00.000Z"),
       budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
     });
 
     expect(result.coverage.status).toBe("scanned");
+    expect(result.coverage).toMatchObject({
+      sourcesFound: 2,
+      sourceFilesScanned: 1,
+    });
+    expect(result.coverage.sourceBytesScanned).toBeGreaterThan(0);
     expect(result.observations).toHaveLength(2);
     expect(result.observations).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -579,6 +707,11 @@ describe("usage collectors", () => {
     });
 
     expect(result.coverage.status).toBe("scanned");
+    expect(result.coverage).toMatchObject({
+      sourcesFound: 1,
+      sourceFilesScanned: 1,
+    });
+    expect(result.coverage.sourceBytesScanned).toBeGreaterThan(0);
     expect(result.observations).toHaveLength(1);
     expect(result.observations[0]).toMatchObject({
       agent: "pi",
@@ -593,6 +726,20 @@ describe("usage collectors", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-opencode-collector-"));
     const dbPath = path.join(root, "opencode.db");
     const projectPath = path.join(root, "project");
+    const skillRoot = path.join(root, "skills");
+    await fs.mkdir(path.join(skillRoot, "impeccable"), { recursive: true });
+    await fs.writeFile(
+      path.join(skillRoot, "impeccable", "SKILL.md"),
+      [
+        "---",
+        "name: impeccable",
+        "---",
+        "",
+        "This skill gives you the tools and permission to create design that earns to be called out-of-distribution craft.",
+        "Use it for UI critique.",
+      ].join("\n"),
+      "utf8",
+    );
     const skillPart = JSON.stringify({
       type: "tool",
       callID: "call-1",
@@ -623,30 +770,73 @@ describe("usage collectors", () => {
         time: { start: 1787443200002 },
       },
     });
+    const injectedSkillPart = JSON.stringify({
+      type: "text",
+      text: "This skill gives you the tools and permission to create design that earns to be called out-of-distribution craft.\nUse it for UI critique.",
+    });
+    const explicitSkillPart = JSON.stringify({
+      type: "text",
+      text: "/mattpocock-skills:tdd drive this change.",
+    });
+    const pathTextPart = JSON.stringify({
+      type: "text",
+      text: "Do not count /tmp/SKILL.md or https://example.com/path.",
+    });
     execFileSync("sqlite3", [dbPath, `
 CREATE TABLE session (id text PRIMARY KEY, directory text);
-CREATE TABLE part (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, data text NOT NULL);
+CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, data text NOT NULL);
+CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, data text NOT NULL);
 INSERT INTO session (id, directory) VALUES ('session-1', '${projectPath.replaceAll("'", "''")}');
-INSERT INTO part (id, session_id, time_created, data) VALUES ('part-1', 'session-1', 1787443200000, '${skillPart.replaceAll("'", "''")}');
-INSERT INTO part (id, session_id, time_created, data) VALUES ('part-2', 'session-1', 1787443200001, '${readPart.replaceAll("'", "''")}');
-INSERT INTO part (id, session_id, time_created, data) VALUES ('part-3', 'session-1', 1787443200002, '${failedSkillPart.replaceAll("'", "''")}');
+INSERT INTO message (id, session_id, time_created, data) VALUES ('message-1', 'session-1', 1787443200000, '{"role":"assistant"}');
+INSERT INTO message (id, session_id, time_created, data) VALUES ('message-2', 'session-1', 1787443200003, '{"role":"user"}');
+INSERT INTO message (id, session_id, time_created, data) VALUES ('message-3', 'session-1', 1787443200004, '{"role":"user"}');
+INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('part-1', 'message-1', 'session-1', 1787443200000, '${skillPart.replaceAll("'", "''")}');
+INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('part-2', 'message-1', 'session-1', 1787443200001, '${readPart.replaceAll("'", "''")}');
+INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('part-3', 'message-1', 'session-1', 1787443200002, '${failedSkillPart.replaceAll("'", "''")}');
+INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('part-4', 'message-2', 'session-1', 1787443200003, '${injectedSkillPart.replaceAll("'", "''")}');
+INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('part-5', 'message-3', 'session-1', 1787443200004, '${explicitSkillPart.replaceAll("'", "''")}');
+INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('part-6', 'message-3', 'session-1', 1787443200005, '${pathTextPart.replaceAll("'", "''")}');
 `]);
 
-    const result = await new OpenCodeUsageCollector([dbPath]).scan({
+    const result = await new OpenCodeUsageCollector([dbPath], [skillRoot]).scan({
       now: new Date("2026-08-23T00:02:00.000Z"),
       budget: { perSourceBudgetMs: 5000, maxFiles: 500, maxBytes: 536870912 },
     });
 
     expect(result.coverage.status).toBe("scanned");
-    expect(result.observations).toHaveLength(1);
-    expect(result.observations[0]).toMatchObject({
-      agent: "opencode",
-      rawSkillName: "mattpocock-skills:wayfinder",
-      evidenceKind: "tool_call",
-      confidence: "observed",
-      outcome: "completed",
-      rawProjectPath: projectPath,
+    expect(result.coverage).toMatchObject({
+      sourcesFound: 2,
+      sourceFilesScanned: 2,
     });
+    expect(result.coverage.sourceBytesScanned).toBeGreaterThan(0);
+    expect(result.observations).toHaveLength(3);
+    expect(result.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        agent: "opencode",
+        rawSkillName: "mattpocock-skills:wayfinder",
+        evidenceKind: "tool_call",
+        confidence: "observed",
+        outcome: "completed",
+        rawProjectPath: projectPath,
+      }),
+      expect.objectContaining({
+        agent: "opencode",
+        rawSkillName: "impeccable",
+        evidenceKind: "skill_activated",
+        confidence: "observed",
+        outcome: "completed",
+        rawProjectPath: projectPath,
+      }),
+      expect.objectContaining({
+        agent: "opencode",
+        rawSkillName: "mattpocock-skills:tdd",
+        evidenceKind: "explicit_command",
+        confidence: "observed",
+        outcome: "unknown",
+        requiresKnownSkillMatch: true,
+        rawProjectPath: projectPath,
+      }),
+    ]));
   });
 
   test.skipIf(!hasSqlite3())("extracts ZCode completed skill tool calls from sqlite part rows", async () => {
@@ -687,6 +877,11 @@ INSERT INTO part (id, session_id, time_created, data) VALUES ('part-2', 'session
     });
 
     expect(result.coverage.status).toBe("scanned");
+    expect(result.coverage).toMatchObject({
+      sourcesFound: 1,
+      sourceFilesScanned: 1,
+    });
+    expect(result.coverage.sourceBytesScanned).toBeGreaterThan(0);
     expect(result.observations).toHaveLength(1);
     expect(result.observations[0]).toMatchObject({
       agent: "zcode",
