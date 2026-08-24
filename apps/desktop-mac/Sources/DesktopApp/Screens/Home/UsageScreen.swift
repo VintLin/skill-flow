@@ -14,10 +14,6 @@ struct UsageScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Skills Usage")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
-
                 rangePicker
                 content
             }

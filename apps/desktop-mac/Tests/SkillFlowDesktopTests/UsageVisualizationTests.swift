@@ -53,6 +53,7 @@ final class UsageVisualizationTests: XCTestCase {
 
         XCTAssertFalse(source.contains("数据来源提示"))
         XCTAssertFalse(source.contains("coverageNotice("))
+        XCTAssertFalse(source.contains("Text(\"Skills Usage\")"))
     }
 
     func testUsageChartCardHasDailyTrendHeading() throws {

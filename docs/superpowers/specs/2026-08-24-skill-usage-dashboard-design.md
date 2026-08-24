@@ -21,7 +21,7 @@ Usage 页面改为由统一的 Usage Snapshot analytics contract 驱动。Snapsh
 
 用户将在桌面 Usage 页面看到：
 
-- 标题为 `Skills Usage` 的页面。
+- 页面只使用 Header 中的 `Usage` 作为标题，内容区不重复显示页面标题。
 - 时间范围切换：今天、24H、7D、30D、90D、自定义。
 - 时间范围下方的分时活跃卡片，用固定尺寸正方形热力格展示本地时间活跃度；7 天 × 24 小时有效格始终保留，卡片剩余宽度使用无数据占位格补齐，不允许随窗口拉伸格子。
 - 主页面不展示 Agent 数据来源或解析诊断卡片，诊断信息继续保留在 Usage Snapshot 契约中。
@@ -41,7 +41,7 @@ Usage 页面改为由统一的 Usage Snapshot analytics contract 驱动。Snapsh
 ## User Stories
 
 1. As a Skill Flow desktop user, I want to open a Skills Usage page, so that I can understand how my local Skills are actually being used.
-2. As a Skill Flow desktop user, I want the page title to be `Skills Usage`, so that the page purpose is immediately clear.
+2. As a Skill Flow desktop user, I want the Header title `Usage` to identify the page without a repeated content heading, so that the dashboard starts directly with its controls.
 3. As a Skill Flow desktop user, I want unnecessary explanatory copy removed from the top of the page, so that the dashboard feels compact and focused.
 4. As a Skill Flow desktop user, I want to switch between 今天, 24H, 7D, 30D, 90D, and 自定义 ranges, so that I can inspect short-term and long-term usage.
 5. As a Skill Flow desktop user, I want `24H` labels to show real local clock hours, so that I do not have to mentally translate relative labels like `-4h`.
