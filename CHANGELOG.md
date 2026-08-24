@@ -4,6 +4,26 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.0 - 2026-08-24
+
+### Added
+
+- Added local Skill Usage collection across supported Agent session and trace formats, with modular collectors for Codex, Claude Code, ZCode, OpenCode, Pi, Kimi Code, and WorkBuddy evidence sources.
+- Added a desktop Usage dashboard with time-range presets, hourly activity, daily trends, Skill and Agent filtering, usage totals, and top-Skill and top-Agent rankings.
+- Added persisted Usage observations and a shared analytics snapshot contract for CLI bridge and desktop consumers.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.5.10` to `1.6.0`.
+- Skill runs now use explicit Agent-specific evidence rules and count every accepted invocation without de-duplicating the total run metric.
+- Usage collection remains local and only extracts whitelisted metadata required for Skill, Agent, time, project, and session attribution.
+
+### Fixed
+
+- Fixed Codex Usage coverage so active and archived sessions are both scanned without treating generic tool calls as Skill invocations.
+- Fixed ZCode, OpenCode, and WorkBuddy parsing so only completed, attributable Skill calls enter the primary count.
+- Fixed Usage chart reconciliation, heatmap sizing, trend tooltip positioning, and Skill/Agent filter totals in the macOS dashboard.
+
 ## v1.5.10 - 2026-08-22
 
 ### Added
