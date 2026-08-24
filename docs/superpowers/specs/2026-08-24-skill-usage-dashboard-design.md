@@ -24,7 +24,8 @@ Usage 页面改为由统一的 Usage Snapshot analytics contract 驱动。Snapsh
 - 标题为 `Skills Usage` 的页面。
 - 时间范围切换：今天、24H、7D、30D、90D、自定义。
 - 时间范围下方的分时活跃卡片，用 7 天 × 24 小时热力图展示本地时间活跃度。
-- 分离面积图，不使用 stack 叠加；默认按 Skill 展示。
+- 主页面不展示 Agent 数据来源或解析诊断卡片，诊断信息继续保留在 Usage Snapshot 契约中。
+- 分层面积图；不同 series 使用独立上下边界形成可辨识色带，默认按 Skill 展示。
 - 图表 hover 信息卡片，展示当前时间点的总调用次数和各 series 调用次数。
 - 三列统计面板：
   - 活动洞察：技能总数、使用技能总数、技能运行总数、聊天/调用记录。
@@ -49,7 +50,7 @@ Usage 页面改为由统一的 Usage Snapshot analytics contract 驱动。Snapsh
 8. As a Skill Flow desktop user, I want a 分时活跃 heatmap above the usage chart, so that I can quickly see which weekdays and hours are most active.
 9. As a Skill Flow desktop user, I want the heatmap to use low-noise neutral styling, so that it matches the rest of Skill Flow.
 10. As a Skill Flow desktop user, I want the heatmap to summarize the currently selected range, so that it changes when I inspect a different time period.
-11. As a Skill Flow desktop user, I want the usage chart to use separated areas rather than stacked areas, so that each Skill or Agent can be read independently.
+11. As a Skill Flow desktop user, I want the usage chart to render each Skill or Agent as a visually separated color band, so that dense series do not overlap into an unreadable layer.
 12. As a Skill Flow desktop user, I want the usage chart lines to be curved, so that the trend view is visually smoother and easier to scan.
 13. As a Skill Flow desktop user, I want the chart colors to match the dots beside Skill names, so that I can connect the chart to the list.
 14. As a Skill Flow desktop user, I want hover on the chart to show a compact information card, so that I can inspect exact values at a time point.
@@ -118,13 +119,14 @@ type UsageSkillIdentity =
 This shape came from the prototype/data investigation because WorkBuddy, OpenCode, and some Zcode observations can expose a Skill name before Skill Flow can resolve a stable inventory ref.
 
 - Agent Coverage remains a collection-health concept. It answers whether Skill Flow scanned a local Agent source, how many files/sources were scanned, the parser revision, scan status, and diagnostics.
+- Agent Coverage stays in the snapshot for diagnostics and maintenance, but the primary Usage dashboard does not render a data-source notice card.
 - Top Agent is a usage analytics concept. It answers how many Skill Runs an Agent produced in the current range.
 - The Usage dashboard presents Top Agents in the primary three-column panel. Agent Coverage should remain diagnostic and must not drive the Top Agent column.
 - The default chart grouping is by Skill.
 - A selected Skill changes chart grouping to Agent, using only runs for that Skill.
 - A selected Agent changes chart grouping to Skill, using only runs for that Agent.
-- The chart is separated area/line rendering. It must not stack series totals on top of one another.
-- Chart y values are raw per-series counts for each time bucket. The visible total at a bucket is the sum of all visible series at that bucket, but individual series do not visually offset each other.
+- The chart renders cumulative upper and lower boundaries only to form visually separated color bands. Raw per-series counts remain unchanged and continue to drive tooltips and list reconciliation.
+- The top boundary at a bucket is the sum of all visible series at that bucket. Each band thickness represents that series raw count, so series do not visually overlap one another.
 - The chart hover card uses the nearest time bucket and lists visible series counts plus a total.
 - Time ranges are normalized in the runtime using local machine time for presentation buckets.
 - `today` means the current local calendar day.

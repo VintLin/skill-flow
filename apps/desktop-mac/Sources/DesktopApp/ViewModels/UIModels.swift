@@ -215,10 +215,6 @@ struct UsageSnapshotViewData: Equatable {
     let chartSkillsTruncated: Bool
     let matrixTruncated: Bool
 
-    var coverageWarnings: [UsageAgentCoverageViewData] {
-        agentCoverage.filter { $0.status != "scanned" || $0.diagnosticsCount > 0 }
-    }
-
     func chartData(for selection: UsageChartSelectionViewData) -> UsageChartViewData {
         let labels = timeBuckets.map(\.label)
         let candidateRows: [(id: String, label: String, count: Int)]
@@ -230,7 +226,7 @@ struct UsageSnapshotViewData: Equatable {
         case .agent(let agent):
             candidateRows = skillRows(for: agent).map { (id: $0.id, label: $0.skillLabel, count: $0.observedUses) }
         }
-        let rows = Array(candidateRows.prefix(100))
+        let rows = Array(candidateRows.prefix(20))
 
         let series = rows.enumerated().map { index, row in
             let values = timeBuckets.map { bucket -> Int in
@@ -255,7 +251,7 @@ struct UsageSnapshotViewData: Equatable {
                 total + (index < item.values.count ? item.values[index] : 0)
             }
         }
-        return UsageChartViewData(labels: labels, series: series, totals: totals, seriesTruncated: rows.count < candidateRows.count)
+        return UsageChartViewData(labels: labels, series: series, totals: totals)
     }
 
     private func allChartSkillRows() -> [(id: String, label: String, count: Int)] {
@@ -395,7 +391,6 @@ struct UsageChartViewData: Equatable {
     let labels: [String]
     let series: [UsageChartSeriesViewData]
     let totals: [Int]
-    let seriesTruncated: Bool
 }
 
 struct UsageRecentObservationViewData: Identifiable, Equatable {

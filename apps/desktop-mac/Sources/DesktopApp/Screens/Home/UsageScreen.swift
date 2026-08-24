@@ -126,11 +126,8 @@ struct UsageScreen: View {
     private func dashboard(_ snapshot: UsageSnapshotViewData) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             let chart = snapshot.chartData(for: selection)
-            if snapshot.chartSkillsTruncated || chart.seriesTruncated || snapshot.matrixTruncated || !snapshot.coverageWarnings.isEmpty {
-                coverageNotice(snapshot, chartSeriesTruncated: chart.seriesTruncated)
-            }
             heatmap(snapshot)
-            sectionCard(title: nil) { UsageAreaChart(data: chart, theme: theme).frame(height: 300) }
+            sectionCard(title: nil) { UsageAreaChart(data: chart, theme: theme).frame(height: 340) }
             statistics(snapshot)
         }
     }
@@ -155,68 +152,54 @@ struct UsageScreen: View {
                             .frame(width: 28, height: 16, alignment: .leading)
                     }
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 24), spacing: 5) {
-                    ForEach(snapshot.hourlyActivity.indices, id: \.self) { index in
-                        let item = snapshot.hourlyActivity[index]
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(heatmapColor(item.observedUses, maximum: snapshot.hourlyActivity.map(\.observedUses).max() ?? 0))
-                            .frame(height: 16)
-                            .help("周\(item.weekday) \(String(format: "%02d:00", item.hour)) · \(item.observedUses) 次")
+                GeometryReader { proxy in
+                    let layout = UsageHeatmapGeometry(size: proxy.size, columnSpacing: 4, rowSpacing: 5)
+                    let maximum = snapshot.hourlyActivity.map(\.observedUses).max() ?? 0
+                    ZStack(alignment: .topLeading) {
+                        ForEach(0..<7, id: \.self) { weekday in
+                            ForEach(0..<24, id: \.self) { hour in
+                                let item = hourlyActivity(snapshot, weekday: weekday, hour: hour)
+                                let frame = layout.frame(weekday: weekday, hour: hour)
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(heatmapColor(item.observedUses, maximum: maximum))
+                                    .frame(width: frame.width, height: frame.height)
+                                    .position(x: frame.midX, y: frame.midY)
+                                    .help("\(weekdayTitle(weekday)) \(String(format: "%02d:00", hour)) · \(item.observedUses) 次")
+                            }
+                        }
+                    }
+                }
+                .frame(height: 142)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                Color.clear.frame(width: 28, height: 16)
+                GeometryReader { proxy in
+                    let layout = UsageHeatmapGeometry(size: CGSize(width: proxy.size.width, height: 142), columnSpacing: 4, rowSpacing: 5)
+                    ZStack(alignment: .topLeading) {
+                        ForEach([0, 3, 6, 9, 12, 15, 18, 21], id: \.self) { hour in
+                            let frame = layout.frame(weekday: 0, hour: hour)
+                            Text(String(format: "%02d", hour))
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(AppTheme.textMuted(for: theme))
+                                .position(x: frame.midX, y: 8)
+                        }
                     }
                 }
             }
-            HStack {
-                Spacer().frame(width: 36)
-                ForEach([0, 3, 6, 9, 12, 15, 18, 21], id: \.self) { hour in
-                    Text(String(format: "%02d", hour))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 16)
+            HStack(spacing: 5) {
+                Spacer()
+                Text("少")
+                ForEach(0..<7, id: \.self) { level in
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(heatmapLegendColor(level))
+                        .frame(width: 14, height: 14)
                 }
+                Text("多")
             }
+            .font(.system(size: 10))
+            .foregroundStyle(AppTheme.textMuted(for: theme))
         }
-    }
-
-    private func coverageNotice(_ snapshot: UsageSnapshotViewData, chartSeriesTruncated: Bool) -> some View {
-        sectionCard(title: nil) {
-            HStack(alignment: .top, spacing: 9) {
-                Image(systemName: "info.circle")
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("数据来源提示")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    if snapshot.matrixTruncated {
-                        Text("Skill–Agent 关联记录已达到返回上限，筛选后的明细可能不完整。")
-                            .font(.system(size: 11))
-                            .foregroundStyle(AppTheme.textMuted(for: theme))
-                    }
-                    if snapshot.chartSkillsTruncated {
-                        Text("图表 Skill 数量已达到返回上限，未展示的 Skill 仍计入总运行次数。")
-                            .font(.system(size: 11))
-                            .foregroundStyle(AppTheme.textMuted(for: theme))
-                    } else if chartSeriesTruncated {
-                        Text("当前筛选的图表最多展示 100 个 series，未展示的明细仍计入总运行次数。")
-                            .font(.system(size: 11))
-                            .foregroundStyle(AppTheme.textMuted(for: theme))
-                    }
-                    if !snapshot.coverageWarnings.isEmpty {
-                        Text(snapshot.coverageWarnings.map { coverageSummary($0) }.joined(separator: " · "))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(AppTheme.textMuted(for: theme))
-                    }
-                }
-            }
-        }
-    }
-
-    private func coverageSummary(_ coverage: UsageAgentCoverageViewData) -> String {
-        var parts = ["\(coverage.agent)：\(coverage.status)"]
-        if coverage.diagnosticsCount > 0 { parts.append("诊断 \(coverage.diagnosticsCount)") }
-        if let sourcesFound = coverage.sourcesFound { parts.append("源 \(sourcesFound)") }
-        if let sourceFilesScanned = coverage.sourceFilesScanned { parts.append("文件 \(sourceFilesScanned)") }
-        if let parserRevision = coverage.parserRevision, !parserRevision.isEmpty { parts.append(parserRevision) }
-        return parts.joined(separator: " · ")
     }
 
     private func statistics(_ snapshot: UsageSnapshotViewData) -> some View {
@@ -316,6 +299,20 @@ struct UsageScreen: View {
         return AppTheme.brand(for: accent, in: theme).opacity(0.18 + (0.72 * Double(value) / Double(maximum)))
     }
 
+    private func heatmapLegendColor(_ level: Int) -> Color {
+        guard level > 0 else { return AppTheme.pageBackground(for: theme).opacity(0.52) }
+        return AppTheme.brand(for: accent, in: theme).opacity(0.18 + 0.12 * Double(level))
+    }
+
+    private func hourlyActivity(_ snapshot: UsageSnapshotViewData, weekday: Int, hour: Int) -> UsageHourlyActivityViewData {
+        snapshot.hourlyActivity.first { $0.weekday == weekday && $0.hour == hour }
+            ?? UsageHourlyActivityViewData(weekday: weekday, hour: hour, observedUses: 0)
+    }
+
+    private func weekdayTitle(_ weekday: Int) -> String {
+        ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][min(max(weekday, 0), 6)]
+    }
+
     private func sectionCard<Content: View>(title: String?, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title { Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme)) }
@@ -401,23 +398,30 @@ private struct UsageAreaChart: View {
 
     private func drawChart(context: inout GraphicsContext, size: CGSize) {
         let plot = CGRect(x: 38, y: 8, width: max(1, size.width - 48), height: max(1, size.height - 30))
-        let maximum = max(1, data.series.flatMap(\.values).max() ?? 0)
-        for tick in 0...4 {
-            let ratio = CGFloat(tick) / 4
+        let bands = UsageAreaBandGeometry.make(values: data.series.map(\.values))
+        let rawMaximum = bands.flatMap(\.upper).max() ?? 0
+        let tickStep = max(1, Int(ceil(Double(rawMaximum) / 5.0)))
+        let maximum = tickStep * 5
+        for tick in 0...5 {
+            let ratio = CGFloat(tick) / 5
             let y = plot.maxY - (plot.height * ratio)
             var line = Path(); line.move(to: CGPoint(x: plot.minX, y: y)); line.addLine(to: CGPoint(x: plot.maxX, y: y))
             context.stroke(line, with: .color(AppTheme.cardBorder(for: theme).opacity(0.55)), lineWidth: 0.5)
-            context.draw(Text("\(Int(Double(maximum) * Double(tick) / 4.0))").font(.system(size: 10, design: .rounded)).foregroundStyle(AppTheme.textMuted(for: theme)), at: CGPoint(x: 14, y: y))
+            context.draw(Text("\(tickStep * tick)").font(.system(size: 10, design: .rounded)).foregroundStyle(AppTheme.textMuted(for: theme)), at: CGPoint(x: 14, y: y))
         }
-        for series in data.series {
-            let points = series.values.enumerated().map { index, value in
-                CGPoint(x: plot.minX + (plot.width * CGFloat(index) / CGFloat(max(data.labels.count - 1, 1))), y: plot.maxY - (plot.height * CGFloat(value) / CGFloat(maximum)))
+        for (series, band) in zip(data.series, bands) {
+            let upperPoints = band.upper.enumerated().map { index, value in
+                chartPoint(index: index, value: value, maximum: maximum, plot: plot)
             }
-            guard let first = points.first, let last = points.last else { continue }
-            let curve = smoothPath(points)
-            var area = curve; area.addLine(to: CGPoint(x: last.x, y: plot.maxY)); area.addLine(to: CGPoint(x: first.x, y: plot.maxY)); area.closeSubpath()
-            context.fill(area, with: .color(Self.palette[series.colorIndex % Self.palette.count].opacity(0.15)))
-            context.stroke(curve, with: .color(Self.palette[series.colorIndex % Self.palette.count]), lineWidth: 1.8)
+            let lowerPoints = band.lower.enumerated().map { index, value in
+                chartPoint(index: index, value: value, maximum: maximum, plot: plot)
+            }
+            guard !upperPoints.isEmpty, upperPoints.count == lowerPoints.count else { continue }
+            let area = smoothBandPath(upper: upperPoints, lower: lowerPoints)
+            let upperCurve = smoothPath(upperPoints)
+            let color = Self.palette[series.colorIndex % Self.palette.count]
+            context.fill(area, with: .color(color.opacity(0.48)))
+            context.stroke(upperCurve, with: .color(color), lineWidth: 1.6)
         }
         if let hoveredIndex, hoveredIndex < data.labels.count {
             let x = plot.minX + (plot.width * CGFloat(hoveredIndex) / CGFloat(max(data.labels.count - 1, 1)))
@@ -461,20 +465,98 @@ private struct UsageAreaChart: View {
         return min(max(44, x - 30), max(44, width - 190))
     }
 
+    private func chartPoint(index: Int, value: Int, maximum: Int, plot: CGRect) -> CGPoint {
+        CGPoint(
+            x: plot.minX + (plot.width * CGFloat(index) / CGFloat(max(data.labels.count - 1, 1))),
+            y: plot.maxY - (plot.height * CGFloat(value) / CGFloat(maximum))
+        )
+    }
+
     private func smoothPath(_ points: [CGPoint]) -> Path {
         guard let first = points.first else { return Path() }
-        var path = Path(); path.move(to: first)
-        guard points.count > 1 else { return path }
+        var path = Path()
+        path.move(to: first)
+        addSmoothSegments(points, to: &path)
+        return path
+    }
+
+    private func smoothBandPath(upper: [CGPoint], lower: [CGPoint]) -> Path {
+        guard let firstUpper = upper.first, let lastLower = lower.last else { return Path() }
+        var path = Path()
+        path.move(to: firstUpper)
+        addSmoothSegments(upper, to: &path)
+        path.addLine(to: lastLower)
+        addSmoothSegments(Array(lower.reversed()), to: &path)
+        path.closeSubpath()
+        return path
+    }
+
+    private func addSmoothSegments(_ points: [CGPoint], to path: inout Path) {
+        guard points.count > 1 else { return }
         for index in 0..<(points.count - 1) {
             let previous = points[max(0, index - 1)]
             let current = points[index]
             let next = points[index + 1]
             let afterNext = points[min(points.count - 1, index + 2)]
-            let control1 = CGPoint(x: current.x + (next.x - previous.x) / 6, y: current.y + (next.y - previous.y) / 6)
-            let control2 = CGPoint(x: next.x - (afterNext.x - current.x) / 6, y: next.y - (afterNext.y - current.y) / 6)
+            let minimumY = min(current.y, next.y)
+            let maximumY = max(current.y, next.y)
+            let control1 = CGPoint(
+                x: current.x + (next.x - previous.x) / 10,
+                y: min(maximumY, max(minimumY, current.y + (next.y - previous.y) / 10))
+            )
+            let control2 = CGPoint(
+                x: next.x - (afterNext.x - current.x) / 10,
+                y: min(maximumY, max(minimumY, next.y - (afterNext.y - current.y) / 10))
+            )
             path.addCurve(to: next, control1: control1, control2: control2)
         }
-        return path
+    }
+}
+
+struct UsageHeatmapGeometry {
+    static let weekdayCount = 7
+    static let hourCount = 24
+
+    let frames: [CGRect]
+
+    init(size: CGSize, columnSpacing: CGFloat, rowSpacing: CGFloat) {
+        let totalColumnSpacing = columnSpacing * CGFloat(Self.hourCount - 1)
+        let totalRowSpacing = rowSpacing * CGFloat(Self.weekdayCount - 1)
+        let cellWidth = max(0, size.width - totalColumnSpacing) / CGFloat(Self.hourCount)
+        let cellHeight = max(0, size.height - totalRowSpacing) / CGFloat(Self.weekdayCount)
+        frames = (0..<(Self.weekdayCount * Self.hourCount)).map { index in
+            let weekday = index / Self.hourCount
+            let hour = index % Self.hourCount
+            return CGRect(
+                x: CGFloat(hour) * (cellWidth + columnSpacing),
+                y: CGFloat(weekday) * (cellHeight + rowSpacing),
+                width: cellWidth,
+                height: cellHeight
+            )
+        }
+    }
+
+    func frame(weekday: Int, hour: Int) -> CGRect {
+        guard (0..<Self.weekdayCount).contains(weekday), (0..<Self.hourCount).contains(hour) else { return .zero }
+        return frames[(weekday * Self.hourCount) + hour]
+    }
+}
+
+struct UsageAreaBandGeometry: Equatable {
+    let lower: [Int]
+    let upper: [Int]
+
+    static func make(values: [[Int]]) -> [UsageAreaBandGeometry] {
+        let valueCount = values.map(\.count).max() ?? 0
+        var baseline = Array(repeating: 0, count: valueCount)
+        return values.map { series in
+            let lower = baseline
+            let upper = (0..<valueCount).map { index in
+                baseline[index] += index < series.count ? series[index] : 0
+                return baseline[index]
+            }
+            return UsageAreaBandGeometry(lower: lower, upper: upper)
+        }
     }
 }
 
