@@ -39,15 +39,25 @@ The Import page seeds recommended cards from bundled `recommendations.json`. Car
 
 ### Bridge Timeout
 
-Add a fixed timeout to `BridgeClient.send`, with a default of 60 seconds. If the helper process has not exited by then, terminate it, clear pipe handlers, and throw `BridgeClientError.timeout(timeoutMs)`.
+Add a bounded timeout to `BridgeClient.send`. Ordinary commands use 60 seconds,
+network-heavy import/add commands use 5 minutes, and managed update uses 5
+minutes per explicitly selected source with a 15-minute ceiling. Update-all
+uses the 15-minute ceiling. If the helper process has not exited by its active
+budget, terminate it, clear pipe handlers, and throw
+`BridgeClientError.timeout(timeoutMs)`.
 
-The timeout should cover all bridge commands. This is acceptable because desktop actions should not wait indefinitely. Long commands can later receive command-specific budgets if needed.
+The timeout must cover all bridge commands. Command-specific budgets may be
+longer than the ordinary default, but no desktop action may wait indefinitely.
 
 Implementation detail:
 
 - Race subprocess termination against a sleep task.
 - On timeout, call `process.terminate()`.
-- If the process does not terminate shortly after SIGTERM, still return timeout to the UI and let the OS clean up.
+- If the process does not terminate shortly after SIGTERM, force-kill only the
+  helper and return timeout to the UI; ordinary timeout does not expand to its
+  descendants. During application Quit, the later Desktop Quit Operation
+  Recovery design separately stops every cancellable helper process group,
+  waits five seconds, then kills surviving groups.
 - Keep existing stdout and stderr parsing unchanged for non-timeout exits.
 
 ### Network Request Timeout
@@ -112,7 +122,7 @@ If the Swift test harness cannot easily spawn a hanging helper, cover bridge tim
 
 ## Risks
 
-- A 60 second bridge timeout can interrupt a legitimately slow import on poor networks. This is acceptable for desktop UX because indefinite loading is worse, and the user can retry.
+- A bounded bridge timeout can interrupt a legitimately slow network action. Import and update receive larger command-specific budgets, while indefinite loading remains disallowed.
 - Timeout behavior in Swift subprocess handling must avoid leaving pipe readability handlers attached.
 - Adding a fetch helper touches shared integration code. Keep the helper small and avoid broad refactors.
 

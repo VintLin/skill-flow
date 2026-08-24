@@ -35,6 +35,10 @@ final class GroupOperationCoordinator {
     private(set) var updatePhases: [String: GroupOperationQueue.Phase] = [:]
     private(set) var importPhases: [String: GroupOperationQueue.Phase] = [:]
 
+    var activeProtectedOperation: GroupOperationQueue.Operation? {
+        queue.runningOperation
+    }
+
     var importingImportGroupId: String? {
         queue.runningImportGroupId
             ?? testingImportPhaseOverrides.first(where: { $0.value == .running })?.key
@@ -88,6 +92,8 @@ final class GroupOperationCoordinator {
         switch queue.enqueueUpdate(sourceId: normalized) {
         case .alreadyPresent:
             hosts?.onAlreadyQueued()
+        case .shutDown:
+            return
         case .enqueued:
             publishPhases()
             await drain()
@@ -98,6 +104,8 @@ final class GroupOperationCoordinator {
         switch queue.enqueueBulkUpdate(sourceIds: sourceIds) {
         case .alreadyPresent:
             hosts?.onAlreadyQueued()
+        case .shutDown:
+            return
         case .enqueued:
             publishPhases()
             await drain()
@@ -118,6 +126,8 @@ final class GroupOperationCoordinator {
         switch queue.enqueueImport(groupId: normalized) {
         case .alreadyPresent:
             hosts?.onAlreadyQueued()
+        case .shutDown:
+            return
         case .enqueued:
             pendingImportRequestsByGroupId[normalized] = PendingImportRequest(
                 locator: locator,
@@ -128,6 +138,21 @@ final class GroupOperationCoordinator {
             publishPhases()
             await drain()
         }
+    }
+
+    /// Freezes the session queue and returns the operation whose bridge helper
+    /// must be cancelled before AppKit may finish terminating.
+    @discardableResult
+    func shutdownForTermination() -> GroupOperationQueue.Operation? {
+        let active = queue.shutdown()
+        pendingImportRequestsByGroupId.removeAll()
+        publishPhases()
+        return active
+    }
+
+    func resumeAfterRecovery() {
+        queue.resumeAfterRecovery()
+        publishPhases()
     }
 
     private func drain() async {

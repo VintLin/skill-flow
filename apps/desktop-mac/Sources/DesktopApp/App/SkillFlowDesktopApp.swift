@@ -4,14 +4,21 @@ import SwiftUI
 @main
 struct SkillFlowDesktopApp: App {
     @Environment(\.openWindow) private var openWindow
+    @NSApplicationDelegateAdaptor(SkillFlowApplicationDelegate.self) private var appDelegate
 
     @State private var container = DesktopAppContainer()
 
     var body: some Scene {
         Window(L10n.string("app.name", locale: selectedLocale), id: "main-window") {
-            container.homeContainer.makeView()
-                .environment(\.locale, selectedLocale)
-                .background(WindowTitlebarConfigurator())
+            ZStack {
+                container.homeContainer.makeView()
+                TerminationStatusOverlay(coordinator: container.terminationCoordinator)
+            }
+            .environment(\.locale, selectedLocale)
+            .background(WindowTitlebarConfigurator())
+            .onAppear {
+                appDelegate.terminationCoordinator = container.terminationCoordinator
+            }
         }
         .windowStyle(.hiddenTitleBar)
 
@@ -50,6 +57,81 @@ struct SkillFlowDesktopApp: App {
     private var menuIcon: String {
         container.mainViewModel.healthStatus.menuIconSystemName
     }
+}
+
+@MainActor
+final class SkillFlowApplicationDelegate: NSObject, NSApplicationDelegate {
+    weak var terminationCoordinator: ApplicationTerminationCoordinator?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let terminationCoordinator else { return .terminateNow }
+        let disposition = terminationCoordinator.requestTermination { allowed in
+            sender.reply(toApplicationShouldTerminate: allowed)
+        }
+        if disposition == .terminateLater {
+            sender.activate(ignoringOtherApps: true)
+            sender.windows.first(where: { $0.canBecomeKey })?.makeKeyAndOrderFront(nil)
+        }
+        return disposition == .terminateNow ? .terminateNow : .terminateLater
+    }
+}
+
+private struct TerminationStatusOverlay: View {
+    let coordinator: ApplicationTerminationCoordinator
+
+    var body: some View {
+        if coordinator.phase == .recoveryRequired {
+            VStack {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(L10n.string("termination.recovery_required", locale: locale))
+                        .font(.system(size: 13, weight: .semibold))
+                    Button(L10n.string("termination.retry", locale: locale)) {
+                        coordinator.retryRecovery()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(10)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .shadow(radius: 12)
+                Spacer()
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if coordinator.phase != .idle {
+            ZStack {
+                Color.black.opacity(0.3).ignoresSafeArea()
+                VStack(spacing: 14) {
+                    if coordinator.phase == .stoppingAndRestoring {
+                        ProgressView()
+                        Text(L10n.string("termination.stopping", locale: locale))
+                            .font(.system(size: 15, weight: .semibold))
+                    } else {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(L10n.string("termination.failed", locale: locale))
+                            .font(.system(size: 15, weight: .semibold))
+                        HStack {
+                            Button(L10n.string("termination.retry", locale: locale)) {
+                                coordinator.retryRecovery()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button(L10n.string("termination.cancel_exit", locale: locale)) {
+                                coordinator.cancelExit()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .shadow(radius: 20)
+            }
+        }
+    }
+
+    @Environment(\.locale) private var locale
 }
 
 private struct WindowTitlebarConfigurator: NSViewRepresentable {

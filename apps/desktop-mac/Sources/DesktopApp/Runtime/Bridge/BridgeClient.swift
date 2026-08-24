@@ -105,12 +105,101 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
+    private final class ActiveHelperRegistry: @unchecked Sendable {
+        private enum Mode {
+            case normal
+            case terminating
+            case recoveryRequired
+        }
+
+        private struct Entry {
+            let process: Process
+            let command: BridgeCommand
+        }
+
+        private var entries: [ObjectIdentifier: Entry] = [:]
+        private var mode: Mode = .normal
+        private let lock = NSLock()
+
+        func run(_ process: Process, command: BridgeCommand) throws {
+            lock.lock()
+            defer { lock.unlock() }
+            if shouldCancelBeforeLaunchLocked(command) {
+                throw BridgeClientError.commandFailed("Operation cancelled because Skill Flow is terminating.")
+            }
+            try process.run()
+            entries[ObjectIdentifier(process)] = Entry(process: process, command: command)
+        }
+
+        func clear(ifMatching process: Process) {
+            lock.lock()
+            entries.removeValue(forKey: ObjectIdentifier(process))
+            lock.unlock()
+        }
+
+        func requestTerminationCancellation() {
+            lock.lock()
+            mode = .terminating
+            lock.unlock()
+        }
+
+        func clearTerminationCancellation() {
+            lock.lock()
+            mode = .normal
+            lock.unlock()
+        }
+
+        func markRecoveryRequired() {
+            lock.lock()
+            mode = .recoveryRequired
+            lock.unlock()
+        }
+
+        func shouldCancelBeforeLaunch(_ command: BridgeCommand) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return shouldCancelBeforeLaunchLocked(command)
+        }
+
+        private func shouldCancelBeforeLaunchLocked(_ command: BridgeCommand) -> Bool {
+            switch mode {
+            case .normal:
+                return false
+            case .terminating:
+                return command.helperTerminationRole.isCancellableOnQuit
+            case .recoveryRequired:
+                return !command.helperTerminationRole.isAllowedDuringRecoveryRequired
+            }
+        }
+
+        func hasCancellableHelpers() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return entries.values.contains { entry in
+                entry.process.isRunning && entry.command.helperTerminationRole.isCancellableOnQuit
+            }
+        }
+
+        func cancellableProcesses() -> [Process] {
+            lock.lock()
+            defer { lock.unlock() }
+            return entries.values.compactMap { entry in
+                guard entry.process.isRunning, entry.command.helperTerminationRole.isCancellableOnQuit else {
+                    return nil
+                }
+                return entry.process
+            }
+        }
+    }
+
     private let mutationCoordinator = MutationCoordinator()
     private let commandTimeoutMilliseconds: UInt64
     private let importCommandTimeoutMilliseconds: UInt64
     private let updateSourceTimeoutMilliseconds: UInt64
     private let updateCommandMaximumTimeoutMilliseconds: UInt64
     private let commandTimeoutGraceMilliseconds: UInt64
+    private let quitCancellationGraceMilliseconds: UInt64
+    private let activeHelper = ActiveHelperRegistry()
 
     init(
         commandTimeoutMilliseconds: UInt64 = 60_000,
@@ -119,13 +208,15 @@ final class BridgeClient: @unchecked Sendable {
         // One source receives five minutes; selected updates scale to a 15-minute ceiling.
         updateSourceTimeoutMilliseconds: UInt64 = 300_000,
         updateCommandMaximumTimeoutMilliseconds: UInt64 = 900_000,
-        commandTimeoutGraceMilliseconds: UInt64 = 1_000
+        commandTimeoutGraceMilliseconds: UInt64 = 1_000,
+        quitCancellationGraceMilliseconds: UInt64 = 5_000
     ) {
         self.commandTimeoutMilliseconds = commandTimeoutMilliseconds
         self.importCommandTimeoutMilliseconds = importCommandTimeoutMilliseconds
         self.updateSourceTimeoutMilliseconds = updateSourceTimeoutMilliseconds
         self.updateCommandMaximumTimeoutMilliseconds = updateCommandMaximumTimeoutMilliseconds
         self.commandTimeoutGraceMilliseconds = commandTimeoutGraceMilliseconds
+        self.quitCancellationGraceMilliseconds = quitCancellationGraceMilliseconds
     }
 
     func bootstrap() async throws -> BridgeResponse {
@@ -228,14 +319,21 @@ final class BridgeClient: @unchecked Sendable {
         enabledTargets: [String],
         skillSelectionMode: ImportSkillSelectionMode = .selected
     ) async throws -> BridgeResponse {
-        try await mutationCoordinator.runMutation {
-            try await self.sendImportSourceDraft(
-                locator: locator,
-                selectedSkills: selectedSkills,
-                enabledTargets: enabledTargets,
-                skillSelectionMode: skillSelectionMode
-            )
+        let prepared = try await prepareImportSource(locator: locator)
+        guard
+            let payload = prepared.data?.value as? [String: Any],
+            payload["status"] as? String == "ready",
+            let preparationId = payload["preparationId"] as? String,
+            !preparationId.isEmpty
+        else {
+            throw BridgeClientError.commandFailed("Import preparation did not produce a committable source.")
         }
+        return try await commitImportSource(
+            preparationId: preparationId,
+            selectedSkills: selectedSkills,
+            enabledTargets: enabledTargets,
+            skillSelectionMode: skillSelectionMode
+        )
     }
 
     private func sendCommitImportSourceDraft(
@@ -248,25 +346,6 @@ final class BridgeClient: @unchecked Sendable {
             command: .commitImportSource,
             payload: [
                 "preparationId": AnyCodable(preparationId),
-                "draft": AnyCodable([
-                    "skillSelectionMode": skillSelectionMode.rawValue,
-                    "selectedSkills": selectedSkills.map(\.bridgePayload),
-                    "enabledTargets": enabledTargets,
-                ]),
-            ]
-        )
-    }
-
-    private func sendImportSourceDraft(
-        locator: String,
-        selectedSkills: [ImportSkillSelection],
-        enabledTargets: [String],
-        skillSelectionMode: ImportSkillSelectionMode
-    ) async throws -> BridgeResponse {
-        try await send(
-            command: .importSource,
-            payload: [
-                "locator": AnyCodable(locator),
                 "draft": AnyCodable([
                     "skillSelectionMode": skillSelectionMode.rawValue,
                     "selectedSkills": selectedSkills.map(\.bridgePayload),
@@ -392,6 +471,9 @@ final class BridgeClient: @unchecked Sendable {
     }
 
     private func send(command: BridgeCommand, payload: [String: AnyCodable]? = nil) async throws -> BridgeResponse {
+        if activeHelper.shouldCancelBeforeLaunch(command) {
+            throw BridgeClientError.commandFailed("Protected operation cancelled because Skill Flow is terminating.")
+        }
         let helperURL = try resolveHelperURL()
         let request = BridgeRequest(command: command, payload: payload)
         let requestData = try JSONEncoder().encode(request)
@@ -405,14 +487,16 @@ final class BridgeClient: @unchecked Sendable {
         )
 
         let process = Process()
-        if nodeExecutable == "node" {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = ["node", helperURL.path, "bridge", "--json"]
-        } else {
-            process.executableURL = URL(fileURLWithPath: nodeExecutable)
-            process.arguments = [helperURL.path, "bridge", "--json"]
-        }
-        process.environment = Self.bridgeEnvironment(bundledNodeBinDirectory: bundledNodeBinDirectory)
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        let helperArguments = nodeExecutable == "node"
+            ? ["/usr/bin/env", "node", helperURL.path, "bridge", "--json"]
+            : [nodeExecutable, helperURL.path, "bridge", "--json"]
+        process.arguments = ["-c", Self.processGroupLauncherScript, "skill-flow-helper"] + helperArguments
+        var environment = Self.bridgeEnvironment(bundledNodeBinDirectory: bundledNodeBinDirectory)
+        environment["SKILL_FLOW_HELPER_TIMEOUT_GRACE_SECONDS"] = String(
+            Double(commandTimeoutGraceMilliseconds) / 1_000
+        )
+        process.environment = environment
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()
@@ -439,7 +523,8 @@ final class BridgeClient: @unchecked Sendable {
             errorBuffer.append(chunk)
         }
 
-        try process.run()
+        try activeHelper.run(process, command: command)
+        defer { activeHelper.clear(ifMatching: process) }
         inputPipe.fileHandleForWriting.write(requestData)
         inputPipe.fileHandleForWriting.closeFile()
 
@@ -555,33 +640,88 @@ final class BridgeClient: @unchecked Sendable {
     }
 
     private func terminateTimedOutProcess(_ process: Process) async {
-        let state = ProcessExitWaitState()
-        process.terminationHandler = { _ in
-            state.resolve(.exited)
-        }
-
+        guard process.isRunning else { return }
         process.terminate()
+        if await waitUntilStopped(process, timeoutMilliseconds: commandTimeoutGraceMilliseconds) { return }
+        guard process.isRunning else { return }
+        kill(process.processIdentifier, SIGUSR2)
+        _ = await waitUntilStopped(process, timeoutMilliseconds: commandTimeoutGraceMilliseconds)
+    }
 
-        let didExitAfterTerminate = await waitForProcessExit(
-            process,
-            state: state,
-            timeoutMilliseconds: commandTimeoutGraceMilliseconds
-        )
-        guard !didExitAfterTerminate, process.isRunning else {
-            return
-        }
-
-        let killState = ProcessExitWaitState()
-        process.terminationHandler = { _ in
-            killState.resolve(.exited)
-        }
-        kill(process.processIdentifier, SIGKILL)
-        _ = await waitForProcessExit(
-            process,
-            state: killState,
-            timeoutMilliseconds: commandTimeoutGraceMilliseconds
+    /// Cancels the helper serving the currently running protected desktop
+    /// operation. The shell wrapper owns a dedicated helper process group: TERM
+    /// is forwarded cooperatively, then USR1 makes the wrapper SIGKILL that
+    /// entire group after the quit grace period.
+    func cancelActiveHelperForTermination() async -> Bool {
+        activeHelper.requestTerminationCancellation()
+        return await terminateProcessGroups(
+            activeHelper.cancellableProcesses(),
+            graceMilliseconds: quitCancellationGraceMilliseconds
         )
     }
+
+    var hasActiveCancellableHelper: Bool {
+        activeHelper.hasCancellableHelpers()
+    }
+
+    func enterRecoveryRequiredState() {
+        activeHelper.markRecoveryRequired()
+    }
+
+    func resumeProtectedOperationsAfterRecovery() {
+        activeHelper.clearTerminationCancellation()
+    }
+
+    private func terminateProcessGroups(_ processes: [Process], graceMilliseconds: UInt64) async -> Bool {
+        let running = processes.filter(\.isRunning)
+        guard !running.isEmpty else { return true }
+        for process in running {
+            kill(process.processIdentifier, SIGINT)
+        }
+        if await waitUntilAllStopped(running, timeoutMilliseconds: graceMilliseconds) { return true }
+        for process in running where process.isRunning {
+            kill(process.processIdentifier, SIGUSR1)
+        }
+        return await waitUntilAllStopped(running, timeoutMilliseconds: commandTimeoutGraceMilliseconds)
+    }
+
+    private func waitUntilStopped(_ process: Process, timeoutMilliseconds: UInt64) async -> Bool {
+        await waitUntilAllStopped([process], timeoutMilliseconds: timeoutMilliseconds)
+    }
+
+    private func waitUntilAllStopped(_ processes: [Process], timeoutMilliseconds: UInt64) async -> Bool {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutMilliseconds) / 1_000)
+        while processes.contains(where: \.isRunning), Date() < deadline {
+            try? await Task.sleep(nanoseconds: min(Self.nanoseconds(fromMilliseconds: 10), Self.nanoseconds(fromMilliseconds: timeoutMilliseconds)))
+        }
+        return !processes.contains(where: \.isRunning)
+    }
+
+    private static let processGroupLauncherScript = #"""
+    set -m
+    "$@" <&0 &
+    child=$!
+    terminate_child_after_timeout_grace() {
+      kill -TERM "$child" 2>/dev/null
+      (
+        sleep "${SKILL_FLOW_HELPER_TIMEOUT_GRACE_SECONDS:-1}"
+        kill -KILL "$child" 2>/dev/null
+      ) &
+    }
+    trap 'terminate_child_after_timeout_grace' TERM
+    wait_for_group() {
+      while kill -0 -$child 2>/dev/null; do
+        sleep 0.05
+      done
+    }
+    trap 'kill -TERM -$child 2>/dev/null; wait "$child"; wait_for_group' INT
+    trap 'kill -KILL "$child" 2>/dev/null; exit 137' USR2
+    trap 'kill -KILL -$child 2>/dev/null; exit 137' USR1
+    wait "$child"
+    status=$?
+    trap - TERM USR1
+    exit "$status"
+    """#
 
     private static func nanoseconds(fromMilliseconds milliseconds: UInt64) -> UInt64 {
         let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)

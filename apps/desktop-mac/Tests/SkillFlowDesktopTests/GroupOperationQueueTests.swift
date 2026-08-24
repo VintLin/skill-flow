@@ -78,4 +78,25 @@ final class GroupOperationQueueTests: XCTestCase {
         XCTAssertEqual(queue.enqueueBulkUpdate(sourceIds: ["a", "b"]), .enqueued)
         XCTAssertEqual(queue.enqueueBulkUpdate(sourceIds: ["c"]), .alreadyPresent)
     }
+
+    func testShutdownDiscardsQueuedWorkAndFreezesTheQueueUntilRecoveryResumesIt() {
+        let queue = GroupOperationQueue()
+
+        XCTAssertEqual(queue.enqueueUpdate(sourceId: "running"), .enqueued)
+        XCTAssertEqual(queue.enqueueImport(groupId: "queued"), .enqueued)
+        XCTAssertEqual(queue.startNext(), .update(sourceId: "running"))
+
+        XCTAssertEqual(queue.shutdown(), .update(sourceId: "running"))
+        XCTAssertFalse(queue.hasQueuedWork)
+        XCTAssertEqual(queue.updatePhase(for: "running"), .running)
+        XCTAssertNil(queue.importPhase(for: "queued"))
+
+        XCTAssertEqual(queue.enqueueUpdate(sourceId: "later"), .shutDown)
+        XCTAssertEqual(queue.enqueueImport(groupId: "later"), .shutDown)
+        XCTAssertEqual(queue.enqueueBulkUpdate(sourceIds: ["later"]), .shutDown)
+
+        queue.resumeAfterRecovery()
+        XCTAssertNil(queue.updatePhase(for: "running"))
+        XCTAssertEqual(queue.enqueueUpdate(sourceId: "later"), .enqueued)
+    }
 }

@@ -64,7 +64,7 @@ When adding, removing, or renaming a bridge command:
 2. Update the golden fixture in `packages/shared-types/src/fixtures/bridge-command-catalog.json`.
 3. Update the CLI handler table in `apps/cli/src/bridge-command.ts`.
 4. Update `BridgeCommand` in `apps/desktop-mac/Sources/DesktopApp/Runtime/Models/BridgeProtocol.swift`.
-5. Update `BridgeCommand.usesImportTimeout` when the command should use the import timeout.
+5. Update `BridgeCommand.usesExtendedNetworkTimeout` when the command should use the extended desktop helper timeout.
 6. Run the TypeScript protocol tests, CLI bridge tests, and Swift bridge catalog tests.
 
 ## State Files
@@ -74,10 +74,21 @@ When adding, removing, or renaming a bridge command:
 | `manifest.json` | User intent: sources, selected skills, enabled targets, display state. |
 | `lock.json` | Resolved state: inventory snapshots, projections, source metadata. |
 | `preferences.json` | Local preferences, target overrides, desktop-facing settings. |
+| `recovery/active.json` | Internal compensation journal for one interrupted managed Update or final Import; not authority and never resumed as queued work. |
 
 State compatibility is implemented in `packages/storage` and domain types live in `packages/domain`.
 
 State shape changes are external changes. Add storage/domain tests and migration or normalizer coverage.
+
+The recovery journal has structural and semantic validation and must be
+recovered before bootstrap prunes missing checkouts. It records source kind,
+checkout/source ownership, and target IDs. Recovery re-detects current target
+roots and validates the entire authority snapshot and every path before any
+fingerprint, cleanup, or restore. Invalid structure returns
+`RECOVERY_JOURNAL_INVALID`; invalid path ownership returns
+`RECOVERY_PATH_OWNERSHIP_INVALID`. Neither supplies filesystem paths to cleanup
+logic. Migration under the schema-independent mutation lock recovers current
+V2 state first, rejects V1 plus an active journal, and leaves dry-run read-only.
 
 External sources use `ownership: "external"` in manifest/lock state. Their
 paths are observation-only: they cannot receive target bindings, managed

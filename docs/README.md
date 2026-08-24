@@ -11,8 +11,8 @@
 | `ARCHITECTURE.md` | 运行时分层、状态模型和 package 边界。 |
 | `DESIGN.md` | desktop UI design token、交互语言和可访问性规则。 |
 | `contracts/` | bridge protocol 和 state file 契约入口。 |
-| `superpowers/specs/` | 当前或近期需求规格。实现前先确认对应 spec。 |
-| `superpowers/plans/` | 针对 specs 的实施计划和审计记录。完成后归档。 |
+| `superpowers/specs/` | 当前或近期需求规格。无活跃规格时只保留情况说明。 |
+| `superpowers/plans/` | 针对 specs 的实施计划和审计记录。无活跃计划时只保留情况说明。 |
 | `verification/` | 验证矩阵、测试覆盖说明和 UI 状态矩阵。 |
 | `issues/` | 仍需跟踪的问题记录。 |
 | `feedback/` | 用户反馈、交互审计和改进建议。 |

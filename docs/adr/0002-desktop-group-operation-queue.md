@@ -14,4 +14,6 @@ Desktop users need to click Update/Import on many skill groups without waiting f
 - `MutationCoordinator` must wait/queue rather than throw on overlap.
 - Import no longer disables sibling import buttons; it enqueues.
 - Update All is one Bulk Update job that absorbs matching single-group Updates.
-- CLI/TUI unchanged; no cancel, no task panel, no end-of-queue summary toast in v1.
+- CLI/TUI unchanged; no general Cancel action, no task panel, and no end-of-queue
+  summary toast in v1. Application-termination cancellation is defined by
+  [ADR 0003](0003-desktop-quit-operation-recovery.md).

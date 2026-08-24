@@ -4,6 +4,25 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.5.10 - 2026-08-22
+
+### Added
+
+- Added macOS Quit recovery for protected update and final import operations.
+- Added recovery journal validation for managed checkouts, authority snapshots, import preparation state, and owned target projections.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.5.9` to `1.5.10`.
+- Desktop final import now commits through the explicit prepare/commit boundary used by the recovery workflow.
+- Desktop Quit now cancels active managed helpers and blocks new protected mutations until interrupted recovery is resolved.
+
+### Fixed
+
+- Fixed interrupted desktop updates and imports leaving the app unable to distinguish committed state from incomplete work.
+- Fixed target recovery so externally changed target files produce `RECOVERY_TARGET_CONFLICT` instead of being overwritten.
+- Fixed desktop helper timeout handling so ordinary command timeouts keep helper-only termination while Quit cancellation stops the full helper process group.
+
 ## v1.5.9 - 2026-08-21
 
 ### Changed

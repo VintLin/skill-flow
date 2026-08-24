@@ -1,0 +1,206 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import type {
+  DeploymentTargetId,
+  ImportPreparationRecord,
+  SourceKind,
+} from "@skill-flow/domain/types";
+import type { StateStoreState } from "./state-store.js";
+import { writeJsonFile } from "@skill-flow/integration/utils/fs";
+
+export type RecoveryOperationKind = "update" | "import";
+
+type RecoveryPathSnapshotBase = {
+  sourceId: string;
+  path: string;
+  existed: boolean;
+  backupName?: string;
+  beforeFingerprint: string;
+};
+
+export type RecoveryCheckoutSnapshot = RecoveryPathSnapshotBase & {
+  role: "checkout";
+  sourceKind: SourceKind;
+};
+
+export type RecoveryTargetSnapshot = RecoveryPathSnapshotBase & {
+  role: "target";
+  target: DeploymentTargetId;
+  mutationFingerprint: string;
+  allowedMutationFingerprints?: string[];
+};
+
+export type RecoveryPathSnapshot = RecoveryCheckoutSnapshot | RecoveryTargetSnapshot;
+
+type RecoveryJournalBase = {
+  schemaVersion: 1;
+  transactionId: string;
+  sourceId: string;
+  sourceKind: SourceKind;
+  startedAt: string;
+  phase: "prepared" | "mutated";
+  authorityBefore: StateStoreState;
+  checkout: RecoveryCheckoutSnapshot;
+  targets: RecoveryTargetSnapshot[];
+};
+
+export type RecoveryUpdateJournal = RecoveryJournalBase & {
+  kind: "update";
+  importPreparationBefore?: never;
+};
+
+export type RecoveryImportJournal = RecoveryJournalBase & {
+  kind: "import";
+  importPreparationBefore: ImportPreparationRecord;
+};
+
+export type RecoveryJournal = RecoveryUpdateJournal | RecoveryImportJournal;
+
+export class RecoveryJournalStore {
+  constructor(private readonly stateRoot: string) {}
+
+  get recoveryRoot(): string {
+    return path.join(this.stateRoot, "recovery");
+  }
+
+  get journalPath(): string {
+    return path.join(this.recoveryRoot, "active.json");
+  }
+
+  backupPath(transactionId: string, backupName: string): string {
+    assertTransactionId(transactionId);
+    assertBackupName(backupName);
+    return safeRecoveryChild(this.recoveryRoot, transactionId, backupName);
+  }
+
+  async read(): Promise<RecoveryJournal | undefined> {
+    try {
+      const parsed: unknown = JSON.parse(await fs.readFile(this.journalPath, "utf8"));
+      assertRecoveryJournal(parsed);
+      return parsed;
+    } catch (error) {
+      if (isMissing(error)) return undefined;
+      throw error;
+    }
+  }
+
+  async write(journal: RecoveryJournal): Promise<void> {
+    assertRecoveryJournal(journal);
+    await writeJsonFile(this.journalPath, journal);
+  }
+
+  async clear(journal: RecoveryJournal): Promise<void> {
+    assertRecoveryJournal(journal);
+    await fs.rm(this.journalPath, { force: true });
+    await fs.rm(safeRecoveryChild(this.recoveryRoot, journal.transactionId), {
+      recursive: true,
+      force: true,
+    });
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
+}
+
+function assertRecoveryJournal(value: unknown): asserts value is RecoveryJournal {
+  if (!value || typeof value !== "object") invalidJournal("root must be an object");
+  const journal = value as Partial<RecoveryJournal>;
+  if (journal.schemaVersion !== 1) invalidJournal("unsupported schemaVersion");
+  assertTransactionId(journal.transactionId);
+  if (journal.kind !== "update" && journal.kind !== "import") invalidJournal("invalid operation kind");
+  if (typeof journal.sourceId !== "string" || journal.sourceId.trim().length === 0) {
+    invalidJournal("missing sourceId");
+  }
+  if (!isManagedSourceKind(journal.sourceKind)) invalidJournal("invalid sourceKind");
+  if (typeof journal.startedAt !== "string" || Number.isNaN(Date.parse(journal.startedAt))) {
+    invalidJournal("invalid startedAt");
+  }
+  if (journal.phase !== "prepared" && journal.phase !== "mutated") invalidJournal("invalid phase");
+  if (!journal.authorityBefore || typeof journal.authorityBefore !== "object") {
+    invalidJournal("missing authority snapshot");
+  }
+  if (!Array.isArray(journal.targets)) invalidJournal("targets must be an array");
+  if (!journal.checkout) invalidJournal("missing checkout snapshot");
+  assertPathSnapshot(journal.checkout);
+  if (
+    journal.checkout.role !== "checkout"
+    || journal.checkout.sourceId !== journal.sourceId
+    || journal.checkout.sourceKind !== journal.sourceKind
+  ) {
+    invalidJournal("checkout ownership metadata mismatch");
+  }
+  if (journal.kind === "import") {
+    if (!journal.importPreparationBefore) invalidJournal("missing import preparation snapshot");
+  } else if (journal.importPreparationBefore !== undefined) {
+    invalidJournal("update journal cannot contain import preparation snapshot");
+  }
+  for (const target of journal.targets ?? []) {
+    assertPathSnapshot(target);
+    if (
+      target.role !== "target"
+      || target.sourceId !== journal.sourceId
+      || typeof target.target !== "string"
+      || target.target.trim().length === 0
+    ) {
+      invalidJournal("target ownership metadata mismatch");
+    }
+  }
+}
+
+function assertPathSnapshot(value: RecoveryPathSnapshot): void {
+  if (!value || typeof value !== "object") invalidJournal("invalid path snapshot");
+  if (value.role !== "checkout" && value.role !== "target") invalidJournal("invalid snapshot role");
+  if (typeof value.sourceId !== "string" || value.sourceId.trim().length === 0) {
+    invalidJournal("missing snapshot sourceId");
+  }
+  if (typeof value.path !== "string" || !path.isAbsolute(value.path)) {
+    invalidJournal("snapshot path must be absolute");
+  }
+  if (typeof value.existed !== "boolean") invalidJournal("snapshot existed flag must be boolean");
+  if (typeof value.beforeFingerprint !== "string" || value.beforeFingerprint.length === 0) {
+    invalidJournal("missing snapshot before fingerprint");
+  }
+  if (value.role === "target" && (typeof value.mutationFingerprint !== "string" || value.mutationFingerprint.length === 0)) {
+    invalidJournal("missing target mutation fingerprint");
+  }
+  if (value.backupName !== undefined) assertBackupName(value.backupName);
+  if (value.role === "target") {
+    if (value.allowedMutationFingerprints !== undefined && (
+      !Array.isArray(value.allowedMutationFingerprints)
+      || value.allowedMutationFingerprints.some((entry: unknown) => typeof entry !== "string")
+    )) {
+      invalidJournal("invalid allowed mutation fingerprints");
+    }
+  }
+}
+
+function isManagedSourceKind(value: unknown): value is SourceKind {
+  return value === "git" || value === "local" || value === "clawhub";
+}
+
+function assertTransactionId(value: unknown): asserts value is string {
+  if (
+    typeof value !== "string"
+    || !/^recovery-[1-9]\d*-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  ) {
+    invalidJournal("invalid transactionId");
+  }
+}
+
+function assertBackupName(value: unknown): asserts value is string {
+  if (typeof value !== "string" || !/^(checkout|target-\d+)$/.test(value)) {
+    invalidJournal("invalid backup name");
+  }
+}
+
+function safeRecoveryChild(root: string, ...segments: string[]): string {
+  const resolvedRoot = path.resolve(root);
+  const candidate = path.resolve(resolvedRoot, ...segments);
+  if (!candidate.startsWith(`${resolvedRoot}${path.sep}`)) invalidJournal("recovery path escapes root");
+  return candidate;
+}
+
+function invalidJournal(reason: string): never {
+  throw new Error(`Invalid recovery journal: ${reason}.`);
+}
