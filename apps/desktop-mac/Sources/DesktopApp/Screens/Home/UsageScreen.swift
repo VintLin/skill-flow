@@ -155,26 +155,40 @@ struct UsageScreen: View {
                         Text(day)
                             .font(.system(size: 10))
                             .foregroundStyle(AppTheme.textMuted(for: theme))
-                            .frame(width: 28, height: 16, alignment: .leading)
+                            .frame(width: 28, height: UsageHeatmapGeometry.cellSize, alignment: .leading)
                     }
                 }
                 let maximum = snapshot.hourlyActivity.map(\.observedUses).max() ?? 0
-                UsageHeatmapGridLayout(columnSpacing: 4, rowSpacing: 5) {
-                    ForEach(0..<7, id: \.self) { weekday in
-                        ForEach(0..<24, id: \.self) { hour in
-                            let item = hourlyActivity(snapshot, weekday: weekday, hour: hour)
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(heatmapColor(item.observedUses, maximum: maximum))
-                                .help("\(weekdayTitle(weekday)) \(String(format: "%02d:00", hour)) · \(item.observedUses) 次")
+                GeometryReader { proxy in
+                    let geometry = UsageHeatmapGeometry(width: proxy.size.width)
+                    UsageHeatmapGridLayout(
+                        columnCount: geometry.columnCount,
+                        cellSize: geometry.cellSize,
+                        columnSpacing: geometry.columnSpacing,
+                        rowSpacing: geometry.rowSpacing
+                    ) {
+                        ForEach(0..<7, id: \.self) { weekday in
+                            ForEach(0..<geometry.columnCount, id: \.self) { column in
+                                if column < UsageHeatmapGeometry.hourCount {
+                                    let item = hourlyActivity(snapshot, weekday: weekday, hour: column)
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(heatmapColor(item.observedUses, maximum: maximum))
+                                        .help("\(weekdayTitle(weekday)) \(String(format: "%02d:00", column)) · \(item.observedUses) 次")
+                                } else {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(heatmapColor(0, maximum: maximum))
+                                        .accessibilityHidden(true)
+                                }
+                            }
                         }
                     }
                 }
-                .frame(maxWidth: .infinity)
+                .frame(height: UsageHeatmapGeometry.gridHeight)
             }
             HStack(alignment: .top, spacing: 8) {
                 Color.clear.frame(width: 28, height: 16)
                 GeometryReader { proxy in
-                    let layout = UsageHeatmapGeometry(width: proxy.size.width, columnSpacing: 4, rowSpacing: 5)
+                    let layout = UsageHeatmapGeometry(width: proxy.size.width)
                     ZStack(alignment: .topLeading) {
                         ForEach([0, 3, 6, 9, 12, 15, 18, 21], id: \.self) { hour in
                             let frame = layout.frame(weekday: 0, hour: hour)
@@ -348,22 +362,30 @@ private struct UsageAreaChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             GeometryReader { proxy in
-                ZStack(alignment: .topLeading) {
-                    Canvas { context, size in drawChart(context: &context, size: size) }
-                        .contentShape(Rectangle())
-                        .onContinuousHover { phase in
-                            switch phase {
-                            case .active(let location): hoveredIndex = nearestIndex(for: location.x, width: proxy.size.width)
-                            case .ended: hoveredIndex = nil
-                            }
+                Canvas { context, size in drawChart(context: &context, size: size) }
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location): hoveredIndex = nearestIndex(for: location.x, width: proxy.size.width)
+                        case .ended: hoveredIndex = nil
                         }
-                    if let hoveredIndex, let bucket = data.labels[safe: hoveredIndex] {
-                        tooltip(bucket: bucket, index: hoveredIndex)
-                            .allowsHitTesting(false)
-                            .padding(.leading, tooltipOffset(for: hoveredIndex, width: proxy.size.width))
-                            .padding(.top, 8)
                     }
-                }
+                    .overlay(alignment: .topLeading) {
+                        if let hoveredIndex, let bucket = data.labels[safe: hoveredIndex] {
+                            tooltip(bucket: bucket, index: hoveredIndex)
+                                .frame(width: UsageTooltipGeometry.width, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .allowsHitTesting(false)
+                                .offset(
+                                    x: UsageTooltipGeometry.leadingOffset(
+                                        index: hoveredIndex,
+                                        itemCount: data.labels.count,
+                                        containerWidth: proxy.size.width
+                                    ),
+                                    y: UsageTooltipGeometry.topInset
+                                )
+                        }
+                    }
             }
             .frame(height: 260)
             HStack(spacing: 0) {
@@ -446,7 +468,6 @@ private struct UsageAreaChart: View {
             }
         }
         .padding(10)
-        .frame(minWidth: 150, alignment: .leading)
         .background(AppTheme.pageBackground(for: theme))
         .clipShape(RoundedRectangle(cornerRadius: 9))
         .overlay { RoundedRectangle(cornerRadius: 9).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
@@ -457,12 +478,6 @@ private struct UsageAreaChart: View {
         guard !data.labels.isEmpty else { return 0 }
         let ratio = min(1, max(0, (x - 38) / max(1, width - 48)))
         return Int((ratio * CGFloat(max(data.labels.count - 1, 0))).rounded())
-    }
-
-    private func tooltipOffset(for index: Int, width: CGFloat) -> CGFloat {
-        guard data.labels.count > 1 else { return 44 }
-        let x = 38 + (width - 48) * CGFloat(index) / CGFloat(data.labels.count - 1)
-        return min(max(44, x - 30), max(44, width - 190))
     }
 
     private func chartPoint(index: Int, value: Int, maximum: Int, plot: CGRect) -> CGPoint {
@@ -516,20 +531,36 @@ private struct UsageAreaChart: View {
 struct UsageHeatmapGeometry {
     static let weekdayCount = 7
     static let hourCount = 24
+    static let cellSize: CGFloat = 20
+    static let columnSpacing: CGFloat = 4
+    static let rowSpacing: CGFloat = 5
+    static let gridHeight = (cellSize * CGFloat(weekdayCount)) + (rowSpacing * CGFloat(weekdayCount - 1))
 
+    let cellSize: CGFloat
+    let columnSpacing: CGFloat
+    let rowSpacing: CGFloat
+    let columnCount: Int
     let frames: [CGRect]
     let height: CGFloat
 
-    init(width: CGFloat, columnSpacing: CGFloat, rowSpacing: CGFloat) {
-        let totalColumnSpacing = columnSpacing * CGFloat(Self.hourCount - 1)
+    init(
+        width: CGFloat,
+        cellSize: CGFloat = Self.cellSize,
+        columnSpacing: CGFloat = Self.columnSpacing,
+        rowSpacing: CGFloat = Self.rowSpacing
+    ) {
+        self.cellSize = cellSize
+        self.columnSpacing = columnSpacing
+        self.rowSpacing = rowSpacing
+        let resolvedColumnCount = max(Self.hourCount, Int((width + columnSpacing) / (cellSize + columnSpacing)))
+        columnCount = resolvedColumnCount
         let totalRowSpacing = rowSpacing * CGFloat(Self.weekdayCount - 1)
-        let cellSize = max(0, width - totalColumnSpacing) / CGFloat(Self.hourCount)
         height = (cellSize * CGFloat(Self.weekdayCount)) + totalRowSpacing
-        frames = (0..<(Self.weekdayCount * Self.hourCount)).map { index in
-            let weekday = index / Self.hourCount
-            let hour = index % Self.hourCount
+        frames = (0..<(Self.weekdayCount * resolvedColumnCount)).map { index in
+            let weekday = index / resolvedColumnCount
+            let column = index % resolvedColumnCount
             return CGRect(
-                x: CGFloat(hour) * (cellSize + columnSpacing),
+                x: CGFloat(column) * (cellSize + columnSpacing),
                 y: CGFloat(weekday) * (cellSize + rowSpacing),
                 width: cellSize,
                 height: cellSize
@@ -538,12 +569,14 @@ struct UsageHeatmapGeometry {
     }
 
     func frame(weekday: Int, hour: Int) -> CGRect {
-        guard (0..<Self.weekdayCount).contains(weekday), (0..<Self.hourCount).contains(hour) else { return .zero }
-        return frames[(weekday * Self.hourCount) + hour]
+        guard (0..<Self.weekdayCount).contains(weekday), (0..<columnCount).contains(hour) else { return .zero }
+        return frames[(weekday * columnCount) + hour]
     }
 }
 
 struct UsageHeatmapGridLayout: Layout {
+    let columnCount: Int
+    let cellSize: CGFloat
     let columnSpacing: CGFloat
     let rowSpacing: CGFloat
 
@@ -552,9 +585,10 @@ struct UsageHeatmapGridLayout: Layout {
         subviews: Subviews,
         cache: inout ()
     ) -> CGSize {
-        let width = max(0, proposal.width ?? 0)
-        let geometry = UsageHeatmapGeometry(width: width, columnSpacing: columnSpacing, rowSpacing: rowSpacing)
-        return CGSize(width: width, height: geometry.height)
+        let width = (cellSize * CGFloat(columnCount)) + (columnSpacing * CGFloat(max(0, columnCount - 1)))
+        let height = (cellSize * CGFloat(UsageHeatmapGeometry.weekdayCount))
+            + (rowSpacing * CGFloat(UsageHeatmapGeometry.weekdayCount - 1))
+        return CGSize(width: width, height: height)
     }
 
     func placeSubviews(
@@ -563,15 +597,35 @@ struct UsageHeatmapGridLayout: Layout {
         subviews: Subviews,
         cache: inout ()
     ) {
-        let geometry = UsageHeatmapGeometry(width: bounds.width, columnSpacing: columnSpacing, rowSpacing: rowSpacing)
-        for (index, subview) in subviews.prefix(geometry.frames.count).enumerated() {
-            let frame = geometry.frames[index].offsetBy(dx: bounds.minX, dy: bounds.minY)
+        for (index, subview) in subviews.enumerated() {
+            let row = index / columnCount
+            let column = index % columnCount
+            let frame = CGRect(
+                x: bounds.minX + CGFloat(column) * (cellSize + columnSpacing),
+                y: bounds.minY + CGFloat(row) * (cellSize + rowSpacing),
+                width: cellSize,
+                height: cellSize
+            )
             subview.place(
                 at: frame.origin,
                 anchor: .topLeading,
                 proposal: ProposedViewSize(width: frame.width, height: frame.height)
             )
         }
+    }
+}
+
+struct UsageTooltipGeometry {
+    static let width: CGFloat = 190
+    static let edgeInset: CGFloat = 8
+    static let topInset: CGFloat = 8
+
+    static func leadingOffset(index: Int, itemCount: Int, containerWidth: CGFloat) -> CGFloat {
+        guard itemCount > 1 else { return edgeInset }
+        let plotWidth = max(1, containerWidth - 48)
+        let anchorX = 38 + (plotWidth * CGFloat(index) / CGFloat(itemCount - 1))
+        let maximumLeading = max(edgeInset, containerWidth - edgeInset - width)
+        return min(max(edgeInset, anchorX - (width / 2)), maximumLeading)
     }
 }
 

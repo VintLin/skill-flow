@@ -23,7 +23,7 @@ Usage 页面改为由统一的 Usage Snapshot analytics contract 驱动。Snapsh
 
 - 标题为 `Skills Usage` 的页面。
 - 时间范围切换：今天、24H、7D、30D、90D、自定义。
-- 时间范围下方的分时活跃卡片，用完整的 7 天 × 24 小时正方形热力图展示本地时间活跃度；零调用时也保留对应格子。
+- 时间范围下方的分时活跃卡片，用固定尺寸正方形热力格展示本地时间活跃度；7 天 × 24 小时有效格始终保留，卡片剩余宽度使用无数据占位格补齐，不允许随窗口拉伸格子。
 - 主页面不展示 Agent 数据来源或解析诊断卡片，诊断信息继续保留在 Usage Snapshot 契约中。
 - 面积图卡片使用 `每日趋势` 标题和趋势图标；不同 series 使用独立上下边界形成可辨识色带，默认按 Skill 展示。
 - 图表 hover 信息卡片，展示当前时间点的总调用次数和各 series 调用次数。
@@ -50,7 +50,7 @@ Usage 页面改为由统一的 Usage Snapshot analytics contract 驱动。Snapsh
 8. As a Skill Flow desktop user, I want a 分时活跃 heatmap above the usage chart, so that I can quickly see which weekdays and hours are most active.
 9. As a Skill Flow desktop user, I want the heatmap to use low-noise neutral styling, so that it matches the rest of Skill Flow.
 10. As a Skill Flow desktop user, I want the heatmap to summarize the currently selected range, so that it changes when I inspect a different time period.
-10a. As a Skill Flow desktop user, I want all 168 heatmap cells to remain square and present even when a weekday/hour has zero calls, so that the grid remains complete and comparable.
+10a. As a Skill Flow desktop user, I want the heatmap cells to keep a fixed square size at every window width, preserve all 168 weekday/hour cells, and fill remaining card width with neutral placeholders, so that the grid remains compact and visually complete without stretching data.
 11. As a Skill Flow desktop user, I want the usage chart to render each Skill or Agent as a visually separated color band, so that dense series do not overlap into an unreadable layer.
 11a. As a Skill Flow desktop user, I want the area-chart card to be titled `每日趋势` with a trend icon, so that it matches the visual hierarchy of `分时活跃`.
 12. As a Skill Flow desktop user, I want the usage chart lines to be curved, so that the trend view is visually smoother and easier to scan.
@@ -128,6 +128,7 @@ This shape came from the prototype/data investigation because WorkBuddy, OpenCod
 - A selected Skill changes chart grouping to Agent, using only runs for that Skill.
 - A selected Agent changes chart grouping to Skill, using only runs for that Agent.
 - The chart renders cumulative upper and lower boundaries only to form visually separated color bands. Raw per-series counts remain unchanged and continue to drive tooltips and list reconciliation.
+- The chart tooltip is a fixed-width overlay. It clamps to the chart edges and never participates in chart measurement or changes the card height.
 - The top boundary at a bucket is the sum of all visible series at that bucket. Each band thickness represents that series raw count, so series do not visually overlap one another.
 - The chart hover card uses the nearest time bucket and lists visible series counts plus a total.
 - Time ranges are normalized in the runtime using local machine time for presentation buckets.
