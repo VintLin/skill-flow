@@ -127,7 +127,13 @@ struct UsageScreen: View {
         VStack(alignment: .leading, spacing: 14) {
             let chart = snapshot.chartData(for: selection)
             heatmap(snapshot)
-            sectionCard(title: nil) { UsageAreaChart(data: chart, theme: theme).frame(height: 340) }
+            sectionCard(title: nil) {
+                Label("每日趋势", systemImage: "waveform.path.ecg")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                UsageAreaChart(data: chart, theme: theme)
+                    .frame(height: 340)
+            }
             statistics(snapshot)
         }
     }
@@ -152,29 +158,23 @@ struct UsageScreen: View {
                             .frame(width: 28, height: 16, alignment: .leading)
                     }
                 }
-                GeometryReader { proxy in
-                    let layout = UsageHeatmapGeometry(size: proxy.size, columnSpacing: 4, rowSpacing: 5)
-                    let maximum = snapshot.hourlyActivity.map(\.observedUses).max() ?? 0
-                    ZStack(alignment: .topLeading) {
-                        ForEach(0..<7, id: \.self) { weekday in
-                            ForEach(0..<24, id: \.self) { hour in
-                                let item = hourlyActivity(snapshot, weekday: weekday, hour: hour)
-                                let frame = layout.frame(weekday: weekday, hour: hour)
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(heatmapColor(item.observedUses, maximum: maximum))
-                                    .frame(width: frame.width, height: frame.height)
-                                    .position(x: frame.midX, y: frame.midY)
-                                    .help("\(weekdayTitle(weekday)) \(String(format: "%02d:00", hour)) · \(item.observedUses) 次")
-                            }
+                let maximum = snapshot.hourlyActivity.map(\.observedUses).max() ?? 0
+                UsageHeatmapGridLayout(columnSpacing: 4, rowSpacing: 5) {
+                    ForEach(0..<7, id: \.self) { weekday in
+                        ForEach(0..<24, id: \.self) { hour in
+                            let item = hourlyActivity(snapshot, weekday: weekday, hour: hour)
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(heatmapColor(item.observedUses, maximum: maximum))
+                                .help("\(weekdayTitle(weekday)) \(String(format: "%02d:00", hour)) · \(item.observedUses) 次")
                         }
                     }
                 }
-                .frame(height: 142)
+                .frame(maxWidth: .infinity)
             }
             HStack(alignment: .top, spacing: 8) {
                 Color.clear.frame(width: 28, height: 16)
                 GeometryReader { proxy in
-                    let layout = UsageHeatmapGeometry(size: CGSize(width: proxy.size.width, height: 142), columnSpacing: 4, rowSpacing: 5)
+                    let layout = UsageHeatmapGeometry(width: proxy.size.width, columnSpacing: 4, rowSpacing: 5)
                     ZStack(alignment: .topLeading) {
                         ForEach([0, 3, 6, 9, 12, 15, 18, 21], id: \.self) { hour in
                             let frame = layout.frame(weekday: 0, hour: hour)
@@ -518,20 +518,21 @@ struct UsageHeatmapGeometry {
     static let hourCount = 24
 
     let frames: [CGRect]
+    let height: CGFloat
 
-    init(size: CGSize, columnSpacing: CGFloat, rowSpacing: CGFloat) {
+    init(width: CGFloat, columnSpacing: CGFloat, rowSpacing: CGFloat) {
         let totalColumnSpacing = columnSpacing * CGFloat(Self.hourCount - 1)
         let totalRowSpacing = rowSpacing * CGFloat(Self.weekdayCount - 1)
-        let cellWidth = max(0, size.width - totalColumnSpacing) / CGFloat(Self.hourCount)
-        let cellHeight = max(0, size.height - totalRowSpacing) / CGFloat(Self.weekdayCount)
+        let cellSize = max(0, width - totalColumnSpacing) / CGFloat(Self.hourCount)
+        height = (cellSize * CGFloat(Self.weekdayCount)) + totalRowSpacing
         frames = (0..<(Self.weekdayCount * Self.hourCount)).map { index in
             let weekday = index / Self.hourCount
             let hour = index % Self.hourCount
             return CGRect(
-                x: CGFloat(hour) * (cellWidth + columnSpacing),
-                y: CGFloat(weekday) * (cellHeight + rowSpacing),
-                width: cellWidth,
-                height: cellHeight
+                x: CGFloat(hour) * (cellSize + columnSpacing),
+                y: CGFloat(weekday) * (cellSize + rowSpacing),
+                width: cellSize,
+                height: cellSize
             )
         }
     }
@@ -539,6 +540,38 @@ struct UsageHeatmapGeometry {
     func frame(weekday: Int, hour: Int) -> CGRect {
         guard (0..<Self.weekdayCount).contains(weekday), (0..<Self.hourCount).contains(hour) else { return .zero }
         return frames[(weekday * Self.hourCount) + hour]
+    }
+}
+
+struct UsageHeatmapGridLayout: Layout {
+    let columnSpacing: CGFloat
+    let rowSpacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let width = max(0, proposal.width ?? 0)
+        let geometry = UsageHeatmapGeometry(width: width, columnSpacing: columnSpacing, rowSpacing: rowSpacing)
+        return CGSize(width: width, height: geometry.height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let geometry = UsageHeatmapGeometry(width: bounds.width, columnSpacing: columnSpacing, rowSpacing: rowSpacing)
+        for (index, subview) in subviews.prefix(geometry.frames.count).enumerated() {
+            let frame = geometry.frames[index].offsetBy(dx: bounds.minX, dy: bounds.minY)
+            subview.place(
+                at: frame.origin,
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: frame.width, height: frame.height)
+            )
+        }
     }
 }
 

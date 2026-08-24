@@ -23,9 +23,9 @@ Usage 页面改为由统一的 Usage Snapshot analytics contract 驱动。Snapsh
 
 - 标题为 `Skills Usage` 的页面。
 - 时间范围切换：今天、24H、7D、30D、90D、自定义。
-- 时间范围下方的分时活跃卡片，用 7 天 × 24 小时热力图展示本地时间活跃度。
+- 时间范围下方的分时活跃卡片，用完整的 7 天 × 24 小时正方形热力图展示本地时间活跃度；零调用时也保留对应格子。
 - 主页面不展示 Agent 数据来源或解析诊断卡片，诊断信息继续保留在 Usage Snapshot 契约中。
-- 分层面积图；不同 series 使用独立上下边界形成可辨识色带，默认按 Skill 展示。
+- 面积图卡片使用 `每日趋势` 标题和趋势图标；不同 series 使用独立上下边界形成可辨识色带，默认按 Skill 展示。
 - 图表 hover 信息卡片，展示当前时间点的总调用次数和各 series 调用次数。
 - 三列统计面板：
   - 活动洞察：技能总数、使用技能总数、技能运行总数、聊天/调用记录。
@@ -50,7 +50,9 @@ Usage 页面改为由统一的 Usage Snapshot analytics contract 驱动。Snapsh
 8. As a Skill Flow desktop user, I want a 分时活跃 heatmap above the usage chart, so that I can quickly see which weekdays and hours are most active.
 9. As a Skill Flow desktop user, I want the heatmap to use low-noise neutral styling, so that it matches the rest of Skill Flow.
 10. As a Skill Flow desktop user, I want the heatmap to summarize the currently selected range, so that it changes when I inspect a different time period.
+10a. As a Skill Flow desktop user, I want all 168 heatmap cells to remain square and present even when a weekday/hour has zero calls, so that the grid remains complete and comparable.
 11. As a Skill Flow desktop user, I want the usage chart to render each Skill or Agent as a visually separated color band, so that dense series do not overlap into an unreadable layer.
+11a. As a Skill Flow desktop user, I want the area-chart card to be titled `每日趋势` with a trend icon, so that it matches the visual hierarchy of `分时活跃`.
 12. As a Skill Flow desktop user, I want the usage chart lines to be curved, so that the trend view is visually smoother and easier to scan.
 13. As a Skill Flow desktop user, I want the chart colors to match the dots beside Skill names, so that I can connect the chart to the list.
 14. As a Skill Flow desktop user, I want hover on the chart to show a compact information card, so that I can inspect exact values at a time point.
