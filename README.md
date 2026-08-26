@@ -307,7 +307,7 @@ Unsigned macOS install notes:
 - If macOS still marks the app as quarantined, run:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
+sudo xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
 ```
 
 ## Star History
