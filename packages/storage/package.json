@@ -1,6 +1,6 @@
 {
   "name": "@skill-flow/storage",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "type": "module",
   "private": true,
   "main": "dist/index.js",
@@ -14,7 +14,7 @@
     "test:watch": "vitest --passWithNoTests"
   },
   "dependencies": {
-    "@skill-flow/domain": "1.6.0"
+    "@skill-flow/domain": "1.6.1"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

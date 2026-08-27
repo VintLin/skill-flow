@@ -4,6 +4,17 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.1 - 2026-08-27
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.6.0` to `1.6.1`.
+- Simplified macOS Usage navigation so the home toolbar is the single entry point.
+
+### Fixed
+
+- Removed the duplicate Usage Analytics card from the macOS home sidebar.
+
 ## v1.6.0 - 2026-08-24
 
 ### Added
