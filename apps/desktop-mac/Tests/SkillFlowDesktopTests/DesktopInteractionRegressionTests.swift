@@ -2,13 +2,13 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class DesktopInteractionRegressionTests: XCTestCase {
-    func testHomeUsageEntryUsesTheSharedIconButtonWithoutVisibleText() throws {
+    func testHomeUsageEntryExistsOnlyInToolbar() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
-        XCTAssertFalse(source.contains("private var usageEntryButton"))
-        XCTAssertFalse(source.contains("Text(\"Usage\")"))
-        XCTAssertFalse(source.contains("homeUsageEntryButtonWidth"))
+        XCTAssertFalse(source.contains("homeSidebarUsageEntry"))
+        XCTAssertFalse(source.contains("Usage Analytics"))
         XCTAssertTrue(source.contains("private var usageButton: some View"))
+        XCTAssertTrue(source.contains("toolbarIconButton(.usage) { navigation.showUsage() }"))
     }
 
     func testToolbarButtonsUseSharedMotionButtonStyle() throws {

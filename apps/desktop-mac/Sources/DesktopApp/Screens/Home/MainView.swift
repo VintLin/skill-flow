@@ -1570,7 +1570,6 @@ struct MainView: View {
                     homeContainer.setSelectedHomeAgentFilter(optionId == "all" ? nil : optionId)
                 }
 
-                homeSidebarUsageEntry
                 homeSidebarProjectSection
             }
             .padding(.horizontal, Self.homeSidebarHorizontalPadding)
@@ -1602,36 +1601,6 @@ struct MainView: View {
         .padding(.horizontal, Self.homeSidebarHorizontalPadding)
         .padding(.top, Self.homeTitlebarControlTopPadding)
         .frame(height: Self.homeSidebarHeaderHeight, alignment: .top)
-    }
-
-    private var homeSidebarUsageEntry: some View {
-        Button {
-            navigation.showUsage()
-        } label: {
-            HStack(alignment: .center, spacing: 8) {
-                actionIcon(.usage, size: 13)
-                    .foregroundStyle(AppTheme.brand(for: accent, in: theme))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Usage Analytics")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                    Text("Skill calls by agent and project")
-                        .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .desktopMotionChip(kind: .pill, theme: theme, accent: accent, isEnabled: true, isSelected: false)
-        .accessibilityLabel("Usage Analytics")
     }
 
     private var homeSidebarToggleButton: some View {
