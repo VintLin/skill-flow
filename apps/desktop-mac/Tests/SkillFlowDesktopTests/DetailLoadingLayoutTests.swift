@@ -6,7 +6,7 @@ final class DetailLoadingLayoutTests: XCTestCase {
     @MainActor
     func testPreferredDetailGroupTitleUsesDisplayNameBeforeSnapshotTitle() {
         XCTAssertEqual(
-            MainViewModel.preferredDetailGroupTitle(
+            DetailLogic.preferredDetailGroupTitle(
                 sourceId: "alpha",
                 displayName: "dbskill",
                 snapshotTitle: "商业分析",
@@ -16,7 +16,7 @@ final class DetailLoadingLayoutTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            MainViewModel.preferredDetailGroupTitle(
+            DetailLogic.preferredDetailGroupTitle(
                 sourceId: "alpha",
                 displayName: nil,
                 snapshotTitle: "Anthropic Skills",
@@ -26,7 +26,7 @@ final class DetailLoadingLayoutTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            MainViewModel.preferredDetailGroupTitle(
+            DetailLogic.preferredDetailGroupTitle(
                 sourceId: "alpha",
                 displayName: "zsh-compatible: use find i...",
                 snapshotTitle: nil,
@@ -34,12 +34,32 @@ final class DetailLoadingLayoutTests: XCTestCase {
             ),
             "skills"
         )
+
+        XCTAssertEqual(
+            DetailLogic.preferredDetailGroupTitle(
+                sourceId: "alpha",
+                displayName: nil,
+                snapshotTitle: nil,
+                locator: "https://github.com/anthropics/skills.git/"
+            ),
+            "skills"
+        )
+
+        XCTAssertEqual(
+            DetailLogic.preferredDetailGroupTitle(
+                sourceId: "alpha",
+                displayName: nil,
+                snapshotTitle: nil,
+                locator: "clawhub:anthropics/browse@1.0.0"
+            ),
+            "browse"
+        )
     }
 
     @MainActor
     func testPreferredDetailSkillTitleUsesProjectedAndSnapshotNamesBeforeRawLeafName() {
         XCTAssertEqual(
-            MainViewModel.preferredDetailSkillTitle(
+            DetailLogic.preferredDetailSkillTitle(
                 preparedTitle: nil,
                 payloadTitle: nil,
                 projectedName: "Browse Web",
@@ -51,7 +71,7 @@ final class DetailLoadingLayoutTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            MainViewModel.preferredDetailSkillTitle(
+            DetailLogic.preferredDetailSkillTitle(
                 preparedTitle: nil,
                 payloadTitle: nil,
                 projectedName: nil,
@@ -60,6 +80,18 @@ final class DetailLoadingLayoutTests: XCTestCase {
                 fallbackLinkName: "browse"
             ),
             "Browse"
+        )
+
+        XCTAssertEqual(
+            DetailLogic.preferredDetailSkillTitle(
+                preparedTitle: nil,
+                payloadTitle: nil,
+                projectedName: nil,
+                snapshotTitle: nil,
+                rawLeafName: "command not found: browse",
+                fallbackLinkName: "browse"
+            ),
+            "browse"
         )
     }
 

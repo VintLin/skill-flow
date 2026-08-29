@@ -735,14 +735,37 @@ final class DetailLogic {
     }
 
     nonisolated private static func sanitizedDetailTitle(_ value: String?) -> String? {
-        value?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty else {
+            return nil
+        }
+
+        let lowercase = trimmed.lowercased()
+        let rejectedFragments = [
+            "zsh-compatible:",
+            "use find",
+            "no such file",
+            "command not found",
+            "permission denied",
+        ]
+        return rejectedFragments.contains(where: lowercase.contains) ? nil : trimmed
     }
 
     nonisolated private static func detailTitleFallback(from locator: String, sourceId: String) -> String {
-        if let lastComponent = locator.split(separator: "/").last, !lastComponent.isEmpty {
-            return String(lastComponent)
+        let trimmed = locator
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ".git", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        guard !trimmed.isEmpty else {
+            return sourceId
         }
-        return sourceId
+
+        if locator.hasPrefix("clawhub:"),
+           let slug = locator.split(separator: ":").last?.split(separator: "@").first {
+            return String(slug.split(separator: "/").last ?? Substring(sourceId))
+        }
+
+        return trimmed.split(separator: "/").last.map(String.init) ?? sourceId
     }
 
     private static func formattedCount(_ value: Int) -> String {

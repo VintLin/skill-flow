@@ -17,6 +17,7 @@ All notable changes to `skill-flow` will be documented in this file.
 - Removed obsolete whole-cache and update-preflight entry points superseded by granular cache writes and structured update prechecks.
 - Import Data cache entries now persist only expiry and consumed payloads; query/feed/repository keys no longer duplicate identity or unused timestamps inside each entry.
 - Desktop import locator and detail document parsing now have dedicated owners instead of compatibility copies on the app-wide view model.
+- Desktop detail titles now use the production title policy directly, including polluted shell-output rejection and normalized repository or ClawHub fallbacks.
 
 ## v1.6.1 - 2026-08-27
 
