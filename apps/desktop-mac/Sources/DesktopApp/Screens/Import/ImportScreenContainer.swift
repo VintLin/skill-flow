@@ -21,7 +21,7 @@ final class ImportScreenContainer {
 
     private let state: DesktopAppState
     private let mainViewModel: MainViewModel
-    private let recommendationsProvider: () -> [ImportRecommendationEntry]
+    private let recommendations: [ImportRecommendationEntry]
 
     let screenState = ImportScreenState()
 
@@ -32,7 +32,7 @@ final class ImportScreenContainer {
     ) {
         self.state = state
         self.mainViewModel = mainViewModel
-        self.recommendationsProvider = recommendationsProvider
+        self.recommendations = recommendationsProvider()
     }
 
     var isActive: Bool {
@@ -59,7 +59,7 @@ final class ImportScreenContainer {
             locale: locale,
             targetVisibility: .settingsVisible(mainViewModel.importPageTargetIds),
             submittedQuery: mainViewModel.importSubmittedQuery,
-            recommendations: recommendationsProvider()
+            recommendations: recommendations
         )
         return Snapshot(
             searchPhase: mainViewModel.importSearchPhase,

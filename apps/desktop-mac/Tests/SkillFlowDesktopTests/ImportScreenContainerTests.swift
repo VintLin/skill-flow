@@ -1298,6 +1298,26 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(searched?.importingGroupId, "search")
     }
 
+    func testSnapshotReusesRecommendationsLoadedAtContainerInitialization() {
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        var providerCallCount = 0
+        let container = ImportScreenContainer(
+            state: state,
+            mainViewModel: model,
+            recommendationsProvider: {
+                providerCallCount += 1
+                return []
+            }
+        )
+        state.view.currentRoute = .importPage
+
+        _ = container.snapshot(locale: Locale(identifier: "en"))
+        _ = container.snapshot(locale: Locale(identifier: "zh-Hans"))
+
+        XCTAssertEqual(providerCallCount, 1)
+    }
+
     func testImportPageModeSwitchesDisplayedGroups() {
         let state = DesktopAppState()
         state.view.currentRoute = .importPage
