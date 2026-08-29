@@ -93,8 +93,8 @@ _Avoid_: skill metadata tag, import recommendation tag
 ### Group operation queue (desktop)
 
 **Group Operation Queue**:
-A desktop session FIFO that holds Group Operations so the user can keep requesting updates and imports without waiting for the current one to finish. Operations run one at a time in click order.
-_Avoid_: parallel download pool, batch update coalescer, multi-flight mutation
+A desktop session FIFO that holds Group Operations so the user can keep requesting updates and imports without waiting for the current one to finish. Durable commits run one at a time in click order; eligible read/download preparation may start earlier in a bounded preparation pool.
+_Avoid_: parallel commit workers, batch update coalescer, multi-flight mutation
 
 **Group Operation**:
 One discrete user-requested unit of work on a skill group—today either **Update** (an already-installed group) or **Import** (a not-yet-installed group from the import page). Distinct from card chrome actions such as pin, rename, or tag edit.
@@ -111,6 +111,10 @@ _Avoid_: request id, click count
 **Serial Mutation Channel**:
 The desktop rule that bridge-bound write operations (Group Operations and other mutations such as pin, apply, delete, rename) execute one at a time without concurrent-rejection errors: later requests wait their turn instead of failing immediately.
 _Avoid_: concurrent mutation reject, parallel bridge writes
+
+**Bounded Preparation Pool**:
+A maximum of three isolated, disposable preparation tasks may overlap ahead of the Serial Mutation Channel. Import checkout downloads and bulk-update remote revision checks qualify; authority-state writes, managed-checkout replacement, recovery-journal changes, and target reconciliation do not.
+_Avoid_: parallel mutation pool, unbounded prefetch, preparation that changes shared authority state
 
 **Card Operation Feedback**:
 On a skill group card, **Running** uses the existing busy overlay with `Updating` or `Downloading`; **Queued** uses the same overlay structure with a distinct queued label so waiting work is visible without a separate queue panel.
@@ -137,7 +141,7 @@ Desktop state after recovery failed and the user cancelled application terminati
 _Avoid_: recovered, idle, ignore-and-quit
 
 **Bulk Update**:
-A single Group Operation that updates many installed groups in one bridge call (Home “Update All”). While it is Queued or Running, every covered group shows Card Operation Feedback; matching single-group Update entries already in the queue are absorbed so they are not run twice.
+A single Group Operation that updates many installed groups in one bridge call (Home “Update All”). While it is Queued or Running, every covered group shows Card Operation Feedback; matching single-group Update entries already in the queue are absorbed so they are not run twice. Remote Git revision checks use the Bounded Preparation Pool, then required updates commit serially in the original selection order.
 _Avoid_: fan-out to N single updates, bypassing the queue
 
 **Desktop-Only Operation Queue**:

@@ -16,6 +16,7 @@ final class GroupOperationCoordinator {
     struct Hosts {
         var isSourcePresent: (String) -> Bool
         var isImportInstalledLocally: (String) -> Bool
+        var prepareImport: (String, PendingImportRequest) async -> Void = { _, _ in }
         var performUpdate: (String) async -> Void
         var performBulkUpdate: ([String]) async -> Void
         var performImport: (String, PendingImportRequest) async -> Void
@@ -26,7 +27,9 @@ final class GroupOperationCoordinator {
     }
 
     private let queue = GroupOperationQueue()
+    private let importPreparationLimiter = GroupOperationPreparationLimiter(limit: 3)
     private var pendingImportRequestsByGroupId: [String: PendingImportRequest] = [:]
+    @ObservationIgnored private var importPreparationTasksByGroupId: [String: Task<Void, Never>] = [:]
     private var isDraining = false
     private var hosts: Hosts?
     /// Test-only busy markers that do not occupy the FIFO running slot.
@@ -129,12 +132,16 @@ final class GroupOperationCoordinator {
         case .shutDown:
             return
         case .enqueued:
-            pendingImportRequestsByGroupId[normalized] = PendingImportRequest(
+            let request = PendingImportRequest(
                 locator: locator,
                 selectedSkills: selectedSkills,
                 skillSelectionMode: skillSelectionMode,
                 enabledTargets: enabledTargets
             )
+            pendingImportRequestsByGroupId[normalized] = request
+            if isDraining {
+                scheduleImportPreparation(groupId: normalized, request: request)
+            }
             publishPhases()
             await drain()
         }
@@ -146,6 +153,8 @@ final class GroupOperationCoordinator {
     func shutdownForTermination() -> GroupOperationQueue.Operation? {
         let active = queue.shutdown()
         pendingImportRequestsByGroupId.removeAll()
+        importPreparationTasksByGroupId.values.forEach { $0.cancel() }
+        importPreparationTasksByGroupId.removeAll()
         publishPhases()
         return active
     }
@@ -203,14 +212,35 @@ final class GroupOperationCoordinator {
     private func runImport(groupId: String) async {
         if hosts?.isImportInstalledLocally(groupId) == true {
             pendingImportRequestsByGroupId.removeValue(forKey: groupId)
+            importPreparationTasksByGroupId.removeValue(forKey: groupId)?.cancel()
             hosts?.onImportAlreadyExists()
             return
         }
-        guard let request = pendingImportRequestsByGroupId.removeValue(forKey: groupId) else {
+        guard let request = pendingImportRequestsByGroupId[groupId] else {
             hosts?.onSkippedMissing()
             return
         }
+        if let preparation = importPreparationTasksByGroupId[groupId] {
+            await preparation.value
+            importPreparationTasksByGroupId.removeValue(forKey: groupId)
+        }
+        guard pendingImportRequestsByGroupId[groupId] == request else { return }
+        pendingImportRequestsByGroupId.removeValue(forKey: groupId)
         await hosts?.performImport(groupId, request)
+    }
+
+    private func scheduleImportPreparation(groupId: String, request: PendingImportRequest) {
+        guard importPreparationTasksByGroupId[groupId] == nil, let hosts else { return }
+        let limiter = importPreparationLimiter
+        importPreparationTasksByGroupId[groupId] = Task {
+            await limiter.acquire()
+            guard !Task.isCancelled else {
+                await limiter.release()
+                return
+            }
+            await hosts.prepareImport(groupId, request)
+            await limiter.release()
+        }
     }
 
     private func publishPhases() {
@@ -223,5 +253,31 @@ final class GroupOperationCoordinator {
         }
         importPhases = nextImportPhases
         hosts?.onPhasesChange(updatePhases, importPhases)
+    }
+}
+
+private actor GroupOperationPreparationLimiter {
+    private let limit: Int
+    private var active = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+    }
+
+    func acquire() async {
+        if active < limit {
+            active += 1
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            active = max(0, active - 1)
+            return
+        }
+        waiters.removeFirst().resume()
     }
 }

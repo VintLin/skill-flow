@@ -5294,9 +5294,9 @@ export class SkillFlowApp {
   }
 
   private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
-    const preflight = await this.sourceAuthorityService.preflightUpdateSources(sourceIds);
-    if (!preflight.ok) {
-      return fail(preflight.errors, preflight.warnings);
+    const precheck = await this.sourceAuthorityService.precheckUpdateSources(sourceIds);
+    if (!precheck.ok) {
+      return fail(precheck.errors, precheck.warnings);
     }
     const initialState = await this.stateStore.readState();
     const requestedIds = sourceIds?.length
@@ -5311,8 +5311,15 @@ export class SkillFlowApp {
         .map((source) => source.id);
     const updatedItems: SourceUpdateResultItem[] = [];
     const failed: NonNullable<SourceUpdateResult["failed"]> = [];
-    const warnings: Warning[] = [...preflight.warnings];
-    const precheckFallbackSourceIds: string[] = [];
+    const warnings: Warning[] = [...precheck.warnings];
+    const precheckFallbackSourceIds: string[] = [...precheck.data.precheckFallbackSourceIds];
+    const unchangedBySourceId = new Map(
+      precheck.data.unchanged.map((item) => [item.sourceId, item]),
+    );
+    const skipRemotePrecheckSourceIds = new Set([
+      ...precheck.data.remoteChangedSourceIds,
+      ...precheck.data.precheckFallbackSourceIds,
+    ]);
     const hardErrors: Array<{ code: string; message: string }> = [];
     const recordFailureAndRecover = async (
       sourceId: string,
@@ -5331,6 +5338,11 @@ export class SkillFlowApp {
     };
 
     for (const sourceId of requestedIds) {
+      const unchanged = unchangedBySourceId.get(sourceId);
+      if (unchanged) {
+        updatedItems.push(unchanged);
+        continue;
+      }
       const currentState = await this.stateStore.readState();
       const source = currentState.manifest.sources.find((candidate) => candidate.id === sourceId);
       const lock = currentState.lockFile.sources[sourceId];
@@ -5349,6 +5361,7 @@ export class SkillFlowApp {
           });
         }
         const updated = await this.sourceAuthorityService.updateSources([sourceId], {
+          ...(skipRemotePrecheckSourceIds.has(sourceId) ? { skipGitRemotePrecheck: true } : {}),
           ...(transaction
             ? { checkoutBackupPath: transaction.checkoutBackupPath, retainCheckoutBackup: true }
             : {}),

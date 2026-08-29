@@ -936,6 +936,66 @@ describe.sequential("SourceAuthorityService", () => {
     expect(prepareSourceCheckout).toHaveBeenCalledTimes(3);
   });
 
+  test("prechecks remote Git revisions with bounded concurrency", async () => {
+    const stateStore = new StateStore(sandbox.stateRoot);
+    await stateStore.init();
+    const checkoutService = new SourceCheckoutService({
+      sourceRoot: path.join(sandbox.stateRoot, "source"),
+      inventoryService: new InventoryService(),
+    });
+    const service = new SourceAuthorityService({ stateStore, checkoutService });
+    const sourceIds = ["parallel-a", "parallel-b", "parallel-c", "parallel-d"];
+    for (const sourceId of sourceIds) {
+      const preparedPath = path.join(sandbox.stateRoot, "source", "git", `.prepared-${sourceId}`);
+      const skillPath = path.join(preparedPath, "skills", "one");
+      await fs.mkdir(skillPath, { recursive: true });
+      await fs.writeFile(path.join(skillPath, "SKILL.md"), skillDoc("one", "One."), "utf8");
+      const contentHash = await hashDirectory(skillPath);
+      const committed = await service.commitPreparedSource({
+        preparedCheckout: {
+          locator: `https://github.com/acme/${sourceId}.git`,
+          displayName: sourceId,
+          kind: "git",
+          sourceId,
+          checkoutPath: preparedPath,
+          leafs: [{
+            id: `${sourceId}:skills/one`,
+            sourceId,
+            name: "one",
+            linkName: "one",
+            title: "one",
+            description: "One.",
+            relativePath: "skills/one",
+            absolutePath: skillPath,
+            skillFilePath: path.join(skillPath, "SKILL.md"),
+            contentHash,
+            diagnostics: [],
+            valid: true,
+          }],
+          invalidLeafs: [],
+          commitSha: "same-sha",
+        },
+      });
+      expect(committed.ok).toBe(true);
+    }
+    let active = 0;
+    let maximumActive = 0;
+    checkoutService.readGitRemoteHeadCommit = vi.fn(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      active -= 1;
+      return "same-sha";
+    });
+
+    const precheck = await service.precheckUpdateSources(sourceIds);
+
+    expect(precheck.ok).toBe(true);
+    if (!precheck.ok) return;
+    expect(precheck.data.unchanged.map((item) => item.sourceId)).toEqual(sourceIds);
+    expect(maximumActive).toBe(3);
+  });
+
   test("updateSources falls back to a full update when remote HEAD preflight is unavailable", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/one/SKILL.md": skillDoc("one", "One."),

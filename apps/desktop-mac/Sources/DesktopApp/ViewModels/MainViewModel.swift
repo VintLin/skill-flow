@@ -330,6 +330,12 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 isImportInstalledLocally: { [weak self] groupId in
                     self?.importLogic.isImportGroupInstalledLocally(groupId) == true
                 },
+                prepareImport: { [weak self] groupId, request in
+                    await self?.importLogic.prepareImportGroupIfNeeded(
+                        groupId: groupId,
+                        locator: request.locator
+                    )
+                },
                 performUpdate: { [weak self] sourceId in
                     await self?.performQueuedUpdate(sourceId: sourceId)
                 },

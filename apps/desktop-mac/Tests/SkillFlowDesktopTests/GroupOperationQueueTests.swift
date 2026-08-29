@@ -4,6 +4,196 @@ import XCTest
 
 @MainActor
 final class GroupOperationQueueTests: XCTestCase {
+    func testQueuedImportPreparesBeforeEarlierCommitFinishes() async {
+        let coordinator = GroupOperationCoordinator()
+        let firstCommitStarted = expectation(description: "first commit started")
+        let secondPrepared = expectation(description: "second import prepared")
+        let releaseFirstCommit = GroupOperationTestGate()
+        var preparedGroupIds: [String] = []
+        var committedGroupIds: [String] = []
+        coordinator.bind(.init(
+            isSourcePresent: { _ in true },
+            isImportInstalledLocally: { _ in false },
+            prepareImport: { groupId, _ in
+                preparedGroupIds.append(groupId)
+                if groupId == "second" { secondPrepared.fulfill() }
+            },
+            performUpdate: { _ in },
+            performBulkUpdate: { _ in },
+            performImport: { groupId, _ in
+                committedGroupIds.append(groupId)
+                if groupId == "first" {
+                    firstCommitStarted.fulfill()
+                    await releaseFirstCommit.wait()
+                }
+            },
+            onAlreadyQueued: {},
+            onSkippedMissing: {},
+            onImportAlreadyExists: {},
+            onPhasesChange: { _, _ in }
+        ))
+        let requestSkills = [ImportSkillSelection.repoPath("skills/one")]
+
+        let first = Task {
+            await coordinator.enqueueImport(
+                groupId: "first",
+                locator: "first/repo",
+                selectedSkills: requestSkills,
+                skillSelectionMode: .selected,
+                enabledTargets: ["codex"]
+            )
+        }
+        await fulfillment(of: [firstCommitStarted], timeout: 1)
+        let second = Task {
+            await coordinator.enqueueImport(
+                groupId: "second",
+                locator: "second/repo",
+                selectedSkills: requestSkills,
+                skillSelectionMode: .selected,
+                enabledTargets: ["codex"]
+            )
+        }
+
+        await fulfillment(of: [secondPrepared], timeout: 1)
+        XCTAssertEqual(preparedGroupIds, ["second"])
+        XCTAssertEqual(committedGroupIds, ["first"])
+        await releaseFirstCommit.open()
+        await first.value
+        await second.value
+        XCTAssertEqual(committedGroupIds, ["first", "second"])
+    }
+
+    func testImportPreparationConcurrencyIsBoundedAtThree() async throws {
+        let coordinator = GroupOperationCoordinator()
+        let updateStarted = expectation(description: "update started")
+        let releaseUpdate = GroupOperationTestGate()
+        let releasePreparations = GroupOperationTestGate()
+        var preparedGroupIds: [String] = []
+        coordinator.bind(.init(
+            isSourcePresent: { _ in true },
+            isImportInstalledLocally: { _ in false },
+            prepareImport: { groupId, _ in
+                preparedGroupIds.append(groupId)
+                await releasePreparations.wait()
+            },
+            performUpdate: { _ in
+                updateStarted.fulfill()
+                await releaseUpdate.wait()
+            },
+            performBulkUpdate: { _ in },
+            performImport: { _, _ in },
+            onAlreadyQueued: {},
+            onSkippedMissing: {},
+            onImportAlreadyExists: {},
+            onPhasesChange: { _, _ in }
+        ))
+        let skills = [ImportSkillSelection.repoPath("skills/one")]
+        let blockingUpdate = Task { await coordinator.enqueueUpdate(sourceId: "updating") }
+        await fulfillment(of: [updateStarted], timeout: 1)
+        let tasks = ["one", "two", "three", "four"].map { groupId in
+            Task {
+                await coordinator.enqueueImport(
+                    groupId: groupId,
+                    locator: "\(groupId)/repo",
+                    selectedSkills: skills,
+                    skillSelectionMode: .selected,
+                    enabledTargets: ["codex"]
+                )
+            }
+        }
+
+        let deadline = ContinuousClock.now + .seconds(1)
+        while preparedGroupIds.count < 3, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(preparedGroupIds, ["one", "two", "three"])
+
+        await releasePreparations.open()
+        await releaseUpdate.open()
+        await blockingUpdate.value
+        for task in tasks { await task.value }
+        XCTAssertEqual(preparedGroupIds, ["one", "two", "three", "four"])
+    }
+
+    func testShutdownCancelsImportPreparationWithoutStartingCommit() async {
+        let coordinator = GroupOperationCoordinator()
+        let updateStarted = expectation(description: "update started")
+        let releaseUpdate = GroupOperationTestGate()
+        let preparationStarted = expectation(description: "preparation started")
+        let preparationCancelled = expectation(description: "preparation cancelled")
+        var committedGroupIds: [String] = []
+        coordinator.bind(.init(
+            isSourcePresent: { _ in true },
+            isImportInstalledLocally: { _ in false },
+            prepareImport: { _, _ in
+                preparationStarted.fulfill()
+                do {
+                    try await Task.sleep(for: .seconds(10))
+                } catch {
+                    preparationCancelled.fulfill()
+                }
+            },
+            performUpdate: { _ in
+                updateStarted.fulfill()
+                await releaseUpdate.wait()
+            },
+            performBulkUpdate: { _ in },
+            performImport: { groupId, _ in committedGroupIds.append(groupId) },
+            onAlreadyQueued: {},
+            onSkippedMissing: {},
+            onImportAlreadyExists: {},
+            onPhasesChange: { _, _ in }
+        ))
+
+        let blockingUpdate = Task { await coordinator.enqueueUpdate(sourceId: "updating") }
+        await fulfillment(of: [updateStarted], timeout: 1)
+        await coordinator.enqueueImport(
+            groupId: "queued",
+            locator: "queued/repo",
+            selectedSkills: [.repoPath("skills/one")],
+            skillSelectionMode: .selected,
+            enabledTargets: ["codex"]
+        )
+        await fulfillment(of: [preparationStarted], timeout: 1)
+
+        coordinator.shutdownForTermination()
+
+        await fulfillment(of: [preparationCancelled], timeout: 1)
+        await releaseUpdate.open()
+        await blockingUpdate.value
+        XCTAssertTrue(committedGroupIds.isEmpty)
+    }
+
+    func testFirstImportUsesExistingDirectCommitPath() async {
+        let coordinator = GroupOperationCoordinator()
+        var preparedGroupIds: [String] = []
+        var committedGroupIds: [String] = []
+        coordinator.bind(.init(
+            isSourcePresent: { _ in true },
+            isImportInstalledLocally: { _ in false },
+            prepareImport: { groupId, _ in preparedGroupIds.append(groupId) },
+            performUpdate: { _ in },
+            performBulkUpdate: { _ in },
+            performImport: { groupId, _ in committedGroupIds.append(groupId) },
+            onAlreadyQueued: {},
+            onSkippedMissing: {},
+            onImportAlreadyExists: {},
+            onPhasesChange: { _, _ in }
+        ))
+
+        await coordinator.enqueueImport(
+            groupId: "first",
+            locator: "first/repo",
+            selectedSkills: [.repoPath("skills/one")],
+            skillSelectionMode: .selected,
+            enabledTargets: ["codex"]
+        )
+
+        XCTAssertTrue(preparedGroupIds.isEmpty)
+        XCTAssertEqual(committedGroupIds, ["first"])
+    }
+
     func testEnqueueUpdateIsFIFOAndTracksQueuedThenRunning() {
         let queue = GroupOperationQueue()
 
@@ -98,5 +288,22 @@ final class GroupOperationQueueTests: XCTestCase {
         queue.resumeAfterRecovery()
         XCTAssertNil(queue.updatePhase(for: "running"))
         XCTAssertEqual(queue.enqueueUpdate(sourceId: "later"), .enqueued)
+    }
+}
+
+private actor GroupOperationTestGate {
+    private var isOpen = false
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuations.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = continuations
+        continuations.removeAll()
+        pending.forEach { $0.resume() }
     }
 }

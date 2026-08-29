@@ -17,8 +17,9 @@ Cancel action.
 ## Decision
 
 - Command-Q and the application Quit menu freeze the Group Operation Queue,
-  discard Queued operations, and cancel the single Running operation. Closing
-  the main window does not cancel work.
+  discard Queued operations, cancel all disposable preparation tasks, and
+  cancel the single durable Running commit. Closing the main window does not
+  cancel work.
 - A completed operation remains committed. During Bulk Update, groups that
   reached their per-group commit point remain committed; only the current
   incomplete group is recovered.
@@ -59,8 +60,8 @@ Cancel action.
 
 ## Consequences
 
-- The queue stays session-scoped and single-flight, preserving ADR 0002's FIFO
-  and serial mutation decisions.
+- The queue stays session-scoped. Preparation may overlap within ADR 0002's
+  bound, while durable commits remain FIFO and single-flight.
 - `no cancel` in ADR 0002 is superseded only for application termination.
 - Recovery state is an internal durable implementation detail, separate from
   Shared Skill State authority files, migration markers, and Desktop Workspace

@@ -363,6 +363,12 @@ final class ImportLogic {
         }
     }
 
+    func prepareImportGroupIfNeeded(groupId: String, locator: String) async {
+        guard let item = importGroupItem(id: groupId), item.locator == locator else { return }
+        guard item.preparationStatus != "ready", item.preparationStatus != "preparing" else { return }
+        await prepareImportGroup(groupId: groupId, locator: locator)
+    }
+
     private func prepareImportGroup(groupId: String, locator: String, token: UInt64? = nil) async {
         if token == nil {
             importPreparationTokenSeed &+= 1

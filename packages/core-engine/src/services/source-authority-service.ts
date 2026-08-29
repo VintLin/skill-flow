@@ -48,6 +48,19 @@ export type SourceSnapshot = {
   invalidLeafCount: number;
 };
 
+export type SourceUpdatePrecheckResult = {
+  unchanged: SourceUpdateResultItem[];
+  updateRequiredSourceIds: string[];
+  remoteChangedSourceIds: string[];
+  precheckFallbackSourceIds: string[];
+};
+
+type SourceUpdateOptions = {
+  checkoutBackupPath?: string;
+  retainCheckoutBackup?: boolean;
+  skipGitRemotePrecheck?: boolean;
+};
+
 type SourceUpdateTarget =
   | { kind: "collection"; sourceId: string }
   | {
@@ -55,6 +68,14 @@ type SourceUpdateTarget =
       source: SourceManifestRecord;
       lock: LockFile["sources"][string];
     };
+
+type SourceUpdatePrecheckItem = {
+  sourceId: string;
+  outcome: "unchanged" | "update-required";
+  remoteChanged?: boolean;
+  fallback?: boolean;
+  warning?: Warning;
+};
 
 export class SourceAuthorityService {
   constructor(private readonly options: SourceAuthorityServiceOptions) {}
@@ -355,7 +376,7 @@ export class SourceAuthorityService {
 
   async updateSources(
     sourceIds?: string[],
-    options: { checkoutBackupPath?: string; retainCheckoutBackup?: boolean } = {},
+    options: SourceUpdateOptions = {},
   ): Promise<Result<SourceUpdateResult>> {
     return this.withMutationLock(() => this.updateSourcesUnlocked(sourceIds, options));
   }
@@ -375,9 +396,98 @@ export class SourceAuthorityService {
       : fail(preflight.errors, preflight.warnings);
   }
 
+  async precheckUpdateSources(sourceIds?: string[]): Promise<Result<SourceUpdatePrecheckResult>> {
+    const state = await this.options.stateStore.readState();
+    const requestedIds = sourceIds?.length
+      ? [...new Set(sourceIds)]
+      : state.manifest.sources.map((source) => source.id);
+    const preflight = await this.preflightSourceUpdates(
+      state,
+      requestedIds,
+      Boolean(sourceIds?.length),
+    );
+    if (!preflight.ok) {
+      return fail(preflight.errors, preflight.warnings);
+    }
+
+    const unchanged: SourceUpdateResultItem[] = [];
+    const updateRequiredSourceIds: string[] = [];
+    const remoteChangedSourceIds: string[] = [];
+    const precheckFallbackSourceIds: string[] = [];
+    const warnings: Warning[] = [...preflight.warnings];
+    const checks = await this.mapConcurrent(preflight.data, 3, (target) =>
+      this.precheckUpdateTarget(target, state.lockFile.leafInventory)
+    );
+    for (const check of checks) {
+      if (check.outcome === "unchanged") {
+        unchanged.push(this.emptyUpdateResult(check.sourceId));
+      } else {
+        updateRequiredSourceIds.push(check.sourceId);
+      }
+      if (check.remoteChanged) remoteChangedSourceIds.push(check.sourceId);
+      if (check.fallback) precheckFallbackSourceIds.push(check.sourceId);
+      if (check.warning) warnings.push(check.warning);
+    }
+
+    return ok({
+      unchanged,
+      updateRequiredSourceIds,
+      remoteChangedSourceIds,
+      precheckFallbackSourceIds,
+    }, warnings);
+  }
+
+  private async precheckUpdateTarget(
+    target: SourceUpdateTarget,
+    leafInventory: LeafRecord[],
+  ): Promise<SourceUpdatePrecheckItem> {
+    if (target.kind === "collection") {
+      return { sourceId: target.sourceId, outcome: "unchanged" };
+    }
+    const sourceId = target.source.id;
+    const lockedCommit = this.readLockedCommitSha(target.lock.revision);
+    if (target.source.kind !== "git" || !lockedCommit) {
+      return { sourceId, outcome: "update-required" };
+    }
+    try {
+      const remoteCommit = await this.options.checkoutService.readGitRemoteHeadCommit(
+        target.source.locator,
+        target.lock.originBranch ? { branch: target.lock.originBranch } : {},
+      );
+      if (!remoteCommit) {
+        return {
+          sourceId,
+          outcome: "update-required",
+          fallback: true,
+          warning: {
+            code: "SOURCE_REMOTE_PRECHECK_FALLBACK",
+            message: `Remote HEAD could not be verified for '${sourceId}'; running a full update.`,
+          },
+        };
+      }
+      if (remoteCommit !== lockedCommit) {
+        return { sourceId, outcome: "update-required", remoteChanged: true };
+      }
+      const integrity = await this.inspectCheckoutIntegrity(target.lock, leafInventory);
+      return integrity.repairReason
+        ? { sourceId, outcome: "update-required" }
+        : { sourceId, outcome: "unchanged" };
+    } catch (error) {
+      return {
+        sourceId,
+        outcome: "update-required",
+        fallback: true,
+        warning: {
+          code: "SOURCE_REMOTE_PRECHECK_FALLBACK",
+          message: `Remote HEAD could not be verified for '${sourceId}'; running a full update: ${String(error)}`,
+        },
+      };
+    }
+  }
+
   private async updateSourcesUnlocked(
     sourceIds?: string[],
-    options: { checkoutBackupPath?: string; retainCheckoutBackup?: boolean } = {},
+    options: SourceUpdateOptions = {},
   ): Promise<Result<SourceUpdateResult>> {
     const state = await this.options.stateStore.readState();
     const requestedIds = sourceIds?.length
@@ -415,7 +525,7 @@ export class SourceAuthorityService {
 
       const lockedCommit = this.readLockedCommitSha(lock.revision);
       let repairReason: SourceRepairReason | undefined;
-      if (source.kind === "git" && lockedCommit) {
+      if (source.kind === "git" && lockedCommit && !options.skipGitRemotePrecheck) {
         try {
           const remoteCommit = await this.options.checkoutService.readGitRemoteHeadCommit(
             source.locator,
@@ -861,6 +971,25 @@ export class SourceAuthorityService {
     }
 
     return {};
+  }
+
+  private async mapConcurrent<T, R>(
+    items: readonly T[],
+    concurrency: number,
+    worker: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) return [];
+    const limit = Math.max(1, Math.min(concurrency, items.length));
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    await Promise.all(Array.from({ length: limit }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex]!, currentIndex);
+      }
+    }));
+    return results;
   }
 
   private emptyUpdateResult(sourceId: string): SourceUpdateResultItem {
