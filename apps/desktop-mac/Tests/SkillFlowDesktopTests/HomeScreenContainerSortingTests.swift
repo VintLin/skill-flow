@@ -63,6 +63,37 @@ final class HomeScreenContainerSortingTests: XCTestCase {
         XCTAssertEqual(sorted.map(\.id), ["she", "shu", "zi"])
     }
 
+    func testSortKeyProjectionNormalizesEachCardNameOnce() {
+        let snapshot = GroupTagController.HomeSnapshot(
+            availableTags: [],
+            tagCountsByID: [:],
+            selectedKey: nil,
+            visibleSourceIDs: ["a", "b", "c"],
+            tagsBySourceID: [:],
+            suggestionsBySourceID: [:],
+            tagRankByID: [:],
+            visibleSourceIDSet: ["a", "b", "c"]
+        )
+        let cards = [
+            card(id: "a", title: "甲", isPinned: false),
+            card(id: "b", title: "乙", isPinned: false),
+            card(id: "c", title: "丙", isPinned: false),
+        ]
+        var normalizationCount = 0
+
+        _ = HomeScreenContainer.makeHomeSortKeys(
+            for: cards,
+            snapshot: snapshot,
+            pinnedSourceIds: [],
+            nameKey: { title in
+                normalizationCount += 1
+                return title
+            }
+        )
+
+        XCTAssertEqual(normalizationCount, cards.count)
+    }
+
     private func card(id: String, title: String, isPinned: Bool) -> GroupCardModel {
         GroupCardModel(
             id: id,

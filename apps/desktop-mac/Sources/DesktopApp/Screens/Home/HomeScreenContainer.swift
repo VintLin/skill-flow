@@ -3,6 +3,12 @@ import SwiftUI
 
 @MainActor
 final class HomeScreenContainer {
+    struct HomeSortKey {
+        let pinRank: Int
+        let tagRank: Int
+        let name: String
+    }
+
     private let state: DesktopAppState
     private let groupTagController: GroupTagController
     let viewModel: HomeViewModel
@@ -82,27 +88,54 @@ final class HomeScreenContainer {
         snapshot: GroupTagController.HomeSnapshot,
         pinnedSourceIds: [String]
     ) -> [GroupCardModel] {
-        cards.sorted { lhs, rhs in
-            let leftPin = pinRank(for: lhs.id, pinnedSourceIds: pinnedSourceIds)
-            let rightPin = pinRank(for: rhs.id, pinnedSourceIds: pinnedSourceIds)
-            if leftPin != rightPin {
-                return leftPin < rightPin
+        let sortKeys = makeHomeSortKeys(
+            for: cards,
+            snapshot: snapshot,
+            pinnedSourceIds: pinnedSourceIds,
+            nameKey: homeNameSortKey
+        )
+
+        return cards.sorted { lhs, rhs in
+            guard let left = sortKeys[lhs.id], let right = sortKeys[rhs.id] else {
+                return lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
+            }
+            if left.pinRank != right.pinRank {
+                return left.pinRank < right.pinRank
             }
 
-            let leftTag = firstTagRank(for: lhs.id, snapshot: snapshot)
-            let rightTag = firstTagRank(for: rhs.id, snapshot: snapshot)
-            if leftTag != rightTag {
-                return leftTag < rightTag
+            if left.tagRank != right.tagRank {
+                return left.tagRank < right.tagRank
             }
 
-            let leftName = homeNameSortKey(lhs.title)
-            let rightName = homeNameSortKey(rhs.title)
-            if leftName != rightName {
-                return leftName < rightName
+            if left.name != right.name {
+                return left.name < right.name
             }
 
             return lhs.id.localizedCaseInsensitiveCompare(rhs.id) == .orderedAscending
         }
+    }
+
+    static func makeHomeSortKeys(
+        for cards: [GroupCardModel],
+        snapshot: GroupTagController.HomeSnapshot,
+        pinnedSourceIds: [String],
+        nameKey: (String) -> String
+    ) -> [String: HomeSortKey] {
+        var pinRanks: [String: Int] = [:]
+        for (index, sourceId) in pinnedSourceIds.enumerated() where pinRanks[sourceId] == nil {
+            pinRanks[sourceId] = index
+        }
+
+        var keys: [String: HomeSortKey] = [:]
+        keys.reserveCapacity(cards.count)
+        for card in cards {
+            keys[card.id] = HomeSortKey(
+                pinRank: pinRanks[card.id] ?? Int.max,
+                tagRank: firstTagRank(for: card.id, snapshot: snapshot),
+                name: nameKey(card.title)
+            )
+        }
+        return keys
     }
 
     func groupTags(for sourceId: String, locale: Locale) -> [GroupTagDisplayItem] {
@@ -281,10 +314,6 @@ final class HomeScreenContainer {
                 self?.observeMainViewModelState()
             }
         }
-    }
-
-    private static func pinRank(for sourceId: String, pinnedSourceIds: [String]) -> Int {
-        pinnedSourceIds.firstIndex(of: sourceId) ?? Int.max
     }
 
     private static func firstTagRank(for sourceId: String, snapshot: GroupTagController.HomeSnapshot) -> Int {
