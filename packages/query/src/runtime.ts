@@ -2696,7 +2696,7 @@ export class SkillFlowApp {
   ): ImportGroupCandidate {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
     const cachedRepo = importCache.repos?.[normalizedRepo];
-    const cachedSnapshot = cachedRepo?.providers.skills?.snapshot;
+    const cachedSnapshot = cachedRepo?.data;
 
     if (cachedSnapshot) {
       return buildImportGroupCandidate({
@@ -2705,27 +2705,6 @@ export class SkillFlowApp {
         snapshot: cachedSnapshot,
         ...(options.matchedSkills ? { matchedSkills: options.matchedSkills } : {}),
       });
-    }
-
-    if (cachedRepo) {
-      return {
-        id: normalizedRepo,
-        provider: "skills",
-        locator: normalizedRepo,
-        canonicalRepo: normalizedRepo,
-        aliases: cachedRepo.identity.aliases,
-        title: cachedRepo.resolved.title ?? normalizedRepo.split("/")[1] ?? normalizedRepo,
-        installed: options.installed,
-        ...(cachedRepo.resolved.summary ? { summary: cachedRepo.resolved.summary } : {}),
-        ...(cachedRepo.resolved.sourceUrl ? { sourceUrl: cachedRepo.resolved.sourceUrl } : {}),
-        ...(cachedRepo.resolved.githubUrl ? { repoUrl: cachedRepo.resolved.githubUrl } : {}),
-        ...(cachedRepo.resolved.starCount !== undefined ? { starCount: cachedRepo.resolved.starCount } : {}),
-        ...(cachedRepo.resolved.downloadCount !== undefined ? { totalInstalls: cachedRepo.resolved.downloadCount } : {}),
-        ...(cachedRepo.resolved.skillCount !== undefined ? { skillCount: cachedRepo.resolved.skillCount } : {}),
-        ...(options.matchedSkills?.length ? { matchedSkillNames: options.matchedSkills.map((skill) => skill.title) } : {}),
-        ...(options.matchedSkills?.length ? { matchedSkills: options.matchedSkills } : {}),
-        enrichState: { status: "ready" },
-      };
     }
 
     return {
@@ -2756,7 +2735,7 @@ export class SkillFlowApp {
       }
       const normalizedRepo = normalizeImportCanonicalRepo(group.canonicalRepo) ?? group.canonicalRepo;
       const cached = importCache.repos?.[normalizedRepo];
-      const cachedSnapshot = cached?.providers.skills?.snapshot;
+      const cachedSnapshot = cached?.data;
       if (cached && cachedSnapshot && !isImportDataCacheExpired(cached)) {
         continue;
       }
@@ -3283,7 +3262,7 @@ export class SkillFlowApp {
         return normalizeImportCanonicalRepo(locator);
       }, undefined);
       const cachedSnapshot = canonicalRepo
-        ? importDataCache.repos?.[canonicalRepo]?.providers.skills?.snapshot
+        ? importDataCache.repos?.[canonicalRepo]?.data
         : undefined;
       if (cachedSnapshot) {
         entry.sourceSnapshot = cachedSnapshot;

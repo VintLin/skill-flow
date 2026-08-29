@@ -10,6 +10,7 @@ All notable changes to `skill-flow` will be documented in this file.
 - Local Skill scan now derives groups only from observed local paths and content hashes; legacy Agents lock origin inference is no longer part of scan behavior.
 - Removed unused persisted local import-choice snapshots from preferences; migration and settings writes now discard those rebuildable legacy fields.
 - Simplified disposable import preparation records to retain only checkout, lifecycle, retry, and recovery evidence.
+- Replaced the unused multi-provider import repository cache envelope with direct Skills source snapshots.
 
 ## v1.6.1 - 2026-08-27
 

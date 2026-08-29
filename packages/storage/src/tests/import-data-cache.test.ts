@@ -45,6 +45,33 @@ describe("import-data-cache", () => {
     ).toEqual({});
   });
 
+  test("does not preserve obsolete provider envelopes", () => {
+    expect(
+      normalizeImportDataCache({
+        repos: {
+          "anthropics/skills": {
+            checkedAt: "2026-03-28T00:00:00.000Z",
+            expiresAt: "2026-03-29T00:00:00.000Z",
+            identity: {
+              canonicalRepo: "anthropics/skills",
+              aliases: [],
+              origins: ["skills"],
+            },
+            providers: {
+              skills: {
+                provider: "skills",
+                status: "ready",
+                checkedAt: "2026-03-28T00:00:00.000Z",
+                expiresAt: "2026-03-29T00:00:00.000Z",
+              },
+            },
+            resolved: { fieldSources: {} },
+          },
+        },
+      }).repos,
+    ).toEqual({});
+  });
+
   test("keeps only valid search, repo, and recommendation entries", () => {
     expect(
       normalizeImportDataCache({
@@ -68,48 +95,23 @@ describe("import-data-cache", () => {
         },
         repos: {
           "anthropics/skills": {
-            identity: {
-              canonicalRepo: "anthropics/skills",
-              aliases: [],
-              origins: ["skills"],
-            },
-            providers: {
-              skills: {
-                provider: "skills",
-                status: "ready",
-                checkedAt: "2026-03-28T00:00:00.000Z",
-                expiresAt: "2026-03-29T00:00:00.000Z",
-                snapshot: {
-                  canonicalRepo: "anthropics/skills",
-                  aliases: [],
-                  title: "skills",
-                  sourceUrl: "https://skills.sh/anthropics/skills",
-                  repoUrl: "https://github.com/anthropics/skills",
-                  repoLabel: "anthropics/skills",
-                  owner: {
-                    slug: "anthropics",
-                    sourceUrl: "https://skills.sh/anthropics",
-                  },
-                  skills: [],
-                },
-              },
-            },
-            resolved: {
-              title: "skills",
-              author: "anthropics",
-              githubUrl: "https://github.com/anthropics/skills",
-              sourceUrl: "https://skills.sh/anthropics/skills",
-              skillCount: 4,
-              fieldSources: {
-                title: "skills",
-                author: "skills",
-                githubUrl: "skills",
-                sourceUrl: "skills",
-                skillCount: "skills",
-              },
-            },
+            canonicalRepo: "anthropics/skills",
             checkedAt: "2026-03-28T00:00:00.000Z",
             expiresAt: "2026-03-29T00:00:00.000Z",
+            data: {
+              canonicalRepo: "anthropics/skills",
+              aliases: [],
+              title: "skills",
+              sourceUrl: "https://skills.sh/anthropics/skills",
+              repoUrl: "https://github.com/anthropics/skills",
+              repoLabel: "anthropics/skills",
+              owner: {
+                slug: "anthropics",
+                sourceUrl: "https://skills.sh/anthropics",
+              },
+              skills: [],
+              skillCount: 4,
+            },
           },
         },
         recommendations: {
@@ -146,46 +148,20 @@ describe("import-data-cache", () => {
           canonicalRepo: "anthropics/skills",
           checkedAt: "2026-03-28T00:00:00.000Z",
           expiresAt: "2026-03-29T00:00:00.000Z",
-          identity: {
+          data: {
             canonicalRepo: "anthropics/skills",
             aliases: [],
-            origins: ["skills"],
-          },
-          providers: {
-            skills: {
-              provider: "skills",
-              status: "ready",
-              checkedAt: "2026-03-28T00:00:00.000Z",
-              expiresAt: "2026-03-29T00:00:00.000Z",
-              snapshot: {
-                canonicalRepo: "anthropics/skills",
-                aliases: [],
-                title: "skills",
-                provider: "skills",
-                sourceUrl: "https://skills.sh/anthropics/skills",
-                repoUrl: "https://github.com/anthropics/skills",
-                repoLabel: "anthropics/skills",
-                owner: {
-                  slug: "anthropics",
-                  sourceUrl: "https://skills.sh/anthropics",
-                },
-                skills: [],
-              },
-            },
-          },
-          resolved: {
             title: "skills",
-            author: "anthropics",
-            githubUrl: "https://github.com/anthropics/skills",
+            provider: "skills",
             sourceUrl: "https://skills.sh/anthropics/skills",
-            skillCount: 4,
-            fieldSources: {
-              title: "skills",
-              author: "skills",
-              githubUrl: "skills",
-              sourceUrl: "skills",
-              skillCount: "skills",
+            repoUrl: "https://github.com/anthropics/skills",
+            repoLabel: "anthropics/skills",
+            owner: {
+              slug: "anthropics",
+              sourceUrl: "https://skills.sh/anthropics",
             },
+            skills: [],
+            skillCount: 4,
           },
         },
       },

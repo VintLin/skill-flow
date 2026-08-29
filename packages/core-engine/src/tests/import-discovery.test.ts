@@ -173,6 +173,22 @@ describe("ImportDiscovery", () => {
     expect(provider.search).not.toHaveBeenCalled();
   });
 
+  test("returns a fresh source snapshot without calling the provider", async () => {
+    const provider = createProvider();
+    const { discovery, store } = createDiscovery(provider);
+    const cached = sourceSnapshot("acme/skills");
+    await store.writeImportSourceSnapshotEntry({
+      canonicalRepo: cached.canonicalRepo,
+      checkedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      data: cached,
+    });
+
+    await expect(discovery.resolveSource("acme/skills")).resolves.toEqual(cached);
+    await expect(discovery.resolvePreviewSource("acme/skills")).resolves.toEqual(cached);
+    expect(provider.fetchSource).not.toHaveBeenCalled();
+  });
+
   test("returns stale search data immediately and refreshes it in the background", async () => {
     const pending = deferred<ImportSearchSnapshot["hits"]>();
     const search = vi.fn(() => pending.promise);

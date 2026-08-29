@@ -92,7 +92,7 @@ export class ImportDiscovery {
   ): Promise<UnifiedSourceSnapshot> {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
     const cached = (await this.options.store.readImportDataCache()).repos[normalizedRepo];
-    const cachedSnapshot = cached?.providers.skills?.snapshot;
+    const cachedSnapshot = cached?.data;
     const requiresSkillRefresh = cachedSnapshot
       ? this.snapshotNeedsSkillRefresh(cachedSnapshot, options?.enrichSkillIds ?? [])
       : false;
@@ -129,7 +129,7 @@ export class ImportDiscovery {
   async resolvePreviewSource(canonicalRepo: string): Promise<UnifiedSourceSnapshot> {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
     const cached = (await this.options.store.readImportDataCache()).repos[normalizedRepo];
-    const cachedSnapshot = cached?.providers.skills?.snapshot;
+    const cachedSnapshot = cached?.data;
     if (cached && cachedSnapshot && !isImportDataCacheExpired(cached)) {
       return cachedSnapshot;
     }

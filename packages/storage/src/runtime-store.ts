@@ -3,7 +3,6 @@ import path from "node:path";
 import type {
   ImportDataCache,
   ImportRecommendationFeed,
-  RepoMetadataCacheEntry,
   SourceKind,
   SourceMetadataCache,
   SourceMetadataCacheEntry,
@@ -120,45 +119,7 @@ export class RuntimeStore {
     await this.withIoLock(async () => {
       await this.init();
       const cache = await this.readImportDataCacheRaw();
-      cache.repos[entry.canonicalRepo] = {
-        canonicalRepo: entry.canonicalRepo,
-        checkedAt: entry.checkedAt,
-        expiresAt: entry.expiresAt,
-        identity: {
-          canonicalRepo: entry.canonicalRepo,
-          aliases: entry.data.aliases,
-          origins: ["skills"],
-        },
-        providers: {
-          skills: {
-            provider: "skills",
-            status: "ready",
-            checkedAt: entry.checkedAt,
-            expiresAt: entry.expiresAt,
-            snapshot: entry.data,
-          },
-        },
-        resolved: {
-          ...(entry.data.title ? { title: entry.data.title } : {}),
-          ...(entry.data.owner.slug ? { author: entry.data.owner.slug } : {}),
-          ...(entry.data.description ? { summary: entry.data.description } : {}),
-          ...(entry.data.repoUrl ? { githubUrl: entry.data.repoUrl } : {}),
-          ...(entry.data.sourceUrl ? { sourceUrl: entry.data.sourceUrl } : {}),
-          ...(entry.data.skillCount !== undefined ? { skillCount: entry.data.skillCount } : {}),
-          ...(entry.data.totalInstalls !== undefined ? { downloadCount: entry.data.totalInstalls } : {}),
-          ...(entry.data.repoStars !== undefined ? { starCount: entry.data.repoStars } : {}),
-          fieldSources: {
-            ...(entry.data.title ? { title: "skills" } : {}),
-            ...(entry.data.owner.slug ? { author: "skills" } : {}),
-            ...(entry.data.description ? { summary: "skills" } : {}),
-            ...(entry.data.repoUrl ? { githubUrl: "skills" } : {}),
-            ...(entry.data.sourceUrl ? { sourceUrl: "skills" } : {}),
-            ...(entry.data.skillCount !== undefined ? { skillCount: "skills" } : {}),
-            ...(entry.data.totalInstalls !== undefined ? { downloadCount: "skills" } : {}),
-            ...(entry.data.repoStars !== undefined ? { starCount: "skills" } : {}),
-          },
-        },
-      } as RepoMetadataCacheEntry;
+      cache.repos[entry.canonicalRepo] = entry;
       await writeJsonFile(this.importDataPath, cache);
     });
   }

@@ -79,6 +79,7 @@ Tests:
 - 删除 runtime 内旧 implementation、in-flight maps、无用 imports 和被替代测试。
 - 删除 production 不可达的 legacy Agents origin test seam。
 - 删除 Import preparation cache 中无消费的 `schemaVersion`、selector snapshot、target snapshot 与 revision snapshot 字段；不改变 Shared Skill State schema。
+- 将可重建 Import Data repo cache 收敛为单一 Skills snapshot，删除无人生产的 multi-provider、identity 与 resolved metadata 投影。
 
 Verification:
 
