@@ -129,10 +129,6 @@ final class GroupOperationQueue {
         entries.contains { $0.phase == .queued }
     }
 
-    var hasWork: Bool {
-        !entries.isEmpty
-    }
-
     var runningOperation: Operation? {
         entries.first(where: { $0.phase == .running })?.operation
     }
@@ -178,16 +174,6 @@ final class GroupOperationQueue {
             }
         }
         return nil
-    }
-
-    var activeImportGroupIds: Set<String> {
-        var ids = Set<String>()
-        for entry in entries {
-            if case .importGroup(let id) = entry.operation {
-                ids.insert(id)
-            }
-        }
-        return ids
     }
 
     func snapshotUpdatePhases() -> [String: Phase] {

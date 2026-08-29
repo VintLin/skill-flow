@@ -13,7 +13,6 @@ enum BridgeClientError: Error, LocalizedError {
     case commandFailed(String, response: BridgeResponse? = nil)
     case timeout(UInt64)
     case emptyResponse
-    case concurrentMutationRejected
     case missingDependency(RuntimeDependency)
 
     private var locale: Locale {
@@ -33,8 +32,6 @@ enum BridgeClientError: Error, LocalizedError {
             return L10n.string("bridge.error.timeout", locale: locale, arguments: [String(timeoutMs)])
         case .emptyResponse:
             return L10n.string("bridge.error.empty_response", locale: locale)
-        case .concurrentMutationRejected:
-            return L10n.string("bridge.error.concurrent_mutation", locale: locale)
         case .missingDependency(let dependency):
             return L10n.string(
                 "bridge.error.missing_dependency.\(dependency.rawValue)",

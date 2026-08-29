@@ -50,64 +50,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         case detail(sourceId: String)
     }
 
-    private struct DraftState: Equatable {
-        var selectedLeafIds: [String]
-        var enabledTargets: [String]
-    }
-
-    private struct WorkflowSummary: Sendable {
-        enum SelectionMode: String, Sendable {
-            case all
-            case selected
-        }
-
-        let sourceId: String
-        let sourceKind: String
-        let sourceDisplayName: String
-        let sourceOriginalDisplayName: String
-        let sourceLocator: String
-        let sourceCanonicalRepo: String?
-        let selectionMode: SelectionMode?
-        let leafs: [LeafSummary]
-        let selectedLeafIds: [String]
-        let enabledTargets: [String]
-        let targetLeafIdsByTarget: [String: [String]]
-        let health: String
-        let warningCount: Int
-        let errorCount: Int
-        let updatedAt: String
-
-        func renamed(displayName: String, originalDisplayName: String) -> WorkflowSummary {
-            WorkflowSummary(
-                sourceId: sourceId,
-                sourceKind: sourceKind,
-                sourceDisplayName: displayName,
-                sourceOriginalDisplayName: originalDisplayName,
-                sourceLocator: sourceLocator,
-                sourceCanonicalRepo: sourceCanonicalRepo,
-                selectionMode: selectionMode,
-                leafs: leafs,
-                selectedLeafIds: selectedLeafIds,
-                enabledTargets: enabledTargets,
-                targetLeafIdsByTarget: targetLeafIdsByTarget,
-                health: health,
-                warningCount: warningCount,
-                errorCount: errorCount,
-                updatedAt: updatedAt
-            )
-        }
-    }
-
-    private struct LeafSummary: Sendable {
-        let id: String
-        let sourceId: String?
-        let linkName: String
-        let name: String
-        let description: String
-        let sourceTitle: String?
-        let metadataWarnings: [String]
-    }
-
     private struct FileTreeNode: Sendable {
         var name: String
         var isFile: Bool
@@ -149,7 +91,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         warningsSink: { [weak self] warnings in self?.stateManager.setLatestWarnings(warnings) }
     )
     private let collectionLogic: CollectionLogic
-    private let detailDocumentStore = DetailDocumentStore()
     let bridgeClient: BridgeClient
     private let detailEnrichmentQuery: any DesktopDetailEnrichmentQuerying
     private let usageQuery: any DesktopUsageQuerying
@@ -171,8 +112,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToRuntimePreferences"
-    private let recommendationsProvider: () -> [ImportRecommendationEntry]
-    private var workingDrafts: [ScopedSourceKey: DraftState] = [:]
     private var detectedTargets: Set<String> = []
     var inspectedPayloadBySourceId: [ScopedSourceKey: [String: Any]] = [:]
     private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
@@ -180,7 +119,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     var usageLoadState: LoadState = .idle
     var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
     var renamedSourceOriginalDisplayNameOverridesBySourceId: [String: String] = [:]
-    private var preparedDetailContentBySourceId: [String: DetailLogic.PreparedDetailContent] = [:]
     private var projectScopeChangeToken: UInt64 = 0
     private var cachedSelectedProjectScope: ProjectScopeSelection = .global
     private var cachedRecentProjectScopes: [RecentProjectScopeItem] = []
@@ -303,14 +241,12 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             delegate: nil
         )
         self.importLogic = ImportLogic(
-            bridgeClient: bridgeClient,
             queryFacade: resolvedQueryFacade,
             commandFacade: resolvedCommandFacade,
             recommendationsProvider: recommendationsProvider,
             delegate: nil
         )
         self.collectionLogic = CollectionLogic(commandFacade: resolvedCommandFacade)
-        self.recommendationsProvider = recommendationsProvider
 
         sourceManagement.setDelegate(self)
         importLogic.setDelegate(self)
@@ -367,10 +303,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 }
             )
         )
-    }
-
-    func showToast(style: ToastStyle, message: String) {
-        stateManager.showToast(style: style, message: message)
     }
 
     func showToast(style: ToastStyle, text: PresentationText) {
@@ -1194,16 +1126,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         }
     }
 
-    func updateAll() async {
-        do {
-            _ = try await sourceManagement.updateAll()
-            await synchronizeState(refreshDoctor: true)
-            showToast(style: .success, text: .plain(updateSummaryMessage(from: nil, fallbackCount: sourceIds.count)))
-        } catch {
-            showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
-        }
-    }
-
     func updateAllGroupsFromHome() async {
         let sourceIds = self.sourceIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         guard !sourceIds.isEmpty else {
@@ -1846,9 +1768,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         }
     }
 
-    func cancelDeferredDraftSync() {
-    }
-
     func localizedText(_ key: String, _ arguments: [String]) -> PresentationText {
         if arguments.isEmpty {
             return .localized(key)
@@ -1888,10 +1807,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             } catch {
             }
         }
-    }
-
-    private func invalidatePreparedDetailContent(for sourceId: String) {
-        preparedDetailContentBySourceId.removeValue(forKey: sourceId)
     }
 
     func preferredGroupPath(lockPayload: [String: Any], leafPayloads: [[String: Any]]) -> String? {

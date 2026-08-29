@@ -529,10 +529,6 @@ final class DesktopLocalizationTests: XCTestCase {
 
         UserDefaults.standard.set(DesktopLanguage.en.rawValue, forKey: DesktopLanguage.storageKey)
         XCTAssertEqual(
-            BridgeClientError.concurrentMutationRejected.errorDescription,
-            "Another write task is already running."
-        )
-        XCTAssertEqual(
             BridgeClientError.missingDependency(.npx).errorDescription,
             "`npx` is required for ClawHub imports. Install Node.js/npm, then retry. README: https://github.com/VintLin/skill-flow#desktop-prerequisites"
         )

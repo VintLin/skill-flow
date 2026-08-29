@@ -2173,10 +2173,6 @@ extension MainView {
         isSelected
     }
 
-    static func projectScopeShowsLegacySubtitle(isSelected: Bool) -> Bool {
-        false
-    }
-
     static func homeLeadingFixedButtonWidth(for locale: Locale) -> CGFloat {
         let projectTitle = L10n.string("project_scope.global", locale: locale)
         let filterTitle = "#\(L10n.string("group_tag.filter.all", locale: locale))"

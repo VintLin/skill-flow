@@ -2245,11 +2245,9 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertEqual(MainView.homeProjectPillCornerRadius, MainView.homeFilterPillCornerRadius)
     }
 
-    func testSelectedProjectScopeUsesIndicatorWithoutLegacySubtitle() {
+    func testSelectedProjectScopeUsesSelectionIndicator() {
         XCTAssertTrue(MainView.projectScopeShowsSelectionIndicator(isSelected: true))
         XCTAssertFalse(MainView.projectScopeShowsSelectionIndicator(isSelected: false))
-        XCTAssertFalse(MainView.projectScopeShowsLegacySubtitle(isSelected: true))
-        XCTAssertFalse(MainView.projectScopeShowsLegacySubtitle(isSelected: false))
     }
 
     func testLeadingFixedButtonsUseCenteredAlignmentForStableWidth() {

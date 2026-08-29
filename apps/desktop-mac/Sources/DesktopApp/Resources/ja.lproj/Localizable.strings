@@ -3,7 +3,6 @@
 "bridge.error.invalid_response" = "Bridge helper から無効な応答が返されました。";
 "bridge.error.timeout" = "%@ms 後に操作がタイムアウトしました。";
 "bridge.error.empty_response" = "Bridge helper から空の応答が返されました。";
-"bridge.error.concurrent_mutation" = "別の書き込みタスクがすでに実行中です。";
 "bridge.error.command_failed_default" = "不明な bridge コマンド失敗です。";
 "bridge.error.missing_dependency.node" = "Skill Flow Desktop の実行には Node.js 20 以降が必要です。インストール後に再試行してください。README: %@";
 "bridge.error.missing_dependency.git" = "この操作には Git が必要です。Git または Xcode Command Line Tools をインストールしてから再試行してください。README: %@";

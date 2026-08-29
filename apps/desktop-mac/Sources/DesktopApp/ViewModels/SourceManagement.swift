@@ -300,20 +300,7 @@ final class SourceManagement {
         removeStateForSource(sourceId)
     }
 
-    func updateAll() async throws -> Any? {
-        cancelDeferredDraftSync()
-        let response = try await bridgeClient.updateAll()
-        registerRecentlyUpdatedSources(from: response.data?.value)
-        return response.data?.value
-    }
-
-    func updateSources(_ sourceIds: [String]) async throws -> Any? {
-        let response = try await updateSourcesReturningResponse(sourceIds)
-        return response.data?.value
-    }
-
     func updateSourcesReturningResponse(_ sourceIds: [String]) async throws -> BridgeResponse {
-        cancelDeferredDraftSync()
         let response = try await bridgeClient.updateSources(sourceIds)
         registerRecentlyUpdatedSources(from: response.data?.value)
         return response
@@ -322,25 +309,10 @@ final class SourceManagement {
     func updateSelectedSource(_ sourceId: String) async throws -> BridgeResponse? {
         let result = try await mutationCoordinator.updateSelectedSource(sourceId)
         if case let .submitted(_, response) = result {
-            cancelDeferredDraftSync()
             registerRecentlyUpdatedSources(from: response.data?.value)
             return response
         }
         return nil
-    }
-
-    func applyChanges(
-        sourceId: String,
-        scope: ProjectScopeSelection,
-        selectedLeafIds: [String],
-        enabledTargets: [String]
-    ) async throws -> BridgeResponse {
-        try await commandFacade.apply(
-            sourceId: sourceId,
-            scope: scope,
-            selectedLeafIds: selectedLeafIds,
-            enabledTargets: enabledTargets
-        )
     }
 
     func commitDraftChange(
@@ -393,32 +365,6 @@ final class SourceManagement {
         let renamed = existing.renamed(displayName: displayName, originalDisplayName: originalDisplayName)
         if let index = allSummaries.firstIndex(where: { $0.sourceId == sourceId }) {
             allSummaries[index] = renamed
-        }
-    }
-
-    func invalidatePreparedDetailContent(for sourceId: String) {
-
-    }
-
-    func parseSummaries(from value: Any?) -> [WorkflowSummary] {
-        parseSummariesPayload(value)
-    }
-
-    func applyExternalSummaries(_ summaries: [WorkflowSummary]) {
-        allSummaries = summaries
-        for summary in summaries {
-            let key = ScopedSourceKey(scope: .global, sourceId: summary.sourceId)
-            let savePhase = saveStateBySourceId[key]?.phase ?? .idle
-
-            if savePhase == .saving {
-                if workingDrafts[key] == nil {
-                    workingDrafts[key] = buildInitialDraftFromSummary(summary: summary)
-                }
-            } else {
-                workingDrafts[key] = buildInitialDraftFromSummary(summary: summary)
-            }
-
-            detectedTargets.formUnion(summary.enabledTargets)
         }
     }
 
@@ -850,9 +796,6 @@ final class SourceManagement {
             recentlyUpdatedSourceKeys.remove(key)
             recentlyUpdatedClearTasksBySourceId.removeValue(forKey: key)
         }
-    }
-
-    private func cancelDeferredDraftSync() {
     }
 
     private func normalizedPinnedSourceIds(_ sourceIds: [String]) -> [String] {

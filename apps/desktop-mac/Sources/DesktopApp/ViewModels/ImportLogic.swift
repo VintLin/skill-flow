@@ -4,11 +4,6 @@ import Observation
 @MainActor
 @Observable
 final class ImportLogic {
-    private struct ScopedSourceKey: Hashable {
-        let scope: ProjectScopeSelection
-        let sourceId: String
-    }
-
     @ObservationIgnored private var importSearchTasksByQuery: [String: Task<BridgeResponse, Error>] = [:]
     private var importSearchTokensByQuery: [String: UInt64] = [:]
     private var importSearchTokenSeed: UInt64 = 0
@@ -26,7 +21,6 @@ final class ImportLogic {
     var localImportGroups: [ImportGroupItem] = []
     var localImportScanPhase: ImportLoadPhase = .idle
     var searchImportGroups: [ImportGroupItem] = []
-    private let bridgeClient: BridgeClient
     private let queryFacade: any DesktopImportQuerying
     private let commandFacade: any DesktopImportCommanding
     private let recommendationsProvider: () -> [ImportRecommendationEntry]
@@ -36,13 +30,11 @@ final class ImportLogic {
     private weak var delegate: ImportLogicDelegate?
 
     init(
-        bridgeClient: BridgeClient,
         queryFacade: any DesktopImportQuerying,
         commandFacade: any DesktopImportCommanding,
         recommendationsProvider: @escaping () -> [ImportRecommendationEntry],
         delegate: ImportLogicDelegate? = nil
     ) {
-        self.bridgeClient = bridgeClient
         self.queryFacade = queryFacade
         self.commandFacade = commandFacade
         self.recommendationsProvider = recommendationsProvider
@@ -310,7 +302,6 @@ final class ImportLogic {
                 }
             }
 
-            delegate?.cancelDeferredDraftSync()
             mutateImportGroup(groupId) { item in
                 ImportGroupItem(
                     id: item.id,
@@ -1236,8 +1227,6 @@ final class ImportLogic {
 protocol ImportLogicDelegate: AnyObject {
     var currentRoute: DesktopRoute { get }
     func showToast(style: ToastStyle, text: PresentationText)
-    func showToast(style: ToastStyle, message: String)
-    func cancelDeferredDraftSync()
     func synchronizeAfterMutation(_ response: BridgeResponse, inspectSourceId: String?) async
     func applyWarningsFromApplyResponse(_ warnings: [BridgeIssue])
     func localizedText(_ key: String, _ arguments: [String]) -> PresentationText

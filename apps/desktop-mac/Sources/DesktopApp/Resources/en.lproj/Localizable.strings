@@ -3,7 +3,6 @@
 "bridge.error.invalid_response" = "Bridge helper returned an invalid response.";
 "bridge.error.timeout" = "Operation timed out after %@ms.";
 "bridge.error.empty_response" = "Bridge helper returned an empty response.";
-"bridge.error.concurrent_mutation" = "Another write task is already running.";
 "bridge.error.command_failed_default" = "Unknown bridge command failure.";
 "bridge.error.missing_dependency.node" = "Node.js 20+ is required to run Skill Flow Desktop. Install it, then retry. README: %@";
 "bridge.error.missing_dependency.git" = "Git is required for this operation. Install Git or Xcode Command Line Tools, then retry. README: %@";
