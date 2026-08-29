@@ -5,6 +5,7 @@
 | 主题 | 状态 | 规格 | 计划 / 记录 | 验证 |
 | --- | --- | --- | --- | --- |
 | Active superpowers specs | Empty | [status](superpowers/specs/README.md) | - | - |
+| Import Discovery deepening | Active | - | [plan](superpowers/plans/2026-08-29-import-discovery-deepening.md) | Pending |
 | Equivalent architecture cleanup | Completed | - | [archive](archives/plans/2026-08-29-equivalent-architecture-cleanup.md) | Passed |
 | Archived specs | Archived | [archive](archives/specs/) | - | - |
 | Archived plans | Archived | - | [archive](archives/plans/) | - |

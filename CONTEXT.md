@@ -90,6 +90,12 @@ _Avoid_: visibility, enabled targets
 A desktop-only label attached to a skill group/card for organization and filtering. Currently stored in UserDefaults, not Shared Skill State.
 _Avoid_: skill metadata tag, import recommendation tag
 
+### Import workflow
+
+**Import Discovery**:
+The read-only process that recommends, searches, scans, and previews potential Skill sources before preparation or final Import. It may use rebuildable caches and external providers, but it never changes Shared Skill State or target projections.
+_Avoid_: import preparation, final import, source update
+
 ### Group operation queue (desktop)
 
 **Group Operation Queue**:
