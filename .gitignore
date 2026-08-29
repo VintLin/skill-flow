@@ -36,6 +36,7 @@ PRD/
 .gstack/
 .codegraph/
 .superpowers/
+/.scratch/
 
 # Build artifacts
 *.tgz
