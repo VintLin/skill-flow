@@ -64,6 +64,14 @@ final class UsageVisualizationTests: XCTestCase {
         XCTAssertTrue(source.contains(".frame(width: UsageTooltipGeometry.width"))
     }
 
+    func testUsageLoadingHasOneScreenOwnedLifecycleTrigger() throws {
+        let usageSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/UsageScreen.swift")
+        let mainSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertTrue(usageSource.contains(".task { await viewModel.loadUsageSnapshot"))
+        XCTAssertFalse(mainSource.contains("await viewModel.loadUsageSnapshot()"))
+    }
+
     private func sourceText(at relativePath: String) throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

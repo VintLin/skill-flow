@@ -366,10 +366,6 @@ struct MainView: View {
                 Task {
                     await viewModel.loadImportPageIfNeeded()
                 }
-            case .usage:
-                Task {
-                    await viewModel.loadUsageSnapshot()
-                }
             default:
                 break
             }
