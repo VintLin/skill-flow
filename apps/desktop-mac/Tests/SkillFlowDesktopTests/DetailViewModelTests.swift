@@ -292,6 +292,17 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertNotEqual(base, detailRevision(fileTree: [baseTree], groupDocuments: [baseDocument], targets: [baseTarget], skills: [changedSkill]))
     }
 
+    func testDetailRevisionHashesLargeDocumentContentWithoutEmbeddingIt() {
+        let first = detailRevisionSkill(summary: "Summary", documentContent: String(repeating: "a", count: 100_000))
+        let second = detailRevisionSkill(summary: "Summary", documentContent: String(repeating: "b", count: 100_000))
+
+        let firstRevision = detailRevision(fileTree: [], groupDocuments: [], targets: [], skills: [first])
+        let secondRevision = detailRevision(fileTree: [], groupDocuments: [], targets: [], skills: [second])
+
+        XCTAssertLessThan(firstRevision.utf8.count, 2_048)
+        XCTAssertNotEqual(firstRevision, secondRevision)
+    }
+
     func testFileTreeRendererPreservesAsciiBranches() {
         let tree = [
             FileTreeItem(
@@ -432,7 +443,7 @@ final class DetailViewModelTests: XCTestCase {
         )
     }
 
-    private func detailRevisionSkill(summary: String) -> DetailSkill {
+    private func detailRevisionSkill(summary: String, documentContent: String = "") -> DetailSkill {
         DetailSkill(
             id: "browse",
             title: "Browse",
@@ -445,7 +456,7 @@ final class DetailViewModelTests: XCTestCase {
             relativeFolderPath: nil,
             documents: [],
             detailLines: [],
-            documentContent: "",
+            documentContent: documentContent,
             isEnabled: true,
             warningCount: 0
         )
