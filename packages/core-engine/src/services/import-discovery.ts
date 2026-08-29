@@ -1,10 +1,17 @@
 import type {
   ImportRecommendationFeed,
   ImportRecommendationFeedId,
+  ImportSearchHit,
   ImportSearchSnapshot,
   UnifiedSourceSnapshot,
+  UnifiedSourceTrust,
 } from "@skill-flow/domain/types";
-import { normalizeImportCanonicalRepo } from "@skill-flow/integration/utils/skills-directory";
+import {
+  IMPORT_RECOMMENDATION_CACHE_TTL_MS,
+  IMPORT_SEARCH_CACHE_TTL_MS,
+  IMPORT_SOURCE_CACHE_TTL_MS,
+  normalizeImportCanonicalRepo,
+} from "@skill-flow/integration/utils/skills-directory";
 import { isImportDataCacheExpired } from "@skill-flow/storage/import-data-cache";
 import { RuntimeStore } from "@skill-flow/storage/runtime-store";
 
@@ -16,13 +23,25 @@ export type ImportSourceReadOptions = {
 };
 
 export type ImportDiscoveryProvider = {
-  refreshRecommendation(feedId: ImportRecommendationFeedId): Promise<ImportRecommendationFeed>;
-  refreshSearch(query: string): Promise<ImportSearchSnapshot>;
-  refreshSource(
+  fetchRecommendationGroups(
+    feedId: Exclude<ImportRecommendationFeedId, "seed">,
+  ): Promise<string[]>;
+  search(query: string, limit: number): Promise<ImportSearchHit[]>;
+  fetchSource(
     canonicalRepo: string,
-    options?: ImportSourceReadOptions,
+    options: {
+      enrichSkillIds?: string[];
+      includeSkillDetails: boolean;
+      trust?: UnifiedSourceTrust;
+    },
   ): Promise<UnifiedSourceSnapshot>;
 };
+
+const IMPORT_RECOMMENDATION_SEEDS = [
+  "anthropics/skills",
+  "garrytan/gstack",
+  "vercel-labs/agent-skills",
+];
 
 export class ImportDiscovery {
   private readonly recommendationRefreshes = new Map<
@@ -135,7 +154,7 @@ export class ImportDiscovery {
       return inFlight;
     }
 
-    const refresh = this.options.provider.refreshRecommendation(feedId).finally(() => {
+    const refresh = this.refreshRecommendationEntry(feedId).finally(() => {
       this.recommendationRefreshes.delete(feedId);
     });
     this.recommendationRefreshes.set(feedId, refresh);
@@ -149,7 +168,7 @@ export class ImportDiscovery {
       return inFlight;
     }
 
-    const refresh = this.options.provider.refreshSearch(query).finally(() => {
+    const refresh = this.refreshSearchEntry(query).finally(() => {
       this.searchRefreshes.delete(key);
     });
     this.searchRefreshes.set(key, refresh);
@@ -166,11 +185,119 @@ export class ImportDiscovery {
       return inFlight;
     }
 
-    const refresh = this.options.provider.refreshSource(canonicalRepo, options).finally(() => {
+    const refresh = this.refreshSourceEntry(canonicalRepo, options).finally(() => {
       this.sourceRefreshes.delete(key);
     });
     this.sourceRefreshes.set(key, refresh);
     return refresh;
+  }
+
+  private async refreshRecommendationEntry(
+    feedId: ImportRecommendationFeedId,
+  ): Promise<ImportRecommendationFeed> {
+    const checkedAt = new Date().toISOString();
+    const groups = feedId === "seed"
+      ? [...IMPORT_RECOMMENDATION_SEEDS]
+      : await this.options.provider.fetchRecommendationGroups(feedId);
+    const entry: ImportRecommendationFeed = {
+      id: feedId,
+      checkedAt,
+      expiresAt: new Date(Date.now() + IMPORT_RECOMMENDATION_CACHE_TTL_MS).toISOString(),
+      groups,
+    };
+    await this.options.store.writeImportRecommendationFeedEntry(entry);
+    return entry;
+  }
+
+  private async refreshSearchEntry(query: string): Promise<ImportSearchSnapshot> {
+    const hits = await this.options.provider.search(query, 20);
+    const snapshot: ImportSearchSnapshot = {
+      query: query.trim(),
+      checkedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + IMPORT_SEARCH_CACHE_TTL_MS).toISOString(),
+      hits,
+      groups: [...new Set(hits.map((hit) => hit.canonicalRepo))],
+    };
+    await this.options.store.writeImportSearchSnapshotEntry(query.trim().toLowerCase(), snapshot);
+    return snapshot;
+  }
+
+  private async refreshSourceEntry(
+    canonicalRepo: string,
+    options?: ImportSourceReadOptions,
+  ): Promise<UnifiedSourceSnapshot> {
+    const includeSkillDetails = options?.includeSkillDetails
+      ?? (options?.enrichSkillIds?.length ?? 0) > 0;
+    const trust = await this.resolveCachedSourceTrust(canonicalRepo, {
+      refreshInBackground: options?.refreshTrustInBackground ?? includeSkillDetails,
+    });
+    const snapshot = await this.options.provider.fetchSource(canonicalRepo, {
+      includeSkillDetails,
+      ...(options?.enrichSkillIds ? { enrichSkillIds: options.enrichSkillIds } : {}),
+      ...(this.hasTrust(trust) ? { trust } : {}),
+    });
+    const mergedSnapshot = options?.cachedSnapshot
+      ? this.mergeSourceSnapshots(options.cachedSnapshot, snapshot)
+      : snapshot;
+    await this.options.store.writeImportSourceSnapshotEntry({
+      canonicalRepo,
+      checkedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + IMPORT_SOURCE_CACHE_TTL_MS).toISOString(),
+      data: mergedSnapshot,
+    });
+    return mergedSnapshot;
+  }
+
+  private async resolveCachedSourceTrust(
+    canonicalRepo: string,
+    options: { refreshInBackground: boolean },
+  ): Promise<UnifiedSourceTrust> {
+    const recommendations = (await this.options.store.readImportDataCache()).recommendations;
+    const trust: UnifiedSourceTrust = {};
+    for (const feedId of ["official", "trending", "hot", "audits"] as const) {
+      const cachedFeed = recommendations[feedId];
+      if (cachedFeed && !isImportDataCacheExpired(cachedFeed)) {
+        if (cachedFeed.groups.includes(canonicalRepo)) {
+          trust[feedId === "audits" ? "audited" : feedId] = true;
+        }
+      } else if (options.refreshInBackground) {
+        void this.refreshRecommendation(feedId).catch(() => undefined);
+      }
+    }
+    return trust;
+  }
+
+  private mergeSourceSnapshots(
+    previous: UnifiedSourceSnapshot,
+    next: UnifiedSourceSnapshot,
+  ): UnifiedSourceSnapshot {
+    const previousSkillsById = new Map(previous.skills.map((skill) => [skill.skillId, skill]));
+    return {
+      ...previous,
+      ...next,
+      owner: { ...previous.owner, ...next.owner },
+      skills: next.skills.map((skill) => {
+        const previousSkill = previousSkillsById.get(skill.skillId);
+        return previousSkill
+          ? {
+              ...previousSkill,
+              ...skill,
+              ...(skill.installedOn?.length
+                ? { installedOn: skill.installedOn }
+                : previousSkill.installedOn ? { installedOn: previousSkill.installedOn } : {}),
+              ...(skill.audits
+                ? { audits: skill.audits }
+                : previousSkill.audits ? { audits: previousSkill.audits } : {}),
+            }
+          : skill;
+      }),
+      trust: { ...(previous.trust ?? {}), ...(next.trust ?? {}) },
+    };
+  }
+
+  private hasTrust(trust: UnifiedSourceTrust): boolean {
+    return trust.official === true || trust.trending === true ||
+      trust.hot === true || trust.audited === true;
   }
 
   private sourceRefreshKey(

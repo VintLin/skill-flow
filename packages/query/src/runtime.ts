@@ -20,10 +20,8 @@ import type {
   ImportGroupCandidate,
   LocalImportDetectedSkill,
   LocalImportValidationStatus,
-  ImportRecommendationFeed,
   ImportRecommendationFeedId,
   ImportSearchHit,
-  ImportSearchSnapshot,
   ImportPreviewResult,
   ImportPreparationResult,
   ImportReasonCode,
@@ -55,7 +53,6 @@ import type {
   SourceUpdateResult,
   SourceUpdateResultItem,
   UnifiedSourceSnapshot,
-  UnifiedSourceTrust,
   CollectionViewRecord,
   CollectionSkillRef,
   UsageRefreshSummary,
@@ -106,7 +103,6 @@ import {
 import { fail, ok } from "@skill-flow/integration/utils/result";
 import { searchClawHubSkills } from "@skill-flow/integration/utils/clawhub";
 import { deriveDisplayName, deriveSourceId } from "@skill-flow/integration/utils/source-id";
-import { fetchSourceDetails } from "@skill-flow/integration/utils/source-details";
 import {
   buildFailedSourceMetadataResult,
   buildSourceMetadataResult,
@@ -120,9 +116,6 @@ import {
   fetchSkillsDirectoryFeedGroups,
   fetchSkillsDirectorySourceSnapshot,
   groupSkillsDirectorySearchHits,
-  IMPORT_RECOMMENDATION_CACHE_TTL_MS,
-  IMPORT_SEARCH_CACHE_TTL_MS,
-  IMPORT_SOURCE_CACHE_TTL_MS,
   normalizeImportCanonicalRepo,
   normalizeImportRepoPathSelector,
   searchSkillsDirectory,
@@ -506,10 +499,9 @@ export class SkillFlowApp {
     this.importDiscovery = new ImportDiscovery({
       store: this.store,
       provider: {
-        refreshRecommendation: (feedId) => this.refreshImportRecommendationFeed(feedId),
-        refreshSearch: (query) => this.refreshImportSearchSnapshot(query),
-        refreshSource: (canonicalRepo, refreshOptions) =>
-          this.refreshImportSourceSnapshot(canonicalRepo, refreshOptions),
+        fetchRecommendationGroups: fetchSkillsDirectoryFeedGroups,
+        search: searchSkillsDirectory,
+        fetchSource: fetchSkillsDirectorySourceSnapshot,
       },
     });
     this.importSourcePolicy = new ImportSourcePolicy();
@@ -3289,14 +3281,6 @@ export class SkillFlowApp {
     };
   }
 
-  private importRecommendationSeedRepos(): string[] {
-    return [
-      "anthropics/skills",
-      "garrytan/gstack",
-      "vercel-labs/agent-skills",
-    ];
-  }
-
   private installedCanonicalRepos(manifest: RuntimeManifestView | ManifestFile): Set<string> {
     return new Set(
       manifest.sources.flatMap((source) => {
@@ -3459,32 +3443,6 @@ export class SkillFlowApp {
 
   private refreshImportRecommendationFeedInBackground(feedId: ImportRecommendationFeedId): void {
     void this.importDiscovery.refreshRecommendation(feedId).catch(() => undefined);
-  }
-
-  private async refreshImportRecommendationFeed(
-    feedId: ImportRecommendationFeedId,
-  ): Promise<ImportRecommendationFeed> {
-    const checkedAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + IMPORT_RECOMMENDATION_CACHE_TTL_MS).toISOString();
-    const groups = feedId === "seed"
-      ? this.importRecommendationSeedRepos()
-      : await fetchSkillsDirectoryFeedGroups(feedId);
-    const entry: ImportRecommendationFeed = { id: feedId, checkedAt, expiresAt, groups };
-    await this.store.writeImportRecommendationFeedEntry(entry);
-    return entry;
-  }
-
-  private async refreshImportSearchSnapshot(query: string): Promise<ImportSearchSnapshot> {
-    const hits = await searchSkillsDirectory(query, 20);
-    const snapshot: ImportSearchSnapshot = {
-      query: query.trim(),
-      checkedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + IMPORT_SEARCH_CACHE_TTL_MS).toISOString(),
-      hits,
-      groups: [...new Set(hits.map((hit) => hit.canonicalRepo))],
-    };
-    await this.store.writeImportSearchSnapshotEntry(query.trim().toLowerCase(), snapshot);
-    return snapshot;
   }
 
   private async previewDirectImportSource(
@@ -3705,110 +3663,6 @@ export class SkillFlowApp {
 
   private refreshImportSourceSnapshotInBackground(canonicalRepo: string): void {
     void this.importDiscovery.refreshSource(canonicalRepo).catch(() => undefined);
-  }
-
-  private async refreshImportSourceSnapshot(
-    canonicalRepo: string,
-    options?: {
-      enrichSkillIds?: string[];
-      includeSkillDetails?: boolean;
-      refreshTrustInBackground?: boolean;
-      cachedSnapshot?: UnifiedSourceSnapshot;
-    },
-  ): Promise<UnifiedSourceSnapshot> {
-    const includeSkillDetails = options?.includeSkillDetails !== undefined
-      ? options.includeSkillDetails
-      : (options?.enrichSkillIds?.length ?? 0) > 0;
-    const trust = await this.resolveCachedImportSourceTrust(canonicalRepo, {
-      refreshInBackground: options?.refreshTrustInBackground ?? includeSkillDetails,
-    });
-
-    const snapshot = await fetchSkillsDirectorySourceSnapshot(canonicalRepo, {
-      includeSkillDetails,
-      ...(options?.enrichSkillIds ? { enrichSkillIds: options.enrichSkillIds } : {}),
-      ...(this.hasUnifiedSourceTrust(trust) ? { trust } : {}),
-    });
-    const mergedSnapshot = options?.cachedSnapshot
-      ? this.mergeSourceSnapshots(options.cachedSnapshot, snapshot)
-      : snapshot;
-    await this.store.writeImportSourceSnapshotEntry({
-      canonicalRepo,
-      checkedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + IMPORT_SOURCE_CACHE_TTL_MS).toISOString(),
-      data: mergedSnapshot,
-    });
-    return mergedSnapshot;
-  }
-
-  private async resolveCachedImportSourceTrust(
-    canonicalRepo: string,
-    options?: { refreshInBackground?: boolean },
-  ): Promise<UnifiedSourceTrust> {
-    const recommendations = (await this.store.readImportDataCache()).recommendations;
-    const trust: UnifiedSourceTrust = {};
-
-    for (const feedId of ["official", "trending", "hot", "audits"] as const) {
-      const cachedFeed = recommendations[feedId];
-      if (cachedFeed && !isImportDataCacheExpired(cachedFeed)) {
-        if (cachedFeed.groups.includes(canonicalRepo)) {
-          if (feedId === "official") {
-            trust.official = true;
-          } else if (feedId === "trending") {
-            trust.trending = true;
-          } else if (feedId === "hot") {
-            trust.hot = true;
-          } else if (feedId === "audits") {
-            trust.audited = true;
-          }
-        }
-        continue;
-      }
-
-      if (options?.refreshInBackground !== false) {
-        this.refreshImportRecommendationFeedInBackground(feedId);
-      }
-    }
-
-    return trust;
-  }
-
-  private mergeSourceSnapshots(
-    previous: UnifiedSourceSnapshot,
-    next: UnifiedSourceSnapshot,
-  ): UnifiedSourceSnapshot {
-    const previousSkillsById = new Map(previous.skills.map((skill) => [skill.skillId, skill]));
-    const mergedSkills = next.skills.map((skill) => {
-      const previousSkill = previousSkillsById.get(skill.skillId);
-      return previousSkill
-        ? {
-            ...previousSkill,
-            ...skill,
-            ...(skill.installedOn?.length ? { installedOn: skill.installedOn } : previousSkill.installedOn ? { installedOn: previousSkill.installedOn } : {}),
-            ...(skill.audits ? { audits: skill.audits } : previousSkill.audits ? { audits: previousSkill.audits } : {}),
-          }
-        : skill;
-    });
-
-    return {
-      ...previous,
-      ...next,
-      owner: {
-        ...previous.owner,
-        ...next.owner,
-      },
-      skills: mergedSkills,
-      trust: {
-        ...(previous.trust ?? {}),
-        ...(next.trust ?? {}),
-      },
-    };
-  }
-
-  private hasUnifiedSourceTrust(trust: UnifiedSourceTrust): boolean {
-    return trust.official === true ||
-      trust.trending === true ||
-      trust.hot === true ||
-      trust.audited === true;
   }
 
   private async mapConcurrent<T, R>(

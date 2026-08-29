@@ -18,7 +18,7 @@ describe("ImportDiscovery", () => {
 
   afterEach(async () => {
     await Promise.all(temporaryPaths.splice(0).map((entry) =>
-      fs.rm(entry, { recursive: true, force: true })
+      fs.rm(entry, { recursive: true, force: true, maxRetries: 3, retryDelay: 10 })
     ));
   });
 
@@ -33,49 +33,53 @@ describe("ImportDiscovery", () => {
   };
 
   test("shares an in-flight recommendation refresh and releases it after completion", async () => {
-    const pending = deferred<ImportRecommendationFeed>();
+    const pending = deferred<string[]>();
     const provider = createProvider({
-      refreshRecommendation: vi.fn(() => pending.promise),
+      fetchRecommendationGroups: vi.fn(() => pending.promise),
     });
     const { discovery } = createDiscovery(provider);
 
     const first = discovery.refreshRecommendation("hot");
     const second = discovery.refreshRecommendation("hot");
 
-    expect(provider.refreshRecommendation).toHaveBeenCalledTimes(1);
+    expect(provider.fetchRecommendationGroups).toHaveBeenCalledTimes(1);
 
-    const feed = recommendationFeed("hot", ["acme/skills"]);
-    pending.resolve(feed);
-    await expect(Promise.all([first, second])).resolves.toEqual([feed, feed]);
+    pending.resolve(["acme/skills"]);
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { id: "hot", groups: ["acme/skills"] },
+      { id: "hot", groups: ["acme/skills"] },
+    ]);
 
     await discovery.refreshRecommendation("hot");
-    expect(provider.refreshRecommendation).toHaveBeenCalledTimes(2);
+    expect(provider.fetchRecommendationGroups).toHaveBeenCalledTimes(2);
   });
 
   test("shares an in-flight search across normalized queries and releases it after completion", async () => {
-    const pending = deferred<ImportSearchSnapshot>();
+    const pending = deferred<ImportSearchSnapshot["hits"]>();
     const provider = createProvider({
-      refreshSearch: vi.fn(() => pending.promise),
+      search: vi.fn(() => pending.promise),
     });
     const { discovery } = createDiscovery(provider);
 
     const first = discovery.refreshSearch(" React ");
     const second = discovery.refreshSearch("react");
 
-    expect(provider.refreshSearch).toHaveBeenCalledTimes(1);
+    expect(provider.search).toHaveBeenCalledTimes(1);
 
-    const snapshot = searchSnapshot("React");
-    pending.resolve(snapshot);
-    await expect(Promise.all([first, second])).resolves.toEqual([snapshot, snapshot]);
+    pending.resolve([]);
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { query: "React", hits: [] },
+      { query: "React", hits: [] },
+    ]);
 
     await discovery.refreshSearch("REACT");
-    expect(provider.refreshSearch).toHaveBeenCalledTimes(2);
+    expect(provider.search).toHaveBeenCalledTimes(2);
   });
 
   test("shares a source refresh when repository, sorted skill ids, and read shape match", async () => {
     const pending = deferred<UnifiedSourceSnapshot>();
     const provider = createProvider({
-      refreshSource: vi.fn(() => pending.promise),
+      fetchSource: vi.fn(() => pending.promise),
     });
     const { discovery } = createDiscovery(provider);
 
@@ -88,7 +92,7 @@ describe("ImportDiscovery", () => {
       includeSkillDetails: false,
     });
 
-    expect(provider.refreshSource).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(provider.fetchSource).toHaveBeenCalledTimes(1));
 
     const snapshot = sourceSnapshot("acme/skills");
     pending.resolve(snapshot);
@@ -98,12 +102,12 @@ describe("ImportDiscovery", () => {
       enrichSkillIds: ["alpha", "beta"],
       includeSkillDetails: false,
     });
-    expect(provider.refreshSource).toHaveBeenCalledTimes(2);
+    expect(provider.fetchSource).toHaveBeenCalledTimes(2);
   });
 
   test("keeps repository and source read shapes in separate flights", async () => {
     const provider = createProvider({
-      refreshSource: vi.fn(async (canonicalRepo) => sourceSnapshot(canonicalRepo)),
+      fetchSource: vi.fn(async (canonicalRepo) => sourceSnapshot(canonicalRepo)),
     });
     const { discovery } = createDiscovery(provider);
 
@@ -128,37 +132,35 @@ describe("ImportDiscovery", () => {
       discovery.refreshSource("other/skills", { enrichSkillIds: ["alpha"] }),
     ];
 
-    expect(provider.refreshSource).toHaveBeenCalledTimes(6);
     await Promise.all(refreshes);
+    expect(provider.fetchSource).toHaveBeenCalledTimes(6);
   });
 
   test("releases every flight after provider rejection", async () => {
-    const feed = recommendationFeed("hot", ["acme/skills"]);
-    const search = searchSnapshot("react");
     const source = sourceSnapshot("acme/skills");
-    const refreshRecommendation = vi.fn()
+    const fetchRecommendationGroups = vi.fn()
       .mockRejectedValueOnce(new Error("recommendation failed"))
-      .mockResolvedValueOnce(feed);
-    const refreshSearch = vi.fn()
+      .mockResolvedValueOnce(["acme/skills"]);
+    const search = vi.fn()
       .mockRejectedValueOnce(new Error("search failed"))
-      .mockResolvedValueOnce(search);
-    const refreshSource = vi.fn()
+      .mockResolvedValueOnce([]);
+    const fetchSource = vi.fn()
       .mockRejectedValueOnce(new Error("source failed"))
       .mockResolvedValueOnce(source);
     const { discovery } = createDiscovery(
-      createProvider({ refreshRecommendation, refreshSearch, refreshSource }),
+      createProvider({ fetchRecommendationGroups, search, fetchSource }),
     );
 
     await expect(discovery.refreshRecommendation("hot")).rejects.toThrow("recommendation failed");
     await expect(discovery.refreshSearch("react")).rejects.toThrow("search failed");
     await expect(discovery.refreshSource("acme/skills")).rejects.toThrow("source failed");
 
-    await expect(discovery.refreshRecommendation("hot")).resolves.toBe(feed);
-    await expect(discovery.refreshSearch("react")).resolves.toBe(search);
+    await expect(discovery.refreshRecommendation("hot")).resolves.toMatchObject({ groups: ["acme/skills"] });
+    await expect(discovery.refreshSearch("react")).resolves.toMatchObject({ hits: [] });
     await expect(discovery.refreshSource("acme/skills")).resolves.toBe(source);
-    expect(refreshRecommendation).toHaveBeenCalledTimes(2);
-    expect(refreshSearch).toHaveBeenCalledTimes(2);
-    expect(refreshSource).toHaveBeenCalledTimes(2);
+    expect(fetchRecommendationGroups).toHaveBeenCalledTimes(2);
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(fetchSource).toHaveBeenCalledTimes(2);
   });
 
   test("returns a fresh search cache entry without calling the provider", async () => {
@@ -168,26 +170,26 @@ describe("ImportDiscovery", () => {
     await store.writeImportSearchSnapshotEntry("react", cached);
 
     await expect(discovery.resolveSearch(" React ")).resolves.toEqual(cached);
-    expect(provider.refreshSearch).not.toHaveBeenCalled();
+    expect(provider.search).not.toHaveBeenCalled();
   });
 
   test("returns stale search data immediately and refreshes it in the background", async () => {
-    const pending = deferred<ImportSearchSnapshot>();
-    const refreshSearch = vi.fn(() => pending.promise);
-    const provider = createProvider({ refreshSearch });
+    const pending = deferred<ImportSearchSnapshot["hits"]>();
+    const search = vi.fn(() => pending.promise);
+    const provider = createProvider({ search });
     const { discovery, store } = createDiscovery(provider);
     const stale = searchSnapshot("react", Date.now() - 1);
     await store.writeImportSearchSnapshotEntry("react", stale);
 
     await expect(discovery.resolveSearch("react")).resolves.toEqual(stale);
-    expect(provider.refreshSearch).toHaveBeenCalledTimes(1);
-    pending.resolve(searchSnapshot("react"));
-    await refreshSearch.mock.results[0]?.value;
+    expect(provider.search).toHaveBeenCalledTimes(1);
+    pending.resolve([]);
+    await search.mock.results[0]?.value;
   });
 
   test("falls back to a stale source snapshot when required enrichment fails", async () => {
     const provider = createProvider({
-      refreshSource: vi.fn(async () => { throw new Error("provider unavailable"); }),
+      fetchSource: vi.fn(async () => { throw new Error("provider unavailable"); }),
     });
     const { discovery, store } = createDiscovery(provider);
     const stale = sourceSnapshot("acme/skills");
@@ -200,8 +202,44 @@ describe("ImportDiscovery", () => {
 
     await expect(discovery.resolveSource("acme/skills", {
       enrichSkillIds: ["missing-skill"],
+      refreshTrustInBackground: false,
     })).resolves.toEqual(stale);
-    expect(provider.refreshSource).toHaveBeenCalledTimes(1);
+    expect(provider.fetchSource).toHaveBeenCalledTimes(1);
+  });
+
+  test("passes cached trust to the provider and preserves prior skill enrichment", async () => {
+    const previous = {
+      ...sourceSnapshot("acme/skills"),
+      skills: [{ skillId: "alpha", title: "Alpha", summary: "Existing summary" }],
+    };
+    const next = {
+      ...sourceSnapshot("acme/skills"),
+      skills: [{ skillId: "alpha", title: "Alpha", installs: 42 }],
+    };
+    const fetchSource = vi.fn(async () => next);
+    const { discovery, store } = createDiscovery(createProvider({ fetchSource }));
+    await store.writeImportRecommendationFeedEntry({
+      id: "official",
+      checkedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      groups: ["acme/skills"],
+    });
+
+    const refreshed = await discovery.refreshSource("acme/skills", {
+      includeSkillDetails: true,
+      refreshTrustInBackground: false,
+      cachedSnapshot: previous,
+    });
+
+    expect(fetchSource).toHaveBeenCalledWith("acme/skills", {
+      includeSkillDetails: true,
+      trust: { official: true },
+    });
+    expect(refreshed.skills[0]).toMatchObject({
+      skillId: "alpha",
+      summary: "Existing summary",
+      installs: 42,
+    });
   });
 });
 
@@ -209,9 +247,9 @@ function createProvider(
   overrides: Partial<ImportDiscoveryProvider> = {},
 ): ImportDiscoveryProvider {
   return {
-    refreshRecommendation: vi.fn(async (feedId) => recommendationFeed(feedId, [])),
-    refreshSearch: vi.fn(async (query) => searchSnapshot(query)),
-    refreshSource: vi.fn(async (canonicalRepo) => sourceSnapshot(canonicalRepo)),
+    fetchRecommendationGroups: vi.fn(async () => []),
+    search: vi.fn(async () => []),
+    fetchSource: vi.fn(async (canonicalRepo) => sourceSnapshot(canonicalRepo)),
     ...overrides,
   };
 }
