@@ -141,6 +141,11 @@ import {
   type OperationRecoveryTransaction,
 } from "@skill-flow/core-engine/services/operation-recovery-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
+import {
+  ImportSourcePolicy,
+  type GitHubImportLocator,
+  type SelectableImportLeaf,
+} from "@skill-flow/core-engine/services/import-source-policy";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { SkillUsageService } from "@skill-flow/core-engine/services/skill-usage-service";
 import { SourceAuthorityService } from "@skill-flow/core-engine/services/source-authority-service";
@@ -229,13 +234,6 @@ type RenameSourceResult = {
   isResetToOriginal: boolean;
 };
 
-type GitHubImportLocator = {
-  canonicalRepo: string;
-  originalLocator: string;
-  locator: string;
-  requestedPath?: string;
-  skillSelector?: string;
-};
 export type CreateCollectionOptions = {
   displayName: string;
   skills: CollectionSkillRef[];
@@ -316,9 +314,7 @@ type GroupCardEnrichmentSnapshot = {
   groupPath?: string;
 };
 type RuntimeImportSkillSelection = NonNullable<ImportDraft["selectedSkills"]>[number];
-type SelectableLeaf = Pick<LeafRecord, "id" | "relativePath" | "linkName" | "title"> & {
-  name?: string;
-};
+type SelectableLeaf = SelectableImportLeaf;
 type LocalScanResolvedSkill = {
   scan: LocalSkillScanResult;
   detected: LocalImportDetectedSkill;
@@ -467,6 +463,7 @@ export class SkillFlowApp {
   readonly sourceAuthorityService: SourceAuthorityService;
   readonly externalSourceLifecycle: ExternalSourceLifecycle;
   readonly importPreparationService: ImportPreparationService;
+  readonly importSourcePolicy: ImportSourcePolicy;
   readonly operationRecoveryService: OperationRecoveryService;
   readonly doctorService: DoctorService;
   readonly workflowService: WorkflowService;
@@ -507,6 +504,7 @@ export class SkillFlowApp {
       sourceAuthority: this.sourceAuthorityService,
       checkoutService: this.sourceCheckoutService,
     });
+    this.importSourcePolicy = new ImportSourcePolicy();
     this.operationRecoveryService = new OperationRecoveryService({
       stateStore: this.stateStore,
       cacheStore: this.importPreparationCacheStore,
@@ -888,7 +886,7 @@ export class SkillFlowApp {
       });
     }
 
-    const requestedPath = this.normalizeRequestedPath(addOptions.path);
+    const requestedPath = this.importSourcePolicy.normalizeRequestedPath(addOptions.path);
     const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
     const availableTargets = addOptions.skipTargetDetection
       ? []
@@ -2779,12 +2777,12 @@ export class SkillFlowApp {
           exact: true,
         });
       }
-      const exactLocator = this.parseGitHubImportLocator(normalizedQuery);
+      const exactLocator = this.importSourcePolicy.parseGitHubLocator(normalizedQuery);
       const exactRepo = exactLocator?.canonicalRepo;
       if (exactRepo) {
         try {
           const details = await fetchSkillsDirectorySourceDetails(exactRepo);
-          const matchedSkillNames = this.importLocatorMatchedSkillNames(exactLocator);
+          const matchedSkillNames = this.importSourcePolicy.matchedSkillNames(exactLocator);
           return ok({
             groups: [
               {
@@ -2813,7 +2811,7 @@ export class SkillFlowApp {
             exact: true,
           });
         } catch (error) {
-          const matchedSkillNames = this.importLocatorMatchedSkillNames(exactLocator);
+          const matchedSkillNames = this.importSourcePolicy.matchedSkillNames(exactLocator);
           const exactCandidate = this.buildImmediateImportGroupCandidate(importCache, exactRepo, {
             installed: installedRepos.has(exactRepo),
             ...(matchedSkillNames.length
@@ -2880,7 +2878,7 @@ export class SkillFlowApp {
   }
 
   private async prepareImportSourceImpl(locator: string): Promise<Result<ImportPreparationResult>> {
-    const githubLocator = this.parseGitHubImportLocator(locator);
+    const githubLocator = this.importSourcePolicy.parseGitHubLocator(locator);
     if (githubLocator) {
       return this.importPreparationService.prepareImportSource(githubLocator.locator, {
         project: false,
@@ -2888,7 +2886,7 @@ export class SkillFlowApp {
       });
     }
 
-    const directLocator = await this.resolveDirectImportLocator(locator);
+    const directLocator = await this.importSourcePolicy.resolveDirectLocator(locator);
     return this.importPreparationService.prepareImportSource(directLocator ?? locator.trim(), {
       project: false,
     });
@@ -2972,7 +2970,7 @@ export class SkillFlowApp {
 
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
     await this.stateStore.init();
-    const githubLocator = this.parseGitHubImportLocator(locator);
+    const githubLocator = this.importSourcePolicy.parseGitHubLocator(locator);
     const canonicalRepo = githubLocator?.canonicalRepo;
     if (!canonicalRepo) {
       const localPreview = await this.previewDirectImportSource(locator);
@@ -3067,7 +3065,7 @@ export class SkillFlowApp {
     locator: string,
     draft?: ImportDraft,
   ): Promise<Result<ImportSourceResult>> {
-    const githubLocator = this.parseGitHubImportLocator(locator);
+    const githubLocator = this.importSourcePolicy.parseGitHubLocator(locator);
     const normalizedLocator = githubLocator?.locator ?? locator.trim();
     const localSkillPath = githubLocator
       ? undefined
@@ -3399,7 +3397,7 @@ export class SkillFlowApp {
     locator: string,
     manifest: ManifestFile,
   ): Promise<ImportGroupCandidate | null> {
-    const resolvedLocator = await this.resolveDirectImportLocator(locator);
+    const resolvedLocator = await this.importSourcePolicy.resolveDirectLocator(locator);
     if (!resolvedLocator) {
       return null;
     }
@@ -3600,7 +3598,7 @@ export class SkillFlowApp {
   private async previewDirectImportSource(
     locator: string,
   ): Promise<Result<ImportPreviewResult> | null> {
-    const resolvedLocator = await this.resolveDirectImportLocator(locator);
+    const resolvedLocator = await this.importSourcePolicy.resolveDirectLocator(locator);
     if (!resolvedLocator) {
       return null;
     }
@@ -3748,140 +3746,18 @@ export class SkillFlowApp {
     return "git";
   }
 
-  private parseGitHubImportLocator(locator: string): GitHubImportLocator | undefined {
-    const trimmed = this.stripImportLocatorQuotes(locator.trim()).replace(/\/+$/, "");
-    const selectorLocator = this.parseGitHubImportSelectorLocator(trimmed);
-    if (selectorLocator) {
-      return selectorLocator;
-    }
-
-    const treeLocator = this.parseGitHubImportTreeLocator(trimmed);
-    if (treeLocator) {
-      return treeLocator;
-    }
-
-    const subpathLocator = this.parseGitHubImportShorthandSubpath(trimmed);
-    if (subpathLocator) {
-      return subpathLocator;
-    }
-
-    const canonicalRepo = normalizeImportCanonicalRepo(trimmed);
-    if (!canonicalRepo) {
-      return undefined;
-    }
-
-    return {
-      canonicalRepo,
-      originalLocator: canonicalRepo,
-      locator: canonicalRepo,
-    };
-  }
-
-  private parseGitHubImportSelectorLocator(locator: string): GitHubImportLocator | undefined {
-    const match = locator.match(/^([^/\s:@]+)\/([^/@\s]+)@(.+)$/);
-    const owner = match?.[1];
-    const rawRepo = match?.[2];
-    const skillSelector = match?.[3]?.trim().replace(/^\/+|\/+$/g, "");
-    if (!owner || !rawRepo || !skillSelector || skillSelector.includes("@")) {
-      return undefined;
-    }
-
-    return this.githubImportLocator(owner, rawRepo, locator, { skillSelector });
-  }
-
-  private parseGitHubImportTreeLocator(locator: string): GitHubImportLocator | undefined {
-    try {
-      const url = new URL(locator);
-      if (url.hostname !== "github.com") {
-        return undefined;
-      }
-
-      const parts = url.pathname.split("/").filter(Boolean);
-      if (parts.length < 2 || parts[2] && parts[2] !== "tree") {
-        return undefined;
-      }
-
-      const requestedPath = parts.length >= 5
-        ? parts.slice(4).join("/")
-        : undefined;
-      return this.githubImportLocator(parts[0], parts[1], locator, {
-        ...(requestedPath ? { requestedPath } : {}),
-      });
-    } catch {
-      return undefined;
-    }
-  }
-
-  private parseGitHubImportShorthandSubpath(locator: string): GitHubImportLocator | undefined {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(locator) || locator.startsWith("git@")) {
-      return undefined;
-    }
-
-    const parts = locator.split("/");
-    if (parts.length < 3) {
-      return undefined;
-    }
-
-    const requestedPath = parts.slice(2).join("/");
-    if (!requestedPath) {
-      return undefined;
-    }
-
-    return this.githubImportLocator(parts[0], parts[1], locator, { requestedPath });
-  }
-
-  private githubImportLocator(
-    owner: string | undefined,
-    rawRepo: string | undefined,
-    originalLocator: string,
-    options: {
-      requestedPath?: string;
-      skillSelector?: string;
-    } = {},
-  ): GitHubImportLocator | undefined {
-    if (!owner || !rawRepo) {
-      return undefined;
-    }
-    const repo = rawRepo.replace(/\.git$/i, "");
-    const canonicalRepo = normalizeImportCanonicalRepo(`${owner}/${repo}`);
-    if (!canonicalRepo) {
-      return undefined;
-    }
-
-    return {
-      canonicalRepo,
-      originalLocator,
-      locator: `https://github.com/${canonicalRepo}.git`,
-      ...(options.requestedPath ? { requestedPath: options.requestedPath } : {}),
-      ...(options.skillSelector ? { skillSelector: options.skillSelector } : {}),
-    };
-  }
-
-  private importLocatorMatchedSkillNames(locator: GitHubImportLocator): string[] {
-    if (locator.skillSelector) {
-      return [locator.skillSelector];
-    }
-
-    const basename = locator.requestedPath
-      ?.split("/")
-      .filter(Boolean)
-      .at(-1);
-    return basename ? [basename] : [];
-  }
-
   private filterImportSnapshotSkills(
     skills: UnifiedSourceSnapshot["skills"],
     selector: string,
     canonicalRepo: string,
   ): UnifiedSourceSnapshot["skills"] {
-    const selectorVariants = this.buildImportSkillSelectorVariants(selector, canonicalRepo);
-    return skills.filter((skill) => {
-      const skillVariants = new Set([
-        ...this.buildImportSkillSelectorVariants(skill.skillId, canonicalRepo),
-        ...this.buildImportSkillSelectorVariants(skill.title, canonicalRepo),
-      ]);
-      return selectorVariants.some((variant) => skillVariants.has(variant));
-    });
+    return skills.filter((skill) =>
+      this.importSourcePolicy.matchesSelector(
+        selector,
+        [skill.skillId, skill.title],
+        canonicalRepo,
+      )
+    );
   }
 
   private filterPreviewLeafs<T extends SelectableLeaf>(
@@ -3893,7 +3769,7 @@ export class SkillFlowApp {
     } = {},
   ): T[] | undefined {
     let filteredLeafs = leafs;
-    const requestedPath = this.normalizeRequestedPath(options.requestedPath);
+    const requestedPath = this.importSourcePolicy.normalizeRequestedPath(options.requestedPath);
     if (requestedPath) {
       filteredLeafs = filteredLeafs.filter(
         (leaf) => leaf.relativePath === requestedPath || leaf.relativePath.startsWith(`${requestedPath}/`),
@@ -3919,34 +3795,6 @@ export class SkillFlowApp {
 
     const selected = new Set(selectedLeafIds.data);
     return filteredLeafs.filter((leaf) => selected.has(leaf.id));
-  }
-
-  private async resolveDirectImportLocator(locator: string): Promise<string | undefined> {
-    const trimmed = this.stripImportLocatorQuotes(locator.trim());
-    if (!trimmed || normalizeImportCanonicalRepo(trimmed)) {
-      return undefined;
-    }
-
-    if (/^clawhub:[^@\s]+(?:@.+)?$/i.test(trimmed)) {
-      return trimmed;
-    }
-
-    const hostedRepo = parseHostedGitRepo(trimmed);
-    if (hostedRepo?.host.includes("gitlab")) {
-      return trimmed;
-    }
-
-    const localLocator = trimmed.startsWith("~/")
-      ? path.join(process.env.HOME ?? os.homedir(), trimmed.slice(2))
-      : trimmed;
-    const resolvedPath = path.resolve(localLocator.startsWith("file://")
-      ? decodeURIComponent(new URL(trimmed).pathname)
-      : localLocator);
-    if (await pathExists(resolvedPath)) {
-      return resolvedPath;
-    }
-
-    return undefined;
   }
 
   private stripImportLocatorQuotes(locator: string): string {
@@ -4141,98 +3989,6 @@ export class SkillFlowApp {
         ...(next.trust ?? {}),
       },
     };
-  }
-
-  private buildImportSkillSelectorVariants(
-    value: string,
-    canonicalRepo: string,
-  ): string[] {
-    const normalized = this.normalizeImportSkillSelector(value);
-    if (!normalized) {
-      return [];
-    }
-
-    const repo = parseGitHubRepo(canonicalRepo);
-    const variants = new Set<string>([normalized]);
-    const prefixes = new Set<string>();
-    const pathSegments = value
-      .trim()
-      .replace(/\\/g, "/")
-      .split("/")
-      .map((segment) => segment.trim())
-      .filter(Boolean);
-
-    if (pathSegments.length > 1) {
-      for (let index = 1; index < pathSegments.length; index += 1) {
-        const suffix = this.normalizeImportSkillSelector(pathSegments.slice(index).join("/"));
-        if (suffix) {
-          variants.add(suffix);
-        }
-      }
-    }
-
-    if (repo) {
-      const normalizedOwner = this.normalizeImportSkillSelector(repo.owner);
-      const ownerHead = this.normalizeImportSkillSelector(repo.owner.split(/[^a-z0-9]+/i)[0] ?? "");
-      const normalizedRepo = this.normalizeImportSkillSelector(repo.repo);
-
-      if (normalizedOwner) {
-        prefixes.add(normalizedOwner);
-      }
-      if (ownerHead) {
-        prefixes.add(ownerHead);
-      }
-      if (normalizedRepo) {
-        prefixes.add(normalizedRepo);
-      }
-    }
-
-    for (const prefix of prefixes) {
-      if (normalized.startsWith(`${prefix}-`)) {
-        variants.add(normalized.slice(prefix.length + 1));
-      }
-    }
-
-    return [...variants];
-  }
-
-  private normalizeImportSkillSelector(value: string): string {
-    return value
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .replace(/-+/g, "-");
-  }
-
-  private getImportLeafSelectorRank(relativePath: string): number {
-    if (relativePath === ".") {
-      return 0;
-    }
-    if (/^skills\/[^/]+$/.test(relativePath)) {
-      return 1;
-    }
-    if (/^skills\/\.(curated|experimental|system)\/[^/]+$/.test(relativePath)) {
-      return 2;
-    }
-    return 3;
-  }
-
-  private pickPreferredImportLeafMatch<T extends SelectableLeaf>(matches: T[]): T | undefined {
-    if (matches.length === 0) {
-      return undefined;
-    }
-
-    const ranked = matches.map((leaf) => ({
-      leaf,
-      rank: this.getImportLeafSelectorRank(leaf.relativePath),
-    }));
-    const bestRank = Math.min(...ranked.map((entry) => entry.rank));
-    const bestMatches = ranked
-      .filter((entry) => entry.rank === bestRank)
-      .map((entry) => entry.leaf);
-
-    return bestMatches.length === 1 ? bestMatches[0] : undefined;
   }
 
   private importSourceRefreshKey(canonicalRepo: string, enrichSkillIds?: string[]): string {
@@ -6708,24 +6464,6 @@ export class SkillFlowApp {
     return this.getSourceLeafsForBinding(source, binding, lockFile).find((leaf) => leaf.id === leafId);
   }
 
-  private selectLeafIdsForRequestedPath(
-    leafs: SelectableLeaf[],
-    requestedPath?: string,
-  ): string[] {
-    const normalizedPath = this.normalizeRequestedPath(requestedPath);
-    if (!normalizedPath) {
-      return leafs.map((leaf) => leaf.id);
-    }
-
-    return leafs
-      .filter(
-        (leaf) =>
-          leaf.relativePath === normalizedPath ||
-          leaf.relativePath.startsWith(`${normalizedPath}/`),
-      )
-      .map((leaf) => leaf.id);
-  }
-
   private buildAddDraft(
     sourceLeafs: SelectableLeaf[],
     requestedPath: string | undefined,
@@ -6863,7 +6601,7 @@ export class SkillFlowApp {
       }
       if (fallbackMatches.length > 1) {
         if (canonicalRepo) {
-          const preferred = this.pickPreferredImportLeafMatch(fallbackMatches);
+          const preferred = this.importSourcePolicy.pickPreferredLeaf(fallbackMatches);
           if (preferred) {
             matchedLeafIds.push(preferred.id);
             continue;
@@ -6907,25 +6645,7 @@ export class SkillFlowApp {
     selectorPath: string,
     canonicalRepo: string | undefined,
   ): SelectableLeaf[] {
-    return sourceLeafs.filter((leaf) => {
-      if (leaf.linkName === selectorPath || leaf.title === selectorPath || leaf.name === selectorPath) {
-        return true;
-      }
-
-      if (!canonicalRepo) {
-        return false;
-      }
-
-      const selectorVariants = this.buildImportSkillSelectorVariants(selectorPath, canonicalRepo);
-      const leafVariants = new Set([
-        ...this.buildImportSkillSelectorVariants(leaf.linkName, canonicalRepo),
-        ...this.buildImportSkillSelectorVariants(leaf.title, canonicalRepo),
-        ...(leaf.name ? this.buildImportSkillSelectorVariants(leaf.name, canonicalRepo) : []),
-        ...this.buildImportSkillSelectorVariants(path.posix.basename(leaf.relativePath), canonicalRepo),
-      ]);
-
-      return selectorVariants.some((variant) => leafVariants.has(variant));
-    });
+    return this.importSourcePolicy.findSelectorMatches(sourceLeafs, selectorPath, canonicalRepo);
   }
 
   private resolveSelectedLeafIds(
@@ -6935,7 +6655,7 @@ export class SkillFlowApp {
     canonicalRepo?: string,
   ): Result<string[]> {
     if (!skillNames || skillNames.length === 0) {
-      return ok(this.selectLeafIdsForRequestedPath(sourceLeafs, requestedPath));
+      return ok(this.importSourcePolicy.selectLeafIdsForRequestedPath(sourceLeafs, requestedPath));
     }
 
     const requested = [...new Set(skillNames.map((skillName) => skillName.trim()).filter(Boolean))];
@@ -6954,36 +6674,18 @@ export class SkillFlowApp {
         });
       }
 
-      const fallbackMatches = sourceLeafs.filter((leaf) => {
-        if (leaf.linkName === selector || leaf.title === selector || leaf.name === selector) {
-          return true;
-        }
-
-        if (!canonicalRepo) {
-          return false;
-        }
-
-        // skills.sh can prefix repo skill ids, for example `vercel-react-best-practices`,
-        // while the GitHub checkout still uses the real directory name `react-best-practices`.
-        // Keep the preview data unchanged for the UI, but accept those prefixed ids here so
-        // the actual import still resolves against the GitHub checkout.
-        const selectorVariants = this.buildImportSkillSelectorVariants(selector, canonicalRepo);
-        const leafVariants = new Set([
-          ...this.buildImportSkillSelectorVariants(leaf.linkName, canonicalRepo),
-          ...this.buildImportSkillSelectorVariants(leaf.title, canonicalRepo),
-          ...(leaf.name ? this.buildImportSkillSelectorVariants(leaf.name, canonicalRepo) : []),
-          ...this.buildImportSkillSelectorVariants(path.posix.basename(leaf.relativePath), canonicalRepo),
-        ]);
-
-        return selectorVariants.some((variant) => leafVariants.has(variant));
-      });
+      const fallbackMatches = this.importSourcePolicy.findSelectorMatches(
+        sourceLeafs,
+        selector,
+        canonicalRepo,
+      );
       if (fallbackMatches.length === 1) {
         matchedLeafIds.push(fallbackMatches[0]!.id);
         continue;
       }
       if (fallbackMatches.length > 1) {
         if (canonicalRepo) {
-          const preferred = this.pickPreferredImportLeafMatch(fallbackMatches);
+          const preferred = this.importSourcePolicy.pickPreferredLeaf(fallbackMatches);
           if (preferred) {
             matchedLeafIds.push(preferred.id);
             continue;
@@ -7025,15 +6727,6 @@ export class SkillFlowApp {
     }
 
     return ok([...new Set(requestedTargets)]);
-  }
-
-  private normalizeRequestedPath(requestedPath?: string): string | undefined {
-    if (!requestedPath) {
-      return undefined;
-    }
-
-    const normalized = requestedPath.trim().replace(/^\.\/+/, "").replace(/\/+$/, "");
-    return normalized.length > 0 && normalized !== "." ? normalized : undefined;
   }
 
   private async rollbackPreparedSourceInternal(
