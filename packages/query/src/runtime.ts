@@ -103,7 +103,6 @@ import {
   buildFailedSourceMetadataResult,
   buildSourceMetadataResult,
   fetchFreshSourceMetadata,
-  fetchSkillsDirectorySourceDetails,
   inferSourceMetadataProvider,
   SOURCE_METADATA_CACHE_TTL_MS,
 } from "@skill-flow/integration/utils/source-details";
@@ -2177,7 +2176,6 @@ export class SkillFlowApp {
 
       const manifest = await this.readManifestConsistently();
       const installedRepos = this.installedCanonicalRepos(manifest);
-      const importCache = await this.store.readImportDataCache();
       const directCandidate = await this.buildDirectImportGroupCandidate(
         normalizedQuery,
         manifest,
@@ -2191,48 +2189,35 @@ export class SkillFlowApp {
       const exactLocator = this.importSourcePolicy.parseGitHubLocator(normalizedQuery);
       const exactRepo = exactLocator?.canonicalRepo;
       if (exactRepo) {
+        const matchedSkillNames = this.importSourcePolicy.matchedSkillNames(exactLocator);
+        const matchedSkills = matchedSkillNames.map((skillName) => ({
+          skillId: skillName,
+          title: skillName,
+        }));
         try {
-          const details = await fetchSkillsDirectorySourceDetails(exactRepo);
-          const matchedSkillNames = this.importSourcePolicy.matchedSkillNames(exactLocator);
+          const snapshot = await this.importDiscovery.resolveSource(exactRepo, {
+            includeSkillDetails: false,
+            refreshTrustInBackground: false,
+          });
+          const candidate = buildImportGroupCandidate({
+            canonicalRepo: exactRepo,
+            locator: exactLocator.originalLocator,
+            installed: installedRepos.has(exactRepo),
+            snapshot,
+            ...(matchedSkills.length ? { matchedSkills } : {}),
+          });
           return ok({
-            groups: [
-              {
-                id: exactRepo,
-                provider: "skills",
-                locator: exactLocator.originalLocator,
-                canonicalRepo: exactRepo,
-                aliases: [
-                  exactLocator.originalLocator,
-                  exactRepo,
-                  `https://github.com/${exactRepo}`,
-                  `https://github.com/${exactRepo}.git`,
-                  `git@github.com:${exactRepo}.git`,
-                ].filter((value, index, values) => values.indexOf(value) === index),
-                title: details.repoLabel?.split("/")[1] ?? exactRepo.split("/")[1] ?? exactRepo,
-                installed: installedRepos.has(exactRepo),
-                ...(details.description ? { summary: details.description } : {}),
-                ...(details.sourceUrl ? { sourceUrl: details.sourceUrl } : {}),
-                ...(details.repoUrl ? { repoUrl: details.repoUrl } : {}),
-                ...(details.starCount !== undefined ? { starCount: details.starCount } : {}),
-                ...(details.totalInstalls !== undefined ? { totalInstalls: details.totalInstalls } : {}),
-                ...(matchedSkillNames.length ? { matchedSkillNames } : {}),
-                enrichState: { status: "ready" as const },
-              },
-            ],
+            groups: [{
+              ...candidate,
+              aliases: [exactLocator.originalLocator, ...candidate.aliases]
+                .filter((value, index, values) => values.indexOf(value) === index),
+            }],
             exact: true,
           });
         } catch (error) {
-          const matchedSkillNames = this.importSourcePolicy.matchedSkillNames(exactLocator);
-          const exactCandidate = this.buildImmediateImportGroupCandidate(importCache.repos, exactRepo, {
+          const exactCandidate = this.buildImmediateImportGroupCandidate({}, exactRepo, {
             installed: installedRepos.has(exactRepo),
-            ...(matchedSkillNames.length
-              ? {
-                  matchedSkills: matchedSkillNames.map((skillName) => ({
-                    skillId: skillName,
-                    title: skillName,
-                  })),
-                }
-              : {}),
+            ...(matchedSkills.length ? { matchedSkills } : {}),
           });
           const resolvedExactCandidate = exactLocator.originalLocator !== exactRepo
             ? {
@@ -2267,6 +2252,7 @@ export class SkillFlowApp {
         }
       }
 
+      const importCache = await this.store.readImportDataCache();
       const searchSnapshot = await this.importDiscovery.resolveSearch(normalizedQuery);
       const grouped = groupSkillsDirectorySearchHits(searchSnapshot.hits).slice(0, 8);
       const groups = grouped.map((group) =>

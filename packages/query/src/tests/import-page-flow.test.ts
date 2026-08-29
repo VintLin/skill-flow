@@ -54,6 +54,7 @@ describe.sequential("import page flow", () => {
           <span>18<!-- --> <!-- -->skills</span>
           <span>735.1K<!-- --> total installs</span>
           <a href="https://github.com/anthropics/skills">GitHub</a>
+          <a href="/anthropics/skills/browse"><h3>Browse</h3></a>
         `);
       }
       throw new Error(`Unexpected URL: ${url}`);
@@ -157,6 +158,7 @@ describe.sequential("import page flow", () => {
           <span>18<!-- --> <!-- -->skills</span>
           <span>735.1K<!-- --> total installs</span>
           <a href="https://github.com/anthropics/skills">GitHub</a>
+          <a href="/anthropics/skills/browse"><h3>Browse</h3></a>
         `);
       }
       throw new Error(`Unexpected URL: ${url}`);
@@ -195,6 +197,7 @@ describe.sequential("import page flow", () => {
           <span>9<!-- --> <!-- -->skills</span>
           <span>1.2K<!-- --> total installs</span>
           <a href="https://github.com/VintLin/skill-flow">GitHub</a>
+          <a href="/VintLin/skill-flow/releases"><h3>Releases</h3></a>
         `);
       }
       throw new Error(`Unexpected URL: ${url}`);
@@ -217,6 +220,94 @@ describe.sequential("import page flow", () => {
       title: "skill-flow",
       matchedSkillNames: ["releases"],
     });
+  });
+
+  test("exact import search reuses a fresh discovery snapshot without fetching", async () => {
+    const app = new SkillFlowApp();
+    const snapshot = {
+      canonicalRepo: "acme/skills",
+      aliases: ["acme/skills", "https://github.com/acme/skills"],
+      title: "Acme Skills",
+      provider: "skills" as const,
+      sourceUrl: "https://skills.sh/acme/skills",
+      repoUrl: "https://github.com/acme/skills",
+      repoLabel: "acme/skills",
+      repoStars: 42,
+      owner: {
+        slug: "acme",
+        sourceUrl: "https://skills.sh/acme",
+      },
+      skills: [{ skillId: "review", title: "Review" }],
+    };
+    await app.store.writeImportSourceSnapshotEntry({
+      canonicalRepo: snapshot.canonicalRepo,
+      checkedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      data: snapshot,
+    });
+    const fetchProvider = vi.fn(async () => {
+      throw new Error("fresh cache should bypass provider");
+    });
+    vi.stubGlobal("fetch", fetchProvider);
+
+    const result = await app.searchImportGroups("https://github.com/acme/skills");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.data.groups[0]).toMatchObject({
+      canonicalRepo: "acme/skills",
+      locator: "https://github.com/acme/skills",
+      title: "Acme Skills",
+      starCount: 42,
+      enrichState: { status: "ready" },
+    });
+    expect(fetchProvider).not.toHaveBeenCalled();
+  });
+
+  test("concurrent exact import searches share one discovery refresh", async () => {
+    vi.spyOn(githubCatalog, "fetchGitHubRepoDetails").mockResolvedValue({
+      provider: "github",
+      repoLabel: "acme/skills",
+      repoUrl: "https://github.com/acme/skills",
+    });
+    let resolveSource!: (response: ResponseLike) => void;
+    const sourceResponse = new Promise<ResponseLike>((resolve) => {
+      resolveSource = resolve;
+    });
+    const requestedUrls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url === "https://skills.sh/acme/skills") {
+        return sourceResponse;
+      }
+      if (url === "https://skills.sh/acme") {
+        return responseWithHtml("<h1>Acme</h1>");
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }));
+    const app = new SkillFlowApp();
+
+    const first = app.searchImportGroups("acme/skills");
+    const second = app.searchImportGroups("https://github.com/acme/skills");
+    await vi.waitFor(() => {
+      expect(requestedUrls.filter((url) => url === "https://skills.sh/acme/skills"))
+        .toHaveLength(1);
+    });
+    resolveSource(responseWithHtml(`
+      <h1>acme<!-- -->/<!-- -->skills</h1>
+      <a href="https://github.com/acme/skills">GitHub</a>
+      <a href="/acme/skills/review"><h3>Review</h3></a>
+    `));
+
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { ok: true, data: { exact: true, groups: [{ enrichState: { status: "ready" } }] } },
+      { ok: true, data: { exact: true, groups: [{ enrichState: { status: "ready" } }] } },
+    ]);
+    expect(requestedUrls.filter((url) => url === "https://skills.sh/acme/skills"))
+      .toHaveLength(1);
   });
 
   test("exact import search marks sources missing from skills directory as failed", async () => {

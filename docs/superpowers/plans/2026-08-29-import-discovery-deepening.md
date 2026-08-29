@@ -82,6 +82,7 @@ Tests:
 - 将可重建 Import Data repo cache 收敛为单一 Skills snapshot，删除无人生产的 multi-provider、identity 与 resolved metadata 投影。
 - 推荐页通过 ImportDiscovery 批量解析 feeds 与 cached sources，仅读取一次 Import Data cache，避免 I/O lock 将表面并发退化为串行解析。
 - 删除 Query runtime 中已被 authority manifest 与 deployment reconciler 替代的 legacy manifest mutation helper 链。
+- Exact GitHub 搜索统一经由 ImportDiscovery 读取 source snapshot，复用 cache、stale fallback 与并发请求去重。
 
 Verification:
 
