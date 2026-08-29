@@ -5369,6 +5369,14 @@ export class SkillFlowApp {
           continue;
         }
 
+        const sourceUpdate = updated.data.updated.find((item) => item.sourceId === sourceId);
+        if (sourceUpdate && !sourceUpdate.changed && !sourceUpdate.repaired) {
+          await this.operationRecoveryService.checkpoint();
+          await this.operationRecoveryService.commit();
+          updatedItems.push(...updated.data.updated);
+          continue;
+        }
+
         const state = await this.stateStore.readState();
         const manifest = this.cloneAuthorityManifest(state.manifest);
         const lockFile = this.cloneLockFile(state.lockFile);

@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { StateStore } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
+import { DeploymentReconciler } from "../deployment-reconciler.js";
 import {
   createRepo,
   pathExists,
@@ -334,6 +335,27 @@ describe.sequential("runtime source v2 write chain", () => {
         status: "active",
       }),
     ]));
+    await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
+  });
+
+  test("updateSources skips deployment reconciliation when a managed group is unchanged", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const app = new SkillFlowApp();
+    const added = await app.addSource(repoPath, { sourceIdOverride: "unchanged-source" });
+    expect(added.ok).toBe(true);
+    const plan = vi.spyOn(DeploymentReconciler.prototype, "plan");
+    plan.mockClear();
+
+    const updated = await app.updateSources(["unchanged-source"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.data.updated).toEqual([
+      expect.objectContaining({ sourceId: "unchanged-source", changed: false }),
+    ]);
+    expect(plan).not.toHaveBeenCalled();
     await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
   });
 
