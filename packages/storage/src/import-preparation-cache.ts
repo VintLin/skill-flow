@@ -1,9 +1,7 @@
 import type {
-  DeploymentTargetId,
   ImportPreparationCache,
   ImportPreparationRecord,
   ImportPreparationStatus,
-  PreparedSkillRef,
   SourceKind,
 } from "@skill-flow/domain/types";
 
@@ -113,12 +111,10 @@ function normalizeRecord(id: string, value: unknown): ImportPreparationRecord | 
   }
 
   return {
-    ...(value.schemaVersion === 2 ? { schemaVersion: 2 as const } : {}),
     id,
     ...(stringValue(value.cacheKey) ? { cacheKey: stringValue(value.cacheKey)! } : {}),
     locator,
     canonicalRepo,
-    ...(stringValue(value.sourceSelectionKey) ? { sourceSelectionKey: stringValue(value.sourceSelectionKey)! } : {}),
     sourceKind,
     checkoutPath,
     sourceId,
@@ -127,43 +123,8 @@ function normalizeRecord(id: string, value: unknown): ImportPreparationRecord | 
     status,
     preparedAt,
     expiresAt,
-    ...(stringValue(value.commitSha) ? { commitSha: stringValue(value.commitSha)! } : {}),
-    skillIds: stringArray(value.skillIds),
-    ...(normalizeSkillRefs(value.skillRefs).length > 0
-      ? { skillRefs: normalizeSkillRefs(value.skillRefs) }
-      : {}),
-    availableTargets: stringArray(value.availableTargets) as DeploymentTargetId[],
     ...(normalizeFailure(value.failure) ? { failure: normalizeFailure(value.failure)! } : {}),
   };
-}
-
-function normalizeSkillRefs(value: unknown): PreparedSkillRef[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter(isRecord).flatMap((item) => {
-    if (
-      typeof item.uiId !== "string" ||
-      !isRecord(item.selector) ||
-      item.selector.kind !== "repoPath" ||
-      typeof item.selector.path !== "string" ||
-      typeof item.leafId !== "string" ||
-      typeof item.repoPath !== "string" ||
-      typeof item.contentHash !== "string"
-    ) {
-      return [];
-    }
-
-    return [{
-      uiId: item.uiId,
-      selector: { kind: "repoPath", path: item.selector.path },
-      leafId: item.leafId,
-      repoPath: item.repoPath,
-      contentHash: item.contentHash,
-      selectorAliases: stringArray(item.selectorAliases),
-    }];
-  });
 }
 
 function normalizeFailure(value: unknown): ImportPreparationRecord["failure"] | undefined {

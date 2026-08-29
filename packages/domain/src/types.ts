@@ -1315,32 +1315,17 @@ export type ImportDraft = {
   enabledTargets: DeploymentTargetId[];
 };
 
-export type PreparedSkillRef = {
-  uiId: string;
-  selector: ImportSkillSelector;
-  leafId: SkillLeafId;
-  repoPath: RepoPath;
-  contentHash: string;
-  selectorAliases: string[];
-};
-
 export type ImportPreparationRecord = {
-  schemaVersion?: SchemaVersion;
   id: string;
   cacheKey?: string;
   locator: string;
   canonicalRepo: string;
   requestedPath?: string;
-  sourceSelectionKey?: string;
   sourceKind: SourceKind;
   checkoutPath: string;
   sourceId: string;
   displayName: string;
-  availableTargets: DeploymentTargetId[];
-  commitSha?: string;
-  skillIds: string[];
-  skillRefs?: PreparedSkillRef[];
-  status: ImportPreparationStatus | "committed" | "expired";
+  status: ImportPreparationStatus;
   failure?: {
     reasonCode: string;
     retryable: boolean;

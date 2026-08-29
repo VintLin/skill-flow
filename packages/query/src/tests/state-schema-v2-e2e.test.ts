@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { SourceCheckoutService } from "@skill-flow/core-engine/services/source-checkout-service";
-import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
 import { StateStore } from "@skill-flow/storage/state-store";
 import { SkillFlowApp } from "../runtime.js";
 import { createRepo, skillDoc, useSkillFlowSandbox } from "./test-helpers.js";
@@ -53,19 +52,6 @@ describe.sequential("state schema v2 provider e2e", () => {
     if (!prepared.ok || prepared.data.status !== "ready") {
       return;
     }
-    const preparationCache = await new ImportPreparationCacheStore(app.store.rootPath)
-      .readImportPreparationCache();
-    const preparation = preparationCache.records[prepared.data.preparationId];
-    expect(preparation).toEqual(expect.objectContaining({
-      schemaVersion: 2,
-      sourceSelectionKey: `${locator}#.`,
-    }));
-    expect(preparation?.skillRefs).toContainEqual(expect.objectContaining({
-      uiId: skill?.uiId,
-      selector: { kind: "repoPath", path: repoPath },
-      repoPath,
-    }));
-
     const committed = await app.commitPreparedImportSource(prepared.data.preparationId, {
       selectedSkills: [{ uiId: skill!.uiId!, selector: skill!.selector! }],
       enabledTargets: ["codex"],

@@ -3,13 +3,10 @@ import type {
   ImportPreparationRecord,
   ImportPreparationResult,
   ImportSourceResult,
-  LeafRecord,
-  PreparedSkillRef,
   Result,
 } from "@skill-flow/domain/types";
 import { pathExists, removePath } from "@skill-flow/integration/utils/fs";
 import { ok } from "@skill-flow/integration/utils/result";
-import { normalizeImportRepoPathSelector } from "@skill-flow/integration/utils/skills-directory";
 import { deriveDisplayName, deriveSourceId } from "@skill-flow/integration/utils/source-id";
 import {
   isImportPreparationExpired,
@@ -198,8 +195,6 @@ export class ImportPreparationService {
       status: "preparing",
       preparedAt,
       expiresAt,
-      skillIds: [],
-      availableTargets: [],
     });
 
     const prepared = await this.options.checkoutService.prepareSourceCheckout(locator, {
@@ -229,12 +224,10 @@ export class ImportPreparationService {
     }
 
     const record: ImportPreparationRecord = {
-      schemaVersion: 2,
       id: preparationId,
       cacheKey,
       locator: prepared.data.locator,
       canonicalRepo: cacheKey,
-      sourceSelectionKey: this.sourceSelectionKey(cacheKey, prepared.data.requestedPath),
       sourceKind: prepared.data.kind,
       checkoutPath: prepared.data.checkoutPath,
       sourceId: prepared.data.sourceId,
@@ -243,13 +236,6 @@ export class ImportPreparationService {
       status: "ready",
       preparedAt,
       expiresAt,
-      ...(prepared.data.commitSha ? { commitSha: prepared.data.commitSha } : {}),
-      skillIds: prepared.data.leafs.map((leaf) => leaf.title ?? leaf.name ?? leaf.linkName ?? leaf.id),
-      skillRefs: prepared.data.leafs.map((leaf) => this.preparedSkillRef(
-        this.sourceSelectionKey(cacheKey, prepared.data.requestedPath),
-        leaf,
-      )),
-      availableTargets: [],
     };
     await this.options.cacheStore.writeImportPreparationRecord(record);
     await this.options.cacheStore.writeImportPreparationCache(
@@ -361,8 +347,6 @@ export class ImportPreparationService {
       status: "failed",
       preparedAt: args.preparedAt,
       expiresAt: args.expiresAt,
-      skillIds: [],
-      availableTargets: [],
       failure: {
         reasonCode: args.reasonCode,
         retryable: true,
@@ -387,31 +371,4 @@ export class ImportPreparationService {
     return options.path ? `${trimmed}#${options.path}` : trimmed;
   }
 
-  private sourceSelectionKey(canonicalRepo: string, requestedPath: string | undefined): string {
-    return `${canonicalRepo}#${requestedPath ?? "."}`;
-  }
-
-  private preparedSkillRef(
-    sourceSelectionKey: string,
-    leaf: LeafRecord,
-  ): PreparedSkillRef {
-    const selector = normalizeImportRepoPathSelector(leaf.relativePath);
-    return {
-      uiId: this.importPreviewUiId(sourceSelectionKey, selector.path),
-      selector,
-      leafId: leaf.id,
-      repoPath: selector.path,
-      contentHash: leaf.contentHash,
-      selectorAliases: [...new Set([leaf.id, leaf.name, leaf.title, leaf.linkName, leaf.relativePath].filter(Boolean) as string[])],
-    };
-  }
-
-  private importPreviewUiId(sourceSelectionKey: string, selectorPath: string): string {
-    const digest = crypto
-      .createHash("sha256")
-      .update(`${sourceSelectionKey}\0repoPath\0${selectorPath}`)
-      .digest("base64url")
-      .slice(0, 16);
-    return `skill_${digest}`;
-  }
 }

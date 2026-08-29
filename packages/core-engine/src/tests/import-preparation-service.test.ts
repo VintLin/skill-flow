@@ -112,8 +112,6 @@ describe.sequential("ImportPreparationService", () => {
       status: "ready",
       preparedAt: "2026-06-07T00:00:00.000Z",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      skillIds: [],
-      availableTargets: [],
     });
     await cacheStore.writeImportPreparationRecord({
       id: "prep-failed",
@@ -127,8 +125,6 @@ describe.sequential("ImportPreparationService", () => {
       status: "failed",
       preparedAt: "2026-06-07T00:01:00.000Z",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      skillIds: [],
-      availableTargets: [],
     });
 
     const prepared = await service.prepareImportSource(repoPath);
@@ -165,8 +161,6 @@ describe.sequential("ImportPreparationService", () => {
       status: "committing",
       preparedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      skillIds: [],
-      availableTargets: [],
     });
 
     const prepared = await service.prepareImportSource(repoPath);
@@ -205,8 +199,6 @@ describe.sequential("ImportPreparationService", () => {
       status: "ready",
       preparedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      skillIds: [],
-      availableTargets: [],
     });
 
     const committed = await service.commitPreparedImportSource("prep-missing");
@@ -285,8 +277,6 @@ describe.sequential("ImportPreparationService", () => {
       status: "ready",
       preparedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      skillIds: [],
-      availableTargets: [],
     });
 
     const committed = await service.commitPreparedImportSource("prep-empty");
@@ -330,8 +320,6 @@ describe.sequential("ImportPreparationService", () => {
       status: "ready",
       preparedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
-      skillIds: ["saved"],
-      availableTargets: [],
     });
 
     const committed = await service.commitPreparedImportSource("prep-collection");

@@ -362,8 +362,6 @@ describe.sequential("OperationRecoveryService", () => {
       displayName: "repo",
       preparedAt: "2026-08-22T00:00:00.000Z",
       expiresAt: "2099-08-22T00:00:00.000Z",
-      skillIds: [],
-      availableTargets: [],
     };
     await cacheStore.writeImportPreparationRecord({
       ...base,
@@ -410,8 +408,6 @@ describe.sequential("OperationRecoveryService", () => {
       status: "ready",
       preparedAt: "2026-08-22T00:00:00.000Z",
       expiresAt: "2099-08-22T00:00:00.000Z",
-      skillIds: [],
-      availableTargets: [],
     });
     const recovery = new OperationRecoveryService({ stateStore, cacheStore });
     await recovery.begin({
@@ -455,8 +451,6 @@ describe.sequential("OperationRecoveryService", () => {
       status: "ready",
       preparedAt: "2026-08-22T00:00:00.000Z",
       expiresAt: "2099-08-22T00:00:00.000Z",
-      skillIds: [],
-      availableTargets: [],
     });
     const recovery = new OperationRecoveryService({ stateStore, cacheStore });
     await recovery.begin({
@@ -650,8 +644,6 @@ describe.sequential("OperationRecoveryService", () => {
       status: "ready",
       preparedAt: "2026-08-22T00:00:00.000Z",
       expiresAt: "2099-08-22T00:00:00.000Z",
-      skillIds: [],
-      availableTargets: [],
     });
     const recovery = new OperationRecoveryService({ stateStore, cacheStore });
     await recovery.begin({
