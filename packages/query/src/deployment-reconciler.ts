@@ -89,8 +89,10 @@ export class DeploymentReconciler {
       .flatMap((source) => source.observedPaths ?? [])
       .map((observed) => observed.realPath);
 
-    for (const sourceId of uniqueSourceIds) {
-      const planned = await planner.planForSource(sourceId, input.manifest, input.lockFile);
+    const sourcePlans = await Promise.all(uniqueSourceIds.map((sourceId) =>
+      planner.planForSource(sourceId, input.manifest, input.lockFile)
+    ));
+    for (const planned of sourcePlans) {
       if (!planned.ok) {
         return fail(planned.errors, [...warnings, ...planned.warnings]);
       }

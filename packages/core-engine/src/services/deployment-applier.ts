@@ -43,7 +43,13 @@ export class DeploymentApplier {
     actions: DeploymentAction[],
   ): Promise<Result<{ applied: DeploymentAction[] }>> {
     const applied: DeploymentAction[] = [];
-    const targetRoots = await this.resolveTrustedTargetRoots();
+    const actionableTargets = new Set(
+      actions.filter((action) => action.kind !== "noop").map((action) => action.target),
+    );
+    if (actionableTargets.size === 0) {
+      return ok({ applied });
+    }
+    const targetRoots = await this.resolveTrustedTargetRoots(actionableTargets);
 
     for (const action of actions) {
       if (action.kind === "noop") {
@@ -177,15 +183,18 @@ export class DeploymentApplier {
     );
   }
 
-  private async resolveTrustedTargetRoots(): Promise<Map<DeploymentTargetId, string>> {
+  private async resolveTrustedTargetRoots(
+    targets: ReadonlySet<DeploymentTargetId>,
+  ): Promise<Map<DeploymentTargetId, string>> {
     const detectedRoots = await Promise.all(
-      this.adapters.map(async (adapter) => {
+      this.adapters.filter((adapter) => targets.has(adapter.target)).map(async (adapter) => {
         const detection = await adapter.detect();
         return [adapter.target, detection.rootPath] as const;
       }),
     );
     const explicitRoots = Object.entries(this.trustedTargetRoots).filter(
-      (entry): entry is [DeploymentTargetId, string] => Boolean(entry[1]),
+      (entry): entry is [DeploymentTargetId, string] =>
+        targets.has(entry[0] as DeploymentTargetId) && Boolean(entry[1]),
     );
 
     return new Map([...detectedRoots, ...explicitRoots]);

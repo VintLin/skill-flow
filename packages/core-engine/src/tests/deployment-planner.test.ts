@@ -14,6 +14,31 @@ import type { ChannelAdapter } from "@skill-flow/integration/adapters/channel-ad
 import { DeploymentPlanner } from "../services/deployment-planner.js";
 
 describe("deployment planner v2", () => {
+  test("reuses target detection while planning multiple sources in one reconciliation", async () => {
+    const adapter = createAdapter({ target: "codex", rootPath: "/targets/codex" });
+    const detect = adapter.detect.bind(adapter);
+    let detectionCount = 0;
+    adapter.detect = async () => {
+      detectionCount += 1;
+      return detect();
+    };
+    const planner = new DeploymentPlanner([adapter]);
+    const manifest = createManifest({
+      selectionMode: "all",
+      selectedLeafIds: [],
+      enabledTargets: ["codex"],
+    });
+    const lockFile = createLockFile();
+
+    const results = await Promise.all([
+      planner.planForSource("source-a", manifest, lockFile),
+      planner.planForSource("source-a", manifest, lockFile),
+    ]);
+
+    expect(results.every((result) => result.ok)).toBe(true);
+    expect(detectionCount).toBe(1);
+  });
+
   test("keeps active V2 projections without mode", () => {
     const lockFile: LockFile = {
       schemaVersion: 2,

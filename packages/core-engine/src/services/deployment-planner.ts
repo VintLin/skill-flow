@@ -20,6 +20,11 @@ import { hashDirectory, isPathInside } from "@skill-flow/integration/utils/fs";
 import { fail, ok } from "@skill-flow/integration/utils/result";
 
 export class DeploymentPlanner {
+  private readonly detectionByTarget = new Map<
+    ChannelAdapter["target"],
+    ReturnType<ChannelAdapter["detect"]>
+  >();
+
   constructor(
     private readonly adapters: ChannelAdapter[],
     private readonly projectedLinkNamesByTarget: ReadonlyMap<ChannelAdapter["target"], ReadonlyMap<string, string>> = new Map(),
@@ -51,10 +56,10 @@ export class DeploymentPlanner {
     const actions: DeploymentAction[] = [];
     const warnings: Warning[] = [];
 
-    for (const adapter of this.adapters) {
-      const detection = await adapter.detect();
+    const targetPlans = await Promise.all(this.adapters.map(async (adapter) => {
+      const detection = await this.detectOnce(adapter);
       const desiredLeafIds = this.resolveDesiredLeafIds(adapter.target, binding, sourceLock.leafIds);
-      const plannedForTarget = await this.planTarget(
+      return this.planTarget(
         sourceId,
         adapter,
         detection.available,
@@ -70,7 +75,8 @@ export class DeploymentPlanner {
           author: getHostedGitOwner(source?.locator ?? ""),
         },
       );
-
+    }));
+    for (const plannedForTarget of targetPlans) {
       actions.push(...plannedForTarget.actions);
       warnings.push(...plannedForTarget.warnings);
     }
@@ -80,6 +86,16 @@ export class DeploymentPlanner {
       warnings,
       blocked: actions.filter((action) => action.kind === "blocked"),
     });
+  }
+
+  private detectOnce(adapter: ChannelAdapter): ReturnType<ChannelAdapter["detect"]> {
+    const cached = this.detectionByTarget.get(adapter.target);
+    if (cached) {
+      return cached;
+    }
+    const detection = adapter.detect();
+    this.detectionByTarget.set(adapter.target, detection);
+    return detection;
   }
 
   private resolveDesiredLeafIds(

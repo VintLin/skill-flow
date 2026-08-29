@@ -8,6 +8,74 @@ import { useSkillFlowSandbox, writeRepoFiles } from "./test-helpers.js";
 describe.sequential("deployment applier v2", () => {
   const sandbox = useSkillFlowSandbox();
 
+  test("does not detect target roots when a plan contains only no-op actions", async () => {
+    let detectionCount = 0;
+    const applier = new DeploymentApplier([{
+      target: "codex",
+      strategy: "symlink",
+      detect: async () => {
+        detectionCount += 1;
+        return {
+          target: "codex",
+          strategy: "symlink",
+          available: true,
+          rootPath: process.env.SKILL_FLOW_TARGET_CODEX!,
+        };
+      },
+      resolveTargetPath: (rootPath, linkName) => path.join(rootPath, linkName),
+    }]);
+
+    const result = await applier.applyPlan(createLockFile({ projections: [] }), [{
+      kind: "noop",
+      sourceId: "source-a",
+      leafId: "source-a:one",
+      target: "codex",
+      strategy: "symlink",
+      sourcePath: "/sources/source-a/one",
+      targetPath: "/targets/codex/one",
+      targetRootPath: "/targets/codex",
+      contentHash: "hash-one",
+    }]);
+
+    expect(result.ok).toBe(true);
+    expect(detectionCount).toBe(0);
+  });
+
+  test("detects only target roots referenced by actionable work", async () => {
+    const detectionCounts = { codex: 0, cursor: 0 };
+    const adapter = (target: "codex" | "cursor") => ({
+      target,
+      strategy: "symlink" as const,
+      detect: async () => {
+        detectionCounts[target] += 1;
+        return {
+          target,
+          strategy: "symlink" as const,
+          available: true,
+          rootPath: `/targets/${target}`,
+        };
+      },
+      resolveTargetPath: (rootPath: string, linkName: string) => path.join(rootPath, linkName),
+    });
+    const applier = new DeploymentApplier([adapter("codex"), adapter("cursor")]);
+
+    const result = await applier.applyPlan(createLockFile({ projections: [] }), [{
+      kind: "blocked",
+      sourceId: "source-a",
+      leafId: "source-a:one",
+      target: "codex",
+      strategy: "symlink",
+      sourcePath: "/sources/source-a/one",
+      targetPath: "/targets/codex/one",
+      targetRootPath: "/targets/codex",
+      contentHash: "hash-one",
+      reason: "test",
+    }]);
+
+    expect(result.ok).toBe(true);
+    expect(detectionCounts).toEqual({ codex: 1, cursor: 0 });
+  });
+
   test("writes V2 projections for create and update actions without legacy mode or deployments", async () => {
     const rootPath = process.env.SKILL_FLOW_TARGET_CODEX!;
     const sourceOnePath = path.join(sandbox.sandboxRoot, "source-a", "one");
