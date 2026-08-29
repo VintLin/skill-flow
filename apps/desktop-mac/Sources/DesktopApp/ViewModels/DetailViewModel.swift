@@ -313,7 +313,7 @@ extension DetailViewModel.Snapshot {
             sourceFacts: detail.sourceFacts,
             deploymentFacts: detail.deploymentFacts,
             fileTree: detail.fileTree,
-            groupDocuments: MainViewModel.documentDescriptors(detail.groupDocuments),
+            groupDocuments: detail.groupDocuments.map(\.descriptor),
             targets: detail.targets,
             skills: detail.skills
         )
@@ -346,7 +346,7 @@ extension DetailViewModel.Snapshot {
             sourceFacts: detail.sourceFacts,
             deploymentFacts: detail.deploymentFacts,
             fileTree: detail.fileTree,
-            groupDocuments: MainViewModel.documentDescriptors(detail.groupDocuments),
+            groupDocuments: detail.groupDocuments.map(\.descriptor),
             targets: detail.targets,
             skills: detail.skills
         )

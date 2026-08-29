@@ -360,7 +360,7 @@ final class DetailLogic {
             return placeholder
         }
 
-        return await loadedDocumentTab(from: documentDescriptor(for: placeholder))
+        return await loadedDocumentTab(from: placeholder.descriptor)
     }
 
     private func loadedDocumentTab(from descriptor: DocumentDescriptor) async -> DocumentTab? {
@@ -783,29 +783,7 @@ final class DetailLogic {
     }
 
     nonisolated func placeholderDocumentTabs(_ descriptors: [DocumentDescriptor]) -> [DocumentTab] {
-        descriptors.map {
-            DocumentTab(
-                id: $0.id,
-                title: $0.title,
-                path: $0.path,
-                metadata: $0.metadata,
-                content: "",
-                renderCacheKey: $0.renderCacheKey,
-                externalURL: $0.externalURL,
-                isLoaded: false
-            )
-        }
-    }
-
-    nonisolated func documentDescriptor(for tab: DocumentTab) -> DocumentDescriptor {
-        DocumentDescriptor(
-            id: tab.id,
-            title: tab.title,
-            path: tab.path,
-            metadata: tab.metadata,
-            renderCacheKey: tab.renderCacheKey,
-            externalURL: tab.externalURL
-        )
+        descriptors.map(\.placeholderTab)
     }
 
     nonisolated func detailRevision(

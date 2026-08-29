@@ -2008,15 +2008,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         )
     }
 
-    // MARK: - Document & FileTree Utilities
-
-    nonisolated static func documentDescriptors(_ tabs: [DocumentTab]) -> [DocumentDescriptor] {
-        tabs.map { DocumentDescriptor(id: $0.id, title: $0.title, path: $0.path, metadata: $0.metadata, renderCacheKey: $0.renderCacheKey, externalURL: $0.externalURL) }
-    }
-
-    nonisolated static func documentDescriptor(for tab: DocumentTab) -> DocumentDescriptor {
-        DocumentDescriptor(id: tab.id, title: tab.title, path: tab.path, metadata: tab.metadata, renderCacheKey: tab.renderCacheKey, externalURL: tab.externalURL)
-    }
+    // MARK: - Detail Revision
 
     nonisolated static func detailRevision(
         sourceId: String,

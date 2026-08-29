@@ -578,6 +578,19 @@ struct DocumentDescriptor: Identifiable, Equatable, Sendable {
     let metadata: [MetadataEntry]
     let renderCacheKey: String
     let externalURL: String?
+
+    var placeholderTab: DocumentTab {
+        DocumentTab(
+            id: id,
+            title: title,
+            path: path,
+            metadata: metadata,
+            content: "",
+            renderCacheKey: renderCacheKey,
+            externalURL: externalURL,
+            isLoaded: false
+        )
+    }
 }
 
 struct DocumentTab: Identifiable, Equatable, Sendable {
@@ -608,6 +621,17 @@ struct DocumentTab: Identifiable, Equatable, Sendable {
         self.renderCacheKey = renderCacheKey
         self.externalURL = externalURL
         self.isLoaded = isLoaded
+    }
+
+    var descriptor: DocumentDescriptor {
+        DocumentDescriptor(
+            id: id,
+            title: title,
+            path: path,
+            metadata: metadata,
+            renderCacheKey: renderCacheKey,
+            externalURL: externalURL
+        )
     }
 }
 

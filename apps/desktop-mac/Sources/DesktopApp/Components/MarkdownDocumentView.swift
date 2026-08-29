@@ -23,7 +23,7 @@ struct MarkdownDocumentView: View, Equatable {
 
         init(document: DocumentTab) {
             self.init(
-                descriptor: MainViewModel.documentDescriptor(for: document),
+                descriptor: document.descriptor,
                 content: document.isLoaded ? document.content : nil,
                 metadata: document.metadata
             )

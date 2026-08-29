@@ -835,7 +835,7 @@ private extension DetailViewData {
         groupDocuments: [DocumentTab] = [],
         skills: [DetailSkill] = []
     ) -> Self {
-        let descriptors = MainViewModel.documentDescriptors(groupDocuments)
+        let descriptors = groupDocuments.map(\.descriptor)
         let resolvedRevision = revision ?? MainViewModel.detailRevision(
             sourceId: sourceId,
             title: "AlphaHub",
