@@ -136,6 +136,10 @@ _Avoid_: pause, resumable queue, general cancel action
 Internal durable recovery evidence for the single incomplete managed Update or final Import. It records the pre-operation authority state plus explicit source, checkout, preparation, and target ownership metadata. Recovery validates the whole record against current managed roots before touching a recorded path; it never records work to resume and is not Shared Skill State.
 _Avoid_: persisted queue, download history, migration marker
 
+**Protected Group Operation Transaction**:
+The all-or-recover commit scope for one managed Update or final Import, covering its managed checkout, Shared Skill State, and Skill Flow-owned target projections. Bulk Update contains one transaction per group; completed group transactions remain committed.
+_Avoid_: batch transaction, resumable operation, preparation transaction
+
 **Recovery Required**:
 Desktop state after recovery failed and the user cancelled application termination. The main UI and import discovery (search, local scan, preview) remain available, but preparation, final Import, and Update stay disabled; another Quit or Retry Recovery must attempt recovery again before termination can complete.
 _Avoid_: recovered, idle, ignore-and-quit
