@@ -1919,6 +1919,16 @@ export class SkillFlowApp {
         );
       const installedRepos = this.installedCanonicalRepos(manifest);
       const groupsByKey = new Map<string, LocalSkillScanResult[]>();
+      const originPreviews = new Map<string, Promise<Result<ImportPreviewResult> | null>>();
+      const resolveOriginPreview = (canonicalRepo: string) => {
+        const inFlight = originPreviews.get(canonicalRepo);
+        if (inFlight) {
+          return inFlight;
+        }
+        const preview = this.previewGitHubImportSource(canonicalRepo);
+        originPreviews.set(canonicalRepo, preview);
+        return preview;
+      };
 
       for (const skill of scanned) {
         const canonicalRepo = skill.originLocator
@@ -1941,13 +1951,19 @@ export class SkillFlowApp {
               installedRepos,
               manifest,
               lockFile,
+              resolveOriginPreview,
             );
           }
           return [this.buildLocalImportFallbackGroup(skills[0]!)];
         },
       );
       const groups = groupBatches.flat();
-      const localScanGroups = await this.buildLocalScanGroups(scanned, manifest, lockFile);
+      const localScanGroups = await this.buildLocalScanGroups(
+        scanned,
+        manifest,
+        lockFile,
+        resolveOriginPreview,
+      );
 
       return ok({
         groups: groups.sort((left, right) => left.title.localeCompare(right.title)),
@@ -2049,10 +2065,11 @@ export class SkillFlowApp {
     installedRepos: Set<string>,
     manifest: ManifestFile,
     lockFile: LockFile,
+    resolveOriginPreview: (canonicalRepo: string) => Promise<Result<ImportPreviewResult> | null>,
   ): Promise<ImportGroupCandidate[]> {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
     const originLocator = `https://github.com/${normalizedRepo}.git`;
-    const preview = await this.previewGitHubImportSource(normalizedRepo);
+    const preview = await resolveOriginPreview(normalizedRepo);
     const readyPreview = preview?.ok && preview.data.status === "ready" ? preview.data : undefined;
     const detectedSkills = readyPreview
       ? localSkills.map((skill) => this.buildValidatedLocalImportSkill(skill, readyPreview.skills))
@@ -2359,11 +2376,12 @@ export class SkillFlowApp {
     scanned: LocalSkillScanResult[],
     manifest: ManifestFile,
     lockFile: LockFile,
+    resolveOriginPreview: (canonicalRepo: string) => Promise<Result<ImportPreviewResult> | null>,
   ): Promise<LocalScanGroup[]> {
     const resolved = await this.mapConcurrent(
       scanned,
       SkillFlowApp.importGroupResolveConcurrency,
-      async (skill) => this.resolveLocalScanSkill(skill),
+      async (skill) => this.resolveLocalScanSkill(skill, resolveOriginPreview),
     );
     const alreadyManagedByPath = new Map(
       resolved.map((item) => [
@@ -2428,7 +2446,10 @@ export class SkillFlowApp {
     });
   }
 
-  private async resolveLocalScanSkill(skill: LocalSkillScanResult): Promise<LocalScanResolvedSkill> {
+  private async resolveLocalScanSkill(
+    skill: LocalSkillScanResult,
+    resolveOriginPreview: (canonicalRepo: string) => Promise<Result<ImportPreviewResult> | null>,
+  ): Promise<LocalScanResolvedSkill> {
     const canonicalRepo = skill.originLocator
       ? normalizeImportCanonicalRepo(skill.originLocator)
       : undefined;
@@ -2446,7 +2467,7 @@ export class SkillFlowApp {
       };
     }
 
-    const preview = await this.previewGitHubImportSource(canonicalRepo);
+    const preview = await resolveOriginPreview(canonicalRepo);
     const readyPreview = preview?.ok && preview.data.status === "ready" ? preview.data : undefined;
     return {
       scan: skill,

@@ -1037,7 +1037,7 @@ describe.sequential("import page flow", () => {
         ),
         "skills/resume-tailor/SKILL.md": skillDoc("resume-tailor", "Tailor resumes."),
       });
-      stubGitHubPreview(originRepo);
+      const previewSource = stubGitHubPreview(originRepo);
 
       const app = new SkillFlowApp({
         agentsOriginReader: createLegacyAgentsOriginReader(),
@@ -1082,6 +1082,7 @@ describe.sequential("import page flow", () => {
         "skills/resume-bullet-writer",
         "skills/resume-tailor",
       ]);
+      expect(previewSource).toHaveBeenCalledTimes(1);
     } finally {
       restoreHome(originalHome);
     }
@@ -2125,7 +2126,7 @@ async function writeAgentsLock(
 
 function stubGitHubPreview(repoPath: string) {
   const previewSource = SourceCheckoutService.prototype.previewSource;
-  vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockImplementation(async function (_locator) {
+  return vi.spyOn(SourceCheckoutService.prototype, "previewSource").mockImplementation(async function (_locator) {
     return previewSource.call(this, repoPath);
   });
 }
