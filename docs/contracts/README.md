@@ -43,6 +43,8 @@ adopt-external-source
 configure-external-source
 external-status
 external-update
+refresh-usage
+usage-snapshot
 add
 apply
 update

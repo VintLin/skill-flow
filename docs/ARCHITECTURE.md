@@ -30,7 +30,7 @@ packages/shared-types  <--> bridge protocol users
 | `packages/shared-types` | bridge protocol request/response 类型和解析。 |
 | `packages/integration` | Git/GitHub/skills.sh/source locator/target adapter 等外部集成。 |
 | `packages/storage` | 状态根、manifest、lock、preferences、cache 读写。 |
-| `packages/core-engine` | source service、inventory、deployment planner/applier、doctor、migration。 |
+| `packages/core-engine` | source authority / checkout、Import discovery / preparation、inventory、deployment、recovery、doctor、migration。 |
 | `packages/query` | 面向 CLI/TUI/desktop 的 runtime facade 和工作流编排。 |
 | `packages/tui` | Ink add/config/find 交互 UI。 |
 | `apps/cli` | 用户 CLI 和 `bridge --json` 入口。 |

@@ -5,7 +5,8 @@
 This document defines the expected behavior for skill mount and unmount flows across:
 
 - explicit projection ownership recorded in `lock.projections`
-- migration from legacy `lock.deployments` and `lock.sources[].importedFromTargets`
+- bootstrap observation hints recorded in `lock.sources[].importedFromTargets`
+- migration from legacy `lock.deployments`
 - shared target roots
 - external user-owned content already present at target paths
 
@@ -22,7 +23,7 @@ The current implementation centers on:
 1. Only remove paths inside the managed target root for that target.
 2. Never remove the target root directory itself.
 3. If the target path contains foreign content, do not delete it unless the planner has explicitly relocated or replaced it as safe content.
-4. If a source was imported from an existing agent target via bootstrap detection, turning that target off must still remove the target path even when no legacy deployment record exists.
+4. If a source was imported from an existing agent target via bootstrap detection, turning that target off must still remove the observed target path even when no managed projection exists.
 5. If multiple logical targets point to the same physical root, turning one off must not remove a path still needed by another enabled target.
 6. Uninstall must remove all mounts owned by the source, whether they came from explicit deployment or bootstrap-detected import.
 7. If a mount operation reuses or moves an existing path, rollback paths such as `previousTargetPath` and `relocateExternalToTargetPath` must stay inside the same managed root guarantees.
@@ -92,7 +93,7 @@ These are the cases most likely to leave stale mounts behind or to remove a shar
 
 ## End-State Invariants
 
-- `lock.projections` is the only ownership ledger used by normal lifecycle logic.
+- `lock.projections` is the primary managed ownership ledger; `importedFromTargets` supplements it with explicit bootstrap observation evidence.
 - Bootstrap ownership is derived only from explicit observation or an already confirmed projection path.
 - Shared managed and bootstrap-imported paths use the same last-owner deletion rule.
 - `repairTargets` recreates only `managed` projections and never recreates missing `bootstrap-imported` paths.
@@ -100,7 +101,7 @@ These are the cases most likely to leave stale mounts behind or to remove a shar
 
 ## Migration Leftovers
 
-- Legacy `lock.deployments` and `lock.sources[].importedFromTargets` may still exist as migration inputs and must be deleted after compatibility cleanup lands.
+- Legacy `lock.deployments` remains a migration input. `lock.sources[].importedFromTargets` remains current supplemental evidence for bootstrap-observed ownership.
 - `previousTargetPath` cleanup in [deployment-applier.ts](../../packages/core-engine/src/services/deployment-applier.ts) still deserves explicit shared-owner verification in rename/update flows.
 - Imported-only bootstrap sources remain outside the normal enabled-target binding path, so `repairTargets`, `doctor`, and prune flows still need explicit regression coverage.
 - Any code path that still recognizes bootstrap ownership from naming candidates rather than explicit observation must be treated as a migration bug, not as an acceptable steady-state rule.
