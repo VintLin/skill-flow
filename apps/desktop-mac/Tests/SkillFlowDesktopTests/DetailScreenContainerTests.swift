@@ -683,7 +683,7 @@ private extension DetailViewModel.Snapshot {
         ]
     ) -> Self {
         let resolvedOriginalDisplayName = originalDisplayName ?? title
-        let resolvedRevision = revision ?? MainViewModel.detailRevision(
+        let resolvedRevision = revision ?? DetailRevision.make(
             sourceId: sourceId,
             title: title,
             originalDisplayName: resolvedOriginalDisplayName,
@@ -836,7 +836,7 @@ private extension DetailViewData {
         skills: [DetailSkill] = []
     ) -> Self {
         let descriptors = groupDocuments.map(\.descriptor)
-        let resolvedRevision = revision ?? MainViewModel.detailRevision(
+        let resolvedRevision = revision ?? DetailRevision.make(
             sourceId: sourceId,
             title: "AlphaHub",
             originalDisplayName: originalDisplayName,

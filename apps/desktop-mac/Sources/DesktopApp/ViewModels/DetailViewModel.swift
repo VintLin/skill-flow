@@ -220,7 +220,7 @@ extension DetailViewModel.Snapshot {
         let resolvedOriginalDisplayName = originalDisplayName ?? title
         self.init(
             sourceId: sourceId,
-            revision: Self.buildRevision(
+            revision: DetailRevision.make(
                 sourceId: sourceId,
                 title: title,
                 originalDisplayName: resolvedOriginalDisplayName,
@@ -285,41 +285,9 @@ extension DetailViewModel.Snapshot {
     }
 
     init(detail: DetailViewData) {
-        let visibleRevision = MainViewModel.detailRevision(
-            sourceId: detail.sourceId,
-            title: detail.title,
-            originalDisplayName: detail.originalDisplayName,
-            subtitle: detail.subtitle,
-            author: detail.author,
-            originLabel: detail.originLabel,
-            starCount: detail.starCount,
-            groupStats: detail.groupStats,
-            sourceDetailLines: detail.sourceDetailLines,
-            sourceRepositoryURL: detail.sourceRepositoryURL,
-            locator: detail.locator,
-            groupPath: detail.groupPath,
-            updatedAt: detail.updatedAt,
-            updatedRelative: detail.updatedRelative,
-            health: detail.health,
-            warningCount: detail.warningCount,
-            errorCount: detail.errorCount,
-            enabledSkillCount: detail.enabledSkillCount,
-            totalSkillCount: detail.totalSkillCount,
-            enabledTargetCount: detail.enabledTargetCount,
-            saveState: detail.saveState,
-            skillSelection: detail.skillSelection,
-            targetSelection: detail.targetSelection,
-            enabledTargetLabels: detail.enabledTargetLabels,
-            sourceFacts: detail.sourceFacts,
-            deploymentFacts: detail.deploymentFacts,
-            fileTree: detail.fileTree,
-            groupDocuments: detail.groupDocuments.map(\.descriptor),
-            targets: detail.targets,
-            skills: detail.skills
-        )
         self.init(
             sourceId: detail.sourceId,
-            revision: "\(detail.revision)|\(visibleRevision)",
+            revision: detail.revision,
             title: detail.title,
             originalDisplayName: detail.originalDisplayName,
             subtitle: detail.subtitle,
@@ -352,69 +320,4 @@ extension DetailViewModel.Snapshot {
         )
     }
 
-    private static func buildRevision(
-        sourceId: String,
-        title: String,
-        originalDisplayName: String,
-        subtitle: String,
-        author: String,
-        originLabel: String,
-        starCount: Int?,
-        groupStats: GroupCardStats,
-        sourceDetailLines: [String],
-        sourceRepositoryURL: String?,
-        locator: String,
-        groupPath: String?,
-        updatedAt: String,
-        updatedRelative: String,
-        health: String,
-        warningCount: Int,
-        errorCount: Int,
-        enabledSkillCount: Int,
-        totalSkillCount: Int,
-        enabledTargetCount: Int,
-        saveState: SaveState,
-        skillSelection: SelectionState,
-        targetSelection: SelectionState,
-        enabledTargetLabels: [String],
-        sourceFacts: [String],
-        deploymentFacts: [String],
-        fileTree: [FileTreeItem],
-        groupDocuments: [DocumentDescriptor],
-        targets: [DetailTarget],
-        skills: [DetailSkill]
-    ) -> String {
-        MainViewModel.detailRevision(
-            sourceId: sourceId,
-            title: title,
-            originalDisplayName: originalDisplayName,
-            subtitle: subtitle,
-            author: author,
-            originLabel: originLabel,
-            starCount: starCount,
-            groupStats: groupStats,
-            sourceDetailLines: sourceDetailLines,
-            sourceRepositoryURL: sourceRepositoryURL,
-            locator: locator,
-            groupPath: groupPath,
-            updatedAt: updatedAt,
-            updatedRelative: updatedRelative,
-            health: health,
-            warningCount: warningCount,
-            errorCount: errorCount,
-            enabledSkillCount: enabledSkillCount,
-            totalSkillCount: totalSkillCount,
-            enabledTargetCount: enabledTargetCount,
-            saveState: saveState,
-            skillSelection: skillSelection,
-            targetSelection: targetSelection,
-            enabledTargetLabels: enabledTargetLabels,
-            sourceFacts: sourceFacts,
-            deploymentFacts: deploymentFacts,
-            fileTree: fileTree,
-            groupDocuments: groupDocuments,
-            targets: targets,
-            skills: skills
-        )
-    }
 }

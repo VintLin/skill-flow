@@ -227,6 +227,71 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertNotEqual(current.revision, changedOriginal.revision)
     }
 
+    func testDetailRevisionTracksNestedVisibleChangesWithoutIdentityChanges() {
+        let baseTree = FileTreeItem(
+            id: "root",
+            title: "Alpha",
+            path: "/alpha",
+            isDirectory: true,
+            isSkillRoot: false,
+            isSkillDocument: false,
+            skillId: nil,
+            children: []
+        )
+        let changedTree = FileTreeItem(
+            id: "root",
+            title: "Beta",
+            path: "/alpha",
+            isDirectory: true,
+            isSkillRoot: false,
+            isSkillDocument: false,
+            skillId: nil,
+            children: []
+        )
+        let baseDocument = DocumentDescriptor(
+            id: "readme",
+            title: "README.md",
+            path: "README.md",
+            metadata: [MetadataEntry(id: "name:Alpha", key: "name", value: "Alpha")],
+            renderCacheKey: "readme-cache",
+            externalURL: nil
+        )
+        let changedDocument = DocumentDescriptor(
+            id: "readme",
+            title: "README.md",
+            path: "README.md",
+            metadata: [MetadataEntry(id: "name:Beta", key: "name", value: "Beta")],
+            renderCacheKey: "readme-cache",
+            externalURL: nil
+        )
+        let baseTarget = DetailTarget(id: "claude", label: "Claude", shortLabel: "Claude", isEnabled: true)
+        let changedTarget = DetailTarget(id: "claude", label: "Claude Code", shortLabel: "Claude", isEnabled: true)
+        let baseSkill = detailRevisionSkill(summary: "Alpha summary")
+        let changedSkill = detailRevisionSkill(summary: "Beta summary")
+        let base = detailRevision(
+            groupStats: GroupCardStats(downloadCount: 1, starCount: 2, githubURL: nil, localPath: nil),
+            fileTree: [baseTree],
+            groupDocuments: [baseDocument],
+            targets: [baseTarget],
+            skills: [baseSkill]
+        )
+
+        XCTAssertNotEqual(
+            base,
+            detailRevision(
+                groupStats: GroupCardStats(downloadCount: 2, starCount: 2, githubURL: nil, localPath: nil),
+                fileTree: [baseTree],
+                groupDocuments: [baseDocument],
+                targets: [baseTarget],
+                skills: [baseSkill]
+            )
+        )
+        XCTAssertNotEqual(base, detailRevision(fileTree: [changedTree], groupDocuments: [baseDocument], targets: [baseTarget], skills: [baseSkill]))
+        XCTAssertNotEqual(base, detailRevision(fileTree: [baseTree], groupDocuments: [changedDocument], targets: [baseTarget], skills: [baseSkill]))
+        XCTAssertNotEqual(base, detailRevision(fileTree: [baseTree], groupDocuments: [baseDocument], targets: [changedTarget], skills: [baseSkill]))
+        XCTAssertNotEqual(base, detailRevision(fileTree: [baseTree], groupDocuments: [baseDocument], targets: [baseTarget], skills: [changedSkill]))
+    }
+
     func testSnapshotStoresOnlyDescriptorDrivenGroupDocuments() {
         let descriptor = DocumentDescriptor(
             id: "readme",
@@ -276,5 +341,70 @@ final class DetailViewModelTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.groupDocuments.first?.renderCacheKey, "descriptor-cache")
+    }
+
+    private func detailRevision(
+        groupStats: GroupCardStats = GroupCardStats(
+            downloadCount: 1,
+            starCount: 2,
+            githubURL: nil,
+            localPath: nil
+        ),
+        fileTree: [FileTreeItem],
+        groupDocuments: [DocumentDescriptor],
+        targets: [DetailTarget],
+        skills: [DetailSkill]
+    ) -> String {
+        DetailRevision.make(
+            sourceId: "alpha",
+            title: "Alpha",
+            originalDisplayName: "Alpha",
+            subtitle: "git",
+            author: "Acme",
+            originLabel: "GitHub",
+            starCount: 2,
+            groupStats: groupStats,
+            sourceDetailLines: [],
+            sourceRepositoryURL: nil,
+            locator: "acme/alpha",
+            groupPath: "/alpha",
+            updatedAt: "2026-08-29T00:00:00Z",
+            updatedRelative: "Today",
+            health: "healthy",
+            warningCount: 0,
+            errorCount: 0,
+            enabledSkillCount: 1,
+            totalSkillCount: 1,
+            enabledTargetCount: 1,
+            saveState: SaveState(phase: .idle, detail: nil),
+            skillSelection: .full,
+            targetSelection: .full,
+            enabledTargetLabels: ["Claude"],
+            sourceFacts: [],
+            deploymentFacts: [],
+            fileTree: fileTree,
+            groupDocuments: groupDocuments,
+            targets: targets,
+            skills: skills
+        )
+    }
+
+    private func detailRevisionSkill(summary: String) -> DetailSkill {
+        DetailSkill(
+            id: "browse",
+            title: "Browse",
+            summary: summary,
+            version: nil,
+            author: "Acme",
+            originLabel: "GitHub",
+            starCount: nil,
+            folderPath: nil,
+            relativeFolderPath: nil,
+            documents: [],
+            detailLines: [],
+            documentContent: "",
+            isEnabled: true,
+            warningCount: 0
+        )
     }
 }

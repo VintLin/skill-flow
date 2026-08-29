@@ -254,7 +254,7 @@ final class DetailLogic {
         let locator = (sourcePayload["locator"] as? String)?.nonEmpty ?? summary.sourceLocator
         let updatedAt = (lockPayload["updatedAt"] as? String)?.nonEmpty ?? summary.updatedAt
         let updatedRelative = input.updatedRelative
-        let revision = detailRevision(
+        let revision = DetailRevision.make(
             sourceId: summary.sourceId,
             title: title,
             originalDisplayName: originalDisplayName,
@@ -784,73 +784,6 @@ final class DetailLogic {
 
     nonisolated func placeholderDocumentTabs(_ descriptors: [DocumentDescriptor]) -> [DocumentTab] {
         descriptors.map(\.placeholderTab)
-    }
-
-    nonisolated func detailRevision(
-        sourceId: String,
-        title: String,
-        originalDisplayName: String,
-        subtitle: String,
-        author: String,
-        originLabel: String,
-        starCount: Int?,
-        groupStats: GroupCardStats,
-        sourceDetailLines: [String],
-        sourceRepositoryURL: String?,
-        locator: String,
-        groupPath: String?,
-        updatedAt: String,
-        updatedRelative: String,
-        health: String,
-        warningCount: Int,
-        errorCount: Int,
-        enabledSkillCount: Int,
-        totalSkillCount: Int,
-        enabledTargetCount: Int,
-        saveState: SaveState,
-        skillSelection: SelectionState,
-        targetSelection: SelectionState,
-        enabledTargetLabels: [String],
-        sourceFacts: [String],
-        deploymentFacts: [String],
-        fileTree: [FileTreeItem],
-        groupDocuments: [DocumentDescriptor],
-        targets: [DetailTarget],
-        skills: [DetailSkill]
-    ) -> String {
-        var hasher = Hasher()
-        hasher.combine(sourceId)
-        hasher.combine(title)
-        hasher.combine(originalDisplayName)
-        hasher.combine(subtitle)
-        hasher.combine(author)
-        hasher.combine(originLabel)
-        hasher.combine(starCount)
-        hasher.combine(groupStats.githubURL)
-        hasher.combine(sourceDetailLines)
-        hasher.combine(sourceRepositoryURL)
-        hasher.combine(locator)
-        hasher.combine(groupPath)
-        hasher.combine(updatedAt)
-        hasher.combine(updatedRelative)
-        hasher.combine(health)
-        hasher.combine(warningCount)
-        hasher.combine(errorCount)
-        hasher.combine(enabledSkillCount)
-        hasher.combine(totalSkillCount)
-        hasher.combine(enabledTargetCount)
-        hasher.combine(saveState.phase.rawValue)
-        hasher.combine(saveState.detail)
-        hasher.combine(skillSelection.rawValue)
-        hasher.combine(targetSelection.rawValue)
-        hasher.combine(enabledTargetLabels)
-        hasher.combine(sourceFacts)
-        hasher.combine(deploymentFacts)
-        hasher.combine(fileTree.map { $0.id })
-        hasher.combine(groupDocuments.map { $0.id })
-        hasher.combine(targets.map { $0.id })
-        hasher.combine(skills.map { $0.id })
-        return String(hasher.finalize(), radix: 16)
     }
 
     nonisolated private static func sortedDetailSkills(_ skills: [DetailSkill]) -> [DetailSkill] {

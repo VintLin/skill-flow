@@ -1,0 +1,72 @@
+enum DetailRevision {
+    static func make(
+        sourceId: String,
+        title: String,
+        originalDisplayName: String,
+        subtitle: String,
+        author: String,
+        originLabel: String,
+        starCount: Int?,
+        groupStats: GroupCardStats,
+        sourceDetailLines: [String],
+        sourceRepositoryURL: String?,
+        locator: String,
+        groupPath: String?,
+        updatedAt: String,
+        updatedRelative: String,
+        health: String,
+        warningCount: Int,
+        errorCount: Int,
+        enabledSkillCount: Int,
+        totalSkillCount: Int,
+        enabledTargetCount: Int,
+        saveState: SaveState,
+        skillSelection: SelectionState,
+        targetSelection: SelectionState,
+        enabledTargetLabels: [String],
+        sourceFacts: [String],
+        deploymentFacts: [String],
+        fileTree: [FileTreeItem],
+        groupDocuments: [DocumentDescriptor],
+        targets: [DetailTarget],
+        skills: [DetailSkill]
+    ) -> String {
+        let components: [String] = [
+            sourceId,
+            title,
+            originalDisplayName,
+            subtitle,
+            author,
+            originLabel,
+            starCount.map(String.init) ?? "",
+            signature(groupStats),
+            sourceDetailLines.joined(separator: "\u{1f}"),
+            sourceRepositoryURL ?? "",
+            locator,
+            groupPath ?? "",
+            updatedAt,
+            updatedRelative,
+            health,
+            String(warningCount),
+            String(errorCount),
+            String(enabledSkillCount),
+            String(totalSkillCount),
+            String(enabledTargetCount),
+            signature(saveState),
+            signature(skillSelection),
+            signature(targetSelection),
+            enabledTargetLabels.joined(separator: "\u{1f}"),
+            sourceFacts.joined(separator: "\u{1f}"),
+            deploymentFacts.joined(separator: "\u{1f}"),
+            signature(fileTree),
+            signature(groupDocuments),
+            signature(targets),
+            signature(skills),
+        ]
+        return components.joined(separator: "\u{1e}")
+    }
+
+    private static func signature(_ value: Any) -> String {
+        String(describing: value)
+    }
+}
