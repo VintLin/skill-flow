@@ -32,6 +32,12 @@ private struct GroupCardActionButtonFrameKey: PreferenceKey {
     }
 }
 
+enum GroupCardActionFrameTracking {
+    static func shouldMeasure(isHovered: Bool, isMenuOpen: Bool) -> Bool {
+        isHovered || isMenuOpen
+    }
+}
+
 enum GroupCardScale {
     case home
     case menu
@@ -734,11 +740,16 @@ struct SharedGroupCard: View {
                 .contentShape(Rectangle())
         }
         .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: GroupCardActionButtonFrameKey.self,
-                    value: proxy.frame(in: .global)
-                )
+            if GroupCardActionFrameTracking.shouldMeasure(
+                isHovered: isActionButtonHovered,
+                isMenuOpen: isActionMenuOpen
+            ) {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: GroupCardActionButtonFrameKey.self,
+                        value: proxy.frame(in: .global)
+                    )
+                }
             }
         }
         .buttonStyle(.plain)

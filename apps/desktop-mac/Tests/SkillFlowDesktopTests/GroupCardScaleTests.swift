@@ -4,6 +4,12 @@ import XCTest
 
 @MainActor
 final class GroupCardScaleTests: XCTestCase {
+    func testActionButtonFrameTrackingOnlyRunsAroundMenuInteraction() {
+        XCTAssertFalse(GroupCardActionFrameTracking.shouldMeasure(isHovered: false, isMenuOpen: false))
+        XCTAssertTrue(GroupCardActionFrameTracking.shouldMeasure(isHovered: true, isMenuOpen: false))
+        XCTAssertTrue(GroupCardActionFrameTracking.shouldMeasure(isHovered: false, isMenuOpen: true))
+    }
+
     func testDisplayModePresentationProfilesMatchAgreedVisibilityMatrix() {
         XCTAssertEqual(
             GroupCardDisplayMode.homeComfortable.presentationProfile,
