@@ -132,6 +132,15 @@ final class SettingsViewTests: XCTestCase {
         XCTAssertFalse(source.contains("settings.action.view"))
     }
 
+    func testAgentHandleHoverStateIsScopedToTheHandleComponent() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
+
+        XCTAssertTrue(source.contains("private struct AgentDragHandle: View"))
+        XCTAssertTrue(source.contains("@State private var isHovered = false"))
+        XCTAssertFalse(source.contains("hoveredAgentHandleTargetId"))
+        XCTAssertFalse(source.contains("draggedAgentTargetId"))
+    }
+
     func testSettingsViewDoesNotUseManageAgentsSheetOrNestedSheets() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Settings/SettingsView.swift")
 
