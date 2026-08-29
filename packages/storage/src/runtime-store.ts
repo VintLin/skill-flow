@@ -108,13 +108,6 @@ export class RuntimeStore {
     });
   }
 
-  async writeImportDataCache(cache: ImportDataCache): Promise<void> {
-    await this.withIoLock(async () => {
-      await this.init();
-      await writeJsonFile(this.importDataPath, normalizeImportDataCache(cache));
-    });
-  }
-
   async writeImportSourceSnapshotEntry(entry: UnifiedSourceSnapshotCacheEntry): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();

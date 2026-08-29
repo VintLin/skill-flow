@@ -598,11 +598,6 @@ describe.sequential("import page flow", () => {
       }));
 
       const app = new SkillFlowApp();
-      await app.store.writeImportDataCache({
-        searches: {},
-        repos: {},
-        recommendations: {},
-      });
       const previewPromise = app.previewImportSource("anthropics/skills");
 
       await vi.waitFor(() => {

@@ -14,6 +14,7 @@ All notable changes to `skill-flow` will be documented in this file.
 - Recommendation loading now resolves all feeds and cached source cards from one cache read instead of serializing repeated full-file reads.
 - Removed the superseded RuntimeManifestView mutation helper chain now that source authority and deployment reconciliation own final mutations.
 - Exact GitHub import searches now use ImportDiscovery caching, stale fallback, and in-flight request sharing instead of bypassing the discovery boundary.
+- Removed obsolete whole-cache and update-preflight entry points superseded by granular cache writes and structured update prechecks.
 
 ## v1.6.1 - 2026-08-27
 
