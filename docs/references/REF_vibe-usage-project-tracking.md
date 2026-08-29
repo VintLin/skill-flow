@@ -257,9 +257,9 @@ type SessionEvent = {
 
 这与当前仓库已经在做的事情是一致的：
 
-- [runtime.ts](/Users/Vint/Repos/03_Project/skill-flow/packages/query/src/runtime.ts)
+- [runtime.ts](../../packages/query/src/runtime.ts)
   已经承担统一编排和状态写入角色。
-- [source-service.ts](/Users/Vint/Repos/03_Project/skill-flow/packages/core-engine/src/services/source-service.ts)
+- [source-checkout-service.ts](../../packages/core-engine/src/services/source-checkout-service.ts)
   已经承担 source 解析、拉取和快照构建角色。
 - [PLAN_v1.0.0_mount-projection-unification.md](../archives/plans/legacy-plan/cache/PLAN_v1.0.0_mount-projection-unification.md)
   已经明确区分 `manifest` 的期望状态和本地观察状态。

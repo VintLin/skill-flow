@@ -35,8 +35,8 @@ Issue 8 指出两个相关问题：
   - 扩展 target definition 和 adapter。
   - 保留 built-in target 的默认 skills 行为，同时支持 Claude Code 资产目录映射。
 - `packages/storage`
-  - 扩展 `SharedPreferences.customTargets` 结构。
-  - 提供 schemaVersion 1 的兼容读取和规范化。
+  - 在当前 V2 authority 中定义 `PreferencesFile.customTargets` 的最终结构。
+  - 如果持久化结构必须变化，通过显式 schema migration 一次性升级，不在正常读写链路叠加旧形状兼容。
 - `packages/query`
   - 调整 add、apply draft、detail、import、doctor、update 的 leaf 展示和选择逻辑。
 - `apps/cli`
@@ -108,7 +108,7 @@ type AssetLeafRecord = {
 };
 ```
 
-`skillFilePath` 可在迁移期保留为可选字段，但新代码不应依赖它。
+`skillFilePath` 是 skill 专用字段。最终模型应直接以可选的 `entryFilePath` 取代它；如果 authority schema 需要升级，由显式 migration 完成重写，正常运行时不同时维护两套字段。
 
 ### Target 模型
 
@@ -130,10 +130,10 @@ type CustomTargetDefinition = {
 };
 ```
 
-兼容策略：
+状态演进策略：
 
-- 读取旧 `globalPath` / `projectPathTemplate` 时迁移为 `assetPaths.skills`。
-- 写回时只写新结构。
+- 为持久化的 target mapping 定义单一最终结构；不要在 normalizer 中长期双读 `globalPath` / `projectPathTemplate` 与 `assetPaths`。
+- 已有 V2 authority 通过显式 schema migration 一次性把 skills 路径重写为 `assetPaths.skills`，迁移后只写新结构。
 - built-in target 也应进入同一套 mapping，只是由代码定义。
 
 对 Claude Code，默认映射应是：
@@ -150,17 +150,18 @@ output-styles -> ~/.claude/output-styles
 
 ## 分阶段计划
 
-### Phase 1: 定义契约和兼容层
+### Phase 1: 定义最终契约和迁移边界
 
 - 在 `packages/domain` 增加 `PluginAssetType`、通用 leaf 类型和 target asset mapping 类型。
-- 在 `packages/storage` 增加旧 preferences 读取兼容：
+- 在 `packages/storage` 定义新的 authority schema，并通过显式 migration 一次性转换已有 custom target：
   - `globalPath` -> `assetPaths.skills.globalPath`
   - `projectPathTemplate` -> `assetPaths.skills.projectPathTemplate`
 - 在 `packages/integration` 为 built-in target 增加 `assetPaths`，先保持只有 `skills` 行为不变。
 - 补测试：
-  - preferences 旧结构兼容。
+  - 迁移后的 preferences 只包含最终结构。
+  - 正常读写链路不接受或写回旧字段。
   - built-in target 输出仍包含原 skills 路径。
-  - custom target 旧结构可读且新结构可写。
+  - custom target 新结构可读写。
 
 ### Phase 2: 扩展 inventory 扫描
 
@@ -216,19 +217,19 @@ output-styles -> ~/.claude/output-styles
 - 补 XCTest：
   - source detail 能展示 commands。
   - 自定义 Claude profile target 能保存 commands path。
-  - 旧 custom target 在 UI 中显示为只配置 skills。
+  - migration 后的既有 custom target 在 UI 中显示为只配置 skills。
 
 ### Phase 6: 文档与迁移说明
 
 - 更新 `README.md`、`README.zh.md`、`README.ja.md` 中 target 和支持资产类型说明。
 - 增加 release note，说明：
-  - 旧 custom target 自动迁移为 skills-only。
+  - 已有 custom target 通过显式 state migration 转为 skills-only mapping。
   - 新的 Claude profile target 可同步 commands。
   - 不支持某资产类型的 target 会显示 blocked，而不是安装失败。
 
 ## 风险
 
-- `lock.json` schemaVersion 当前仍为 1。扩展 leaf 结构时需要决定是否升级 schemaVersion。若不升级，兼容判断会变复杂。
+- 当前 authority schema 是 V2。扩展 leaf 与 custom target 持久化结构属于外部变更；应升级 schema version 并走显式 migration，不能在 V2 normalizer 中静默长期兼容两种形状。
 - commands / hooks / output-styles 的验证规则不如 skills 明确。初版应少做推断，只保证路径、hash 和投影正确。
 - 部署层现有命名冲突逻辑是 skill 专属。直接复用到文件型资产会产生错误路径。
 - Desktop UI 当前大量命名使用 `skills`，改文案和状态字段容易引入回归。
@@ -242,7 +243,7 @@ output-styles -> ~/.claude/output-styles
 2. Claude Code built-in target 支持 `commands -> ~/.claude/commands`。
 3. Custom target 支持 `assetPaths.skills` 和 `assetPaths.commands`。
 4. CLI / bridge / desktop detail 能展示和选择 commands。
-5. 旧 custom target 自动迁移为 skills-only。
+5. 既有 custom target 通过显式 state migration 转为 skills-only mapping。
 
 暂缓：
 

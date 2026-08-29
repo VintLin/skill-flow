@@ -132,7 +132,7 @@ SharedGroupCard
 - 右上角是纯图标导入按钮，不是更多菜单
 - skill 可带搜索高亮
 - 无 group tag
-- 如果已安装，本地仍显示卡片；导入按钮保持可点，但点击后只弹 toast 提示
+- 如果已安装，本地仍显示卡片；导入按钮显示 `Installed` 并保持禁用，不再触发导入或 toast
 - 卡片 busy 时显示 `Downloading`
 
 ### 4. Import / Recommendation

@@ -2,7 +2,7 @@
 
 这里是当前或近期需求的临时工作区，不是长期事实源。
 
-当前没有活跃规格或实施计划。已完成、废弃或被替代的工作材料已经归档到 `../archives/specs/` 和 `../archives/plans/`。
+当前没有活跃规格；当前活跃实施计划见 [Equivalent Architecture Cleanup](plans/2026-08-29-equivalent-architecture-cleanup.md)。已完成、废弃或被替代的工作材料已经归档到 `../archives/specs/` 和 `../archives/plans/`。
 
 | 路径 | 用途 |
 | --- | --- |

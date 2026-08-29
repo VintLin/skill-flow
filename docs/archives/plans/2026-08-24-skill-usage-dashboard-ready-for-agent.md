@@ -8,7 +8,7 @@ Implement the confirmed Skills Usage dashboard and supporting Usage Snapshot ana
 
 ## Spec
 
-See [Skill Usage Dashboard Design](../superpowers/specs/2026-08-24-skill-usage-dashboard-design.md).
+See [Skill Usage Dashboard Design](../specs/2026-08-24-skill-usage-dashboard-design.md).
 
 ## Ready-for-agent scope
 

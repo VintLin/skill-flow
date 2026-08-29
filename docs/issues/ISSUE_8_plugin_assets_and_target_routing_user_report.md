@@ -1,5 +1,7 @@
 > 中英对照 / English & Chinese
 
+> 本文件保留原始问题报告与当时环境快照；其中 schema version 和本机路径不代表当前仓库实现。
+
 ## Summary｜概述
 
 **EN.** Two related gaps that share one root cause: skillflow's source scanner and target model are hardcoded to `/skills` only. Upstream plugin repos ship more than skills, and users with multi-profile setups need each asset type synced to the right directory in each profile.

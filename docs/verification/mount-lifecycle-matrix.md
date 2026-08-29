@@ -11,11 +11,11 @@ This document defines the expected behavior for skill mount and unmount flows ac
 
 The current implementation centers on:
 
-- [packages/query/src/runtime.ts](/Users/Vint/Repos/03_Project/skill-flow/packages/query/src/runtime.ts)
-- [packages/core-engine/src/services/deployment-planner.ts](/Users/Vint/Repos/03_Project/skill-flow/packages/core-engine/src/services/deployment-planner.ts)
-- [packages/core-engine/src/services/deployment-applier.ts](/Users/Vint/Repos/03_Project/skill-flow/packages/core-engine/src/services/deployment-applier.ts)
-- [packages/core-engine/src/services/workspace-bootstrap-service.ts](/Users/Vint/Repos/03_Project/skill-flow/packages/core-engine/src/services/workspace-bootstrap-service.ts)
-- [apps/cli/src/tests/skill-flow.test.ts](/Users/Vint/Repos/03_Project/skill-flow/apps/cli/src/tests/skill-flow.test.ts)
+- [packages/query/src/runtime.ts](../../packages/query/src/runtime.ts)
+- [packages/core-engine/src/services/deployment-planner.ts](../../packages/core-engine/src/services/deployment-planner.ts)
+- [packages/core-engine/src/services/deployment-applier.ts](../../packages/core-engine/src/services/deployment-applier.ts)
+- [packages/core-engine/src/services/workspace-bootstrap-service.ts](../../packages/core-engine/src/services/workspace-bootstrap-service.ts)
+- [apps/cli/src/tests/skill-flow.test.ts](../../apps/cli/src/tests/skill-flow.test.ts)
 
 ## Rules
 
@@ -101,7 +101,7 @@ These are the cases most likely to leave stale mounts behind or to remove a shar
 ## Migration Leftovers
 
 - Legacy `lock.deployments` and `lock.sources[].importedFromTargets` may still exist as migration inputs and must be deleted after compatibility cleanup lands.
-- `previousTargetPath` cleanup in [deployment-applier.ts](/Users/Vint/Repos/03_Project/skill-flow/packages/core-engine/src/services/deployment-applier.ts) still deserves explicit shared-owner verification in rename/update flows.
+- `previousTargetPath` cleanup in [deployment-applier.ts](../../packages/core-engine/src/services/deployment-applier.ts) still deserves explicit shared-owner verification in rename/update flows.
 - Imported-only bootstrap sources remain outside the normal enabled-target binding path, so `repairTargets`, `doctor`, and prune flows still need explicit regression coverage.
 - Any code path that still recognizes bootstrap ownership from naming candidates rather than explicit observation must be treated as a migration bug, not as an acceptable steady-state rule.
 
