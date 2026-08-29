@@ -961,11 +961,14 @@ final class DetailLogic {
         }
 
         let standardizedRootPath = URL(fileURLWithPath: groupPath).standardizedFileURL.path
+        let skillReferencesByPath = Dictionary(uniqueKeysWithValues: skillReferences.map { ($0.folderPath, $0) })
+        let skillRootPaths = Set(skillReferencesByPath.keys)
         guard FileManager.default.fileExists(atPath: standardizedRootPath),
               let rootItem = buildFileTreeItem(
                   at: standardizedRootPath,
                   rootDisplayTitle: rootName,
-                  skillReferencesByPath: Dictionary(uniqueKeysWithValues: skillReferences.map { ($0.folderPath, $0) })
+                  skillReferencesByPath: skillReferencesByPath,
+                  skillRootPaths: skillRootPaths
               )
         else {
             return buildSyntheticFileTreeItems(rootName: rootName, skills: skillReferences)
@@ -1017,14 +1020,14 @@ final class DetailLogic {
     nonisolated private static func buildFileTreeItem(
         at path: String,
         rootDisplayTitle: String? = nil,
-        skillReferencesByPath: [String: FileTreeSkillReference]
+        skillReferencesByPath: [String: FileTreeSkillReference],
+        skillRootPaths: Set<String>
     ) -> FileTreeItem? {
         let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
         let url = URL(fileURLWithPath: standardizedPath)
         let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
         let isDirectory = values?.isDirectory ?? false
         let skillReference = skillReferencesByPath[standardizedPath]
-        let skillRootPaths = Set(skillReferencesByPath.keys)
         let title = rootDisplayTitle
             ?? skillReference?.displayTitle
             ?? url.lastPathComponent.nonEmpty
@@ -1039,9 +1042,19 @@ final class DetailLogic {
            ) {
             children = entries
                 .compactMap { entry in
-                    buildFileTreeItem(
+                    let isDirectory = (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                    if isDirectory,
+                       !shouldTraverseFileTreeDirectory(
+                           at: entry.path,
+                           currentSkillRootPath: skillReference?.folderPath,
+                           skillRootPaths: skillRootPaths
+                       ) {
+                        return nil
+                    }
+                    return buildFileTreeItem(
                         at: entry.path,
-                        skillReferencesByPath: skillReferencesByPath
+                        skillReferencesByPath: skillReferencesByPath,
+                        skillRootPaths: skillRootPaths
                     )
                 }
                 .filter { item in
@@ -1079,6 +1092,17 @@ final class DetailLogic {
                 ?? (isSkillDocument ? skillReferencesByPath[url.deletingLastPathComponent().path]?.skillId : nil),
             children: children
         )
+    }
+
+    nonisolated static func shouldTraverseFileTreeDirectory(
+        at path: String,
+        currentSkillRootPath: String?,
+        skillRootPaths: Set<String>
+    ) -> Bool {
+        guard currentSkillRootPath == nil else {
+            return false
+        }
+        return containsSkillRootDescendant(path, skillRootPaths: skillRootPaths)
     }
 
     nonisolated private static func shouldIncludeFileTreeItem(

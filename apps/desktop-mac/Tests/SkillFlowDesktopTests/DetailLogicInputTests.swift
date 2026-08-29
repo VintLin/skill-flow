@@ -110,4 +110,31 @@ final class DetailLogicInputTests: XCTestCase {
             )
         )
     }
+
+    func testFileTreeTraversalSkipsDirectoriesWithoutSkillDescendants() {
+        XCTAssertFalse(
+            DetailLogic.shouldTraverseFileTreeDirectory(
+                at: "/tmp/repo/node_modules",
+                currentSkillRootPath: nil,
+                skillRootPaths: ["/tmp/repo/skills/writer"]
+            )
+        )
+        XCTAssertTrue(
+            DetailLogic.shouldTraverseFileTreeDirectory(
+                at: "/tmp/repo/skills",
+                currentSkillRootPath: nil,
+                skillRootPaths: ["/tmp/repo/skills/writer"]
+            )
+        )
+    }
+
+    func testFileTreeTraversalDoesNotDescendBelowSkillRoot() {
+        XCTAssertFalse(
+            DetailLogic.shouldTraverseFileTreeDirectory(
+                at: "/tmp/repo/skills/writer/references",
+                currentSkillRootPath: "/tmp/repo/skills/writer",
+                skillRootPaths: ["/tmp/repo/skills/writer"]
+            )
+        )
+    }
 }
