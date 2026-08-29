@@ -119,6 +119,24 @@ final class MenuBarIconTests: XCTestCase {
         XCTAssertEqual(image?.isTemplate, true)
     }
 
+    func testActionIconReusesCachedImageVariant() throws {
+        let first = try XCTUnwrap(ActionIcon.dragHandle.image(size: 14, isTemplate: true))
+        let second = try XCTUnwrap(ActionIcon.dragHandle.image(size: 14, isTemplate: true))
+
+        XCTAssertTrue(first === second)
+    }
+
+    func testActionIconSeparatesCachedImageVariants() throws {
+        let template14 = try XCTUnwrap(ActionIcon.dragHandle.image(size: 14, isTemplate: true))
+        let template16 = try XCTUnwrap(ActionIcon.dragHandle.image(size: 16, isTemplate: true))
+        let original14 = try XCTUnwrap(ActionIcon.dragHandle.image(size: 14, isTemplate: false))
+
+        XCTAssertFalse(template14 === template16)
+        XCTAssertFalse(template14 === original14)
+        XCTAssertEqual(template16.size, NSSize(width: 16, height: 16))
+        XCTAssertFalse(original14.isTemplate)
+    }
+
     func testImportCardsReserveMetadataRowAndDividerWhileLoading() {
         let loadingCard = GroupCardModel(
             id: "import-loading",

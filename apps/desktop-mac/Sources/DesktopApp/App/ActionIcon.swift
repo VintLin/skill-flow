@@ -3,7 +3,9 @@ import Foundation
 
 @MainActor
 enum ActionIcon: String {
+    private static let imageVariantCache = NSCache<NSString, NSImage>()
     private static let symbolCache = NSCache<NSString, NSImage>()
+    private static let cachedResourceDirectories = resourceDirectories()
 
     case back
     case close
@@ -31,40 +33,48 @@ enum ActionIcon: String {
     case usage
 
     func image(size: CGFloat? = nil, isTemplate: Bool = true) -> NSImage? {
-        if self == .searchSubmitEnter,
-           let fallback = Self.systemSymbolImage("arrow.turn.down.left", size: size, isTemplate: isTemplate) {
-            return fallback
-        }
-        if self == .rename,
-           let fallback = Self.systemSymbolImage("pencil", size: size, isTemplate: isTemplate) {
-            return fallback
-        }
-        for directory in Self.resourceDirectories() {
-            let url = directory.appendingPathComponent("\(rawValue).svg")
-            if let image = NSImage(contentsOf: url) {
-                image.isTemplate = isTemplate
-                if let size {
-                    image.size = NSSize(width: size, height: size)
-                }
-                return image
-            }
+        let cacheKey = imageVariantCacheKey(size: size, isTemplate: isTemplate)
+        if let cached = Self.imageVariantCache.object(forKey: cacheKey as NSString) {
+            return cached
         }
 
-        return nil
+        let resolvedImage: NSImage?
+        if self == .searchSubmitEnter,
+           let fallback = Self.systemSymbolImage("arrow.turn.down.left", size: size, isTemplate: isTemplate) {
+            resolvedImage = fallback
+        } else if self == .rename,
+           let fallback = Self.systemSymbolImage("pencil", size: size, isTemplate: isTemplate) {
+            resolvedImage = fallback
+        } else {
+            resolvedImage = Self.cachedResourceDirectories.lazy.compactMap { directory in
+                NSImage(contentsOf: directory.appendingPathComponent("\(rawValue).svg"))
+            }.first
+        }
+
+        guard let resolvedImage else {
+            return nil
+        }
+        resolvedImage.isTemplate = isTemplate
+        if let size {
+            resolvedImage.size = NSSize(width: size, height: size)
+        }
+        Self.imageVariantCache.setObject(resolvedImage, forKey: cacheKey as NSString)
+        return resolvedImage
     }
 
     func symbolImage(size: CGFloat? = nil, foreground: NSColor) -> NSImage? {
+        let foreground = foreground.usingColorSpace(.deviceRGB) ?? foreground
+        let sizeKey = size.map { String(format: "%.4f", Double($0)) } ?? "intrinsic"
+        let cacheKey = "\(rawValue)#\(Self.colorKey(foreground))#\(sizeKey)"
+        if let cached = Self.symbolCache.object(forKey: cacheKey as NSString) {
+            return cached
+        }
+
         guard let baseImage = image(size: nil, isTemplate: false),
               let cgImage = baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let context = Self.bitmapContext(width: cgImage.width, height: cgImage.height)
         else {
             return nil
-        }
-
-        let foreground = foreground.usingColorSpace(.deviceRGB) ?? foreground
-        let cacheKey = "\(rawValue)#\(Self.colorKey(foreground))#\(Int((size ?? CGFloat(cgImage.width)).rounded()))"
-        if let cached = Self.symbolCache.object(forKey: cacheKey as NSString) {
-            return cached
         }
 
         let rect = CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
@@ -99,6 +109,11 @@ enum ActionIcon: String {
         image.isTemplate = false
         Self.symbolCache.setObject(image, forKey: cacheKey as NSString)
         return image
+    }
+
+    private func imageVariantCacheKey(size: CGFloat?, isTemplate: Bool) -> String {
+        let sizeKey = size.map { String(format: "%.4f", Double($0)) } ?? "intrinsic"
+        return "\(rawValue)#\(sizeKey)#\(isTemplate ? "template" : "original")"
     }
 
     private static func bitmapContext(width: Int, height: Int) -> CGContext? {
