@@ -206,7 +206,6 @@ export async function searchSkillsDirectory(
 
   return (payload.skills ?? []).flatMap((skill) => {
     if (
-      typeof skill.id !== "string" ||
       typeof skill.skillId !== "string" ||
       typeof skill.name !== "string" ||
       typeof skill.source !== "string"
@@ -220,11 +219,9 @@ export async function searchSkillsDirectory(
     }
 
     return [{
-      id: skill.id,
       skillId: skill.skillId,
       title: skill.name,
       ...(typeof skill.installs === "number" ? { installs: skill.installs } : {}),
-      source: skill.source,
       canonicalRepo,
     } satisfies SkillsDirectorySearchHit];
   });

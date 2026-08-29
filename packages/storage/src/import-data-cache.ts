@@ -51,7 +51,7 @@ function normalizeSearchSnapshots(value: unknown): Record<string, ImportSearchSn
 
   return Object.fromEntries(
     Object.entries(value).flatMap(([query, snapshot]) => {
-      const normalized = normalizeSearchSnapshot(query, snapshot);
+      const normalized = normalizeSearchSnapshot(snapshot);
       return normalized ? [[query, normalized] as const] : [];
     }),
   );
@@ -75,33 +75,27 @@ function normalizeRecommendationFeeds(value: unknown): Record<string, ImportReco
 
   return Object.fromEntries(
     Object.entries(value).flatMap(([id, feed]) => {
+      const feedId = normalizeRecommendationFeedId(id);
       const normalized = normalizeRecommendationFeed(feed);
-      return normalized ? [[id, normalized] as const] : [];
+      return feedId && normalized ? [[feedId, normalized] as const] : [];
     }),
   );
 }
 
-function normalizeSearchSnapshot(
-  query: string,
-  value: unknown,
-): ImportSearchSnapshot | undefined {
+function normalizeSearchSnapshot(value: unknown): ImportSearchSnapshot | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
   }
 
   const candidate = value as Record<string, unknown>;
-  const checkedAt = normalizeString(candidate.checkedAt);
   const expiresAt = normalizeString(candidate.expiresAt);
-  if (!checkedAt || !expiresAt) {
+  if (!expiresAt) {
     return undefined;
   }
 
   return {
-    query,
-    checkedAt,
     expiresAt,
     hits: normalizeSearchHits(candidate.hits),
-    groups: normalizeStringArray(candidate.groups),
   };
 }
 
@@ -114,16 +108,14 @@ function normalizeRepoSnapshotEntry(
   }
 
   const candidate = value as Record<string, unknown>;
-  const checkedAt = normalizeString(candidate.checkedAt);
   const expiresAt = normalizeString(candidate.expiresAt);
   const data = normalizeUnifiedSourceSnapshot(candidate.data);
-  if (!checkedAt || !expiresAt || !data) {
+  if (!expiresAt || !data) {
     return undefined;
   }
 
   return {
     canonicalRepo,
-    checkedAt,
     expiresAt,
     data: {
       ...data,
@@ -138,16 +130,12 @@ function normalizeRecommendationFeed(value: unknown): ImportRecommendationFeed |
   }
 
   const candidate = value as Record<string, unknown>;
-  const id = normalizeRecommendationFeedId(candidate.id);
-  const checkedAt = normalizeString(candidate.checkedAt);
   const expiresAt = normalizeString(candidate.expiresAt);
-  if (!id || !checkedAt || !expiresAt) {
+  if (!expiresAt) {
     return undefined;
   }
 
   return {
-    id,
-    checkedAt,
     expiresAt,
     groups: normalizeStringArray(candidate.groups),
   };
@@ -164,20 +152,16 @@ function normalizeSearchHits(value: unknown): ImportSearchHit[] {
     }
 
     const candidate = item as Record<string, unknown>;
-    const id = normalizeString(candidate.id);
     const skillId = normalizeString(candidate.skillId);
     const title = normalizeString(candidate.title) ?? normalizeString(candidate.name);
-    const source = normalizeString(candidate.source);
     const canonicalRepo = normalizeString(candidate.canonicalRepo);
-    if (!id || !skillId || !title || !source || !canonicalRepo) {
+    if (!skillId || !title || !canonicalRepo) {
       return [];
     }
 
     return [{
-      id,
       skillId,
       title,
-      source,
       canonicalRepo,
       ...(normalizeNumber(candidate.installs) !== undefined
         ? { installs: normalizeNumber(candidate.installs)! }

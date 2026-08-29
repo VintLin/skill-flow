@@ -3,6 +3,7 @@ import path from "node:path";
 import type {
   ImportDataCache,
   ImportRecommendationFeed,
+  ImportRecommendationFeedId,
   SourceKind,
   SourceMetadataCache,
   SourceMetadataCacheEntry,
@@ -129,11 +130,14 @@ export class RuntimeStore {
     });
   }
 
-  async writeImportRecommendationFeedEntry(entry: ImportRecommendationFeed): Promise<void> {
+  async writeImportRecommendationFeedEntry(
+    feedId: ImportRecommendationFeedId,
+    entry: ImportRecommendationFeed,
+  ): Promise<void> {
     await this.withIoLock(async () => {
       await this.init();
       const cache = await this.readImportDataCacheRaw();
-      cache.recommendations[entry.id] = entry;
+      cache.recommendations[feedId] = entry;
       await writeJsonFile(this.importDataPath, cache);
     });
   }

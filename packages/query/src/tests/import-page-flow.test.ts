@@ -241,7 +241,6 @@ describe.sequential("import page flow", () => {
     };
     await app.store.writeImportSourceSnapshotEntry({
       canonicalRepo: snapshot.canonicalRepo,
-      checkedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       data: snapshot,
     });

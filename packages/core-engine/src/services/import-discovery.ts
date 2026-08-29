@@ -214,28 +214,22 @@ export class ImportDiscovery {
   private async refreshRecommendationEntry(
     feedId: ImportRecommendationFeedId,
   ): Promise<ImportRecommendationFeed> {
-    const checkedAt = new Date().toISOString();
     const groups = feedId === "seed"
       ? [...IMPORT_RECOMMENDATION_SEEDS]
       : await this.options.provider.fetchRecommendationGroups(feedId);
     const entry: ImportRecommendationFeed = {
-      id: feedId,
-      checkedAt,
       expiresAt: new Date(Date.now() + IMPORT_RECOMMENDATION_CACHE_TTL_MS).toISOString(),
       groups,
     };
-    await this.options.store.writeImportRecommendationFeedEntry(entry);
+    await this.options.store.writeImportRecommendationFeedEntry(feedId, entry);
     return entry;
   }
 
   private async refreshSearchEntry(query: string): Promise<ImportSearchSnapshot> {
     const hits = await this.options.provider.search(query, 20);
     const snapshot: ImportSearchSnapshot = {
-      query: query.trim(),
-      checkedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + IMPORT_SEARCH_CACHE_TTL_MS).toISOString(),
       hits,
-      groups: [...new Set(hits.map((hit) => hit.canonicalRepo))],
     };
     await this.options.store.writeImportSearchSnapshotEntry(query.trim().toLowerCase(), snapshot);
     return snapshot;
@@ -260,7 +254,6 @@ export class ImportDiscovery {
       : snapshot;
     await this.options.store.writeImportSourceSnapshotEntry({
       canonicalRepo,
-      checkedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + IMPORT_SOURCE_CACHE_TTL_MS).toISOString(),
       data: mergedSnapshot,
     });

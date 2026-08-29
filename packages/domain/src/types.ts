@@ -797,26 +797,20 @@ export type UnifiedSourceSnapshot = {
 
 export type UnifiedSourceSnapshotCacheEntry = {
   canonicalRepo: string;
-  checkedAt: string;
   expiresAt: string;
   data: UnifiedSourceSnapshot;
 };
 
 export type ImportSearchHit = {
-  id: string;
   skillId: string;
   title: string;
   installs?: number;
-  source: string;
   canonicalRepo: string;
 };
 
 export type ImportSearchSnapshot = {
-  query: string;
-  checkedAt: string;
   expiresAt: string;
   hits: ImportSearchHit[];
-  groups: string[];
 };
 
 export type ImportRecommendationFeedId =
@@ -827,8 +821,6 @@ export type ImportRecommendationFeedId =
   | "audits";
 
 export type ImportRecommendationFeed = {
-  id: ImportRecommendationFeedId;
-  checkedAt: string;
   expiresAt: string;
   groups: string[];
 };

@@ -84,6 +84,7 @@ Tests:
 - 删除 Query runtime 中已被 authority manifest 与 deployment reconciler 替代的 legacy manifest mutation helper 链。
 - Exact GitHub 搜索统一经由 ImportDiscovery 读取 source snapshot，复用 cache、stale fallback 与并发请求去重。
 - 删除无生产调用的整份 Import Data cache 写入口与旧 update preflight 入口，只保留 granular cache writes 和结构化 precheck。
+- Import Data cache 由 map key 承载 query/feed/repo identity，entry 只保留 expiry 与真实消费 payload，删除 `checkedAt`、重复 key、search groups 及 hit transport 字段。
 
 Verification:
 

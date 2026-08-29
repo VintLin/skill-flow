@@ -127,26 +127,20 @@ describe("import-data-cache", () => {
     ).toEqual({
       searches: {
         browse: {
-          query: "browse",
-          checkedAt: "2026-03-28T00:00:00.000Z",
           expiresAt: "2026-03-29T00:00:00.000Z",
           hits: [
             {
-              id: "browse",
               skillId: "browse",
               title: "Browse",
-              source: "anthropics/skills",
               canonicalRepo: "anthropics/skills",
               installs: 12,
             },
           ],
-          groups: ["anthropics/skills"],
         },
       },
       repos: {
         "anthropics/skills": {
           canonicalRepo: "anthropics/skills",
-          checkedAt: "2026-03-28T00:00:00.000Z",
           expiresAt: "2026-03-29T00:00:00.000Z",
           data: {
             canonicalRepo: "anthropics/skills",
@@ -167,8 +161,6 @@ describe("import-data-cache", () => {
       },
       recommendations: {
         trending: {
-          id: "trending",
-          checkedAt: "2026-03-28T00:00:00.000Z",
           expiresAt: "2026-03-29T00:00:00.000Z",
           groups: ["anthropics/skills"],
         },

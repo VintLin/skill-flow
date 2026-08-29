@@ -46,8 +46,8 @@ describe("ImportDiscovery", () => {
 
     pending.resolve(["acme/skills"]);
     await expect(Promise.all([first, second])).resolves.toMatchObject([
-      { id: "hot", groups: ["acme/skills"] },
-      { id: "hot", groups: ["acme/skills"] },
+      { groups: ["acme/skills"] },
+      { groups: ["acme/skills"] },
     ]);
 
     await discovery.refreshRecommendation("hot");
@@ -60,12 +60,11 @@ describe("ImportDiscovery", () => {
     const cachedSource = sourceSnapshot("acme/skills");
     await store.writeImportSourceSnapshotEntry({
       canonicalRepo: cachedSource.canonicalRepo,
-      checkedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       data: cachedSource,
     });
-    await store.writeImportRecommendationFeedEntry(recommendationFeed("seed", ["acme/skills"]));
-    await store.writeImportRecommendationFeedEntry(recommendationFeed("official", ["acme/skills", "other/skills"]));
+    await store.writeImportRecommendationFeedEntry("seed", recommendationFeed(["acme/skills"]));
+    await store.writeImportRecommendationFeedEntry("official", recommendationFeed(["acme/skills", "other/skills"]));
     const readCache = vi.spyOn(store, "readImportDataCache");
 
     await expect(discovery.resolveRecommendations(["seed", "official"])).resolves.toEqual({
@@ -92,8 +91,8 @@ describe("ImportDiscovery", () => {
 
     pending.resolve([]);
     await expect(Promise.all([first, second])).resolves.toMatchObject([
-      { query: "React", hits: [] },
-      { query: "React", hits: [] },
+      { hits: [] },
+      { hits: [] },
     ]);
 
     await discovery.refreshSearch("REACT");
@@ -190,7 +189,7 @@ describe("ImportDiscovery", () => {
   test("returns a fresh search cache entry without calling the provider", async () => {
     const provider = createProvider();
     const { discovery, store } = createDiscovery(provider);
-    const cached = searchSnapshot("react", Date.now() + 60_000);
+    const cached = searchSnapshot(Date.now() + 60_000);
     await store.writeImportSearchSnapshotEntry("react", cached);
 
     await expect(discovery.resolveSearch(" React ")).resolves.toEqual(cached);
@@ -203,7 +202,6 @@ describe("ImportDiscovery", () => {
     const cached = sourceSnapshot("acme/skills");
     await store.writeImportSourceSnapshotEntry({
       canonicalRepo: cached.canonicalRepo,
-      checkedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       data: cached,
     });
@@ -218,7 +216,7 @@ describe("ImportDiscovery", () => {
     const search = vi.fn(() => pending.promise);
     const provider = createProvider({ search });
     const { discovery, store } = createDiscovery(provider);
-    const stale = searchSnapshot("react", Date.now() - 1);
+    const stale = searchSnapshot(Date.now() - 1);
     await store.writeImportSearchSnapshotEntry("react", stale);
 
     await expect(discovery.resolveSearch("react")).resolves.toEqual(stale);
@@ -235,7 +233,6 @@ describe("ImportDiscovery", () => {
     const stale = sourceSnapshot("acme/skills");
     await store.writeImportSourceSnapshotEntry({
       canonicalRepo: stale.canonicalRepo,
-      checkedAt: "2026-08-29T00:00:00.000Z",
       expiresAt: "2026-08-29T00:00:00.001Z",
       data: stale,
     });
@@ -258,9 +255,7 @@ describe("ImportDiscovery", () => {
     };
     const fetchSource = vi.fn(async () => next);
     const { discovery, store } = createDiscovery(createProvider({ fetchSource }));
-    await store.writeImportRecommendationFeedEntry({
-      id: "official",
-      checkedAt: new Date().toISOString(),
+    await store.writeImportRecommendationFeedEntry("official", {
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       groups: ["acme/skills"],
     });
@@ -295,24 +290,18 @@ function createProvider(
 }
 
 function recommendationFeed(
-  id: ImportRecommendationFeed["id"],
   groups: string[],
 ): ImportRecommendationFeed {
   return {
-    id,
-    checkedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     groups,
   };
 }
 
-function searchSnapshot(query: string, expiresAt = Date.now() + 60_000): ImportSearchSnapshot {
+function searchSnapshot(expiresAt = Date.now() + 60_000): ImportSearchSnapshot {
   return {
-    query,
-    checkedAt: "2026-08-29T00:00:00.000Z",
     expiresAt: new Date(expiresAt).toISOString(),
     hits: [],
-    groups: [],
   };
 }
 
