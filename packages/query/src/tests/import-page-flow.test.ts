@@ -747,7 +747,7 @@ describe.sequential("import page flow", () => {
     expect(imported.data.preparationId).toMatch(/^prep-/);
   });
 
-  test("scanLocalImportGroups builds local fallback cards for local-only skills", async () => {
+  test("scanLocalImportGroups exposes only dedicated local scan groups", async () => {
     const localPath = await createLocalSkill(
       process.env.SKILL_FLOW_TARGET_CODEX!,
       "local-review",
@@ -763,16 +763,8 @@ describe.sequential("import page flow", () => {
       return;
     }
 
-    expect(result.data.groups).toHaveLength(1);
-    expect(result.data.groups[0]).toMatchObject({
-      provider: "local",
-      locator: localPath,
-      canonicalRepo: `local:${deriveSourceId(localPath)}`,
-      localImport: {
-        validationStatus: "local-only",
-        selectedChoiceId: "local",
-      },
-    });
+    expect("groups" in result.data).toBe(false);
+    expect(result.data.localScanGroups[0]?.sourcePaths[0]?.path).toBe(localPath);
   });
 
   test("scanLocalImportGroups returns dedicated local scan groups", async () => {
@@ -1049,22 +1041,6 @@ describe.sequential("import page flow", () => {
         return;
       }
 
-      expect(result.data.groups).toHaveLength(1);
-      expect(result.data.groups[0]).toMatchObject({
-        provider: "skills",
-        canonicalRepo: "paramchoudhary/resumeskills",
-        localImport: {
-          validationStatus: "matched",
-          selectedChoiceId: "origin",
-        },
-      });
-      expect(result.data.groups[0].matchedSkillNames?.sort()).toEqual([
-        "resume-bullet-writer",
-        "resume-tailor",
-      ]);
-      expect(result.data.groups[0].localImport?.choices.map((choice) => choice.sourceChoiceId)).toEqual([
-        "origin",
-      ]);
       expect(result.data.localScanGroups).toHaveLength(1);
       const localScanGroup = result.data.localScanGroups[0];
       expect(localScanGroup.skills.map((skill) => skill.id).sort()).toEqual([
@@ -1168,13 +1144,6 @@ describe.sequential("import page flow", () => {
           { uiId: "skills/new-skill", selector: { kind: "repoPath", path: "skills/new-skill" } },
         ],
       });
-      expect(result.data.groups).toHaveLength(1);
-      expect(result.data.groups[0].installed).toBe(false);
-      const originChoice = result.data.groups[0].localImport?.choices.find(
-        (choice) => choice.sourceChoiceId === "origin",
-      );
-      expect(originChoice?.selectedSkills.map((skill) => skill.selector.path)).toEqual(["skills/new-skill"]);
-      expect(originChoice?.selectedSkills.map((skill) => skill.selector.path)).not.toContain("skills/managed-skill");
     } finally {
       restoreHome(originalHome);
     }
@@ -1215,18 +1184,6 @@ describe.sequential("import page flow", () => {
         return;
       }
 
-      expect(result.data.groups).toHaveLength(1);
-      expect(result.data.groups[0]).toMatchObject({
-        provider: "skills",
-        canonicalRepo: "paramchoudhary/resumeskills",
-        localImport: {
-          validationStatus: "matched",
-          selectedChoiceId: "origin",
-        },
-      });
-      expect(result.data.groups[0].localImport?.detectedSkills[0]).toMatchObject({
-        originSkillId: "skills/resume-bullet-writer",
-      });
       expect(result.data.localScanGroups).toHaveLength(1);
       expect(result.data.localScanGroups[0]?.importChoices.map((choice) => choice.sourceChoiceId)).toEqual([
         "local",
@@ -1289,15 +1246,13 @@ describe.sequential("import page flow", () => {
         return;
       }
 
-      expect(result.data.groups).toHaveLength(1);
-      const originChoice = result.data.groups[0].localImport?.choices.find(
+      expect(result.data.localScanGroups[0]?.status).toBe("matched");
+      const originChoice = result.data.localScanGroups[0]?.importChoices.find(
         (choice) => choice.sourceChoiceId === "origin",
       );
-      expect(result.data.groups[0].localImport).toMatchObject({
-        validationStatus: "matched",
-        selectedChoiceId: "origin",
-      });
-      expect(originChoice?.selectedSkills.map((skill) => skill.selector.path)).toEqual(["skills/actual-review"]);
+      expect(originChoice?.selectedSkills.map((skill) => skill.selector.path)).toEqual([
+        "skills/actual-review",
+      ]);
     } finally {
       restoreHome(originalHome);
     }
@@ -1345,18 +1300,6 @@ describe.sequential("import page flow", () => {
         return;
       }
 
-      expect(result.data.groups).toHaveLength(2);
-      expect(result.data.groups.map((group) => group.provider)).toEqual(["local", "local"]);
-      expect(result.data.groups.map((group) => group.locator).sort()).toEqual([
-        changedPath,
-        missingPath,
-      ].sort());
-      for (const group of result.data.groups) {
-        const localChoice = group.localImport?.choices.find((choice) => choice.sourceChoiceId === "local");
-        expect(group.localImport?.selectedChoiceId).toBe("local");
-        expect(localChoice?.locator).toBe(group.locator);
-        expect(localChoice?.selectedSkills).toHaveLength(1);
-      }
       expect(result.data.localScanGroups).toHaveLength(2);
       expect(new Set(result.data.localScanGroups.map((group) => group.id)).size).toBe(2);
       expect(result.data.localScanGroups.map((group) => group.status).sort()).toEqual([
@@ -1406,14 +1349,9 @@ describe.sequential("import page flow", () => {
         return;
       }
 
-      expect(result.data.groups).toHaveLength(1);
-      expect(result.data.groups[0]).toMatchObject({
-        provider: "skills",
-        canonicalRepo: "skill-flow-test/missing-origin-repo",
-        localImport: {
-          validationStatus: "origin-unavailable",
-          selectedChoiceId: "local",
-        },
+      expect(result.data.localScanGroups[0]).toMatchObject({
+        status: "origin-unavailable",
+        origin: { canonicalRepo: "skill-flow-test/missing-origin-repo" },
       });
     } finally {
       restoreHome(originalHome);
@@ -1434,10 +1372,7 @@ describe.sequential("import page flow", () => {
       },
     });
 
-    expect(result.group.localImport).toMatchObject({
-      validationStatus: "changed",
-      selectedChoiceId: "local",
-    });
+    expect(result.localScanGroup.status).toBe("changed");
     expect(result.localScanGroup.skills[0]).toMatchObject({
       id: "resume-quantifier",
     });
@@ -1457,10 +1392,7 @@ describe.sequential("import page flow", () => {
       },
     });
 
-    expect(result.group.localImport).toMatchObject({
-      validationStatus: "missing",
-      selectedChoiceId: "local",
-    });
+    expect(result.localScanGroup.status).toBe("missing");
   });
 
   test("scanLocalImportGroups marks local skills as ambiguous when multiple origin skills match", async () => {
@@ -1474,10 +1406,7 @@ describe.sequential("import page flow", () => {
       },
     });
 
-    expect(result.group.localImport).toMatchObject({
-      validationStatus: "ambiguous",
-      selectedChoiceId: "local",
-    });
+    expect(result.localScanGroup.status).toBe("ambiguous");
   });
 
   test("previewImportSource supports quoted local paths with spaces", async () => {
@@ -2168,10 +2097,8 @@ async function scanOneOriginValidationCase(
     if (!result.ok) {
       throw new Error("Expected local import scan to succeed.");
     }
-    expect(result.data.groups).toHaveLength(1);
     expect(result.data.localScanGroups).toHaveLength(1);
     return {
-      group: result.data.groups[0],
       localScanGroup: result.data.localScanGroups[0],
     };
   } finally {

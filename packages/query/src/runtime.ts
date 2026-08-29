@@ -28,7 +28,6 @@ import type {
   ImportSourceResult,
   LeafRecord,
   LockFile,
-  LocalImportChoice,
   LocalScanGroup,
   LocalScanGroupStatus,
   LocalScanImportChoice,
@@ -1472,7 +1471,7 @@ export class SkillFlowApp {
 
   async scanLocalImportGroups(
     localPath?: string,
-  ): Promise<Result<{ groups: ImportGroupCandidate[]; localScanGroups: LocalScanGroup[] }>> {
+  ): Promise<Result<{ localScanGroups: LocalScanGroup[] }>> {
     return this.scanLocalImportGroupsImpl(localPath);
   }
 
@@ -1900,7 +1899,7 @@ export class SkillFlowApp {
 
   private async scanLocalImportGroupsImpl(
     localPath?: string,
-  ): Promise<Result<{ groups: ImportGroupCandidate[]; localScanGroups: LocalScanGroup[] }>> {
+  ): Promise<Result<{ localScanGroups: LocalScanGroup[] }>> {
     try {
       const { manifest, lockFile } = await this.readRuntimeAuthorityView();
       const scanned = localPath
@@ -1909,8 +1908,6 @@ export class SkillFlowApp {
           manifest,
           lockFile,
         );
-      const installedRepos = this.installedCanonicalRepos(manifest);
-      const groupsByKey = new Map<string, LocalSkillScanResult[]>();
       const originPreviews = new Map<string, Promise<Result<ImportPreviewResult> | null>>();
       const resolveOriginPreview = (canonicalRepo: string) => {
         const inFlight = originPreviews.get(canonicalRepo);
@@ -1922,34 +1919,6 @@ export class SkillFlowApp {
         return preview;
       };
 
-      for (const skill of scanned) {
-        const canonicalRepo = skill.originLocator
-          ? normalizeImportCanonicalRepo(skill.originLocator)
-          : undefined;
-        const key = canonicalRepo ? `origin:${canonicalRepo}` : `local:${skill.sourceId}`;
-        const current = groupsByKey.get(key) ?? [];
-        current.push(skill);
-        groupsByKey.set(key, current);
-      }
-
-      const groupBatches = await this.mapConcurrent(
-        [...groupsByKey.entries()],
-        SkillFlowApp.importGroupResolveConcurrency,
-        async ([key, skills]) => {
-          if (key.startsWith("origin:")) {
-            return this.buildOriginLocalImportGroups(
-              key.slice("origin:".length),
-              skills,
-              installedRepos,
-              manifest,
-              lockFile,
-              resolveOriginPreview,
-            );
-          }
-          return [this.buildLocalImportFallbackGroup(skills[0]!)];
-        },
-      );
-      const groups = groupBatches.flat();
       const localScanGroups = await this.buildLocalScanGroups(
         scanned,
         manifest,
@@ -1958,7 +1927,6 @@ export class SkillFlowApp {
       );
 
       return ok({
-        groups: groups.sort((left, right) => left.title.localeCompare(right.title)),
         localScanGroups: localScanGroups.sort((left, right) => left.title.localeCompare(right.title)),
       });
     } catch (error) {
@@ -2049,88 +2017,6 @@ export class SkillFlowApp {
     const title = frontmatter?.data.name?.trim() ?? "";
     const description = frontmatter?.data.description?.trim() ?? "";
     return { title, description };
-  }
-
-  private async buildOriginLocalImportGroups(
-    canonicalRepo: string,
-    localSkills: LocalSkillScanResult[],
-    installedRepos: Set<string>,
-    manifest: ManifestFile,
-    lockFile: LockFile,
-    resolveOriginPreview: (canonicalRepo: string) => Promise<Result<ImportPreviewResult> | null>,
-  ): Promise<ImportGroupCandidate[]> {
-    const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
-    const originLocator = `https://github.com/${normalizedRepo}.git`;
-    const preview = await resolveOriginPreview(normalizedRepo);
-    const readyPreview = preview?.ok && preview.data.status === "ready" ? preview.data : undefined;
-    const detectedSkills = readyPreview
-      ? localSkills.map((skill) => this.buildValidatedLocalImportSkill(skill, readyPreview.skills))
-      : localSkills.map((skill) => this.buildUnavailableLocalImportSkill(skill));
-    const validationStatus = this.aggregateLocalImportValidationStatus(detectedSkills);
-    const importableOriginSkillIds = detectedSkills.flatMap((detectedSkill, index) => {
-      const localSkill = localSkills[index];
-      if (
-        !localSkill ||
-        !detectedSkill.originSkillId ||
-        this.isLocalScanOriginAlreadyManaged(localSkill, detectedSkill, normalizedRepo, manifest, lockFile)
-      ) {
-        return [];
-      }
-      return [detectedSkill.originSkillId];
-    });
-    const selectedChoiceId = validationStatus === "matched" && importableOriginSkillIds.length > 0
-      ? "origin"
-      : "local";
-    if (validationStatus !== "matched" && localSkills.length > 1) {
-      return localSkills.map((skill, index) =>
-        this.buildLocalImportFallbackGroup(skill, detectedSkills[index]),
-      );
-    }
-
-    const matchedSkills = detectedSkills.map((skill) => ({
-      skillId: skill.originSkillId ?? skill.id,
-      title: skill.title,
-    }));
-    const originLocalImportChoices: LocalImportChoice[] = validationStatus === "matched" && importableOriginSkillIds.length > 0
-      ? [{
-          sourceChoiceId: "origin",
-          sourceChoiceAlias: "Origin",
-          label: "Origin",
-          locator: originLocator,
-          detectedSourcePath: localSkills[0]?.path ?? originLocator,
-          variant: localSkills.length === 1 ? "single-skill" : "multi-skill",
-          selectedSkills: this.importSkillSelectionsForRepoPaths(importableOriginSkillIds),
-          enabledTargets: [],
-        }]
-      : [];
-    const installed = originLocalImportChoices.length > 0
-      ? false
-      : installedRepos.has(normalizedRepo);
-
-    return [{
-      id: normalizedRepo,
-      provider: "skills",
-      locator: normalizedRepo,
-      canonicalRepo: normalizedRepo,
-      aliases: buildImportGroupCandidate({
-        canonicalRepo: normalizedRepo,
-        installed,
-      }).aliases,
-      title: normalizedRepo.split("/")[1] ?? normalizedRepo,
-      installed,
-      matchedSkillNames: localSkills.map((skill) => skill.title),
-      matchedSkills,
-      enrichState: { status: readyPreview ? "ready" : "idle" },
-      localImport: {
-        validationStatus,
-        selectedChoiceId,
-        choices: [
-          ...originLocalImportChoices,
-          ...(localSkills.length === 1 ? [this.buildLocalImportChoice(localSkills)] : []),
-        ],
-        detectedSkills,
-      },
-    }];
   }
 
   private localScanSkillGroupKey(item: LocalScanResolvedSkill): string {
@@ -2500,29 +2386,6 @@ export class SkillFlowApp {
     });
   }
 
-  private isLocalScanOriginAlreadyManaged(
-    localSkill: LocalSkillScanResult,
-    detectedSkill: LocalImportDetectedSkill,
-    canonicalRepo: string,
-    manifest: ManifestFile,
-    lockFile: LockFile,
-  ): boolean {
-    return manifest.sources.some((source) => {
-      const sourceRepo = normalizeImportCanonicalRepo(source.locator)
-        ?? normalizeImportCanonicalRepo(source.canonicalLocator);
-      if (!sourceRepo || sourceRepo !== canonicalRepo) {
-        return false;
-      }
-      return this.isLocalScanOriginSkillManaged(
-        source.id,
-        localSkill,
-        detectedSkill,
-        manifest,
-        lockFile,
-      );
-    });
-  }
-
   private isLocalScanOriginSkillManaged(
     sourceId: string,
     localSkill: LocalSkillScanResult,
@@ -2580,53 +2443,6 @@ export class SkillFlowApp {
       ...(skill.importedFromTargets[0] ? { target: skill.importedFromTargets[0] } : {}),
       contentHash: skill.contentHash,
       alreadyManaged,
-    };
-  }
-
-  private buildLocalImportFallbackGroup(
-    skill: LocalSkillScanResult,
-    detectedSkill?: LocalImportDetectedSkill,
-  ): ImportGroupCandidate {
-    const canonicalRepo = `local:${skill.sourceId}`;
-    const fallbackDetectedSkill = detectedSkill ?? {
-      id: skill.displayName,
-      title: skill.title || skill.displayName,
-      localPath: skill.path,
-      discoveredTargets: skill.importedFromTargets,
-      validationStatus: "local-only" as const,
-    };
-    return {
-      id: canonicalRepo,
-      provider: "local",
-      locator: skill.path,
-      canonicalRepo,
-      aliases: [skill.path, `file://${skill.path}`],
-      title: skill.title || skill.displayName,
-      installed: false,
-      ...(skill.description ? { summary: skill.description } : {}),
-      matchedSkillNames: [skill.title || skill.displayName],
-      matchedSkills: [{ skillId: skill.displayName, title: skill.title || skill.displayName }],
-      enrichState: { status: "idle" },
-      localImport: {
-        validationStatus: fallbackDetectedSkill.validationStatus,
-        selectedChoiceId: "local",
-        choices: [this.buildLocalImportChoice([skill])],
-        detectedSkills: [fallbackDetectedSkill],
-      },
-    };
-  }
-
-  private buildLocalImportChoice(localSkills: LocalSkillScanResult[]): LocalImportChoice {
-    const localPath = localSkills[0]?.path ?? "";
-    return {
-      sourceChoiceId: "local" as const,
-      sourceChoiceAlias: "Local",
-      label: "Local",
-      locator: localPath,
-      detectedSourcePath: localPath,
-      variant: localSkills.length > 1 ? "multi-skill" : "single-skill",
-      selectedSkills: this.importSkillSelectionsForRepoPaths(localSkills.map((skill) => skill.displayName)),
-      enabledTargets: [],
     };
   }
 

@@ -924,7 +924,7 @@ describe.sequential("bridge command dispatcher", () => {
 
   test("accepts valid scan-local-import-groups payload", async () => {
     const app = {
-      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ groups: [], path })),
+      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ localScanGroups: [], path })),
     } as unknown as SkillFlowApp;
 
     const response = await executeBridgeRequest(app, {
@@ -939,7 +939,7 @@ describe.sequential("bridge command dispatcher", () => {
 
   test("rejects invalid scan-local-import-groups path payload", async () => {
     const app = {
-      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ groups: [], path })),
+      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ localScanGroups: [], path })),
     } as unknown as SkillFlowApp;
 
     const response = await executeBridgeRequest(app, {
@@ -955,7 +955,7 @@ describe.sequential("bridge command dispatcher", () => {
 
   test("accepts scan-local-import-groups without path payload", async () => {
     const app = {
-      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ groups: [], path })),
+      scanLocalImportGroups: vi.fn(async (path?: string) => ok({ localScanGroups: [], path })),
     } as unknown as SkillFlowApp;
 
     const responseWithoutPayload = await executeBridgeRequest(app, {

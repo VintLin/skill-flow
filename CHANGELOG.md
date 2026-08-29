@@ -4,6 +4,10 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Local Skill scan bridge responses now expose only `localScanGroups`, and the macOS app consumes their final import-choice shape directly.
+
 ## v1.6.1 - 2026-08-27
 
 ### Changed

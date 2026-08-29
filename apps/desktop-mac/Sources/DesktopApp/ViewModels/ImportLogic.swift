@@ -90,8 +90,7 @@ final class ImportLogic {
         do {
             let response = try await queryFacade.scanLocalImportGroups(path: path)
             let payload = response.data?.value as? [String: Any] ?? [:]
-            let localScanGroups = parseLocalScanGroupsPayload(payload: payload)
-            let groups = localScanGroups.isEmpty ? parseImportGroupsPayload(payload: payload) : localScanGroups
+            let groups = parseLocalScanGroupsPayload(payload: payload)
 
             if path == nil {
                 localImportGroups = groups
@@ -612,7 +611,6 @@ final class ImportLogic {
             let matchedSkills = parseMatchedSkills(group["matchedSkills"] as? [[String: Any]])
             let snapshot = BridgePayloadDecoder.sourceSnapshot(from: group["snapshot"] as? [String: Any])
             let provider = group["provider"] as? String ?? "skills"
-            let localImport = parseLocalImport(group["localImport"] as? [String: Any])
             let summary = (group["summary"] as? String)?.nonEmpty
                 ?? snapshot?.description.nonEmpty
                 ?? ""
@@ -644,63 +642,12 @@ final class ImportLogic {
                 matchedSkillNames: matchedSkillNames,
                 matchedSkills: matchedSkills,
                 provider: provider,
-                localImport: localImport,
+                localImport: nil,
                 snapshot: snapshot,
                 enrichPhase: parseImportLoadPhase(group["enrichState"] as? [String: Any]),
                 previewPhase: .idle,
                 skills: skills,
                 targets: []
-            )
-        }
-    }
-
-    private func parseLocalImport(_ payload: [String: Any]?) -> LocalImportInfo? {
-        guard let payload,
-              let validationStatus = (payload["validationStatus"] as? String)?.nonEmpty else {
-            return nil
-        }
-
-        return LocalImportInfo(
-            validationStatus: validationStatus,
-            selectedChoiceId: (payload["selectedChoiceId"] as? String)?.nonEmpty,
-            choices: parseLocalImportChoices(payload["choices"] as? [[String: Any]]),
-            detectedSkills: parseLocalImportDetectedSkills(payload["detectedSkills"] as? [[String: Any]])
-        )
-    }
-
-    private func parseLocalImportChoices(_ payload: [[String: Any]]?) -> [LocalImportChoice] {
-        (payload ?? []).compactMap { choice in
-            guard let id = (choice["id"] as? String)?.nonEmpty,
-                  let label = (choice["label"] as? String)?.nonEmpty,
-                  let locator = (choice["locator"] as? String)?.nonEmpty else {
-                return nil
-            }
-
-            return LocalImportChoice(
-                id: id,
-                label: label,
-                locator: locator,
-                selectedSkills: parseImportSkillSelections(choice["selectedSkills"] as? [[String: Any]])
-            )
-        }
-    }
-
-    private func parseLocalImportDetectedSkills(_ payload: [[String: Any]]?) -> [LocalImportDetectedSkill] {
-        (payload ?? []).compactMap { skill in
-            guard let id = (skill["id"] as? String)?.nonEmpty,
-                  let title = (skill["title"] as? String)?.nonEmpty,
-                  let localPath = (skill["localPath"] as? String)?.nonEmpty,
-                  let validationStatus = (skill["validationStatus"] as? String)?.nonEmpty else {
-                return nil
-            }
-
-            return LocalImportDetectedSkill(
-                id: id,
-                title: title,
-                localPath: localPath,
-                discoveredTargets: skill["discoveredTargets"] as? [String] ?? [],
-                validationStatus: validationStatus,
-                originSkillId: (skill["originSkillId"] as? String)?.nonEmpty
             )
         }
     }
@@ -719,9 +666,7 @@ final class ImportLogic {
             let canonicalRepo = (origin?["canonicalRepo"] as? String)?.nonEmpty ?? id
             let sourcePaths = group["sourcePaths"] as? [[String: Any]] ?? []
             let skillsPayload = group["skills"] as? [[String: Any]] ?? []
-            let enabledChoicesPayload = (group["importChoices"] as? [[String: Any]] ?? [])
-                .filter { $0["enabled"] as? Bool ?? false }
-            let choices = parseLocalScanImportChoices(enabledChoicesPayload)
+            let choices = parseLocalScanImportChoices(group["importChoices"] as? [[String: Any]] ?? [])
             let selectionRequired = skillsPayload.contains { $0["selectionRequired"] as? Bool ?? false }
             let selectedChoiceId = status == "version-conflict"
                 ? nil
@@ -777,15 +722,14 @@ final class ImportLogic {
 
     private func parseLocalScanImportChoices(_ payload: [[String: Any]]) -> [LocalImportChoice] {
         payload.compactMap { choice in
-            guard let id = (choice["id"] as? String)?.nonEmpty,
-                  let label = (choice["label"] as? String)?.nonEmpty,
-                  let locator = (choice["locator"] as? String)?.nonEmpty else {
+            guard let id = (choice["sourceChoiceId"] as? String)?.nonEmpty,
+                  let locator = (choice["sourcePath"] as? String)?.nonEmpty else {
                 return nil
             }
 
             return LocalImportChoice(
                 id: id,
-                label: label,
+                label: id == "origin" ? "Origin" : "Local",
                 locator: locator,
                 selectedSkills: parseImportSkillSelections(choice["selectedSkills"] as? [[String: Any]])
             )
