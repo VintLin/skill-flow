@@ -1711,6 +1711,29 @@ description: "Safe Codex local-state maintenance"
     expect(binding?.enabledTargets).toEqual(["cursor"]);
   });
 
+  test("importSource returns preparation failures without entering the legacy add path", async () => {
+    const app = new SkillFlowApp();
+    vi.spyOn(app.importPreparationService, "prepareImportSource").mockResolvedValue(ok({
+      status: "failed",
+      preparationId: "prep-failed",
+      reasonCode: "IMPORT_PREPARE_FAILED",
+      retryable: true,
+    }, [{ code: "IMPORT_PROVIDER_WARNING", message: "Provider unavailable." }]));
+    const legacyAdd = vi.spyOn(app.sourceAuthorityService, "addSource").mockResolvedValue(fail({
+      code: "LEGACY_ADD_CALLED",
+      message: "Legacy add path must not run.",
+    }));
+
+    const imported = await app.importSource("anthropics/skills");
+
+    expect(imported).toEqual(ok({
+      status: "failed",
+      reasonCode: "IMPORT_PREPARE_FAILED",
+      retryable: true,
+    }, [{ code: "IMPORT_PROVIDER_WARNING", message: "Provider unavailable." }]));
+    expect(legacyAdd).not.toHaveBeenCalled();
+  });
+
   test("importSource uses local preview skill ids without ambiguous selector fallback", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/pdf-analysis/SKILL.md": skillDoc("PDF Analysis", "PDF analysis."),

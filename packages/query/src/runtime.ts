@@ -3087,61 +3087,36 @@ export class SkillFlowApp {
         }
       : undefined);
     const canonicalRepo = githubLocator?.canonicalRepo ?? normalizeImportCanonicalRepo(normalizedLocator);
-    if (preparation.ok && preparation.data.status === "ready") {
-      return this.commitPreparedImportSourceImpl(
-        preparation.data.preparationId,
-        importDraft,
-        canonicalRepo,
-        localSkillPath,
-      );
-    }
-
-    const prepared = await this.prepareAddSourceImpl(normalizedLocator, {
-      project: false,
-      ...(githubLocator?.requestedPath ? { path: githubLocator.requestedPath } : {}),
-    });
-    if (!prepared.ok) {
+    if (!preparation.ok) {
       return ok({
         status: "failed",
-        reasonCode: prepared.errors[0]?.code ?? "IMPORT_PREPARE_FAILED",
+        reasonCode: preparation.errors[0]?.code ?? "IMPORT_PREPARE_FAILED",
         retryable: true,
-      });
+      }, preparation.warnings);
     }
 
-    const finalDraft = this.resolveImportDraftForPreparedSource(
-      prepared.data.leafs,
-      prepared.data.availableTargets,
-      canonicalRepo,
+    if (preparation.data.status === "failed") {
+      return ok({
+        status: "failed",
+        reasonCode: preparation.data.reasonCode,
+        retryable: preparation.data.retryable,
+      }, preparation.warnings);
+    }
+
+    if (preparation.data.status !== "ready") {
+      return ok({
+        status: "failed",
+        reasonCode: `IMPORT_PREPARATION_${preparation.data.status.toUpperCase()}`,
+        retryable: true,
+      }, preparation.warnings);
+    }
+
+    return this.commitPreparedImportSourceImpl(
+      preparation.data.preparationId,
       importDraft,
+      canonicalRepo,
+      localSkillPath,
     );
-    if (!finalDraft.ok) {
-      await this.rollbackPreparedSourceInternal(prepared.data.sourceId);
-      return ok({
-        status: "failed",
-        reasonCode: finalDraft.errors[0]?.code ?? "IMPORT_PREVIEW_INVALID",
-        retryable: true,
-      });
-    }
-
-    const applied = await this.applyDraftImpl(prepared.data.sourceId, finalDraft.data, { kind: "global" });
-    if (!applied.ok) {
-      await this.rollbackPreparedSourceInternal(prepared.data.sourceId);
-      return ok({
-        status: "failed",
-        reasonCode: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
-        retryable: true,
-      }, [...finalDraft.warnings, ...applied.warnings]);
-    }
-
-    if (localSkillPath) {
-      await this.replaceLocalImportWithManagedSymlink(localSkillPath, prepared.data.sourceId);
-    }
-
-    return ok({
-      status: "ready",
-      sourceId: prepared.data.sourceId,
-      canonicalRepo: canonicalRepo ?? normalizedLocator,
-    }, [...finalDraft.warnings, ...applied.warnings]);
   }
 
   private async replaceLocalImportWithManagedSymlink(
