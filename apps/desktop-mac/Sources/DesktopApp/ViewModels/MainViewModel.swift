@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import CryptoKit
-import Yams
 
 @MainActor
 @Observable
@@ -66,19 +65,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         let skillId: String
         let folderPath: String
         let displayTitle: String
-    }
-
-    private struct ParsedDocument: Sendable {
-        let frontMatter: SkillFrontMatter?
-        let metadata: [MetadataEntry]
-        let body: String
-    }
-
-    private struct SkillFrontMatter: Decodable, Sendable {
-        let name: String?
-        let description: String?
-        let version: String?
-        let enabled: Bool?
     }
 
     private let stateManager: AppStateManager
@@ -2022,107 +2008,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         )
     }
 
-    // MARK: - Static Utility Methods (kept for backward compatibility)
-
-    static func isSupportedImportLocator(_ value: String) -> Bool {
-        let candidate = normalizedImportLocator(value)
-        guard !candidate.isEmpty else { return false }
-        let lowercasedCandidate = candidate.lowercased()
-        if lowercasedCandidate.hasPrefix("file://"), candidate.count > "file://".count { return true }
-        if lowercasedCandidate.hasPrefix("clawhub:"), candidate.count > "clawhub:".count { return true }
-        if candidate.hasPrefix("/") || candidate.hasPrefix("~/") { return true }
-        if isSupportedGitHTTPSLocator(candidate) { return true }
-        if matches(candidate, pattern: #"^git@(github|gitlab)\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$"#) { return true }
-        if matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$"#) { return true }
-        return matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?@[A-Za-z0-9_.-]+$"#) ||
-               matches(candidate, pattern: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?(?:/[A-Za-z0-9_.-]+)+$"#)
-    }
-
-    static func normalizedImportLocator(_ value: String) -> String {
-        var candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard candidate.count >= 2 else { return candidate }
-        let first = candidate.first
-        let last = candidate.last
-        if (first == "\"" && last == "\"") || (first == "'" && last == "'") {
-            candidate.removeFirst(); candidate.removeLast()
-            candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return candidate
-    }
-
-    private static func isSupportedGitHTTPSLocator(_ candidate: String) -> Bool {
-        guard !candidate.containsWhitespace else { return false }
-        guard let components = URLComponents(string: candidate), components.scheme?.lowercased() == "https", let host = components.host?.lowercased(), host == "github.com" || host == "gitlab.com" else { return false }
-        let pathSegments = components.path.split(separator: "/").filter { !$0.isEmpty }.map(String.init)
-        guard pathSegments.count >= 2 else { return false }
-        switch host {
-        case "github.com": return pathSegments.count == 2 || (pathSegments.count >= 4 && pathSegments[2].lowercased() == "tree")
-        case "gitlab.com":
-            let treeMarkerIndex = pathSegments.indices.first { index in
-                pathSegments[index] == "-"
-                    && pathSegments.indices.contains(index + 1)
-                    && pathSegments[index + 1] == "tree"
-            }
-
-            if let treeMarkerIndex {
-                return treeMarkerIndex >= 2 && pathSegments.count >= treeMarkerIndex + 3
-            }
-
-            let hasUnsupportedPagePath = pathSegments.contains("-")
-                || pathSegments.contains { ["tree", "blob", "issues", "merge_requests"].contains($0) }
-
-            return pathSegments.count >= 2 && !hasUnsupportedPagePath
-        default: return false
-        }
-    }
-
-    private static func matches(_ value: String, pattern: String) -> Bool {
-        value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
-    }
-
-    // MARK: - Document & FileTree Utilities (kept for backward compatibility)
-
-    nonisolated static func parseDetailDocument(_ content: String) -> (metadata: [MetadataEntry], body: String) {
-        let lines = content.components(separatedBy: .newlines)
-        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
-            return ([], content.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        guard let closingIndex = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "---" }) else {
-            return ([], content.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        let frontMatterText = Array(lines[1..<closingIndex]).joined(separator: "\n")
-        let metadata = parseFrontmatterEntries(frontMatterText)
-        let bodyLines = closingIndex + 1 < lines.count ? Array(lines[(closingIndex + 1)...]) : []
-        return (metadata, bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    nonisolated private static func parseFrontmatterEntries(_ frontMatterText: String) -> [MetadataEntry] {
-        guard let dictionary = (try? Yams.load(yaml: frontMatterText)) as? [String: Any] else {
-            return []
-        }
-        return dictionary.keys.sorted().compactMap { key in
-            guard let value = dictionary[key] else { return nil }
-            let renderedValue = stringifyMetadataValue(value)
-            return MetadataEntry(id: "\(key):\(renderedValue)", key: key, value: renderedValue)
-        }
-    }
-
-    nonisolated private static func stringifyMetadataValue(_ value: Any) -> String {
-        switch value {
-        case let string as String:
-            return string
-        case let number as NSNumber:
-            return number.stringValue
-        case let values as [Any]:
-            return values.map(stringifyMetadataValue).joined(separator: ", ")
-        case let dictionary as [String: Any]:
-            return dictionary.keys.sorted()
-                .map { "\($0): \(stringifyMetadataValue(dictionary[$0] as Any))" }
-                .joined(separator: ", ")
-        default:
-            return String(describing: value)
-        }
-    }
+    // MARK: - Document & FileTree Utilities
 
     nonisolated static func documentDescriptors(_ tabs: [DocumentTab]) -> [DocumentDescriptor] {
         tabs.map { DocumentDescriptor(id: $0.id, title: $0.title, path: $0.path, metadata: $0.metadata, renderCacheKey: $0.renderCacheKey, externalURL: $0.externalURL) }
@@ -2130,10 +2016,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     nonisolated static func documentDescriptor(for tab: DocumentTab) -> DocumentDescriptor {
         DocumentDescriptor(id: tab.id, title: tab.title, path: tab.path, metadata: tab.metadata, renderCacheKey: tab.renderCacheKey, externalURL: tab.externalURL)
-    }
-
-    nonisolated static func placeholderDocumentTabs(_ descriptors: [DocumentDescriptor]) -> [DocumentTab] {
-        descriptors.map { DocumentTab(id: $0.id, title: $0.title, path: $0.path, metadata: $0.metadata, content: "", renderCacheKey: $0.renderCacheKey, externalURL: $0.externalURL, isLoaded: false) }
     }
 
     nonisolated static func detailRevision(
@@ -2277,5 +2159,4 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
 extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
-    var containsWhitespace: Bool { rangeOfCharacter(from: .whitespacesAndNewlines) != nil }
 }

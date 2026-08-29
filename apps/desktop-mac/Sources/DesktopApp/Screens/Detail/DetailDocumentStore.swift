@@ -113,7 +113,7 @@ final class DetailDocumentStore {
                 try Task.checkCancellation()
                 let raw = try readRawDocument(fileReader: fileReader, descriptor: descriptor)
                 try Task.checkCancellation()
-                let parsed = MainViewModel.parseDetailDocument(raw)
+                let parsed = DetailDocumentParser.parse(raw)
                 try Task.checkCancellation()
                 return LoadedDocument(
                     id: descriptor.id,

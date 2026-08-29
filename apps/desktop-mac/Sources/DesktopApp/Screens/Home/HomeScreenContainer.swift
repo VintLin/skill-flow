@@ -190,8 +190,8 @@ final class HomeScreenContainer {
     }
 
     func handleHomeSearchSubmit(_ query: String) async -> Bool {
-        let locator = MainViewModel.normalizedImportLocator(query)
-        guard MainViewModel.isSupportedImportLocator(locator) else {
+        let locator = ImportLocatorParser.normalize(query)
+        guard ImportLocatorParser.isSupported(locator) else {
             return false
         }
 

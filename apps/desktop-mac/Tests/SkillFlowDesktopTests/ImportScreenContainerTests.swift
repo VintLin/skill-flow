@@ -137,7 +137,7 @@ final class ImportScreenContainerTests: XCTestCase {
 
         for (locator, expected) in cases {
             XCTAssertEqual(
-                MainViewModel.isSupportedImportLocator(locator),
+                ImportLocatorParser.isSupported(locator),
                 expected,
                 "locator: \(locator)"
             )

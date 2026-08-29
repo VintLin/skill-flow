@@ -5,6 +5,38 @@ import XCTest
 
 @MainActor
 final class DetailDocumentStoreTests: XCTestCase {
+    func testDocumentParserHandlesPlainAndUnclosedFrontmatter() {
+        let plain = DetailDocumentParser.parse("  # Plain  ")
+        XCTAssertTrue(plain.metadata.isEmpty)
+        XCTAssertEqual(plain.body, "# Plain")
+
+        let unclosed = DetailDocumentParser.parse("""
+        ---
+        name: Broken
+        # Body
+        """)
+        XCTAssertTrue(unclosed.metadata.isEmpty)
+        XCTAssertEqual(unclosed.body, "---\nname: Broken\n# Body")
+    }
+
+    func testDocumentParserSortsAndRendersFrontmatterValues() {
+        let parsed = DetailDocumentParser.parse("""
+        ---
+        zeta:
+          nested: value
+        alpha:
+          - one
+          - two
+        count: 3
+        ---
+        # Body
+        """)
+
+        XCTAssertEqual(parsed.metadata.map(\.key), ["alpha", "count", "zeta"])
+        XCTAssertEqual(parsed.metadata.map(\.value), ["one, two", "3", "nested: value"])
+        XCTAssertEqual(parsed.body, "# Body")
+    }
+
     final class LockedContentBox: @unchecked Sendable {
         private let lock = NSLock()
         private var value: String

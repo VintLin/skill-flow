@@ -16,6 +16,7 @@ All notable changes to `skill-flow` will be documented in this file.
 - Exact GitHub import searches now use ImportDiscovery caching, stale fallback, and in-flight request sharing instead of bypassing the discovery boundary.
 - Removed obsolete whole-cache and update-preflight entry points superseded by granular cache writes and structured update prechecks.
 - Import Data cache entries now persist only expiry and consumed payloads; query/feed/repository keys no longer duplicate identity or unused timestamps inside each entry.
+- Desktop import locator and detail document parsing now have dedicated owners instead of compatibility copies on the app-wide view model.
 
 ## v1.6.1 - 2026-08-27
 

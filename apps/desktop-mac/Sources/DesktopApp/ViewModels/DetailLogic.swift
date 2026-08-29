@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 import CryptoKit
-import Yams
 
 @MainActor
 @Observable
@@ -83,18 +82,6 @@ final class DetailLogic {
         let skillId: String
         let folderPath: String
         let displayTitle: String
-    }
-
-    private struct ParsedDocument: Sendable {
-        let frontMatter: SkillFrontMatter?
-        let metadata: [MetadataEntry]
-        let body: String
-    }
-
-    private struct SkillFrontMatter: Decodable, Sendable {
-        let name: String?
-        let description: String?
-        let version: String?
     }
 
     private let detailEnrichmentQuery: any DesktopDetailEnrichmentQuerying
@@ -1013,69 +1000,8 @@ final class DetailLogic {
         guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else {
             return nil
         }
-        let parsed = parseDetailDocument(raw)
+        let parsed = DetailDocumentParser.parse(raw)
         return parsed.body.isEmpty ? nil : parsed.body
-    }
-
-    nonisolated static func parseDetailDocument(_ content: String) -> (metadata: [MetadataEntry], body: String) {
-        let parsed = parseDocument(content)
-        return (metadata: parsed.metadata, body: parsed.body)
-    }
-
-    nonisolated private static func parseDocument(_ content: String) -> ParsedDocument {
-        let lines = content.components(separatedBy: .newlines)
-        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
-            return ParsedDocument(frontMatter: nil, metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-
-        guard let closingIndex = lines.dropFirst().firstIndex(where: {
-            $0.trimmingCharacters(in: .whitespacesAndNewlines) == "---"
-        }) else {
-            return ParsedDocument(frontMatter: nil, metadata: [], body: content.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-
-        let frontMatterText = Array(lines[1..<closingIndex]).joined(separator: "\n")
-        let metadata = parseFrontmatterEntries(frontMatterText)
-        let frontMatter = parseFrontMatter(frontMatterText)
-        let bodyLines = closingIndex + 1 < lines.count ? Array(lines[(closingIndex + 1)...]) : []
-        let body = bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        return ParsedDocument(frontMatter: frontMatter, metadata: metadata, body: body)
-    }
-
-    nonisolated private static func parseFrontMatter(_ frontMatterText: String) -> SkillFrontMatter? {
-        try? YAMLDecoder().decode(SkillFrontMatter.self, from: frontMatterText)
-    }
-
-    nonisolated private static func parseFrontmatterEntries(_ frontMatterText: String) -> [MetadataEntry] {
-        guard let dictionary = (try? Yams.load(yaml: frontMatterText)) as? [String: Any] else {
-            return []
-        }
-
-        return dictionary.keys.sorted().compactMap { key in
-            guard let value = dictionary[key] else {
-                return nil
-            }
-
-            let renderedValue = stringifyMetadataValue(value)
-            return MetadataEntry(id: "\(key):\(renderedValue)", key: key, value: renderedValue)
-        }
-    }
-
-    nonisolated private static func stringifyMetadataValue(_ value: Any) -> String {
-        switch value {
-        case let string as String:
-            return string
-        case let number as NSNumber:
-            return number.stringValue
-        case let values as [Any]:
-            return values.map(stringifyMetadataValue).joined(separator: ", ")
-        case let dictionary as [String: Any]:
-            return dictionary.keys.sorted()
-                .map { "\($0): \(stringifyMetadataValue(dictionary[$0] as Any))" }
-                .joined(separator: ", ")
-        default:
-            return String(describing: value)
-        }
     }
 
     nonisolated private static func groupDocumentDescriptors(
