@@ -315,21 +315,8 @@ struct ImportScreen: View {
         return activeImportDisabledReason
     }
 
-    static func localValidationStatusTextKey(for status: String?) -> String {
-        switch status {
-        case "matched":
-            return "import.local.status.matched"
-        case "changed":
-            return "import.local.status.changed"
-        case "missing":
-            return "import.local.status.missing"
-        case "ambiguous":
-            return "import.local.status.ambiguous"
-        case "origin-unavailable":
-            return "import.local.status.origin_unavailable"
-        default:
-            return "import.local.status.local_only"
-        }
+    static func localValidationStatusTextKey(for _: String?) -> String {
+        "import.local.status.local_only"
     }
 
     private func emptyState(title: String, subtitle: String, chromed: Bool = true) -> some View {

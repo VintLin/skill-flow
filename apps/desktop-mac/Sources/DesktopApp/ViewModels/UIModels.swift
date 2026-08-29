@@ -872,7 +872,6 @@ struct LocalImportDetectedSkill: Identifiable, Equatable {
     let localPath: String
     let discoveredTargets: [String]
     let validationStatus: String
-    let originSkillId: String?
 }
 
 struct LocalImportInfo: Equatable {

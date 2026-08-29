@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import type { DraftBinding } from "@skill-flow/domain/types";
-import { createLegacyAgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
 import { SkillFlowApp } from "@skill-flow/query/runtime";
 import { StateStore } from "@skill-flow/storage/state-store";
 import {
@@ -592,52 +591,4 @@ describe.sequential("config integration", () => {
     expect(path.resolve(localSkillPath)).not.toBe(source?.localPath);
   });
 
-  test("local import scan preserves agents lock origin metadata", async () => {
-    const agentsRoot = path.join(sandbox.sandboxRoot, "home", ".agents");
-    const oldHome = process.env.HOME;
-
-    try {
-      process.env.HOME = path.join(sandbox.sandboxRoot, "home");
-      const app = new SkillFlowApp({
-        agentsOriginReader: createLegacyAgentsOriginReader(),
-      });
-      await writeRepoFiles(
-        path.join(process.env.SKILL_FLOW_TARGET_CODEX!, "resume-bullet-writer"),
-        {
-          "SKILL.md": skillDoc("resume-bullet-writer", "Write resume bullets."),
-        },
-      );
-      await writeRepoFiles(agentsRoot, {
-        ".skill-lock.json": JSON.stringify({
-          skills: {
-            "resume-bullet-writer": {
-              source: "paramchoudhary/resumeskills",
-              sourceType: "github",
-              skillPath: "skills/resume-bullet-writer",
-              branch: "main",
-            },
-          },
-        }),
-      });
-
-
-      const { manifest, lockFile } = await v2State(app);
-      const scanned = await app.workspaceBootstrapService.scanUnmanagedLocalSkills(
-        manifest,
-        lockFile,
-      );
-
-      expect(scanned[0]).toMatchObject({
-        originLocator: "https://github.com/paramchoudhary/resumeskills.git",
-        originRequestedPath: "skills/resume-bullet-writer",
-        originBranch: "main",
-      });
-    } finally {
-      if (oldHome === undefined) {
-        delete process.env.HOME;
-      } else {
-        process.env.HOME = oldHome;
-      }
-    }
-  });
 });

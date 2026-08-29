@@ -662,8 +662,7 @@ final class ImportLogic {
                 return nil
             }
 
-            let origin = group["origin"] as? [String: Any]
-            let canonicalRepo = (origin?["canonicalRepo"] as? String)?.nonEmpty ?? id
+            let canonicalRepo = id
             let sourcePaths = group["sourcePaths"] as? [[String: Any]] ?? []
             let skillsPayload = group["skills"] as? [[String: Any]] ?? []
             let choices = parseLocalScanImportChoices(group["importChoices"] as? [[String: Any]] ?? [])
@@ -700,7 +699,7 @@ final class ImportLogic {
                 skillCount: groupSkills.isEmpty ? nil : groupSkills.count,
                 matchedSkillNames: uniqueSorted(groupSkills.map(\.title)),
                 matchedSkills: matchedSkills,
-                provider: origin == nil ? "local" : "skills",
+                provider: "local",
                 localImport: LocalImportInfo(
                     validationStatus: status,
                     selectedChoiceId: selectedChoiceId,
@@ -812,8 +811,7 @@ final class ImportLogic {
             title: title,
             localPath: path,
             discoveredTargets: target.map { [$0] } ?? [],
-            validationStatus: status,
-            originSkillId: (skill?["originSkillId"] as? String)?.nonEmpty
+            validationStatus: status
         )
     }
 

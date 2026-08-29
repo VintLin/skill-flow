@@ -9,10 +9,6 @@ import type {
 import { getTargetScanRoots, TARGET_DEFINITIONS, TARGET_ORDER } from "@skill-flow/integration/utils/constants";
 import { hashDirectory, pathExists } from "@skill-flow/integration/utils/fs";
 import { deriveSourceId } from "@skill-flow/integration/utils/source-id";
-import {
-  type AgentsOrigin,
-  type AgentsOriginReader,
-} from "./legacy-agents-lock.js";
 import { parseSkillFrontmatter } from "./skill-frontmatter.js";
 
 export type BootstrapEvent = {
@@ -40,9 +36,6 @@ export type DetectedExternalSkill = {
     rootPath: string;
     targetPath: string;
   }>;
-  originLocator?: string;
-  originRequestedPath?: string;
-  originBranch?: string;
 };
 
 export type LocalSkillScanResult = DetectedExternalSkill & {
@@ -52,18 +45,13 @@ export type LocalSkillScanResult = DetectedExternalSkill & {
 
 export type WorkspaceBootstrapServiceOptions = {
   stateRoot: string;
-  agentsOriginReader?: AgentsOriginReader;
 };
 
 export class WorkspaceBootstrapService {
   private readonly stateRoot: string;
-  private readonly agentsOriginReader: AgentsOriginReader;
 
   constructor(options: WorkspaceBootstrapServiceOptions) {
     this.stateRoot = options.stateRoot;
-    this.agentsOriginReader = options.agentsOriginReader ?? {
-      readAgentsLockOrigins: async () => new Map(),
-    };
   }
 
   async detectUnmanagedExternalSkills(
@@ -82,7 +70,6 @@ export class WorkspaceBootstrapService {
     const managedTargetPaths = new Set(
       activeProjections(lockFile).map((deployment) => path.resolve(deployment.targetPath)),
     );
-    const agentsOrigins = await this.agentsOriginReader.readAgentsLockOrigins();
     const grouped = new Map<
       string,
       {
@@ -95,7 +82,6 @@ export class WorkspaceBootstrapService {
           rootPath: string;
           targetPath: string;
         }>;
-        origin: AgentsOrigin | undefined;
       }
     >();
 
@@ -162,7 +148,6 @@ export class WorkspaceBootstrapService {
               rootPath: root,
               targetPath: skillDir,
             }],
-            origin: agentsOrigins.get(entry.name),
           });
         }
       }
@@ -182,11 +167,6 @@ export class WorkspaceBootstrapService {
         contentHash: item.hash,
         importedFromTargets: TARGET_ORDER.filter((target) => item.targets.has(target)),
         observedTargets: [...item.observedTargets],
-        ...(item.origin?.originLocator ? { originLocator: item.origin.originLocator } : {}),
-        ...(item.origin?.originRequestedPath
-          ? { originRequestedPath: item.origin.originRequestedPath }
-          : {}),
-        ...(item.origin?.originBranch ? { originBranch: item.origin.originBranch } : {}),
       });
     }
 

@@ -334,11 +334,6 @@
 "import.action.disabled.import_running" = "Another import is already running.";
 "import.local.detected.title" = "Local detected";
 "import.local.detected.description" = "Skills found in local agent directories.";
-"import.local.status.matched" = "Local skill matches the origin group.";
-"import.local.status.changed" = "Local skill differs from the origin group.";
-"import.local.status.missing" = "Local skill was not found in the origin group.";
-"import.local.status.ambiguous" = "Multiple origin skills match this local skill.";
-"import.local.status.origin_unavailable" = "Origin group is unavailable; local version is selected.";
 "import.local.status.local_only" = "Local-only skill.";
 "import.error.load_recommendations" = "Unable to load recommendations.";
 "import.error.search_groups" = "Unable to search import groups.";

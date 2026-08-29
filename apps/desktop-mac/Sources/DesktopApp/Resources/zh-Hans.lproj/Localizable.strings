@@ -334,11 +334,6 @@
 "import.action.disabled.import_running" = "已有导入任务正在进行。";
 "import.local.detected.title" = "本地检测";
 "import.local.detected.description" = "从本地 Agent 目录发现的 Skill。";
-"import.local.status.matched" = "本地 Skill 与原始组一致。";
-"import.local.status.changed" = "本地 Skill 与原始组不一致。";
-"import.local.status.missing" = "原始组中未找到此本地 Skill。";
-"import.local.status.ambiguous" = "多个原始 Skill 匹配此本地 Skill。";
-"import.local.status.origin_unavailable" = "原始组暂不可用，已选择本地版本。";
 "import.local.status.local_only" = "仅本地存在的 Skill。";
 "import.error.load_recommendations" = "无法加载推荐内容。";
 "import.error.search_groups" = "无法搜索可导入分组。";

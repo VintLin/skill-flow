@@ -1214,7 +1214,7 @@ final class ImportScreenContainerTests: XCTestCase {
         ])
     }
 
-    func testChangedLocalChoiceFallsBackToFirstChoiceAndKeepsImportEnabled() {
+    func testLocalChoiceFallsBackToFirstChoiceAndKeepsImportEnabled() {
         let state = DesktopAppState()
         let model = MainViewModel(bridgeClient: BridgeClient())
         let container = ImportScreenContainer(state: state, mainViewModel: model)
@@ -1234,7 +1234,7 @@ final class ImportScreenContainerTests: XCTestCase {
                 .init(id: "writer", title: "Writer", summary: "", selectedByDefault: true),
             ],
             targets: [],
-            localValidationStatus: "changed",
+            localValidationStatus: "local-only",
             selectedLocalChoiceId: nil,
             localChoices: [
                 LocalImportChoice(
@@ -1617,11 +1617,10 @@ final class ImportScreenContainerTests: XCTestCase {
         let query = RecordingLocalImportQueryFacade()
         query.localScanPayloads = [
             [
-                "groups": [],
                 "localScanGroups": [
                     [
-                        "id": "paramchoudhary/resumeskills:skills/resume-review",
-                        "title": "Resume Skills",
+                        "id": "local:resume-review",
+                        "title": "Resume Review",
                         "status": "version-conflict",
                         "sourcePaths": [
                             [
@@ -1644,7 +1643,6 @@ final class ImportScreenContainerTests: XCTestCase {
                                 "title": "Resume Review",
                                 "status": "version-conflict",
                                 "selectionRequired": true,
-                                "originSkillId": "skills/resume-review",
                                 "variants": [
                                     [
                                         "id": "skills/resume-review:hash-codex",
@@ -1665,11 +1663,6 @@ final class ImportScreenContainerTests: XCTestCase {
                             ],
                         ],
                         "importChoices": [],
-                        "origin": [
-                            "canonicalRepo": "paramchoudhary/resumeskills",
-                            "locator": "https://github.com/paramchoudhary/resumeskills.git",
-                            "previewStatus": "ready",
-                        ],
                     ],
                 ],
             ],

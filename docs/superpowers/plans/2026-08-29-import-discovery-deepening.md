@@ -62,22 +62,22 @@ Tests:
 
 ### 3. Local Scan
 
-- 迁移 local scan classification、origin match、variant grouping、managed 判断和 choices。
+- 迁移 local scan classification、variant grouping、managed 判断和 choices。
 - 删除旧 `groups` + 新 `localScanGroups` 双结果计算，只保留最终 `localScanGroups` 逻辑。
-- 每个 distinct origin repo 最多一次 checkout preview，总并发不超过 3。
+- 删除 production 不可达的 legacy Agents origin reader 及其 origin preview/match 分支。
 
 Tests:
 
 - realpath dedupe。
-- same-origin same-hash / different-hash。
+- same-name same-hash / different-hash。
 - managed、manual、target-agent。
-- matched、changed、missing、ambiguous、origin unavailable。
+- local-only、version-conflict、already-managed。
 - scan 前后 authority state 完全不变。
 
 ### 4. Cleanup and verification
 
 - 删除 runtime 内旧 implementation、in-flight maps、无用 imports 和被替代测试。
-- 评估并删除 production 不可达的 legacy Agents origin test seam。
+- 删除 production 不可达的 legacy Agents origin test seam。
 - 单独评估 rebuildable Import cache 的 dead fields；不改变 Shared Skill State schema。
 
 Verification:

@@ -56,7 +56,7 @@ Bridge changes are external changes. Update parser tests, CLI bridge behavior, d
 
 `update`、`import-source` 与 `commit-import-source` 成功时会在原有 mutation data 中附带 `workspace`，其结构与 `bootstrap` data 一致。Desktop 应优先应用该快照；仅当旧 helper 或异常响应未返回 `workspace` 时，才回退到独立的 `list` / `doctor` 恢复链路。
 
-`scan-local-import-groups` 成功响应只返回 `localScanGroups`。每个 group 的 `importChoices` 使用 `sourceChoiceId` 与 `sourcePath` 表示最终导入来源；调用方不得回退解析旧 `groups` 卡片。
+`scan-local-import-groups` 成功响应只返回 `localScanGroups`。每个 group 的状态为 `local-only`、`version-conflict` 或 `already-managed`，`importChoices` 使用 `sourceChoiceId` 与 `sourcePath` 表示最终本地导入来源；调用方不得回退解析旧 `groups` 卡片或 legacy Agents origin metadata。
 
 Desktop helper execution is always time-bounded. Ordinary commands use 60
 seconds, import/add commands use 5 minutes, and managed update scales by the

@@ -334,11 +334,6 @@
 "import.action.disabled.import_running" = "別のインポートが実行中です。";
 "import.local.detected.title" = "検出されたローカル";
 "import.local.detected.description" = "ローカル Agent ディレクトリで見つかった Skill。";
-"import.local.status.matched" = "ローカル Skill は元の Group と一致しています。";
-"import.local.status.changed" = "ローカル Skill は元の Group と異なります。";
-"import.local.status.missing" = "元の Group にこのローカル Skill が見つかりません。";
-"import.local.status.ambiguous" = "複数の元 Skill がこのローカル Skill に一致します。";
-"import.local.status.origin_unavailable" = "元の Group を利用できないため、ローカル版を選択しています。";
 "import.local.status.local_only" = "ローカル専用 Skill。";
 "import.error.load_recommendations" = "おすすめを読み込めませんでした。";
 "import.error.search_groups" = "インポート可能なグループを検索できませんでした。";

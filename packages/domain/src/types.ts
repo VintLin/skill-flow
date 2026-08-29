@@ -899,41 +899,10 @@ export type ImportAsyncState =
       retryable: boolean;
     };
 
-export type LocalImportValidationStatus =
-  | "matched"
-  | "changed"
-  | "missing"
-  | "ambiguous"
-  | "origin-unavailable"
-  | "local-only";
-
-export type LocalImportChoiceId = "origin" | "local";
-
-export type LocalImportDetectedSkill = {
-  id: string;
-  title: string;
-  localPath: string;
-  discoveredTargets: DeploymentTargetId[];
-  validationStatus: LocalImportValidationStatus;
-  originSkillId?: string;
-};
-
-export type LocalImportCandidateInfo = {
-  validationStatus: LocalImportValidationStatus;
-  selectedChoiceId: LocalImportChoiceId;
-  choices: LocalImportChoice[];
-  detectedSkills: LocalImportDetectedSkill[];
-};
-
 export type LocalScanSourcePathKind = "target-agent" | "manual";
 
 export type LocalScanGroupStatus =
   | "local-only"
-  | "matched"
-  | "changed"
-  | "missing"
-  | "ambiguous"
-  | "origin-unavailable"
   | "version-conflict"
   | "already-managed";
 
@@ -959,13 +928,6 @@ export type LocalScanSkill = {
   status: LocalScanGroupStatus;
   variants: LocalScanSkillVariant[];
   selectionRequired: boolean;
-  originSkillId?: string;
-};
-
-export type LocalScanOrigin = {
-  canonicalRepo: string;
-  locator: string;
-  previewStatus: "ready" | "failed";
 };
 
 export type LocalScanGroup = {
@@ -975,12 +937,11 @@ export type LocalScanGroup = {
   sourcePaths: LocalScanSourcePath[];
   skills: LocalScanSkill[];
   importChoices: LocalScanImportChoice[];
-  origin?: LocalScanOrigin;
 };
 
 export type ImportGroupCandidate = {
   id: string;
-  provider: "skills" | "local";
+  provider: "skills";
   locator: string;
   canonicalRepo: string;
   aliases: string[];
@@ -1000,7 +961,6 @@ export type ImportGroupCandidate = {
   }>;
   snapshot?: UnifiedSourceSnapshot;
   enrichState: ImportAsyncState;
-  localImport?: LocalImportCandidateInfo;
 };
 
 export type ImportPreviewTarget = {

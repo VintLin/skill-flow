@@ -290,7 +290,6 @@ final class ImportViewModelTests: XCTestCase {
                         localPath: "/Users/me/skills/conflict-a",
                         discoveredTargets: ["codex"],
                         validationStatus: "version-conflict",
-                        originSkillId: nil
                     ),
                     .init(
                         id: "conflict",
@@ -298,7 +297,6 @@ final class ImportViewModelTests: XCTestCase {
                         localPath: "/Users/me/skills/conflict-b",
                         discoveredTargets: ["cursor"],
                         validationStatus: "version-conflict",
-                        originSkillId: nil
                     ),
                 ]
             )
@@ -354,7 +352,7 @@ final class ImportViewModelTests: XCTestCase {
         let item = makeItem(
             provider: "local",
             localImport: .init(
-                validationStatus: "changed",
+                validationStatus: "local-only",
                 selectedChoiceId: nil,
                 choices: [],
                 detectedSkills: [
@@ -363,8 +361,7 @@ final class ImportViewModelTests: XCTestCase {
                         title: "Writer",
                         localPath: "/Users/me/.cursor/skills/writer",
                         discoveredTargets: ["cursor"],
-                        validationStatus: "changed",
-                        originSkillId: nil
+                        validationStatus: "local-only",
                     ),
                 ]
             ),
@@ -390,7 +387,7 @@ final class ImportViewModelTests: XCTestCase {
         let item = makeItem(
             provider: "local",
             localImport: .init(
-                validationStatus: "changed",
+                validationStatus: "local-only",
                 selectedChoiceId: nil,
                 choices: [],
                 detectedSkills: [
@@ -399,8 +396,7 @@ final class ImportViewModelTests: XCTestCase {
                         title: "Writer",
                         localPath: "/Users/me/.cursor/skills/writer",
                         discoveredTargets: ["cursor"],
-                        validationStatus: "changed",
-                        originSkillId: nil
+                        validationStatus: "local-only",
                     ),
                 ]
             ),
@@ -421,7 +417,7 @@ final class ImportViewModelTests: XCTestCase {
         XCTAssertEqual(card.targets.filter(\.isLocked).map(\.id), ["cursor"])
     }
 
-    func testLocalScanCardWithChangedChoiceRemainsImportableWithoutDefaultSelection() {
+    func testLocalScanCardWithLocalChoiceRemainsImportableWithoutDefaultSelection() {
         let item = makeItem(
             id: "local-changed",
             title: "Local Changed",
@@ -429,7 +425,7 @@ final class ImportViewModelTests: XCTestCase {
             canonicalRepo: "local:writer",
             provider: "local",
             localImport: .init(
-                validationStatus: "changed",
+                validationStatus: "local-only",
                 selectedChoiceId: nil,
                 choices: [
                     .init(
@@ -445,8 +441,7 @@ final class ImportViewModelTests: XCTestCase {
                         title: "Writer",
                         localPath: "/Users/me/skills/writer",
                         discoveredTargets: ["codex"],
-                        validationStatus: "changed",
-                        originSkillId: "skills/writer"
+                        validationStatus: "local-only",
                     ),
                 ]
             )
@@ -454,7 +449,7 @@ final class ImportViewModelTests: XCTestCase {
 
         let card = ImportViewModel.card(from: item, locale: locale)
 
-        XCTAssertEqual(card.localValidationStatus, "changed")
+        XCTAssertEqual(card.localValidationStatus, "local-only")
         XCTAssertEqual(card.localChoices.map(\.id), ["local"])
         XCTAssertFalse(card.requiresLocalVariantSelection)
         XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card))

@@ -7,6 +7,7 @@ All notable changes to `skill-flow` will be documented in this file.
 ### Changed
 
 - Local Skill scan bridge responses now expose only `localScanGroups`, and the macOS app consumes their final import-choice shape directly.
+- Local Skill scan now derives groups only from observed local paths and content hashes; legacy Agents lock origin inference is no longer part of scan behavior.
 
 ## v1.6.1 - 2026-08-27
 
