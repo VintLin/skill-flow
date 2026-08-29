@@ -135,7 +135,8 @@ struct UsageScreen: View {
     }
 
     private func heatmap(_ snapshot: UsageSnapshotViewData) -> some View {
-        sectionCard(title: nil) {
+        let activityGrid = UsageHourlyActivityGrid(snapshot.hourlyActivity)
+        return sectionCard(title: nil) {
             HStack(alignment: .firstTextBaseline) {
                 Label("分时活跃", systemImage: "calendar")
                     .font(.system(size: 15, weight: .semibold))
@@ -154,7 +155,6 @@ struct UsageScreen: View {
                             .frame(width: 28, height: UsageHeatmapGeometry.cellSize, alignment: .leading)
                     }
                 }
-                let maximum = snapshot.hourlyActivity.map(\.observedUses).max() ?? 0
                 GeometryReader { proxy in
                     let geometry = UsageHeatmapGeometry(width: proxy.size.width)
                     UsageHeatmapGridLayout(
@@ -166,13 +166,13 @@ struct UsageScreen: View {
                         ForEach(0..<7, id: \.self) { weekday in
                             ForEach(0..<geometry.columnCount, id: \.self) { column in
                                 if column < UsageHeatmapGeometry.hourCount {
-                                    let item = hourlyActivity(snapshot, weekday: weekday, hour: column)
+                                    let observedUses = activityGrid.observedUses(weekday: weekday, hour: column)
                                     RoundedRectangle(cornerRadius: 4)
-                                        .fill(heatmapColor(item.observedUses, maximum: maximum))
-                                        .help("\(weekdayTitle(weekday)) \(String(format: "%02d:00", column)) · \(item.observedUses) 次")
+                                        .fill(heatmapColor(observedUses, maximum: activityGrid.maximum))
+                                        .help("\(weekdayTitle(weekday)) \(String(format: "%02d:00", column)) · \(observedUses) 次")
                                 } else {
                                     RoundedRectangle(cornerRadius: 4)
-                                        .fill(heatmapColor(0, maximum: maximum))
+                                        .fill(heatmapColor(0, maximum: activityGrid.maximum))
                                         .accessibilityHidden(true)
                                 }
                             }
@@ -312,11 +312,6 @@ struct UsageScreen: View {
     private func heatmapLegendColor(_ level: Int) -> Color {
         guard level > 0 else { return AppTheme.pageBackground(for: theme).opacity(0.52) }
         return AppTheme.brand(for: accent, in: theme).opacity(0.18 + 0.12 * Double(level))
-    }
-
-    private func hourlyActivity(_ snapshot: UsageSnapshotViewData, weekday: Int, hour: Int) -> UsageHourlyActivityViewData {
-        snapshot.hourlyActivity.first { $0.weekday == weekday && $0.hour == hour }
-            ?? UsageHourlyActivityViewData(weekday: weekday, hour: hour, observedUses: 0)
     }
 
     private func weekdayTitle(_ weekday: Int) -> String {
