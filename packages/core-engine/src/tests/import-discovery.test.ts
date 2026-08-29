@@ -1,4 +1,8 @@
-import { describe, expect, test, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { RuntimeStore } from "@skill-flow/storage/runtime-store";
 import type {
   ImportRecommendationFeed,
   ImportSearchSnapshot,
@@ -10,12 +14,30 @@ import {
 } from "../services/import-discovery.js";
 
 describe("ImportDiscovery", () => {
+  const temporaryPaths: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(temporaryPaths.splice(0).map((entry) =>
+      fs.rm(entry, { recursive: true, force: true })
+    ));
+  });
+
+  const createDiscovery = (provider: ImportDiscoveryProvider) => {
+    const root = path.join(
+      os.tmpdir(),
+      `skill-flow-import-discovery-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    );
+    temporaryPaths.push(root);
+    const store = new RuntimeStore(root);
+    return { discovery: new ImportDiscovery({ provider, store }), store };
+  };
+
   test("shares an in-flight recommendation refresh and releases it after completion", async () => {
     const pending = deferred<ImportRecommendationFeed>();
     const provider = createProvider({
       refreshRecommendation: vi.fn(() => pending.promise),
     });
-    const discovery = new ImportDiscovery({ provider });
+    const { discovery } = createDiscovery(provider);
 
     const first = discovery.refreshRecommendation("hot");
     const second = discovery.refreshRecommendation("hot");
@@ -35,7 +57,7 @@ describe("ImportDiscovery", () => {
     const provider = createProvider({
       refreshSearch: vi.fn(() => pending.promise),
     });
-    const discovery = new ImportDiscovery({ provider });
+    const { discovery } = createDiscovery(provider);
 
     const first = discovery.refreshSearch(" React ");
     const second = discovery.refreshSearch("react");
@@ -55,7 +77,7 @@ describe("ImportDiscovery", () => {
     const provider = createProvider({
       refreshSource: vi.fn(() => pending.promise),
     });
-    const discovery = new ImportDiscovery({ provider });
+    const { discovery } = createDiscovery(provider);
 
     const first = discovery.refreshSource("acme/skills", {
       enrichSkillIds: ["beta", "alpha", "beta"],
@@ -83,7 +105,7 @@ describe("ImportDiscovery", () => {
     const provider = createProvider({
       refreshSource: vi.fn(async (canonicalRepo) => sourceSnapshot(canonicalRepo)),
     });
-    const discovery = new ImportDiscovery({ provider });
+    const { discovery } = createDiscovery(provider);
 
     const refreshes = [
       discovery.refreshSource("acme/skills", { enrichSkillIds: ["alpha"] }),
@@ -123,9 +145,9 @@ describe("ImportDiscovery", () => {
     const refreshSource = vi.fn()
       .mockRejectedValueOnce(new Error("source failed"))
       .mockResolvedValueOnce(source);
-    const discovery = new ImportDiscovery({
-      provider: createProvider({ refreshRecommendation, refreshSearch, refreshSource }),
-    });
+    const { discovery } = createDiscovery(
+      createProvider({ refreshRecommendation, refreshSearch, refreshSource }),
+    );
 
     await expect(discovery.refreshRecommendation("hot")).rejects.toThrow("recommendation failed");
     await expect(discovery.refreshSearch("react")).rejects.toThrow("search failed");
@@ -137,6 +159,49 @@ describe("ImportDiscovery", () => {
     expect(refreshRecommendation).toHaveBeenCalledTimes(2);
     expect(refreshSearch).toHaveBeenCalledTimes(2);
     expect(refreshSource).toHaveBeenCalledTimes(2);
+  });
+
+  test("returns a fresh search cache entry without calling the provider", async () => {
+    const provider = createProvider();
+    const { discovery, store } = createDiscovery(provider);
+    const cached = searchSnapshot("react", Date.now() + 60_000);
+    await store.writeImportSearchSnapshotEntry("react", cached);
+
+    await expect(discovery.resolveSearch(" React ")).resolves.toEqual(cached);
+    expect(provider.refreshSearch).not.toHaveBeenCalled();
+  });
+
+  test("returns stale search data immediately and refreshes it in the background", async () => {
+    const pending = deferred<ImportSearchSnapshot>();
+    const refreshSearch = vi.fn(() => pending.promise);
+    const provider = createProvider({ refreshSearch });
+    const { discovery, store } = createDiscovery(provider);
+    const stale = searchSnapshot("react", Date.now() - 1);
+    await store.writeImportSearchSnapshotEntry("react", stale);
+
+    await expect(discovery.resolveSearch("react")).resolves.toEqual(stale);
+    expect(provider.refreshSearch).toHaveBeenCalledTimes(1);
+    pending.resolve(searchSnapshot("react"));
+    await refreshSearch.mock.results[0]?.value;
+  });
+
+  test("falls back to a stale source snapshot when required enrichment fails", async () => {
+    const provider = createProvider({
+      refreshSource: vi.fn(async () => { throw new Error("provider unavailable"); }),
+    });
+    const { discovery, store } = createDiscovery(provider);
+    const stale = sourceSnapshot("acme/skills");
+    await store.writeImportSourceSnapshotEntry({
+      canonicalRepo: stale.canonicalRepo,
+      checkedAt: "2026-08-29T00:00:00.000Z",
+      expiresAt: "2026-08-29T00:00:00.001Z",
+      data: stale,
+    });
+
+    await expect(discovery.resolveSource("acme/skills", {
+      enrichSkillIds: ["missing-skill"],
+    })).resolves.toEqual(stale);
+    expect(provider.refreshSource).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -163,11 +228,11 @@ function recommendationFeed(
   };
 }
 
-function searchSnapshot(query: string): ImportSearchSnapshot {
+function searchSnapshot(query: string, expiresAt = Date.now() + 60_000): ImportSearchSnapshot {
   return {
     query,
     checkedAt: "2026-08-29T00:00:00.000Z",
-    expiresAt: "2026-08-29T01:00:00.000Z",
+    expiresAt: new Date(expiresAt).toISOString(),
     hits: [],
     groups: [],
   };

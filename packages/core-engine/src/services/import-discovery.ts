@@ -4,6 +4,9 @@ import type {
   ImportSearchSnapshot,
   UnifiedSourceSnapshot,
 } from "@skill-flow/domain/types";
+import { normalizeImportCanonicalRepo } from "@skill-flow/integration/utils/skills-directory";
+import { isImportDataCacheExpired } from "@skill-flow/storage/import-data-cache";
+import { RuntimeStore } from "@skill-flow/storage/runtime-store";
 
 export type ImportSourceReadOptions = {
   enrichSkillIds?: string[];
@@ -29,7 +32,102 @@ export class ImportDiscovery {
   private readonly searchRefreshes = new Map<string, Promise<ImportSearchSnapshot>>();
   private readonly sourceRefreshes = new Map<string, Promise<UnifiedSourceSnapshot>>();
 
-  constructor(private readonly options: { provider: ImportDiscoveryProvider }) {}
+  constructor(private readonly options: {
+    provider: ImportDiscoveryProvider;
+    store: RuntimeStore;
+  }) {}
+
+  async resolveRecommendation(feedId: ImportRecommendationFeedId): Promise<string[]> {
+    const cached = (await this.options.store.readImportDataCache()).recommendations[feedId];
+    if (cached) {
+      if (!isImportDataCacheExpired(cached)) {
+        return cached.groups;
+      }
+      void this.refreshRecommendation(feedId).catch(() => undefined);
+      return cached.groups;
+    }
+
+    if (feedId === "seed") {
+      return (await this.refreshRecommendation(feedId)).groups;
+    }
+    void this.refreshRecommendation(feedId).catch(() => undefined);
+    return [];
+  }
+
+  async resolveSearch(query: string): Promise<ImportSearchSnapshot> {
+    const normalizedQuery = query.trim().toLowerCase();
+    const cached = (await this.options.store.readImportDataCache()).searches[normalizedQuery];
+    if (cached) {
+      if (!isImportDataCacheExpired(cached)) {
+        return cached;
+      }
+      void this.refreshSearch(query).catch(() => undefined);
+      return cached;
+    }
+    return this.refreshSearch(query);
+  }
+
+  async resolveSource(
+    canonicalRepo: string,
+    options?: Omit<ImportSourceReadOptions, "cachedSnapshot">,
+  ): Promise<UnifiedSourceSnapshot> {
+    const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
+    const cached = (await this.options.store.readImportDataCache()).repos[normalizedRepo];
+    const cachedSnapshot = cached?.providers.skills?.snapshot;
+    const requiresSkillRefresh = cachedSnapshot
+      ? this.snapshotNeedsSkillRefresh(cachedSnapshot, options?.enrichSkillIds ?? [])
+      : false;
+
+    if (cached && cachedSnapshot) {
+      if (!isImportDataCacheExpired(cached) && !requiresSkillRefresh) {
+        return cachedSnapshot;
+      }
+      if (!requiresSkillRefresh) {
+        void this.refreshSource(normalizedRepo).catch(() => undefined);
+        return cachedSnapshot;
+      }
+    }
+
+    try {
+      return await this.refreshSource(normalizedRepo, {
+        ...(options?.enrichSkillIds ? { enrichSkillIds: options.enrichSkillIds } : {}),
+        ...(options?.includeSkillDetails !== undefined
+          ? { includeSkillDetails: options.includeSkillDetails }
+          : {}),
+        ...(options?.refreshTrustInBackground !== undefined
+          ? { refreshTrustInBackground: options.refreshTrustInBackground }
+          : {}),
+        ...(cachedSnapshot ? { cachedSnapshot } : {}),
+      });
+    } catch (error) {
+      if (cachedSnapshot) {
+        return cachedSnapshot;
+      }
+      throw error;
+    }
+  }
+
+  async resolvePreviewSource(canonicalRepo: string): Promise<UnifiedSourceSnapshot> {
+    const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
+    const cached = (await this.options.store.readImportDataCache()).repos[normalizedRepo];
+    const cachedSnapshot = cached?.providers.skills?.snapshot;
+    if (cached && cachedSnapshot && !isImportDataCacheExpired(cached)) {
+      return cachedSnapshot;
+    }
+
+    try {
+      return await this.refreshSource(normalizedRepo, {
+        includeSkillDetails: false,
+        refreshTrustInBackground: false,
+        ...(cachedSnapshot ? { cachedSnapshot } : {}),
+      });
+    } catch (error) {
+      if (cachedSnapshot) {
+        return cachedSnapshot;
+      }
+      throw error;
+    }
+  }
 
   refreshRecommendation(feedId: ImportRecommendationFeedId): Promise<ImportRecommendationFeed> {
     const inFlight = this.recommendationRefreshes.get(feedId);
@@ -93,5 +191,19 @@ export class ImportDiscovery {
         ? "background"
         : "no-background";
     return JSON.stringify([canonicalRepo, enrichSkillIds, readShape, trustShape]);
+  }
+
+  private snapshotNeedsSkillRefresh(
+    snapshot: UnifiedSourceSnapshot,
+    skillIds: readonly string[],
+  ): boolean {
+    return skillIds.some((skillId) => {
+      const skill = snapshot.skills.find((item) => item.skillId === skillId);
+      return !skill || !skill.summary &&
+        skill.weeklyInstalls === undefined &&
+        !skill.firstSeen &&
+        !skill.installedOn?.length &&
+        !skill.audits;
+    });
   }
 }
