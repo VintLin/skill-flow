@@ -1,6 +1,33 @@
 import Foundation
 import Observation
 
+private actor ImportPreviewLimiter {
+    private var availablePermits: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(maxConcurrent: Int) {
+        availablePermits = max(1, maxConcurrent)
+    }
+
+    func acquire() async {
+        if availablePermits > 0 {
+            availablePermits -= 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            availablePermits += 1
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class ImportScreenState {
@@ -22,6 +49,7 @@ final class ImportScreenContainer {
     private let state: DesktopAppState
     private let mainViewModel: MainViewModel
     private let recommendations: [ImportRecommendationEntry]
+    private let previewLimiter = ImportPreviewLimiter(maxConcurrent: 2)
 
     let screenState = ImportScreenState()
 
@@ -84,24 +112,14 @@ final class ImportScreenContainer {
         await mainViewModel.submitImportSearch(locator)
     }
 
-    func prefetchGroupSkillDetailsIfNeeded(_ groupIds: [String]) async {
-        let maxConcurrentPreviews = 2
-        var iterator = groupIds.makeIterator()
-        await withTaskGroup(of: Void.self) { group in
-            for _ in 0..<maxConcurrentPreviews {
-                guard let groupId = iterator.next() else { break }
-                group.addTask { [mainViewModel] in
-                    await mainViewModel.previewImportGroupIfNeeded(groupId)
-                }
-            }
-
-            while await group.next() != nil {
-                guard let groupId = iterator.next() else { continue }
-                group.addTask { [mainViewModel] in
-                    await mainViewModel.previewImportGroupIfNeeded(groupId)
-                }
-            }
+    func prefetchGroupSkillDetailsIfNeeded(_ groupId: String) async {
+        await previewLimiter.acquire()
+        guard !Task.isCancelled else {
+            await previewLimiter.release()
+            return
         }
+        await mainViewModel.previewImportGroupIfNeeded(groupId)
+        await previewLimiter.release()
     }
 
     func importLocalDirectory(_ path: String) async {

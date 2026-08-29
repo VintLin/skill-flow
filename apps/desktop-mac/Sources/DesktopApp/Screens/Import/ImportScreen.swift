@@ -43,11 +43,6 @@ struct ImportScreen: View {
                     VStack(alignment: .leading, spacing: 16) {
                         contentBody(cards: displayedCards, importPhases: importPhases)
                     }
-                    .task(id: Self.skillDetailsPrefetchTaskKey(cards: displayedCards, submittedQuery: submittedQuery)) {
-                        await container.prefetchGroupSkillDetailsIfNeeded(
-                            Self.groupIDsNeedingSkillDetails(for: displayedCards)
-                        )
-                    }
                     .padding(16)
                 }
             }
@@ -101,6 +96,12 @@ struct ImportScreen: View {
             LazyVGrid(columns: gridColumns, spacing: 12) {
                 ForEach(cards) { card in
                     importCard(card, phase: importPhases[card.id])
+                        .task(id: Self.skillDetailsPrefetchTaskKey(for: card)) {
+                            guard Self.needsSkillDetailsPrefetch(for: card) else {
+                                return
+                            }
+                            await container.prefetchGroupSkillDetailsIfNeeded(card.id)
+                        }
                 }
             }
             .frame(maxWidth: gridFrameWidth, alignment: .center)
@@ -368,17 +369,12 @@ extension ImportScreen {
         case spinner
     }
 
-    static func groupIDsNeedingSkillDetails(for cards: [ImportViewModel.Card]) -> [String] {
-        cards.compactMap { card in
-            guard card.provider != "local", card.needsSkillDetails else {
-                return nil
-            }
-            return card.id
-        }
+    static func needsSkillDetailsPrefetch(for card: ImportViewModel.Card) -> Bool {
+        card.provider != "local" && card.needsSkillDetails
     }
 
-    static func skillDetailsPrefetchTaskKey(cards: [ImportViewModel.Card], submittedQuery: String) -> String {
-        ([submittedQuery] + groupIDsNeedingSkillDetails(for: cards)).joined(separator: "|")
+    static func skillDetailsPrefetchTaskKey(for card: ImportViewModel.Card) -> String {
+        "\(card.id)|\(card.locator)|\(needsSkillDetailsPrefetch(for: card))"
     }
 
     static func loadingPresentationStyle(

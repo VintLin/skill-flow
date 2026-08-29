@@ -1459,11 +1459,23 @@ final class ImportScreenContainerTests: XCTestCase {
             ),
         ]
 
-        XCTAssertEqual(ImportScreen.groupIDsNeedingSkillDetails(for: cards), ["remote-loading"])
-        XCTAssertEqual(
-            ImportScreen.skillDetailsPrefetchTaskKey(cards: cards, submittedQuery: "browse"),
-            "browse|remote-loading"
+        XCTAssertTrue(ImportScreen.needsSkillDetailsPrefetch(for: cards[0]))
+        XCTAssertFalse(ImportScreen.needsSkillDetailsPrefetch(for: cards[1]))
+        XCTAssertFalse(ImportScreen.needsSkillDetailsPrefetch(for: cards[2]))
+        XCTAssertNotEqual(
+            ImportScreen.skillDetailsPrefetchTaskKey(for: cards[0]),
+            ImportScreen.skillDetailsPrefetchTaskKey(for: cards[1])
         )
+    }
+
+    func testImportSkillDetailPrefetchIsScopedToLazyGridCards() throws {
+        let source = try String(
+            contentsOf: sourceRoot().appendingPathComponent("Sources/DesktopApp/Screens/Import/ImportScreen.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("importCard(card, phase: importPhases[card.id])\n                        .task"))
+        XCTAssertFalse(source.contains("skillDetailsPrefetchTaskKey(cards:"))
     }
 
     func testImportHeaderUsesTwoModesAndOneLocalImportAction() throws {
@@ -2615,12 +2627,11 @@ final class ImportScreenContainerTests: XCTestCase {
             makeItem(id: "owner/repo-3", title: "Repo 3", locator: "owner/repo-3"),
         ]
 
-        await container.prefetchGroupSkillDetailsIfNeeded([
-            "owner/repo-0",
-            "owner/repo-1",
-            "owner/repo-2",
-            "owner/repo-3",
-        ])
+        async let first: Void = container.prefetchGroupSkillDetailsIfNeeded("owner/repo-0")
+        async let second: Void = container.prefetchGroupSkillDetailsIfNeeded("owner/repo-1")
+        async let third: Void = container.prefetchGroupSkillDetailsIfNeeded("owner/repo-2")
+        async let fourth: Void = container.prefetchGroupSkillDetailsIfNeeded("owner/repo-3")
+        _ = await (first, second, third, fourth)
 
         let previewLocators = await query.recordedPreviewLocators().sorted()
         let maxConcurrentPreviewCount = await query.recordedMaxConcurrentPreviewCount()
