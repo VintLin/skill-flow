@@ -292,6 +292,49 @@ final class DetailViewModelTests: XCTestCase {
         XCTAssertNotEqual(base, detailRevision(fileTree: [baseTree], groupDocuments: [baseDocument], targets: [baseTarget], skills: [changedSkill]))
     }
 
+    func testFileTreeRendererPreservesAsciiBranches() {
+        let tree = [
+            FileTreeItem(
+                id: "alpha",
+                title: "alpha",
+                path: "/alpha",
+                isDirectory: true,
+                isSkillRoot: false,
+                isSkillDocument: false,
+                skillId: nil,
+                children: [
+                    FileTreeItem(
+                        id: "alpha/docs",
+                        title: "docs",
+                        path: "/alpha/docs",
+                        isDirectory: true,
+                        isSkillRoot: false,
+                        isSkillDocument: false,
+                        skillId: nil,
+                        children: [
+                            fileTreeFile(id: "alpha/docs/a.md", title: "a.md"),
+                            fileTreeFile(id: "alpha/docs/b.md", title: "b.md"),
+                        ]
+                    ),
+                    fileTreeFile(id: "alpha/README.md", title: "README.md"),
+                ]
+            ),
+            fileTreeFile(id: "LICENSE", title: "LICENSE"),
+        ]
+
+        XCTAssertEqual(
+            FileTreeRenderer.render(tree),
+            """
+            alpha
+            |-- docs
+            |   |-- a.md
+            |   `-- b.md
+            `-- README.md
+            LICENSE
+            """
+        )
+    }
+
     func testSnapshotStoresOnlyDescriptorDrivenGroupDocuments() {
         let descriptor = DocumentDescriptor(
             id: "readme",
@@ -405,6 +448,19 @@ final class DetailViewModelTests: XCTestCase {
             documentContent: "",
             isEnabled: true,
             warningCount: 0
+        )
+    }
+
+    private func fileTreeFile(id: String, title: String) -> FileTreeItem {
+        FileTreeItem(
+            id: id,
+            title: title,
+            path: "/\(id)",
+            isDirectory: false,
+            isSkillRoot: false,
+            isSkillDocument: title.lowercased().hasSuffix(".md"),
+            skillId: nil,
+            children: []
         )
     }
 }

@@ -316,7 +316,7 @@ final class DetailLogic {
             sourceFacts: sourceFacts,
             deploymentFacts: deploymentFacts,
             fileTree: fileTree,
-            groupDocuments: placeholderDocumentTabs(groupDocumentDescriptors),
+            groupDocuments: groupDocumentDescriptors.map(\.placeholderTab),
             targets: targets,
             skills: skills
         )
@@ -340,7 +340,7 @@ final class DetailLogic {
                     title: descriptor.title,
                     path: descriptor.path,
                     metadata: descriptor.metadata,
-                    content: Self.renderFileTree(preparedContent.fileTree),
+                    content: FileTreeRenderer.render(preparedContent.fileTree),
                     renderCacheKey: descriptor.renderCacheKey,
                     externalURL: descriptor.externalURL
                 )
@@ -780,10 +780,6 @@ final class DetailLogic {
         if normalizedKind == "collection" { return localizedWarmup("source.author.collection") }
         if let handle = authorHandle(from: locator) { return handle }
         return normalizedKind
-    }
-
-    nonisolated func placeholderDocumentTabs(_ descriptors: [DocumentDescriptor]) -> [DocumentTab] {
-        descriptors.map(\.placeholderTab)
     }
 
     nonisolated private static func sortedDetailSkills(_ skills: [DetailSkill]) -> [DetailSkill] {
@@ -1271,59 +1267,6 @@ final class DetailLogic {
             return compareRootDocumentNames(lhs.title, rhs.title)
         }
         return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-    }
-
-    nonisolated private static func renderFileTree(_ items: [FileTreeItem]) -> String {
-        renderFileTreeLines(items).map { "\($0.prefix)\($0.title)" }.joined(separator: "\n")
-    }
-
-    nonisolated private static func renderFileTreeLines(_ items: [FileTreeItem]) -> [FileTreeLine] {
-        var lines: [FileTreeLine] = []
-        for (index, item) in items.enumerated() {
-            lines.append(
-                FileTreeLine(
-                    id: item.id,
-                    depth: 0,
-                    prefix: "",
-                    title: item.title,
-                    isFile: !item.isDirectory
-                )
-            )
-            appendRenderedFileTreeLines(
-                from: item.children,
-                depth: 1,
-                ancestry: [index == items.count - 1],
-                into: &lines
-            )
-        }
-        return lines
-    }
-
-    nonisolated private static func appendRenderedFileTreeLines(
-        from items: [FileTreeItem],
-        depth: Int,
-        ancestry: [Bool],
-        into lines: inout [FileTreeLine]
-    ) {
-        for (index, item) in items.enumerated() {
-            let isLast = index == items.count - 1
-            let branch = ancestry.dropLast().map { $0 ? "    " : "|   " }.joined() + (isLast ? "`-- " : "|-- ")
-            lines.append(
-                FileTreeLine(
-                    id: item.id,
-                    depth: depth,
-                    prefix: branch,
-                    title: item.title,
-                    isFile: !item.isDirectory
-                )
-            )
-            appendRenderedFileTreeLines(
-                from: item.children,
-                depth: depth + 1,
-                ancestry: ancestry + [isLast],
-                into: &lines
-            )
-        }
     }
 
     nonisolated private static func enrichDocumentTabs(

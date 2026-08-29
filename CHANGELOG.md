@@ -20,6 +20,7 @@ All notable changes to `skill-flow` will be documented in this file.
 - Desktop detail titles now use the production title policy directly, including polluted shell-output rejection and normalized repository or ClawHub fallbacks.
 - Desktop document Tab/Descriptor conversion now lives on the document models instead of duplicated app-wide view-model helpers.
 - Desktop detail caching now uses one comprehensive revision policy, including nested stats, file-tree, document, target, and Skill presentation changes.
+- Desktop file-tree documents now render directly from tree items without unused line models or placeholder conversion adapters.
 
 ## v1.6.1 - 2026-08-27
 

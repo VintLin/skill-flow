@@ -642,14 +642,6 @@ struct DetailTarget: Identifiable, Equatable, Sendable {
     let isEnabled: Bool
 }
 
-struct FileTreeLine: Identifiable, Sendable {
-    let id: String
-    let depth: Int
-    let prefix: String
-    let title: String
-    let isFile: Bool
-}
-
 struct FileTreeItem: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
