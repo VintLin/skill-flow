@@ -536,11 +536,7 @@ export class SkillFlowApp {
       store: {
         readPreferences: async () => (await this.readRuntimeAuthorityView()).preferences,
         readCollections: () => this.readCollectionsForRuntime(),
-        writePreferences: async (preferences) => {
-          await this.writePreferences(preferences);
-        },
       },
-      recentProjectService: this.recentProjectService,
       doctorService: this.doctorService,
       workflowService: this.workflowService,
       getAvailableTargets: () => this.getAvailableTargets(),
@@ -4379,11 +4375,8 @@ export class SkillFlowApp {
   ): Promise<
     Result<{
       availableTargets: DeploymentTargetId[];
-      manifest: ManifestFile;
-      lockFile: LockFile;
       summaries: WorkflowSummary[];
       initialDrafts: Record<string, DraftBinding>;
-      audit: DoctorReport;
       importedSourceIds: string[];
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
@@ -4419,11 +4412,8 @@ export class SkillFlowApp {
   ): Promise<
     Result<{
       availableTargets: DeploymentTargetId[];
-      manifest: ManifestFile;
-      lockFile: LockFile;
       summaries: WorkflowSummary[];
       initialDrafts: Record<string, DraftBinding>;
-      audit: DoctorReport;
       importedSourceIds: string[];
       pinnedSourceIds: string[];
       recentProjects: RecentProject[];
@@ -4444,17 +4434,10 @@ export class SkillFlowApp {
       boot.data.manifest,
       boot.data.lockFile,
     );
-    if (process.env.VITEST !== "true") {
-      void this.refreshUsageObservations({ trigger: "bootstrap" }).catch(() => undefined);
-    }
-
     return ok({
       availableTargets: boot.data.availableTargets,
-      manifest: boot.data.manifest,
-      lockFile: boot.data.lockFile,
       summaries: boot.data.summaries,
       initialDrafts: boot.data.initialDrafts,
-      audit: boot.data.audit,
       importedSourceIds: [],
       pinnedSourceIds: preferences.pinnedSourceIds,
       recentProjects: preferences.recentProjects,

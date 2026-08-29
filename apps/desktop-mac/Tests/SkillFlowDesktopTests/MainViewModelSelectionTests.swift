@@ -80,6 +80,23 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(model.isSkillEnabled("alpha-b", sourceId: "alpha"))
     }
 
+    func testBootstrapSchedulesUsageRefreshAfterTheWorkspaceBecomesReady() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        let appState = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(appState)
+
+        await model.bootstrap()
+
+        guard case .ready = model.loadState else {
+            return XCTFail("Expected workspace to become ready before background usage refresh")
+        }
+        try await fixture.waitForLoggedRequest(command: "refresh-usage")
+        let refreshRequest = fixture.loggedRequests().last { $0.command == "refresh-usage" }
+        XCTAssertEqual(refreshRequest?.payload?["trigger"]?.value as? String, "bootstrap")
+    }
+
     func testHomeStatusAndSourceFilterDefaultsAreAvailable() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline

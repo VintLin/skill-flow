@@ -120,22 +120,9 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.data).toHaveProperty("customTargets");
     expect(response.data).toHaveProperty("agentDisplayOrder");
     expect(response.data).toHaveProperty("capabilities", { importDraftV2: true });
-    expect(response.data).toMatchObject({
-      manifest: {
-        schemaVersion: 2,
-        bindings: {
-          [added.data.manifest.id]: expect.objectContaining({
-            sourceId: added.data.manifest.id,
-            enabledTargets: expect.any(Array),
-          }),
-        },
-      },
-      lockFile: {
-        schemaVersion: 2,
-        projections: expect.any(Array),
-      },
-    });
-    expect((response.data as any).lockFile.deployments).toBeUndefined();
+    expect(response.data).not.toHaveProperty("manifest");
+    expect(response.data).not.toHaveProperty("lockFile");
+    expect(response.data).not.toHaveProperty("audit");
   });
 
   test("save-settings preserves custom target path strings in runtime preferences", async () => {

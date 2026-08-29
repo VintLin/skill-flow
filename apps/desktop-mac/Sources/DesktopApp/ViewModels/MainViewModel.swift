@@ -1104,6 +1104,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             stateManager.setHealthStatus(warnings.isEmpty ? .healthy : .warnings)
             await migrateLegacyPinnedSourceIdsIfNeeded()
             Task { [weak self] in await self?.importLogic.loadImportPageIfNeeded() }
+            Task { [weak self] in
+                guard let self else { return }
+                _ = try? await self.usageQuery.refreshUsage(trigger: "bootstrap")
+            }
         } catch {
             stateManager.setLoadState(.failed(error.localizedDescription))
             stateManager.setHealthStatus(.error)

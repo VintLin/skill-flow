@@ -23,10 +23,6 @@ type ConfigCoordinatorDeps = {
   store: {
     readPreferences(): Promise<PreferencesFile>;
     readCollections(): Promise<CollectionsFile>;
-    writePreferences(preferences: PreferencesFile): Promise<void>;
-  };
-  recentProjectService: {
-    listRecentProjects(): Promise<RecentProject[]>;
   };
   doctorService: {
     run(
@@ -155,15 +151,6 @@ export class ConfigCoordinator {
       failedSources: [],
     };
 
-    // Refresh recent projects and reconcile selected scope against them.
-    // This is preference-layer state, not part of manifest/lock global config.
-    const recentProjects = await this.deps.recentProjectService.listRecentProjects().catch(() => []);
-    await this.deps.store.writePreferences({
-      ...currentPreferences,
-      recentProjects,
-    });
-    const reconciledPreferences = await this.deps.store.readPreferences();
-
     onEvent?.({
       phase: "done",
       level: "success",
@@ -178,9 +165,9 @@ export class ConfigCoordinator {
       initialDrafts: buildInitialDrafts(summaries),
       audit: audit.data,
       bootStatus,
-      recentProjects: reconciledPreferences.recentProjects,
-      selectedProjectScope: reconciledPreferences.selectedProjectScope,
-      projectDrafts: projectDraftsFromPreferences(reconciledPreferences),
+      recentProjects: currentPreferences.recentProjects,
+      selectedProjectScope: currentPreferences.selectedProjectScope,
+      projectDrafts: projectDraftsFromPreferences(currentPreferences),
     }, warnings);
   }
 }

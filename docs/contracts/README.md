@@ -52,6 +52,8 @@ save-settings
 
 Bridge changes are external changes. Update parser tests, CLI bridge behavior, desktop bridge models, and release/user docs when changing this surface.
 
+`bootstrap` 返回桌面首屏所需的读取模型：工作流摘要、草稿、项目范围、设置与缓存的卡片补充数据。权威状态 `manifest`、`lockFile` 和诊断报告不进入首屏响应，避免随技能清单规模放大启动负载；需要权威状态或诊断时应使用对应的查询或命令。
+
 Desktop helper execution is always time-bounded. Ordinary commands use 60
 seconds, import/add commands use 5 minutes, and managed update scales by the
 number of explicitly selected sources at 5 minutes each with a 15-minute

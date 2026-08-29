@@ -73,16 +73,16 @@ describe.sequential("project scoped drafts", () => {
   });
 
   test("bootstrapWorkspaceState returns recent projects and selected scope", async () => {
-    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([
-      {
+    const app = new SkillFlowApp();
+    await updatePreferences(app, (preferences) => ({
+      ...preferences,
+      recentProjects: [{
         projectId: "acme/skill-flow",
         title: "Skill Flow",
         lastActivityAt: "2026-03-30T00:00:00.000Z",
         tools: ["codex"],
-      },
-    ]);
-
-    const app = new SkillFlowApp();
+      }],
+    }));
 
     const result = await app.bootstrapWorkspaceState();
 
@@ -141,8 +141,10 @@ describe.sequential("project scoped drafts", () => {
     ]);
   });
 
-  test("bootstrapWorkspaceState falls back to global when project validation removes the selected project", async () => {
-    vi.spyOn(RecentProjectService.prototype, "listRecentProjects").mockResolvedValue([]);
+  test("bootstrapWorkspaceState preserves the cached project scope without rescanning observations", async () => {
+    const listRecentProjects = vi
+      .spyOn(RecentProjectService.prototype, "listRecentProjects")
+      .mockResolvedValue([]);
 
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
@@ -179,8 +181,9 @@ describe.sequential("project scoped drafts", () => {
       return;
     }
 
-    expect(result.data.selectedProjectScope).toEqual({ kind: "global" });
-    expect(result.data.recentProjects).toEqual([]);
+    expect(result.data.selectedProjectScope).toEqual({ kind: "project", projectId: "repo-a" });
+    expect(result.data.recentProjects.map((project) => project.projectId)).toEqual(["repo-a"]);
+    expect(listRecentProjects).not.toHaveBeenCalled();
   });
 
   test("applyDraft(project) only updates the project layer", async () => {

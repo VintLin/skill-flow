@@ -197,10 +197,6 @@ describe("ConfigCoordinator", () => {
       store: {
         readPreferences: vi.fn().mockResolvedValue(preferences),
         readCollections: vi.fn().mockResolvedValue(emptyCollections),
-        writePreferences: vi.fn().mockResolvedValue(undefined),
-      },
-      recentProjectService: {
-        listRecentProjects: vi.fn().mockResolvedValue([]),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -237,8 +233,7 @@ describe("ConfigCoordinator", () => {
   });
 
   test("boots config and derives initial drafts from normalized summaries", async () => {
-    const initialPreferences = createPreferences();
-    const refreshedPreferences = createPreferences({
+    const cachedPreferences = createPreferences({
       recentProjects: [
         {
           projectId: "acme/skill-flow",
@@ -252,15 +247,8 @@ describe("ConfigCoordinator", () => {
     const getSummaries = vi.fn().mockReturnValue(summaries);
     const coordinator = new ConfigCoordinator({
       store: {
-        readPreferences: vi
-          .fn()
-          .mockResolvedValueOnce(initialPreferences)
-          .mockResolvedValueOnce(refreshedPreferences),
+        readPreferences: vi.fn().mockResolvedValue(cachedPreferences),
         readCollections: vi.fn().mockResolvedValue(emptyCollections),
-        writePreferences: vi.fn().mockResolvedValue(undefined),
-      },
-      recentProjectService: {
-        listRecentProjects: vi.fn().mockResolvedValue(refreshedPreferences.recentProjects),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -310,16 +298,58 @@ describe("ConfigCoordinator", () => {
     expect(getSummaries).toHaveBeenCalledWith(manifest, lockFile, audit, emptyCollections);
   });
 
+  test("boots from cached recent projects without scanning agent observations", async () => {
+    const cachedPreferences = createPreferences({
+      recentProjects: [
+        {
+          projectId: "cached/project",
+          title: "Cached Project",
+          lastActivityAt: "2026-08-29T00:00:00.000Z",
+          tools: ["codex"],
+        },
+      ],
+      selectedProjectScope: { kind: "project", projectId: "cached/project" },
+    });
+    const coordinator = new ConfigCoordinator({
+      store: {
+        readPreferences: vi.fn().mockResolvedValue(cachedPreferences),
+        readCollections: vi.fn().mockResolvedValue(emptyCollections),
+      },
+      doctorService: {
+        run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
+      },
+      workflowService: {
+        getSummaries: vi.fn().mockReturnValue(summaries),
+      },
+      getAvailableTargets: vi.fn().mockResolvedValue(["codex"]),
+      pruneMissingCheckouts: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { removedSourceIds: [] },
+        warnings: [],
+        errors: [],
+      }),
+      getConfigData: vi.fn().mockResolvedValue({
+        ok: true,
+        data: { manifest, lockFile, summaries },
+        warnings: [],
+        errors: [],
+      }),
+    });
+
+    const result = await coordinator.bootstrapWorkspaceState();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.recentProjects).toEqual(cachedPreferences.recentProjects);
+    expect(result.data.selectedProjectScope).toEqual(cachedPreferences.selectedProjectScope);
+  });
+
   test("derives all-mode initial draft selections from enabled target leaf ids", async () => {
     const preferences = createPreferences();
     const coordinator = new ConfigCoordinator({
       store: {
         readPreferences: vi.fn().mockResolvedValue(preferences),
         readCollections: vi.fn().mockResolvedValue(emptyCollections),
-        writePreferences: vi.fn().mockResolvedValue(undefined),
-      },
-      recentProjectService: {
-        listRecentProjects: vi.fn().mockResolvedValue([]),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -361,10 +391,6 @@ describe("ConfigCoordinator", () => {
       store: {
         readPreferences: vi.fn().mockResolvedValue(preferences),
         readCollections: vi.fn().mockResolvedValue(emptyCollections),
-        writePreferences: vi.fn().mockResolvedValue(undefined),
-      },
-      recentProjectService: {
-        listRecentProjects: vi.fn().mockResolvedValue([]),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -412,10 +438,6 @@ describe("ConfigCoordinator", () => {
       store: {
         readPreferences: vi.fn().mockResolvedValue(preferences),
         readCollections: vi.fn().mockResolvedValue(emptyCollections),
-        writePreferences: vi.fn().mockResolvedValue(undefined),
-      },
-      recentProjectService: {
-        listRecentProjects: vi.fn().mockResolvedValue([]),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
@@ -481,10 +503,6 @@ describe("ConfigCoordinator", () => {
       store: {
         readPreferences: vi.fn().mockResolvedValue(preferences),
         readCollections: vi.fn().mockResolvedValue(emptyCollections),
-        writePreferences: vi.fn().mockResolvedValue(undefined),
-      },
-      recentProjectService: {
-        listRecentProjects: vi.fn().mockResolvedValue([]),
       },
       doctorService: {
         run: vi.fn().mockResolvedValue({ ok: true, data: audit, warnings: [], errors: [] }),
