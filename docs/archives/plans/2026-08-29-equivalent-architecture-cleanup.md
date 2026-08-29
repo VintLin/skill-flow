@@ -1,7 +1,7 @@
 # Equivalent Architecture Cleanup
 
 Date: 2026-08-29
-Status: Active
+Status: Completed
 
 ## Objective
 
@@ -79,3 +79,18 @@ Verification:
 ## Commit discipline
 
 每个独立逻辑单元单独提交，不混合行为等价重构、文档归档和机械格式化。若测试证明行为发生变化，立即停止该项并恢复到现有语义。
+
+## Result
+
+- Desktop 删除零引用状态、旧 Update All 直连路径、no-op callback 与不可达兼容分支。
+- TypeScript 统一 skill frontmatter parser，删除零 caller alias，并收窄未持久化的 preparation cache 类型字段。
+- recovery lifecycle 由显式 transaction handle 约束；journal schema、执行顺序与错误结果保持不变。
+- 已完成或过时的 specs、plans、issues 与审计记录已归档，当前索引只保留有效事实源。
+
+Verification:
+
+- `npm run build`
+- `npm test`（67 files，710 tests）
+- `swift build --package-path apps/desktop-mac`
+- Desktop 相关测试（218 tests）
+- `codegraph sync` / `codegraph status`
