@@ -1124,7 +1124,7 @@ final class DetailLogic {
         }
 
         return [
-            fileTreeItems(from: root, parentPath: rootName, skillReferencesByPath: Dictionary(uniqueKeysWithValues: skills.map { ($0.folderPath, $0) }))
+            fileTreeItems(from: root, parentPath: rootName)
         ]
     }
 
@@ -1143,8 +1143,7 @@ final class DetailLogic {
 
     nonisolated private static func fileTreeItems(
         from node: FileTreeNode,
-        parentPath: String,
-        skillReferencesByPath _: [String: FileTreeSkillReference]
+        parentPath: String
     ) -> FileTreeItem {
         let itemPath = parentPath
         let children = node.children.values
@@ -1157,8 +1156,7 @@ final class DetailLogic {
             .map { child in
                 fileTreeItems(
                     from: child,
-                    parentPath: "\(parentPath)/\(child.name)",
-                    skillReferencesByPath: [:]
+                    parentPath: "\(parentPath)/\(child.name)"
                 )
             }
         return FileTreeItem(

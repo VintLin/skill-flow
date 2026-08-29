@@ -262,8 +262,7 @@ struct DetailScreen: View {
             if showingGroupOverview {
                 detailGroupHeader(
                     detail: detail,
-                    fallbackTitle: detailFallbackTitle(sourceId: groupId, fallbackRow: fallbackRow),
-                    fallbackOriginLabel: fallbackRow?.locator
+                    fallbackTitle: detailFallbackTitle(sourceId: groupId, fallbackRow: fallbackRow)
                 )
             } else {
                 detailSkillHeader(skill: selectedSkill, fallbackGroupId: groupId)
@@ -272,7 +271,7 @@ struct DetailScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if showingGroupOverview {
-                        detailGroupOverview(groupId: groupId, detail: detail, fallbackRow: fallbackRow)
+                        detailGroupOverview(groupId: groupId, detail: detail)
                     } else if isSkillLoading {
                         detailSkillLoadingPlaceholder()
                     } else if let selectedSkill {
@@ -304,8 +303,7 @@ struct DetailScreen: View {
 
     private func detailGroupOverview(
         groupId: String,
-        detail: DetailViewModel?,
-        fallbackRow _: SourceRow?
+        detail: DetailViewModel?
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             detailTagRail(groupId: groupId)
@@ -380,11 +378,9 @@ struct DetailScreen: View {
 
     private func detailGroupHeader(
         detail: DetailViewModel?,
-        fallbackTitle: String,
-        fallbackOriginLabel: String?
+        fallbackTitle: String
     ) -> some View {
         let isUpdating = container.isUpdatingCurrentGroup
-        _ = fallbackOriginLabel
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
