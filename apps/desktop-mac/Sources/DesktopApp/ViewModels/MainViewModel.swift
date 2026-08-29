@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import CryptoKit
 
 @MainActor
 @Observable
@@ -10,61 +9,12 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         let sourceId: String
     }
 
-    private struct ParsedUpdateItem {
-        let sourceId: String?
-        let changed: Bool
-        let addedLeafIds: [String]
-        let removedLeafIds: [String]
-        let invalidatedLeafIds: [String]
-
-        var hasActualChange: Bool {
-            changed
-                || !addedLeafIds.isEmpty
-                || !removedLeafIds.isEmpty
-                || !invalidatedLeafIds.isEmpty
-        }
-
-        var summaryBucket: UpdateSummaryBucket {
-            if !invalidatedLeafIds.isEmpty {
-                return .needsReview
-            }
-            if changed || !addedLeafIds.isEmpty || !removedLeafIds.isEmpty {
-                return .updated
-            }
-            return .upToDate
-        }
-    }
-
-    private enum UpdateSummaryBucket {
-        case updated
-        case upToDate
-        case needsReview
-    }
-
     enum Page: Equatable {
         case home
         case importPage
         case usage
         case settings
         case detail(sourceId: String)
-    }
-
-    private struct FileTreeNode: Sendable {
-        var name: String
-        var isFile: Bool
-        var children: [String: FileTreeNode]
-
-        init(name: String, isFile: Bool = false, children: [String: FileTreeNode] = [:]) {
-            self.name = name
-            self.isFile = isFile
-            self.children = children
-        }
-    }
-
-    private struct FileTreeSkillReference: Sendable {
-        let skillId: String
-        let folderPath: String
-        let displayTitle: String
     }
 
     private let stateManager: AppStateManager
@@ -298,10 +248,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     func showImportInProgressToast() {
         showToast(style: .neutral, text: localizedText("toast.import.in_progress"))
-    }
-
-    func showImportAnotherRunningToast() {
-        showToast(style: .neutral, text: localizedText("toast.operation.already_queued"))
     }
 
     func showOperationAlreadyQueuedToast() {
@@ -1270,14 +1216,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         )
     }
 
-    func uninstallSelectedSource() async {
-        guard let selectedSourceId else {
-            showToast(style: .error, text: localizedText("toast.uninstall.no_group_selected"))
-            return
-        }
-        await deleteSource(sourceId: selectedSourceId)
-    }
-
     func deleteSource(sourceId: String) async {
         do {
             try await sourceManagement.deleteSource(sourceId: sourceId)
@@ -1427,12 +1365,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             drafts: projectionDrafts(),
             sourceId: sourceId
         )
-    }
-
-    func formattedCount(_ value: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
     func relativeUpdateLabel(_ updatedAt: String) -> String {
@@ -1968,18 +1900,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             normalized.append(trimmed)
         }
         return normalized
-    }
-
-    private func groupLabel(for sourceId: String) -> String {
-        sourceManagement.summary(for: sourceId)?.sourceDisplayName ?? sourceId
-    }
-
-    private func leafLabel(for leafId: String, sourceId: String) -> String {
-        sourceManagement.summary(for: sourceId)?.leafs.first(where: { $0.id == leafId })?.name ?? leafId
-    }
-
-    private func targetLabel(for targetId: String) -> String {
-        AgentDisplayCatalog.label(for: targetId, customAgents: routeState?.settings.customAgents ?? [])
     }
 
     private func localizedText(_ key: String, _ arguments: String...) -> PresentationText {
