@@ -4,7 +4,16 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.2 - 2026-08-29
+
 ### Changed
+
+- Updated the CLI and all internal workspace packages from `1.6.1` to `1.6.2`.
+- Reduced desktop launch and home-screen work through cached workspace bootstrap, shared card projections, precomputed sorting, bounded geometry tracking, and cached visual metadata.
+- Parallelized independent update checks and import preparation with bounded concurrency while preserving serial recovery-journal commits.
+- Simplified import discovery, runtime mutation, desktop parsing, detail enrichment, and persisted cache boundaries by removing superseded compatibility paths and dead state.
+- Reduced Detail, Usage, Settings, and Import rendering work through bounded revisions, indexed heatmap activity, localized hover state, and visible-card prefetching.
+- Skill and target toggles now finish immediately after Apply completes instead of enforcing an artificial delay.
 
 - Local Skill scan bridge responses now expose only `localScanGroups`, and the macOS app consumes their final import-choice shape directly.
 - Local Skill scan now derives groups only from observed local paths and content hashes; legacy Agents lock origin inference is no longer part of scan behavior.
@@ -28,6 +37,7 @@ All notable changes to `skill-flow` will be documented in this file.
 ### Fixed
 
 - Desktop detail links now reject sibling directories whose names merely share the managed repository path prefix.
+- Detail views now publish completion when background warmup finishes, preventing stale loading state without refreshing Home.
 
 ## v1.6.1 - 2026-08-27
 
