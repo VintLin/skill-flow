@@ -37,14 +37,26 @@ export type RecoveryResult = {
   kind?: RecoveryOperationKind;
 };
 
+export type OperationRecoveryTransaction = {
+  readonly checkoutBackupPath: string;
+  prepareTargetMutations(actions: DeploymentAction[]): Promise<void>;
+  prepareManagedSymlinkMutation(
+    targetPath: string,
+    sourcePath: string,
+    ownership: { sourceId: string; target: DeploymentTargetId },
+  ): Promise<void>;
+  checkpoint(): Promise<void>;
+  commit(): Promise<void>;
+};
+
 type RecoveryTargetSnapshotDraft = Omit<
   RecoveryTargetSnapshot,
   "mutationFingerprint" | "allowedMutationFingerprints"
 >;
 
 /**
- * Owns the durable recovery transaction for one managed source operation.
- * Callers only begin, checkpoint after filesystem mutation, and commit.
+ * Creates one durable transaction at a time and retains crash recovery when
+ * no in-memory transaction object survives.
  */
 export class OperationRecoveryService {
   private readonly journalStore: RecoveryJournalStore;
@@ -59,7 +71,7 @@ export class OperationRecoveryService {
     sourceKind: SourceKind;
     checkoutPath?: string;
     preparationId?: string;
-  }): Promise<{ checkoutBackupPath: string }> {
+  }): Promise<OperationRecoveryTransaction> {
     const existing = await this.journalStore.read();
     if (existing) {
       throw new Error(
@@ -120,11 +132,21 @@ export class OperationRecoveryService {
     } else {
       await this.journalStore.write({ ...journalBase, kind: "update" });
     }
-    return { checkoutBackupPath };
+    return {
+      checkoutBackupPath,
+      prepareTargetMutations: (actions) => this.prepareTargetMutations(transactionId, actions),
+      prepareManagedSymlinkMutation: (targetPath, sourcePath, ownership) =>
+        this.prepareManagedSymlinkMutation(transactionId, targetPath, sourcePath, ownership),
+      checkpoint: () => this.checkpoint(transactionId),
+      commit: () => this.commit(transactionId),
+    };
   }
 
-  async prepareTargetMutations(actions: DeploymentAction[]): Promise<void> {
-    const journal = await this.requireJournal();
+  private async prepareTargetMutations(
+    transactionId: string,
+    actions: DeploymentAction[],
+  ): Promise<void> {
+    const journal = await this.requireJournal(transactionId);
     const knownTargets = new Map(journal.targets.map((target) => [path.resolve(target.path), target]));
     for (const action of actions.filter((candidate) =>
       candidate.kind !== "noop"
@@ -195,12 +217,13 @@ export class OperationRecoveryService {
     });
   }
 
-  async prepareManagedSymlinkMutation(
+  private async prepareManagedSymlinkMutation(
+    transactionId: string,
     targetPath: string,
     sourcePath: string,
     ownership: { sourceId: string; target: DeploymentTargetId },
   ): Promise<void> {
-    const journal = await this.requireJournal();
+    const journal = await this.requireJournal(transactionId);
     if (journal.targets.some((target) => path.resolve(target.path) === path.resolve(targetPath))) {
       return;
     }
@@ -224,16 +247,16 @@ export class OperationRecoveryService {
     });
   }
 
-  async checkpoint(): Promise<void> {
-    const journal = await this.requireJournal();
+  private async checkpoint(transactionId: string): Promise<void> {
+    const journal = await this.requireJournal(transactionId);
     const conflict = await this.findTargetConflict(journal);
     if (conflict) {
       throw new Error(`Managed target '${conflict}' changed outside the active operation.`);
     }
   }
 
-  async commit(): Promise<void> {
-    const journal = await this.requireJournal();
+  private async commit(transactionId: string): Promise<void> {
+    const journal = await this.requireJournal(transactionId);
     await this.journalStore.clear(journal);
   }
 
@@ -493,9 +516,12 @@ export class OperationRecoveryService {
     }
   }
 
-  private async requireJournal(): Promise<RecoveryJournal> {
+  private async requireJournal(transactionId: string): Promise<RecoveryJournal> {
     const journal = await this.journalStore.read();
     if (!journal) throw new Error("No active recovery transaction.");
+    if (journal.transactionId !== transactionId) {
+      throw new Error(`Recovery transaction '${transactionId}' is no longer active.`);
+    }
     return journal;
   }
 }

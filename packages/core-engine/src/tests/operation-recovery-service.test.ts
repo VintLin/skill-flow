@@ -168,6 +168,30 @@ describe.sequential("OperationRecoveryService", () => {
     await expect(fs.access(path.join(stateRoot, "recovery", "active.json"))).rejects.toThrow();
   });
 
+  test("binds lifecycle methods to the transaction that began them", async () => {
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-"));
+    roots.push(stateRoot);
+    const stateStore = new StateStore(stateRoot);
+    await stateStore.init();
+    await seedManagedSource(stateStore);
+    const recovery = new OperationRecoveryService({ stateStore });
+
+    const completed = await recovery.begin({
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+    });
+    await completed.commit();
+    const active = await recovery.begin({
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+    });
+
+    await expect(completed.checkpoint()).rejects.toThrow("is no longer active");
+    await active.commit();
+  });
+
   test("does not overwrite a managed target changed after the mutation checkpoint", async () => {
     const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "skill-flow-recovery-"));
     roots.push(stateRoot);
@@ -197,8 +221,12 @@ describe.sequential("OperationRecoveryService", () => {
       stateStore,
       resolveTargetRoots: async () => new Map([["codex", path.dirname(targetPath)]]),
     });
-    await recovery.begin({ kind: "update", sourceId: "repo", sourceKind: "git" });
-    await recovery.prepareTargetMutations([{
+    const transaction = await recovery.begin({
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+    });
+    await transaction.prepareTargetMutations([{
       kind: "update",
       sourceId: "repo",
       leafId: "repo:review",
@@ -210,7 +238,7 @@ describe.sequential("OperationRecoveryService", () => {
       contentHash: "by-operation",
     }]);
     await fs.writeFile(targetPath, "by-operation\n", "utf8");
-    await recovery.checkpoint();
+    await transaction.checkpoint();
     await fs.writeFile(targetPath, "external-edit\n", "utf8");
 
     const recovered = await recovery.recover();
@@ -237,8 +265,12 @@ describe.sequential("OperationRecoveryService", () => {
       stateStore,
       resolveTargetRoots: async () => new Map([["codex", path.dirname(targetPath)]]),
     });
-    await recovery.begin({ kind: "update", sourceId: "repo", sourceKind: "git" });
-    await recovery.prepareTargetMutations([{
+    const transaction = await recovery.begin({
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+    });
+    await transaction.prepareTargetMutations([{
       kind: "update",
       sourceId: "repo",
       leafId: "repo:review",
@@ -276,8 +308,12 @@ describe.sequential("OperationRecoveryService", () => {
       stateStore,
       resolveTargetRoots: async () => new Map([["codex", path.dirname(targetPath)]]),
     });
-    await recovery.begin({ kind: "update", sourceId: "repo", sourceKind: "git" });
-    await recovery.prepareTargetMutations([{
+    const transaction = await recovery.begin({
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+    });
+    await transaction.prepareTargetMutations([{
       kind: "update",
       sourceId: "repo",
       leafId: "repo:review",
@@ -547,8 +583,12 @@ describe.sequential("OperationRecoveryService", () => {
       stateStore,
       resolveTargetRoots: async () => new Map([["codex", targetRoot]]),
     });
-    await recovery.begin({ kind: "update", sourceId: "repo", sourceKind: "git" });
-    await recovery.prepareTargetMutations([{
+    const transaction = await recovery.begin({
+      kind: "update",
+      sourceId: "repo",
+      sourceKind: "git",
+    });
+    await transaction.prepareTargetMutations([{
       kind: "create",
       sourceId: "repo",
       leafId: "repo:review",

@@ -136,7 +136,10 @@ import {
   type ExternalSourceSnapshot,
 } from "@skill-flow/core-engine/services/external-source-lifecycle";
 import { InventoryService } from "@skill-flow/core-engine/services/inventory-service";
-import { OperationRecoveryService } from "@skill-flow/core-engine/services/operation-recovery-service";
+import {
+  OperationRecoveryService,
+  type OperationRecoveryTransaction,
+} from "@skill-flow/core-engine/services/operation-recovery-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { RecentProjectService } from "@skill-flow/core-engine/services/recent-project-service";
 import { SkillUsageService } from "@skill-flow/core-engine/services/skill-usage-service";
@@ -2908,7 +2911,7 @@ export class SkillFlowApp {
       preparation.sourceKind,
       preparation.sourceId,
     );
-    await this.operationRecoveryService.begin({
+    const transaction = await this.operationRecoveryService.begin({
       kind: "import",
       sourceId: preparation.sourceId,
       sourceKind: preparation.sourceKind,
@@ -2920,7 +2923,7 @@ export class SkillFlowApp {
       return this.recoverInterruptedOperationOrReturn(committed);
     }
     if (committed.data.status !== "ready") {
-      await this.operationRecoveryService.commit();
+      await transaction.commit();
       return ok(committed.data, committed.warnings);
     }
     const committedData = committed.data;
@@ -2946,7 +2949,7 @@ export class SkillFlowApp {
       committedData.sourceId,
       finalDraft.data,
       { kind: "global" },
-      { recoverable: true },
+      transaction,
     );
     if (!applied.ok) {
       return this.recoverInterruptedOperationOrReturn(ok({
@@ -2959,10 +2962,10 @@ export class SkillFlowApp {
     await this.replaceLocalImportWithManagedSymlink(
       localSkillPath,
       committedData.sourceId,
-      { recoverable: true },
+      transaction,
     );
-    await this.operationRecoveryService.checkpoint();
-    await this.operationRecoveryService.commit();
+    await transaction.checkpoint();
+    await transaction.commit();
 
     return ok(committedData, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
   }
@@ -3146,7 +3149,7 @@ export class SkillFlowApp {
   private async replaceLocalImportWithManagedSymlink(
     localSkillPath: string | undefined,
     sourceId: string,
-    options: { recoverable?: boolean } = {},
+    transaction?: OperationRecoveryTransaction,
   ): Promise<void> {
     if (!localSkillPath) {
       return;
@@ -3158,8 +3161,8 @@ export class SkillFlowApp {
     const { lockFile } = await this.readRuntimeAuthorityView();
     const source = lockFile.sources[sourceId];
     if (source?.localPath) {
-      if (options.recoverable) {
-        await this.operationRecoveryService.prepareManagedSymlinkMutation(
+      if (transaction) {
+        await transaction.prepareManagedSymlinkMutation(
           localSkillPath,
           source.localPath,
           { sourceId, target: targetOwnership.target },
@@ -4847,7 +4850,7 @@ export class SkillFlowApp {
     sourceId: string,
     draft: DraftBinding,
     scope: ProjectScope,
-    options: { recoverable?: boolean } = {},
+    transaction?: OperationRecoveryTransaction,
   ): Promise<Result<ApplyDraftResult>> {
     if (scope.kind === "project") {
       const runtimeView = await this.readRuntimeAuthorityView();
@@ -5002,8 +5005,8 @@ export class SkillFlowApp {
       lockFile,
       sourceId,
       preferences,
-      options.recoverable
-        ? (actions) => this.operationRecoveryService.prepareTargetMutations(actions)
+      transaction
+        ? (actions) => transaction.prepareTargetMutations(actions)
         : undefined,
     );
     if (!reconciled.ok) {
@@ -5325,12 +5328,12 @@ export class SkillFlowApp {
       sourceId: string,
       failureErrors: Array<{ code: string; message: string }>,
       fallback: { code: string; message: string },
-      shouldRecover: boolean,
+      transaction: OperationRecoveryTransaction | undefined,
     ): Promise<Result<void>> => {
       const primary = failureErrors[0] ?? fallback;
       hardErrors.push(...(failureErrors.length > 0 ? failureErrors : [fallback]));
       failed.push({ sourceId, code: primary.code, message: primary.message });
-      if (!shouldRecover) return ok(undefined);
+      if (!transaction) return ok(undefined);
       const recovered = await this.recoverInterruptedOperation();
       if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
       warnings.push(...recovered.warnings);
@@ -5351,7 +5354,7 @@ export class SkillFlowApp {
         && source.kind !== "collection"
         && source.ownership !== "external"
         && lock.ownership !== "external";
-      let transaction: { checkoutBackupPath: string } | undefined;
+      let transaction: OperationRecoveryTransaction | undefined;
       try {
         if (managed) {
           transaction = await this.operationRecoveryService.begin({
@@ -5371,7 +5374,7 @@ export class SkillFlowApp {
           const handled = await recordFailureAndRecover(sourceId, updated.errors, {
             code: "SOURCE_UPDATE_FAILED",
             message: `Unable to update skills group '${sourceId}'.`,
-          }, transaction !== undefined);
+          }, transaction);
           if (!handled.ok) return fail(handled.errors, handled.warnings);
           continue;
         }
@@ -5384,8 +5387,8 @@ export class SkillFlowApp {
 
         const sourceUpdate = updated.data.updated.find((item) => item.sourceId === sourceId);
         if (sourceUpdate && !sourceUpdate.changed && !sourceUpdate.repaired) {
-          await this.operationRecoveryService.checkpoint();
-          await this.operationRecoveryService.commit();
+          await transaction.checkpoint();
+          await transaction.commit();
           updatedItems.push(...updated.data.updated);
           continue;
         }
@@ -5417,11 +5420,11 @@ export class SkillFlowApp {
           const handled = await recordFailureAndRecover(sourceId, planned.errors, {
             code: "DEPLOYMENT_PLAN_FAILED",
             message: `Unable to plan deployment for '${sourceId}'.`,
-          }, true);
+          }, transaction);
           if (!handled.ok) return fail(handled.errors, handled.warnings);
           continue;
         }
-        await this.operationRecoveryService.prepareTargetMutations(planned.data.actions);
+        await transaction.prepareTargetMutations(planned.data.actions);
         const applied = await this.deploymentReconciler.apply({
           lockFile,
           actions: planned.data.actions,
@@ -5432,20 +5435,20 @@ export class SkillFlowApp {
           const handled = await recordFailureAndRecover(sourceId, applied.errors, {
             code: "DEPLOYMENT_APPLY_FAILED",
             message: `Unable to apply deployment for '${sourceId}'.`,
-          }, true);
+          }, transaction);
           if (!handled.ok) return fail(handled.errors, handled.warnings);
           continue;
         }
         await this.stateStore.writeState({ ...state, manifest, lockFile });
-        await this.operationRecoveryService.checkpoint();
-        await this.operationRecoveryService.commit();
+        await transaction.checkpoint();
+        await transaction.commit();
         updatedItems.push(...updated.data.updated);
       } catch (error) {
         const failure = {
           code: "SOURCE_UPDATE_FAILED",
           message: `Unable to update skills group '${sourceId}': ${String(error)}`,
         };
-        const handled = await recordFailureAndRecover(sourceId, [failure], failure, transaction !== undefined);
+        const handled = await recordFailureAndRecover(sourceId, [failure], failure, transaction);
         if (!handled.ok) return fail(handled.errors, handled.warnings);
       }
     }
