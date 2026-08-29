@@ -1187,6 +1187,40 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(enrichmentRequests.count, 1)
     }
 
+    func testHomeEnrichmentPrefetchDoesNotWarmDetailContent() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+
+        await model.prefetchHomeGroupCardMetadataIfNeeded(["alpha"])
+        try await fixture.waitForLoggedRequest(command: "inspect-enrichment", sourceId: "alpha")
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertFalse(model.hasPreparedOrScheduledDetailContent(for: "alpha"))
+    }
+
+    func testDetailRenderWaitsForInFlightEnrichmentBeforeWarmup() async throws {
+        let fixture = try TestFixture.install()
+        var fixtureState = TestFixture.State.baseline
+        fixtureState.inspectEnrichmentDelayMilliseconds = 400
+        try fixture.reset(state: fixtureState)
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        model.detailWarmupDelay = .zero
+        await model.bootstrap()
+
+        await model.selectSource("alpha")
+        _ = model.detailSnapshot(for: "alpha")
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertFalse(model.hasPreparedOrScheduledDetailContent(for: "alpha"))
+    }
+
     func testRenameSourceKeepsDetailTitleWhenInFlightEnrichmentReturnsOldSnapshot() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline

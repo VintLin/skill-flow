@@ -1039,10 +1039,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                     inspectedPayloadBySourceId[key] = payload
                 }
                 detailLogic.invalidatePreparedDetailContent(for: sourceId)
-                if let input = detailInput(for: sourceId) {
-                    detailLogic.scheduleDetailContentWarmupIfNeeded(input: input)
+                let isAwaitingEnrichment = scheduleDetailEnrichmentFetch(sourceId: sourceId)
+                if !isAwaitingEnrichment {
+                    scheduleActiveDetailWarmupIfNeeded(sourceId: sourceId)
                 }
-                scheduleDetailEnrichmentFetch(sourceId: sourceId)
             }
             stateManager.setLatestWarnings(response.warnings)
         } catch {
@@ -1292,7 +1292,16 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func detailViewData(for sourceId: String) -> DetailViewData? {
-        detailInput(for: sourceId).map { detailLogic.detailViewData(for: $0) }
+        detailInput(for: sourceId).map {
+            detailLogic.detailViewData(
+                for: $0,
+                schedulesWarmup: detailEnrichmentTasksBySourceId[sourceId] == nil
+            )
+        }
+    }
+
+    func hasPreparedOrScheduledDetailContent(for sourceId: String) -> Bool {
+        detailLogic.hasPreparedOrScheduledDetailContent(for: sourceId)
     }
 
     func detailSnapshot(for sourceId: String) -> DetailViewModel.Snapshot? {
@@ -1685,11 +1694,14 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         return .localized(key, arguments)
     }
 
-    private func scheduleDetailEnrichmentFetch(sourceId: String, force: Bool = false) {
+    @discardableResult
+    private func scheduleDetailEnrichmentFetch(sourceId: String, force: Bool = false) -> Bool {
         if !force {
-            guard !refreshedDetailEnrichmentSourceIds.contains(sourceId),
-                  detailEnrichmentTasksBySourceId[sourceId] == nil else {
-                return
+            if refreshedDetailEnrichmentSourceIds.contains(sourceId) {
+                return false
+            }
+            if detailEnrichmentTasksBySourceId[sourceId] != nil {
+                return true
             }
         } else {
             detailEnrichmentTasksBySourceId[sourceId]?.cancel()
@@ -1734,17 +1746,33 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                         self.detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
                         with: normalizedPayload
                     )
-                    self.detailLogic.invalidatePreparedDetailContent(for: sourceId)
-                    if let input = self.detailInput(for: sourceId) {
-                        self.detailLogic.scheduleDetailContentWarmupIfNeeded(input: input)
+                    if self.isActiveDetailSource(sourceId) {
+                        self.detailLogic.invalidatePreparedDetailContent(for: sourceId)
                     }
                 }
                 self.refreshedDetailEnrichmentSourceIds.insert(sourceId)
                 self.stateManager.setLatestWarnings(response.warnings)
+                self.scheduleActiveDetailWarmupIfNeeded(sourceId: sourceId)
             } catch {
+                self.scheduleActiveDetailWarmupIfNeeded(sourceId: sourceId)
             }
         }
         detailEnrichmentTasksBySourceId[sourceId] = task
+        return true
+    }
+
+    private func scheduleActiveDetailWarmupIfNeeded(sourceId: String) {
+        guard isActiveDetailSource(sourceId), let input = detailInput(for: sourceId) else {
+            return
+        }
+        detailLogic.scheduleDetailContentWarmupIfNeeded(input: input)
+    }
+
+    private func isActiveDetailSource(_ sourceId: String) -> Bool {
+        guard case .detail(let activeSourceId) = currentRoute else {
+            return false
+        }
+        return activeSourceId == sourceId
     }
 
     func preferredGroupPath(lockPayload: [String: Any], leafPayloads: [[String: Any]]) -> String? {

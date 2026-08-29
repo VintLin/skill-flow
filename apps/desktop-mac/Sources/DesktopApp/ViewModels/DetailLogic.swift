@@ -105,7 +105,7 @@ final class DetailLogic {
         self.detailDocumentStore = DetailDocumentStore()
     }
 
-    func detailViewData(for input: DetailInput) -> DetailViewData {
+    func detailViewData(for input: DetailInput, schedulesWarmup: Bool = true) -> DetailViewData {
         let summary = input.summary
         let draft = input.draft
         let sourceId = summary.sourceId
@@ -137,7 +137,7 @@ final class DetailLogic {
         let starCount = groupStats.starCount
         let projectedNamesByLeafId = input.projectedNamesByLeafId
 
-        if preparedDetailContent == nil, !payload.isEmpty {
+        if schedulesWarmup, preparedDetailContent == nil, !payload.isEmpty {
             scheduleDetailContentWarmupIfNeeded(input: input)
         }
 
@@ -420,6 +420,11 @@ final class DetailLogic {
         detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
         detailWarmupTokenSeed &+= 1
         detailWarmupTokensBySourceId[sourceId] = detailWarmupTokenSeed
+    }
+
+    func hasPreparedOrScheduledDetailContent(for sourceId: String) -> Bool {
+        preparedDetailContentBySourceId[sourceId] != nil
+            || detailWarmupTasksBySourceId[sourceId] != nil
     }
 
     private func buildPreparedDetailWarmupInput(input: DetailInput) -> PreparedDetailWarmupInput {
