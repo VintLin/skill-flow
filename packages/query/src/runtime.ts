@@ -141,6 +141,7 @@ import {
   type OperationRecoveryTransaction,
 } from "@skill-flow/core-engine/services/operation-recovery-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
+import { ImportDiscovery } from "@skill-flow/core-engine/services/import-discovery";
 import {
   ImportSourcePolicy,
   type GitHubImportLocator,
@@ -463,6 +464,7 @@ export class SkillFlowApp {
   readonly sourceAuthorityService: SourceAuthorityService;
   readonly externalSourceLifecycle: ExternalSourceLifecycle;
   readonly importPreparationService: ImportPreparationService;
+  readonly importDiscovery: ImportDiscovery;
   readonly importSourcePolicy: ImportSourcePolicy;
   readonly operationRecoveryService: OperationRecoveryService;
   readonly doctorService: DoctorService;
@@ -475,9 +477,6 @@ export class SkillFlowApp {
   private readonly builtInSkillsRoot: string | undefined;
   private mutationQueue: Promise<void> = Promise.resolve();
   private metadataRefreshesBySourceId = new Map<string, Promise<void>>();
-  private importSearchRefreshesByQuery = new Map<string, Promise<ImportSearchSnapshot>>();
-  private importSourceRefreshesByKey = new Map<string, Promise<UnifiedSourceSnapshot>>();
-  private importRecommendationRefreshesByFeed = new Map<ImportRecommendationFeedId, Promise<ImportRecommendationFeed>>();
 
   constructor(options: SkillFlowAppOptions = {}) {
     this.builtInSkillsRoot = options.builtInSkillsRoot;
@@ -503,6 +502,14 @@ export class SkillFlowApp {
       cacheStore: this.importPreparationCacheStore,
       sourceAuthority: this.sourceAuthorityService,
       checkoutService: this.sourceCheckoutService,
+    });
+    this.importDiscovery = new ImportDiscovery({
+      provider: {
+        refreshRecommendation: (feedId) => this.refreshImportRecommendationFeed(feedId),
+        refreshSearch: (query) => this.refreshImportSearchSnapshot(query),
+        refreshSource: (canonicalRepo, refreshOptions) =>
+          this.refreshImportSourceSnapshot(canonicalRepo, refreshOptions),
+      },
     });
     this.importSourcePolicy = new ImportSourcePolicy();
     this.operationRecoveryService = new OperationRecoveryService({
@@ -1617,7 +1624,7 @@ export class SkillFlowApp {
   }
 
   private async warmRebuildableCacheAfterMigration(): Promise<void> {
-    await this.refreshImportRecommendationFeedTracked("seed").catch(() => undefined);
+    await this.importDiscovery.refreshRecommendation("seed").catch(() => undefined);
     for (const feedId of ["official", "trending", "hot", "audits"] as const) {
       this.refreshImportRecommendationFeedInBackground(feedId);
     }
@@ -3442,7 +3449,7 @@ export class SkillFlowApp {
     }
 
     if (feedId === "seed") {
-      return (await this.refreshImportRecommendationFeedTracked(feedId)).groups;
+      return (await this.importDiscovery.refreshRecommendation(feedId)).groups;
     }
 
     this.refreshImportRecommendationFeedInBackground(feedId);
@@ -3450,11 +3457,7 @@ export class SkillFlowApp {
   }
 
   private refreshImportRecommendationFeedInBackground(feedId: ImportRecommendationFeedId): void {
-    if (this.importRecommendationRefreshesByFeed.has(feedId)) {
-      return;
-    }
-
-    void this.refreshImportRecommendationFeedTracked(feedId).catch(() => undefined);
+    void this.importDiscovery.refreshRecommendation(feedId).catch(() => undefined);
   }
 
   private async refreshImportRecommendationFeed(
@@ -3482,12 +3485,11 @@ export class SkillFlowApp {
       return cached;
     }
 
-    return this.refreshImportSearchSnapshotTracked(normalizedQuery, query);
+    return this.importDiscovery.refreshSearch(query);
   }
 
   private refreshImportSearchSnapshotInBackground(query: string): void {
-    const normalizedQuery = query.trim().toLowerCase();
-    void this.refreshImportSearchSnapshotTracked(normalizedQuery, query).catch(() => undefined);
+    void this.importDiscovery.refreshSearch(query).catch(() => undefined);
   }
 
   private async refreshImportSearchSnapshot(query: string): Promise<ImportSearchSnapshot> {
@@ -3536,7 +3538,7 @@ export class SkillFlowApp {
         ...(options?.refreshTrustInBackground !== undefined ? { refreshTrustInBackground: options.refreshTrustInBackground } : {}),
         ...(cachedSnapshot ? { cachedSnapshot } : {}),
       };
-      return await this.refreshImportSourceSnapshotTracked(normalizedRepo, {
+      return await this.importDiscovery.refreshSource(normalizedRepo, {
         ...refreshOptions,
       });
     } catch (error) {
@@ -3557,7 +3559,7 @@ export class SkillFlowApp {
     }
 
     try {
-      return await this.refreshImportSourceSnapshotTracked(normalizedRepo, {
+      return await this.importDiscovery.refreshSource(normalizedRepo, {
         includeSkillDetails: false,
         refreshTrustInBackground: false,
         ...(cachedSnapshot ? { cachedSnapshot } : {}),
@@ -3787,65 +3789,7 @@ export class SkillFlowApp {
   }
 
   private refreshImportSourceSnapshotInBackground(canonicalRepo: string): void {
-    const refreshKey = this.importSourceRefreshKey(canonicalRepo);
-    if (this.importSourceRefreshesByKey.has(refreshKey)) {
-      return;
-    }
-
-    void this.refreshImportSourceSnapshotTracked(canonicalRepo).catch(() => undefined);
-  }
-
-  private refreshImportRecommendationFeedTracked(
-    feedId: ImportRecommendationFeedId,
-  ): Promise<ImportRecommendationFeed> {
-    const inFlight = this.importRecommendationRefreshesByFeed.get(feedId);
-    if (inFlight) {
-      return inFlight;
-    }
-
-    const refresh = this.refreshImportRecommendationFeed(feedId).finally(() => {
-      this.importRecommendationRefreshesByFeed.delete(feedId);
-    });
-    this.importRecommendationRefreshesByFeed.set(feedId, refresh);
-    return refresh;
-  }
-
-  private refreshImportSearchSnapshotTracked(
-    normalizedQuery: string,
-    query: string,
-  ): Promise<ImportSearchSnapshot> {
-    const inFlight = this.importSearchRefreshesByQuery.get(normalizedQuery);
-    if (inFlight) {
-      return inFlight;
-    }
-
-    const refresh = this.refreshImportSearchSnapshot(query).finally(() => {
-      this.importSearchRefreshesByQuery.delete(normalizedQuery);
-    });
-    this.importSearchRefreshesByQuery.set(normalizedQuery, refresh);
-    return refresh;
-  }
-
-  private refreshImportSourceSnapshotTracked(
-    canonicalRepo: string,
-    options?: {
-      enrichSkillIds?: string[];
-      includeSkillDetails?: boolean;
-      refreshTrustInBackground?: boolean;
-      cachedSnapshot?: UnifiedSourceSnapshot;
-    },
-  ): Promise<UnifiedSourceSnapshot> {
-    const refreshKey = this.importSourceRefreshKey(canonicalRepo, options?.enrichSkillIds);
-    const inFlight = this.importSourceRefreshesByKey.get(refreshKey);
-    if (inFlight) {
-      return inFlight;
-    }
-
-    const refresh = this.refreshImportSourceSnapshot(canonicalRepo, options).finally(() => {
-      this.importSourceRefreshesByKey.delete(refreshKey);
-    });
-    this.importSourceRefreshesByKey.set(refreshKey, refresh);
-    return refresh;
+    void this.importDiscovery.refreshSource(canonicalRepo).catch(() => undefined);
   }
 
   private async refreshImportSourceSnapshot(
@@ -3964,14 +3908,6 @@ export class SkillFlowApp {
         ...(next.trust ?? {}),
       },
     };
-  }
-
-  private importSourceRefreshKey(canonicalRepo: string, enrichSkillIds?: string[]): string {
-    const normalizedSkillIds = [...new Set((enrichSkillIds ?? []).filter(Boolean))].sort();
-    if (normalizedSkillIds.length === 0) {
-      return canonicalRepo;
-    }
-    return `${canonicalRepo}::${normalizedSkillIds.join(",")}`;
   }
 
   private hasUnifiedSourceTrust(trust: UnifiedSourceTrust): boolean {
