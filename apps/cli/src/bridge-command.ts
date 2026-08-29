@@ -166,13 +166,13 @@ const bridgeCommandHandlers = {
     const payload = expectObjectPayload(request.payload, "commit-import-source");
     const preparationId = expectString(payload.preparationId, "preparationId", "commit-import-source");
     const draft = expectOptionalImportDraft(payload.draft);
-    return runBridgeResult(request, () => app.commitPreparedImportSource(preparationId, draft));
+    return runBridgeMutationWithWorkspace(app, request, () => app.commitPreparedImportSource(preparationId, draft));
   },
   "import-source": async (app, request) => {
     const payload = expectObjectPayload(request.payload, "import-source");
     const locator = expectString(payload.locator, "locator", "import-source");
     const draft = expectOptionalImportDraft(payload.draft);
-    return runBridgeResult(request, () => app.importSource(locator, draft));
+    return runBridgeMutationWithWorkspace(app, request, () => app.importSource(locator, draft));
   },
   "toggle-pin": async (app, request) => {
     const payload = expectObjectPayload(request.payload, "toggle-pin");
@@ -297,7 +297,7 @@ const bridgeCommandHandlers = {
   update: async (app, request) => {
     const payload = expectOptionalObject(request.payload, "update");
     const sourceIds = parseOptionalStringArray(payload?.sourceIds, "update.sourceIds");
-    return runBridgeResult(request, () => app.updateSources(sourceIds));
+    return runBridgeMutationWithWorkspace(app, request, () => app.updateSources(sourceIds));
   },
   uninstall: async (app, request) => {
     const payload = expectObjectPayload(request.payload, "uninstall");
@@ -334,6 +334,33 @@ async function runBridgeResult<T>(
         message: warning.message,
       })),
     }),
+  });
+}
+
+async function runBridgeMutationWithWorkspace<T>(
+  app: SkillFlowApp,
+  request: BridgeRequest,
+  command: BridgeResultCommand<T>,
+): Promise<BridgeResponse> {
+  const result = await command();
+  if (!result.ok) {
+    return toFailureResponse(request, result.errors, result.warnings);
+  }
+
+  const workspace = await app.bootstrapWorkspaceState();
+  const resultData = sanitizeForJson(result.data);
+  const data = workspace.ok && isJsonObject(resultData)
+    ? { ...resultData, workspace: sanitizeForJson(workspace.data) }
+    : resultData;
+
+  return buildResponseWithRequest({
+    request,
+    ok: true,
+    data,
+    warnings: result.warnings.map((warning) => ({
+      code: warning.code,
+      message: warning.message,
+    })),
   });
 }
 

@@ -283,6 +283,7 @@ final class WorkflowCoverageTests: XCTestCase {
         try fixture.reset(state: .baseline)
 
         let model = try await fixture.makeModel()
+        let doctorCountBeforeUpdate = fixture.loggedRequests().filter { $0.command == "doctor" }.count
 
         await model.updateAllGroupsFromHome()
 
@@ -293,6 +294,32 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertFalse(model.isUpdatingSource("beta"))
         XCTAssertEqual(model.toast?.style, .success)
         XCTAssertEqual(model.toast?.message, "Updated 2 groups.")
+        XCTAssertEqual(
+            fixture.loggedRequests().filter { $0.command == "doctor" }.count,
+            doctorCountBeforeUpdate
+        )
+    }
+
+    func testUpdateFallsBackToListAndDoctorWhenMutationWorkspaceIsMissing() async throws {
+        let fixture = try TestFixture.install()
+        var state = TestFixture.State.baseline
+        state.omitMutationWorkspace = true
+        try fixture.reset(state: state)
+
+        let model = try await fixture.makeModel()
+        let requestsBeforeUpdate = fixture.loggedRequests()
+
+        await model.updateSource("alpha")
+
+        let requestsAfterUpdate = fixture.loggedRequests()
+        XCTAssertEqual(
+            requestsAfterUpdate.filter { $0.command == "list" }.count,
+            requestsBeforeUpdate.filter { $0.command == "list" }.count + 1
+        )
+        XCTAssertEqual(
+            requestsAfterUpdate.filter { $0.command == "doctor" }.count,
+            requestsBeforeUpdate.filter { $0.command == "doctor" }.count + 1
+        )
     }
 
     func testImportPageLoadsRecommendationsAndPreview() async throws {
@@ -470,6 +497,7 @@ final class WorkflowCoverageTests: XCTestCase {
 
         let card = try XCTUnwrap(model.importDisplayGroups.first(where: { $0.id == "anthropics-skills" }))
         XCTAssertEqual(card.locator, "anthropics/skills")
+        let doctorCountBeforeImport = fixture.loggedRequests().filter { $0.command == "doctor" }.count
 
         await model.importImportGroup(
             groupId: "anthropics-skills",
@@ -509,6 +537,10 @@ final class WorkflowCoverageTests: XCTestCase {
         XCTAssertEqual((selectedSkills?.first?["selector"] as? [String: Any])?["path"] as? String, "research")
         XCTAssertNil(draft?["selectedSkillIds"])
         XCTAssertEqual(draft?["enabledTargets"] as? [String], ["cursor"])
+        XCTAssertEqual(
+            fixture.loggedRequests().filter { $0.command == "doctor" }.count,
+            doctorCountBeforeImport
+        )
     }
 
     func testImportPageSearchResultMarksImportedGroupAsInstalledWithoutOpeningDetail() async throws {
@@ -771,6 +803,7 @@ private struct TestFixture {
         var recentProjects: [RecentProjectState]
         var importGroups: [ImportGroupState]
         var importFailures: [String: String]
+        var omitMutationWorkspace = false
 
         static let baseline = State(
             availableTargets: ["claude-code", "cursor"],
@@ -1301,6 +1334,23 @@ private struct TestFixture {
       };
     }
 
+    function workspaceFor(state) {
+      return {
+        availableTargets: state.availableTargets || [],
+        pinnedSourceIds: state.pinnedSourceIds || [],
+        recentProjects: state.recentProjects || [],
+        selectedProjectScope: state.selectedProjectScope
+          ? { kind: 'project', projectId: state.selectedProjectScope }
+          : { kind: 'global' },
+        summaries: buildSummaries(state),
+        groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
+        capabilities: { importDraftV2: true },
+        initialDrafts: Object.fromEntries(
+          Object.entries(state.sources || {}).map(([sourceId, source]) => [sourceId, sourceDraft(source)])
+        )
+      };
+    }
+
     function main() {
       const request = JSON.parse(fs.readFileSync(0, 'utf8'));
       logRequest(request);
@@ -1308,23 +1358,7 @@ private struct TestFixture {
       const state = readState();
 
       if (request.command === 'bootstrap') {
-        process.stdout.write(JSON.stringify(responseFor(request, true, {
-          availableTargets: state.availableTargets || [],
-          pinnedSourceIds: state.pinnedSourceIds || [],
-          recentProjects: state.recentProjects || [],
-          selectedProjectScope: state.selectedProjectScope
-            ? { kind: 'project', projectId: state.selectedProjectScope }
-            : { kind: 'global' },
-          summaries: buildSummaries(state),
-          groupCardEnrichmentBySourceId: buildGroupCardEnrichment(state),
-          audit: {
-            issues: []
-          },
-          capabilities: {
-            importDraftV2: true
-          },
-          initialDrafts: Object.fromEntries(Object.entries(state.sources || {}).map(([sourceId, source]) => [sourceId, sourceDraft(source)]))
-        }, [], [])));
+        process.stdout.write(JSON.stringify(responseFor(request, true, workspaceFor(state), [], [])));
         return;
       }
 
@@ -1555,7 +1589,8 @@ private struct TestFixture {
 
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           status: 'ready',
-          sourceId: group.id
+          sourceId: group.id,
+          workspace: workspaceFor(state)
         }, [], [])));
         return;
       }
@@ -1606,7 +1641,8 @@ private struct TestFixture {
           status: 'ready',
           sourceId: group.id,
           preparationId,
-          usedPreparation: true
+          usedPreparation: true,
+          workspace: workspaceFor(state)
         }, [], [])));
         return;
       }
@@ -1695,6 +1731,16 @@ private struct TestFixture {
         writeState(state);
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           sourceId
+        }, [], [])));
+        return;
+      }
+
+      if (request.command === 'update') {
+        const requestedSourceIds = (request.payload && request.payload.sourceIds) || Object.keys(state.sources || {});
+        process.stdout.write(JSON.stringify(responseFor(request, true, {
+          updated: requestedSourceIds.map((sourceId) => ({ sourceId, changed: false })),
+          failed: [],
+          ...(state.omitMutationWorkspace ? {} : { workspace: workspaceFor(state) })
         }, [], [])));
         return;
       }

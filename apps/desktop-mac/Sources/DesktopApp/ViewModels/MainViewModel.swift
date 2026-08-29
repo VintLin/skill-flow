@@ -1237,7 +1237,11 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     private func performQueuedUpdate(sourceId: String) async {
         do {
             let response = try await sourceManagement.updateSelectedSource(sourceId)
-            await synchronizeState(refreshDoctor: true)
+            if let response {
+                await synchronizeAfterMutation(response)
+            } else {
+                await synchronizeState(refreshDoctor: true)
+            }
             registerRecentlyUpdatedSources(from: response?.data?.value)
             showToast(style: .success, text: .plain(updateSummaryMessage(from: response?.data?.value, fallbackCount: 1)))
         } catch {
@@ -1248,7 +1252,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     private func performQueuedBulkUpdate(sourceIds: [String]) async {
         do {
             let response = try await sourceManagement.updateSourcesReturningResponse(sourceIds)
-            await synchronizeState(refreshDoctor: true)
+            await synchronizeAfterMutation(response)
             registerRecentlyUpdatedSources(from: response.data?.value)
             presentBulkUpdateOutcome(requestedCount: sourceIds.count, payload: response.data?.value, warnings: response.warnings)
         } catch {
@@ -1823,6 +1827,21 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         await refreshList()
         if refreshDoctor { await runDoctor() }
         if let inspectSourceId = inspectSourceId?.trimmingCharacters(in: .whitespacesAndNewlines), !inspectSourceId.isEmpty, sourceIds.contains(inspectSourceId) {
+            await selectSource(inspectSourceId)
+        }
+    }
+
+    func synchronizeAfterMutation(_ response: BridgeResponse, inspectSourceId: String? = nil) async {
+        guard sourceManagement.applyMutationWorkspace(response.data?.value) else {
+            await synchronizeState(refreshDoctor: true, inspectSourceId: inspectSourceId)
+            return
+        }
+        detectedTargets = sourceManagement.detectedTargetIds()
+        stateManager.setLatestWarnings(response.warnings)
+        stateManager.setHealthStatus(response.warnings.isEmpty ? .healthy : .warnings)
+        if let inspectSourceId = inspectSourceId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !inspectSourceId.isEmpty,
+           sourceIds.contains(inspectSourceId) {
             await selectSource(inspectSourceId)
         }
     }

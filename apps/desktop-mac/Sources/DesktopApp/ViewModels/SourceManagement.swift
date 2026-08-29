@@ -243,6 +243,19 @@ final class SourceManagement {
         return bootstrap.warnings
     }
 
+    @discardableResult
+    func applyMutationWorkspace(_ value: Any?) -> Bool {
+        guard
+            let data = value as? [String: Any],
+            let workspace = data["workspace"] as? [String: Any],
+            workspace["summaries"] is [[String: Any]]
+        else {
+            return false
+        }
+        parseBootstrapData(workspace)
+        return true
+    }
+
     func refreshList() async throws -> BridgeResponse {
         let response = try await fetchListResponse()
         applyList(response)

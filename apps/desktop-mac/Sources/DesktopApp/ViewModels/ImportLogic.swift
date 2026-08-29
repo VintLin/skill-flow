@@ -338,10 +338,7 @@ final class ImportLogic {
                     targets: item.targets
                 )
             }
-            await delegate?.synchronizeState(
-                refreshDoctor: true,
-                inspectSourceId: nil
-            )
+            await delegate?.synchronizeAfterMutation(response, inspectSourceId: nil)
             delegate?.applyWarningsFromApplyResponse(response.warnings)
             if let warningToastText = importWarningToastText(warnings: response.warnings) {
                 delegate?.showToast(style: .neutral, text: warningToastText)
@@ -1241,7 +1238,7 @@ protocol ImportLogicDelegate: AnyObject {
     func showToast(style: ToastStyle, text: PresentationText)
     func showToast(style: ToastStyle, message: String)
     func cancelDeferredDraftSync()
-    func synchronizeState(refreshDoctor: Bool, inspectSourceId: String?) async
+    func synchronizeAfterMutation(_ response: BridgeResponse, inspectSourceId: String?) async
     func applyWarningsFromApplyResponse(_ warnings: [BridgeIssue])
     func localizedText(_ key: String, _ arguments: [String]) -> PresentationText
 }

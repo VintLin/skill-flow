@@ -48,6 +48,19 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.data).toHaveProperty("pinnedSourceIds");
   });
 
+  test("returns a workspace snapshot with update mutations", async () => {
+    const app = new SkillFlowApp();
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION,
+      command: "update",
+      payload: { sourceIds: [] },
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.data).toHaveProperty("workspace.summaries");
+    expect(response.data).toHaveProperty("workspace.initialDrafts");
+  });
+
   test("adopts and refreshes an external source through the bridge without enabling it", async () => {
     const externalPath = path.join(sandbox.sandboxRoot, "external-bridge");
     await writeRepoFiles(externalPath, {
@@ -1070,6 +1083,7 @@ describe.sequential("bridge command dispatcher", () => {
     expect(response.ok).toBe(true);
     expect(response.data).toHaveProperty("status", "ready");
     expect(response.data).toHaveProperty("usedPreparation", true);
+    expect(response.data).toHaveProperty("workspace.summaries");
   });
 
   test("rejects import-source legacy selectedSkillIds payload", async () => {
