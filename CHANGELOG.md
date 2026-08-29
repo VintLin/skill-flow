@@ -12,6 +12,7 @@ All notable changes to `skill-flow` will be documented in this file.
 - Simplified disposable import preparation records to retain only checkout, lifecycle, retry, and recovery evidence.
 - Replaced the unused multi-provider import repository cache envelope with direct Skills source snapshots.
 - Recommendation loading now resolves all feeds and cached source cards from one cache read instead of serializing repeated full-file reads.
+- Removed the superseded RuntimeManifestView mutation helper chain now that source authority and deployment reconciliation own final mutations.
 
 ## v1.6.1 - 2026-08-27
 

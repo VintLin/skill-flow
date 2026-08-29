@@ -89,7 +89,6 @@ import {
   getHostedGitOwner,
   parseGitHubRepo,
   parseHostedGitRepo,
-  resolveProjectedSkillNames,
 } from "@skill-flow/integration/utils/naming";
 import {
   getTargetScanRoots,
@@ -4727,21 +4726,6 @@ export class SkillFlowApp {
     );
   }
 
-  bindingFromDraft(draft: DraftBinding): SourceBindingSummary {
-    const targets: SourceBindingSummary["targets"] = {};
-    for (const target of draft.enabledTargets) {
-      targets[target] = {
-        enabled: true,
-        leafIds: [...draft.selectedLeafIds],
-      };
-    }
-    return {
-      selectedLeafIds: [...draft.selectedLeafIds],
-      resolvedSelectedLeafCount: draft.selectedLeafIds.length,
-      targets,
-    };
-  }
-
   private uniqueCollectionSourceId(
     displayName: string,
     manifest: ManifestFile,
@@ -4993,35 +4977,6 @@ export class SkillFlowApp {
         ),
       ]),
     );
-  }
-
-  private cloneManifest(manifest: RuntimeManifestView): RuntimeManifestView {
-    const bindings: Record<string, SourceBindingSummary> = {};
-
-    for (const [sourceId, binding] of Object.entries(manifest.bindings)) {
-      const targets: SourceBindingSummary["targets"] = {};
-      for (const [target, targetBinding] of Object.entries(binding.targets)) {
-        if (!targetBinding) {
-          continue;
-        }
-        targets[target as DeploymentTargetName] = {
-          enabled: targetBinding.enabled,
-          leafIds: [...targetBinding.leafIds],
-        };
-      }
-
-      bindings[sourceId] = {
-        selectedLeafIds: [...binding.selectedLeafIds],
-        resolvedSelectedLeafCount: binding.resolvedSelectedLeafCount ?? binding.selectedLeafIds.length,
-        targets,
-      };
-    }
-
-    return {
-      schemaVersion: manifest.schemaVersion,
-      sources: manifest.sources.map((source) => ({ ...source })),
-      bindings,
-    };
   }
 
   private cloneAuthorityManifest(manifest: ManifestFile): ManifestFile {
@@ -5330,50 +5285,6 @@ export class SkillFlowApp {
     }
   }
 
-  private normalizeBindings(
-    manifest: RuntimeManifestView,
-    lockFile: LockFile,
-    collections?: CollectionsFile,
-  ): boolean {
-    let changed = false;
-
-    for (const source of manifest.sources) {
-      const currentBinding = manifest.bindings[source.id] ?? {
-        selectedLeafIds: [],
-        resolvedSelectedLeafCount: 0,
-        targets: {},
-      };
-      const normalizedDraft = this.draftFromSourceBinding(source, currentBinding, lockFile, collections);
-      const normalizedBinding = this.bindingFromDraft(normalizedDraft);
-
-      if (JSON.stringify(currentBinding) === JSON.stringify(normalizedBinding)) {
-        continue;
-      }
-
-      manifest.bindings[source.id] = normalizedBinding;
-      changed = true;
-    }
-
-    return changed;
-  }
-
-  private draftFromSourceBinding(
-    source: RuntimeManifestView["sources"][number],
-    binding: SourceBindingSummary,
-    lockFile: LockFile,
-    collections?: CollectionsFile,
-  ): DraftBinding {
-    const leafIds = source.kind === "collection"
-      ? this.getCollectionSourceAllowedLeafIds(source.id, binding, lockFile, collections)
-      : new Set(
-          lockFile.leafInventory
-            .filter((leaf) => leaf.sourceId === source.id)
-            .map((leaf) => leaf.id),
-        );
-
-    return this.draftFromBindingAllowedLeafIds(binding, leafIds);
-  }
-
   private draftFromBinding(
     sourceId: string,
     binding: SourceBindingSummary,
@@ -5411,70 +5322,6 @@ export class SkillFlowApp {
       enabledTargets,
       selectedLeafIds,
     };
-  }
-
-  private getCollectionSourceAllowedLeafIds(
-    sourceId: string,
-    binding: SourceBindingSummary,
-    lockFile: LockFile,
-    collections?: CollectionsFile,
-  ): Set<string> {
-    const existingLeafIds = new Set(lockFile.leafInventory.map((leaf) => leaf.id));
-    const collectionLeafIds = collections?.collections[sourceId]?.members
-      .map((member) => member.snapshot.leafId)
-      .filter((leafId) => existingLeafIds.has(leafId));
-
-    if (collectionLeafIds) {
-      return new Set(collectionLeafIds);
-    }
-
-    return new Set(
-      [
-        ...(binding.selectedLeafIds ?? []),
-        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
-      ].filter((leafId) => existingLeafIds.has(leafId)),
-    );
-  }
-
-  private getSourceLeafsForBinding(
-    source: RuntimeManifestView["sources"][number],
-    binding: SourceBindingSummary,
-    lockFile: LockFile,
-    collections?: CollectionsFile,
-  ): LeafRecord[] {
-    if (source.kind !== "collection") {
-      return lockFile.leafInventory.filter((leaf) => leaf.sourceId === source.id);
-    }
-
-    const leafsById = new Map(lockFile.leafInventory.map((leaf) => [leaf.id, leaf]));
-    const collection = collections?.collections[source.id];
-    if (collection) {
-      return collection.members
-        .map((member) => leafsById.get(member.snapshot.leafId))
-        .filter((leaf): leaf is LeafRecord => Boolean(leaf));
-    }
-
-    return ([
-      ...new Set([
-        ...(binding.selectedLeafIds ?? []),
-        ...Object.values(binding.targets).flatMap((targetBinding) => targetBinding?.leafIds ?? []),
-      ]),
-    ])
-      .map((leafId) => leafsById.get(leafId))
-      .filter((leaf): leaf is LeafRecord => Boolean(leaf));
-  }
-
-  private findLeafForSourceBinding(
-    source: RuntimeManifestView["sources"][number],
-    binding: SourceBindingSummary,
-    lockFile: LockFile,
-    leafId: string,
-  ): LeafRecord | undefined {
-    if (source.kind !== "collection") {
-      return lockFile.leafInventory.find((leaf) => leaf.sourceId === source.id && leaf.id === leafId);
-    }
-
-    return this.getSourceLeafsForBinding(source, binding, lockFile).find((leaf) => leaf.id === leafId);
   }
 
   private buildAddDraft(
@@ -5765,46 +5612,6 @@ export class SkillFlowApp {
     return this.sourceAuthorityService.removeSource([sourceId]);
   }
 
-  private prepareManifestForDraft(
-    manifest: RuntimeManifestView,
-    lockFile: LockFile,
-    sourceId: string,
-    draft: DraftBinding,
-  ): { manifest: RuntimeManifestView; draft: DraftBinding; warnings: Warning[] } {
-    manifest.bindings[sourceId] = this.bindingFromDraft(draft);
-    const source = manifest.sources.find((item) => item.id === sourceId);
-    if (source) {
-      const sourceLeafCount = lockFile.leafInventory.filter((leaf) => leaf.sourceId === sourceId).length;
-      source.selectionMode =
-        draft.selectedLeafIds.length >= sourceLeafCount && sourceLeafCount > 0
-          ? "all"
-          : "selected";
-    }
-
-    const conflictingLeafIds = this.findExactDuplicateLeafSelections(
-      manifest,
-      lockFile,
-      sourceId,
-      draft.enabledTargets,
-    );
-    const normalizedDraft: DraftBinding = {
-      enabledTargets: [...draft.enabledTargets],
-      selectedLeafIds: draft.selectedLeafIds.filter((leafId) => !conflictingLeafIds.has(leafId)),
-    };
-    manifest.bindings[sourceId] = this.bindingFromDraft(normalizedDraft);
-
-    const warnings = [...conflictingLeafIds].map((leafId) => ({
-      code: "DUPLICATE_LEAF_SELECTION_SKIPPED",
-      message: `${lockFile.leafInventory.find((leaf) => leaf.id === leafId)?.linkName ?? leafId} skipped because an identical skill is already selected in another skills group.`,
-    }));
-
-    return {
-      manifest,
-      draft: normalizedDraft,
-      warnings,
-    };
-  }
-
   private prepareAuthorityManifestForDraft(
     manifest: ManifestFile,
     lockFile: LockFile,
@@ -5908,48 +5715,6 @@ export class SkillFlowApp {
       }
     }
     return conflicts;
-  }
-
-  private findExactDuplicateLeafSelections(
-    manifest: RuntimeManifestView,
-    lockFile: LockFile,
-    currentSourceId: string,
-    enabledTargets: DeploymentTargetId[],
-  ): Set<string> {
-    const conflictingKeys = new Set<string>();
-
-    for (const source of manifest.sources) {
-      if (source.id === currentSourceId) {
-        continue;
-      }
-
-      const binding = manifest.bindings[source.id];
-      if (!binding) {
-        continue;
-      }
-
-      for (const target of enabledTargets) {
-        const targetBinding = binding.targets[target];
-        if (!targetBinding?.enabled) {
-          continue;
-        }
-
-        for (const leafId of targetBinding.leafIds) {
-          const leaf = lockFile.leafInventory.find((item) => item.id === leafId);
-          if (!leaf) {
-            continue;
-          }
-          conflictingKeys.add(this.getExactDuplicateKey(leaf));
-        }
-      }
-    }
-
-    const currentLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === currentSourceId);
-    return new Set(
-      currentLeafs
-        .filter((leaf) => conflictingKeys.has(this.getExactDuplicateKey(leaf)))
-        .map((leaf) => leaf.id),
-    );
   }
 
   private getExactDuplicateKey(leaf: LeafRecord | LeafRecord): string {
@@ -6260,32 +6025,6 @@ export class SkillFlowApp {
         restore();
       }
     }
-  }
-
-  private buildProjectedLinkNameMap(
-    manifest: RuntimeManifestView,
-    lockFile: LockFile,
-    target: DeploymentTargetId,
-  ): Map<string, string> {
-    return resolveProjectedSkillNames(
-      manifest.sources.flatMap((source) => {
-        const targetBinding = manifest.bindings[source.id]?.targets[target];
-        if (!targetBinding?.enabled) {
-          return [];
-        }
-
-        return targetBinding.leafIds
-          .map((leafId) => lockFile.leafInventory.find((leaf) => leaf.id === leafId))
-          .filter((leaf): leaf is LeafRecord => Boolean(leaf))
-          .map((leaf) => ({
-            leafId: leaf.id,
-            groupId: source.id,
-            groupName: source.displayName,
-            groupAuthor: getHostedGitOwner(source.locator),
-            skillName: leaf.linkName,
-          }));
-      }),
-    );
   }
 
   private async findManagedDeploymentOnDisk(
@@ -6628,55 +6367,4 @@ export class SkillFlowApp {
     return `${displayName}@${repo.owner}`;
   }
 
-  private applySourceUpdateResults(
-    manifest: RuntimeManifestView,
-    lockFile: LockFile,
-    updates: SourceUpdateResultItem[],
-  ) {
-    for (const update of updates) {
-      if (!update.changed) {
-        continue;
-      }
-      const source = manifest.sources.find((item) => item.id === update.sourceId);
-      const binding = manifest.bindings[update.sourceId];
-      if (!source || !binding) {
-        continue;
-      }
-
-      for (const diff of update.diffs) {
-        if (diff.kind !== "moved" || !diff.previousLeafId) {
-          continue;
-        }
-        for (const targetBinding of Object.values(binding.targets)) {
-          if (!targetBinding?.enabled || !targetBinding.leafIds.includes(diff.previousLeafId)) {
-            continue;
-          }
-          targetBinding.leafIds = targetBinding.leafIds.map((leafId) =>
-            leafId === diff.previousLeafId ? diff.leafId : leafId,
-          );
-        }
-      }
-
-      if ((update.selectionMode ?? source.selectionMode) !== "all") {
-        continue;
-      }
-
-      const addedLeafIds = update.diffs
-        .filter((diff) => diff.kind === "added")
-        .map((diff) => diff.leafId);
-      if (addedLeafIds.length === 0) {
-        continue;
-      }
-
-      for (const targetBinding of Object.values(binding.targets)) {
-        if (!targetBinding?.enabled) {
-          continue;
-        }
-        const merged = new Set([...targetBinding.leafIds, ...addedLeafIds]);
-        targetBinding.leafIds = [...merged].filter((leafId) =>
-          lockFile.leafInventory.some((leaf) => leaf.id === leafId && leaf.sourceId === update.sourceId),
-        );
-      }
-    }
-  }
 }

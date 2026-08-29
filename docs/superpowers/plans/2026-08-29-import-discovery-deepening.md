@@ -81,6 +81,7 @@ Tests:
 - 删除 Import preparation cache 中无消费的 `schemaVersion`、selector snapshot、target snapshot 与 revision snapshot 字段；不改变 Shared Skill State schema。
 - 将可重建 Import Data repo cache 收敛为单一 Skills snapshot，删除无人生产的 multi-provider、identity 与 resolved metadata 投影。
 - 推荐页通过 ImportDiscovery 批量解析 feeds 与 cached sources，仅读取一次 Import Data cache，避免 I/O lock 将表面并发退化为串行解析。
+- 删除 Query runtime 中已被 authority manifest 与 deployment reconciler 替代的 legacy manifest mutation helper 链。
 
 Verification:
 
