@@ -23,6 +23,10 @@ All notable changes to `skill-flow` will be documented in this file.
 - Desktop file-tree documents now render directly from tree items without unused line models or placeholder conversion adapters.
 - Desktop Home cards and Detail views now share one single-flight enrichment cache and recursive overlay policy, avoiding duplicate requests and stale appended leaf payloads.
 
+### Fixed
+
+- Desktop detail links now reject sibling directories whose names merely share the managed repository path prefix.
+
 ## v1.6.1 - 2026-08-27
 
 ### Changed

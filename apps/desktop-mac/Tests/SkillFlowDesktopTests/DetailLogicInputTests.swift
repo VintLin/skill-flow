@@ -91,4 +91,23 @@ final class DetailLogicInputTests: XCTestCase {
         XCTAssertEqual(source?["displayName"] as? String, "New")
         XCTAssertEqual(source?["kind"] as? String, "git")
     }
+
+    func testRelativePathAcceptsAChildPath() {
+        XCTAssertEqual(
+            DetailLogic.relativePath(
+                from: "/tmp/repo",
+                to: "/tmp/repo/skills/writer/SKILL.md"
+            ),
+            "skills/writer/SKILL.md"
+        )
+    }
+
+    func testRelativePathRejectsASiblingWithTheSamePrefix() {
+        XCTAssertNil(
+            DetailLogic.relativePath(
+                from: "/tmp/repo",
+                to: "/tmp/repo-copy/skills/writer/SKILL.md"
+            )
+        )
+    }
 }

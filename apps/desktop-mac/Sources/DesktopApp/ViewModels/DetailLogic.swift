@@ -918,14 +918,14 @@ final class DetailLogic {
         return 3
     }
 
-    nonisolated private static func relativePath(from basePath: String, to targetPath: String) -> String? {
-        let standardizedBase = URL(fileURLWithPath: basePath).standardizedFileURL.path
-        let standardizedTarget = URL(fileURLWithPath: targetPath).standardizedFileURL.path
-        guard standardizedTarget.hasPrefix(standardizedBase) else {
+    nonisolated static func relativePath(from basePath: String, to targetPath: String) -> String? {
+        let baseComponents = URL(fileURLWithPath: basePath).standardizedFileURL.pathComponents
+        let targetComponents = URL(fileURLWithPath: targetPath).standardizedFileURL.pathComponents
+        guard targetComponents.starts(with: baseComponents) else {
             return nil
         }
-        let suffix = String(standardizedTarget.dropFirst(standardizedBase.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return suffix.isEmpty ? "." : suffix
+        let relativeComponents = targetComponents.dropFirst(baseComponents.count)
+        return relativeComponents.isEmpty ? "." : relativeComponents.joined(separator: "/")
     }
 
     nonisolated private static func projectedRelativeFolderPath(
