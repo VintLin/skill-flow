@@ -84,8 +84,6 @@ final class DetailLogic {
         let displayTitle: String
     }
 
-    private let detailEnrichmentQuery: any DesktopDetailEnrichmentQuerying
-    private let warningsSink: ([BridgeIssue]) -> Void
     private let detailDocumentStore: DetailDocumentStore
 
     @ObservationIgnored
@@ -103,24 +101,7 @@ final class DetailLogic {
     @ObservationIgnored
     var detailWarmupDelay: Duration = .milliseconds(40)
 
-    @ObservationIgnored
-    private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
-
-    @ObservationIgnored
-    private var detailEnrichmentTasksBySourceId: [String: Task<Void, Never>] = [:]
-
-    @ObservationIgnored
-    private var detailEnrichmentTokensBySourceId: [String: UInt64] = [:]
-
-    @ObservationIgnored
-    private var detailEnrichmentTokenSeed: UInt64 = 0
-
-    init(
-        detailEnrichmentQuery: any DesktopDetailEnrichmentQuerying,
-        warningsSink: @escaping ([BridgeIssue]) -> Void
-    ) {
-        self.detailEnrichmentQuery = detailEnrichmentQuery
-        self.warningsSink = warningsSink
+    init() {
         self.detailDocumentStore = DetailDocumentStore()
     }
 
@@ -129,7 +110,7 @@ final class DetailLogic {
         let draft = input.draft
         let sourceId = summary.sourceId
 
-        let payload = mergedDetailPayload(basePayload: input.inspectedPayload, sourceId: sourceId)
+        let payload = input.inspectedPayload
         let sourcePayload = payload["source"] as? [String: Any] ?? [:]
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let summarySourcePayload = summaryPayload["source"] as? [String: Any] ?? [:]
@@ -388,50 +369,6 @@ final class DetailLogic {
         }
     }
 
-    func scheduleDetailEnrichmentFetch(input: DetailInput, force: Bool = false) {
-        let sourceId = input.summary.sourceId
-        if !force, detailEnrichmentTasksBySourceId[sourceId] != nil {
-            return
-        }
-        if force {
-            detailEnrichmentTasksBySourceId[sourceId]?.cancel()
-            detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
-        }
-
-        detailEnrichmentTokenSeed &+= 1
-        let token = detailEnrichmentTokenSeed
-        detailEnrichmentTokensBySourceId[sourceId] = token
-
-        let task = Task { @MainActor [weak self, sourceId] in
-            guard let self else { return }
-            do {
-                let response = try await self.detailEnrichmentQuery.inspectEnrichment(sourceId: sourceId)
-                guard !Task.isCancelled else { return }
-
-                if let payload = response.data?.value as? [String: Any],
-                   self.detailEnrichmentTokensBySourceId[sourceId] == token
-                {
-                    self.detailEnrichmentPayloadBySourceId[sourceId] = self.mergedDetailEnrichmentPayload(
-                        existing: self.detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
-                        incoming: payload
-                    )
-                }
-                if self.detailEnrichmentTokensBySourceId[sourceId] == token {
-                    self.warningsSink(response.warnings)
-                    self.detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
-                    self.detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
-                }
-            } catch {
-                if self.detailEnrichmentTokensBySourceId[sourceId] == token {
-                    self.detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
-                    self.detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
-                }
-            }
-        }
-
-        detailEnrichmentTasksBySourceId[sourceId] = task
-    }
-
     func scheduleDetailContentWarmupIfNeeded(input: DetailInput) {
         let sourceId = input.summary.sourceId
         guard detailWarmupTasksBySourceId[sourceId] == nil else {
@@ -483,29 +420,6 @@ final class DetailLogic {
         detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
         detailWarmupTokenSeed &+= 1
         detailWarmupTokensBySourceId[sourceId] = detailWarmupTokenSeed
-    }
-
-    private func mergedDetailPayload(basePayload: [String: Any], sourceId: String) -> [String: Any] {
-        var payload = basePayload
-        let enrichmentPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
-        payload = mergedDetailEnrichmentPayload(existing: payload, incoming: enrichmentPayload)
-        return payload
-    }
-
-    private func mergedDetailEnrichmentPayload(existing: [String: Any], incoming: [String: Any]) -> [String: Any] {
-        var merged = existing
-        for (key, value) in incoming {
-            if let existingArray = merged[key] as? [Any],
-               let incomingArray = value as? [Any] {
-                merged[key] = existingArray + incomingArray
-            } else if let existingObject = merged[key] as? [String: Any],
-                      let incomingObject = value as? [String: Any] {
-                merged[key] = mergedDetailEnrichmentPayload(existing: existingObject, incoming: incomingObject)
-            } else {
-                merged[key] = value
-            }
-        }
-        return merged
     }
 
     private func buildPreparedDetailWarmupInput(input: DetailInput) -> PreparedDetailWarmupInput {

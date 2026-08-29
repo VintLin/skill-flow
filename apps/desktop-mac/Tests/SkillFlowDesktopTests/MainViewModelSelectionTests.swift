@@ -1167,6 +1167,26 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.title, "Writing Tools")
     }
 
+    func testHomeEnrichmentPrefetchIsReusedWhenOpeningDetail() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        await model.bootstrap()
+
+        await model.prefetchHomeGroupCardMetadataIfNeeded(["alpha"])
+        try await fixture.waitForLoggedRequest(command: "inspect-enrichment", sourceId: "alpha")
+        await model.selectSource("alpha")
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        let enrichmentRequests = fixture.loggedRequests().filter {
+            $0.command == "inspect-enrichment"
+                && $0.payload?["sourceId"]?.value as? String == "alpha"
+        }
+        XCTAssertEqual(enrichmentRequests.count, 1)
+    }
+
     func testRenameSourceKeepsDetailTitleWhenInFlightEnrichmentReturnsOldSnapshot() async throws {
         let fixture = try TestFixture.install()
         var state = TestFixture.State.baseline

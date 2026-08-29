@@ -5,10 +5,7 @@ import XCTest
 @MainActor
 final class DetailLogicInputTests: XCTestCase {
     func testBuildsDetailFromTypedInputWithoutMainViewModel() {
-        let logic = DetailLogic(
-            detailEnrichmentQuery: DetailEnrichmentStub(),
-            warningsSink: { _ in }
-        )
+        let logic = DetailLogic()
         let summary = SourceManagement.WorkflowSummary(
             sourceId: "source-1",
             sourceKind: "github",
@@ -74,6 +71,24 @@ final class DetailLogicInputTests: XCTestCase {
         XCTAssertEqual(detail.skillSelection, .full)
         XCTAssertEqual(detail.targetSelection, .full)
     }
-}
 
-private struct DetailEnrichmentStub: DesktopDetailEnrichmentQuerying {}
+    func testDetailPayloadOverlayReplacesArraysAndRecursivelyMergesObjects() {
+        let base: [String: Any] = [
+            "leafs": [["id": "leaf-1", "name": "Old"]],
+            "summary": ["source": ["displayName": "Old", "kind": "git"]],
+        ]
+        let incoming: [String: Any] = [
+            "leafs": [["id": "leaf-1", "name": "New"]],
+            "summary": ["source": ["displayName": "New"]],
+        ]
+
+        let merged = DetailPayloadOverlay.merge(base, with: incoming)
+        let leafs = merged["leafs"] as? [[String: Any]]
+        let source = (merged["summary"] as? [String: Any])?["source"] as? [String: Any]
+
+        XCTAssertEqual(leafs?.count, 1)
+        XCTAssertEqual(leafs?.first?["name"] as? String, "New")
+        XCTAssertEqual(source?["displayName"] as? String, "New")
+        XCTAssertEqual(source?["kind"] as? String, "git")
+    }
+}

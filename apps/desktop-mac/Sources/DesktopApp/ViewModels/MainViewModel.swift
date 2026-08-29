@@ -72,10 +72,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     private let sourceManagement: SourceManagement
     private let importLogic: ImportLogic
     private let settingsStore: DesktopSettingsStore
-    @ObservationIgnored private lazy var detailLogic = DetailLogic(
-        detailEnrichmentQuery: detailEnrichmentQuery,
-        warningsSink: { [weak self] warnings in self?.stateManager.setLatestWarnings(warnings) }
-    )
+    @ObservationIgnored private lazy var detailLogic = DetailLogic()
     private let collectionLogic: CollectionLogic
     let bridgeClient: BridgeClient
     private let detailEnrichmentQuery: any DesktopDetailEnrichmentQuerying
@@ -101,6 +98,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     private var detectedTargets: Set<String> = []
     var inspectedPayloadBySourceId: [ScopedSourceKey: [String: Any]] = [:]
     private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
+    @ObservationIgnored private var detailEnrichmentTasksBySourceId: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var detailEnrichmentTokensBySourceId: [String: UInt64] = [:]
+    @ObservationIgnored private var detailEnrichmentTokenSeed: UInt64 = 0
+    @ObservationIgnored private var refreshedDetailEnrichmentSourceIds: Set<String> = []
     var usageSnapshot: UsageSnapshotViewData?
     var usageLoadState: LoadState = .idle
     var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
@@ -675,7 +676,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             return nil
         }
 
-        let payload = scopedSourceKey(sourceId: sourceId).flatMap { inspectedPayloadBySourceId[$0] } ?? [:]
+        let payload = mergedDetailPayload(for: sourceId)
         let sourcePayload = payload["source"] as? [String: Any] ?? [:]
         let summaryPayload = payload["summary"] as? [String: Any] ?? [:]
         let lockPayload = summaryPayload["lock"] as? [String: Any] ?? [:]
@@ -722,7 +723,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         guard currentRoute == .home else { return }
         for sourceId in sourceIds {
             guard currentRoute == .home else { return }
-            guard detailEnrichmentPayloadBySourceId[sourceId] == nil else { continue }
             scheduleDetailEnrichmentFetch(sourceId: sourceId)
         }
     }
@@ -762,9 +762,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 originalDisplayName: result.originalDisplayName
             )
             scheduleDetailEnrichmentFetch(sourceId: result.sourceId, force: true)
-            if let input = detailInput(for: result.sourceId) {
-                detailLogic.scheduleDetailEnrichmentFetch(input: input)
-            }
             let toastKey = result.isResetToOriginal ? "toast.rename.reset_success" : "toast.rename.success"
             showToast(style: .success, text: localizedText(toastKey, result.displayName))
         } catch {
@@ -1090,8 +1087,8 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 detailLogic.invalidatePreparedDetailContent(for: sourceId)
                 if let input = detailInput(for: sourceId) {
                     detailLogic.scheduleDetailContentWarmupIfNeeded(input: input)
-                    detailLogic.scheduleDetailEnrichmentFetch(input: input)
                 }
+                scheduleDetailEnrichmentFetch(sourceId: sourceId)
             }
             stateManager.setLatestWarnings(response.warnings)
         } catch {
@@ -1580,9 +1577,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             guard let payload = rawValue as? [String: Any] else {
                 continue
             }
-            let mergedPayload = mergedDetailEnrichmentPayload(
-                existing: detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
-                incoming: payload
+            let mergedPayload = DetailPayloadOverlay.merge(
+                detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
+                with: payload
             )
             if !mergedPayload.isEmpty {
                 detailEnrichmentPayloadBySourceId[sourceId] = mergedPayload
@@ -1596,19 +1593,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     func currentProjectScopeForSourceManagement() -> ProjectScopeSelection {
         currentProjectScope()
-    }
-
-    private func mergedDetailEnrichmentPayload(existing: [String: Any], incoming: [String: Any]) -> [String: Any] {
-        var mergedPayload = existing
-        for (key, value) in incoming {
-            if let existingObject = mergedPayload[key] as? [String: Any],
-               let incomingObject = value as? [String: Any] {
-                mergedPayload[key] = mergedDetailEnrichmentPayload(existing: existingObject, incoming: incomingObject)
-            } else {
-                mergedPayload[key] = value
-            }
-        }
-        return mergedPayload
     }
 
     private func parseProjectScopeSelection(_ value: Any?) -> ProjectScopeSelection? {
@@ -1762,37 +1746,65 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func scheduleDetailEnrichmentFetch(sourceId: String, force: Bool = false) {
-        Task { @MainActor [weak self] in
+        if !force {
+            guard !refreshedDetailEnrichmentSourceIds.contains(sourceId),
+                  detailEnrichmentTasksBySourceId[sourceId] == nil else {
+                return
+            }
+        } else {
+            detailEnrichmentTasksBySourceId[sourceId]?.cancel()
+            detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+        }
+
+        detailEnrichmentTokenSeed &+= 1
+        let token = detailEnrichmentTokenSeed
+        detailEnrichmentTokensBySourceId[sourceId] = token
+
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer {
+                if self.detailEnrichmentTokensBySourceId[sourceId] == token {
+                    self.detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+                    self.detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
+                }
+            }
             do {
-                let response = try await self.bridgeClient.inspectEnrichment(sourceId: sourceId)
+                let response = try await self.detailEnrichmentQuery.inspectEnrichment(sourceId: sourceId)
+                guard !Task.isCancelled,
+                      self.detailEnrichmentTokensBySourceId[sourceId] == token else {
+                    return
+                }
                 if let payload = response.data?.value as? [String: Any] {
                     let displayName = self.renamedSourceDisplayNameOverridesBySourceId[sourceId]
                         ?? self.sourceManagement.summary(for: sourceId)?.sourceDisplayName
                     let originalDisplayName = self.renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId]
                         ?? self.sourceManagement.summary(for: sourceId)?.sourceOriginalDisplayName
                         ?? displayName
+                    let normalizedPayload: [String: Any]
                     if let displayName, let originalDisplayName {
-                        let normalizedPayload = self.enrichmentPayloadWithDisplayName(
+                        normalizedPayload = self.enrichmentPayloadWithDisplayName(
                             payload,
                             displayName: displayName,
                             originalDisplayName: originalDisplayName
                         )
-                        self.detailEnrichmentPayloadBySourceId[sourceId] = self.mergedDetailEnrichmentPayload(
-                            existing: self.detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
-                            incoming: normalizedPayload
-                        )
                     } else {
-                        self.detailEnrichmentPayloadBySourceId[sourceId] = self.mergedDetailEnrichmentPayload(
-                            existing: self.detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
-                            incoming: payload
-                        )
+                        normalizedPayload = payload
+                    }
+                    self.detailEnrichmentPayloadBySourceId[sourceId] = DetailPayloadOverlay.merge(
+                        self.detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
+                        with: normalizedPayload
+                    )
+                    self.detailLogic.invalidatePreparedDetailContent(for: sourceId)
+                    if let input = self.detailInput(for: sourceId) {
+                        self.detailLogic.scheduleDetailContentWarmupIfNeeded(input: input)
                     }
                 }
+                self.refreshedDetailEnrichmentSourceIds.insert(sourceId)
                 self.stateManager.setLatestWarnings(response.warnings)
             } catch {
             }
         }
+        detailEnrichmentTasksBySourceId[sourceId] = task
     }
 
     func preferredGroupPath(lockPayload: [String: Any], leafPayloads: [[String: Any]]) -> String? {
@@ -1864,10 +1876,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func mergedDetailPayload(for sourceId: String) -> [String: Any] {
-        var payload = inspectedPayloadBySourceId[ScopedSourceKey(scope: currentProjectScope(), sourceId: sourceId)] ?? [:]
+        let payload = inspectedPayloadBySourceId[ScopedSourceKey(scope: currentProjectScope(), sourceId: sourceId)] ?? [:]
         let enrichmentPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
-        for (key, value) in enrichmentPayload { payload[key] = value }
-        return payload
+        return DetailPayloadOverlay.merge(payload, with: enrichmentPayload)
     }
 
     private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {
