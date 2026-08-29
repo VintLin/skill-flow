@@ -27,5 +27,3 @@ export function bootstrapImportedTargets(
     ]),
   ];
 }
-
-export const managedProjections = activeProjections;

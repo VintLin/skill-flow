@@ -1381,39 +1381,27 @@ export type PreparedSkillRef = {
 export type ImportPreparationRecord = {
   schemaVersion?: SchemaVersion;
   id: string;
-  preparationId?: string;
   cacheKey?: string;
   locator: string;
   canonicalRepo: string;
-  sourceLocator?: string;
-  canonicalLocator?: string;
   requestedPath?: string;
   sourceSelectionKey?: string;
-  existingSourceIdHint?: SourceId;
   sourceKind: SourceKind;
   checkoutPath: string;
   sourceId: string;
   displayName: string;
-  sourceRevision?: SourceRevision;
   availableTargets: DeploymentTargetId[];
   commitSha?: string;
   skillIds: string[];
   skillRefs?: PreparedSkillRef[];
-  currentAttempt?: {
-    attemptId: string;
-    commitStartedAt?: string;
-  };
   status: ImportPreparationStatus | "committed" | "expired";
   failure?: {
     reasonCode: string;
     retryable: boolean;
     message: string;
-    diagnostics?: Diagnostic[];
   };
-  diagnostics?: Diagnostic[];
   preparedAt: string;
   expiresAt: string;
-  createdAt?: string;
 };
 
 export type SourceUpdateDiff = {

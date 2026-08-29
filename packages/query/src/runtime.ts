@@ -160,7 +160,7 @@ import {
   type BootstrapEvent,
   type LocalSkillScanResult,
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
-import { parseSkillFrontmatter } from "./skill-frontmatter.js";
+import { parseSkillFrontmatter } from "@skill-flow/core-engine/services/skill-frontmatter";
 import type { AgentsOriginReader } from "@skill-flow/core-engine/services/legacy-agents-lock";
 import { DeploymentReconciler } from "./deployment-reconciler.js";
 import {
