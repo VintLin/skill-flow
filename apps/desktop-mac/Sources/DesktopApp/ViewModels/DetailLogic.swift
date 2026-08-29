@@ -98,6 +98,8 @@ final class DetailLogic {
     @ObservationIgnored
     private var detailWarmupTokenSeed: UInt64 = 0
 
+    private var preparedContentRevision: UInt64 = 0
+
     @ObservationIgnored
     var detailWarmupDelay: Duration = .milliseconds(40)
 
@@ -106,6 +108,7 @@ final class DetailLogic {
     }
 
     func detailViewData(for input: DetailInput, schedulesWarmup: Bool = true) -> DetailViewData {
+        _ = preparedContentRevision
         let summary = input.summary
         let draft = input.draft
         let sourceId = summary.sourceId
@@ -409,6 +412,7 @@ final class DetailLogic {
                     return
                 }
                 self.preparedDetailContentBySourceId[sourceId] = prepared
+                self.preparedContentRevision &+= 1
             }
         }
         detailWarmupTasksBySourceId[sourceId] = task
@@ -420,6 +424,7 @@ final class DetailLogic {
         detailWarmupTasksBySourceId.removeValue(forKey: sourceId)
         detailWarmupTokenSeed &+= 1
         detailWarmupTokensBySourceId[sourceId] = detailWarmupTokenSeed
+        preparedContentRevision &+= 1
     }
 
     func hasPreparedOrScheduledDetailContent(for sourceId: String) -> Bool {

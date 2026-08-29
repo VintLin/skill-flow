@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import XCTest
 
 @testable import SkillFlowDesktop
@@ -1844,6 +1845,30 @@ final class MainViewModelSelectionTests: XCTestCase {
         }
 
         XCTAssertTrue(model.detailSnapshot(for: "alpha")?.skills.allSatisfy({ !$0.documents.isEmpty }) == true)
+    }
+
+    func testDetailWarmupCompletionInvalidatesObservedSnapshot() async throws {
+        let fixture = try TestFixture.install()
+        try fixture.reset(state: .baseline)
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+        model.detailWarmupDelay = .milliseconds(300)
+        await model.bootstrap()
+        await model.selectSource("alpha")
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        let invalidated = ThreadSafeFlag()
+        withObservationTracking {
+            _ = model.detailSnapshot(for: "alpha")
+        } onChange: {
+            invalidated.setTrue()
+        }
+
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertTrue(invalidated.value)
     }
 
     func testHydratedSkillDocumentTabsRemainUnloadedUntilOpened() async throws {
