@@ -45,11 +45,6 @@ export async function fetchGitHubSkillPaths(
     .sort((left, right) => left.localeCompare(right));
 }
 
-export async function fetchGitHubRepoStarCount(locator: string): Promise<number | undefined> {
-  const details = await fetchGitHubRepoDetails(locator);
-  return details.starCount;
-}
-
 export async function fetchGitHubRepoDetails(locator: string): Promise<SourceStats> {
   const repo = parseGitHubRepo(locator);
   if (!repo) {

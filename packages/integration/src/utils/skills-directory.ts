@@ -18,8 +18,6 @@ const SKILLS_DIRECTORY_BASE_URL = "https://skills.sh";
 export const IMPORT_SEARCH_CACHE_TTL_MS = 5 * 60_000;
 export const IMPORT_SOURCE_CACHE_TTL_MS = 5 * 60_000;
 export const IMPORT_RECOMMENDATION_CACHE_TTL_MS = 5 * 60_000;
-export const IMPORT_GITHUB_ENRICH_TTL_MS = 30 * 60_000;
-export const IMPORT_DIRECTORY_CACHE_TTL_MS = IMPORT_SOURCE_CACHE_TTL_MS;
 const SKILL_DETAIL_ENRICH_CONCURRENCY = 3;
 
 const IMPORT_REPO_ALIASES = new Map<string, string>([
@@ -68,15 +66,6 @@ export type SkillsDirectorySourcePage = {
   repoUrl?: string;
   repoLabel?: string;
   skills: SkillsDirectorySourceSkill[];
-};
-
-export type SkillsDirectoryOwnerPage = {
-  slug: string;
-  sourceUrl: string;
-  githubUrl?: string;
-  sourceCount?: number;
-  skillCount?: number;
-  totalInstalls?: number;
 };
 
 export type SkillsDirectorySkillDetail = {
@@ -351,18 +340,6 @@ export async function fetchSkillsDirectorySourceSnapshot(
     skills,
     ...(options?.trust && hasTrustSignals(options.trust) ? { trust: options.trust } : {}),
   };
-}
-
-export async function fetchSkillsDirectorySourcePreview(
-  locator: string,
-  options?: {
-    trust?: UnifiedSourceTrust;
-  },
-): Promise<UnifiedSourceSnapshot> {
-  return fetchSkillsDirectorySourceSnapshot(locator, {
-    includeSkillDetails: false,
-    ...(options?.trust ? { trust: options.trust } : {}),
-  });
 }
 
 export async function fetchSkillsDirectoryFeedGroups(

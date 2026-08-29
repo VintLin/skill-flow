@@ -23,6 +23,7 @@ All notable changes to `skill-flow` will be documented in this file.
 - Desktop file-tree documents now render directly from tree items without unused line models or placeholder conversion adapters.
 - Desktop Home cards and Detail views now share one single-flight enrichment cache and recursive overlay policy, avoiding duplicate requests and stale appended leaf payloads.
 - Removed superseded update parsing, file-tree, toast, uninstall-selection, and label helpers from the desktop app-wide view model.
+- Removed unused Import/GitHub integration exports and a stale handwritten declaration that no longer matched the TypeScript implementation.
 
 ### Fixed
 
