@@ -380,7 +380,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     var homeAgentFilterOptions: [HomeAgentFilterOption] {
-        let cards = groupCards
+        homeAgentFilterOptions(from: groupCards)
+    }
+
+    func homeAgentFilterOptions(from cards: [GroupCardModel]) -> [HomeAgentFilterOption] {
         let enabledGroupCountsByTargetId = Dictionary(
             grouping: cards.flatMap { card in
                 card.targets.filter(\.isEnabled).map { target in (target.id, card.id) }
@@ -398,7 +401,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     var homeStatusFilterOptions: [HomeSidebarFilterOption] {
-        let cards = groupCards
+        homeStatusFilterOptions(from: groupCards)
+    }
+
+    func homeStatusFilterOptions(from cards: [GroupCardModel]) -> [HomeSidebarFilterOption] {
         return [
             HomeSidebarFilterOption(id: "all", count: cards.count),
             HomeSidebarFilterOption(id: "pinned", count: cards.filter(\.isPinned).count),
@@ -406,7 +412,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     var homeSourceTypeFilterOptions: [HomeSidebarFilterOption] {
-        let cards = groupCards
+        homeSourceTypeFilterOptions(from: groupCards)
+    }
+
+    func homeSourceTypeFilterOptions(from cards: [GroupCardModel]) -> [HomeSidebarFilterOption] {
         return [
             HomeSidebarFilterOption(id: "all", count: cards.count),
             HomeSidebarFilterOption(id: "local", count: cards.filter(Self.isLocalHomeSource).count),
@@ -417,8 +426,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     var effectiveSelectedHomeAgentFilterId: String? {
         guard let selectedHomeAgentFilterId else { return nil }
-        let optionIds = Set(homeAgentFilterOptions.map(\.id))
-        return optionIds.contains(selectedHomeAgentFilterId) ? selectedHomeAgentFilterId : nil
+        return visibleTargetIds().contains(selectedHomeAgentFilterId) ? selectedHomeAgentFilterId : nil
     }
 
     var detectedTargetIdsForSettings: [String] {

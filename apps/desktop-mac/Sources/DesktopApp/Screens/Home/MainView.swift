@@ -1126,14 +1126,15 @@ struct MainView: View {
 
     private func homeShell(layout: LayoutMetrics) -> some View {
         let homeTagSnapshot = homeContainer.homeTagSnapshot(locale: locale)
+        let groupCards = viewModel.groupCards
         let visibleCards = homeContainer.visibleGroupCards(
-            from: viewModel.groupCards,
+            from: groupCards,
             snapshot: homeTagSnapshot
         )
 
         return HStack(alignment: .top, spacing: 0) {
             if isHomeSidebarVisible {
-                homeSidebarColumn(homeTagSnapshot: homeTagSnapshot)
+                homeSidebarColumn(homeTagSnapshot: homeTagSnapshot, groupCards: groupCards)
                     .frame(width: layout.homeSidebarWidth)
             }
 
@@ -1532,27 +1533,30 @@ struct MainView: View {
         )
     }
 
-    private func homeSidebar(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
+    private func homeSidebar(
+        homeTagSnapshot: GroupTagController.HomeSnapshot,
+        groupCards: [GroupCardModel]
+    ) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
-                let homeAgentOptions = homeAgentChipItems()
+                let homeAgentOptions = homeAgentChipItems(groupCards: groupCards)
                 let rawHomeAgentFilterId = homeContainer.selectedHomeAgentFilterId()
                 let selectedHomeAgentFilterId = rawHomeAgentFilterId.flatMap { raw in
                     homeAgentOptions.contains { $0.id == raw } ? raw : nil
                 }
 
-                homeSidebarChipSection(sectionId: HomeSidebarSectionID.status, title: t("home.sidebar.status"), options: homeStatusChipItems(), selectedId: homeContainer.selectedHomeStatusFilterId()) { optionId in
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.status, title: t("home.sidebar.status"), options: homeStatusChipItems(groupCards: groupCards), selectedId: homeContainer.selectedHomeStatusFilterId()) { optionId in
                     homeContainer.setSelectedHomeStatusFilter(optionId)
                 }
 
-                homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType, title: t("home.sidebar.source_type"), options: homeSourceTypeChipItems(), selectedId: homeContainer.selectedHomeSourceTypeFilterId()) { optionId in
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType, title: t("home.sidebar.source_type"), options: homeSourceTypeChipItems(groupCards: groupCards), selectedId: homeContainer.selectedHomeSourceTypeFilterId()) { optionId in
                     homeContainer.setSelectedHomeSourceTypeFilter(optionId)
                 }
 
                 homeSidebarChipSection(
                     sectionId: HomeSidebarSectionID.tags,
                     title: t("home.sidebar.tags"),
-                    options: homeTagChipItems(snapshot: homeTagSnapshot),
+                    options: homeTagChipItems(snapshot: homeTagSnapshot, groupCards: groupCards),
                     selectedId: homeTagSnapshot.selectedKey ?? "all",
                     onSelect: { optionId in
                         homeContainer.setSelectedHomeTagFilterKey(optionId == "all" ? nil : optionId)
@@ -1566,7 +1570,7 @@ struct MainView: View {
                     homeContainer.setSelectedHomeAgentFilter(optionId == "all" ? nil : optionId)
                 }
 
-                homeSidebarProjectSection
+                homeSidebarProjectSection(groupCards: groupCards)
             }
             .padding(.horizontal, Self.homeSidebarHorizontalPadding)
             .padding(.top, 16)
@@ -1574,10 +1578,13 @@ struct MainView: View {
         }
     }
 
-    private func homeSidebarColumn(homeTagSnapshot: GroupTagController.HomeSnapshot) -> some View {
+    private func homeSidebarColumn(
+        homeTagSnapshot: GroupTagController.HomeSnapshot,
+        groupCards: [GroupCardModel]
+    ) -> some View {
         VStack(spacing: 0) {
             homeSidebarHeader
-            homeSidebar(homeTagSnapshot: homeTagSnapshot)
+            homeSidebar(homeTagSnapshot: homeTagSnapshot, groupCards: groupCards)
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(AppTheme.surface(for: theme))
@@ -1615,8 +1622,8 @@ struct MainView: View {
         .accessibilityLabel(isHomeSidebarVisible ? "Hide sidebar" : "Show sidebar")
     }
 
-    private func homeStatusChipItems() -> [HomeSidebarChipItem] {
-        homeContainer.homeStatusFilterOptions().map { option in
+    private func homeStatusChipItems(groupCards: [GroupCardModel]) -> [HomeSidebarChipItem] {
+        homeContainer.homeStatusFilterOptions(from: groupCards).map { option in
             HomeSidebarChipItem(
                 id: option.id,
                 title: option.id == "pinned" ? t("home.sidebar.pinned") : t("home.sidebar.all"),
@@ -1627,8 +1634,8 @@ struct MainView: View {
         }
     }
 
-    private func homeSourceTypeChipItems() -> [HomeSidebarChipItem] {
-        homeContainer.homeSourceTypeFilterOptions().map { option in
+    private func homeSourceTypeChipItems(groupCards: [GroupCardModel]) -> [HomeSidebarChipItem] {
+        homeContainer.homeSourceTypeFilterOptions(from: groupCards).map { option in
             let title: String
             switch option.id {
             case "local":
@@ -1644,16 +1651,19 @@ struct MainView: View {
         }
     }
 
-    private func homeTagChipItems(snapshot: GroupTagController.HomeSnapshot) -> [HomeSidebarChipItem] {
-        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: accent, showsHashPrefix: true)
+    private func homeTagChipItems(
+        snapshot: GroupTagController.HomeSnapshot,
+        groupCards: [GroupCardModel]
+    ) -> [HomeSidebarChipItem] {
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: groupCards.count, accent: accent, showsHashPrefix: true)
         return [all] + snapshot.availableTags.map { item in
             HomeSidebarChipItem(id: item.id, title: item.title, count: snapshot.tagCountsByID[item.id], accent: item.accent, showsHashPrefix: true)
         }
     }
 
-    private func homeAgentChipItems() -> [HomeSidebarChipItem] {
-        let options = homeContainer.homeAgentFilterOptions()
-        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: viewModel.groupCards.count, accent: nil, showsHashPrefix: false)
+    private func homeAgentChipItems(groupCards: [GroupCardModel]) -> [HomeSidebarChipItem] {
+        let options = homeContainer.homeAgentFilterOptions(from: groupCards)
+        let all = HomeSidebarChipItem(id: "all", title: t("home.sidebar.all"), count: groupCards.count, accent: nil, showsHashPrefix: false)
         return [all] + options.map { option in
             HomeSidebarChipItem(id: option.id, title: option.label, count: option.enabledGroupCount, accent: nil, showsHashPrefix: false)
         }
@@ -1733,7 +1743,7 @@ struct MainView: View {
         )
     }
 
-    private var homeSidebarProjectSection: some View {
+    private func homeSidebarProjectSection(groupCards: [GroupCardModel]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(t("home.sidebar.projects"))
@@ -1745,19 +1755,19 @@ struct MainView: View {
                 homeProjectScopeRefreshButton
             }
 
-            homeProjectScopeList
+            homeProjectScopeList(groupCards: groupCards)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var homeProjectScopeList: some View {
+    private func homeProjectScopeList(groupCards: [GroupCardModel]) -> some View {
         let projects = homeContainer.recentProjectScopes()
 
         return VStack(alignment: .leading, spacing: 6) {
             homeProjectScopeRow(
                 title: t("project_scope.global"),
                 projectPath: nil,
-                count: viewModel.groupCards.count,
+                count: groupCards.count,
                 isSelected: viewModel.selectedProjectScope == .global
             ) {
                 Task {

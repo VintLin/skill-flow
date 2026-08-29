@@ -3,6 +3,12 @@ import XCTest
 
 @MainActor
 final class HomeScreenContainerSortingTests: XCTestCase {
+    func testHomeRenderBuildsGroupCardsOnceAndPassesTheProjectionDownstream() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        XCTAssertEqual(source.components(separatedBy: "viewModel.groupCards").count - 1, 1)
+    }
+
     func testSortsByPinnedFirstThenFirstTagRankThenNameKey() {
         let snapshot = GroupTagController.HomeSnapshot(
             availableTags: [],
@@ -83,5 +89,14 @@ final class HomeScreenContainerSortingTests: XCTestCase {
             targets: [],
             saveState: SaveState(phase: .idle, detail: nil)
         )
+    }
+
+    private func sourceText(at relativePath: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: url, encoding: .utf8)
     }
 }

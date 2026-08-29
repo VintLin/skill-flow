@@ -133,6 +133,10 @@ final class HomeScreenContainer {
         mainViewModel.homeAgentFilterOptions
     }
 
+    func homeAgentFilterOptions(from cards: [GroupCardModel]) -> [HomeAgentFilterOption] {
+        mainViewModel.homeAgentFilterOptions(from: cards)
+    }
+
     func selectedHomeAgentFilterId() -> String? {
         mainViewModel.selectedHomeAgentFilterId
     }
@@ -145,6 +149,10 @@ final class HomeScreenContainer {
         mainViewModel.homeStatusFilterOptions
     }
 
+    func homeStatusFilterOptions(from cards: [GroupCardModel]) -> [HomeSidebarFilterOption] {
+        mainViewModel.homeStatusFilterOptions(from: cards)
+    }
+
     func selectedHomeStatusFilterId() -> String {
         mainViewModel.selectedHomeStatusFilterId
     }
@@ -155,6 +163,10 @@ final class HomeScreenContainer {
 
     func homeSourceTypeFilterOptions() -> [HomeSidebarFilterOption] {
         mainViewModel.homeSourceTypeFilterOptions
+    }
+
+    func homeSourceTypeFilterOptions(from cards: [GroupCardModel]) -> [HomeSidebarFilterOption] {
+        mainViewModel.homeSourceTypeFilterOptions(from: cards)
     }
 
     func selectedHomeSourceTypeFilterId() -> String {
