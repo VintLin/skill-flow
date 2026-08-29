@@ -346,7 +346,6 @@ final class SourceManagement {
         let key = ScopedSourceKey(scope: scope, sourceId: sourceId)
 
         let previousDraft = currentDraft
-        let saveStartedAt = ContinuousClock.now
         workingDrafts[key] = normalizedDraft
         saveStateBySourceId[key] = SaveState(phase: .saving, detail: nil)
 
@@ -357,7 +356,6 @@ final class SourceManagement {
                 selectedLeafIds: normalizedDraft.selectedLeafIds,
                 enabledTargets: normalizedDraft.enabledTargets
             )
-            await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
             workingDrafts[key] = normalizedDraft
             saveStateBySourceId[key] = SaveState(phase: .saved, detail: nil)
             applyPostApplyResponse(response, sourceId: sourceId, scope: scope)
@@ -365,7 +363,6 @@ final class SourceManagement {
             delegate?.showToast(style: successStyle, text: successMessage)
         } catch {
             let firstReason = firstErrorLine(from: error)
-            await ensureMinimumSaveLoadingDuration(since: saveStartedAt)
             applyProjectScopeStateIfAvailable(from: error)
             workingDrafts[key] = previousDraft
             saveStateBySourceId[key] = SaveState(phase: .failed, detail: firstReason)
@@ -843,15 +840,6 @@ final class SourceManagement {
     }
 
     private func cancelDeferredDraftSync() {
-    }
-
-    private func ensureMinimumSaveLoadingDuration(since start: ContinuousClock.Instant) async {
-        let minimum: Duration = .milliseconds(200)
-        let elapsed = start.duration(to: ContinuousClock.now)
-        guard elapsed < minimum else {
-            return
-        }
-        try? await Task.sleep(for: minimum - elapsed)
     }
 
     private func normalizedPinnedSourceIds(_ sourceIds: [String]) -> [String] {

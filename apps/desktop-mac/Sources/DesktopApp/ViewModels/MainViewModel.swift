@@ -167,7 +167,6 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     @MainActor static var currentDateProvider: () -> Date = Date.init
 
     private static var targetOrder: [String] { AgentDisplayCatalog.defaultTargetOrder }
-    private static var minimumSaveLoadingDuration: Duration { .milliseconds(200) }
     private static var defaultRecentlyUpdatedIndicatorDuration: Duration { .seconds(2) }
 
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"

@@ -997,7 +997,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertEqual(model.detailSnapshot(for: "alpha")?.enabledTargetLabels, ["Cursor"])
     }
 
-    func testTargetToggleKeepsLoadingVisibleForMinimumDuration() async throws {
+    func testTargetToggleDoesNotAddArtificialLoadingDelay() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
 
@@ -1012,7 +1012,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         )
 
         let elapsed = startedAt.duration(to: ContinuousClock.now)
-        XCTAssertGreaterThanOrEqual(elapsed, .milliseconds(200))
+        XCTAssertLessThan(elapsed, .milliseconds(150))
         XCTAssertEqual(model.saveState(for: "alpha").phase, .saved)
     }
 
