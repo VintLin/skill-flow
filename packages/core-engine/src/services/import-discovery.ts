@@ -4,6 +4,7 @@ import type {
   ImportSearchHit,
   ImportSearchSnapshot,
   UnifiedSourceSnapshot,
+  UnifiedSourceSnapshotCacheEntry,
   UnifiedSourceTrust,
 } from "@skill-flow/domain/types";
 import {
@@ -56,21 +57,39 @@ export class ImportDiscovery {
     store: RuntimeStore;
   }) {}
 
-  async resolveRecommendation(feedId: ImportRecommendationFeedId): Promise<string[]> {
-    const cached = (await this.options.store.readImportDataCache()).recommendations[feedId];
-    if (cached) {
-      if (!isImportDataCacheExpired(cached)) {
+  async resolveRecommendations(
+    feedIds: readonly ImportRecommendationFeedId[],
+  ): Promise<{
+    groups: string[];
+    cachedSources: Record<string, UnifiedSourceSnapshotCacheEntry>;
+  }> {
+    const cache = await this.options.store.readImportDataCache();
+    const groupLists = await Promise.all(feedIds.map(async (feedId) => {
+      const cached = cache.recommendations[feedId];
+      if (cached) {
+        if (isImportDataCacheExpired(cached)) {
+          void this.refreshRecommendation(feedId).catch(() => undefined);
+        }
         return cached.groups;
       }
-      void this.refreshRecommendation(feedId).catch(() => undefined);
-      return cached.groups;
-    }
 
-    if (feedId === "seed") {
-      return (await this.refreshRecommendation(feedId)).groups;
-    }
-    void this.refreshRecommendation(feedId).catch(() => undefined);
-    return [];
+      if (feedId === "seed") {
+        const refreshed = await this.refreshRecommendation(feedId);
+        cache.recommendations[feedId] = refreshed;
+        return refreshed.groups;
+      }
+      void this.refreshRecommendation(feedId).catch(() => undefined);
+      return [];
+    }));
+    const groups = [...new Set(groupLists.flat())];
+
+    return {
+      groups,
+      cachedSources: Object.fromEntries(groups.flatMap((canonicalRepo) => {
+        const cached = cache.repos[canonicalRepo];
+        return cached ? [[canonicalRepo, cached] as const] : [];
+      })),
+    };
   }
 
   async resolveSearch(query: string): Promise<ImportSearchSnapshot> {

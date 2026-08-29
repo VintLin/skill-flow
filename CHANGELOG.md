@@ -11,6 +11,7 @@ All notable changes to `skill-flow` will be documented in this file.
 - Removed unused persisted local import-choice snapshots from preferences; migration and settings writes now discard those rebuildable legacy fields.
 - Simplified disposable import preparation records to retain only checkout, lifecycle, retry, and recovery evidence.
 - Replaced the unused multi-provider import repository cache envelope with direct Skills source snapshots.
+- Recommendation loading now resolves all feeds and cached source cards from one cache read instead of serializing repeated full-file reads.
 
 ## v1.6.1 - 2026-08-27
 

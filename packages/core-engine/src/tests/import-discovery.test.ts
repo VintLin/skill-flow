@@ -54,6 +54,30 @@ describe("ImportDiscovery", () => {
     expect(provider.fetchRecommendationGroups).toHaveBeenCalledTimes(2);
   });
 
+  test("resolves recommendation feeds and cached sources with one cache read", async () => {
+    const provider = createProvider();
+    const { discovery, store } = createDiscovery(provider);
+    const cachedSource = sourceSnapshot("acme/skills");
+    await store.writeImportSourceSnapshotEntry({
+      canonicalRepo: cachedSource.canonicalRepo,
+      checkedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      data: cachedSource,
+    });
+    await store.writeImportRecommendationFeedEntry(recommendationFeed("seed", ["acme/skills"]));
+    await store.writeImportRecommendationFeedEntry(recommendationFeed("official", ["acme/skills", "other/skills"]));
+    const readCache = vi.spyOn(store, "readImportDataCache");
+
+    await expect(discovery.resolveRecommendations(["seed", "official"])).resolves.toEqual({
+      groups: ["acme/skills", "other/skills"],
+      cachedSources: {
+        "acme/skills": expect.objectContaining({ data: cachedSource }),
+      },
+    });
+    expect(readCache).toHaveBeenCalledTimes(1);
+    expect(provider.fetchRecommendationGroups).not.toHaveBeenCalled();
+  });
+
   test("shares an in-flight search across normalized queries and releases it after completion", async () => {
     const pending = deferred<ImportSearchSnapshot["hits"]>();
     const provider = createProvider({
@@ -276,8 +300,8 @@ function recommendationFeed(
 ): ImportRecommendationFeed {
   return {
     id,
-    checkedAt: "2026-08-29T00:00:00.000Z",
-    expiresAt: "2026-08-29T01:00:00.000Z",
+    checkedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
     groups,
   };
 }

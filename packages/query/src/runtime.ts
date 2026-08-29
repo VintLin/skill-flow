@@ -1864,17 +1864,21 @@ export class SkillFlowApp {
   private async listRecommendedImportGroupsImpl(): Promise<Result<{ groups: ImportGroupCandidate[] }>> {
     const manifest = await this.readManifestConsistently();
     const installedRepos = this.installedCanonicalRepos(manifest);
-    const recommendedRepos = await this.resolveRecommendedImportRepos();
-    const importCache = await this.store.readImportDataCache();
-    const groups = recommendedRepos
+    const recommendations = await this.importDiscovery.resolveRecommendations([
+      "seed",
+      "official",
+      "hot",
+      "trending",
+    ]);
+    const groups = recommendations.groups
       .slice(0, 8)
       .map((canonicalRepo) =>
-        this.buildImmediateImportGroupCandidate(importCache, canonicalRepo, {
+        this.buildImmediateImportGroupCandidate(recommendations.cachedSources, canonicalRepo, {
           installed: installedRepos.has(canonicalRepo),
         }),
       );
 
-    this.prewarmImportPreviewSnapshots(groups, importCache);
+    this.prewarmImportPreviewSnapshots(groups, recommendations.cachedSources);
 
     return ok({ groups });
   }
@@ -2220,7 +2224,7 @@ export class SkillFlowApp {
           });
         } catch (error) {
           const matchedSkillNames = this.importSourcePolicy.matchedSkillNames(exactLocator);
-          const exactCandidate = this.buildImmediateImportGroupCandidate(importCache, exactRepo, {
+          const exactCandidate = this.buildImmediateImportGroupCandidate(importCache.repos, exactRepo, {
             installed: installedRepos.has(exactRepo),
             ...(matchedSkillNames.length
               ? {
@@ -2267,7 +2271,7 @@ export class SkillFlowApp {
       const searchSnapshot = await this.importDiscovery.resolveSearch(normalizedQuery);
       const grouped = groupSkillsDirectorySearchHits(searchSnapshot.hits).slice(0, 8);
       const groups = grouped.map((group) =>
-        this.buildImmediateImportGroupCandidate(importCache, group.canonicalRepo, {
+        this.buildImmediateImportGroupCandidate(importCache.repos, group.canonicalRepo, {
           installed: installedRepos.has(group.canonicalRepo),
           matchedSkills: group.matchedSkills,
         }),
@@ -2683,7 +2687,7 @@ export class SkillFlowApp {
   }
 
   private buildImmediateImportGroupCandidate(
-    importCache: ImportDataCache,
+    cachedSources: ImportDataCache["repos"],
     canonicalRepo: string,
     options: {
       installed: boolean;
@@ -2695,7 +2699,7 @@ export class SkillFlowApp {
     },
   ): ImportGroupCandidate {
     const normalizedRepo = normalizeImportCanonicalRepo(canonicalRepo) ?? canonicalRepo;
-    const cachedRepo = importCache.repos?.[normalizedRepo];
+    const cachedRepo = cachedSources[normalizedRepo];
     const cachedSnapshot = cachedRepo?.data;
 
     if (cachedSnapshot) {
@@ -2726,7 +2730,7 @@ export class SkillFlowApp {
 
   private prewarmImportPreviewSnapshots(
     groups: ImportGroupCandidate[],
-    importCache: ImportDataCache,
+    cachedSources: ImportDataCache["repos"],
   ): void {
     let started = 0;
     for (const group of groups) {
@@ -2734,7 +2738,7 @@ export class SkillFlowApp {
         continue;
       }
       const normalizedRepo = normalizeImportCanonicalRepo(group.canonicalRepo) ?? group.canonicalRepo;
-      const cached = importCache.repos?.[normalizedRepo];
+      const cached = cachedSources[normalizedRepo];
       const cachedSnapshot = cached?.data;
       if (cached && cachedSnapshot && !isImportDataCacheExpired(cached)) {
         continue;
@@ -2789,22 +2793,6 @@ export class SkillFlowApp {
     }
 
     return manifest.sources.some((source) => source.locator === locator);
-  }
-
-  private async resolveRecommendedImportRepos(): Promise<string[]> {
-    const [seedGroups, officialGroups, hotGroups, trendingGroups] = await Promise.all([
-      this.importDiscovery.resolveRecommendation("seed"),
-      this.importDiscovery.resolveRecommendation("official"),
-      this.importDiscovery.resolveRecommendation("hot"),
-      this.importDiscovery.resolveRecommendation("trending"),
-    ]);
-
-    return [...new Set([
-      ...seedGroups,
-      ...officialGroups,
-      ...hotGroups,
-      ...trendingGroups,
-    ])];
   }
 
   private refreshImportRecommendationFeedInBackground(feedId: ImportRecommendationFeedId): void {
