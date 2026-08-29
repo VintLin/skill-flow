@@ -331,12 +331,6 @@ async function rewriteAuthorityFiles(
     customTargets: readCustomTargets(preferences.customTargets),
     agentDisplayOrder: readStringArray(preferences.agentDisplayOrder),
   };
-  if (Array.isArray(preferences.localImportChoices)) {
-    preferencesPayload.localImportChoices = preferences.localImportChoices;
-  }
-  if (Array.isArray(preferences.localScanImportChoices)) {
-    preferencesPayload.localScanImportChoices = preferences.localScanImportChoices;
-  }
   await writeJsonFile(path.join(stateRoot, "preferences.json"), {
     ...preferencesPayload,
   });

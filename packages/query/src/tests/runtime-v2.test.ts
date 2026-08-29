@@ -739,7 +739,7 @@ describe.sequential("runtime v2 authority reads", () => {
   });
 
   test("config reads and settings writes use v2 preferences", async () => {
-    await writeAuthorityState(sandbox.stateRoot, createAuthorityState(sandbox, {
+    const authorityState = createAuthorityState(sandbox, {
       preferences: {
         pinnedSourceIds: ["repo", "missing"],
         projectSourceDrafts: {
@@ -759,7 +759,15 @@ describe.sequential("runtime v2 authority reads", () => {
           },
         },
       },
-    }));
+    });
+    await writeAuthorityState(sandbox.stateRoot, {
+      ...authorityState,
+      preferences: {
+        ...authorityState.preferences,
+        localImportChoices: [{ sourceChoiceId: "legacy-local" }],
+        localScanImportChoices: [{ sourceChoiceId: "legacy-scan" }],
+      } as PreferencesFile,
+    });
     const app = new SkillFlowApp();
 
     const saved = await app.saveSettings({
@@ -802,6 +810,8 @@ describe.sequential("runtime v2 authority reads", () => {
       },
     });
     expect(state.preferences.customTargets.map((target) => target.id)).toEqual(["team-target"]);
+    expect(state.preferences).not.toHaveProperty("localImportChoices");
+    expect(state.preferences).not.toHaveProperty("localScanImportChoices");
   });
 
   test("inspectSource fails on v1 authority instead of falling back", async () => {

@@ -348,8 +348,8 @@ async function resolveUsableProjectPath(projectPath: string | undefined): Promis
 function normalizePreferencesFile(preferences: PreferencesFile): PreferencesFile {
   const recentProjects = normalizeRecentProjects(preferences.recentProjects);
   return {
-    ...preferences,
     schemaVersion: 2,
+    migrationGeneration: preferences.migrationGeneration,
     pinnedSourceIds: uniqueNonEmptyStrings(preferences.pinnedSourceIds),
     selectedProjectScope: normalizeSelectedProjectScope(preferences.selectedProjectScope, recentProjects),
     recentProjects,
@@ -628,10 +628,6 @@ export class SkillFlowApp {
     const nextPreferences = normalizePreferencesFile({
       ...preferences,
       migrationGeneration: state.preferences.migrationGeneration,
-      ...(state.preferences.localImportChoices ? { localImportChoices: state.preferences.localImportChoices } : {}),
-      ...(state.preferences.localScanImportChoices
-        ? { localScanImportChoices: state.preferences.localScanImportChoices }
-        : {}),
     });
     await this.stateStore.writeState({
       ...state,

@@ -947,6 +947,8 @@ describe("state migration service", () => {
         },
       ],
       agentDisplayOrder: ["codex", "custom-target"],
+      localImportChoices: [{ sourceChoiceId: "legacy-local" }],
+      localScanImportChoices: [{ sourceChoiceId: "legacy-scan" }],
       legacyPanelState: { expanded: true },
     });
     await writeJsonFile(path.join(stateRoot, "collections.json"), {

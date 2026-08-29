@@ -1189,18 +1189,6 @@ export type ImportSkillSelection = {
   selector: ImportSkillSelector;
 };
 
-export type LocalImportChoice = {
-  sourceChoiceId: string;
-  sourceChoiceAlias?: string;
-  label: string;
-  locator: string;
-  detectedSourcePath: string;
-  detectedSkillPath?: RepoPath;
-  variant: "single-skill" | "multi-skill" | "source-root";
-  selectedSkills: ImportSkillSelection[];
-  enabledTargets: DeploymentTargetId[];
-};
-
 export type LocalScanDetectedSkill = {
   leafId: SkillLeafId;
   existingSourceIdHint?: SourceId;
@@ -1233,8 +1221,6 @@ export type PreferencesFile = {
   projectSourceDrafts: Record<string, Record<SourceId, ProjectSourceDraft>>;
   customTargets: CustomTargetDefinition[];
   agentDisplayOrder: DeploymentTargetId[];
-  localImportChoices?: LocalImportChoice[];
-  localScanImportChoices?: LocalScanImportChoice[];
 };
 
 export type SkillCollectionMemberOrigin = {

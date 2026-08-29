@@ -86,6 +86,8 @@ State compatibility is implemented in `packages/storage` and domain types live i
 
 State shape changes are external changes. Add storage/domain tests and migration or normalizer coverage.
 
+`preferences.json` 只持久化当前设置字段；历史 `localImportChoices` 与 `localScanImportChoices` 不属于权威状态，迁移或下一次设置写入时会被丢弃。
+
 The recovery journal has structural and semantic validation and must be
 recovered before bootstrap prunes missing checkouts. It records source kind,
 checkout/source ownership, and target IDs. Recovery re-detects current target
