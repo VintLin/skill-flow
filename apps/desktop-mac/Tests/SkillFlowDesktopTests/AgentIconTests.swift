@@ -166,6 +166,13 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(GroupMetadataIconLibrary.image(for: .github))
     }
 
+    func testGroupMetadataIconLoaderReusesDecodedImage() throws {
+        let first = try XCTUnwrap(GroupMetadataIconLibrary.image(for: .skills))
+        let second = try XCTUnwrap(GroupMetadataIconLibrary.image(for: .skills))
+
+        XCTAssertTrue(first === second)
+    }
+
     func testDetailInfoIconLoaderFindsBundledSvgAssets() {
         XCTAssertNotNil(DetailInfoIconLibrary.image(for: .version))
         XCTAssertNotNil(DetailInfoIconLibrary.image(for: .wordCount))

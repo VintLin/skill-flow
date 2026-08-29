@@ -10,11 +10,19 @@ enum GroupMetadataIconLibrary {
         case localFile = "group-metadata-local-file.svg"
     }
 
+    nonisolated(unsafe) private static let cache = NSCache<NSString, NSImage>()
+    private static let directories = makeResourceDirectories()
+
     static func image(for icon: Icon) -> NSImage? {
         let fileName = icon.rawValue
-        for directory in resourceDirectories() {
+        let cacheKey = fileName as NSString
+        if let cached = cache.object(forKey: cacheKey) {
+            return cached
+        }
+        for directory in directories {
             let url = directory.appendingPathComponent(fileName)
             if let image = NSImage(contentsOf: url) {
+                cache.setObject(image, forKey: cacheKey)
                 return image
             }
         }
@@ -22,7 +30,7 @@ enum GroupMetadataIconLibrary {
         return nil
     }
 
-    private static func resourceDirectories() -> [URL] {
+    private static func makeResourceDirectories() -> [URL] {
         let sourceDirectory = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
