@@ -60,6 +60,7 @@ done
 
 BUNDLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$INFO_PLIST")"
 DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")"
+BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
 
 if [[ "$BUNDLE_NAME" != "Skill Flow" ]]; then
   echo "Unexpected CFBundleName: $BUNDLE_NAME" >&2
@@ -70,6 +71,38 @@ if [[ "$DISPLAY_NAME" != "Skill Flow" ]]; then
   echo "Unexpected CFBundleDisplayName: $DISPLAY_NAME" >&2
   exit 1
 fi
+
+case "$BUNDLE_IDENTIFIER" in
+  com.skillflow.desktop.arm64|com.skillflow.desktop.x86_64|com.skillflow.desktop.universal|\
+  com.skillflow.desktop.dev.arm64|com.skillflow.desktop.dev.x86_64|com.skillflow.desktop.dev.universal)
+    ;;
+  *)
+    echo "Unexpected CFBundleIdentifier: $BUNDLE_IDENTIFIER" >&2
+    exit 1
+    ;;
+esac
+
+if ! codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"; then
+  echo "App bundle does not have a valid complete code signature" >&2
+  exit 1
+fi
+
+DESIGNATED_REQUIREMENT="$(codesign -dr - "$APP_BUNDLE" 2>&1 | tail -n 1)"
+EXPECTED_REQUIREMENT="designated => identifier \"$BUNDLE_IDENTIFIER\""
+if [[ "$DESIGNATED_REQUIREMENT" != "$EXPECTED_REQUIREMENT" ]]; then
+  echo "Unexpected designated requirement: $DESIGNATED_REQUIREMENT" >&2
+  exit 1
+fi
+
+for forbidden_xattr in \
+  com.apple.quarantine \
+  com.apple.metadata:kMDItemWhereFroms \
+  com.apple.macl; do
+  if [[ -n "$(find "$APP_BUNDLE" -xattrname "$forbidden_xattr" -print -quit)" ]]; then
+    echo "Packaged app contains forbidden extended attribute: $forbidden_xattr" >&2
+    exit 1
+  fi
+done
 
 if [[ -n "$EXPECTED_ARCHS" ]]; then
   ACTUAL_ARCHS="$(lipo -archs "$EXECUTABLE")"

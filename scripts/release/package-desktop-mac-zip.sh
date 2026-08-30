@@ -17,7 +17,7 @@ package_zip() {
   fi
 
   rm -f "$zip_path"
-  ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$zip_path"
+  ditto -c -k --norsrc --noextattr --noqtn --noacl --keepParent "$app_bundle" "$zip_path"
 
   echo "ZIP: $zip_path"
 }

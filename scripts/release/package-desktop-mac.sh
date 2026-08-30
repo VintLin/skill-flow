@@ -94,6 +94,8 @@ require_command node
 require_command curl
 require_command shasum
 require_command tar
+require_command codesign
+require_command xattr
 
 SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
 BUILD_TS="$(date +%Y%m%d%H%M%S)"
@@ -308,6 +310,24 @@ stage_node_runtimes() {
   fi
 }
 
+seal_app_bundle() {
+  local designated_requirement
+
+  # Source resources may carry browser download metadata; it must not become release metadata.
+  chmod -R u+w "$APP_BUNDLE"
+  xattr -cr "$APP_BUNDLE"
+
+  # A stable designated requirement lets macOS identify later ad-hoc builds as the same app.
+  designated_requirement="=designated => identifier \"$BUNDLE_ID\""
+  codesign \
+    --force \
+    --sign - \
+    --identifier "$BUNDLE_ID" \
+    --requirements "$designated_requirement" \
+    "$APP_BUNDLE"
+  codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+}
+
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
 if [[ "$ARCH" == "universal" ]]; then
@@ -377,6 +397,7 @@ EOF
 stage_helper "$HELPER_STAGE"
 cp -R "$HELPER_STAGE" "$APP_BUNDLE/Contents/Resources/helper"
 stage_node_runtimes
+seal_app_bundle
 
 mkdir -p "$DMG_STAGE"
 cp -R "$APP_BUNDLE" "$DMG_STAGE/"

@@ -295,7 +295,7 @@ Debugging the desktop shell against a local CLI build:
 export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
 ```
 
-Unsigned desktop packaging:
+Ad-hoc-signed desktop packaging:
 
 ```bash
 scripts/release/package-desktop-mac.sh --arch arm64
@@ -309,16 +309,12 @@ Open-source macOS release flow:
 scripts/release/release-github.sh all
 ```
 
-Unsigned macOS install notes:
+macOS install notes without an Apple Developer certificate:
 
 - Apple Silicon Macs can use `Skill-Flow-arm64.dmg` or `Skill-Flow-universal.dmg`.
 - Intel Macs can use `Skill-Flow-x86_64.dmg` or `Skill-Flow-universal.dmg`.
-- Copy `Skill Flow.app` to `Applications`, then open it once with Finder's `Open` action if Gatekeeper blocks it.
-- If macOS still marks the app as quarantined, run:
-
-```bash
-sudo xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
-```
+- Copy `Skill Flow.app` to `Applications`, then use Finder's `Open` action for the first launch if Gatekeeper blocks it.
+- Each release architecture keeps a stable Bundle ID and designated requirement across versions, so replacing an approved installation with the same architecture does not require a new `sudo xattr` workaround for every update.
 
 ## Star History
 

@@ -101,6 +101,15 @@ scripts/release/release-github.sh all
 
 该命令会构建桌面 app、生成三种架构的 `.dmg` 和 `.zip`、生成 `sha256.txt`，并校验架构。
 
+在没有 Apple Developer 证书的发布边界下，打包脚本仍必须：
+
+- 沿用各发布架构既有且跨版本稳定的 Bundle ID，避免重置现有安装身份与偏好设置。
+- 清除源码资源携带的 quarantine、下载来源和 ACL 扩展属性。
+- 使用稳定 designated requirement 完成 bundle 级 ad-hoc 签名并密封 `Info.plist` 与 Resources。
+- 通过 `codesign --verify --deep --strict`；不得退化为只有 linker signature 的裸可执行文件。
+
+首次安装仍可能需要 Finder → Open 确认未知开发者；同架构应用的后续替换不应再要求执行 `sudo xattr`。这套流程不宣称 Developer ID 或 Apple notarization。
+
 产物检查：
 
 ```bash
@@ -108,6 +117,8 @@ ls -lh dist/desktop-mac/arm64/
 ls -lh dist/desktop-mac/x86_64/
 ls -lh dist/desktop-mac/universal/
 cat dist/desktop-mac/sha256.txt
+codesign --verify --deep --strict --verbose=2 "dist/desktop-mac/universal/Skill Flow.app"
+codesign -dr - "dist/desktop-mac/universal/Skill Flow.app"
 ```
 
 如果只需要复查架构：

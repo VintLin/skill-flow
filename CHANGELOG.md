@@ -4,6 +4,10 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Stabilized unsigned macOS updates with a bundle-level ad-hoc signature, a designated requirement tied to each architecture's existing Bundle ID, sealed resources, and release-time removal of inherited download metadata, so approved installations no longer require a repeated `sudo xattr` workaround after every same-architecture update.
+
 ## v1.6.4 - 2026-08-31
 
 ### Added
