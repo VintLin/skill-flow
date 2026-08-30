@@ -135,7 +135,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 
 ## サポートされているターゲット
 
-現在の組み込みターゲット：
+現在の組み込みターゲット（32）：
 
 - Claude Code
 - Codex
@@ -147,6 +147,9 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 - OpenClaw
 - Hermes Agent
 - MiniMax Code
+- Kimi Code
+- WorkBuddy
+- CodeBuddy
 - Pi
 - Trae
 - Trae CN

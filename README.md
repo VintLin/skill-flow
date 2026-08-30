@@ -140,7 +140,7 @@ Use `--path <repoSubpath>` when the repo is large but your default selection sho
 
 ## Supported Targets
 
-Current built-in targets:
+Current built-in targets (32):
 
 - Claude Code
 - Codex

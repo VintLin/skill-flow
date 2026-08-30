@@ -4,10 +4,21 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.4 - 2026-08-31
+
 ### Added
 
 - Added 10 icon-backed Agent deployment targets, bringing the catalog to 32 targets while preserving all existing target IDs, ordering, paths, and deployment strategies.
 - Added bundled icons for Antigravity, DeepSeek Harness, Goose, Junie, Kilo Code, Mistral Vibe, OpenHands, Pi, Qoder, Qwen Code, and Zencoder, and assigned OpenClaw its dedicated icon.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.6.3` to `1.6.4`.
+- Clarified desktop copy for local discovery, maintenance actions, Usage loading and recovery states, and custom date-range validation across English, Simplified Chinese, and Japanese.
+
+### Fixed
+
+- Limited every newly added Agent to its declared global scan root; documented project paths remain project-scope references and are not treated as extra user-level compatibility roots.
 
 ## v1.6.3 - 2026-08-30
 

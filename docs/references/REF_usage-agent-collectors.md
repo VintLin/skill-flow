@@ -1,6 +1,6 @@
 # 跨 Agent Skill 使用记录读取调研
 
-日期：2026-08-23；2026-08-24 补充本机字段级验证
+日期：2026-08-23；2026-08-24 补充本机字段级验证；2026-08-31 同步 32 个内置 Agent 边界
 范围：SkillFlow 内置 target 与用户点名的相邻 agent。本文记录一手资料调研与本机字段级验证结论；验证过程只读取结构字段和聚合结果，不保存 prompt、response、tool output 或原始路径。
 
 ## 结论摘要
@@ -54,13 +54,28 @@
 
 ### 0. 代码层统一边界
 
-当前实现以 `packages/integration/src/utils/usage/agent-usage-policies.ts` 的 `USAGE_AGENT_POLICIES` 作为 22 个内置 Agent 的代码层边界表：
+当前实现以 `packages/integration/src/utils/usage/agent-usage-policies.ts` 的 `USAGE_AGENT_POLICIES` 作为 32 个内置 Agent 的代码层边界表：
 
 - `implemented`：进入 `createDefaultUsageCollectors()`，并有 parser revision、source kind、evidence kind 单测校验。
 - `candidate`：存在候选一手数据源，但缺少当前可安全默认读取的字段样本；不进入默认 collector，coverage 显示 `parser_unsupported`。
 - `unsupported` / `lifecycle only`：不得进入主使用次数；不把安装、同步、目录存在、匿名 telemetry、普通 tool call 或 history/memory 当作 skill 调用。
 
 `createDefaultSupportedUsageAgents()` 从 policy 派生；测试要求 `TARGET_ORDER`、`USAGE_AGENT_POLICIES` 与默认 collectors 不漂移。
+
+2026-08-31 新增的 10 个 deployment target 均只有明确的 Skill 部署路径，没有足以证明真实 Skill 调用的一手事件或稳定会话字段，因此 Usage policy 统一保持 `unsupported`，不进入默认 collector，也不显示误导性的 0 次使用：
+
+| Target id | Usage 结论 |
+| --- | --- |
+| `deepseek-harness` | `unsupported` |
+| `antigravity` | `unsupported` |
+| `junie` | `unsupported` |
+| `mistral-vibe` | `unsupported` |
+| `openhands` | `unsupported` |
+| `qoder` | `unsupported` |
+| `qwen-code` | `unsupported` |
+| `zencoder` | `unsupported` |
+| `kilo-code` | `unsupported` |
+| `goose` | `unsupported` |
 
 ### 1. 数据模型
 

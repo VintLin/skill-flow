@@ -134,7 +134,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 
 ## 支持的目标 Agent
 
-当前内置目标：
+当前内置目标（32 个）：
 
 - Claude Code
 - Codex
