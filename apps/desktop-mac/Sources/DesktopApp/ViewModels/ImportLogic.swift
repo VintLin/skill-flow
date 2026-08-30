@@ -728,7 +728,7 @@ final class ImportLogic {
 
             return LocalImportChoice(
                 id: id,
-                label: id == "origin" ? "Origin" : "Local",
+                label: id,
                 locator: locator,
                 selectedSkills: parseImportSkillSelections(choice["selectedSkills"] as? [[String: Any]])
             )

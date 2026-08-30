@@ -817,7 +817,7 @@ struct EditCustomAgentSheet: View {
     @ViewBuilder
     private func validationText(_ message: String?) -> some View {
         if let message {
-            Text(message)
+            Text(t(message))
                 .font(.system(size: 11))
                 .foregroundStyle(.red)
         }

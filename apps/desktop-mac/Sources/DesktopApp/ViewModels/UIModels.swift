@@ -278,7 +278,9 @@ struct UsageSnapshotViewData: Equatable {
             let source = topSkills.first(where: { $0.id == key })
             return UsageTopSkillViewData(
                 id: key,
-                skillLabel: source?.skillLabel ?? entries.first?.skillLabel ?? "Unmatched skill",
+                skillLabel: source?.skillLabel
+                    ?? entries.first?.skillLabel
+                    ?? PresentationText.localized("usage.fallback.unmatched_skill").resolve(locale: PresentationText.presentationLocale),
                 observedUses: entries.reduce(0) { $0 + $1.observedUses },
                 activeAgentCount: 1,
                 activeProjectCount: source?.activeProjectCount ?? 0,

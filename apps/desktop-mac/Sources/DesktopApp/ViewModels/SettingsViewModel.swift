@@ -451,23 +451,23 @@ final class SettingsViewModel {
         let normalizedProjectPath = normalizeProjectPath(draft.projectPathTemplate)
 
         if trimmedName.isEmpty {
-            errors["name"] = "Name is required."
+            errors["name"] = "settings.custom_agents.validation.name_required"
         }
 
         if trimmedGlobalPath.isEmpty {
-            errors["globalPath"] = "Global path is required."
+            errors["globalPath"] = "settings.custom_agents.validation.global_path_required"
         } else if !trimmedGlobalPath.hasPrefix("/") {
-            errors["globalPath"] = "Global path must be absolute."
+            errors["globalPath"] = "settings.custom_agents.validation.global_path_absolute"
         }
 
         if normalizedProjectPath == nil {
-            errors["projectPathTemplate"] = "Project path must be relative."
+            errors["projectPathTemplate"] = "settings.custom_agents.validation.project_path_relative"
         }
 
         if state.settings.customAgents.contains(where: {
             $0.name.compare(trimmedName, options: .caseInsensitive) == .orderedSame && $0.id != editingId
         }) {
-            errors["name"] = "Name is already in use."
+            errors["name"] = "settings.custom_agents.validation.name_duplicate"
         }
 
         return errors

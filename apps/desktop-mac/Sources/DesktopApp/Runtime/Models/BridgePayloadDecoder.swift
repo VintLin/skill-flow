@@ -34,7 +34,7 @@ enum BridgePayloadDecoder {
                 let agents = strings(item["agents"])
                 return UsageTopSkillViewData(
                     id: skillKey,
-                    skillLabel: string(item["skillLabel"]) ?? "Unmatched skill",
+                    skillLabel: string(item["skillLabel"]) ?? localizedUsageFallback("usage.fallback.unmatched_skill"),
                     observedUses: integer(item["observedUses"]) ?? 0,
                     activeAgentCount: agents.count,
                     activeProjectCount: projects.count,
@@ -43,10 +43,10 @@ enum BridgePayloadDecoder {
                 )
             },
             topAgents: objects(payload["topAgents"]).enumerated().map { index, item in
-                let agent = string(item["agent"]) ?? "unknown-\(index)"
+                let agentID = string(item["agent"]) ?? "unknown-\(index)"
                 return UsageTopAgentViewData(
-                    id: agent,
-                    agent: agent,
+                    id: agentID,
+                    agent: string(item["agent"]) ?? localizedUsageFallback("usage.fallback.unknown_agent"),
                     observedUses: integer(item["observedUses"]) ?? 0,
                     activeSkills: integer(item["activeSkills"]) ?? 0,
                     activeProjects: integer(item["activeProjects"]) ?? 0,
@@ -64,22 +64,22 @@ enum BridgePayloadDecoder {
                     bySkill: objects(item["bySkill"]).map { series in
                         UsageSkillSeriesViewData(
                             id: string(series["key"]) ?? "unknown",
-                            skillLabel: string(series["skillLabel"]) ?? "Unmatched skill",
+                            skillLabel: string(series["skillLabel"]) ?? localizedUsageFallback("usage.fallback.unmatched_skill"),
                             observedUses: integer(series["observedUses"]) ?? 0
                         )
                     },
                     byAgent: objects(item["byAgent"]).map { series in
-                        let agent = string(series["agent"]) ?? "unknown"
+                        let agentID = string(series["agent"]) ?? "unknown"
                         return UsageAgentSeriesViewData(
-                            id: agent,
-                            agent: agent,
+                            id: agentID,
+                            agent: string(series["agent"]) ?? localizedUsageFallback("usage.fallback.unknown_agent"),
                             observedUses: integer(series["observedUses"]) ?? 0
                         )
                     },
                     bySkillAgent: objects(item["bySkillAgent"]).map { series in
                         UsageSkillAgentSeriesViewData(
                             skillKey: string(series["skillKey"]) ?? "unknown",
-                            agent: string(series["agent"]) ?? "unknown",
+                            agent: string(series["agent"]) ?? localizedUsageFallback("usage.fallback.unknown_agent"),
                             observedUses: integer(series["observedUses"]) ?? 0
                         )
                     }
@@ -96,8 +96,8 @@ enum BridgePayloadDecoder {
                 UsageSkillAgentMatrixViewData(
                     skillKey: string(item["skillKey"]) ?? "unknown",
                     skillRef: string(item["skillRef"]),
-                    skillLabel: string(item["skillLabel"]) ?? "Unmatched skill",
-                    agent: string(item["agent"]) ?? "unknown",
+                    skillLabel: string(item["skillLabel"]) ?? localizedUsageFallback("usage.fallback.unmatched_skill"),
+                    agent: string(item["agent"]) ?? localizedUsageFallback("usage.fallback.unknown_agent"),
                     observedUses: integer(item["observedUses"]) ?? 0
                 )
             },
@@ -105,18 +105,18 @@ enum BridgePayloadDecoder {
                 UsageRecentObservationViewData(
                     id: "\(string(item["observedAt"]) ?? "\(index)"):\(string(item["agent"]) ?? "unknown"):\(string(item["skillLabel"]) ?? "skill")",
                     observedAt: string(item["observedAt"]) ?? "",
-                    agent: string(item["agent"]) ?? "unknown",
-                    skillLabel: string(item["skillLabel"]) ?? "Unmatched skill",
-                    projectLabel: string(item["projectLabel"]) ?? "Unknown project",
+                    agent: string(item["agent"]) ?? localizedUsageFallback("usage.fallback.unknown_agent"),
+                    skillLabel: string(item["skillLabel"]) ?? localizedUsageFallback("usage.fallback.unmatched_skill"),
+                    projectLabel: string(item["projectLabel"]) ?? localizedUsageFallback("usage.fallback.unknown_project"),
                     evidenceKind: string(item["evidenceKind"]) ?? "unknown",
                     confidence: string(item["confidence"]) ?? "observed"
                 )
             },
             agentCoverage: objects(payload["agentCoverage"]).map { item in
-                let agent = string(item["agent"]) ?? "unknown"
+                let agentID = string(item["agent"]) ?? "unknown"
                 return UsageAgentCoverageViewData(
-                    id: agent,
-                    agent: agent,
+                    id: agentID,
+                    agent: string(item["agent"]) ?? localizedUsageFallback("usage.fallback.unknown_agent"),
                     status: string(item["status"]) ?? "unknown",
                     sourceKind: string(item["sourceKind"]),
                     parserRevision: string(item["parserRevision"]),
@@ -233,12 +233,16 @@ enum BridgePayloadDecoder {
     }
 
     private static func usageRangeLabel(_ range: [String: Any]) -> String {
-        let from = string(range["from"]) ?? "unknown"
-        let to = string(range["to"]) ?? "unknown"
+        let from = string(range["from"]) ?? localizedUsageFallback("usage.fallback.unknown_range")
+        let to = string(range["to"]) ?? localizedUsageFallback("usage.fallback.unknown_range")
         let preset = string(range["preset"])
         if let preset, preset != "custom" {
             return "\(preset) · \(from) → \(to)"
         }
         return "\(from) → \(to)"
+    }
+
+    private static func localizedUsageFallback(_ key: String) -> String {
+        PresentationText.localized(key).resolve(locale: PresentationText.presentationLocale)
     }
 }

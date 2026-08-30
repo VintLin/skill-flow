@@ -348,7 +348,10 @@ final class SettingsViewModelTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(absolutePathErrors["projectPathTemplate"], "Project path must be relative.")
+        XCTAssertEqual(
+            absolutePathErrors["projectPathTemplate"],
+            "settings.custom_agents.validation.project_path_relative"
+        )
         XCTAssertTrue(generatedIDResult.isEmpty)
         XCTAssertEqual(state.settings.customAgents.map(\.id), ["codex-2"])
     }

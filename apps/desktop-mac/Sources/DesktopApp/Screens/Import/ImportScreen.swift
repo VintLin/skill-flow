@@ -184,7 +184,7 @@ struct ImportScreen: View {
 
             Picker("", selection: localChoiceSelection(for: card)) {
                 ForEach(card.localChoices) { choice in
-                    Text(choice.label).tag(choice.id)
+                    Text(localChoiceTitle(choice)).tag(choice.id)
                 }
             }
             .pickerStyle(.segmented)
@@ -202,6 +202,12 @@ struct ImportScreen: View {
                 container.setLocalChoice(choiceId, for: card)
             }
         )
+    }
+
+    private func localChoiceTitle(_ choice: LocalImportChoice) -> String {
+        let key = "import.local.choice.\(choice.id)"
+        let localized = t(key)
+        return localized == key ? choice.label : localized
     }
 
     private func displayMode(for card: ImportViewModel.Card) -> GroupCardDisplayMode {

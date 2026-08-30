@@ -227,8 +227,20 @@ final class DesktopLocalizationTests: XCTestCase {
             "usage.total_calls",
             "usage.error.load",
             "usage.error.refresh",
+            "usage.fallback.unmatched_skill",
+            "usage.fallback.unknown_agent",
+            "usage.fallback.unknown_project",
+            "usage.fallback.unknown_range",
             "detail.document.default_title",
             "detail.document.unavailable",
+            "detail.document.load_failed",
+            "import.local.choice.origin",
+            "import.local.choice.local",
+            "settings.custom_agents.validation.name_required",
+            "settings.custom_agents.validation.global_path_required",
+            "settings.custom_agents.validation.global_path_absolute",
+            "settings.custom_agents.validation.project_path_relative",
+            "settings.custom_agents.validation.name_duplicate",
         ]
 
         for locale in supportedLocales {

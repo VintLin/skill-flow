@@ -96,6 +96,7 @@ final class UsageVisualizationTests: XCTestCase {
     func testUsageDashboardDoesNotEmbedInterfaceCopy() throws {
         let usageSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/UsageScreen.swift")
         let mainSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+        let decoderSource = try sourceText(at: "Sources/DesktopApp/Runtime/Models/BridgePayloadDecoder.swift")
 
         let staleUsageCopy = [
             "自定义时间范围",
@@ -112,6 +113,8 @@ final class UsageVisualizationTests: XCTestCase {
         }
         XCTAssertFalse(mainSource.contains("Text(\"Refresh\")"))
         XCTAssertFalse(mainSource.contains("return \"Usage\""))
+        XCTAssertFalse(decoderSource.contains("?? \"Unmatched skill\""))
+        XCTAssertFalse(decoderSource.contains("?? \"Unknown project\""))
     }
 
     func testUsageLoadingHasOneScreenOwnedLifecycleTrigger() throws {

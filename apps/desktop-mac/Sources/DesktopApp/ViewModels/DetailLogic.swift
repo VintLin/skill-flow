@@ -784,7 +784,7 @@ final class DetailLogic {
     nonisolated private static func displayOriginLabel(from locator: String) -> String {
         let trimmed = locator.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return "Unknown"
+            return localizedWarmup("detail.meta.unknown_source")
         }
 
         if let url = URL(string: trimmed), let host = url.host?.nonEmpty {
@@ -1289,7 +1289,7 @@ final class DetailLogic {
     }
 
     nonisolated private static var documentLoadFailureContent: String {
-        "Failed to load document."
+        localizedWarmup("detail.document.load_failed")
     }
 
     nonisolated private static func localizedWarmup(_ key: String) -> String {
