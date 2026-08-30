@@ -144,18 +144,21 @@ final class DetailDocumentStore {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 return title == "SKILL.md"
                     ? Self.localizedWarmup("detail.document.skill_unavailable")
-                    : "\(title.isEmpty ? "Document" : title) unavailable."
+                    : Self.localizedWarmup(
+                        "detail.document.unavailable",
+                        title.isEmpty ? Self.localizedWarmup("detail.document.default_title") : title
+                    )
             }
             throw error
         }
     }
 
-    nonisolated private static func localizedWarmup(_ key: String) -> String {
+    nonisolated private static func localizedWarmup(_ key: String, _ arguments: String...) -> String {
         let rawValue = UserDefaults.standard.string(forKey: DesktopLanguage.storageKey)
         if rawValue == nil, ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
-            return PresentationText.localized(key).resolve(locale: DesktopLanguage.en.locale)
+            return PresentationText.localized(key, arguments).resolve(locale: DesktopLanguage.en.locale)
         }
-        return PresentationText.localized(key)
+        return PresentationText.localized(key, arguments)
             .resolve(locale: DesktopLanguage(storageValue: rawValue ?? DesktopLanguage.system.rawValue).locale)
     }
 }

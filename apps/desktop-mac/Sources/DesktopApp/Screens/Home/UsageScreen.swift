@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct UsageScreen: View {
+    @Environment(\.locale) private var locale
     @Bindable var viewModel: MainViewModel
     let theme: DesktopThemeMode
     let accent: DesktopAccentColor
@@ -37,7 +38,7 @@ struct UsageScreen: View {
                 Button {
                     if range == .custom { showingCustomRange = true } else { selectedRange = range }
                 } label: {
-                    Text(range.title)
+                    Text(t(range.localizationKey))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(range == selectedRange ? AppTheme.textPrimary(for: theme) : AppTheme.textMuted(for: theme))
                         .padding(.horizontal, 11)
@@ -59,12 +60,12 @@ struct UsageScreen: View {
         .overlay { RoundedRectangle(cornerRadius: 9).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
         .popover(isPresented: $showingCustomRange, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("自定义时间范围").font(.system(size: 14, weight: .semibold))
-                DatePicker("开始", selection: $customFrom, displayedComponents: .date)
-                DatePicker("结束", selection: $customTo, displayedComponents: .date)
+                Text(t("usage.range.custom_title")).font(.system(size: 14, weight: .semibold))
+                DatePicker(t("usage.range.start"), selection: $customFrom, displayedComponents: .date)
+                DatePicker(t("usage.range.end"), selection: $customTo, displayedComponents: .date)
                 HStack {
                     Spacer()
-                    Button("应用") {
+                    Button(t("usage.range.apply")) {
                         guard customFrom <= customTo else { return }
                         selectedRange = .custom
                         showingCustomRange = false
@@ -90,17 +91,17 @@ struct UsageScreen: View {
     private var content: some View {
         switch viewModel.usageLoadState {
         case .idle, .loading:
-            sectionCard(title: "正在读取 Skill 使用记录") {
+            sectionCard(title: t("usage.state.loading.title")) {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
-                    Text("正在扫描本地 Agent 会话…")
+                    Text(t("usage.state.loading.body"))
                         .font(.system(size: 13))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                 }
                 .padding(.vertical, 12)
             }
         case .failed(let message):
-            sectionCard(title: "无法加载 Skill 使用记录") {
+            sectionCard(title: t("usage.state.failed.title")) {
                 Text(message)
                     .font(.system(size: 13))
                     .foregroundStyle(AppTheme.textMuted(for: theme))
@@ -109,8 +110,8 @@ struct UsageScreen: View {
         case .ready:
             if let snapshot = viewModel.usageSnapshot { dashboard(snapshot) }
             else {
-                sectionCard(title: "暂无 Skill 使用记录") {
-                    Text("本地 Agent 尚未产生可识别的 Skill 调用记录。")
+                sectionCard(title: t("usage.state.empty.title")) {
+                    Text(t("usage.state.empty.body"))
                         .font(.system(size: 13))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .padding(.vertical, 12)
@@ -124,10 +125,10 @@ struct UsageScreen: View {
             let chart = snapshot.chartData(for: selection)
             heatmap(snapshot)
             sectionCard(title: nil) {
-                Label("每日趋势", systemImage: "waveform.path.ecg")
+                Label(t("usage.chart.daily_trend"), systemImage: "waveform.path.ecg")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
-                UsageAreaChart(data: chart, theme: theme)
+                UsageAreaChart(data: chart, theme: theme, locale: locale)
                     .frame(height: 340)
             }
             statistics(snapshot)
@@ -138,7 +139,7 @@ struct UsageScreen: View {
         let activityGrid = UsageHourlyActivityGrid(snapshot.hourlyActivity)
         return sectionCard(title: nil) {
             HStack(alignment: .firstTextBaseline) {
-                Label("分时活跃", systemImage: "calendar")
+                Label(t("usage.chart.hourly_activity"), systemImage: "calendar")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
                 Spacer()
@@ -148,8 +149,8 @@ struct UsageScreen: View {
             }
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 5) {
-                    ForEach(["周日", "周一", "周二", "周三", "周四", "周五", "周六"], id: \.self) { day in
-                        Text(day)
+                    ForEach(0..<7, id: \.self) { weekday in
+                        Text(weekdayTitle(weekday))
                             .font(.system(size: 10))
                             .foregroundStyle(AppTheme.textMuted(for: theme))
                             .frame(width: 28, height: UsageHeatmapGeometry.cellSize, alignment: .leading)
@@ -169,7 +170,7 @@ struct UsageScreen: View {
                                     let observedUses = activityGrid.observedUses(weekday: weekday, hour: column)
                                     RoundedRectangle(cornerRadius: 4)
                                         .fill(heatmapColor(observedUses, maximum: activityGrid.maximum))
-                                        .help("\(weekdayTitle(weekday)) \(String(format: "%02d:00", column)) · \(observedUses) 次")
+                                        .help(t("usage.heatmap.tooltip", weekdayTitle(weekday), String(format: "%02d:00", column), observedUses))
                                 } else {
                                     RoundedRectangle(cornerRadius: 4)
                                         .fill(heatmapColor(0, maximum: activityGrid.maximum))
@@ -199,13 +200,13 @@ struct UsageScreen: View {
             .frame(height: 16)
             HStack(spacing: 5) {
                 Spacer()
-                Text("少")
+                Text(t("usage.heatmap.less"))
                 ForEach(0..<7, id: \.self) { level in
                     RoundedRectangle(cornerRadius: 3)
                         .fill(heatmapLegendColor(level))
                         .frame(width: 14, height: 14)
                 }
-                Text("多")
+                Text(t("usage.heatmap.more"))
             }
             .font(.system(size: 10))
             .foregroundStyle(AppTheme.textMuted(for: theme))
@@ -228,11 +229,11 @@ struct UsageScreen: View {
 
     private func kpiColumn(_ snapshot: UsageSnapshotViewData) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("活动洞察").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
-            kpiRow("技能总数", value: snapshot.kpis.totalSkills)
-            kpiRow("使用技能总数", value: snapshot.kpis.usedSkills)
-            kpiRow("技能运行总数", value: snapshot.kpis.skillRuns)
-            kpiRow("聊天/调用记录", value: snapshot.kpis.chatRecords)
+            Text(t("usage.insights.title")).font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            kpiRow(t("usage.kpi.total_skills"), value: snapshot.kpis.totalSkills)
+            kpiRow(t("usage.kpi.used_skills"), value: snapshot.kpis.usedSkills)
+            kpiRow(t("usage.kpi.skill_runs"), value: snapshot.kpis.skillRuns)
+            kpiRow(t("usage.kpi.chat_records"), value: snapshot.kpis.chatRecords)
         }
         .padding(.trailing, 18)
     }
@@ -241,9 +242,9 @@ struct UsageScreen: View {
         let selectedAgent: String? = { if case .agent(let agent) = selection { return agent }; return nil }()
         let rows = snapshot.skillRows(for: selectedAgent)
         return VStack(alignment: .leading, spacing: 8) {
-            Text("最常用的技能").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
-            Text("前 20 个 Skill · 点击查看 Agent 分布").font(.system(size: 11)).foregroundStyle(AppTheme.textMuted(for: theme))
-            if rows.isEmpty { emptyRow("当前范围没有 Skill 调用") }
+            Text(t("usage.skills.title")).font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            Text(t("usage.skills.subtitle")).font(.system(size: 11)).foregroundStyle(AppTheme.textMuted(for: theme))
+            if rows.isEmpty { emptyRow(t("usage.skills.empty")) }
             else {
                 ForEach(rows.prefix(20)) { item in
                     Button {
@@ -263,9 +264,9 @@ struct UsageScreen: View {
         let selectedSkill: String? = { if case .skill(let skill) = selection { return skill }; return nil }()
         let rows = snapshot.agentRows(for: selectedSkill)
         return VStack(alignment: .leading, spacing: 8) {
-            Text("最常用的 Agent").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
-            Text("当前范围内的真实 Skill 运行次数").font(.system(size: 11)).foregroundStyle(AppTheme.textMuted(for: theme))
-            if rows.isEmpty { emptyRow("当前范围没有 Agent 调用") }
+            Text(t("usage.agents.title")).font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            Text(t("usage.agents.subtitle")).font(.system(size: 11)).foregroundStyle(AppTheme.textMuted(for: theme))
+            if rows.isEmpty { emptyRow(t("usage.agents.empty")) }
             else {
                 ForEach(rows.prefix(20)) { item in
                     Button {
@@ -294,7 +295,7 @@ struct UsageScreen: View {
             Circle().fill(UsageAreaChart.palette[colorIndex % UsageAreaChart.palette.count]).frame(width: 7, height: 7)
             Text(label).font(.system(size: 12)).foregroundStyle(AppTheme.textPrimary(for: theme)).lineLimit(1)
             Spacer(minLength: 6)
-            Text("\(value) 次运行").font(.system(size: 11, design: .rounded)).foregroundStyle(AppTheme.textMuted(for: theme))
+            Text(t("usage.run_count", value)).font(.system(size: 11, design: .rounded)).foregroundStyle(AppTheme.textMuted(for: theme))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
@@ -315,7 +316,7 @@ struct UsageScreen: View {
     }
 
     private func weekdayTitle(_ weekday: Int) -> String {
-        ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][min(max(weekday, 0), 6)]
+        t("usage.weekday.\(min(max(weekday, 0), 6))")
     }
 
     private func sectionCard<Content: View>(title: String?, @ViewBuilder content: () -> Content) -> some View {
@@ -341,6 +342,10 @@ struct UsageScreen: View {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
+
+    private func t(_ key: String, _ arguments: CVarArg...) -> String {
+        L10n.string(key, locale: locale, arguments: arguments)
+    }
 }
 
 private struct UsageAreaChart: View {
@@ -348,6 +353,7 @@ private struct UsageAreaChart: View {
 
     let data: UsageChartViewData
     let theme: DesktopThemeMode
+    let locale: Locale
     @State private var hoveredIndex: Int?
 
     var body: some View {
@@ -446,7 +452,7 @@ private struct UsageAreaChart: View {
     private func tooltip(bucket: String, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(bucket).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(AppTheme.textPrimary(for: theme))
-            Text("总调用：\(data.totals[safe: index] ?? 0)").font(.system(size: 11, weight: .medium)).foregroundStyle(AppTheme.textPrimary(for: theme))
+            Text(L10n.string("usage.total_calls", locale: locale, arguments: [data.totals[safe: index] ?? 0])).font(.system(size: 11, weight: .medium)).foregroundStyle(AppTheme.textPrimary(for: theme))
             ForEach(data.series.compactMap { series -> (String, Int, Int)? in
                 guard let value = series.values[safe: index], value > 0 else { return nil }
                 return (series.label, value, series.colorIndex)

@@ -88,9 +88,30 @@ final class UsageVisualizationTests: XCTestCase {
     func testUsageChartCardHasDailyTrendHeading() throws {
         let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/UsageScreen.swift")
 
-        XCTAssertTrue(source.contains("Label(\"每日趋势\", systemImage: \"waveform.path.ecg\")"))
+        XCTAssertTrue(source.contains("Label(t(\"usage.chart.daily_trend\"), systemImage: \"waveform.path.ecg\")"))
         XCTAssertTrue(source.contains(".overlay(alignment: .topLeading)"))
         XCTAssertTrue(source.contains(".frame(width: UsageTooltipGeometry.width"))
+    }
+
+    func testUsageDashboardDoesNotEmbedInterfaceCopy() throws {
+        let usageSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/UsageScreen.swift")
+        let mainSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
+
+        let staleUsageCopy = [
+            "自定义时间范围",
+            "正在扫描本地 Agent 会话",
+            "每日趋势",
+            "分时活跃",
+            "活动洞察",
+            "最常用的技能",
+            "最常用的 Agent",
+            "总调用：",
+        ]
+        for copy in staleUsageCopy {
+            XCTAssertFalse(usageSource.contains(copy), "Usage copy should be localized: \(copy)")
+        }
+        XCTAssertFalse(mainSource.contains("Text(\"Refresh\")"))
+        XCTAssertFalse(mainSource.contains("return \"Usage\""))
     }
 
     func testUsageLoadingHasOneScreenOwnedLifecycleTrigger() throws {

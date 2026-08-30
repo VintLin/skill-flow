@@ -1267,7 +1267,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             guard response.ok,
                   let snapshot = BridgePayloadDecoder.usageSnapshot(from: response.data?.value as? [String: Any])
             else {
-                usageLoadState = .failed(response.errors.first?.message ?? "Unable to load usage analytics.")
+                usageLoadState = .failed(response.errors.first?.message ?? localized("usage.error.load"))
                 return
             }
             usageSnapshot = snapshot
@@ -1282,7 +1282,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         do {
             let response = try await usageQuery.refreshUsage(trigger: "manual")
             guard response.ok else {
-                usageLoadState = .failed(response.errors.first?.message ?? "Unable to refresh usage analytics.")
+                usageLoadState = .failed(response.errors.first?.message ?? localized("usage.error.refresh"))
                 return
             }
             await loadUsageSnapshot(force: true, rangePreset: "30d")

@@ -178,6 +178,79 @@ final class DesktopLocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.string("detail.updated.unavailable", locale: Locale(identifier: "ja")), "更新時刻を取得できません")
     }
 
+    func testUsagePageLocalizationKeysExistInAllSupportedLocales() {
+        let requiredKeys = [
+            "page.usage.title",
+            "common.action.back",
+            "common.action.refresh",
+            "home.sidebar.show",
+            "home.sidebar.hide",
+            "usage.range.today",
+            "usage.range.24_hours",
+            "usage.range.7_days",
+            "usage.range.30_days",
+            "usage.range.90_days",
+            "usage.range.custom",
+            "usage.range.custom_title",
+            "usage.range.start",
+            "usage.range.end",
+            "usage.range.apply",
+            "usage.state.loading.title",
+            "usage.state.loading.body",
+            "usage.state.failed.title",
+            "usage.state.empty.title",
+            "usage.state.empty.body",
+            "usage.chart.daily_trend",
+            "usage.chart.hourly_activity",
+            "usage.weekday.0",
+            "usage.weekday.1",
+            "usage.weekday.2",
+            "usage.weekday.3",
+            "usage.weekday.4",
+            "usage.weekday.5",
+            "usage.weekday.6",
+            "usage.heatmap.tooltip",
+            "usage.heatmap.less",
+            "usage.heatmap.more",
+            "usage.insights.title",
+            "usage.kpi.total_skills",
+            "usage.kpi.used_skills",
+            "usage.kpi.skill_runs",
+            "usage.kpi.chat_records",
+            "usage.skills.title",
+            "usage.skills.subtitle",
+            "usage.skills.empty",
+            "usage.agents.title",
+            "usage.agents.subtitle",
+            "usage.agents.empty",
+            "usage.run_count",
+            "usage.total_calls",
+            "usage.error.load",
+            "usage.error.refresh",
+            "detail.document.default_title",
+            "detail.document.unavailable",
+        ]
+
+        for locale in supportedLocales {
+            for key in requiredKeys {
+                XCTAssertNotEqual(
+                    L10n.string(key, locale: locale),
+                    key,
+                    "Missing localization for \(key) in \(locale.identifier)"
+                )
+            }
+        }
+
+        XCTAssertEqual(
+            L10n.string("usage.run_count", locale: Locale(identifier: "zh-Hans"), arguments: [3]),
+            "3 次运行"
+        )
+        XCTAssertEqual(
+            L10n.string("usage.total_calls", locale: Locale(identifier: "ja"), arguments: [12]),
+            "合計呼び出し：12"
+        )
+    }
+
     func testSourceTypeCollectionLabelUsesCombinedCopy() {
         XCTAssertEqual(L10n.string("home.sidebar.collection", locale: Locale(identifier: "zh-Hans")), "组合")
         XCTAssertEqual(L10n.string("home.sidebar.collection", locale: Locale(identifier: "en")), "Combined")
@@ -384,11 +457,6 @@ final class DesktopLocalizationTests: XCTestCase {
             "import.local.source.manual",
             "import.local.detected.title",
             "import.local.detected.description",
-            "import.local.status.matched",
-            "import.local.status.changed",
-            "import.local.status.missing",
-            "import.local.status.ambiguous",
-            "import.local.status.origin_unavailable",
             "import.local.status.local_only",
             "import.local.action.choose_version",
             "toast.import.local_source_target_locked",

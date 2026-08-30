@@ -888,7 +888,7 @@ struct MainView: View {
         } label: {
             HStack(spacing: 7) {
                 actionIcon(.update, size: 13)
-                Text("Refresh")
+                Text(t("common.action.refresh"))
                     .font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(AppTheme.textPrimary(for: theme))
@@ -1365,7 +1365,7 @@ struct MainView: View {
         case .importPage:
             return t("page.import.title")
         case .usage:
-            return "Usage"
+            return t("page.usage.title")
         case .settings:
             return t("page.settings.title")
         case .detail:
@@ -1619,7 +1619,7 @@ struct MainView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isHomeSidebarVisible ? "Hide sidebar" : "Show sidebar")
+        .accessibilityLabel(t(isHomeSidebarVisible ? "home.sidebar.hide" : "home.sidebar.show"))
     }
 
     private func homeStatusChipItems(groupCards: [GroupCardModel]) -> [HomeSidebarChipItem] {
@@ -2083,17 +2083,17 @@ struct MainView: View {
     private func toolbarIconLabel(_ icon: ActionIcon) -> String {
         switch icon {
         case .back:
-            return "Back"
+            return t("common.action.back")
         case .groupEditor:
-            return "Group Editor"
+            return t("group_editor.title")
         case .import:
-            return "Import"
+            return t("page.import.title")
         case .settings:
-            return "Settings"
+            return t("page.settings.title")
         case .update:
-            return "Refresh"
+            return t("common.action.refresh")
         case .usage:
-            return "Usage"
+            return t("page.usage.title")
         default:
             return icon.rawValue
         }

@@ -535,7 +535,7 @@ final class DesktopInteractionRegressionTests: XCTestCase {
         XCTAssertTrue(source.contains("private var homeSidebarToggleButton: some View"))
         XCTAssertTrue(source.contains("headerLogoRow"))
         XCTAssertTrue(source.contains("isHomeSidebarVisible.toggle()"))
-        XCTAssertTrue(source.contains(".accessibilityLabel(isHomeSidebarVisible ? \"Hide sidebar\" : \"Show sidebar\")"))
+        XCTAssertTrue(source.contains(".accessibilityLabel(t(isHomeSidebarVisible ? \"home.sidebar.hide\" : \"home.sidebar.show\"))"))
         XCTAssertFalse(source.contains("private var homeSidebarRail: some View"))
         XCTAssertFalse(source.contains("homeSidebarRailWidth"))
     }

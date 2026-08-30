@@ -182,14 +182,14 @@ enum UsageRangePresetViewData: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var localizationKey: String {
         switch self {
-        case .today: return "今天"
-        case .twentyFourHours: return "24H"
-        case .sevenDays: return "7D"
-        case .thirtyDays: return "30D"
-        case .ninetyDays: return "90D"
-        case .custom: return "自定义"
+        case .today: return "usage.range.today"
+        case .twentyFourHours: return "usage.range.24_hours"
+        case .sevenDays: return "usage.range.7_days"
+        case .thirtyDays: return "usage.range.30_days"
+        case .ninetyDays: return "usage.range.90_days"
+        case .custom: return "usage.range.custom"
         }
     }
 }
