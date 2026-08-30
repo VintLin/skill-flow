@@ -139,26 +139,23 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 
 - Claude Code
 - Codex
-- ZCode
 - Cursor
 - Grok Build
-- Pi
-- WorkBuddy
-- CodeBuddy
-- Trae
-- Trae CN
-- Kimi Code
-- OpenCode
-- MiniMax Code
-- Hermes Agent
-- OpenClaw
 - GitHub Copilot
 - Gemini CLI
+- OpenCode
+- OpenClaw
+- Hermes Agent
+- MiniMax Code
+- Pi
+- Trae
+- Trae CN
 - Windsurf
-- Amp
-- Kiro
 - Roo Code
 - Cline
+- Amp
+- Kiro
+- ZCode
 - DeepSeek Harness
 - Antigravity
 - Junie

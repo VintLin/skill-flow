@@ -54,6 +54,7 @@ describe("target definitions", () => {
     for (const [target, [globalPath, projectPath]] of Object.entries(expectedPaths)) {
       expect(TARGET_PATH_CANDIDATES[target]).toEqual([path.join(os.homedir(), globalPath)]);
       expect(getTargetDetectionCandidates(target)).toContain(path.join(os.homedir(), globalPath));
+      expect(TARGET_COMPAT_READ_CANDIDATES[target]).toEqual([]);
       expect(TARGET_DOCUMENTED_GLOBAL_PATHS[target]).toBe(`~/${globalPath}/`);
       expect(TARGET_DOCUMENTED_PROJECT_PATHS[target]).toBe(`${projectPath}/`);
     }

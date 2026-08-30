@@ -387,7 +387,7 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     writerKey: "antigravity-home",
     writeRootCandidates: [path.join(os.homedir(), ".gemini", "config", "skills")],
     detectionRootCandidates: [path.join(os.homedir(), ".gemini", "config")],
-    compatReadRootCandidates: [path.join(os.homedir(), ".agents", "skills")],
+    compatReadRootCandidates: [],
     documentedProjectPath: ".agents/skills/",
     documentedGlobalPath: "~/.gemini/config/skills/",
     iconAssetName: "antigravity.svg",
