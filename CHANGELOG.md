@@ -4,6 +4,12 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.5 - 2026-08-31
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.6.4` to `1.6.5`.
+
 ### Fixed
 
 - Stabilized unsigned macOS updates with a bundle-level ad-hoc signature, a designated requirement tied to each architecture's existing Bundle ID, sealed resources, and release-time removal of inherited download metadata, so approved installations no longer require a repeated `sudo xattr` workaround after every same-architecture update.
