@@ -4,6 +4,23 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.3 - 2026-08-30
+
+### Added
+
+- Added a responsive daily activity calendar with rolling 12-month and calendar-year views, localized month and weekday labels, and per-day Skill invocation tooltips.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.6.2` to `1.6.3`.
+- Localized the remaining desktop interface copy and fallback labels in English, Simplified Chinese, and Japanese.
+- Moved Usage range controls into the Daily Trend heading so they only affect the trend chart.
+
+### Fixed
+
+- Centered the Usage dashboard at its maximum content width while keeping the vertical scroll indicator aligned to the window edge.
+- Loaded long-range activity history independently from Daily Trend filters so switching trend ranges no longer changes the activity calendar.
+
 ## v1.6.2 - 2026-08-29
 
 ### Changed
