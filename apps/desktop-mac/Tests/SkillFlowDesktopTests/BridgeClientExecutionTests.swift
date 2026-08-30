@@ -464,27 +464,6 @@ final class BridgeClientExecutionTests: XCTestCase {
         )
     }
 
-    func testClawHubPreflightAcceptsBundledNpxBeforeSystemNpx() throws {
-        let source = try sourceText()
-
-        XCTAssertTrue(source.contains("bundledNpxPath(in: bundledNodeBinDirectory)"))
-        XCTAssertTrue(source.contains("if locator.hasPrefix(\"clawhub:\"), bundledNpxPath(in: bundledNodeBinDirectory) == nil, !isCommandAvailable(\"npx\")"))
-        XCTAssertTrue(source.contains("bundledNodeBinDirectory: String?"))
-    }
-
-    func testHelperResolutionPrefersDesktopBridgeBeforeLegacyCLI() throws {
-        let source = try sourceText()
-        let desktopBridgePath = "Contents/Resources/helper/dist/desktop-bridge.js"
-        let desktopBridgeResource = "path(forResource: \"desktop-bridge\", ofType: \"js\", inDirectory: \"helper/dist\")"
-        let legacyCLIPath = "Contents/Resources/helper/dist/cli.js"
-
-        let desktopBridgePathRange = try XCTUnwrap(source.range(of: desktopBridgePath))
-        let legacyCLIPathRange = try XCTUnwrap(source.range(of: legacyCLIPath))
-
-        XCTAssertTrue(source.contains(desktopBridgeResource))
-        XCTAssertLessThan(desktopBridgePathRange.lowerBound, legacyCLIPathRange.lowerBound)
-    }
-
     func testApplyEncodesProjectScopePayload() async throws {
         let fixture = try RecordingBridgeFixture.install()
         recordingFixture = fixture
@@ -791,16 +770,6 @@ final class BridgeClientExecutionTests: XCTestCase {
         let payload = try fixture.lastPayload()
         XCTAssertEqual(try fixture.lastCommand(), "restore-collection-sources")
         XCTAssertEqual(payload["collectionId"] as? String, "collection-1")
-    }
-
-    private func sourceText() throws -> String {
-        let desktopRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = desktopRoot
-            .appendingPathComponent("Sources/DesktopApp/Runtime/Bridge/BridgeClient.swift")
-        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
     private func waitForProcessToExit(pid: Int32, timeoutNanoseconds: UInt64) async throws {

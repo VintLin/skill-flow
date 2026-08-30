@@ -255,7 +255,10 @@ final class WorkflowCoverageTests: XCTestCase {
 
         XCTAssertEqual(model.pinnedSourceIds, [])
         XCTAssertEqual(model.toast?.style, .error)
-        XCTAssertEqual(model.toast?.message, "Something went wrong. Issue code: 599.")
+        XCTAssertEqual(
+            model.toast?.message,
+            L10n.string("toast.issue.generic", locale: Locale(identifier: "en"), arguments: ["599"])
+        )
 
         let pinRequests = fixture.loggedRequests().filter { $0.command == "toggle-pin" }
         XCTAssertEqual(pinRequests.count, 1)

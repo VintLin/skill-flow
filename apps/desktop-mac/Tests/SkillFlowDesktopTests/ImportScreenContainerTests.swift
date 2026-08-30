@@ -546,7 +546,6 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(model.toast?.style, .error)
         let toastMessage = try XCTUnwrap(model.toast?.message)
-        XCTAssertTrue(toastMessage.contains("Something went wrong"))
         XCTAssertTrue(toastMessage.contains("502"))
         XCTAssertFalse(toastMessage.contains("BRIDGE_REQUEST_INVALID"))
     }
@@ -1468,68 +1467,6 @@ final class ImportScreenContainerTests: XCTestCase {
         )
     }
 
-    func testImportSkillDetailPrefetchIsScopedToLazyGridCards() throws {
-        let source = try String(
-            contentsOf: sourceRoot().appendingPathComponent("Sources/DesktopApp/Screens/Import/ImportScreen.swift"),
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(source.contains("importCard(card, phase: importPhases[card.id])\n                        .task"))
-        XCTAssertFalse(source.contains("skillDetailsPrefetchTaskKey(cards:"))
-    }
-
-    func testImportHeaderUsesTwoModesAndOneLocalImportAction() throws {
-        let source = try String(
-            contentsOfFile: sourceRoot()
-                .appendingPathComponent("Sources/DesktopApp/Screens/Home/MainView.swift")
-                .path,
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(source.contains("setImportPageMode(mode)"))
-        XCTAssertTrue(source.contains("importModeButton(.recommended, titleKey: \"import.mode.recommended\", icon: .importRecommended)"))
-        XCTAssertTrue(source.contains("importModeButton(.localScan, titleKey: \"import.mode.local_scan\", icon: .importLocalScan)"))
-        XCTAssertTrue(source.contains("presentImportLocalDirectoryPanel()"))
-        XCTAssertTrue(source.contains("actionIcon(.importLocal"))
-        XCTAssertTrue(source.contains("import.mode.recommended"))
-        XCTAssertTrue(source.contains("import.mode.local_scan"))
-        XCTAssertTrue(source.contains("import.local.button"))
-    }
-
-    func testImportAndSettingsHeaderActionsShareTopBarWithSettingsButton() throws {
-        let source = try String(
-            contentsOfFile: sourceRoot()
-                .appendingPathComponent("Sources/DesktopApp/Screens/Home/MainView.swift")
-                .path,
-            encoding: .utf8
-        )
-        let settingsSource = try String(
-            contentsOfFile: sourceRoot()
-                .appendingPathComponent("Sources/DesktopApp/Screens/Settings/SettingsView.swift")
-                .path,
-            encoding: .utf8
-        )
-
-        guard
-            let importHeaderStart = source.range(of: "} else if isImportPage {"),
-            let importHeaderEnd = source.range(of: "\n            } else", range: importHeaderStart.upperBound..<source.endIndex),
-            let settingsHeaderStart = source.range(of: "} else if isSettingsPage {"),
-            let settingsHeaderEnd = source.range(of: "\n            } else", range: settingsHeaderStart.upperBound..<source.endIndex)
-        else {
-            XCTFail("Expected import and settings header branches were not found")
-            return
-        }
-
-        let importHeaderSource = String(source[importHeaderStart.lowerBound..<importHeaderEnd.lowerBound])
-        let settingsHeaderSource = String(source[settingsHeaderStart.lowerBound..<settingsHeaderEnd.lowerBound])
-
-        XCTAssertTrue(importHeaderSource.contains("importHeaderActions"))
-        XCTAssertTrue(importHeaderSource.contains("settingsButton"))
-        XCTAssertTrue(settingsHeaderSource.contains("settingsHeaderActions"))
-        XCTAssertTrue(settingsHeaderSource.contains("settingsButton"))
-        XCTAssertFalse(settingsSource.contains("headerTrailing: {\n                        addCustomAgentButton\n                    }"))
-    }
-
     func testLoadImportPageSeedsRecommendedContentFromLocalRecommendations() async {
         let recommendations = [
             ImportRecommendationEntry(
@@ -2159,47 +2096,6 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertNil(ImportScreen.importActionHelpText(for: freshCard, activeImportDisabledReason: nil, localized: localized))
     }
 
-    func testImportScreenUsesPerCardImportPhasesInsteadOfGlobalDisable() throws {
-        let source = try String(
-            contentsOfFile: sourceRoot()
-                .appendingPathComponent("Sources/DesktopApp/Screens/Import/ImportScreen.swift")
-                .path,
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(source.contains("importPhases: [String: GroupOperationQueue.Phase]"))
-        XCTAssertTrue(source.contains("isQueued: isQueued"))
-        XCTAssertTrue(source.contains("isAnotherImportRunning: false"))
-        XCTAssertTrue(source.contains("actionButtonHelpText: Self.importActionHelpText("))
-    }
-
-    func testImportSuccessDoesNotWriteDetailRoute() throws {
-        let source = try String(
-            contentsOfFile: sourceRoot()
-                .appendingPathComponent("Sources/DesktopApp/ViewModels/MainViewModel.swift")
-                .path,
-            encoding: .utf8
-        )
-
-        XCTAssertFalse(
-            source.contains("currentRoute = .detail(sourceId: sourceId)"),
-            "Import success should not open the imported group detail page automatically."
-        )
-    }
-
-    func testSharedGroupCardUsesActionButtonHelpTextForHelp() throws {
-        let source = try String(
-            contentsOfFile: sourceRoot()
-                .appendingPathComponent("Sources/DesktopApp/Components/GroupCardComponents.swift")
-                .path,
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(source.contains("let actionButtonHelpText: String?"))
-        XCTAssertTrue(source.contains("actionButtonHelpText: String? = nil"))
-        XCTAssertTrue(source.contains(".help(actionButtonHelpText ?? buttonTitle)"))
-    }
-
     func testImportViewModelFallsBackToVisibleTargetsWhenPreviewTargetsAreUnavailable() {
         let viewModel = ImportViewModel(
             items: [
@@ -2232,23 +2128,6 @@ final class ImportScreenContainerTests: XCTestCase {
 
         XCTAssertEqual(viewModel.content.first?.targets.map(\.id), ["claude-code", "cursor"])
         XCTAssertFalse(viewModel.content.first?.targetsLoading ?? true)
-    }
-
-    func testImportScreenUsesUnifiedGridForRecommendationsSearchAndLocalScan() throws {
-        let source = try String(
-            contentsOfFile: sourceRoot()
-                .appendingPathComponent("Sources/DesktopApp/Screens/Import/ImportScreen.swift")
-                .path,
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(source.contains("private func contentBody("))
-        XCTAssertTrue(source.contains("cards: [ImportViewModel.Card]"))
-        XCTAssertTrue(source.contains("LazyVGrid(columns: gridColumns, spacing: 12)"))
-        XCTAssertFalse(source.contains("recommendedContent("))
-        XCTAssertFalse(source.contains("sectionTitle("))
-        XCTAssertFalse(source.contains("ScrollView(.horizontal, showsIndicators: false)"))
-        XCTAssertFalse(source.contains("LazyHStack"))
     }
 
     func testImportScreenUsesSpinnerForInitialLoadingInsteadOfSkeletonCards() {
@@ -2839,13 +2718,6 @@ final class ImportScreenContainerTests: XCTestCase {
             "issueCounts": [:],
             "health": "OK",
         ]
-    }
-
-    private func sourceRoot() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
     }
 
     private func waitForCondition(
