@@ -130,6 +130,13 @@ final class UsageVisualizationTests: XCTestCase {
         XCTAssertTrue(source.contains("activityPeriodPicker"))
     }
 
+    func testCustomUsageRangeExplainsAndBlocksInvalidDates() throws {
+        let source = try sourceText(at: "Sources/DesktopApp/Screens/Home/UsageScreen.swift")
+
+        XCTAssertTrue(source.contains("t(\"usage.range.validation.order\")"))
+        XCTAssertTrue(source.contains(".disabled(!isCustomRangeValid)"))
+    }
+
     func testUsageDashboardDoesNotEmbedInterfaceCopy() throws {
         let usageSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/UsageScreen.swift")
         let mainSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")

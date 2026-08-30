@@ -68,6 +68,12 @@ struct UsageScreen: View {
                 Text(t("usage.range.custom_title")).font(.system(size: 14, weight: .semibold))
                 DatePicker(t("usage.range.start"), selection: $customFrom, displayedComponents: .date)
                 DatePicker(t("usage.range.end"), selection: $customTo, displayedComponents: .date)
+                if !isCustomRangeValid {
+                    Text(t("usage.range.validation.order"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack {
                     Spacer()
                     Button(t("usage.range.apply")) {
@@ -85,6 +91,7 @@ struct UsageScreen: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(!isCustomRangeValid)
                 }
             }
             .padding(16)
@@ -107,10 +114,13 @@ struct UsageScreen: View {
             }
         case .failed(let message):
             sectionCard(title: t("usage.state.failed.title")) {
-                Text(message)
-                    .font(.system(size: 13))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
-                    .padding(.vertical, 12)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(message)
+                    Text(t("usage.state.failed.recovery"))
+                }
+                .font(.system(size: 13))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+                .padding(.vertical, 12)
             }
         case .ready:
             if let snapshot = viewModel.usageSnapshot { dashboard(snapshot) }
@@ -222,6 +232,10 @@ struct UsageScreen: View {
         calendar.locale = locale
         calendar.firstWeekday = 1
         return calendar
+    }
+
+    private var isCustomRangeValid: Bool {
+        customFrom <= customTo
     }
 
     private func statistics(_ snapshot: UsageSnapshotViewData) -> some View {

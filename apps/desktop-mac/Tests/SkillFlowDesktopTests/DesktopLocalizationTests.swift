@@ -195,13 +195,17 @@ final class DesktopLocalizationTests: XCTestCase {
             "usage.range.start",
             "usage.range.end",
             "usage.range.apply",
+            "usage.range.validation.order",
             "usage.state.loading.title",
             "usage.state.loading.body",
             "usage.state.failed.title",
+            "usage.state.failed.recovery",
             "usage.state.empty.title",
             "usage.state.empty.body",
             "usage.chart.daily_trend",
             "usage.chart.hourly_activity",
+            "usage.activity.current",
+            "usage.calendar.tooltip",
             "usage.weekday.0",
             "usage.weekday.1",
             "usage.weekday.2",
@@ -261,6 +265,16 @@ final class DesktopLocalizationTests: XCTestCase {
             L10n.string("usage.total_calls", locale: Locale(identifier: "ja"), arguments: [12]),
             "合計呼び出し：12"
         )
+    }
+
+    func testUsageCopyMatchesCalendarSemanticsInAllSupportedLocales() {
+        XCTAssertEqual(L10n.string("page.usage.title", locale: Locale(identifier: "zh-Hans")), "使用统计")
+        XCTAssertEqual(L10n.string("usage.chart.hourly_activity", locale: Locale(identifier: "en")), "Activity calendar")
+        XCTAssertEqual(L10n.string("usage.chart.hourly_activity", locale: Locale(identifier: "zh-Hans")), "活跃日历")
+        XCTAssertEqual(L10n.string("usage.chart.hourly_activity", locale: Locale(identifier: "ja")), "アクティビティカレンダー")
+        XCTAssertEqual(L10n.string("usage.activity.current", locale: Locale(identifier: "en")), "Past year")
+        XCTAssertEqual(L10n.string("usage.activity.current", locale: Locale(identifier: "zh-Hans")), "近一年")
+        XCTAssertEqual(L10n.string("usage.activity.current", locale: Locale(identifier: "ja")), "過去1年")
     }
 
     func testSourceTypeCollectionLabelUsesCombinedCopy() {
