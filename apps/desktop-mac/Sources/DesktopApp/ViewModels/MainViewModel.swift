@@ -53,6 +53,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     @ObservationIgnored private var detailEnrichmentTokenSeed: UInt64 = 0
     @ObservationIgnored private var refreshedDetailEnrichmentSourceIds: Set<String> = []
     var usageSnapshot: UsageSnapshotViewData?
+    var usageActivitySnapshot: UsageSnapshotViewData?
     var usageLoadState: LoadState = .idle
     var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
     var renamedSourceOriginalDisplayNameOverridesBySourceId: [String: String] = [:]
@@ -1277,6 +1278,19 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         }
     }
 
+    func loadUsageActivitySnapshot(force: Bool = false) async {
+        guard force || usageActivitySnapshot == nil else { return }
+        do {
+            let response = try await usageQuery.usageSnapshot(rangePreset: "available", from: nil, to: nil)
+            guard response.ok,
+                  let snapshot = BridgePayloadDecoder.usageSnapshot(from: response.data?.value as? [String: Any])
+            else { return }
+            usageActivitySnapshot = snapshot
+        } catch {
+            // The trend remains usable when the independent activity history cannot load.
+        }
+    }
+
     func refreshUsageAnalytics() async {
         usageLoadState = .loading
         do {
@@ -1286,6 +1300,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 return
             }
             await loadUsageSnapshot(force: true, rangePreset: "30d")
+            await loadUsageActivitySnapshot(force: true)
         } catch {
             usageLoadState = .failed(error.localizedDescription)
         }

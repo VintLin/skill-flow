@@ -484,6 +484,8 @@
 "usage.state.empty.body" = "No recognizable skill calls were found in local agent sessions.";
 "usage.chart.daily_trend" = "Daily trend";
 "usage.chart.hourly_activity" = "Activity by time";
+"usage.activity.current" = "Current";
+"usage.calendar.tooltip" = "%d skill runs";
 "usage.weekday.0" = "Sun";
 "usage.weekday.1" = "Mon";
 "usage.weekday.2" = "Tue";

@@ -484,6 +484,8 @@
 "usage.state.empty.body" = "ローカルの Agent セッションに認識可能なスキル呼び出しがありません。";
 "usage.chart.daily_trend" = "日別推移";
 "usage.chart.hourly_activity" = "時間帯別アクティビティ";
+"usage.activity.current" = "現在";
+"usage.calendar.tooltip" = "Skill 呼び出し %d 回";
 "usage.weekday.0" = "日";
 "usage.weekday.1" = "月";
 "usage.weekday.2" = "火";

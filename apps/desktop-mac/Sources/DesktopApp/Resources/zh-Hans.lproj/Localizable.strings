@@ -484,6 +484,8 @@
 "usage.state.empty.body" = "本地 Agent 会话中尚未发现可识别的技能调用记录。";
 "usage.chart.daily_trend" = "每日趋势";
 "usage.chart.hourly_activity" = "分时活跃";
+"usage.activity.current" = "当前";
+"usage.calendar.tooltip" = "%d 次 Skill 调用";
 "usage.weekday.0" = "周日";
 "usage.weekday.1" = "周一";
 "usage.weekday.2" = "周二";

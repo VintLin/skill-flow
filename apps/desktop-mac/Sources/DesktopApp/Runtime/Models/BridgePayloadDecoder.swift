@@ -53,6 +53,12 @@ enum BridgePayloadDecoder {
                     lastObservedAt: string(item["lastObservedAt"])
                 )
             },
+            dailySeries: objects(payload["dailySeries"]).map { item in
+                UsageDailyActivityViewData(
+                    date: string(item["date"]) ?? "",
+                    observedUses: integer(item["observedUses"]) ?? 0
+                )
+            }.filter { !$0.date.isEmpty },
             timeBuckets: objects(payload["timeBuckets"]).enumerated().map { index, item in
                 let bucketKey = string(item["key"]) ?? "bucket-\(index)"
                 return UsageTimeBucketViewData(

@@ -7,6 +7,7 @@ struct UsageScreen: View {
     let accent: DesktopAccentColor
 
     @State private var selectedRange: UsageRangePresetViewData = .thirtyDays
+    @State private var selectedActivityPeriod: UsageCalendarPeriod = .current
     @State private var selection: UsageChartSelectionViewData = .all
     @State private var showingCustomRange = false
     @State private var customFrom = Calendar.current.date(byAdding: .day, value: -29, to: Date()) ?? Date()
@@ -15,16 +16,20 @@ struct UsageScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                rangePicker
                 content
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 24)
-            .frame(maxWidth: 1180, alignment: .leading)
+            .frame(maxWidth: 1180, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppTheme.pageBackground(for: theme))
-        .task { await viewModel.loadUsageSnapshot(rangePreset: selectedRange.rawValue) }
+        .task {
+            async let trend: Void = viewModel.loadUsageSnapshot(rangePreset: selectedRange.rawValue)
+            async let activity: Void = viewModel.loadUsageActivitySnapshot()
+            _ = await (trend, activity)
+        }
         .onChange(of: selectedRange) { _, newValue in
             guard newValue != .custom else { return }
             selection = .all
@@ -123,11 +128,9 @@ struct UsageScreen: View {
     private func dashboard(_ snapshot: UsageSnapshotViewData) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             let chart = snapshot.chartData(for: selection)
-            heatmap(snapshot)
+            activityHeatmap(viewModel.usageActivitySnapshot ?? snapshot)
             sectionCard(title: nil) {
-                Label(t("usage.chart.daily_trend"), systemImage: "waveform.path.ecg")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppTheme.textPrimary(for: theme))
+                dailyTrendHeader
                 UsageAreaChart(data: chart, theme: theme, locale: locale)
                     .frame(height: 340)
             }
@@ -135,69 +138,36 @@ struct UsageScreen: View {
         }
     }
 
-    private func heatmap(_ snapshot: UsageSnapshotViewData) -> some View {
-        let activityGrid = UsageHourlyActivityGrid(snapshot.hourlyActivity)
+    private var dailyTrendHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Label(t("usage.chart.daily_trend"), systemImage: "waveform.path.ecg")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+            Spacer(minLength: 16)
+            rangePicker
+        }
+    }
+
+    private func activityHeatmap(_ snapshot: UsageSnapshotViewData) -> some View {
+        let calendar = usageCalendar
+        let range = selectedActivityPeriod.dateRange(calendar: calendar, now: Date())
+        let dailyUses = Dictionary(uniqueKeysWithValues: snapshot.dailySeries.map { ($0.date, $0.observedUses) })
+        let grid = UsageCalendarGrid(start: range.start, end: range.end, dailyUses: dailyUses, calendar: calendar)
         return sectionCard(title: nil) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .center, spacing: 12) {
                 Label(t("usage.chart.hourly_activity"), systemImage: "calendar")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(AppTheme.textPrimary(for: theme))
-                Spacer()
-                Text(snapshot.rangeLabel)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                Spacer(minLength: 16)
+                activityPeriodPicker(snapshot)
             }
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(0..<7, id: \.self) { weekday in
-                        Text(weekdayTitle(weekday))
-                            .font(.system(size: 10))
-                            .foregroundStyle(AppTheme.textMuted(for: theme))
-                            .frame(width: 28, height: UsageHeatmapGeometry.cellSize, alignment: .leading)
-                    }
-                }
-                GeometryReader { proxy in
-                    let geometry = UsageHeatmapGeometry(width: proxy.size.width)
-                    UsageHeatmapGridLayout(
-                        columnCount: geometry.columnCount,
-                        cellSize: geometry.cellSize,
-                        columnSpacing: geometry.columnSpacing,
-                        rowSpacing: geometry.rowSpacing
-                    ) {
-                        ForEach(0..<7, id: \.self) { weekday in
-                            ForEach(0..<geometry.columnCount, id: \.self) { column in
-                                if column < UsageHeatmapGeometry.hourCount {
-                                    let observedUses = activityGrid.observedUses(weekday: weekday, hour: column)
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(heatmapColor(observedUses, maximum: activityGrid.maximum))
-                                        .help(t("usage.heatmap.tooltip", weekdayTitle(weekday), String(format: "%02d:00", column), observedUses))
-                                } else {
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(heatmapColor(0, maximum: activityGrid.maximum))
-                                        .accessibilityHidden(true)
-                                }
-                            }
-                        }
-                    }
-                }
-                .frame(height: UsageHeatmapGeometry.gridHeight)
-            }
-            HStack(alignment: .top, spacing: 8) {
-                Color.clear.frame(width: 28, height: 16)
-                GeometryReader { proxy in
-                    let layout = UsageHeatmapGeometry(width: proxy.size.width)
-                    ZStack(alignment: .topLeading) {
-                        ForEach([0, 3, 6, 9, 12, 15, 18, 21], id: \.self) { hour in
-                            let frame = layout.frame(weekday: 0, hour: hour)
-                            Text(String(format: "%02d", hour))
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(AppTheme.textMuted(for: theme))
-                                .position(x: frame.midX, y: 8)
-                        }
-                    }
-                }
-            }
-            .frame(height: 16)
+            UsageCalendarHeatmap(
+                grid: grid,
+                theme: theme,
+                accent: accent,
+                locale: locale,
+                callCountText: { t("usage.calendar.tooltip", $0) }
+            )
             HStack(spacing: 5) {
                 Spacer()
                 Text(t("usage.heatmap.less"))
@@ -211,6 +181,47 @@ struct UsageScreen: View {
             .font(.system(size: 10))
             .foregroundStyle(AppTheme.textMuted(for: theme))
         }
+    }
+
+    private func activityPeriodPicker(_ snapshot: UsageSnapshotViewData) -> some View {
+        HStack(spacing: 0) {
+            ForEach(activityPeriods(snapshot)) { period in
+                Button {
+                    selectedActivityPeriod = period
+                } label: {
+                    Text(period == .current ? t("usage.activity.current") : period.title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(period == selectedActivityPeriod ? AppTheme.textPrimary(for: theme) : AppTheme.textMuted(for: theme))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background {
+                            if period == selectedActivityPeriod {
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(AppTheme.surface(for: theme))
+                                    .overlay { RoundedRectangle(cornerRadius: 7).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(AppTheme.pageBackground(for: theme).opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 9))
+    }
+
+    private func activityPeriods(_ snapshot: UsageSnapshotViewData) -> [UsageCalendarPeriod] {
+        let currentYear = usageCalendar.component(.year, from: Date())
+        let baselineYears = [currentYear, currentYear - 1]
+        let years = Set(baselineYears + snapshot.dailySeries.compactMap { Int($0.date.prefix(4)) }).sorted(by: >)
+        return [.current] + years.map(UsageCalendarPeriod.year)
+    }
+
+    private var usageCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        calendar.firstWeekday = 1
+        return calendar
     }
 
     private func statistics(_ snapshot: UsageSnapshotViewData) -> some View {
@@ -315,10 +326,6 @@ struct UsageScreen: View {
         return AppTheme.brand(for: accent, in: theme).opacity(0.18 + 0.12 * Double(level))
     }
 
-    private func weekdayTitle(_ weekday: Int) -> String {
-        t("usage.weekday.\(min(max(weekday, 0), 6))")
-    }
-
     private func sectionCard<Content: View>(title: String?, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title { Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(AppTheme.textPrimary(for: theme)) }
@@ -345,6 +352,253 @@ struct UsageScreen: View {
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
         L10n.string(key, locale: locale, arguments: arguments)
+    }
+}
+
+enum UsageCalendarPeriod: Hashable, Identifiable {
+    case current
+    case year(Int)
+
+    var id: String {
+        switch self {
+        case .current: return "current"
+        case .year(let year): return String(year)
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .current: return ""
+        case .year(let year): return String(year)
+        }
+    }
+
+    func dateRange(calendar: Calendar, now: Date) -> (start: Date, end: Date) {
+        switch self {
+        case .current:
+            let end = calendar.startOfDay(for: now)
+            return (calendar.date(byAdding: .day, value: -364, to: end) ?? end, end)
+        case .year(let year):
+            let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)) ?? now
+            let nextYear = calendar.date(byAdding: .year, value: 1, to: start) ?? start
+            return (start, calendar.date(byAdding: .day, value: -1, to: nextYear) ?? start)
+        }
+    }
+}
+
+struct UsageCalendarCell: Equatable {
+    let date: Date?
+    let dateKey: String?
+    let weekday: Int
+    let week: Int
+    let observedUses: Int
+}
+
+struct UsageCalendarMonthLabel: Identifiable, Equatable {
+    var id: String { "\(year)-\(month)-\(week)" }
+    let year: Int
+    let month: Int
+    let week: Int
+}
+
+struct UsageCalendarGrid: Equatable {
+    let cells: [UsageCalendarCell]
+    let monthLabels: [UsageCalendarMonthLabel]
+    let weekCount: Int
+    let maximum: Int
+
+    init(start: Date, end: Date, dailyUses: [String: Int], calendar: Calendar) {
+        let normalizedStart = calendar.startOfDay(for: start)
+        let normalizedEnd = calendar.startOfDay(for: end)
+        let startWeekday = calendar.component(.weekday, from: normalizedStart)
+        let leadingDays = (startWeekday - calendar.firstWeekday + 7) % 7
+        let gridStart = calendar.date(byAdding: .day, value: -leadingDays, to: normalizedStart) ?? normalizedStart
+        let endWeekday = calendar.component(.weekday, from: normalizedEnd)
+        let trailingDays = (calendar.firstWeekday + 6 - endWeekday + 7) % 7
+        let gridEnd = calendar.date(byAdding: .day, value: trailingDays, to: normalizedEnd) ?? normalizedEnd
+        let totalDays = max(7, (calendar.dateComponents([.day], from: gridStart, to: gridEnd).day ?? 0) + 1)
+        weekCount = Int(ceil(Double(totalDays) / 7.0))
+
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        cells = (0..<(weekCount * 7)).map { index in
+            let date = calendar.date(byAdding: .day, value: index, to: gridStart)
+            let isInRange = date.map { $0 >= normalizedStart && $0 <= normalizedEnd } ?? false
+            let dateKey = isInRange ? date.map(formatter.string(from:)) : nil
+            return UsageCalendarCell(
+                date: isInRange ? date : nil,
+                dateKey: dateKey,
+                weekday: index % 7,
+                week: index / 7,
+                observedUses: dateKey.flatMap { dailyUses[$0] } ?? 0
+            )
+        }
+        maximum = cells.map(\.observedUses).max() ?? 0
+
+        var labels: [UsageCalendarMonthLabel] = []
+        let firstMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: normalizedStart)) ?? normalizedStart
+        var monthStart = firstMonth < normalizedStart
+            ? (calendar.date(byAdding: .month, value: 1, to: firstMonth) ?? normalizedStart)
+            : firstMonth
+        while monthStart <= normalizedEnd {
+            let offset = calendar.dateComponents([.day], from: gridStart, to: monthStart).day ?? 0
+            let components = calendar.dateComponents([.year, .month], from: monthStart)
+            labels.append(UsageCalendarMonthLabel(
+                year: components.year ?? 0,
+                month: components.month ?? 1,
+                week: max(0, offset / 7)
+            ))
+            monthStart = calendar.date(byAdding: .month, value: 1, to: monthStart) ?? normalizedEnd.addingTimeInterval(1)
+        }
+        monthLabels = labels
+    }
+}
+
+private struct UsageCalendarHeatmap: View {
+    let grid: UsageCalendarGrid
+    let theme: DesktopThemeMode
+    let accent: DesktopAccentColor
+    let locale: Locale
+    let callCountText: (Int) -> String
+
+    @State private var hoveredCell: UsageCalendarCell?
+
+    private let spacing: CGFloat = 3
+    private let weekdayWidth: CGFloat = 30
+
+    var body: some View {
+        GeometryReader { proxy in
+            let gridWidth = max(1, proxy.size.width - weekdayWidth - 8)
+            let cellSize = min(16, max(10, (gridWidth - spacing * CGFloat(grid.weekCount - 1)) / CGFloat(grid.weekCount)))
+            let stride = cellSize + spacing
+            VStack(alignment: .leading, spacing: 6) {
+                monthLabels(cellStride: stride)
+                    .padding(.leading, weekdayWidth + 8)
+                HStack(alignment: .top, spacing: 8) {
+                    weekdayLabels(cellSize: cellSize)
+                    calendarCanvas(cellSize: cellSize, cellStride: stride, availableWidth: gridWidth)
+                }
+            }
+        }
+        .frame(height: 22 + (16 * 7) + (spacing * 6))
+    }
+
+    private func monthLabels(cellStride: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(grid.monthLabels) { label in
+                Text(monthName(label.month))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .offset(x: CGFloat(label.week) * cellStride)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 14, alignment: .topLeading)
+        .clipped()
+    }
+
+    private func weekdayLabels(cellSize: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            ForEach(0..<7, id: \.self) { row in
+                Text(row.isMultiple(of: 2) ? "" : weekdayName(row))
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+                    .frame(width: weekdayWidth, height: cellSize, alignment: .leading)
+            }
+        }
+    }
+
+    private func calendarCanvas(cellSize: CGFloat, cellStride: CGFloat, availableWidth: CGFloat) -> some View {
+        Canvas { context, _ in
+            for cell in grid.cells {
+                let rect = CGRect(
+                    x: CGFloat(cell.week) * cellStride,
+                    y: CGFloat(cell.weekday) * cellStride,
+                    width: cellSize,
+                    height: cellSize
+                )
+                context.fill(
+                    Path(roundedRect: rect, cornerRadius: 3),
+                    with: .color(color(for: cell))
+                )
+            }
+        }
+        .frame(width: min(availableWidth, CGFloat(grid.weekCount) * cellStride - spacing), height: cellSize * 7 + spacing * 6, alignment: .topLeading)
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let location):
+                let week = Int(location.x / cellStride)
+                let weekday = Int(location.y / cellStride)
+                hoveredCell = grid.cells.first { $0.week == week && $0.weekday == weekday && $0.date != nil }
+            case .ended:
+                hoveredCell = nil
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if let hoveredCell, let date = hoveredCell.date {
+                tooltip(date: date, observedUses: hoveredCell.observedUses)
+                    .fixedSize()
+                    .allowsHitTesting(false)
+                    .offset(
+                        x: tooltipX(for: hoveredCell, cellStride: cellStride, availableWidth: availableWidth),
+                        y: max(0, CGFloat(hoveredCell.weekday) * cellStride - 44)
+                    )
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.string("usage.chart.hourly_activity", locale: locale))
+    }
+
+    private func tooltip(date: Date, observedUses: Int) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(formattedDate(date))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+            Text(callCountText(observedUses))
+                .font(.system(size: 10))
+                .foregroundStyle(AppTheme.textMuted(for: theme))
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(AppTheme.pageBackground(for: theme))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+    }
+
+    private func color(for cell: UsageCalendarCell) -> Color {
+        guard cell.date != nil else { return .clear }
+        guard cell.observedUses > 0, grid.maximum > 0 else { return AppTheme.pageBackground(for: theme).opacity(0.72) }
+        let normalized = log(Double(cell.observedUses) + 1) / log(Double(grid.maximum) + 1)
+        return AppTheme.brand(for: accent, in: theme).opacity(0.2 + 0.72 * normalized)
+    }
+
+    private func tooltipX(for cell: UsageCalendarCell, cellStride: CGFloat, availableWidth: CGFloat) -> CGFloat {
+        let width: CGFloat = 150
+        return min(max(0, CGFloat(cell.week) * cellStride - width / 2), max(0, availableWidth - width))
+    }
+
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = locale
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+
+    private func monthName(_ month: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        return formatter.shortMonthSymbols[max(0, min(11, month - 1))]
+    }
+
+    private func weekdayName(_ row: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        return formatter.veryShortWeekdaySymbols[max(0, min(6, row))]
     }
 }
 

@@ -3,6 +3,41 @@ import XCTest
 @testable import SkillFlowDesktop
 
 final class UsageVisualizationTests: XCTestCase {
+    func testCalendarPeriodCurrentCoversTrailingTwelveMonths() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 30))!
+
+        let range = UsageCalendarPeriod.current.dateRange(calendar: calendar, now: now)
+
+        XCTAssertEqual(calendar.dateComponents([.year, .month, .day], from: range.start), DateComponents(year: 2025, month: 8, day: 31))
+        XCTAssertEqual(calendar.dateComponents([.year, .month, .day], from: range.end), DateComponents(year: 2026, month: 8, day: 30))
+    }
+
+    func testCalendarPeriodYearCoversWholeCalendarYear() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 30))!
+
+        let range = UsageCalendarPeriod.year(2025).dateRange(calendar: calendar, now: now)
+
+        XCTAssertEqual(calendar.dateComponents([.year, .month, .day], from: range.start), DateComponents(year: 2025, month: 1, day: 1))
+        XCTAssertEqual(calendar.dateComponents([.year, .month, .day], from: range.end), DateComponents(year: 2025, month: 12, day: 31))
+    }
+
+    func testCalendarGridMapsDatesIntoWeekColumnsAndWeekdayRows() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 1
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 1))!
+        let end = calendar.date(from: DateComponents(year: 2026, month: 12, day: 31))!
+
+        let grid = UsageCalendarGrid(start: start, end: end, dailyUses: ["2026-01-01": 4], calendar: calendar)
+
+        let januaryFirst = grid.cells.first(where: { $0.dateKey == "2026-01-01" })
+        XCTAssertEqual(januaryFirst?.weekday, 4)
+        XCTAssertEqual(januaryFirst?.observedUses, 4)
+        XCTAssertEqual(grid.cells.count, grid.weekCount * 7)
+        XCTAssertGreaterThanOrEqual(grid.monthLabels.count, 12)
+    }
+
     func testHourlyActivityGridIndexesShuffledValuesAndMaximum() {
         let values = (0..<(7 * 24)).reversed().map { index in
             UsageHourlyActivityViewData(
@@ -91,6 +126,8 @@ final class UsageVisualizationTests: XCTestCase {
         XCTAssertTrue(source.contains("Label(t(\"usage.chart.daily_trend\"), systemImage: \"waveform.path.ecg\")"))
         XCTAssertTrue(source.contains(".overlay(alignment: .topLeading)"))
         XCTAssertTrue(source.contains(".frame(width: UsageTooltipGeometry.width"))
+        XCTAssertTrue(source.contains("dailyTrendHeader"))
+        XCTAssertTrue(source.contains("activityPeriodPicker"))
     }
 
     func testUsageDashboardDoesNotEmbedInterfaceCopy() throws {
@@ -121,7 +158,8 @@ final class UsageVisualizationTests: XCTestCase {
         let usageSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/UsageScreen.swift")
         let mainSource = try sourceText(at: "Sources/DesktopApp/Screens/Home/MainView.swift")
 
-        XCTAssertTrue(usageSource.contains(".task { await viewModel.loadUsageSnapshot"))
+        XCTAssertTrue(usageSource.contains("async let trend: Void = viewModel.loadUsageSnapshot"))
+        XCTAssertTrue(usageSource.contains("async let activity: Void = viewModel.loadUsageActivitySnapshot"))
         XCTAssertFalse(mainSource.contains("await viewModel.loadUsageSnapshot()"))
     }
 

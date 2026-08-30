@@ -207,6 +207,7 @@ struct UsageSnapshotViewData: Equatable {
     let kpis: UsageKpisViewData
     let topSkills: [UsageTopSkillViewData]
     let topAgents: [UsageTopAgentViewData]
+    let dailySeries: [UsageDailyActivityViewData]
     let timeBuckets: [UsageTimeBucketViewData]
     let hourlyActivity: [UsageHourlyActivityViewData]
     let skillAgentMatrix: [UsageSkillAgentMatrixViewData]
@@ -305,6 +306,12 @@ struct UsageSnapshotViewData: Equatable {
             )
         }.sorted { $0.observedUses > $1.observedUses || ($0.observedUses == $1.observedUses && $0.agent < $1.agent) }
     }
+}
+
+struct UsageDailyActivityViewData: Identifiable, Equatable {
+    var id: String { date }
+    let date: String
+    let observedUses: Int
 }
 
 struct UsageKpisViewData: Equatable {

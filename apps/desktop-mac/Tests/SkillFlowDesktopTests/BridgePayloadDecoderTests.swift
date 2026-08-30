@@ -100,6 +100,7 @@ final class BridgePayloadDecoderTests: XCTestCase {
                 "activeSkills": 1,
                 "activeProjects": 1,
             ]],
+            "dailySeries": [["date": "2026-08-24", "observedUses": 12]],
             "timeBuckets": [[
                 "key": "2026-08-24",
                 "label": "8/24",
@@ -156,6 +157,7 @@ final class BridgePayloadDecoderTests: XCTestCase {
         XCTAssertEqual(snapshot?.kpis.totalSkills, 57)
         XCTAssertEqual(snapshot?.kpis.skillRuns, 341)
         XCTAssertEqual(snapshot?.topAgents.first?.observedUses, 12)
+        XCTAssertEqual(snapshot?.dailySeries, [UsageDailyActivityViewData(date: "2026-08-24", observedUses: 12)])
         XCTAssertEqual(snapshot?.timeBuckets.first?.bySkill.first?.observedUses, 12)
         XCTAssertEqual(snapshot?.skillAgentMatrix.first?.skillKey, "ref:leaf-wayfinder")
         XCTAssertEqual(snapshot?.chartSkillsTruncated, true)
