@@ -54,7 +54,12 @@ final class AgentIconTests: XCTestCase {
         XCTAssertEqual(AgentIconLibrary.fileName(for: "kiro"), "kiro-cli.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "trae"), "trae.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "grok-build"), "grok-build.svg")
-        XCTAssertNil(AgentIconLibrary.fileName(for: "pi"))
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "pi"), "pi.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "openclaw"), "openclaw.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "deepseek-harness"), "deepseek.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "antigravity"), "antigravity.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "mistral-vibe"), "mistral.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "qwen-code"), "qwen.svg")
     }
 
     func testIconLoaderFindsSourceControlledSvgAssets() {
@@ -68,10 +73,27 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.image(for: "codebuddy"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "trae"))
         XCTAssertNotNil(AgentIconLibrary.image(for: "grok-build"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "pi"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "openclaw"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "deepseek-harness"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "antigravity"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "goose"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "junie"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "kilo-code"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "mistral-vibe"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "openhands"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "qoder"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "qwen-code"))
+        XCTAssertNotNil(AgentIconLibrary.image(for: "zencoder"))
     }
 
     func testCurrentColorAgentIconsLoadAtUsableResolution() {
-        for targetId in ["kimi-code", "workbuddy", "codebuddy", "grok-build"] {
+        let targetIds = [
+            "kimi-code", "workbuddy", "codebuddy", "grok-build", "pi", "openclaw",
+            "deepseek-harness", "antigravity", "goose", "junie", "kilo-code",
+            "mistral-vibe", "openhands", "qoder", "qwen-code", "zencoder",
+        ]
+        for targetId in targetIds {
             guard
                 let image = AgentIconLibrary.image(for: targetId),
                 let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -82,6 +104,24 @@ final class AgentIconTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(cgImage.width, 24)
             XCTAssertGreaterThanOrEqual(cgImage.height, 24)
             XCTAssertTrue(hasVisiblePixels(cgImage), "\(targetId) icon should not be blank")
+        }
+    }
+
+    func testAddedCurrentColorSymbolIconsRetainVisiblePixelsAfterRecoloring() {
+        let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
+        let targetIds = [
+            "pi", "openclaw", "deepseek-harness", "antigravity", "goose", "junie",
+            "kilo-code", "mistral-vibe", "openhands", "qoder", "qwen-code", "zencoder",
+        ]
+
+        for targetId in targetIds {
+            guard
+                let image = AgentIconLibrary.symbolImage(for: targetId, foreground: foreground),
+                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else {
+                return XCTFail("Expected \(targetId) symbol image to load")
+            }
+            XCTAssertTrue(hasVisiblePixels(cgImage), "\(targetId) symbol image should remain visible")
         }
     }
 

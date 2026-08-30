@@ -4,6 +4,11 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Added 10 icon-backed Agent deployment targets, bringing the catalog to 32 targets while preserving all existing target IDs, ordering, paths, and deployment strategies.
+- Added bundled icons for Antigravity, DeepSeek Harness, Goose, Junie, Kilo Code, Mistral Vibe, OpenHands, Pi, Qoder, Qwen Code, and Zencoder, and assigned OpenClaw its dedicated icon.
+
 ## v1.6.3 - 2026-08-30
 
 ### Added

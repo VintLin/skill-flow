@@ -17,10 +17,48 @@ const {
   TARGET_DOCUMENTED_GLOBAL_PATHS,
   TARGET_DOCUMENTED_PROJECT_PATHS,
   TARGET_ICON_ASSET_NAMES,
+  TARGET_ORDER,
   TARGET_PATH_CANDIDATES,
 } = constants;
 
 describe("target definitions", () => {
+  test("appends icon-backed targets without reordering existing targets", () => {
+    const existingTargets = [
+      "claude-code", "codex", "zcode", "cursor", "grok-build", "pi", "workbuddy",
+      "codebuddy", "trae", "trae-cn", "kimi-code", "opencode", "minimax-code",
+      "hermes-agent", "openclaw", "github-copilot", "gemini-cli", "windsurf", "amp",
+      "kiro", "roo-code", "cline",
+    ];
+    const addedTargets = [
+      "deepseek-harness", "antigravity", "junie", "mistral-vibe", "openhands",
+      "qoder", "qwen-code", "zencoder", "kilo-code", "goose",
+    ];
+
+    expect(TARGET_ORDER).toEqual([...existingTargets, ...addedTargets]);
+  });
+
+  test("defines isolated global, detection, and documented project paths for new targets", () => {
+    const expectedPaths = {
+      "deepseek-harness": [".dsh/skills", ".dsh/skills"],
+      antigravity: [".gemini/config/skills", ".agents/skills"],
+      junie: [".junie/skills", ".junie/skills"],
+      "mistral-vibe": [".vibe/skills", ".vibe/skills"],
+      openhands: [".openhands/skills", ".openhands/skills"],
+      qoder: [".qoder/skills", ".qoder/skills"],
+      "qwen-code": [".qwen/skills", ".qwen/skills"],
+      zencoder: [".zencoder/skills", ".zencoder/skills"],
+      "kilo-code": [".kilocode/skills", ".kilocode/skills"],
+      goose: [".config/goose/skills", ".goose/skills"],
+    } as const;
+
+    for (const [target, [globalPath, projectPath]] of Object.entries(expectedPaths)) {
+      expect(TARGET_PATH_CANDIDATES[target]).toEqual([path.join(os.homedir(), globalPath)]);
+      expect(getTargetDetectionCandidates(target)).toContain(path.join(os.homedir(), globalPath));
+      expect(TARGET_DOCUMENTED_GLOBAL_PATHS[target]).toBe(`~/${globalPath}/`);
+      expect(TARGET_DOCUMENTED_PROJECT_PATHS[target]).toBe(`${projectPath}/`);
+    }
+  });
+
   test("includes config-based OpenCode skills directory in default detection paths", () => {
     expect(TARGET_PATH_CANDIDATES.opencode).toContain(
       path.join(os.homedir(), ".config", "opencode", "skills"),
@@ -260,7 +298,7 @@ describe("target definitions", () => {
   test("keeps icon metadata and documented slug aliases explicit", () => {
     expect(TARGET_ICON_ASSET_NAMES["claude-code"]).toBe("claude-code.svg");
     expect(TARGET_ICON_ASSET_NAMES["github-copilot"]).toBe("copilot.svg");
-    expect(TARGET_ICON_ASSET_NAMES.openclaw).toBe("clawdbot.svg");
+    expect(TARGET_ICON_ASSET_NAMES.openclaw).toBe("openclaw.svg");
     expect(TARGET_ICON_ASSET_NAMES["hermes-agent"]).toBe("hermesagent.svg");
     expect(TARGET_ICON_ASSET_NAMES["minimax-code"]).toBe("minimax.svg");
     expect(TARGET_ICON_ASSET_NAMES["kimi-code"]).toBe("kimi.svg");
@@ -270,7 +308,17 @@ describe("target definitions", () => {
     expect(TARGET_ICON_ASSET_NAMES["trae-cn"]).toBe("trae.svg");
     expect(TARGET_ICON_ASSET_NAMES.zcode).toBe("zcode.svg");
     expect(TARGET_ICON_ASSET_NAMES["grok-build"]).toBe("grok-build.svg");
-    expect(TARGET_ICON_ASSET_NAMES.pi).toBeUndefined();
+    expect(TARGET_ICON_ASSET_NAMES.pi).toBe("pi.svg");
+    expect(TARGET_ICON_ASSET_NAMES["deepseek-harness"]).toBe("deepseek.svg");
+    expect(TARGET_ICON_ASSET_NAMES.antigravity).toBe("antigravity.svg");
+    expect(TARGET_ICON_ASSET_NAMES.junie).toBe("junie.svg");
+    expect(TARGET_ICON_ASSET_NAMES["mistral-vibe"]).toBe("mistral.svg");
+    expect(TARGET_ICON_ASSET_NAMES.openhands).toBe("openhands.svg");
+    expect(TARGET_ICON_ASSET_NAMES.qoder).toBe("qoder.svg");
+    expect(TARGET_ICON_ASSET_NAMES["qwen-code"]).toBe("qwen.svg");
+    expect(TARGET_ICON_ASSET_NAMES.zencoder).toBe("zencoder.svg");
+    expect(TARGET_ICON_ASSET_NAMES["kilo-code"]).toBe("kilocode.svg");
+    expect(TARGET_ICON_ASSET_NAMES.goose).toBe("goose.svg");
     expect(TARGET_DEFINITIONS["roo-code"].documentedAgentIds).toEqual(["roo"]);
     expect(TARGET_DEFINITIONS["hermes-agent"].documentedAgentIds).toEqual(["hermes"]);
     expect(TARGET_DEFINITIONS["minimax-code"].documentedAgentIds).toEqual(["minimax"]);

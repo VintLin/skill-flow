@@ -51,6 +51,22 @@ const UNSUPPORTED_PRIVACY = "不扫描原始 conversation/history/memory；无�
 
 export const USAGE_AGENT_POLICY_REVISION = "usage-agent-policy@1";
 
+function unsupportedDeploymentTargetPolicy(
+  agent: DeploymentTargetName,
+  sourceCandidates: readonly string[],
+): UsageAgentPolicy {
+  return {
+    agent,
+    status: "unsupported",
+    evidenceLevels: ["lifecycle only"],
+    sourceCandidates,
+    acceptedSignals: ["无可进入主计数的默认信号"],
+    rejectedSignals: [...COMMON_REJECTED_SIGNALS, "skill 目录存在"],
+    privacyBoundary: UNSUPPORTED_PRIVACY,
+    planNote: "当前仅支持部署与生命周期检测；未确认稳定调用事件前保持 parser_unsupported。",
+  };
+}
+
 export const USAGE_AGENT_POLICIES = {
   "claude-code": {
     agent: "claude-code",
@@ -350,6 +366,16 @@ export const USAGE_AGENT_POLICIES = {
     privacyBoundary: UNSUPPORTED_PRIVACY,
     planNote: "匿名 telemetry 不能映射具体 skill 名，保持 parser_unsupported。",
   },
+  "deepseek-harness": unsupportedDeploymentTargetPolicy("deepseek-harness", ["~/.dsh/skills"]),
+  antigravity: unsupportedDeploymentTargetPolicy("antigravity", ["~/.gemini/config/skills"]),
+  junie: unsupportedDeploymentTargetPolicy("junie", ["~/.junie/skills"]),
+  "mistral-vibe": unsupportedDeploymentTargetPolicy("mistral-vibe", ["~/.vibe/skills"]),
+  openhands: unsupportedDeploymentTargetPolicy("openhands", ["~/.openhands/skills"]),
+  qoder: unsupportedDeploymentTargetPolicy("qoder", ["~/.qoder/skills"]),
+  "qwen-code": unsupportedDeploymentTargetPolicy("qwen-code", ["~/.qwen/skills"]),
+  zencoder: unsupportedDeploymentTargetPolicy("zencoder", ["~/.zencoder/skills"]),
+  "kilo-code": unsupportedDeploymentTargetPolicy("kilo-code", ["~/.kilocode/skills"]),
+  goose: unsupportedDeploymentTargetPolicy("goose", ["~/.config/goose/skills"]),
 } as const satisfies Record<DeploymentTargetName, UsageAgentPolicy>;
 
 export function createDefaultUsageAgentPolicies(): UsageAgentPolicy[] {

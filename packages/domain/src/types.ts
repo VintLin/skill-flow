@@ -64,7 +64,17 @@ export type DeploymentTargetName =
   | "amp"
   | "kiro"
   | "zcode"
-  | "grok-build";
+  | "grok-build"
+  | "deepseek-harness"
+  | "antigravity"
+  | "junie"
+  | "mistral-vibe"
+  | "openhands"
+  | "qoder"
+  | "qwen-code"
+  | "zencoder"
+  | "kilo-code"
+  | "goose";
 
 export type DeploymentTargetId = DeploymentTargetName | (string & {});
 
@@ -144,6 +154,16 @@ export const USAGE_AGENTS = [
   "kiro",
   "zcode",
   "grok-build",
+  "deepseek-harness",
+  "antigravity",
+  "junie",
+  "mistral-vibe",
+  "openhands",
+  "qoder",
+  "qwen-code",
+  "zencoder",
+  "kilo-code",
+  "goose",
   "copilot-cli",
   "unknown",
 ] as const;

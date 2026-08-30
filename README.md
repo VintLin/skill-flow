@@ -144,26 +144,36 @@ Current built-in targets:
 
 - Claude Code
 - Codex
+- ZCode
 - Cursor
 - Grok Build
-- GitHub Copilot
-- Gemini CLI
-- OpenCode
-- OpenClaw
-- Hermes Agent
-- MiniMax Code
-- Kimi Code
+- Pi
 - WorkBuddy
 - CodeBuddy
-- Pi
 - Trae
 - Trae CN
+- Kimi Code
+- OpenCode
+- MiniMax Code
+- Hermes Agent
+- OpenClaw
+- GitHub Copilot
+- Gemini CLI
 - Windsurf
-- Roo Code
-- Cline
 - Amp
 - Kiro
-- ZCode
+- Roo Code
+- Cline
+- DeepSeek Harness
+- Antigravity
+- Junie
+- Mistral Vibe
+- OpenHands
+- Qoder
+- Qwen Code
+- Zencoder
+- Kilo Code
+- Goose
 
 Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 

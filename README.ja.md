@@ -139,23 +139,36 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 
 - Claude Code
 - Codex
+- ZCode
 - Cursor
 - Grok Build
-- GitHub Copilot
-- Gemini CLI
-- OpenCode
-- OpenClaw
-- Hermes Agent
-- MiniMax Code
 - Pi
+- WorkBuddy
+- CodeBuddy
 - Trae
 - Trae CN
+- Kimi Code
+- OpenCode
+- MiniMax Code
+- Hermes Agent
+- OpenClaw
+- GitHub Copilot
+- Gemini CLI
 - Windsurf
-- Roo Code
-- Cline
 - Amp
 - Kiro
-- ZCode
+- Roo Code
+- Cline
+- DeepSeek Harness
+- Antigravity
+- Junie
+- Mistral Vibe
+- OpenHands
+- Qoder
+- Qwen Code
+- Zencoder
+- Kilo Code
+- Goose
 
 ターゲットパスは `SKILL_FLOW_TARGET_*` 環境変数でオーバーライドできます。
 

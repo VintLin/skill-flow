@@ -15,12 +15,13 @@ enum AgentIconLibrary {
         "github-copilot": "copilot.svg",
         "gemini-cli": "gemini.svg",
         "opencode": "opencode.svg",
-        "openclaw": "clawdbot.svg",
+        "openclaw": "openclaw.svg",
         "hermes-agent": "hermesagent.svg",
         "minimax-code": "minimax.svg",
         "kimi-code": "kimi.svg",
         "workbuddy": "codebuddy.svg",
         "codebuddy": "codebuddy.svg",
+        "pi": "pi.svg",
         "windsurf": "windsurf.svg",
         "trae": "trae.svg",
         "trae-cn": "trae.svg",
@@ -30,6 +31,16 @@ enum AgentIconLibrary {
         "kiro": "kiro-cli.svg",
         "zcode": "zcode.svg",
         "grok-build": "grok-build.svg",
+        "deepseek-harness": "deepseek.svg",
+        "antigravity": "antigravity.svg",
+        "junie": "junie.svg",
+        "mistral-vibe": "mistral.svg",
+        "openhands": "openhands.svg",
+        "qoder": "qoder.svg",
+        "qwen-code": "qwen.svg",
+        "zencoder": "zencoder.svg",
+        "kilo-code": "kilocode.svg",
+        "goose": "goose.svg",
     ]
 
     private static let cache = NSCache<NSString, NSImage>()
@@ -219,7 +230,9 @@ enum AgentIconLibrary {
 
     private static func symbolAlphaMode(for targetId: String) -> SymbolAlphaMode {
         switch targetId {
-        case "hermes-agent", "minimax-code", "kimi-code", "workbuddy", "codebuddy", "grok-build":
+        case "hermes-agent", "minimax-code", "kimi-code", "workbuddy", "codebuddy", "grok-build",
+             "pi", "openclaw", "deepseek-harness", "antigravity", "goose", "junie",
+             "kilo-code", "mistral-vibe", "openhands", "qoder", "qwen-code", "zencoder":
             return .darkForeground
         default:
             return .brightForeground

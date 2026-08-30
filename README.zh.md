@@ -138,26 +138,36 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 
 - Claude Code
 - Codex
+- ZCode
 - Cursor
 - Grok Build
-- GitHub Copilot
-- Gemini CLI
-- OpenCode
-- OpenClaw
-- Hermes Agent
-- MiniMax Code
-- Kimi Code
+- Pi
 - WorkBuddy
 - CodeBuddy
-- Pi
 - Trae
 - Trae CN
+- Kimi Code
+- OpenCode
+- MiniMax Code
+- Hermes Agent
+- OpenClaw
+- GitHub Copilot
+- Gemini CLI
 - Windsurf
-- Roo Code
-- Cline
 - Amp
 - Kiro
-- ZCode
+- Roo Code
+- Cline
+- DeepSeek Harness
+- Antigravity
+- Junie
+- Mistral Vibe
+- OpenHands
+- Qoder
+- Qwen Code
+- Zencoder
+- Kilo Code
+- Goose
 
 目标路径可以通过 `SKILL_FLOW_TARGET_*` 环境变量覆盖。
 
