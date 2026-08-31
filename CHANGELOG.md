@@ -4,6 +4,24 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.6 - 2026-08-31
+
+### Added
+
+- Added documented, contrast-checked identity colors for built-in Agents and a dedicated WorkBuddy icon asset.
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.6.5` to `1.6.6`.
+- Simplified Usage summary metrics by removing the redundant chat/call-record count.
+- Applied Agent identity colors to Agent series in Daily Trend and to the top-Agent ranking dots while keeping Group Card icons neutral.
+- Updated selected Skill and Agent ranking rows to use the active theme accent for clearer selection feedback.
+
+### Fixed
+
+- Extended the Settings scroll surface to the full window width so its vertical scroll indicator sits against the window edge.
+- Restored distinct Agent colors in the Usage top-Agent ranking instead of rendering every indicator as muted gray.
+
 ## v1.6.5 - 2026-08-31
 
 ### Changed
