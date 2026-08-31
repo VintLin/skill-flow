@@ -272,6 +272,19 @@ swift test
 export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
 ```
 
+无 Apple Developer 证书时的 macOS 安装说明：
+
+- Apple Silicon Mac 可使用 `Skill-Flow-arm64.dmg` 或 `Skill-Flow-universal.dmg`。
+- Intel Mac 可使用 `Skill-Flow-x86_64.dmg` 或 `Skill-Flow-universal.dmg`。
+- 将 `Skill Flow.app` 复制到“应用程序”后，如果 Gatekeeper 阻止首次启动，请在 Finder 中右键并选择“打开”。
+- 如果 macOS 仍将应用标记为已隔离，请运行：
+
+```bash
+sudo xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
+```
+
+- 每种发布架构在各版本间保持稳定的 Bundle ID 和 designated requirement，因此已授权安装被同架构新版本替换后，通常无需再次执行 `sudo xattr`。
+
 ## 文档入口
 
 - [架构文档](./docs/ARCHITECTURE.md)

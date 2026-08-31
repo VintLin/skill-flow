@@ -318,6 +318,12 @@ macOS install notes without an Apple Developer certificate:
 - Apple Silicon Macs can use `Skill-Flow-arm64.dmg` or `Skill-Flow-universal.dmg`.
 - Intel Macs can use `Skill-Flow-x86_64.dmg` or `Skill-Flow-universal.dmg`.
 - Copy `Skill Flow.app` to `Applications`, then use Finder's `Open` action for the first launch if Gatekeeper blocks it.
+- If macOS still marks the app as quarantined, run:
+
+```bash
+sudo xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
+```
+
 - Each release architecture keeps a stable Bundle ID and designated requirement across versions, so replacing an approved installation with the same architecture does not require a new `sudo xattr` workaround for every update.
 
 ## Star History

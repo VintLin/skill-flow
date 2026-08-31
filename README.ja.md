@@ -272,6 +272,19 @@ swift test
 export SKILL_FLOW_DESKTOP_HELPER_OVERRIDE=/absolute/path/to/apps/cli/dist/cli.js
 ```
 
+Apple Developer 証明書がない場合の macOS インストール手順：
+
+- Apple Silicon Mac では `Skill-Flow-arm64.dmg` または `Skill-Flow-universal.dmg` を使用できます。
+- Intel Mac では `Skill-Flow-x86_64.dmg` または `Skill-Flow-universal.dmg` を使用できます。
+- `Skill Flow.app` を「アプリケーション」にコピーし、Gatekeeper が初回起動をブロックする場合は Finder で右クリックして「開く」を選択します。
+- macOS が引き続きアプリを隔離済みとして扱う場合は、次を実行します：
+
+```bash
+sudo xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
+```
+
+- 各リリースアーキテクチャでは Bundle ID と designated requirement がバージョン間で安定しているため、承認済みのインストールを同じアーキテクチャの新しいバージョンに置き換える際は、通常 `sudo xattr` を再実行する必要はありません。
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=VintLin/skill-flow&type=Date)](https://www.star-history.com/#VintLin/skill-flow&Date)
