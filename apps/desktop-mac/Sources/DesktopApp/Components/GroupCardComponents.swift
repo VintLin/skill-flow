@@ -1186,17 +1186,18 @@ struct SharedGroupCard: View {
         isOn: Bool
     ) -> some View {
         let shape = RoundedRectangle(cornerRadius: scale.cornerRadius - 2)
+        let foreground = targetForegroundColor(isOn: isOn)
 
         return ZStack {
             shape
                 .fill(targetBackgroundFill(isOn: isOn))
 
-            if let image = AgentIconLibrary.symbolImage(
+            if let asset = AgentIconLibrary.renderAsset(
                 for: targetId,
-                foreground: targetForegroundColor(isOn: isOn),
+                foreground: foreground,
                 cropToVisibleBounds: true
             ) {
-                targetIcon(image: image, targetId: targetId, isOn: isOn)
+                targetIcon(asset: asset, foreground: foreground)
             } else {
                 Text(fallbackText)
                     .font(.system(size: scale.targetFontSize, weight: .bold, design: .monospaced))
@@ -1209,12 +1210,13 @@ struct SharedGroupCard: View {
     }
 
     @ViewBuilder
-    private func targetIcon(image: NSImage, targetId: String, isOn: Bool) -> some View {
-        Image(nsImage: image)
-            .renderingMode(.original)
+    private func targetIcon(asset: AgentIconRenderAsset, foreground: NSColor) -> some View {
+        Image(nsImage: asset.image)
+            .renderingMode(asset.usesTemplateRendering ? .template : .original)
             .resizable()
             .interpolation(.high)
             .scaledToFit()
+            .foregroundStyle(Color(nsColor: foreground))
             .padding(6)
     }
 

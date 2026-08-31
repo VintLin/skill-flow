@@ -87,7 +87,7 @@ final class AgentIconTests: XCTestCase {
         XCTAssertNotNil(AgentIconLibrary.image(for: "zencoder"))
     }
 
-    func testCurrentColorAgentIconsLoadAtUsableResolution() {
+    func testMonochromeAgentIconsLoadAtUsableResolution() {
         let targetIds = [
             "kimi-code", "workbuddy", "codebuddy", "grok-build", "pi", "openclaw",
             "deepseek-harness", "antigravity", "goose", "junie", "kilo-code",
@@ -107,7 +107,7 @@ final class AgentIconTests: XCTestCase {
         }
     }
 
-    func testAddedCurrentColorSymbolIconsRetainVisiblePixelsAfterRecoloring() {
+    func testAddedMonochromeSymbolIconsRetainVisiblePixelsAfterRecoloring() {
         let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
         let targetIds = [
             "pi", "openclaw", "deepseek-harness", "antigravity", "goose", "junie",
@@ -123,6 +123,39 @@ final class AgentIconTests: XCTestCase {
             }
             XCTAssertTrue(hasVisiblePixels(cgImage), "\(targetId) symbol image should remain visible")
         }
+    }
+
+    func testMonochromeAgentIconsUsePreRasterizedTemplatesForScrollingSurfaces() throws {
+        let foreground = NSColor(calibratedWhite: 0.15, alpha: 1)
+        let targetIds = [
+            "hermes-agent", "minimax-code", "kimi-code", "workbuddy", "codebuddy", "grok-build",
+            "pi", "openclaw", "deepseek-harness", "antigravity", "goose", "junie",
+            "kilo-code", "mistral-vibe", "openhands", "qoder", "qwen-code", "zencoder",
+        ]
+
+        for targetId in targetIds {
+            let asset = try XCTUnwrap(
+                AgentIconLibrary.renderAsset(for: targetId, foreground: foreground),
+                "Expected a render asset for \(targetId)"
+            )
+            XCTAssertTrue(
+                asset.usesTemplateRendering,
+                "\(targetId) should avoid synchronous bitmap recoloring when it enters the viewport"
+            )
+            XCTAssertTrue(
+                asset.image.representations.contains { $0 is NSBitmapImageRep },
+                "\(targetId) should avoid cold CoreSVG parsing on scrolling surfaces"
+            )
+            let cgImage = try XCTUnwrap(
+                asset.image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            )
+            XCTAssertTrue(hasVisiblePixels(cgImage), "\(targetId) template should not be blank")
+        }
+
+        let legacyAsset = try XCTUnwrap(
+            AgentIconLibrary.renderAsset(for: "codex", foreground: foreground)
+        )
+        XCTAssertFalse(legacyAsset.usesTemplateRendering)
     }
 
     func testSymbolIconLoaderCanRecolorBundledSvgAssets() {

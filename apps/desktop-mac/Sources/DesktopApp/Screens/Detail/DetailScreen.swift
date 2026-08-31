@@ -831,15 +831,17 @@ struct DetailScreen: View {
                             }
                         } label: {
                             HStack(spacing: 10) {
-                                if let image = AgentIconLibrary.symbolImage(
+                                let foreground = agentIconForeground(isEnabled: target.isEnabled)
+                                if let asset = AgentIconLibrary.renderAsset(
                                     for: target.id,
-                                    foreground: agentIconForeground(isEnabled: target.isEnabled),
+                                    foreground: foreground,
                                     cropToVisibleBounds: true
                                 ) {
-                                    Image(nsImage: image)
-                                        .renderingMode(.original)
+                                    Image(nsImage: asset.image)
+                                        .renderingMode(asset.usesTemplateRendering ? .template : .original)
                                         .resizable()
                                         .scaledToFit()
+                                        .foregroundStyle(Color(nsColor: foreground))
                                         .frame(width: detailAgentIconSize, height: detailAgentIconSize)
                                 } else {
                                     Text(target.shortLabel.uppercased())

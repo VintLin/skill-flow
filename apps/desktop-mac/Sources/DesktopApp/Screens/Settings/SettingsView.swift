@@ -537,16 +537,17 @@ struct SettingsView: View {
             shape
                 .fill(Self.controlBackground(for: .pageBackground, theme: theme))
 
-            if let image = AgentIconLibrary.symbolImage(
+            if let asset = AgentIconLibrary.renderAsset(
                 for: targetId,
                 foreground: NSColor(foreground),
                 cropToVisibleBounds: true
             ) {
-                Image(nsImage: image)
-                    .renderingMode(.original)
+                Image(nsImage: asset.image)
+                    .renderingMode(asset.usesTemplateRendering ? .template : .original)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
+                    .foregroundStyle(foreground)
                     .padding(6)
             } else {
                 Text(fallbackText)

@@ -1,6 +1,11 @@
 import AppKit
 import Foundation
 
+struct AgentIconRenderAsset {
+    let image: NSImage
+    let usesTemplateRendering: Bool
+}
+
 @MainActor
 enum AgentIconLibrary {
     private enum SymbolAlphaMode: String {
@@ -45,6 +50,12 @@ enum AgentIconLibrary {
 
     private static let cache = NSCache<NSString, NSImage>()
     private static let symbolCache = NSCache<NSString, NSImage>()
+    private static let templateCache = NSCache<NSString, NSImage>()
+    private static let templateRenderTargetIds: Set<String> = [
+        "hermes-agent", "minimax-code", "kimi-code", "workbuddy", "codebuddy", "grok-build",
+        "pi", "openclaw", "deepseek-harness", "antigravity", "goose", "junie",
+        "kilo-code", "mistral-vibe", "openhands", "qoder", "qwen-code", "zencoder",
+    ]
 
     static func fileName(for targetId: String) -> String? {
         iconFileNames[targetId]
@@ -66,6 +77,49 @@ enum AgentIconLibrary {
             }
         }
 
+        return nil
+    }
+
+    static func renderAsset(
+        for targetId: String,
+        foreground: NSColor,
+        cropToVisibleBounds: Bool = false
+    ) -> AgentIconRenderAsset? {
+        if let image = templateImage(for: targetId) {
+            return AgentIconRenderAsset(image: image, usesTemplateRendering: true)
+        }
+
+        guard let image = symbolImage(
+            for: targetId,
+            foreground: foreground,
+            cropToVisibleBounds: cropToVisibleBounds
+        ) else {
+            return nil
+        }
+        return AgentIconRenderAsset(image: image, usesTemplateRendering: false)
+    }
+
+    private static func templateImage(for targetId: String) -> NSImage? {
+        guard
+            templateRenderTargetIds.contains(targetId),
+            let svgFileName = fileName(for: targetId)
+        else {
+            return nil
+        }
+
+        let fileName = "\(URL(fileURLWithPath: svgFileName).deletingPathExtension().lastPathComponent)-template.png"
+        let cacheKey = fileName as NSString
+        if let cached = templateCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        for directory in resourceDirectories() {
+            let url = directory.appendingPathComponent(fileName)
+            if let image = NSImage(contentsOf: url) {
+                templateCache.setObject(image, forKey: cacheKey)
+                return image
+            }
+        }
         return nil
     }
 
