@@ -502,7 +502,6 @@
 "usage.kpi.total_skills" = "スキル総数";
 "usage.kpi.used_skills" = "使用したスキル";
 "usage.kpi.skill_runs" = "スキル実行数";
-"usage.kpi.chat_records" = "チャット／呼び出し記録";
 "usage.skills.title" = "よく使うスキル";
 "usage.skills.subtitle" = "上位20件 · 選択すると Agent の内訳を表示";
 "usage.skills.empty" = "この期間にスキル呼び出しはありません";

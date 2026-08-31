@@ -502,7 +502,6 @@
 "usage.kpi.total_skills" = "Total skills";
 "usage.kpi.used_skills" = "Skills used";
 "usage.kpi.skill_runs" = "Skill runs";
-"usage.kpi.chat_records" = "Chat/call records";
 "usage.skills.title" = "Most-used skills";
 "usage.skills.subtitle" = "Top 20 skills · Select one to view its agent breakdown";
 "usage.skills.empty" = "No skill calls in this range";

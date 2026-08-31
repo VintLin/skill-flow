@@ -258,7 +258,6 @@ struct UsageScreen: View {
             kpiRow(t("usage.kpi.total_skills"), value: snapshot.kpis.totalSkills)
             kpiRow(t("usage.kpi.used_skills"), value: snapshot.kpis.usedSkills)
             kpiRow(t("usage.kpi.skill_runs"), value: snapshot.kpis.skillRuns)
-            kpiRow(t("usage.kpi.chat_records"), value: snapshot.kpis.chatRecords)
         }
         .padding(.trailing, 18)
     }
@@ -276,7 +275,12 @@ struct UsageScreen: View {
                         if case .skill(let current) = selection, current == item.id { selection = .all }
                         else { selection = .skill(item.id) }
                     } label: {
-                        rankingRow(label: item.skillLabel, value: item.observedUses, colorIndex: colorIndex(for: item.id), selected: selection == .skill(item.id))
+                        rankingRow(
+                            label: item.skillLabel,
+                            value: item.observedUses,
+                            indicatorColor: UsageDailyTrendSeriesStyle.fallbackPalette[colorIndex(for: item.id) % UsageDailyTrendSeriesStyle.fallbackPalette.count],
+                            selected: selection == .skill(item.id)
+                        )
                     }
                     .buttonStyle(.plain)
                 }
@@ -298,7 +302,15 @@ struct UsageScreen: View {
                         if case .agent(let current) = selection, current == item.id { selection = .all }
                         else { selection = .agent(item.id) }
                     } label: {
-                        rankingRow(label: item.agent, value: item.observedUses, colorIndex: colorIndex(for: item.id), selected: selection == .agent(item.id))
+                        rankingRow(
+                            label: item.agent,
+                            value: item.observedUses,
+                            indicatorColor: UsageRankingRowStyle.agentIndicatorColor(
+                                targetId: item.id,
+                                theme: theme
+                            ),
+                            selected: selection == .agent(item.id)
+                        )
                     }
                     .buttonStyle(.plain)
                 }
@@ -315,16 +327,16 @@ struct UsageScreen: View {
         }
     }
 
-    private func rankingRow(label: String, value: Int, colorIndex: Int, selected: Bool) -> some View {
+    private func rankingRow(label: String, value: Int, indicatorColor: Color, selected: Bool) -> some View {
         HStack(spacing: 8) {
-            Circle().fill(UsageAreaChart.palette[colorIndex % UsageAreaChart.palette.count]).frame(width: 7, height: 7)
+            Circle().fill(indicatorColor).frame(width: 8, height: 8)
             Text(label).font(.system(size: 12)).foregroundStyle(AppTheme.textPrimary(for: theme)).lineLimit(1)
             Spacer(minLength: 6)
             Text(t("usage.run_count", value)).font(.system(size: 11, design: .rounded)).foregroundStyle(AppTheme.textMuted(for: theme))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
-        .background(selected ? AppTheme.cardBorder(for: theme).opacity(0.22) : .clear)
+        .background(UsageRankingRowStyle.backgroundColor(selected: selected, accent: accent, theme: theme))
         .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 
@@ -366,6 +378,38 @@ struct UsageScreen: View {
 
     private func t(_ key: String, _ arguments: CVarArg...) -> String {
         L10n.string(key, locale: locale, arguments: arguments)
+    }
+}
+
+enum UsageRankingRowStyle {
+    static func agentIndicatorColor(targetId: String, theme: DesktopThemeMode) -> Color {
+        AgentIdentityColorCatalog.color(for: targetId, theme: theme)
+            ?? AppTheme.textMuted(for: theme)
+    }
+
+    static func backgroundColor(
+        selected: Bool,
+        accent: DesktopAccentColor,
+        theme: DesktopThemeMode
+    ) -> Color {
+        guard selected else { return .clear }
+        return AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.26 : 0.18)
+    }
+}
+
+enum UsageDailyTrendSeriesStyle {
+    static let fallbackPalette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
+
+    static func color(
+        agentTargetId: String?,
+        fallbackColorIndex: Int,
+        theme: DesktopThemeMode
+    ) -> Color {
+        if let agentTargetId,
+           let identityColor = AgentIdentityColorCatalog.color(for: agentTargetId, theme: theme) {
+            return identityColor
+        }
+        return fallbackPalette[fallbackColorIndex % fallbackPalette.count]
     }
 }
 
@@ -617,8 +661,6 @@ private struct UsageCalendarHeatmap: View {
 }
 
 private struct UsageAreaChart: View {
-    static let palette: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
-
     let data: UsageChartViewData
     let theme: DesktopThemeMode
     let locale: Locale
@@ -666,7 +708,7 @@ private struct UsageAreaChart: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)], alignment: .leading, spacing: 8) {
                 ForEach(data.series) { series in
                     HStack(spacing: 5) {
-                        Capsule().fill(Self.palette[series.colorIndex % Self.palette.count]).frame(width: 14, height: 3)
+                        Capsule().fill(seriesColor(series)).frame(width: 14, height: 3)
                         Text(series.label).font(.system(size: 10)).foregroundStyle(AppTheme.textMuted(for: theme)).lineLimit(1)
                     }
                 }
@@ -706,7 +748,7 @@ private struct UsageAreaChart: View {
             guard !upperPoints.isEmpty, upperPoints.count == lowerPoints.count else { continue }
             let area = smoothBandPath(upper: upperPoints, lower: lowerPoints)
             let upperCurve = smoothPath(upperPoints)
-            let color = Self.palette[series.colorIndex % Self.palette.count]
+            let color = seriesColor(series)
             context.fill(area, with: .color(color.opacity(0.48)))
             context.stroke(upperCurve, with: .color(color), lineWidth: 1.6)
         }
@@ -721,12 +763,16 @@ private struct UsageAreaChart: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(bucket).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(AppTheme.textPrimary(for: theme))
             Text(L10n.string("usage.total_calls", locale: locale, arguments: [data.totals[safe: index] ?? 0])).font(.system(size: 11, weight: .medium)).foregroundStyle(AppTheme.textPrimary(for: theme))
-            ForEach(data.series.compactMap { series -> (String, Int, Int)? in
+            ForEach(data.series.compactMap { series -> (String, Int, String?, Int)? in
                 guard let value = series.values[safe: index], value > 0 else { return nil }
-                return (series.label, value, series.colorIndex)
-            }, id: \.0) { label, value, colorIndex in
+                return (series.label, value, series.agentIdentityTargetId, series.colorIndex)
+            }, id: \.0) { label, value, agentTargetId, colorIndex in
                 HStack(spacing: 5) {
-                    Circle().fill(Self.palette[colorIndex % Self.palette.count]).frame(width: 6, height: 6)
+                    Circle().fill(UsageDailyTrendSeriesStyle.color(
+                        agentTargetId: agentTargetId,
+                        fallbackColorIndex: colorIndex,
+                        theme: theme
+                    )).frame(width: 6, height: 6)
                     Text(label).lineLimit(1); Spacer(minLength: 12); Text("\(value)").fontDesign(.rounded)
                 }
                 .font(.system(size: 10)).foregroundStyle(AppTheme.textMuted(for: theme))
@@ -737,6 +783,14 @@ private struct UsageAreaChart: View {
         .clipShape(RoundedRectangle(cornerRadius: 9))
         .overlay { RoundedRectangle(cornerRadius: 9).stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5) }
         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+    }
+
+    private func seriesColor(_ series: UsageChartSeriesViewData) -> Color {
+        UsageDailyTrendSeriesStyle.color(
+            agentTargetId: series.agentIdentityTargetId,
+            fallbackColorIndex: series.colorIndex,
+            theme: theme
+        )
     }
 
     private func nearestIndex(for x: CGFloat, width: CGFloat) -> Int {

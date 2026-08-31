@@ -24,7 +24,7 @@ enum AgentIconLibrary {
         "hermes-agent": "hermesagent.svg",
         "minimax-code": "minimax.svg",
         "kimi-code": "kimi.svg",
-        "workbuddy": "codebuddy.svg",
+        "workbuddy": "workbuddy.svg",
         "codebuddy": "codebuddy.svg",
         "pi": "pi.svg",
         "windsurf": "windsurf.svg",

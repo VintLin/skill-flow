@@ -220,7 +220,6 @@ final class DesktopLocalizationTests: XCTestCase {
             "usage.kpi.total_skills",
             "usage.kpi.used_skills",
             "usage.kpi.skill_runs",
-            "usage.kpi.chat_records",
             "usage.skills.title",
             "usage.skills.subtitle",
             "usage.skills.empty",

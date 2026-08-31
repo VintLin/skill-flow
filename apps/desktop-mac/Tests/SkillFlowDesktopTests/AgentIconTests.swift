@@ -49,7 +49,7 @@ final class AgentIconTests: XCTestCase {
         XCTAssertEqual(AgentIconLibrary.fileName(for: "hermes-agent"), "hermesagent.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "minimax-code"), "minimax.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "kimi-code"), "kimi.svg")
-        XCTAssertEqual(AgentIconLibrary.fileName(for: "workbuddy"), "codebuddy.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "workbuddy"), "workbuddy.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "codebuddy"), "codebuddy.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "kiro"), "kiro-cli.svg")
         XCTAssertEqual(AgentIconLibrary.fileName(for: "trae"), "trae.svg")
@@ -204,7 +204,7 @@ final class AgentIconTests: XCTestCase {
         XCTAssertTrue(hasVisiblePixels(cgImage), "Kimi Code symbol image should not be fully transparent after recoloring")
     }
 
-    func testCodeBuddySharedSymbolIconRetainsVisiblePixelsAfterRecoloring() {
+    func testWorkBuddyAndCodeBuddyIndependentIconsRetainVisiblePixelsAfterRecoloring() {
         let foreground = NSColor(calibratedRed: 38.0 / 255.0, green: 38.0 / 255.0, blue: 38.0 / 255.0, alpha: 1.0)
 
         for targetId in ["workbuddy", "codebuddy"] {

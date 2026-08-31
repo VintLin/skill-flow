@@ -50,6 +50,7 @@ PRD/
 *.png
 !img/*.png
 !docs/**/*.png
+!apps/desktop-mac/Sources/DesktopApp/Resources/AgentIcons/*-template.png
 
 /AGENTS.md
 /DESIGN.md

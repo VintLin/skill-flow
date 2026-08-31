@@ -15,6 +15,8 @@ struct SettingsScreen: View {
                 onEditCustomAgent: onEditCustomAgent
             )
             .padding(16)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }

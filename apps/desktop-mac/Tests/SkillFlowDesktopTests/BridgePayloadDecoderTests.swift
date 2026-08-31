@@ -166,11 +166,13 @@ final class BridgePayloadDecoderTests: XCTestCase {
         let skillChart = snapshot?.chartData(for: .skill("ref:leaf-wayfinder"))
         XCTAssertEqual(skillChart?.series.map(\.id), ["codex"])
         XCTAssertEqual(skillChart?.series.first?.values, [12])
+        XCTAssertEqual(skillChart?.series.first?.agentIdentityTargetId, "codex")
         XCTAssertEqual(snapshot?.agentRows(for: "ref:leaf-wayfinder").first?.observedUses, 12)
 
         let agentChart = snapshot?.chartData(for: .agent("codex"))
         XCTAssertEqual(agentChart?.series.map(\.id), ["ref:leaf-wayfinder"])
         XCTAssertEqual(agentChart?.series.first?.values, [12])
+        XCTAssertNil(agentChart?.series.first?.agentIdentityTargetId)
         XCTAssertEqual(snapshot?.skillRows(for: "codex").first?.observedUses, 12)
     }
 }

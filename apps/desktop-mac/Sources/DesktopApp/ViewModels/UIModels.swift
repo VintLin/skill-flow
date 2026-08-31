@@ -244,7 +244,11 @@ struct UsageSnapshotViewData: Equatable {
                 id: row.id,
                 label: row.label,
                 values: values,
-                colorIndex: usageColorIndex(for: row.id)
+                colorIndex: usageColorIndex(for: row.id),
+                agentIdentityTargetId: {
+                    if case .skill = selection { return row.id }
+                    return nil
+                }()
             )
         }
         let totals = timeBuckets.indices.map { index in
@@ -418,6 +422,7 @@ struct UsageChartSeriesViewData: Identifiable, Equatable {
     let label: String
     let values: [Int]
     let colorIndex: Int
+    let agentIdentityTargetId: String?
 }
 
 struct UsageChartViewData: Equatable {

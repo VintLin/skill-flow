@@ -502,7 +502,6 @@
 "usage.kpi.total_skills" = "技能总数";
 "usage.kpi.used_skills" = "使用技能数";
 "usage.kpi.skill_runs" = "技能运行数";
-"usage.kpi.chat_records" = "聊天/调用记录";
 "usage.skills.title" = "最常用技能";
 "usage.skills.subtitle" = "前 20 个技能 · 选择技能可查看 Agent 分布";
 "usage.skills.empty" = "当前范围内没有技能调用";

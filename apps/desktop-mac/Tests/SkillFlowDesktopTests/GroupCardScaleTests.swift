@@ -197,4 +197,5 @@ final class GroupCardScaleTests: XCTestCase {
             .readOnlyTags
         )
     }
+
 }

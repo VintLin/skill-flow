@@ -298,6 +298,14 @@ Accent 不用于：
 - 所有图标的默认着色。
 - 健康、警告和错误语义的替代色。
 
+### Agent Identity Colors
+
+- Agent identity color 用于 Usage「每日趋势」中代表 Agent 的数据系列，以及「最常用 Agent」排名圆点；图例、面积、曲线、tooltip 和排名圆点保持同一颜色映射。
+- 每日趋势显示 Skill 系列时使用普通图表色板；未知与 Custom Agent 同样回退到该色板。
+- 「最常用 Agent」中的未知与 Custom Agent 回退到中性色；Group Card 及其他界面不展示 Agent identity color，图标与辅助圆点使用中性前景色。
+- Agent identity color 不替代页面 accent，也不修改第三方 logo 原始资产。选中背景、focus 和主操作继续使用当前用户 accent。
+- 色值、证据等级和官方来源记录见 [Agent identity colors](references/REF_agent-identity-colors.md)。
+
 ### Semantic Color
 
 - **Success / healthy / fully selected**：green。

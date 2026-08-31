@@ -1,8 +1,110 @@
+import AppKit
 import CoreGraphics
+import SwiftUI
 import XCTest
 @testable import SkillFlowDesktop
 
 final class UsageVisualizationTests: XCTestCase {
+    func testAgentIdentityColorsCoverEveryBuiltInDesktopAgent() {
+        XCTAssertEqual(
+            Set(AgentIdentityColorCatalog.targetIds),
+            Set(AgentDisplayCatalog.defaultTargetOrder)
+        )
+    }
+
+    func testCodexAndZCodeUseClearlyDifferentIdentityColors() {
+        let codex = AgentIdentityColorCatalog.swatch(for: "codex")
+        let zcode = AgentIdentityColorCatalog.swatch(for: "zcode")
+
+        XCTAssertEqual(codex?.hex(for: .light), "#2563EB")
+        XCTAssertEqual(codex?.hex(for: .dark), "#60A5FA")
+        XCTAssertEqual(zcode?.hex(for: .light), "#0284C7")
+        XCTAssertNotEqual(codex?.hex(for: .light), zcode?.hex(for: .light))
+        XCTAssertNotEqual(codex?.hex(for: .dark), zcode?.hex(for: .dark))
+    }
+
+    func testVerifiedAgentIdentityColorsUseBrandAlignedSwatches() {
+        let expected: [String: (light: String, dark: String)] = [
+            "claude-code": ("#C96443", "#E89B7E"),
+            "workbuddy": ("#07856F", "#0EC8A9"),
+            "codebuddy": ("#6C4DFF", "#A694FF"),
+            "kimi-code": ("#007CFF", "#66B5FF"),
+            "minimax-code": ("#3977A8", "#7DC6FF"),
+            "hermes-agent": ("#0000F2", "#7B7BFF"),
+            "openclaw": ("#D14A22", "#FF7A3D"),
+            "amp": ("#C65A18", "#F6833B"),
+        ]
+
+        for (targetId, colors) in expected {
+            let swatch = AgentIdentityColorCatalog.swatch(for: targetId)
+            XCTAssertEqual(swatch?.hex(for: .light), colors.light, targetId)
+            XCTAssertEqual(swatch?.hex(for: .dark), colors.dark, targetId)
+        }
+    }
+
+    @MainActor
+    func testWorkBuddyAndCodeBuddyUseIndependentIcons() {
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "workbuddy"), "workbuddy.svg")
+        XCTAssertEqual(AgentIconLibrary.fileName(for: "codebuddy"), "codebuddy.svg")
+    }
+
+    func testUnknownAgentFallsBackOutsideIdentityCatalog() {
+        XCTAssertNil(AgentIdentityColorCatalog.swatch(for: "custom-agent"))
+    }
+
+    func testAgentIdentityColorsMaintainNonTextContrastAgainstUsageBackgrounds() throws {
+        for targetId in AgentIdentityColorCatalog.targetIds {
+            let swatch = try XCTUnwrap(AgentIdentityColorCatalog.swatch(for: targetId))
+            XCTAssertGreaterThanOrEqual(
+                contrastRatio(swatch.hex(for: .light), "#F2F2F2"),
+                3,
+                "\(targetId) light identity color"
+            )
+            XCTAssertGreaterThanOrEqual(
+                contrastRatio(swatch.hex(for: .dark), "#222222"),
+                3,
+                "\(targetId) dark identity color"
+            )
+        }
+    }
+
+    func testSelectedRankingRowUsesCurrentAccentBackground() {
+        assertColorsEqual(
+            UsageRankingRowStyle.backgroundColor(selected: true, accent: .orange, theme: .light),
+            AppTheme.brand(for: .orange, in: .light).opacity(0.18)
+        )
+        assertColorsEqual(
+            UsageRankingRowStyle.backgroundColor(selected: true, accent: .purple, theme: .dark),
+            AppTheme.brand(for: .purple, in: .dark).opacity(0.26)
+        )
+    }
+
+    func testAgentIdentityColorIsUsedByUsageAgentSeriesAndRanking() throws {
+        let dailyTrendColor = UsageDailyTrendSeriesStyle.color(
+            agentTargetId: "codex",
+            fallbackColorIndex: 3,
+            theme: .light
+        )
+        let expectedIdentityColor = try XCTUnwrap(AgentIdentityColorCatalog.color(for: "codex", theme: .light))
+        assertColorsEqual(dailyTrendColor, expectedIdentityColor)
+
+        let skillSeriesColor = UsageDailyTrendSeriesStyle.color(
+            agentTargetId: nil,
+            fallbackColorIndex: 3,
+            theme: .light
+        )
+        assertColorsEqual(skillSeriesColor, UsageDailyTrendSeriesStyle.fallbackPalette[3])
+
+        let rankingIndicator = UsageRankingRowStyle.agentIndicatorColor(targetId: "codex", theme: .light)
+        assertColorsEqual(rankingIndicator, expectedIdentityColor)
+
+        let unknownAgentIndicator = UsageRankingRowStyle.agentIndicatorColor(
+            targetId: "custom-agent",
+            theme: .dark
+        )
+        assertColorsEqual(unknownAgentIndicator, AppTheme.textMuted(for: .dark))
+    }
+
     func testCalendarPeriodCurrentCoversTrailingTwelveMonths() {
         let calendar = Calendar(identifier: .gregorian)
         let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 30))!
@@ -110,6 +212,45 @@ final class UsageVisualizationTests: XCTestCase {
             [3, 5, 1],
             [4, 5, 5],
         ])
+    }
+
+    private func assertColorsEqual(
+        _ lhs: Color,
+        _ rhs: Color,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let left = NSColor(lhs).usingColorSpace(.deviceRGB)
+        let right = NSColor(rhs).usingColorSpace(.deviceRGB)
+
+        XCTAssertNotNil(left, file: file, line: line)
+        XCTAssertNotNil(right, file: file, line: line)
+        XCTAssertEqual(left?.redComponent ?? -1, right?.redComponent ?? -2, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(left?.greenComponent ?? -1, right?.greenComponent ?? -2, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(left?.blueComponent ?? -1, right?.blueComponent ?? -2, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(left?.alphaComponent ?? -1, right?.alphaComponent ?? -2, accuracy: 0.001, file: file, line: line)
+    }
+
+    private func contrastRatio(_ foreground: String, _ background: String) -> Double {
+        let foregroundLuminance = relativeLuminance(foreground)
+        let backgroundLuminance = relativeLuminance(background)
+        return (max(foregroundLuminance, backgroundLuminance) + 0.05)
+            / (min(foregroundLuminance, backgroundLuminance) + 0.05)
+    }
+
+    private func relativeLuminance(_ hex: String) -> Double {
+        let value = UInt64(hex.dropFirst(), radix: 16) ?? 0
+        let components = [
+            Double((value >> 16) & 0xFF) / 255,
+            Double((value >> 8) & 0xFF) / 255,
+            Double(value & 0xFF) / 255,
+        ]
+        .map { component in
+            component <= 0.04045
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+        return (0.2126 * components[0]) + (0.7152 * components[1]) + (0.0722 * components[2])
     }
 
 }
