@@ -45,13 +45,17 @@ Installing skills one by one breaks down at scale:
 
 ## Interface Preview
 
-| Menu Bar | Import |
+| Usage View | Import |
 | --- | --- |
-| ![Menu bar quick config](./img/img-menu.png) | ![Import screen](./img/img-import.png) |
+| ![Usage view](./img/img-usage.png) | ![Import screen](./img/img-import.png) |
 
 | Detail | Settings |
 | --- | --- |
 | ![Detail screen](./img/img-detail.png) | ![Settings screen](./img/img-setting.png) |
+
+| Menu Bar |
+| --- |
+| ![Menu bar quick config](./img/img-menu.png) |
 
 ## Quick Start
 

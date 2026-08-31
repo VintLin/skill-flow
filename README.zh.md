@@ -45,13 +45,17 @@
 
 ## 界面预览
 
-| 菜单栏 | 导入页 |
+| 使用情况视图 | 导入页 |
 | --- | --- |
-| ![菜单栏快速配置](./img/img-menu.png) | ![导入页](./img/img-import.png) |
+| ![使用情况视图](./img/img-usage.png) | ![导入页](./img/img-import.png) |
 
 | 详情页 | 设置页 |
 | --- | --- |
 | ![详情页](./img/img-detail.png) | ![设置页](./img/img-setting.png) |
+
+| 菜单栏 |
+| --- |
+| ![菜单栏快速配置](./img/img-menu.png) |
 
 ## 快速开始
 
