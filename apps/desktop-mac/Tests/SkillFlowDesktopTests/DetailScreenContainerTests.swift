@@ -4,6 +4,131 @@ import XCTest
 
 @MainActor
 final class DetailScreenContainerTests: XCTestCase {
+    func testEnterDetailUsesRealEntryFlowToInspectAndApplyFreshSelections() async {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+        var shouldInspect = true
+        var inspectCount = 0
+        var snapshot: DetailViewModel.Snapshot?
+
+        let container = DetailScreenContainer(
+            state: state,
+            detailSnapshot: { _ in snapshot },
+            shouldInspectDetail: { _ in shouldInspect },
+            selectSource: { _ in
+                inspectCount += 1
+                shouldInspect = false
+                snapshot = .fixture(
+                    sourceId: "alpha",
+                    skills: [
+                        DetailSkill(
+                            id: "alpha-a",
+                            title: "Browse",
+                            summary: "Browse things.",
+                            version: nil,
+                            author: "Acme",
+                            originLabel: "local",
+                            starCount: nil,
+                            folderPath: "/skills/alpha-a",
+                            relativeFolderPath: "alpha-a",
+                            documents: [],
+                            detailLines: [],
+                            documentContent: "# Browse",
+                            isEnabled: true,
+                            warningCount: 0
+                        )
+                    ]
+                )
+            }
+        )
+
+        await container.enterDetail(sourceId: "alpha")
+
+        XCTAssertEqual(inspectCount, 1)
+        XCTAssertEqual(container.screenState.detailSkillIdByGroup["alpha"], "alpha-a")
+    }
+
+    func testEnterDetailReconcilesSelectionWhenAcceptedRevisionChanges() async {
+        let state = DesktopAppState()
+        state.view.currentRoute = .detail(sourceId: "alpha")
+        let remainingSkill = DetailSkill(
+            id: "alpha-a",
+            title: "Browse",
+            summary: "Browse things.",
+            version: nil,
+            author: "Acme",
+            originLabel: "local",
+            starCount: nil,
+            folderPath: nil,
+            relativeFolderPath: nil,
+            documents: [],
+            detailLines: [],
+            documentContent: "# Browse",
+            isEnabled: true,
+            warningCount: 0
+        )
+        var snapshot = DetailViewModel.Snapshot.fixture(
+            sourceId: "alpha",
+            revision: "rev-1",
+            skills: [remainingSkill]
+        )
+        let container = DetailScreenContainer(state: state, detailSnapshot: { _ in snapshot })
+        container.screenState.detailShowsGroupOverviewByGroup["alpha"] = false
+        container.screenState.detailSkillIdByGroup["alpha"] = "removed"
+
+        snapshot = .fixture(sourceId: "alpha", revision: "rev-2", skills: [remainingSkill])
+        await container.enterDetail(sourceId: "alpha")
+
+        XCTAssertEqual(container.detailRevision, "rev-2")
+        XCTAssertEqual(container.screenState.detailSkillIdByGroup["alpha"], "alpha-a")
+    }
+
+    func testApplySelectionsFallsBackWhenSelectedSkillWasRemoved() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "removed"
+        state.pendingDetailSkillIdByGroup["alpha"] = "removed"
+        let remainingSkill = DetailSkill(
+            id: "remaining",
+            title: "Remaining",
+            summary: "Still installed.",
+            version: nil,
+            author: "Acme",
+            originLabel: "local",
+            starCount: nil,
+            folderPath: nil,
+            relativeFolderPath: nil,
+            documents: [],
+            detailLines: [],
+            documentContent: "# Remaining",
+            isEnabled: true,
+            warningCount: 0
+        )
+        let detail = DetailViewModel(snapshot: .fixture(skills: [remainingSkill]))
+
+        DetailRouteBootstrap.applySelections(state: state, sourceId: "alpha", detail: detail)
+
+        XCTAssertEqual(state.detailSkillIdByGroup["alpha"], "remaining")
+        XCTAssertNil(state.pendingDetailSkillIdByGroup["alpha"])
+        XCTAssertEqual(state.detailShowsGroupOverviewByGroup["alpha"], false)
+    }
+
+    func testApplySelectionsReturnsToOverviewWhenEverySkillWasRemoved() {
+        let state = DetailScreenState()
+        state.detailShowsGroupOverviewByGroup["alpha"] = false
+        state.detailSkillIdByGroup["alpha"] = "removed"
+        state.pendingDetailSkillIdByGroup["alpha"] = "removed"
+        state.detailSelectedTreeItemIdByGroup["alpha"] = "skill:removed"
+        let detail = DetailViewModel(snapshot: .fixture(skills: []))
+
+        DetailRouteBootstrap.applySelections(state: state, sourceId: "alpha", detail: detail)
+
+        XCTAssertNil(state.detailSkillIdByGroup["alpha"])
+        XCTAssertNil(state.pendingDetailSkillIdByGroup["alpha"])
+        XCTAssertNil(state.detailSelectedTreeItemIdByGroup["alpha"])
+        XCTAssertEqual(state.detailShowsGroupOverviewByGroup["alpha"], true)
+    }
+
     func testBuildsDetailViewModelFromCurrentDetailRoute() {
         let state = DesktopAppState()
         state.view.currentRoute = .detail(sourceId: "alpha")
@@ -673,6 +798,7 @@ private extension DetailViewModel.Snapshot {
         updatedRelative: String = "Updated 1 day ago",
         fileTree: [FileTreeItem] = [],
         groupDocuments: [DocumentDescriptor] = [],
+        skills: [DetailSkill] = [],
         targets: [DetailTarget] = [
             DetailTarget(
                 id: "claude-code",
@@ -718,7 +844,7 @@ private extension DetailViewModel.Snapshot {
             fileTree: fileTree,
             groupDocuments: groupDocuments,
             targets: targets,
-            skills: []
+            skills: skills
         )
         return Self(
             sourceId: sourceId,
@@ -756,7 +882,7 @@ private extension DetailViewModel.Snapshot {
             fileTree: fileTree,
             groupDocuments: groupDocuments,
             targets: targets,
-            skills: []
+            skills: skills
         )
     }
 }

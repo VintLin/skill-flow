@@ -14,6 +14,16 @@ final class SourceManagement {
         var enabledTargets: [String]
     }
 
+    enum InspectIntent: Equatable {
+        case navigation
+        case postCommit
+    }
+
+    enum InspectOutcome {
+        case current(BridgeResponse)
+        case superseded
+    }
+
     struct WorkflowSummary: Sendable {
         enum SelectionMode: String, Sendable {
             case all
@@ -114,7 +124,6 @@ final class SourceManagement {
     private var allSummaries: [WorkflowSummary] = []
     private var workingDrafts: [ScopedSourceKey: DraftState] = [:]
     private var detectedTargets: Set<String> = []
-    private var inspectedPayloadBySourceId: [ScopedSourceKey: [String: Any]] = [:]
     private var saveStateBySourceId: [ScopedSourceKey: SaveState] = [:]
     private var recentlyUpdatedSourceKeys: Set<ScopedSourceKey> = []
     private var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
@@ -222,19 +231,20 @@ final class SourceManagement {
         scheduleRecentlyUpdatedIndicatorClear(for: key)
     }
 
-    func hasInspectPayload(for sourceId: String, scope: ProjectScopeSelection) -> Bool {
-        let key = ScopedSourceKey(scope: scope, sourceId: sourceId)
-        return inspectedPayloadBySourceId[key] != nil
-    }
-
     func isInspectRequestInFlight(for sourceId: String, scope: ProjectScopeSelection) -> Bool {
         let key = ScopedSourceKey(scope: scope, sourceId: sourceId)
         return inspectRequestTasksBySourceId[key] != nil
     }
 
-    func inspectedPayload(for sourceId: String, scope: ProjectScopeSelection) -> [String: Any]? {
-        let key = ScopedSourceKey(scope: scope, sourceId: sourceId)
-        return inspectedPayloadBySourceId[key]
+    func invalidateInspectState(for sourceId: String) {
+        let keys = Set(inspectRequestTasksBySourceId.keys)
+            .union(inspectRequestTokensBySourceId.keys)
+            .filter { $0.sourceId == sourceId }
+        for key in keys {
+            inspectRequestTasksBySourceId[key]?.cancel()
+            inspectRequestTasksBySourceId.removeValue(forKey: key)
+            inspectRequestTokensBySourceId.removeValue(forKey: key)
+        }
     }
 
     func bootstrap() async throws -> [BridgeIssue] {
@@ -256,19 +266,37 @@ final class SourceManagement {
         return true
     }
 
+    @discardableResult
+    func applyUpdateWorkspace(_ value: Any?) -> Bool {
+        guard
+            let data = value as? [String: Any],
+            let workspace = data["workspace"] as? [String: Any],
+            workspace["summaries"] is [[String: Any]]
+        else {
+            return false
+        }
+        parseWorkspaceState(workspace)
+        return true
+    }
+
     func refreshList() async throws -> BridgeResponse {
         let response = try await fetchListResponse()
         applyList(response)
         return response
     }
 
-    func selectSource(_ sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
-        let response = try await fetchInspectResponse(sourceId: sourceId, scope: scope)
-        if let payload = response.data?.value as? [String: Any] {
-            let key = ScopedSourceKey(scope: scope, sourceId: sourceId)
-            inspectedPayloadBySourceId[key] = payload
-        }
+    func refreshListAfterUpdate() async throws -> BridgeResponse {
+        let response = try await fetchListResponse()
+        applyUpdateList(response)
         return response
+    }
+
+    func inspectSource(
+        _ sourceId: String,
+        scope: ProjectScopeSelection,
+        intent: InspectIntent
+    ) async throws -> InspectOutcome {
+        try await fetchInspectResponse(sourceId: sourceId, scope: scope, intent: intent)
     }
 
     func runDoctor() async throws -> ([DoctorIssueRow], [BridgeIssue]) {
@@ -371,7 +399,15 @@ final class SourceManagement {
     func pruneStateMaps(allowedSourceIds: Set<String>) {
         workingDrafts = workingDrafts.filter { allowedSourceIds.contains($0.key.sourceId) }
         saveStateBySourceId = saveStateBySourceId.filter { allowedSourceIds.contains($0.key.sourceId) }
-        inspectedPayloadBySourceId = inspectedPayloadBySourceId.filter { allowedSourceIds.contains($0.key.sourceId) }
+
+        let removedInspectSourceIds = Set(
+            inspectRequestTasksBySourceId.keys
+                .map(\.sourceId)
+                .filter { !allowedSourceIds.contains($0) }
+        )
+        for sourceId in removedInspectSourceIds {
+            invalidateInspectState(for: sourceId)
+        }
 
         let removedRecentlyUpdatedKeys = Set(
             recentlyUpdatedSourceKeys.filter { !allowedSourceIds.contains($0.sourceId) }
@@ -484,8 +520,8 @@ final class SourceManagement {
     }
 
     private func removeStateForSource(_ sourceId: String) {
+        invalidateInspectState(for: sourceId)
         workingDrafts = workingDrafts.filter { $0.key.sourceId != sourceId }
-        inspectedPayloadBySourceId = inspectedPayloadBySourceId.filter { $0.key.sourceId != sourceId }
         saveStateBySourceId = saveStateBySourceId.filter { $0.key.sourceId != sourceId }
     }
 
@@ -536,13 +572,17 @@ final class SourceManagement {
     }
 
     private func parseBootstrapData(_ value: Any?) {
+        parseWorkspaceState(value)
+        guard let data = value as? [String: Any] else { return }
+        delegate?.applyProjectScopeState(data)
+    }
+
+    private func parseWorkspaceState(_ value: Any?) {
         guard let data = value as? [String: Any] else { return }
 
         delegate?.applyCachedGroupCardEnrichment(data)
         applyPinnedSourceIds(data)
         applySummaries(parseSummariesPayload(data))
-        delegate?.applyProjectScopeState(data)
-
         if let availableTargets = data["availableTargets"] as? [String] {
             detectedTargets.formUnion(availableTargets)
         }
@@ -574,10 +614,20 @@ final class SourceManagement {
     }
 
     private func applyList(_ response: BridgeResponse) {
+        applyListState(response)
+        if let data = response.data?.value as? [String: Any] {
+            delegate?.applyProjectScopeState(data)
+        }
+    }
+
+    private func applyUpdateList(_ response: BridgeResponse) {
+        applyListState(response)
+    }
+
+    private func applyListState(_ response: BridgeResponse) {
         let summaries = parseSummariesPayload(response.data?.value)
         if let data = response.data?.value as? [String: Any] {
             delegate?.applyCachedGroupCardEnrichment(data)
-            delegate?.applyProjectScopeState(data)
             if let availableTargets = data["availableTargets"] as? [String] {
                 detectedTargets = Set(availableTargets)
                 for summary in summaries {
@@ -679,10 +729,16 @@ final class SourceManagement {
         }
     }
 
-    private func fetchInspectResponse(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
+    private func fetchInspectResponse(
+        sourceId: String,
+        scope: ProjectScopeSelection,
+        intent: InspectIntent
+    ) async throws -> InspectOutcome {
         let key = ScopedSourceKey(scope: scope, sourceId: sourceId)
-        if let existingTask = inspectRequestTasksBySourceId[key] {
-            return try await existingTask.value
+        if intent == .navigation,
+           let existingTask = inspectRequestTasksBySourceId[key],
+           let token = inspectRequestTokensBySourceId[key] {
+            return try await inspectOutcome(for: existingTask, key: key, token: token)
         }
 
         inspectRequestTokenSeed &+= 1
@@ -691,18 +747,28 @@ final class SourceManagement {
         inspectRequestTasksBySourceId[key] = task
         inspectRequestTokensBySourceId[key] = token
 
+        return try await inspectOutcome(for: task, key: key, token: token)
+    }
+
+    private func inspectOutcome(
+        for task: Task<BridgeResponse, Error>,
+        key: ScopedSourceKey,
+        token: UInt64
+    ) async throws -> InspectOutcome {
         do {
             let response = try await task.value
-            if inspectRequestTokensBySourceId[key] == token {
-                inspectRequestTasksBySourceId.removeValue(forKey: key)
-                inspectRequestTokensBySourceId.removeValue(forKey: key)
+            guard inspectRequestTokensBySourceId[key] == token else {
+                return .superseded
             }
-            return response
+            inspectRequestTasksBySourceId.removeValue(forKey: key)
+            inspectRequestTokensBySourceId.removeValue(forKey: key)
+            return .current(response)
         } catch {
-            if inspectRequestTokensBySourceId[key] == token {
-                inspectRequestTasksBySourceId.removeValue(forKey: key)
-                inspectRequestTokensBySourceId.removeValue(forKey: key)
+            guard inspectRequestTokensBySourceId[key] == token else {
+                return .superseded
             }
+            inspectRequestTasksBySourceId.removeValue(forKey: key)
+            inspectRequestTokensBySourceId.removeValue(forKey: key)
             throw error
         }
     }

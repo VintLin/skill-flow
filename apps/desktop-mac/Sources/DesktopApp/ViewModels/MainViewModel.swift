@@ -4,9 +4,31 @@ import Observation
 @MainActor
 @Observable
 final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
-    struct ScopedSourceKey: Hashable {
+    private struct ScopedSourceKey: Hashable {
         let scope: ProjectScopeSelection
         let sourceId: String
+    }
+
+    private enum DetailFreshness: Equatable {
+        case absent
+        case fresh
+        case refreshRequired
+    }
+
+    private enum DetailProjectionError: LocalizedError {
+        case invalidInspectPayload(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidInspectPayload(let sourceId):
+                return "Inspect returned an invalid payload for \(sourceId)"
+            }
+        }
+    }
+
+    private struct DetailProjection {
+        var payload: [String: Any]?
+        var freshness: DetailFreshness
     }
 
     enum Page: Equatable {
@@ -46,7 +68,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     private let legacyPinnedSourceIdsKey = "desktop.pinnedSourceIds"
     private let pinnedSourceIdsMigrationKey = "desktop.pinnedSourceIds.migratedToRuntimePreferences"
     private var detectedTargets: Set<String> = []
-    var inspectedPayloadBySourceId: [ScopedSourceKey: [String: Any]] = [:]
+    private var detailProjectionBySource: [ScopedSourceKey: DetailProjection] = [:]
     private var detailEnrichmentPayloadBySourceId: [String: [String: Any]] = [:]
     @ObservationIgnored private var detailEnrichmentTasksBySourceId: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var detailEnrichmentTokensBySourceId: [String: UInt64] = [:]
@@ -284,8 +306,26 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func updateSourceIds(_ ids: [String]) {
+        let allowedSourceIds = Set(ids)
+        let ownedDetailSourceIds = Set(detailProjectionBySource.keys.map(\.sourceId))
+            .union(detailEnrichmentPayloadBySourceId.keys)
+            .union(detailEnrichmentTasksBySourceId.keys)
+        let removedSourceIds = ownedDetailSourceIds.subtracting(allowedSourceIds)
+        for sourceId in removedSourceIds {
+            removeDetailState(for: sourceId)
+        }
         stateManager.sourceIds = ids
         importLogic.updateAllSummaries(sourceManagement.summaries())
+    }
+
+    private func removeDetailState(for sourceId: String) {
+        detailProjectionBySource = detailProjectionBySource.filter { $0.key.sourceId != sourceId }
+        sourceManagement.invalidateInspectState(for: sourceId)
+        invalidateDetailEnrichmentRequest(sourceId: sourceId)
+        detailEnrichmentPayloadBySourceId.removeValue(forKey: sourceId)
+        detailEnrichmentTokensBySourceId.removeValue(forKey: sourceId)
+        refreshedDetailEnrichmentSourceIds.remove(sourceId)
+        detailLogic.invalidatePreparedDetailContent(for: sourceId)
     }
 
     func selectSource(_ sourceId: String) {
@@ -1033,17 +1073,20 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     func selectSource(_ sourceId: String) async {
         stateManager.selectSource(sourceId)
+        let scope = currentProjectScope()
         do {
-            let response = try await sourceManagement.selectSource(sourceId, scope: currentProjectScope())
-            if let payload = response.data?.value as? [String: Any] {
-                if let key = scopedSourceKey(sourceId: sourceId, scope: currentProjectScope()) {
-                    inspectedPayloadBySourceId[key] = payload
-                }
+            let outcome = try await sourceManagement.inspectSource(sourceId, scope: scope, intent: .navigation)
+            guard case .current(let response) = outcome else { return }
+            if let payload = validInspectPayload(from: response, sourceId: sourceId),
+               let key = scopedSourceKey(sourceId: sourceId, scope: scope) {
+                detailProjectionBySource[key] = DetailProjection(payload: payload, freshness: .fresh)
                 detailLogic.invalidatePreparedDetailContent(for: sourceId)
                 let isAwaitingEnrichment = scheduleDetailEnrichmentFetch(sourceId: sourceId)
                 if !isAwaitingEnrichment {
                     scheduleActiveDetailWarmupIfNeeded(sourceId: sourceId)
                 }
+            } else {
+                throw DetailProjectionError.invalidInspectPayload(sourceId)
             }
             stateManager.setLatestWarnings(response.warnings)
         } catch {
@@ -1095,29 +1138,125 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func performQueuedUpdate(sourceId: String) async {
+        let operationScope = currentProjectScope()
         do {
             let response = try await sourceManagement.updateSelectedSource(sourceId)
             if let response {
-                await synchronizeAfterMutation(response)
+                await synchronizeAfterUpdateMutation(response)
             } else {
-                await synchronizeState(refreshDoctor: true)
+                await synchronizeAfterNoOpUpdate()
             }
             registerRecentlyUpdatedSources(from: response?.data?.value)
-            showToast(style: .success, text: .plain(updateSummaryMessage(from: response?.data?.value, fallbackCount: 1)))
+            let refreshOutcome = await refreshActiveDetailAfterCommittedUpdate(
+                affectedSourceIds: [sourceId],
+                operationScope: operationScope
+            )
+            if refreshOutcome == .refreshFailed {
+                showToast(style: .neutral, text: localizedText("toast.update.detail_refresh_failed"))
+            } else {
+                showToast(style: .success, text: .plain(updateSummaryMessage(from: response?.data?.value, fallbackCount: 1)))
+            }
         } catch {
             showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
         }
     }
 
+    private enum PostCommitDetailRefreshOutcome: Equatable {
+        case notApplicable
+        case refreshed
+        case refreshFailed
+    }
+
+    private func refreshActiveDetailAfterCommittedUpdate(
+        affectedSourceIds: Set<String>,
+        operationScope: ProjectScopeSelection
+    ) async -> PostCommitDetailRefreshOutcome {
+        guard currentProjectScope() == operationScope,
+              case .detail(let sourceId) = currentRoute,
+              affectedSourceIds.contains(sourceId),
+              let key = scopedSourceKey(sourceId: sourceId, scope: operationScope) else {
+            return .notApplicable
+        }
+
+        let retainedPayload = detailProjectionBySource[key]?.payload
+        detailProjectionBySource[key] = DetailProjection(
+            payload: retainedPayload,
+            freshness: .refreshRequired
+        )
+
+        do {
+            let outcome = try await sourceManagement.inspectSource(sourceId, scope: operationScope, intent: .postCommit)
+            guard case .current(let response) = outcome else {
+                return .notApplicable
+            }
+            guard currentProjectScope() == operationScope,
+                  case .detail(let activeSourceId) = currentRoute,
+                  activeSourceId == sourceId else {
+                return .notApplicable
+            }
+            guard let payload = validInspectPayload(from: response, sourceId: sourceId) else {
+                throw DetailProjectionError.invalidInspectPayload(sourceId)
+            }
+
+            detailProjectionBySource[key] = DetailProjection(payload: payload, freshness: .fresh)
+            detailLogic.invalidatePreparedDetailContent(for: sourceId)
+            scheduleActiveDetailWarmupIfNeeded(sourceId: sourceId)
+            stateManager.setLatestWarnings(response.warnings)
+            return .refreshed
+        } catch {
+            guard currentProjectScope() == operationScope,
+                  case .detail(let activeSourceId) = currentRoute,
+                  activeSourceId == sourceId else {
+                return .notApplicable
+            }
+            return .refreshFailed
+        }
+    }
+
     private func performQueuedBulkUpdate(sourceIds: [String]) async {
+        let operationScope = currentProjectScope()
         do {
             let response = try await sourceManagement.updateSourcesReturningResponse(sourceIds)
-            await synchronizeAfterMutation(response)
+            await synchronizeAfterUpdateMutation(response)
             registerRecentlyUpdatedSources(from: response.data?.value)
-            presentBulkUpdateOutcome(requestedCount: sourceIds.count, payload: response.data?.value, warnings: response.warnings)
+            let committedSourceIds = committedSourceIds(from: response.data?.value)
+            let refreshOutcome = await refreshActiveDetailAfterCommittedUpdate(
+                affectedSourceIds: committedSourceIds,
+                operationScope: operationScope
+            )
+            if refreshOutcome == .refreshFailed {
+                let mutationOutcome = Self.parseBulkUpdateOutcome(
+                    requestedCount: sourceIds.count,
+                    payload: response.data?.value,
+                    warnings: response.warnings
+                )
+                if mutationOutcome.failedCount > 0 {
+                    showToast(
+                        style: .neutral,
+                        text: localizedText(
+                            "toast.update.partial_detail_refresh_failed",
+                            String(mutationOutcome.successCount),
+                            String(mutationOutcome.failedCount),
+                            mutationOutcome.firstFailureMessage ?? localized("toast.update.failed", "update failed")
+                        )
+                    )
+                } else {
+                    showToast(style: .neutral, text: localizedText("toast.update.detail_refresh_failed"))
+                }
+            } else {
+                presentBulkUpdateOutcome(requestedCount: sourceIds.count, payload: response.data?.value, warnings: response.warnings)
+            }
         } catch {
             showOperationFailureToast(fallbackKey: "toast.update.failed", fallbackArgument: error.localizedDescription, error: error)
         }
+    }
+
+    private func committedSourceIds(from payload: Any?) -> Set<String> {
+        guard let data = payload as? [String: Any],
+              let updated = data["updated"] as? [[String: Any]] else {
+            return []
+        }
+        return Set(updated.compactMap { ($0["sourceId"] as? String)?.nonEmpty })
     }
 
     var importDisplayGroups: [ImportGroupItem] {
@@ -1228,6 +1367,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     func deleteSource(sourceId: String) async {
         do {
             try await sourceManagement.deleteSource(sourceId: sourceId)
+            removeDetailState(for: sourceId)
             if selectedSourceId == sourceId { stateManager.selectSource(nil) }
             await synchronizeState(refreshDoctor: true)
             if let first = sourceIds.first {
@@ -1329,12 +1469,23 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         return await detailLogic.groupDocument(for: sourceId, documentId: documentId, input: input)
     }
 
-    func hasInspectPayload(for sourceId: String) -> Bool {
-        sourceManagement.hasInspectPayload(for: sourceId, scope: currentProjectScope())
+    func hasFreshDetailProjection(for sourceId: String) -> Bool {
+        guard let key = scopedSourceKey(sourceId: sourceId, scope: currentProjectScope()) else {
+            return false
+        }
+        return detailFreshness(for: key) == .fresh
     }
 
     func isInspectRequestInFlight(for sourceId: String) -> Bool {
         sourceManagement.isInspectRequestInFlight(for: sourceId, scope: currentProjectScope())
+    }
+
+    func shouldInspectDetail(for sourceId: String) -> Bool {
+        !hasFreshDetailProjection(for: sourceId) && !isInspectRequestInFlight(for: sourceId)
+    }
+
+    private func detailFreshness(for key: ScopedSourceKey) -> DetailFreshness {
+        detailProjectionBySource[key]?.freshness ?? .absent
     }
 
     func bindRouteState(_ state: DesktopAppState) {
@@ -1459,17 +1610,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func updateCachedDetailDisplayName(sourceId: String, displayName: String, originalDisplayName: String) {
-        if let payload = detailEnrichmentPayloadBySourceId[sourceId] {
-            detailEnrichmentPayloadBySourceId[sourceId] = enrichmentPayloadWithDisplayName(
-                payload,
-                displayName: displayName,
-                originalDisplayName: originalDisplayName
-            )
-        }
-
-        for key in inspectedPayloadBySourceId.keys where key.sourceId == sourceId {
-            if let payload = inspectedPayloadBySourceId[key] {
-                inspectedPayloadBySourceId[key] = enrichmentPayloadWithDisplayName(
+        for key in detailProjectionBySource.keys where key.sourceId == sourceId {
+            if let payload = detailProjectionBySource[key]?.payload {
+                detailProjectionBySource[key]?.payload = enrichmentPayloadWithDisplayName(
                     payload,
                     displayName: displayName,
                     originalDisplayName: originalDisplayName
@@ -1486,7 +1629,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     func currentProjectScope() -> ProjectScopeSelection { selectedProjectScope }
 
-    func scopedSourceKey(sourceId: String, scope: ProjectScopeSelection? = nil) -> ScopedSourceKey? {
+    private func scopedSourceKey(sourceId: String, scope: ProjectScopeSelection? = nil) -> ScopedSourceKey? {
         let trimmed = sourceId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return ScopedSourceKey(scope: scope ?? currentProjectScope(), sourceId: trimmed)
@@ -1543,7 +1686,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             }
             let mergedPayload = DetailPayloadOverlay.merge(
                 detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
-                with: payload
+                with: cachedGroupCardEnrichmentPayload(payload)
             )
             if !mergedPayload.isEmpty {
                 detailEnrichmentPayloadBySourceId[sourceId] = mergedPayload
@@ -1702,6 +1845,28 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         }
     }
 
+    private func synchronizeAfterUpdateMutation(_ response: BridgeResponse) async {
+        guard sourceManagement.applyUpdateWorkspace(response.data?.value) else {
+            await synchronizeAfterNoOpUpdate()
+            return
+        }
+        detectedTargets = sourceManagement.detectedTargetIds()
+        stateManager.setLatestWarnings(response.warnings)
+        stateManager.setHealthStatus(response.warnings.isEmpty ? .healthy : .warnings)
+    }
+
+    private func synchronizeAfterNoOpUpdate() async {
+        do {
+            let response = try await sourceManagement.refreshListAfterUpdate()
+            detectedTargets = sourceManagement.detectedTargetIds()
+            stateManager.setLatestWarnings(response.warnings)
+            stateManager.setHealthStatus(response.warnings.isEmpty ? .healthy : .warnings)
+        } catch {
+            stateManager.setHealthStatus(.error)
+        }
+        await runDoctor()
+    }
+
     func localizedText(_ key: String, _ arguments: [String]) -> PresentationText {
         if arguments.isEmpty {
             return .localized(key)
@@ -1711,6 +1876,9 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     @discardableResult
     private func scheduleDetailEnrichmentFetch(sourceId: String, force: Bool = false) -> Bool {
+        let projectionKey = scopedSourceKey(sourceId: sourceId, scope: currentProjectScope()).flatMap { key in
+            detailProjectionBySource[key] == nil ? nil : key
+        }
         if !force {
             if refreshedDetailEnrichmentSourceIds.contains(sourceId) {
                 return false
@@ -1738,42 +1906,68 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             do {
                 let response = try await self.detailEnrichmentQuery.inspectEnrichment(sourceId: sourceId)
                 guard !Task.isCancelled,
-                      self.detailEnrichmentTokensBySourceId[sourceId] == token else {
+                      self.detailEnrichmentTokensBySourceId[sourceId] == token,
+                      self.isEnrichmentIdentityCurrent(sourceId: sourceId, projectionKey: projectionKey) else {
                     return
                 }
                 if let payload = response.data?.value as? [String: Any] {
-                    let displayName = self.renamedSourceDisplayNameOverridesBySourceId[sourceId]
-                        ?? self.sourceManagement.summary(for: sourceId)?.sourceDisplayName
-                    let originalDisplayName = self.renamedSourceOriginalDisplayNameOverridesBySourceId[sourceId]
-                        ?? self.sourceManagement.summary(for: sourceId)?.sourceOriginalDisplayName
-                        ?? displayName
-                    let normalizedPayload: [String: Any]
-                    if let displayName, let originalDisplayName {
-                        normalizedPayload = self.enrichmentPayloadWithDisplayName(
-                            payload,
-                            displayName: displayName,
-                            originalDisplayName: originalDisplayName
-                        )
-                    } else {
-                        normalizedPayload = payload
-                    }
+                    let normalizedPayload = self.metadataOnlyEnrichmentPayload(payload)
                     self.detailEnrichmentPayloadBySourceId[sourceId] = DetailPayloadOverlay.merge(
                         self.detailEnrichmentPayloadBySourceId[sourceId] ?? [:],
                         with: normalizedPayload
                     )
-                    if self.isActiveDetailSource(sourceId) {
-                        self.detailLogic.invalidatePreparedDetailContent(for: sourceId)
-                    }
                 }
                 self.refreshedDetailEnrichmentSourceIds.insert(sourceId)
                 self.stateManager.setLatestWarnings(response.warnings)
                 self.scheduleActiveDetailWarmupIfNeeded(sourceId: sourceId)
             } catch {
+                guard !Task.isCancelled,
+                      self.detailEnrichmentTokensBySourceId[sourceId] == token,
+                      self.isEnrichmentIdentityCurrent(sourceId: sourceId, projectionKey: projectionKey) else {
+                    return
+                }
                 self.scheduleActiveDetailWarmupIfNeeded(sourceId: sourceId)
             }
         }
         detailEnrichmentTasksBySourceId[sourceId] = task
         return true
+    }
+
+    private func invalidateDetailEnrichmentRequest(sourceId: String) {
+        detailEnrichmentTasksBySourceId[sourceId]?.cancel()
+        detailEnrichmentTasksBySourceId.removeValue(forKey: sourceId)
+        detailEnrichmentTokenSeed &+= 1
+        detailEnrichmentTokensBySourceId[sourceId] = detailEnrichmentTokenSeed
+    }
+
+    private func metadataOnlyEnrichmentPayload(_ payload: [String: Any]) -> [String: Any] {
+        let allowedKeys = ["sourceMetadata", "sourceSnapshot"]
+        return allowedKeys.reduce(into: [:]) { result, key in
+            if let value = payload[key] {
+                result[key] = value
+            }
+        }
+    }
+
+    private func cachedGroupCardEnrichmentPayload(_ payload: [String: Any]) -> [String: Any] {
+        var normalized = metadataOnlyEnrichmentPayload(payload)
+        if let groupPath = (payload["groupPath"] as? String)?.nonEmpty {
+            normalized["groupPath"] = groupPath
+        }
+        return normalized
+    }
+
+    private func isEnrichmentIdentityCurrent(
+        sourceId: String,
+        projectionKey: ScopedSourceKey?
+    ) -> Bool {
+        guard sourceIds.contains(sourceId) else { return false }
+        guard let projectionKey else { return true }
+        guard currentProjectScope() == projectionKey.scope,
+              let projectionPayload = detailProjectionBySource[projectionKey]?.payload else {
+            return false
+        }
+        return inspectPayloadSourceId(projectionPayload) == sourceId
     }
 
     private func scheduleActiveDetailWarmupIfNeeded(sourceId: String) {
@@ -1859,9 +2053,31 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func mergedDetailPayload(for sourceId: String) -> [String: Any] {
-        let payload = inspectedPayloadBySourceId[ScopedSourceKey(scope: currentProjectScope(), sourceId: sourceId)] ?? [:]
-        let enrichmentPayload = detailEnrichmentPayloadBySourceId[sourceId] ?? [:]
+        let payload = detailProjectionBySource[
+            ScopedSourceKey(scope: currentProjectScope(), sourceId: sourceId)
+        ]?.payload ?? [:]
+        let enrichmentPayload = metadataOnlyEnrichmentPayload(detailEnrichmentPayloadBySourceId[sourceId] ?? [:])
         return DetailPayloadOverlay.merge(payload, with: enrichmentPayload)
+    }
+
+    private func validInspectPayload(from response: BridgeResponse, sourceId: String) -> [String: Any]? {
+        guard let payload = response.data?.value as? [String: Any],
+              let source = payload["source"] as? [String: Any],
+              inspectPayloadSourceId(payload) == sourceId,
+              payload["summary"] is [String: Any],
+              payload["binding"] is [String: Any],
+              payload["leafs"] is [[String: Any]],
+              source["displayName"] is String,
+              source["kind"] is String,
+              source["locator"] is String else {
+            return nil
+        }
+        return payload
+    }
+
+    private func inspectPayloadSourceId(_ payload: [String: Any]) -> String? {
+        let source = payload["source"] as? [String: Any]
+        return (source?["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
     }
 
     private func updateSummaryMessage(from value: Any?, fallbackCount: Int) -> String {

@@ -71,11 +71,8 @@ final class DesktopAppContainer {
             toastPresenter: { [weak mainViewModel] style, message in
                 mainViewModel?.presentToast(style: style, message: message)
             },
-            hasInspectPayload: { [weak mainViewModel] sourceId in
-                mainViewModel?.hasInspectPayload(for: sourceId) ?? false
-            },
-            isInspectRequestInFlight: { [weak mainViewModel] sourceId in
-                mainViewModel?.isInspectRequestInFlight(for: sourceId) ?? false
+            shouldInspectDetail: { [weak mainViewModel] sourceId in
+                mainViewModel?.shouldInspectDetail(for: sourceId) ?? false
             },
             isUpdatingCurrentGroup: { [weak mainViewModel] in
                 mainViewModel?.isUpdatingCurrentGroup ?? false

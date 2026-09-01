@@ -15,7 +15,27 @@ enum DetailRouteBootstrap {
         guard let detail else {
             return
         }
-        if state.detailSkillIdByGroup[sourceId] == nil {
+        let availableSkillIds = Set(detail.skills.map(\.id))
+        if availableSkillIds.isEmpty {
+            if let removedSkillId = state.detailSkillIdByGroup.removeValue(forKey: sourceId) {
+                state.detailDocumentTabIdBySkill.removeValue(forKey: removedSkillId)
+            }
+            state.pendingDetailSkillIdByGroup.removeValue(forKey: sourceId)
+            state.detailShowsGroupOverviewByGroup[sourceId] = true
+            state.detailSelectedTreeItemIdByGroup.removeValue(forKey: sourceId)
+            state.detailHoveredItemIdByGroup.removeValue(forKey: sourceId)
+            return
+        }
+        if let pendingSkillId = state.pendingDetailSkillIdByGroup[sourceId],
+           !availableSkillIds.contains(pendingSkillId) {
+            state.pendingDetailSkillIdByGroup.removeValue(forKey: sourceId)
+        }
+        if let selectedSkillId = state.detailSkillIdByGroup[sourceId],
+           !availableSkillIds.contains(selectedSkillId) {
+            state.detailDocumentTabIdBySkill.removeValue(forKey: selectedSkillId)
+            state.detailSkillIdByGroup[sourceId] = preferredDetailSkillId(for: detail)
+            state.detailSelectedTreeItemIdByGroup.removeValue(forKey: sourceId)
+        } else if state.detailSkillIdByGroup[sourceId] == nil {
             state.detailSkillIdByGroup[sourceId] = preferredDetailSkillId(for: detail)
         }
         if state.detailDocumentTabIdByGroup[sourceId] == nil {
@@ -30,10 +50,6 @@ enum DetailRouteBootstrap {
            let treeItemId = detail.fileTree.skillRootItemId(for: selectedSkillId) {
             state.detailSelectedTreeItemIdByGroup[sourceId] = treeItemId
         }
-    }
-
-    static func shouldFetchInspect(hasInspectPayload: Bool, isInspectRequestInFlight: Bool) -> Bool {
-        !hasInspectPayload && !isInspectRequestInFlight
     }
 
     @MainActor
@@ -182,24 +198,15 @@ struct DetailScreen: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .task(id: sourceId) {
-                    await bootstrapDetailRoute(sourceId: sourceId, detail: detail)
+                    await container.enterDetail(sourceId: sourceId)
+                }
+                .onChange(of: container.detailRevision) {
+                    container.reconcileDetailSelection(sourceId: sourceId)
                 }
             } else {
                 EmptyView()
             }
         }
-    }
-
-    private func bootstrapDetailRoute(sourceId: String, detail: DetailViewModel?) async {
-        DetailRouteBootstrap.applySelections(state: screenState, sourceId: sourceId, detail: detail)
-        guard DetailRouteBootstrap.shouldFetchInspect(
-            hasInspectPayload: container.hasInspectPayload(for: sourceId),
-            isInspectRequestInFlight: container.isInspectRequestInFlight(for: sourceId)
-        ) else {
-            return
-        }
-        await container.selectSource(sourceId)
-        DetailRouteBootstrap.applySelections(state: screenState, sourceId: sourceId, detail: container.viewModel)
     }
 
     private func detailSidebar(

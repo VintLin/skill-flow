@@ -229,7 +229,7 @@ final class WorkflowCoverageTests: XCTestCase {
         await waitForCondition(timeoutNanoseconds: 1_500_000_000) {
             self.inspectRequestCount(in: fixture, sourceId: "alpha") == 1
                 && self.inspectEnrichmentRequestCount(in: fixture, sourceId: "alpha") == 1
-                && container.mainViewModel.hasInspectPayload(for: "alpha")
+                && container.mainViewModel.hasFreshDetailProjection(for: "alpha")
         }
 
         try await Task.sleep(nanoseconds: 150_000_000)
@@ -1383,10 +1383,29 @@ private struct TestFixture {
         const sourceId = request.payload && request.payload.sourceId;
         const source = (state.sources || {})[sourceId] || {};
         process.stdout.write(JSON.stringify(responseFor(request, true, {
-          sourceId,
-          leafIds: source.leafIds || [],
-          selectedLeafIds: source.selectedLeafIds || [],
-          enabledTargets: source.enabledTargets || []
+          summary: buildSummaries(state).find((item) => item.source.id === sourceId),
+          source: {
+            id: sourceId,
+            kind: source.kind || 'git',
+            displayName: source.displayName || sourceId,
+            originalDisplayName: source.displayName || sourceId,
+            locator: source.locator || sourceId
+          },
+          leafs: (source.leafIds || []).map((leafId) => ({
+            id: leafId,
+            sourceId,
+            title: leafId,
+            name: leafId,
+            linkName: leafId,
+            description: ''
+          })),
+          binding: {
+            selectedLeafIds: source.selectedLeafIds || [],
+            targets: Object.fromEntries((source.enabledTargets || []).map((target) => [target, {
+              enabled: true,
+              leafIds: source.selectedLeafIds || []
+            }]))
+          }
         }, [], [])));
         return;
       }
