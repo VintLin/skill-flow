@@ -4,6 +4,18 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.7 - 2026-09-01
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.6.6` to `1.6.7`.
+- Kept active Group detail ownership scoped to the current route and project while source updates complete.
+
+### Fixed
+
+- Refreshed the currently open macOS Group detail immediately after a committed single or bulk Update, including Skill documents, statistics, and the file tree.
+- Rejected stale inspect completions, preserved the last usable detail on refresh failure, retried failed refreshes on re-entry, and reconciled selection when an update removes the selected Skill.
+
 ## v1.6.6 - 2026-08-31
 
 ### Added
