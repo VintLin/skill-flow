@@ -473,9 +473,28 @@ private final class ProjectScopeQueryStub: DesktopQueryTransporting {
     }
 
     func inspect(sourceId: String, scope: ProjectScopeSelection) async throws -> BridgeResponse {
-        BridgeResponse.success(command: .inspect, payload: [
+        let selectedLeafIds = scope == .global ? ["alpha-a"] : ["alpha-b"]
+        let summary = summaryPayload(
+            sourceId: sourceId,
+            selectedLeafIds: selectedLeafIds,
+            enabledTargets: ["codex"]
+        )
+        return BridgeResponse.success(command: .inspect, payload: [
             "source": [
-                "id": sourceId
+                "id": sourceId,
+                "kind": "clawhub",
+                "displayName": "Alpha",
+                "locator": "https://example.com/\(sourceId)"
+            ],
+            "leafs": summary["leafs"] as Any,
+            "binding": [
+                "selectedLeafIds": selectedLeafIds,
+                "targets": [
+                    "codex": [
+                        "enabled": true,
+                        "leafIds": selectedLeafIds
+                    ]
+                ]
             ],
             "deployments": [
                 [
@@ -487,11 +506,7 @@ private final class ProjectScopeQueryStub: DesktopQueryTransporting {
                         : "/Users/test/src/repo-a/.agents/skills/review"
                 ]
             ],
-            "summary": summaryPayload(
-                sourceId: sourceId,
-                selectedLeafIds: scope == .global ? ["alpha-a"] : ["alpha-b"],
-                enabledTargets: ["codex"]
-            )
+            "summary": summary
         ])
     }
 

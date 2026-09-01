@@ -27,8 +27,7 @@ final class DetailScreenContainer {
     private let groupDocumentProvider: (String, String) async -> DocumentTab?
     private let fallbackRowProvider: (String) -> SourceRow?
     private let toastPresenter: (ToastStyle, String) -> Void
-    private let hasInspectPayloadProvider: (String) -> Bool
-    private let isInspectRequestInFlightProvider: (String) -> Bool
+    private let shouldInspectDetailProvider: (String) -> Bool
     private let isUpdatingCurrentGroupProvider: () -> Bool
     private let selectSourceAction: (String) async -> Void
     private let updateCurrentGroupAction: () async -> Void
@@ -62,8 +61,7 @@ final class DetailScreenContainer {
         groupDocument: @escaping (String, String) async -> DocumentTab? = { _, _ in nil },
         fallbackRow: @escaping (String) -> SourceRow? = { _ in nil },
         toastPresenter: @escaping (ToastStyle, String) -> Void = { _, _ in },
-        hasInspectPayload: @escaping (String) -> Bool = { _ in false },
-        isInspectRequestInFlight: @escaping (String) -> Bool = { _ in false },
+        shouldInspectDetail: @escaping (String) -> Bool = { _ in false },
         isUpdatingCurrentGroup: @escaping () -> Bool = { false },
         selectSource: @escaping (String) async -> Void = { _ in },
         updateCurrentGroup: @escaping () async -> Void = {},
@@ -79,8 +77,7 @@ final class DetailScreenContainer {
         self.groupDocumentProvider = groupDocument
         self.fallbackRowProvider = fallbackRow
         self.toastPresenter = toastPresenter
-        self.hasInspectPayloadProvider = hasInspectPayload
-        self.isInspectRequestInFlightProvider = isInspectRequestInFlight
+        self.shouldInspectDetailProvider = shouldInspectDetail
         self.isUpdatingCurrentGroupProvider = isUpdatingCurrentGroup
         self.selectSourceAction = selectSource
         self.updateCurrentGroupAction = updateCurrentGroup
@@ -97,8 +94,7 @@ final class DetailScreenContainer {
         groupDocument: @escaping (String, String) async -> DocumentTab? = { _, _ in nil },
         fallbackRow: @escaping (String) -> SourceRow? = { _ in nil },
         toastPresenter: @escaping (ToastStyle, String) -> Void = { _, _ in },
-        hasInspectPayload: @escaping (String) -> Bool = { _ in false },
-        isInspectRequestInFlight: @escaping (String) -> Bool = { _ in false },
+        shouldInspectDetail: @escaping (String) -> Bool = { _ in false },
         isUpdatingCurrentGroup: @escaping () -> Bool = { false },
         selectSource: @escaping (String) async -> Void = { _ in },
         updateCurrentGroup: @escaping () async -> Void = {},
@@ -115,8 +111,7 @@ final class DetailScreenContainer {
             groupDocument: groupDocument,
             fallbackRow: fallbackRow,
             toastPresenter: toastPresenter,
-            hasInspectPayload: hasInspectPayload,
-            isInspectRequestInFlight: isInspectRequestInFlight,
+            shouldInspectDetail: shouldInspectDetail,
             isUpdatingCurrentGroup: isUpdatingCurrentGroup,
             selectSource: selectSource,
             updateCurrentGroup: updateCurrentGroup,
@@ -145,12 +140,9 @@ final class DetailScreenContainer {
         isUpdatingCurrentGroupProvider()
     }
 
-    func hasInspectPayload(for sourceId: String) -> Bool {
-        hasInspectPayloadProvider(sourceId)
-    }
-
-    func isInspectRequestInFlight(for sourceId: String) -> Bool {
-        isInspectRequestInFlightProvider(sourceId)
+    var detailRevision: String? {
+        guard let sourceId else { return nil }
+        return detailSnapshot(sourceId)?.revision
     }
 
     var viewModel: DetailViewModel? {
@@ -254,6 +246,20 @@ final class DetailScreenContainer {
 
     func selectSource(_ sourceId: String) async {
         await selectSourceAction(sourceId)
+    }
+
+    func enterDetail(sourceId: String) async {
+        guard self.sourceId == sourceId else { return }
+        reconcileDetailSelection(sourceId: sourceId)
+        guard shouldInspectDetailProvider(sourceId) else { return }
+        await selectSourceAction(sourceId)
+        guard self.sourceId == sourceId else { return }
+        reconcileDetailSelection(sourceId: sourceId)
+    }
+
+    func reconcileDetailSelection(sourceId: String) {
+        guard self.sourceId == sourceId else { return }
+        DetailRouteBootstrap.applySelections(state: screenState, sourceId: sourceId, detail: viewModel)
     }
 
     func updateCurrentGroup() async {

@@ -514,3 +514,5 @@
 "usage.error.refresh" = "スキルの使用状況を更新できませんでした。";
 "detail.document.default_title" = "ドキュメント";
 "detail.document.unavailable" = "%@ を利用できません。";
+"toast.update.detail_refresh_failed" = "グループは更新されましたが、詳細を更新できませんでした。グループを開き直すと再試行できます。";
+"toast.update.partial_detail_refresh_failed" = "%@ 件のグループを更新し、%@ 件が失敗しました（%@）。開いているグループの詳細は古い可能性があります。開き直すと再試行できます。";

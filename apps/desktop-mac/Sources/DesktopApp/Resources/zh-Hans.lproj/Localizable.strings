@@ -514,3 +514,5 @@
 "usage.error.refresh" = "无法刷新技能使用记录。";
 "detail.document.default_title" = "文档";
 "detail.document.unavailable" = "%@ 不可用。";
+"toast.update.detail_refresh_failed" = "分组已更新，但详情刷新失败。重新打开该分组即可重试。";
+"toast.update.partial_detail_refresh_failed" = "%@ 个分组已更新，%@ 个失败（%@）。当前分组详情可能已过期；重新打开即可重试。";

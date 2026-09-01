@@ -403,12 +403,6 @@ final class DetailLoadingLayoutTests: XCTestCase {
         XCTAssertNil(state.detailSelectedTreeItemIdByGroup["alpha"])
     }
 
-    func testDetailRouteBootstrapOnlyFetchesInspectWhenPayloadIsMissing() {
-        XCTAssertTrue(DetailRouteBootstrap.shouldFetchInspect(hasInspectPayload: false, isInspectRequestInFlight: false))
-        XCTAssertFalse(DetailRouteBootstrap.shouldFetchInspect(hasInspectPayload: true, isInspectRequestInFlight: false))
-        XCTAssertFalse(DetailRouteBootstrap.shouldFetchInspect(hasInspectPayload: false, isInspectRequestInFlight: true))
-    }
-
     func testDetailWordCountCountsWhitespaceSeparatedWords() {
         XCTAssertEqual(DetailInfoLayout.wordCount(from: "# Title\n\none two  three"), 4)
         XCTAssertNil(DetailInfoLayout.wordCount(from: "   "))

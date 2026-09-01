@@ -514,4 +514,6 @@
 "usage.error.refresh" = "Unable to refresh skill usage.";
 "detail.document.default_title" = "Document";
 "detail.document.unavailable" = "%@ unavailable.";
+"toast.update.detail_refresh_failed" = "The group was updated, but its details could not be refreshed. Reopen the group to retry.";
+"toast.update.partial_detail_refresh_failed" = "%@ groups updated, %@ failed (%@). The open group details may be stale; reopen it to retry.";
 "test.fallback.only_en" = "Only English";
