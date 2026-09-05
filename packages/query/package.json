@@ -8,8 +8,7 @@
     ".": "./dist/index.js",
     "./runtime": "./dist/runtime.js",
     "./workflow-service": "./dist/workflow-service.js",
-    "./config-coordinator": "./dist/config-coordinator.js",
-    "./application-queries": "./dist/application-queries.js"
+    "./config-coordinator": "./dist/config-coordinator.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

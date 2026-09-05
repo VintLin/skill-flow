@@ -18,8 +18,9 @@ import {
   type UsageRefreshTrigger,
   type UsageSnapshotFilters,
 } from "@skill-flow/domain/types";
-import type { SkillFlowApp } from "@skill-flow/query/runtime";
-import { listWorkflows, type WorkflowListQuery } from "@skill-flow/query/application-queries";
+import type {
+  SkillFlowApp,
+} from "@skill-flow/query/runtime";
 
 type BridgeFailure = {
   code: string;
@@ -111,7 +112,7 @@ export function getBridgeCommandHandlerNames(): BridgeCommandName[] {
 
 const bridgeCommandHandlers = {
   bootstrap: (app, request) => runBridgeResult(request, () => app.bootstrapWorkspaceState()),
-  list: (app, request) => runBridgeResult(request, () => listWorkflows(app as SkillFlowApp & WorkflowListQuery)),
+  list: (app, request) => runBridgeResult(request, () => app.listWorkflows()),
   "inspect-state-migration": (app, request) => runBridgeValue(request, () => app.inspectStateMigration()),
   "migrate-state": async (app, request) => {
     const payload = expectObjectPayload(request.payload, "migrate-state");
