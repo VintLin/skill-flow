@@ -52,7 +52,7 @@ export type ImportedTargetCleanupInput = {
  * skill groups. Runtime workflows retain authority writes, locks, and audit;
  * this module owns the deployment implementation between those seams.
  */
-export class DeploymentReconciler {
+export class DeploymentReconciler implements ProjectionSubsystem {
   async reconcile(input: DeploymentReconcileInput): Promise<Result<{ actions: DeploymentAction[] }>> {
     const planned = await this.plan(input);
     if (!planned.ok) {
@@ -538,3 +538,10 @@ export class DeploymentReconciler {
       left.targetPath === right.targetPath;
   }
 }
+
+/** Stable application boundary for target projection planning and application. */
+export type ProjectionSubsystem = {
+  reconcile(input: DeploymentReconcileInput): Promise<Result<{ actions: DeploymentAction[] }>>;
+  plan(input: DeploymentPlanInput): Promise<Result<DeploymentPlan>>;
+  apply(input: DeploymentApplyInput): Promise<Result<{ applied: DeploymentAction[] }>>;
+};
