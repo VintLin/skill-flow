@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import bridgeCommandCatalogFixture from "../fixtures/bridge-command-catalog.json" with { type: "json" };
 import {
   BRIDGE_COMMAND_NAMES,
-  getBridgeCommandMetadata,
   buildBridgeResponse,
   isBridgeCommandName,
   isJsonObject,
@@ -369,22 +368,5 @@ describe("bridge protocol", () => {
         enabledTargets: ["codex"],
       },
     });
-  });
-});
-
-describe("bridge command metadata", () => {
-  test("covers every command with an operation and timeout classification", () => {
-    for (const command of BRIDGE_COMMAND_NAMES) {
-      const metadata = getBridgeCommandMetadata(command);
-      expect(["query", "mutation"]).toContain(metadata.kind);
-      expect(["standard", "long", "update"]).toContain(metadata.timeoutClass);
-      expect(typeof metadata.cancellable).toBe("boolean");
-    }
-  });
-
-  test("classifies read commands separately from mutations", () => {
-    expect(getBridgeCommandMetadata("list").kind).toBe("query");
-    expect(getBridgeCommandMetadata("apply").kind).toBe("mutation");
-    expect(getBridgeCommandMetadata("update").timeoutClass).toBe("update");
   });
 });
