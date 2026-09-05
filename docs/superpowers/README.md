@@ -2,7 +2,7 @@
 
 这里是当前或近期需求的临时工作区，不是长期事实源。
 
-当前没有活跃规格；活跃实施计划见 [Import Discovery Deepening](plans/2026-08-29-import-discovery-deepening.md)。已完成、废弃或被替代的工作材料归档到 `../archives/specs/` 和 `../archives/plans/`。
+当前活跃规格见 [`specs/`](specs/)，活跃实施计划见 [`plans/`](plans/)。已完成、废弃或被替代的工作材料归档到 `../archives/specs/` 和 `../archives/plans/`。
 
 | 路径 | 用途 |
 | --- | --- |

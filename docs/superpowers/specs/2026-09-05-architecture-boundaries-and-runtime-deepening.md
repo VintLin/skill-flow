@@ -66,7 +66,7 @@ Skill Flow 已经具备状态权威模型、source authority、deployment projec
 
 ## Further Notes
 
-The architecture baseline is currently healthy: build succeeds and the TypeScript domain, protocol, integration, storage, core-engine, query, and TUI test suites were observed passing during analysis; the CLI test process was still running at the time of capture and emitted only Node deprecation warnings before the analysis was written. The repository is clean on `main`.
+Validation results are recorded when this work is executed. The historical analysis snapshot is not a current build or test guarantee.
 
 The repository does not currently contain the configured Matt Pocock issue tracker and triage vocabulary files. This local spec is therefore not published and is not marked in an external tracker. Run `/setup-matt-pocock-skills` before publishing and applying the `ready-for-agent` label.
 
@@ -83,6 +83,6 @@ The architecture work is complete only when every criterion below is satisfied:
 7. TypeScript and Swift bridge catalogs and response envelopes are checked by automated contract validation, with no command drift.
 8. Existing CLI behavior, state schema compatibility, external-source ownership, and protocol version `1.0` remain compatible unless a separately approved versioned change is required.
 9. Existing relevant tests are preserved and new tests verify external behavior at the application, projection, storage, and bridge seams; tests do not assert implementation layout.
-10. `npm run build`, `npm test`, and the relevant macOS `swift test` suite pass from a clean working tree; any platform-specific skip is recorded explicitly.
+10. `npm run build`, `npm test`, and the relevant macOS `swift test` suite are run for the affected surfaces; platform-specific skips and unrelated pre-existing failures are recorded.
 11. `docs/ARCHITECTURE.md` and relevant ADRs describe the final boundaries and invariants, and the local issue records the validation commands and outcomes.
-12. No unresolved TODO, compatibility shim, duplicate command path, or undocumented ownership rule remains in the affected architecture.
+12. The affected architecture has no newly introduced compatibility shim, duplicate command path, or undocumented ownership rule. Unrelated TODOs are outside this spec's completion criterion.

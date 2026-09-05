@@ -173,5 +173,5 @@ scripts/release/publish-github-release.sh --skip-build
 
 ## 备注
 
-- `docs/` 目录当前被 `.gitignore` 忽略，这份文件默认不会进入 Git 提交。
+- `docs/` 是受 Git 跟踪的项目文档目录；文档改动应和对应代码或流程改动一起提交。
 - 本仓库内部改动默认直接演进，不为内部调用保留兼容层。
