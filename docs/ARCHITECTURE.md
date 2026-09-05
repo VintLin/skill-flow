@@ -116,3 +116,9 @@ swift test
 ```
 
 专题验证矩阵见 [verification/README.md](verification/README.md)。
+
+## Current Application Seams
+
+The shared query runtime remains the composition root, while client-facing read paths should be introduced through explicit application query seams. The workflow list bridge command currently uses the `WorkflowListQuery` seam. Further command/query extraction must preserve the existing CLI surface and bridge protocol.
+
+Bridge commands also carry shared metadata describing whether an operation is a query or mutation, its timeout class, and whether cancellation is supported. This metadata is part of the TypeScript protocol contract and must remain aligned with desktop behavior.
