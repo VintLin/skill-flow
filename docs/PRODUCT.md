@@ -39,7 +39,6 @@ Skill Flow 用来把分散在不同来源的 AI agent skills 管理成可检查�
 - 不从 agent target 目录反向重建完整权威状态。
 - 不把 cache 当作不可丢失数据。
 - 不为仓库内部调用保留兼容层；内部结构可以随版本直接演进。
-- 不在没有明确规格时扩展到非 skill 插件资产。相关缺口见 [Issue 8](issues/ISSUE_8_plugin_assets_and_target_routing.md)。
 
 ## 发布面
 
