@@ -113,6 +113,14 @@ final class DetailDocumentStore {
                 try Task.checkCancellation()
                 let raw = try readRawDocument(fileReader: fileReader, descriptor: descriptor)
                 try Task.checkCancellation()
+                if Self.isYAMLDocumentPath(descriptor.path) {
+                    return LoadedDocument(
+                        id: descriptor.id,
+                        metadata: [],
+                        content: Self.yamlFencedContent(raw),
+                        renderCacheKey: descriptor.renderCacheKey
+                    )
+                }
                 let parsed = DetailDocumentParser.parse(raw)
                 try Task.checkCancellation()
                 return LoadedDocument(
@@ -129,6 +137,17 @@ final class DetailDocumentStore {
             group.cancelAll()
             return loaded
         }
+    }
+
+    nonisolated private static func isYAMLDocumentPath(_ path: String) -> Bool {
+        let lowercased = path.lowercased()
+        return lowercased.hasSuffix(".yaml") || lowercased.hasSuffix(".yml")
+    }
+
+    nonisolated private static func yamlFencedContent(_ raw: String) -> String {
+        let fence = raw.contains("```") ? "````" : "```"
+        let body = raw.trimmingCharacters(in: .newlines)
+        return "\(fence)yaml\n\(body)\n\(fence)"
     }
 
     nonisolated private static func readRawDocument(

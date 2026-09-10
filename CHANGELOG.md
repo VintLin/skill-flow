@@ -4,6 +4,10 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Showed Agent-Specific Skill Files (`agents/*.yaml` / `*.yml`, such as Codex's `agents/openai.yaml`) as read-only document tabs in the macOS Skill detail view, ordered after `references/` tabs and rendered as syntax-highlighted YAML code blocks.
+
 ## v1.6.7 - 2026-09-01
 
 ### Changed

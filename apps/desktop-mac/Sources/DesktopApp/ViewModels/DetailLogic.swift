@@ -340,7 +340,7 @@ final class DetailLogic {
             return nil
         }
 
-        if !placeholder.content.isEmpty || !placeholder.isMarkdown {
+        if !placeholder.content.isEmpty || !placeholder.isLazyLoadableDocument {
             return placeholder
         }
 
@@ -798,7 +798,7 @@ final class DetailLogic {
         return trimmed
     }
 
-    nonisolated private static func documentPlaceholderTabs(
+    nonisolated static func documentPlaceholderTabs(
         for skillFilePath: String,
         groupPath: String?,
         gitHubRepoContext: GitHubRepoContext?
@@ -820,6 +820,30 @@ final class DetailLogic {
                     placeholderDocumentTab(
                         id: fullPath,
                         title: "references/\(entry)",
+                        path: fullPath
+                    )
+                )
+            }
+        }
+
+        let agentsPath = (folderPath as NSString).appendingPathComponent("agents")
+        if let entries = try? FileManager.default.contentsOfDirectory(atPath: agentsPath) {
+            for entry in entries.sorted() {
+                let lowercased = entry.lowercased()
+                guard lowercased.hasSuffix(".yaml") || lowercased.hasSuffix(".yml") else {
+                    continue
+                }
+                let fullPath = (agentsPath as NSString).appendingPathComponent(entry)
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory),
+                      !isDirectory.boolValue
+                else {
+                    continue
+                }
+                tabs.append(
+                    placeholderDocumentTab(
+                        id: fullPath,
+                        title: "agents/\(entry)",
                         path: fullPath
                     )
                 )

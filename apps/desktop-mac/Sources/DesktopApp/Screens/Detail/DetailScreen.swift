@@ -1044,7 +1044,7 @@ struct DetailScreen: View {
 
     @ViewBuilder
     private func detailDocumentContent(document: DetailViewModel.DocumentTab) -> some View {
-        if document.path.lowercased().hasSuffix(".md") {
+        if document.isMarkdown || document.isYAML {
             MarkdownDocumentView(model: .init(document: document), theme: theme)
                 .equatable()
                 .frame(maxWidth: .infinity, alignment: .leading)
