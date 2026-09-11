@@ -4,9 +4,16 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.8 - 2026-09-12
+
 ### Added
 
-- Showed Agent-Specific Skill Files (`agents/*.yaml` / `*.yml`, such as Codex's `agents/openai.yaml`) as read-only document tabs in the macOS Skill detail view, ordered after `references/` tabs and rendered as syntax-highlighted YAML code blocks.
+- Added read-only `agents/*.yaml` / `*.yml` document tabs and file-tree entries in the macOS Skill detail view.
+- Added supported `references/*.md` entries to the Skill file tree, with direct selection of every supported document.
+
+### Fixed
+
+- Rendered YAML files as syntax-highlighted code blocks without parsing metadata, including safe handling of embedded Markdown fences.
 
 ## v1.6.7 - 2026-09-01
 
