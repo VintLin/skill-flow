@@ -1130,7 +1130,8 @@ final class DetailLogic {
     ) -> Bool {
         if let currentSkillRootPath {
             let relativePath = relativePath(from: currentSkillRootPath, to: path)
-            return relativePath?.lowercased() == "agents"
+            let directoryName = relativePath?.lowercased()
+            return directoryName == "agents" || directoryName == "references"
         }
         return containsSkillRootDescendant(path, skillRootPaths: skillRootPaths)
     }
@@ -1157,14 +1158,19 @@ final class DetailLogic {
         }
 
         let parentURL = URL(fileURLWithPath: parentPath)
-        let isAgentsDirectory = parentURL.lastPathComponent.lowercased() == "agents"
+        let parentDirectoryName = parentURL.lastPathComponent.lowercased()
+        let isSupportedDocumentDirectory = parentDirectoryName == "agents"
+            || parentDirectoryName == "references"
         let isInsideSkillRoot = skillRootPaths.contains { skillRootPath in
             let rootURL = URL(fileURLWithPath: skillRootPath).standardizedFileURL
             return parentURL.standardizedFileURL.path.hasPrefix(rootURL.path + "/")
         }
-        if isAgentsDirectory && isInsideSkillRoot {
+        if isInsideSkillRoot && isSupportedDocumentDirectory {
             let lowercasedTitle = item.title.lowercased()
-            return lowercasedTitle.hasSuffix(".yaml") || lowercasedTitle.hasSuffix(".yml")
+            if parentDirectoryName == "agents" {
+                return lowercasedTitle.hasSuffix(".yaml") || lowercasedTitle.hasSuffix(".yml")
+            }
+            return lowercasedTitle.hasSuffix(".md")
         }
 
         return false
