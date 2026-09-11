@@ -1106,9 +1106,27 @@ final class DetailLogic {
             children = []
         }
 
-        let isSkillDocument = !isDirectory
-            && url.lastPathComponent.caseInsensitiveCompare("SKILL.md") == .orderedSame
-            && skillReferencesByPath[(url.deletingLastPathComponent().path)] != nil
+        let skillDocumentReference = isDirectory
+            ? nil
+            : skillReferencesByPath.values.first { reference in
+                guard let relativePath = relativePath(from: reference.folderPath, to: standardizedPath) else {
+                    return false
+                }
+                let components = relativePath.split(separator: "/").map(String.init)
+                if components == ["SKILL.md"] {
+                    return true
+                }
+                guard components.count == 2 else {
+                    return false
+                }
+                let directoryName = components[0].lowercased()
+                let fileName = components[1].lowercased()
+                if directoryName == "agents" {
+                    return fileName.hasSuffix(".yaml") || fileName.hasSuffix(".yml")
+                }
+                return directoryName == "references" && fileName.hasSuffix(".md")
+            }
+        let isSkillDocument = skillDocumentReference != nil
 
         return FileTreeItem(
             id: standardizedPath,
@@ -1117,8 +1135,7 @@ final class DetailLogic {
             isDirectory: isDirectory,
             isSkillRoot: skillReference != nil,
             isSkillDocument: isSkillDocument,
-            skillId: skillReference?.skillId
-                ?? (isSkillDocument ? skillReferencesByPath[url.deletingLastPathComponent().path]?.skillId : nil),
+            skillId: skillReference?.skillId ?? skillDocumentReference?.skillId,
             children: children
         )
     }

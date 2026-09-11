@@ -1212,6 +1212,10 @@ struct DetailScreen: View {
            (item.isSkillRoot || item.isSkillDocument) {
             expandTreePath(groupId: groupId, itemId: item.id, detail: detail)
             scheduleSkillSelection(groupId: groupId, skill: skill)
+            if item.isSkillDocument,
+               let document = skill.documents.first(where: { $0.path == item.path }) {
+                scheduleSkillDocumentSelection(skillId: skill.id, documentId: document.id)
+            }
             return
         }
 

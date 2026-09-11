@@ -123,8 +123,14 @@ final class AgentSkillFileTabTests: XCTestCase {
         let skillRoot = try XCTUnwrap(tree.first?.children.first?.children.first)
 
         XCTAssertEqual(skillRoot.children.map(\.title), ["agents", "references", "SKILL.md"])
-        XCTAssertEqual(skillRoot.children.first(where: { $0.title == "agents" })?.children.map(\.title), ["openai.yaml"])
-        XCTAssertEqual(skillRoot.children.first(where: { $0.title == "references" })?.children.map(\.title), ["guide.md"])
+        let agentsFile = try XCTUnwrap(skillRoot.children.first(where: { $0.title == "agents" })?.children.first)
+        let referencesFile = try XCTUnwrap(skillRoot.children.first(where: { $0.title == "references" })?.children.first)
+        XCTAssertEqual(agentsFile.title, "openai.yaml")
+        XCTAssertTrue(agentsFile.isSkillDocument)
+        XCTAssertEqual(agentsFile.skillId, "demo")
+        XCTAssertEqual(referencesFile.title, "guide.md")
+        XCTAssertTrue(referencesFile.isSkillDocument)
+        XCTAssertEqual(referencesFile.skillId, "demo")
         XCTAssertEqual(skillPath, skillRoot.children.first(where: { $0.title == "SKILL.md" })?.path)
     }
 
