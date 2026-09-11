@@ -170,4 +170,13 @@ extension DocumentTab {
     var isMarkdown: Bool {
         path.lowercased().hasSuffix(".md")
     }
+
+    var isYAML: Bool {
+        let lowercased = path.lowercased()
+        return lowercased.hasSuffix(".yaml") || lowercased.hasSuffix(".yml")
+    }
+
+    var isLazyLoadableDocument: Bool {
+        isMarkdown || isYAML
+    }
 }

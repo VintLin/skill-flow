@@ -340,7 +340,7 @@ final class DetailLogic {
             return nil
         }
 
-        if !placeholder.content.isEmpty || !placeholder.isMarkdown {
+        if !placeholder.content.isEmpty || !placeholder.isLazyLoadableDocument {
             return placeholder
         }
 
@@ -798,7 +798,7 @@ final class DetailLogic {
         return trimmed
     }
 
-    nonisolated private static func documentPlaceholderTabs(
+    nonisolated static func documentPlaceholderTabs(
         for skillFilePath: String,
         groupPath: String?,
         gitHubRepoContext: GitHubRepoContext?
@@ -820,6 +820,30 @@ final class DetailLogic {
                     placeholderDocumentTab(
                         id: fullPath,
                         title: "references/\(entry)",
+                        path: fullPath
+                    )
+                )
+            }
+        }
+
+        let agentsPath = (folderPath as NSString).appendingPathComponent("agents")
+        if let entries = try? FileManager.default.contentsOfDirectory(atPath: agentsPath) {
+            for entry in entries.sorted() {
+                let lowercased = entry.lowercased()
+                guard lowercased.hasSuffix(".yaml") || lowercased.hasSuffix(".yml") else {
+                    continue
+                }
+                let fullPath = (agentsPath as NSString).appendingPathComponent(entry)
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory),
+                      !isDirectory.boolValue
+                else {
+                    continue
+                }
+                tabs.append(
+                    placeholderDocumentTab(
+                        id: fullPath,
+                        title: "agents/\(entry)",
                         path: fullPath
                     )
                 )
@@ -957,7 +981,7 @@ final class DetailLogic {
         return components.joined(separator: "/")
     }
 
-    nonisolated private static func buildFileTreeItems(groupPath: String?, skills: [DetailSkill]) -> [FileTreeItem] {
+    nonisolated static func buildFileTreeItems(groupPath: String?, skills: [DetailSkill]) -> [FileTreeItem] {
         let rootName = groupPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty } ?? "."
         let skillReferences = fileTreeSkillReferences(skills: skills, groupPath: groupPath)
 
@@ -1082,9 +1106,27 @@ final class DetailLogic {
             children = []
         }
 
-        let isSkillDocument = !isDirectory
-            && url.lastPathComponent.caseInsensitiveCompare("SKILL.md") == .orderedSame
-            && skillReferencesByPath[(url.deletingLastPathComponent().path)] != nil
+        let skillDocumentReference = isDirectory
+            ? nil
+            : skillReferencesByPath.values.first { reference in
+                guard let relativePath = relativePath(from: reference.folderPath, to: standardizedPath) else {
+                    return false
+                }
+                let components = relativePath.split(separator: "/").map(String.init)
+                if components == ["SKILL.md"] {
+                    return true
+                }
+                guard components.count == 2 else {
+                    return false
+                }
+                let directoryName = components[0].lowercased()
+                let fileName = components[1].lowercased()
+                if directoryName == "agents" {
+                    return fileName.hasSuffix(".yaml") || fileName.hasSuffix(".yml")
+                }
+                return directoryName == "references" && fileName.hasSuffix(".md")
+            }
+        let isSkillDocument = skillDocumentReference != nil
 
         return FileTreeItem(
             id: standardizedPath,
@@ -1093,8 +1135,7 @@ final class DetailLogic {
             isDirectory: isDirectory,
             isSkillRoot: skillReference != nil,
             isSkillDocument: isSkillDocument,
-            skillId: skillReference?.skillId
-                ?? (isSkillDocument ? skillReferencesByPath[url.deletingLastPathComponent().path]?.skillId : nil),
+            skillId: skillReference?.skillId ?? skillDocumentReference?.skillId,
             children: children
         )
     }
@@ -1104,8 +1145,10 @@ final class DetailLogic {
         currentSkillRootPath: String?,
         skillRootPaths: Set<String>
     ) -> Bool {
-        guard currentSkillRootPath == nil else {
-            return false
+        if let currentSkillRootPath {
+            let relativePath = relativePath(from: currentSkillRootPath, to: path)
+            let directoryName = relativePath?.lowercased()
+            return directoryName == "agents" || directoryName == "references"
         }
         return containsSkillRootDescendant(path, skillRootPaths: skillRootPaths)
     }
@@ -1120,6 +1163,10 @@ final class DetailLogic {
         let isRootLevel = rootPath == parentPath
 
         if item.isDirectory {
+            if currentSkillReference != nil {
+                let directoryName = item.title.lowercased()
+                return directoryName == "agents" || directoryName == "references"
+            }
             return containsSkillRootDescendant(item.path, skillRootPaths: skillRootPaths)
         }
 
@@ -1129,6 +1176,22 @@ final class DetailLogic {
 
         if currentSkillReference != nil {
             return true
+        }
+
+        let parentURL = URL(fileURLWithPath: parentPath)
+        let parentDirectoryName = parentURL.lastPathComponent.lowercased()
+        let isSupportedDocumentDirectory = parentDirectoryName == "agents"
+            || parentDirectoryName == "references"
+        let isInsideSkillRoot = skillRootPaths.contains { skillRootPath in
+            let rootURL = URL(fileURLWithPath: skillRootPath).standardizedFileURL
+            return parentURL.standardizedFileURL.path.hasPrefix(rootURL.path + "/")
+        }
+        if isInsideSkillRoot && isSupportedDocumentDirectory {
+            let lowercasedTitle = item.title.lowercased()
+            if parentDirectoryName == "agents" {
+                return lowercasedTitle.hasSuffix(".yaml") || lowercasedTitle.hasSuffix(".yml")
+            }
+            return lowercasedTitle.hasSuffix(".md")
         }
 
         return false
