@@ -100,6 +100,34 @@ final class AgentSkillFileTabTests: XCTestCase {
         XCTAssertTrue(document.content.hasSuffix("\n`````"))
     }
 
+    func testFileTreeIncludesSupportedSkillDocuments() throws {
+        let skillDirectory = try makeSkillDirectory(
+            files: [
+                "skills/demo/SKILL.md": "# Demo",
+                "skills/demo/references/guide.md": "# Guide",
+                "skills/demo/references/notes.txt": "ignored",
+                "skills/demo/agents/openai.yaml": "policy: {}",
+                "skills/demo/agents/notes.md": "ignored",
+                "skills/demo/scripts/run.sh": "ignored",
+            ]
+        )
+        let skillPath = skillDirectory.appendingPathComponent("skills/demo/SKILL.md").path
+        let skill = DetailSkill(
+            id: "demo", title: "demo", summary: "", version: nil, author: "", originLabel: "",
+            starCount: nil, folderPath: skillDirectory.appendingPathComponent("skills/demo").path,
+            relativeFolderPath: "skills/demo", documents: [], detailLines: [], documentContent: "",
+            isEnabled: true, warningCount: 0
+        )
+
+        let tree = DetailLogic.buildFileTreeItems(groupPath: skillDirectory.path, skills: [skill])
+        let skillRoot = try XCTUnwrap(tree.first?.children.first?.children.first)
+
+        XCTAssertEqual(skillRoot.children.map(\.title), ["agents", "references", "SKILL.md"])
+        XCTAssertEqual(skillRoot.children.first(where: { $0.title == "agents" })?.children.map(\.title), ["openai.yaml"])
+        XCTAssertEqual(skillRoot.children.first(where: { $0.title == "references" })?.children.map(\.title), ["guide.md"])
+        XCTAssertEqual(skillPath, skillRoot.children.first(where: { $0.title == "SKILL.md" })?.path)
+    }
+
     private func makeSkillDirectory(files: [String: String]) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("agent-skill-file-tab-tests-\(UUID().uuidString)", isDirectory: true)

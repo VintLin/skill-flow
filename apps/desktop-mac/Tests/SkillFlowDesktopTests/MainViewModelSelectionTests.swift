@@ -2238,13 +2238,15 @@ final class MainViewModelSelectionTests: XCTestCase {
         try fixture.reset(state: .baseline)
         try fixture.writeSkillSidecarDocument(sourceId: "alpha", leafId: "alpha-a", name: "README.md", content: "# Local Skill Readme")
         try fixture.writeReferenceDocument(sourceId: "alpha", leafId: "alpha-a", name: "deep.md", content: "# Hidden nested")
+        try fixture.writeAgentDocument(sourceId: "alpha", leafId: "alpha-a", name: "openai.yaml", content: "policy: {}")
 
         let model = try await fixture.makeModel()
         let detail = model.detailSnapshot(for: "alpha")
 
         let alphaSkillRoot = detail?.fileTree.first?.children.first(where: { $0.skillId == "alpha-a" })
-        XCTAssertEqual(alphaSkillRoot?.children.map(\.title), ["README.md", "SKILL.md"])
-        XCTAssertFalse(alphaSkillRoot?.children.contains(where: { $0.title == "references" }) == true)
+        XCTAssertEqual(alphaSkillRoot?.children.map(\.title), ["agents", "references", "README.md", "SKILL.md"])
+        XCTAssertEqual(alphaSkillRoot?.children.first(where: { $0.title == "agents" })?.children.map(\.title), ["openai.yaml"])
+        XCTAssertEqual(alphaSkillRoot?.children.first(where: { $0.title == "references" })?.children.map(\.title), ["deep.md"])
     }
 
     func testDetailSnapshotBuildsLocalContentBeforeInspectPayloadArrives() async throws {
@@ -3099,6 +3101,20 @@ private struct TestFixture {
         try FileManager.default.createDirectory(at: referencesURL, withIntermediateDirectories: true)
         try content.write(
             to: referencesURL.appendingPathComponent(name),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    func writeAgentDocument(sourceId: String, leafId: String, name: String, content: String) throws {
+        let agentsURL = rootURL
+            .appendingPathComponent("docs", isDirectory: true)
+            .appendingPathComponent(sourceId, isDirectory: true)
+            .appendingPathComponent(leafId, isDirectory: true)
+            .appendingPathComponent("agents", isDirectory: true)
+        try FileManager.default.createDirectory(at: agentsURL, withIntermediateDirectories: true)
+        try content.write(
+            to: agentsURL.appendingPathComponent(name),
             atomically: true,
             encoding: .utf8
         )

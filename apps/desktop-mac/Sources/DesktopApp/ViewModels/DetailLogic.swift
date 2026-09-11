@@ -981,7 +981,7 @@ final class DetailLogic {
         return components.joined(separator: "/")
     }
 
-    nonisolated private static func buildFileTreeItems(groupPath: String?, skills: [DetailSkill]) -> [FileTreeItem] {
+    nonisolated static func buildFileTreeItems(groupPath: String?, skills: [DetailSkill]) -> [FileTreeItem] {
         let rootName = groupPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty } ?? "."
         let skillReferences = fileTreeSkillReferences(skills: skills, groupPath: groupPath)
 
@@ -1146,6 +1146,10 @@ final class DetailLogic {
         let isRootLevel = rootPath == parentPath
 
         if item.isDirectory {
+            if currentSkillReference != nil {
+                let directoryName = item.title.lowercased()
+                return directoryName == "agents" || directoryName == "references"
+            }
             return containsSkillRootDescendant(item.path, skillRootPaths: skillRootPaths)
         }
 
