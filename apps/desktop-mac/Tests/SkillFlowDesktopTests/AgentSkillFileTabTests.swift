@@ -58,8 +58,6 @@ final class AgentSkillFileTabTests: XCTestCase {
                 """,
             ]
         )
-        let yamlPath = skillDirectory.appendingPathComponent("agents/openai.yaml").path
-
         let tabs = DetailLogic.documentPlaceholderTabs(
             for: skillDirectory.appendingPathComponent("SKILL.md").path,
             groupPath: nil,
