@@ -137,4 +137,14 @@ final class DetailLogicInputTests: XCTestCase {
             )
         )
     }
+
+    func testFileTreeTraversalIncludesAgentsDirectoryBelowSkillRoot() {
+        XCTAssertTrue(
+            DetailLogic.shouldTraverseFileTreeDirectory(
+                at: "/tmp/repo/skills/writer/agents",
+                currentSkillRootPath: "/tmp/repo/skills/writer",
+                skillRootPaths: ["/tmp/repo/skills/writer"]
+            )
+        )
+    }
 }

@@ -1128,8 +1128,9 @@ final class DetailLogic {
         currentSkillRootPath: String?,
         skillRootPaths: Set<String>
     ) -> Bool {
-        guard currentSkillRootPath == nil else {
-            return false
+        if let currentSkillRootPath {
+            let relativePath = relativePath(from: currentSkillRootPath, to: path)
+            return relativePath?.lowercased() == "agents"
         }
         return containsSkillRootDescendant(path, skillRootPaths: skillRootPaths)
     }
@@ -1153,6 +1154,17 @@ final class DetailLogic {
 
         if currentSkillReference != nil {
             return true
+        }
+
+        let parentURL = URL(fileURLWithPath: parentPath)
+        let isAgentsDirectory = parentURL.lastPathComponent.lowercased() == "agents"
+        let isInsideSkillRoot = skillRootPaths.contains { skillRootPath in
+            let rootURL = URL(fileURLWithPath: skillRootPath).standardizedFileURL
+            return parentURL.standardizedFileURL.path.hasPrefix(rootURL.path + "/")
+        }
+        if isAgentsDirectory && isInsideSkillRoot {
+            let lowercasedTitle = item.title.lowercased()
+            return lowercasedTitle.hasSuffix(".yaml") || lowercasedTitle.hasSuffix(".yml")
         }
 
         return false
