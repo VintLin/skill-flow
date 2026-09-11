@@ -85,6 +85,23 @@ final class AgentSkillFileTabTests: XCTestCase {
         )
     }
 
+    func testDocumentStoreUsesFenceLongerThanEmbeddedBackticks() async throws {
+        let store = DetailDocumentStore(fileReader: { _ in "snippet: ````\n" })
+        let descriptor = DocumentDescriptor(
+            id: "agents/test.yaml",
+            title: "agents/test.yaml",
+            path: "agents/test.yaml",
+            metadata: [],
+            renderCacheKey: "agents/test.yaml",
+            externalURL: nil
+        )
+
+        let document = try await store.document(for: descriptor)
+
+        XCTAssertTrue(document.content.hasPrefix("`````yaml\n"))
+        XCTAssertTrue(document.content.hasSuffix("\n`````"))
+    }
+
     private func makeSkillDirectory(files: [String: String]) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("agent-skill-file-tab-tests-\(UUID().uuidString)", isDirectory: true)

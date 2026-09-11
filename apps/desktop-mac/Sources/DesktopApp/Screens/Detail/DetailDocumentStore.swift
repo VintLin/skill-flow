@@ -145,7 +145,17 @@ final class DetailDocumentStore {
     }
 
     nonisolated private static func yamlFencedContent(_ raw: String) -> String {
-        let fence = raw.contains("```") ? "````" : "```"
+        var longestBacktickRun = 0
+        var currentBacktickRun = 0
+        for character in raw {
+            if character == "`" {
+                currentBacktickRun += 1
+                longestBacktickRun = max(longestBacktickRun, currentBacktickRun)
+            } else {
+                currentBacktickRun = 0
+            }
+        }
+        let fence = String(repeating: "`", count: max(3, longestBacktickRun + 1))
         let body = raw.trimmingCharacters(in: .newlines)
         return "\(fence)yaml\n\(body)\n\(fence)"
     }
