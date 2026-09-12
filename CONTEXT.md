@@ -96,6 +96,10 @@ _Avoid_: skill metadata tag, import recommendation tag
 A configuration file inside a Skill directory that sits outside the Agent Skills open-standard structure (`SKILL.md`, `scripts/`, `references/`, `assets/`) and is addressed to one specific Agent client—today `agents/*.yaml` such as Codex's `agents/openai.yaml`. In Agent Plugins 1.0 language this is client-specific content, not part of the portable core. Skill Flow shows these files verbatim as document tabs in the desktop detail view (after `references/` tabs), without parsing, validating, or writing back; deployment already carries them along with the whole skill directory. Plugin-packaging files (`plugin.json`, `mcp.json`) are a different layer and out of this concept's scope.
 _Avoid_: companion file (vague), skill frontmatter field (these live outside SKILL.md), plugin manifest (packaging layer, not skill content)
 
+**Detail Content Catalog**:
+The user-visible inventory of a Skill group’s root documents, Skill content files, file tree, ordering, and available remote document links. It can represent either a prepared local directory or a synthetic fallback when the directory is not available; document reading, parsing, and caching remain separate concerns.
+_Avoid_: detail payload, document store, file list
+
 ### Import workflow
 
 **Import Discovery**:
