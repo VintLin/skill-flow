@@ -196,7 +196,7 @@ struct DetailContentCatalog: Sendable {
             id: skill.id,
             title: title,
             folderPath: folderPath,
-            relativeFolderPath: projectedRelativeFolderPath(
+            relativeFolderPath: Self.projectedRelativeFolderPath(
                 relativeFolderPath,
                 projectedName: skill.projectedName,
                 fallbackName: skill.linkName
@@ -635,7 +635,7 @@ struct DetailContentCatalog: Sendable {
         return relativeComponents.isEmpty ? "." : relativeComponents.joined(separator: "/")
     }
 
-    private func projectedRelativeFolderPath(
+    static func projectedRelativeFolderPath(
         _ relativeFolderPath: String?,
         projectedName: String?,
         fallbackName: String
