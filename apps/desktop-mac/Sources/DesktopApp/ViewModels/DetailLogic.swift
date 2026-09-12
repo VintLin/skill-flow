@@ -475,37 +475,37 @@ final class DetailLogic {
     }
 
     nonisolated private static func prepareDetailContent(input: PreparedDetailWarmupInput) -> PreparedDetailContent {
+        let catalogContext = DetailContentCatalog.Context(
+            sourceId: input.summary.sourceId,
+            groupPath: input.groupPath,
+            fileTreeTitle: localizedWarmup("detail.document.file_tree"),
+            skills: input.leaves.map { leaf in
+                .init(
+                    id: leaf.id,
+                    linkName: leaf.linkName,
+                    name: leaf.name,
+                    title: leaf.title,
+                    description: leaf.description,
+                    skillFilePath: leaf.skillFilePath,
+                    absolutePath: leaf.absolutePath,
+                    relativePath: leaf.relativePath,
+                    projectedName: input.projectedNamesByLeafId[leaf.id]
+                )
+            },
+            gitHubRepo: input.gitHubRepoContext.map {
+                .init(owner: $0.owner, repo: $0.repo, revision: $0.revision)
+            }
+        )
+        let catalogSnapshot = DetailContentCatalog().snapshot(for: catalogContext)
         var skillsByLeafId: [String: PreparedDetailSkillContent] = [:]
         var lightweightSkills: [DetailSkill] = []
 
         for leaf in input.leaves {
-            let folderPath = leaf.absolutePath
-                ?? leaf.skillFilePath.flatMap { ($0 as NSString).deletingLastPathComponent.nonEmpty }
-            let documents = leaf.skillFilePath.map { path in
-                documentPlaceholderTabs(
-                    for: path,
-                    groupPath: input.groupPath,
-                    gitHubRepoContext: input.gitHubRepoContext
-                )
-            } ?? [
-                DocumentTab(
-                    id: "inline-skill-md:\(leaf.id)",
-                    title: "SKILL.md",
-                    path: "SKILL.md",
-                    metadata: [],
-                    content: leaf.description,
-                    renderCacheKey: "inline-skill-md:\(leaf.id):\(leaf.description.hashValue)",
-                    externalURL: nil
-                )
-            ]
-            let projectedName = input.projectedNamesByLeafId[leaf.id]
-            let title = folderPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty }
-                ?? leaf.title
-                ?? leaf.name.nonEmpty
-                ?? leaf.linkName
-            let relativeFolderPath = input.groupPath.flatMap { basePath in
-                folderPath.flatMap { relativePath(from: basePath, to: $0) }
-            } ?? leaf.relativePath
+            guard let catalogSkill = catalogSnapshot.skillsByLeafId[leaf.id] else { continue }
+            let folderPath = catalogSkill.folderPath
+            let documents = catalogSkill.documents
+            let title = catalogSkill.title
+            let relativeFolderPath = catalogSkill.relativeFolderPath
             let documentContent = leaf.skillFilePath.flatMap(loadDetailDocumentBody) ?? leaf.description
 
             skillsByLeafId[leaf.id] = PreparedDetailSkillContent(
@@ -532,7 +532,7 @@ final class DetailLogic {
                     folderPath: folderPath,
                     relativeFolderPath: projectedRelativeFolderPath(
                         relativeFolderPath,
-                        projectedName: projectedName,
+                        projectedName: input.projectedNamesByLeafId[leaf.id],
                         fallbackName: leaf.linkName
                     ),
                     documents: documents,
@@ -544,11 +544,8 @@ final class DetailLogic {
             )
         }
 
-        let fileTree = buildFileTreeItems(groupPath: input.groupPath, skills: lightweightSkills)
-        let groupDocuments = groupDocumentDescriptors(
-            groupPath: input.groupPath,
-            gitHubRepoContext: input.gitHubRepoContext
-        )
+        let fileTree = catalogSnapshot.fileTree
+        let groupDocuments = catalogSnapshot.groupDocuments
 
         return PreparedDetailContent(
             groupPath: input.groupPath,
