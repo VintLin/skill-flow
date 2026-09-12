@@ -16,7 +16,7 @@ final class AgentSkillFileTabTests: XCTestCase {
             ]
         )
 
-        let tabs = DetailLogic.documentPlaceholderTabs(
+        let tabs = catalogTabs(
             for: skillDirectory.appendingPathComponent("SKILL.md").path,
             groupPath: nil,
             gitHubRepoContext: nil
@@ -36,7 +36,7 @@ final class AgentSkillFileTabTests: XCTestCase {
             ]
         )
 
-        let tabs = DetailLogic.documentPlaceholderTabs(
+        let tabs = catalogTabs(
             for: skillDirectory.appendingPathComponent("SKILL.md").path,
             groupPath: nil,
             gitHubRepoContext: nil
@@ -58,7 +58,7 @@ final class AgentSkillFileTabTests: XCTestCase {
                 """,
             ]
         )
-        let tabs = DetailLogic.documentPlaceholderTabs(
+        let tabs = catalogTabs(
             for: skillDirectory.appendingPathComponent("SKILL.md").path,
             groupPath: nil,
             gitHubRepoContext: nil
@@ -119,7 +119,7 @@ final class AgentSkillFileTabTests: XCTestCase {
             isEnabled: true, warningCount: 0
         )
 
-        let tree = DetailLogic.buildFileTreeItems(groupPath: skillDirectory.path, skills: [skill])
+        let tree = catalogTree(groupPath: skillDirectory.path, skill: skill)
         let skillRoot = try XCTUnwrap(tree.first?.children.first?.children.first)
 
         XCTAssertEqual(skillRoot.children.map(\.title), ["agents", "references", "SKILL.md"])
@@ -148,5 +148,28 @@ final class AgentSkillFileTabTests: XCTestCase {
             try contents.write(to: url, atomically: true, encoding: .utf8)
         }
         return directory
+    }
+
+    private func catalogTabs(for skillFilePath: String, groupPath: String?, gitHubRepoContext: DetailLogic.GitHubRepoContext?) -> [DocumentTab] {
+        let skill = DetailContentCatalog.SkillContext(
+            id: "test", linkName: "test", name: "test", title: nil, description: "",
+            skillFilePath: skillFilePath, absolutePath: (skillFilePath as NSString).deletingLastPathComponent,
+            relativePath: nil, projectedName: nil
+        )
+        return DetailContentCatalog().snapshot(for: .init(
+            sourceId: "test", groupPath: groupPath, fileTreeTitle: "File Tree", skills: [skill],
+            gitHubRepo: gitHubRepoContext.map { .init(owner: $0.owner, repo: $0.repo, revision: $0.revision) }
+        )).skillsByLeafId["test"]?.documents ?? []
+    }
+
+    private func catalogTree(groupPath: String, skill: DetailSkill) -> [FileTreeItem] {
+        let contextSkill = DetailContentCatalog.SkillContext(
+            id: skill.id, linkName: skill.title, name: skill.title, title: skill.title,
+            description: skill.summary, skillFilePath: skill.folderPath.map { ($0 as NSString).appendingPathComponent("SKILL.md") },
+            absolutePath: skill.folderPath, relativePath: skill.relativeFolderPath, projectedName: nil
+        )
+        return DetailContentCatalog().snapshot(for: .init(
+            sourceId: skill.id, groupPath: groupPath, fileTreeTitle: "File Tree", skills: [contextSkill], gitHubRepo: nil
+        )).fileTree
     }
 }

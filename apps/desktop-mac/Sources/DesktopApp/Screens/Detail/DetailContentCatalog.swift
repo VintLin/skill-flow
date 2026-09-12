@@ -406,7 +406,7 @@ struct DetailContentCatalog: Sendable {
             children = entries
                 .compactMap { entry in
                     if entry.isDirectory,
-                       !shouldTraverseFileTreeDirectory(
+                       !Self.shouldTraverseFileTreeDirectory(
                            at: entry.path,
                            currentSkillRootPath: skillReference?.folderPath,
                            skillRootPaths: skillRootPaths
@@ -468,7 +468,7 @@ struct DetailContentCatalog: Sendable {
         )
     }
 
-    private func shouldTraverseFileTreeDirectory(
+    static func shouldTraverseFileTreeDirectory(
         at path: String,
         currentSkillRootPath: String?,
         skillRootPaths: Set<String>
@@ -478,7 +478,7 @@ struct DetailContentCatalog: Sendable {
             let directoryName = relativePath?.lowercased()
             return directoryName == "agents" || directoryName == "references"
         }
-        return containsSkillRootDescendant(path, skillRootPaths: skillRootPaths)
+        return Self.containsSkillRootDescendant(path, skillRootPaths: skillRootPaths)
     }
 
     private func shouldIncludeFileTreeItem(
@@ -495,7 +495,7 @@ struct DetailContentCatalog: Sendable {
                 let directoryName = item.title.lowercased()
                 return directoryName == "agents" || directoryName == "references"
             }
-            return containsSkillRootDescendant(item.path, skillRootPaths: skillRootPaths)
+            return Self.containsSkillRootDescendant(item.path, skillRootPaths: skillRootPaths)
         }
 
         if isRootLevel {
@@ -525,7 +525,7 @@ struct DetailContentCatalog: Sendable {
         return false
     }
 
-    private func containsSkillRootDescendant(
+    private static func containsSkillRootDescendant(
         _ path: String,
         skillRootPaths: Set<String>
     ) -> Bool {

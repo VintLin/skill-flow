@@ -94,7 +94,7 @@ final class DetailLogicInputTests: XCTestCase {
 
     func testRelativePathAcceptsAChildPath() {
         XCTAssertEqual(
-            DetailLogic.relativePath(
+            DetailContentCatalog.relativePath(
                 from: "/tmp/repo",
                 to: "/tmp/repo/skills/writer/SKILL.md"
             ),
@@ -104,7 +104,7 @@ final class DetailLogicInputTests: XCTestCase {
 
     func testRelativePathRejectsASiblingWithTheSamePrefix() {
         XCTAssertNil(
-            DetailLogic.relativePath(
+            DetailContentCatalog.relativePath(
                 from: "/tmp/repo",
                 to: "/tmp/repo-copy/skills/writer/SKILL.md"
             )
@@ -113,14 +113,14 @@ final class DetailLogicInputTests: XCTestCase {
 
     func testFileTreeTraversalSkipsDirectoriesWithoutSkillDescendants() {
         XCTAssertFalse(
-            DetailLogic.shouldTraverseFileTreeDirectory(
+            DetailContentCatalog.shouldTraverseFileTreeDirectory(
                 at: "/tmp/repo/node_modules",
                 currentSkillRootPath: nil,
                 skillRootPaths: ["/tmp/repo/skills/writer"]
             )
         )
         XCTAssertTrue(
-            DetailLogic.shouldTraverseFileTreeDirectory(
+            DetailContentCatalog.shouldTraverseFileTreeDirectory(
                 at: "/tmp/repo/skills",
                 currentSkillRootPath: nil,
                 skillRootPaths: ["/tmp/repo/skills/writer"]
@@ -130,7 +130,7 @@ final class DetailLogicInputTests: XCTestCase {
 
     func testFileTreeTraversalSkipsUnsupportedDirectoriesBelowSkillRoot() {
         XCTAssertFalse(
-            DetailLogic.shouldTraverseFileTreeDirectory(
+            DetailContentCatalog.shouldTraverseFileTreeDirectory(
                 at: "/tmp/repo/skills/writer/docs",
                 currentSkillRootPath: "/tmp/repo/skills/writer",
                 skillRootPaths: ["/tmp/repo/skills/writer"]
@@ -140,7 +140,7 @@ final class DetailLogicInputTests: XCTestCase {
 
     func testFileTreeTraversalIncludesAgentsDirectoryBelowSkillRoot() {
         XCTAssertTrue(
-            DetailLogic.shouldTraverseFileTreeDirectory(
+            DetailContentCatalog.shouldTraverseFileTreeDirectory(
                 at: "/tmp/repo/skills/writer/agents",
                 currentSkillRootPath: "/tmp/repo/skills/writer",
                 skillRootPaths: ["/tmp/repo/skills/writer"]
@@ -150,7 +150,7 @@ final class DetailLogicInputTests: XCTestCase {
 
     func testFileTreeTraversalIncludesReferencesDirectoryBelowSkillRoot() {
         XCTAssertTrue(
-            DetailLogic.shouldTraverseFileTreeDirectory(
+            DetailContentCatalog.shouldTraverseFileTreeDirectory(
                 at: "/tmp/repo/skills/writer/references",
                 currentSkillRootPath: "/tmp/repo/skills/writer",
                 skillRootPaths: ["/tmp/repo/skills/writer"]

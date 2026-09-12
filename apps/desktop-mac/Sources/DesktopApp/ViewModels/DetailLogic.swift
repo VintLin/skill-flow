@@ -795,7 +795,7 @@ final class DetailLogic {
         return trimmed
     }
 
-    nonisolated static func documentPlaceholderTabs(
+    nonisolated private static func documentPlaceholderTabs(
         for skillFilePath: String,
         groupPath: String?,
         gitHubRepoContext: GitHubRepoContext?
@@ -949,7 +949,7 @@ final class DetailLogic {
         return 3
     }
 
-    nonisolated static func relativePath(from basePath: String, to targetPath: String) -> String? {
+    nonisolated private static func relativePath(from basePath: String, to targetPath: String) -> String? {
         let baseComponents = URL(fileURLWithPath: basePath).standardizedFileURL.pathComponents
         let targetComponents = URL(fileURLWithPath: targetPath).standardizedFileURL.pathComponents
         guard targetComponents.starts(with: baseComponents) else {
@@ -978,7 +978,7 @@ final class DetailLogic {
         return components.joined(separator: "/")
     }
 
-    nonisolated static func buildFileTreeItems(groupPath: String?, skills: [DetailSkill]) -> [FileTreeItem] {
+    nonisolated private static func buildFileTreeItems(groupPath: String?, skills: [DetailSkill]) -> [FileTreeItem] {
         let rootName = groupPath.flatMap { URL(fileURLWithPath: $0).lastPathComponent.nonEmpty } ?? "."
         let skillReferences = fileTreeSkillReferences(skills: skills, groupPath: groupPath)
 
@@ -1137,7 +1137,7 @@ final class DetailLogic {
         )
     }
 
-    nonisolated static func shouldTraverseFileTreeDirectory(
+    nonisolated private static func shouldTraverseFileTreeDirectory(
         at path: String,
         currentSkillRootPath: String?,
         skillRootPaths: Set<String>
