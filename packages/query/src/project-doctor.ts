@@ -44,8 +44,10 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
     issues,
     incomplete(affectedPath, error, context = {}) {
       complete = false;
+      const message = `Unable to inspect ${affectedPath}: ${String(error)}`;
+      if (issues.some((issue) => issue.code === "PROJECT_CHECK_INCOMPLETE" && issue.path === affectedPath && issue.message === message)) return;
       issues.push({ sourceId: "project", ...context, path: affectedPath, severity: "warning",
-        code: "PROJECT_CHECK_INCOMPLETE", message: `Unable to inspect ${affectedPath}: ${String(error)}` });
+        code: "PROJECT_CHECK_INCOMPLETE", message });
     },
   };
   const finish = (baseline: "available" | "unavailable", projectId?: string): DoctorReport => ({

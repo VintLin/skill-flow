@@ -255,6 +255,23 @@ describe.sequential("read-only Project Health Check", () => {
     expect(result.data.coverage?.roots.find((entry) => entry.path === root)?.status).toBe("unreadable");
     expect(result.data.externalSkillCount).toBe(1);
   });
+  test("unreadable expected entry produces one coverage finding and no invented absence", async () => {
+    const { app, project, target } = await setup();
+    const before = await snapshotTree(sandbox.sandboxRoot);
+    const lstat = fs.lstat.bind(fs);
+    const spy = vi.spyOn(fs, "lstat").mockImplementation((async (location: unknown, ...args: unknown[]) => {
+      if (location === target) throw Object.assign(new Error("denied"), { code: "EACCES" });
+      return Reflect.apply(lstat, fs, [location, ...args]);
+    }) as typeof fs.lstat);
+    const result = await app.doctor({ projectPath: project });
+    spy.mockRestore();
+    expect(await snapshotTree(sandbox.sandboxRoot)).toEqual(before);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("failed");
+    expect(result.data.status).toBe("PARTIAL");
+    expect(result.data.issues).toEqual([expect.objectContaining({ code: "PROJECT_CHECK_INCOMPLETE", path: target })]);
+    expect(result.data.coverage?.complete).toBe(false);
+  });
   test("custom project roots are inspected without using the configured global root", async () => {
     const { app, project, store } = await setup(false);
     const state = await store.readState();
