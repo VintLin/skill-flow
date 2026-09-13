@@ -423,9 +423,12 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
-    func doctor() async throws -> BridgeResponse {
+    func doctor(projectPath: String? = nil) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
-            try await self.send(command: .doctor)
+            if let projectPath {
+                return try await self.send(command: .doctor, payload: ["projectPath": AnyCodable(projectPath)])
+            }
+            return try await self.send(command: .doctor)
         }
     }
 

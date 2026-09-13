@@ -33,6 +33,31 @@ describe.sequential("bridge command dispatcher", () => {
     });
   });
 
+  test("doctor forwards explicit paths and preserves omitted global arguments", async () => {
+    const app = new SkillFlowApp();
+    const report = { status: "PARTIAL" as const, scope: "project" as const, projectPath: "/tmp/unregistered", issues: [], externalSkillCount: 2 };
+    const doctor = vi.spyOn(app, "doctor").mockResolvedValue(ok(report));
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION, command: "doctor", payload: { projectPath: "/tmp/unregistered" },
+    });
+    expect(doctor).toHaveBeenLastCalledWith({ projectPath: "/tmp/unregistered" });
+    expect(response.data).toEqual(report);
+    await executeBridgeRequest(app, { protocolVersion: PROTOCOL_VERSION, command: "doctor" });
+    expect(doctor).toHaveBeenLastCalledWith();
+    doctor.mockRestore();
+  });
+
+  test("doctor rejects malformed project paths instead of running global maintenance", async () => {
+    const app = new SkillFlowApp();
+    const doctor = vi.spyOn(app, "doctor");
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION, command: "doctor", payload: { projectPath: 123 },
+    });
+    expect(response.ok).toBe(false);
+    expect(doctor).not.toHaveBeenCalled();
+    doctor.mockRestore();
+  });
+
   test("returns list envelope", async () => {
     const app = new SkillFlowApp();
     const response = await executeBridgeRequest(app, {

@@ -74,6 +74,7 @@ final class AppStateManager {
     var latestWarnings: [BridgeIssue] = []
     var latestWarningPresentations: [DesktopWarningPresentation] = []
     var pendingDetailRename: PendingDetailRename?
+    var doctorReport: DoctorReportRow?
     var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?
 
@@ -221,6 +222,7 @@ final class AppStateManager {
         latestWarnings = []
         latestWarningPresentations = []
         pendingDetailRename = nil
+        doctorReport = nil
         doctorIssues = []
         lastDoctorError = nil
     }

@@ -425,14 +425,23 @@ program
     printWarnings(result.warnings.map((warning) => warning.message));
   });
 
-program.command("doctor").action(async () => {
-  const result = await app.doctor();
+program.command("doctor").option("--project <path>", "Inspect a project path without modifying it").action(async (options: { project?: string }) => {
+  const result = await app.doctor(options.project === undefined ? undefined : { projectPath: options.project });
   if (!result.ok) {
     printErrors(result.errors);
     process.exitCode = 1;
     return;
   }
   console.log(result.data.status);
+  if (result.data.scope === "project") {
+    console.log(`Project: ${result.data.projectPath}`);
+    console.log(`Baseline: ${result.data.baseline ?? "unavailable"}`);
+    console.log(`Coverage: ${result.data.coverage?.complete ? "complete" : "incomplete"}`);
+    for (const root of result.data.coverage?.roots ?? []) {
+      console.log(`  ${root.status}: ${root.path} [${root.targets.join(", ")}]`);
+    }
+    console.log(`Managed Skills: ${result.data.managedSkillCount ?? 0}; External Skills: ${result.data.externalSkillCount ?? 0}`);
+  }
   if (result.data.issues.length === 0) {
     console.log("No issues detected.");
     return;

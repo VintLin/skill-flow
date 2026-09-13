@@ -161,6 +161,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         get { stateManager.pendingDetailRename }
         set { stateManager.pendingDetailRename = newValue }
     }
+    var doctorReport: DoctorReportRow? { stateManager.doctorReport }
     var doctorIssues: [DoctorIssueRow] { stateManager.doctorIssues }
     var lastDoctorError: String? { stateManager.lastDoctorError }
     var deploymentFilterTarget: String { stateManager.deploymentFilterTarget }
@@ -1095,15 +1096,27 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func runDoctor() async {
+        let scope = currentProjectScope()
+        let projectPath = currentProjectPath()
+        if case .project = scope, projectPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            stateManager.doctorReport = nil
+            stateManager.setDoctorIssues([])
+            stateManager.setLastDoctorError("Selected project path is unavailable. Select the project again to check it.")
+            stateManager.setHealthStatus(.error)
+            return
+        }
         do {
-            let (issues, warnings) = try await sourceManagement.runDoctor()
-            stateManager.setDoctorIssues(issues)
+            let (report, warnings) = try await sourceManagement.runDoctor(projectPath: projectPath)
+            stateManager.doctorReport = report
+            stateManager.setDoctorIssues(report.issues)
             stateManager.setLastDoctorError(nil)
             stateManager.setLatestWarnings(warnings)
-            stateManager.setHealthStatus(warnings.isEmpty ? .healthy : .warnings)
+            stateManager.setHealthStatus(report.status == "BLOCKED" ? .error : (report.status == "PARTIAL" || !warnings.isEmpty ? .warnings : .healthy))
         } catch {
+            stateManager.doctorReport = nil
+            stateManager.setDoctorIssues([])
             stateManager.setHealthStatus(.error)
-            stateManager.setLastDoctorError(error.localizedDescription)
+            stateManager.setLastDoctorError("\(projectPath ?? "Global"): \(error.localizedDescription)")
         }
     }
 
