@@ -112,6 +112,27 @@ export class StateStore {
     });
   }
 
+  /** Inspect existing authority without initialization, migration, or filesystem locks. */
+  async readStateReadonly(): Promise<StateStoreState | undefined> {
+    return this.withIoLock(async () => {
+      const present = await Promise.all(AUTHORITY_FILES.map(async (name) => {
+        try {
+          await fs.lstat(this.getAuthorityPath(name));
+          return true;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw error;
+        }
+      }));
+      if (present.every((exists) => !exists)) return undefined;
+      const [manifest, lockFile, preferences, collections] = await Promise.all([
+        this.readManifestRaw(), this.readLockRaw(), this.readPreferencesRaw(), this.readCollectionsRaw(),
+      ]);
+      assertMigrationGenerationMatch(this.stateRoot, manifest, lockFile, preferences, collections);
+      return { manifest, lockFile, preferences, collections };
+    });
+  }
+
   async readManifest(): Promise<ManifestFile> {
     return this.withIoLock(async () => {
       await this.init();

@@ -116,6 +116,7 @@ import {
   searchSkillsDirectory,
 } from "@skill-flow/integration/utils/skills-directory";
 import { ConfigCoordinator } from "./config-coordinator.js";
+import { checkProjectHealth } from "./project-doctor.js";
 import { DoctorService } from "@skill-flow/core-engine/services/doctor-service";
 import {
   ExternalSourceLifecycle,
@@ -4235,7 +4236,10 @@ export class SkillFlowApp {
     }, [...warnings, ...externalWarnings]);
   }
 
-  async doctor(): Promise<Result<DoctorReport>> {
+  async doctor(options: { projectPath?: string } = {}): Promise<Result<DoctorReport>> {
+    if (options.projectPath !== undefined) {
+      return ok(await checkProjectHealth(options.projectPath, this.stateStore));
+    }
     return this.runAuditedMutation(
       "doctor",
       {},
