@@ -216,7 +216,7 @@ describe.sequential("read-only Project Health Check", () => {
     expect(result.data.issues).toContainEqual(expect.objectContaining({ code: "PROJECT_CHECK_INCOMPLETE", path: target }));
   });
   test("deployment naming follows applied source disambiguation across Skill groups", async () => {
-    const { app, project } = await setup();
+    const { app, project, store } = await setup();
     const other = await createRepo(sandbox.sandboxRoot, { "skills/review/SKILL.md": skillDoc("review", "Second review.") });
     expect((await app.addSource(other, { sourceIdOverride: "beta", project: false })).ok).toBe(true);
     expect((await app.applyDraft("beta", { selectedLeafIds: ["beta:skills/review"], enabledTargets: ["codex"] }, { kind: "project", projectId: "p" })).ok).toBe(true);
@@ -225,6 +225,42 @@ describe.sequential("read-only Project Health Check", () => {
     expect(report.status).toBe("HEALTHY");
     expect(report.managedSkillCount).toBe(2);
     expect(report.externalSkillCount).toBe(0);
+    const state = await store.readState();
+    await store.writeState({ ...state, preferences: { ...state.preferences, projectSourceDrafts: {
+      ...state.preferences.projectSourceDrafts,
+      p: Object.fromEntries(Object.entries(state.preferences.projectSourceDrafts.p!).reverse()),
+    } } });
+    const reversed = await diagnose(app, project);
+    expect(reversed.status).toBe("HEALTHY");
+    expect(reversed.issues).toEqual([]);
+    expect(reversed.managedSkillCount).toBe(2);
+    expect(reversed.externalSkillCount).toBe(0);
+  });
+  test("a matching external naming alternative cannot hide changes to an applied copy", async () => {
+    const { app, project, store } = await setup(true, ["openclaw"]);
+    const state = await store.readState();
+    const source = state.lockFile.leafInventory.find((leaf) => leaf.id === "alpha:skills/review")!.absolutePath;
+    const applied = path.join(project, "skills/review");
+    await fs.cp(source, path.join(project, "skills/alpha-review"), { recursive: true });
+    await fs.writeFile(path.join(applied, "SKILL.md"), skillDoc("review", "Local edited copy."));
+    const report = await diagnose(app, project);
+    expect(report.status).toBe("PARTIAL");
+    expect(report.coverage?.complete).toBe(false);
+    expect(report.issues).toContainEqual(expect.objectContaining({ code: "PROJECT_CHECK_INCOMPLETE", message: expect.stringContaining("ambiguous") }));
+    expect(report.issues).toContainEqual(expect.objectContaining({ code: "PROJECT_COPY_DIFFERENT", path: applied, message: expect.stringContaining("ownership is uncertain") }));
+  });
+  test("a matching link alternative cannot make a foreign primary path conclusively healthy", async () => {
+    const { app, project, target } = await setup();
+    const linked = await fs.readlink(target);
+    await fs.symlink(linked, path.join(project, ".agents/skills/alpha-review"));
+    await fs.rm(target);
+    await fs.mkdir(target);
+    await fs.writeFile(path.join(target, "SKILL.md"), skillDoc("review", "Foreign contents."));
+    const report = await diagnose(app, project);
+    expect(report.status).toBe("PARTIAL");
+    expect(report.coverage?.complete).toBe(false);
+    expect(report.issues).toContainEqual(expect.objectContaining({ code: "PROJECT_CHECK_INCOMPLETE", message: expect.stringContaining("ambiguous") }));
+    expect(report.issues.some((issue) => issue.severity === "error")).toBe(false);
   });
   test("a dangling Agent directory is incomplete coverage rather than an absent unused root", async () => {
     const { app, project } = await setup(false);

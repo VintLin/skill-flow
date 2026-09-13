@@ -137,7 +137,13 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
           // Earlier applications can retain a short name when later groups disambiguate.
           const candidates = [...new Set([...candidateNames, leaf.linkName])]
             .map((name) => path.join(root.path, name)).filter((candidate) => isPathInside(root.path, candidate));
-          const targetPath = await resolveExpectedProjectPath(candidates, leaf, definition, expected, inspection, context);
+          const otherLeaves = Object.values(drafts)
+            .filter((applied) => applied.enabledTargets.some((agent) => rootForTarget.get(agent) === root))
+            .flatMap((applied) => applied.selectedLeafIds)
+            .filter((id) => id !== leaf.id)
+            .map((id) => state.lockFile.leafInventory.find((item) => item.id === id))
+            .filter((item): item is LeafRecord => item !== undefined);
+          const targetPath = await resolveExpectedProjectPath(candidates, leaf, definition, expected, inspection, context, otherLeaves);
           if (!targetPath) {
             inspection.incomplete(root.path, "No safe deployment name is available", context);
             continue;
@@ -209,8 +215,11 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
 async function resolveExpectedProjectPath(
   candidates: string[], leaf: LeafRecord, definition: MergedTargetDefinition,
   expected: Map<string, ExpectedProjectSkill>, inspection: ProjectInspection, context: Partial<DoctorIssue>,
+  otherLeaves: LeafRecord[],
 ): Promise<string | undefined> {
   let occupied: string | undefined;
+  let matched: string | undefined;
+  const observed = new Map<string, Stats>();
   for (const candidate of candidates) {
     const reserved = expected.get(candidate);
     if (reserved) {
@@ -225,22 +234,60 @@ async function resolveExpectedProjectPath(
       }
       continue;
     }
+    // A different applied Skill can retain the shared short name. Do not let
+    // draft insertion order turn its independently identifiable entry ambiguous.
+    try {
+      if (stats.isSymbolicLink()) {
+        const linked = path.resolve(path.dirname(candidate), await fs.readlink(candidate));
+        if (linked !== path.resolve(leaf.absolutePath) && otherLeaves.some((other) => linked === path.resolve(other.absolutePath))) continue;
+      } else if (definition.strategy === "copy" && stats.isDirectory() && otherLeaves.length) {
+        const contentHash = await hashDirectory(candidate, { symlinkPolicy: "preserve-safe" });
+        if (contentHash !== leaf.contentHash && otherLeaves.some((other) => contentHash === other.contentHash)) continue;
+      }
+    } catch { /* Keep unknown entries for the diagnostic pass. */ }
     occupied ??= candidate;
+    observed.set(candidate, stats);
     try {
       if (definition.strategy === "symlink" && stats.isSymbolicLink()) {
         const linked = path.resolve(path.dirname(candidate), await fs.readlink(candidate));
-        if (linked === path.resolve(leaf.absolutePath)) return candidate;
-        const actual = await fs.realpath(candidate);
-        if (actual === await fs.realpath(leaf.absolutePath)) return candidate;
+        if (linked === path.resolve(leaf.absolutePath)) matched ??= candidate;
+        else {
+          const actual = await fs.realpath(candidate);
+          if (actual === await fs.realpath(leaf.absolutePath)) matched ??= candidate;
+        }
       } else if (definition.strategy === "copy" && stats.isDirectory()) {
         // A content match is additional evidence for an old naming alternative.
-        if (await hashDirectory(candidate, { symlinkPolicy: "preserve-safe" }) === leaf.contentHash) return candidate;
+        if (await hashDirectory(candidate, { symlinkPolicy: "preserve-safe" }) === leaf.contentHash) matched ??= candidate;
       }
     } catch {
       // Retain the observed entry; the diagnostic pass distinguishes damage from read failure.
     }
   }
-  return occupied ?? candidates.find((candidate) => !expected.has(candidate)) ?? candidates[0];
+  const selected = matched ?? occupied ?? candidates.find((candidate) => !expected.has(candidate)) ?? candidates[0];
+  if (observed.size > 1) {
+    inspection.incomplete(path.dirname(candidates[0]!),
+      `Deployment path is ambiguous: multiple naming candidates exist (${[...observed.keys()].join(", ")}). Saved selections do not identify which path was applied.`, context);
+    if (definition.strategy === "copy") {
+      let sourceHash: string | undefined;
+      try { sourceHash = await hashDirectory(leaf.absolutePath, { symlinkPolicy: "preserve-safe" }); }
+      catch (error) { inspection.incomplete(leaf.absolutePath, error, context); }
+      if (sourceHash !== undefined) {
+        for (const [candidate, stats] of observed) {
+          if (candidate === selected || !stats.isDirectory()) continue;
+          try {
+            if (await hashDirectory(candidate, { symlinkPolicy: "preserve-safe" }) !== sourceHash) {
+              inspection.issues.push({ sourceId: "project", ...context, path: candidate, severity: "warning",
+                code: "PROJECT_COPY_DIFFERENT",
+                message: "This copy candidate differs from the current source content. Its deployment ownership is uncertain because multiple naming candidates exist; the comparison does not identify which side changed.",
+                advice: "Review the candidate paths and source before choosing which content to keep."
+                  + (definition.kind === "custom" ? " You can explicitly change this Agent's deployment strategy to symlink and apply it to reflect subsequent changes to the linked local source; this does not update a remote repository." : "") });
+            }
+          } catch (error) { inspection.incomplete(candidate, error, context); }
+        }
+      }
+    }
+  }
+  return selected;
 }
 
 /** Missing unused roots are normal; broken or unreadable ancestors are a coverage gap. */
