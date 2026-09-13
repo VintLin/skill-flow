@@ -2,7 +2,7 @@
 
 Scope: [spec #5](https://github.com/ren2019/skill-flow/issues/5), tasks [#6](https://github.com/ren2019/skill-flow/issues/6), [#7](https://github.com/ren2019/skill-flow/issues/7), [#8](https://github.com/ren2019/skill-flow/issues/8), [#9](https://github.com/ren2019/skill-flow/issues/9). Latest issue bodies and comments were read on 2026-09-13; none had comments. The explicit GitHub tracker instruction takes precedence over the repository's older local-tracker document. Vocabulary and decisions are in [CONTEXT.md](../../CONTEXT.md) and [ADR 0004](../adr/0004-read-only-project-health-check.md).
 
-**Acceptance is not complete:** implementation and TypeScript checks are complete, but the required full macOS build/test gate is blocked by the installed toolchain. No issue was edited or closed, and no branch was pushed, PR opened, application installed, or release published.
+**Acceptance is not complete:** implementation and TypeScript checks are complete, but the required full macOS build/test gate is blocked by the installed toolchain. No issue was edited or closed, application installed, or release published. Following the explicit review/PR request on 2026-09-14, a separate draft-PR branch was prepared from fork main; the original implementation branch remains preserved locally.
 
 ## Use
 
@@ -22,7 +22,7 @@ Desktop: select a project or Global, then click the Doctor toolbar button on Hom
 
 The following test suites use the public runtime entry point and real temporary projects/sources:
 
-- **R** — [project-doctor.test.ts](../../packages/query/src/tests/project-doctor.test.ts): 25 tests for baseline, roots, missing targets, naming, symlinks, managed validity, uncertainty, and read-only failures.
+- **R** — [project-doctor.test.ts](../../packages/query/src/tests/project-doctor.test.ts): 27 tests for baseline, roots, missing targets, naming, symlinks, managed validity, uncertainty, and read-only failures.
 - **C** — [project-doctor-copy.test.ts](../../packages/query/src/tests/project-doctor-copy.test.ts): 12 tests for current content comparison, source validity, capability-specific advice, mixed status, and read-only results.
 - **E** — [project-doctor-external.test.ts](../../packages/query/src/tests/project-doctor-external.test.ts): 10 tests for external candidates, scope, validity, links, coverage, and read-only results.
 - **B** — [bridge-command.test.ts](../../apps/cli/src/tests/bridge-command.test.ts), [doctor-command.test.ts](../../apps/cli/src/tests/doctor-command.test.ts), and [doctor-format.test.ts](../../packages/integration/src/tests/doctor-format.test.ts): path propagation, real CLI invocation, legacy/global compatibility, every new issue family, paths, Agent associations, counts, coverage, and advice.
@@ -93,8 +93,8 @@ Executed from the repository root unless specified otherwise:
 | Command | Result |
 | --- | --- |
 | `npm run build` | PASS; all workspace builds and CLI package build. |
-| `npm test` | PASS, 71 test files / 771 tests (2 domain + 13 shared-types + 64 integration + 72 storage + 163 core-engine + 230 query + 10 TUI + 217 CLI). |
-| `npm run -w @skill-flow/query test -- src/tests/project-doctor.test.ts src/tests/project-doctor-copy.test.ts src/tests/project-doctor-external.test.ts` | R/C/E pass; final suites contain 47 tests (25 + 12 + 10). |
+| `npm test` | PASS, 71 test files / 773 tests (2 domain + 13 shared-types + 64 integration + 72 storage + 163 core-engine + 232 query + 10 TUI + 217 CLI). |
+| `npm run -w @skill-flow/query test -- src/tests/project-doctor.test.ts src/tests/project-doctor-copy.test.ts src/tests/project-doctor-external.test.ts` | R/C/E pass; final suites contain 49 tests (27 + 12 + 10). |
 | `npm run -w @skill-flow/storage test -- src/tests/state-store.test.ts` | PASS, 25 tests. |
 | `npm run -w @skill-flow/core-engine test -- src/tests/inventory-service-precedence.test.ts src/tests/skill-frontmatter.test.ts` | PASS, 11 tests; full core-engine suite also passes. |
 | CLI/bridge focused tests | PASS, 66 tests; formatter 2 tests also pass. |
@@ -105,7 +105,7 @@ Executed from the repository root unless specified otherwise:
 | Exact-source standalone Swift report/concurrency harness | PASS; legacy and new report decoding, seven issue families, per-project/global request sharing and separation. Uses stub transport; does not replace full desktop tests. |
 | `git diff --check` | PASS. |
 
-Full build/test logs are local at `/tmp/skill-flow-build-final.log`, `/tmp/skill-flow-test-final.log`, `/tmp/skill-flow-desktop-build.log`, `/tmp/doctor-swift-test.log`, and `/tmp/skill-flow-cli-smoke.log`. Supplemental Swift harness: `/tmp/doctor-interface-check.swift`; command: `swiftc -parse-as-library /tmp/doctor-interface-check.swift -o /tmp/doctor-interface-check && /tmp/doctor-interface-check`.
+Full build/test logs are local at `/tmp/project-doctor-pr-build.log`, `/tmp/project-doctor-pr-test.log`, `/tmp/project-doctor-review-swift-build.log`, `/tmp/project-doctor-review-swift-test.log`, and `/tmp/skill-flow-cli-smoke.log`. Supplemental Swift harness: `/tmp/doctor-interface-check.swift`; command: `swiftc -parse-as-library /tmp/doctor-interface-check.swift -o /tmp/doctor-interface-check && /tmp/doctor-interface-check`.
 
 ### Remaining desktop gate
 
@@ -115,17 +115,33 @@ A functioning Xcode toolchain with the SwiftUI macro plugin is required to rerun
 
 ## Local commits
 
-Branch: `feat/read-only-project-doctor`, based on `8d6a42d`.
+PR branch: `feat/project-doctor-reviewed`, based on fork main `8023bb7`. Review fixed point was explicitly confirmed as `8d6a42d`. The original branch `feat/read-only-project-doctor` remains local; only Project Doctor commits were copied to the PR branch, excluding the inherited Agent-Specific Skill File tabs change.
 
 | Commit | Logical unit |
 | --- | --- |
-| `9d93174` | #6 runtime baseline/coverage/read-only entry, domain vocabulary and ADR 0004. |
-| `c4a669c` | #6 CLI/bridge and desktop entry/report presentation. |
-| `1a10808` | #7 link integrity, managed validity and conflict tests. |
-| `ebbcc21` | #9 external diagnostics and public runtime tests. |
-| `1b82024` | #8 copy diagnostics and public runtime tests. |
-| `b65a8b0` | Final interface contracts and per-project request coalescing. |
-| `1761827` | Integrated #6–#9 checks, completed coverage, naming and root-failure regressions. |
-| `60ab1d3` | Deduplicate repeated read-failure findings for one expected path. |
+| `d6513d4` | #6 runtime baseline/coverage/read-only entry, domain vocabulary and ADR 0004. |
+| `39ee9b6` | #6 CLI/bridge and desktop entry/report presentation. |
+| `44cbade` | #7 link integrity, managed validity and conflict tests. |
+| `8b3b3fa` | #9 external diagnostics and public runtime tests. |
+| `22a0367` | #8 copy diagnostics and public runtime tests. |
+| `ff1095b` | Final interface contracts and per-project request coalescing. |
+| `243b7a2` | Integrated #6–#9 checks, completed coverage, naming and root-failure regressions. |
+| `e444d88` | Deduplicate repeated read-failure findings for one expected path. |
+| `4bdc561` | Initial acceptance evidence and outstanding desktop gate. |
+| `1c249ef` | Fix review finding: ambiguous naming alternatives cannot hide copy differences or yield HEALTHY. |
 
 The initial user changes to CONTEXT.md and ADR 0004 were preserved and committed with the related runtime work. No unrelated existing feature changes were included.
+
+
+## Code review — 2026-09-14
+
+### Standards
+
+No actionable findings against repository instructions, domain vocabulary, ADR 0004, or the code-review skill's smell baseline. The ambiguity correction was separately rechecked; its uncertain-ownership comparison has a distinct responsibility from normal managed-copy inspection. This axis does not establish desktop runtime correctness.
+
+### Spec
+
+1. **P1, fixed in `1c249ef`:** an edited deployed copy could be bypassed when another naming candidate matched the source hash. The report then incorrectly returned HEALTHY and classified the edited path as valid external content, violating #8's requirement to warn whenever current source and project copy differ. Multiple occupied candidates now lower coverage certainty, retain copy-difference evidence with uncertain-ownership wording, and never silently produce HEALTHY. Public runtime regressions cover copy/link alternatives and reversed saved group order.
+2. **Open verification gate:** #5 requires the repository's desktop build/tests. Fresh `swift build` and `swift test` both fail before application compilation because the installed toolchain lacks `SwiftUIMacros.EntryMacro`. The PR must remain draft until this gate and desktop presentation checks pass.
+
+Review totals: Standards 0 findings; Spec 2 findings (1 fixed, 1 verification gate open). No actionable scope creep was found.
