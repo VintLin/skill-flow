@@ -1096,8 +1096,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func runDoctor() async {
-        let scope = currentProjectScope()
-        let projectPath = currentProjectPath()
+        await runDoctor(scope: currentProjectScope(), projectPath: currentProjectPath())
+    }
+
+    func runDoctor(scope: ProjectScopeSelection, projectPath: String?) async {
         if case .project = scope, projectPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
             stateManager.doctorReport = nil
             stateManager.setDoctorIssues([])

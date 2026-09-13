@@ -129,6 +129,7 @@ final class SourceManagement {
     private var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
     private var renamedSourceOriginalDisplayNameOverridesBySourceId: [String: String] = [:]
 
+    @ObservationIgnored private var doctorRequestTasks: [String?: Task<BridgeResponse, Error>] = [:]
     @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
     private var listRequestToken: UInt64 = 0
     private var activeListRequestToken: UInt64?
@@ -297,8 +298,18 @@ final class SourceManagement {
     }
 
     func runDoctor(projectPath: String? = nil) async throws -> (DoctorReportRow, [BridgeIssue]) {
-        let response = try await bridgeClient.doctor(projectPath: projectPath)
+        let response = try await fetchDoctorResponse(projectPath: projectPath)
         return (DoctorReportRow(value: response.data?.value, requestedProjectPath: projectPath), response.warnings)
+    }
+
+    private func fetchDoctorResponse(projectPath: String?) async throws -> BridgeResponse {
+        if let task = doctorRequestTasks[projectPath] {
+            return try await task.value
+        }
+        let task = Task { try await bridgeClient.doctor(projectPath: projectPath) }
+        doctorRequestTasks[projectPath] = task
+        defer { doctorRequestTasks.removeValue(forKey: projectPath) }
+        return try await task.value
     }
 
     func togglePinned(sourceId: String) async throws -> [String] {

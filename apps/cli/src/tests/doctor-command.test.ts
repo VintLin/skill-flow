@@ -17,7 +17,7 @@ describe.sequential("doctor CLI", () => {
     expect(output).toContain("PARTIAL");
     expect(output).toContain(`Project: ${await fs.realpath(projectPath)}`);
     expect(output).toContain("Baseline: unavailable");
-    expect(output).toContain("Coverage: incomplete");
+    expect(output).toContain("Coverage: complete");
     expect(output).toContain("External Skills:");
     expect(await fs.readdir(projectPath)).toEqual([]);
     await expect(fs.stat(sandbox.stateRoot)).rejects.toMatchObject({ code: "ENOENT" });

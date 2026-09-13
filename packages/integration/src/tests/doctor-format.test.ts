@@ -7,7 +7,7 @@ describe("doctor issue presentation", () => {
       .toBe("[WARNING] source Contents differ");
   });
   test("includes path, all associated Agents and actionable advice", () => {
-    const output = formatDoctorIssue({ severity: "warning", sourceId: "source", code: "COPY_CONTENT_MISMATCH", message: "Contents differ", path: "/project/.agents/skills/example", targets: ["codex", "cursor"], advice: "Switch to symlink deployment." });
+    const output = formatDoctorIssue({ severity: "warning", sourceId: "source", code: "PROJECT_COPY_DIFFERENT", message: "Contents differ", path: "/project/.agents/skills/example", targets: ["codex", "cursor"], advice: "Switch to symlink deployment." });
     expect(output).toContain("Path: /project/.agents/skills/example");
     expect(output).toContain("Codex");
     expect(output).toContain("Cursor");

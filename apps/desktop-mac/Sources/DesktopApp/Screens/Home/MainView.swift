@@ -723,11 +723,13 @@ struct MainView: View {
 
     private var doctorButton: some View {
         Button {
-            doctorRequestedPath = viewModel.currentProjectPath()
+            let scope = viewModel.currentProjectScope()
+            let projectPath = viewModel.currentProjectPath()
+            doctorRequestedPath = projectPath
             isDoctorRunning = true
             isDoctorPresented = true
             Task {
-                await viewModel.runDoctor()
+                await viewModel.runDoctor(scope: scope, projectPath: projectPath)
                 isDoctorRunning = false
             }
         } label: {
