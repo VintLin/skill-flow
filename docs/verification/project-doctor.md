@@ -1,0 +1,131 @@
+# Project Doctor implementation and acceptance record
+
+Scope: [spec #5](https://github.com/ren2019/skill-flow/issues/5), tasks [#6](https://github.com/ren2019/skill-flow/issues/6), [#7](https://github.com/ren2019/skill-flow/issues/7), [#8](https://github.com/ren2019/skill-flow/issues/8), [#9](https://github.com/ren2019/skill-flow/issues/9). Latest issue bodies and comments were read on 2026-09-13; none had comments. The explicit GitHub tracker instruction takes precedence over the repository's older local-tracker document. Vocabulary and decisions are in [CONTEXT.md](../../CONTEXT.md) and [ADR 0004](../adr/0004-read-only-project-health-check.md).
+
+**Acceptance is not complete:** implementation and TypeScript checks are complete, but the required full macOS build/test gate is blocked by the installed toolchain. No issue was edited or closed, and no branch was pushed, PR opened, application installed, or release published.
+
+## Use
+
+```sh
+# Explicit path, including an unregistered project; does not register or initialize state.
+skill-flow doctor --project /absolute/path/to/project
+
+# Existing global maintenance behavior.
+skill-flow doctor
+```
+
+Desktop: select a project or Global, then click the Doctor toolbar button on Home. The report includes the path captured for the request, status, baseline, directory coverage, counts, and findings. Changing selection while a request is running does not relabel its result. Requests for the same path share a running check; different projects remain separate.
+
+`SkillFlowApp.doctor({ projectPath })` is the shared project entry point. Omitted options preserve the global path. Project reports add optional fields to the existing report contract; legacy global reports remain decodable. `coverage.complete` describes inspection, independently of whether a deployment baseline exists. `externalSkillCount` counts valid external candidates; `managedSkillCount` counts present expected deployment paths examined, including paths with reported conflicts.
+
+## Evidence map
+
+The following test suites use the public runtime entry point and real temporary projects/sources:
+
+- **R** — [project-doctor.test.ts](../../packages/query/src/tests/project-doctor.test.ts): 25 tests for baseline, roots, missing targets, naming, symlinks, managed validity, uncertainty, and read-only failures.
+- **C** — [project-doctor-copy.test.ts](../../packages/query/src/tests/project-doctor-copy.test.ts): 12 tests for current content comparison, source validity, capability-specific advice, mixed status, and read-only results.
+- **E** — [project-doctor-external.test.ts](../../packages/query/src/tests/project-doctor-external.test.ts): 10 tests for external candidates, scope, validity, links, coverage, and read-only results.
+- **B** — [bridge-command.test.ts](../../apps/cli/src/tests/bridge-command.test.ts), [doctor-command.test.ts](../../apps/cli/src/tests/doctor-command.test.ts), and [doctor-format.test.ts](../../packages/integration/src/tests/doctor-format.test.ts): path propagation, real CLI invocation, legacy/global compatibility, every new issue family, paths, Agent associations, counts, coverage, and advice.
+- **D** — [MainViewModelSelectionTests.swift](../../apps/desktop-mac/Tests/SkillFlowDesktopTests/MainViewModelSelectionTests.swift): captured scope/path, same-project coalescing versus separate project checks, no global fallback for a missing project path, and report decoding. These full desktop tests are written but **not yet executed successfully** because of the toolchain blocker below.
+
+R/C/E snapshot file bytes, file modes, directory entries, and symlink destinations across the whole sandbox before and after diagnosis. They include shared authority, sources, project paths, and foreign contents. Access times are deliberately excluded. Script fixtures remain unexecuted. Error injection covers EACCES and files disappearing during reads; normal filesystem fixtures cover missing paths, broken/cyclic links, and foreign occupancy.
+
+### Task #6
+
+| Criterion | Implementation and evidence |
+| --- | --- |
+| 1. Shared desktop/CLI project entry and asynchronous attribution | `--project`, bridge payload, captured desktop request path, report scope/path; B passes, D awaits full desktop run. |
+| 2. Omitted/global compatibility and maintenance | Original runtime global method retained; existing global cleanup tests and B pass. |
+| 3. Last successful application per group, no global/draft fallback | Reads only persisted `projectSourceDrafts` for the matching registered path; R verifies different global/project selections. |
+| 4. Never-applied groups, absent versus empty baseline, unregistered paths | R verifies all four cases and absence of new shared-state files. |
+| 5. All known roots, custom paths, hidden/disabled Agents, deduplication | R/E verify known project roots, shared Agent associations, custom roots, and no arbitrary/global scan. |
+| 6. Deployment names, missing targets, retained anomalous entries | R covers missing targets plus multiple groups retaining different naming variants; direct `lstat` retains broken entries. |
+| 7. Absent unused roots, unreadable roots/targets, unavailable projects | R covers each case, including broken parent links and failed absence verification; saved state remains unchanged. |
+| 8. Status aggregation and completed diagnostic extensions | Final integration removes the temporary `PROJECT_CHECKS_INCOMPLETE` finding. R/C/E prove HEALTHY controls and BLOCKED over PARTIAL while preserving warnings/counts. |
+| 9. Read-only success/failure boundary | Runtime branches before audited mutation; `StateStore.readStateReadonly()` bypasses initialization/migration/filesystem locks. R/C/E snapshots cover successful and failed checks. |
+| 10. Public runtime integration matrix | R plus existing project-scoped draft tests; no private diagnostic helper is the primary test seam. |
+| 11. State/link evidence and interface compatibility | R/C/E snapshots and B pass; D/full desktop gate remains outstanding. |
+
+### Task #7
+
+| Criterion | Implementation and evidence |
+| --- | --- |
+| 1. Applied baseline/current source/naming | Shared expected-entry map and existing naming candidates; R multi-group naming regression. |
+| 2. Normal relative links, broken and wrong destinations | R healthy/relative/broken/cyclic/misdirected matrix; realpath identity comparison. |
+| 3. Files/foreign valid directories occupying expected links | R verifies BLOCKED path conflicts without ownership adoption or modification. |
+| 4. Missing/invalid managed Skill, unknown readability | R missing/invalid SKILL.md and EACCES cases; existing parser extracted unchanged. |
+| 5. Full context and shared-root deduplication | R/B paths, Skill/Agent context and associations; expected entries excluded from external pass; D pending full run. |
+| 6. Healthy controls and error precedence | R/C/E controls; no unfinished-check placeholders remain. |
+| 7. Public apply-then-corrupt scenarios | R creates deployments through `applyDraft`, then changes disk; healthy controls retained. |
+| 8. Read-only evidence and thin interfaces | R snapshots include foreign files/links and executable script fixtures; B passes, D pending. |
+
+### Task #8
+
+| Criterion | Implementation and evidence |
+| --- | --- |
+| 1. Current source/copy comparison using existing semantics | `hashDirectory(..., { symlinkPolicy: "preserve-safe" })`, no historical snapshot added; C. |
+| 2. Either side changes, neutral warning | C tests source and copy edits; message states only current content differs. |
+| 3. PARTIAL difference, BLOCKED precedence, equal copies pass | C verifies isolated differences, mixed missing deployment, and equal edits on both sides. |
+| 4. Read failures incomplete; missing paths blocking | C source/copy EACCES, nested disappearing file, missing source and deployment. |
+| 5. Path/Skill/Agent and capability-specific advice | C custom configurable target gets symlink advice; builtin OpenClaw does not; B preserves metadata; D pending. |
+| 6. Accurate advisory-only guidance | Advice describes applying an explicit strategy change and subsequent linked local source changes, without claiming remote freshness; C/B. |
+| 7. Public runtime matrix | C's 12 tests use real applied project copies. Invalid current source is also blocking. |
+| 8. Unchanged source/copy/state and thin presentation tests | C snapshots and B pass; D pending full desktop run. |
+
+### Task #9
+
+| Criterion | Implementation and evidence |
+| --- | --- |
+| 1. Full known-root candidate scan independent of display settings | E hidden/disabled Claude root and shared `.agents/skills` cases; arbitrary/global directories excluded. |
+| 2. Valid external Skills informational only | E counts valid directories and links with HEALTHY when a baseline exists; no adoption writes. |
+| 3. Links, readability, SKILL.md, existing validity rules | E missing/invalid/broken/cyclic matrix; shared read-only parser; scripts not executed. |
+| 4. Unknown readability is incomplete and scanning continues | E readFile/stat EACCES; R root EACCES; valid findings retained. |
+| 5. Physical roots/Agent associations, managed exclusions | R/E deduplicate shared roots; same-named external Skill under another root remains external; expected paths are excluded. |
+| 6. No baseline preserves disk findings and status precedence | E unregistered path yields PARTIAL with valid count; confirmed invalidity/mixed missing deployment yields BLOCKED. |
+| 7. Counts, locations, complete findings, true HEALTHY | R/C/E status and count assertions; B report contract; D pending. |
+| 8. Public runtime integration matrix | E's 10 cases plus R missing/coverage cases. |
+| 9. Read-only content/state/link proof, interfaces/global compatibility | E snapshots and B/full npm suite pass; D/full desktop gate remains outstanding. |
+
+## Commands and results
+
+Executed from the repository root unless specified otherwise:
+
+| Command | Result |
+| --- | --- |
+| `npm run build` | PASS; all workspace builds and CLI package build. |
+| `npm test` | PASS, 71 test files / 771 tests (2 domain + 13 shared-types + 64 integration + 72 storage + 163 core-engine + 230 query + 10 TUI + 217 CLI). |
+| `npm run -w @skill-flow/query test -- src/tests/project-doctor.test.ts src/tests/project-doctor-copy.test.ts src/tests/project-doctor-external.test.ts` | R/C/E pass; final suites contain 47 tests (25 + 12 + 10). |
+| `npm run -w @skill-flow/storage test -- src/tests/state-store.test.ts` | PASS, 25 tests. |
+| `npm run -w @skill-flow/core-engine test -- src/tests/inventory-service-precedence.test.ts src/tests/skill-frontmatter.test.ts` | PASS, 11 tests; full core-engine suite also passes. |
+| CLI/bridge focused tests | PASS, 66 tests; formatter 2 tests also pass. |
+| `swift build` in `apps/desktop-mac` | FAIL before application compilation: dependency `swiftui-math` cannot load `SwiftUIMacros.EntryMacro`. |
+| `swift test` in `apps/desktop-mac` | FAIL at the same dependency/toolchain boundary; desktop tests not run. |
+| Built CLI smoke: `node apps/cli/dist/cli.js doctor --project <temporary-path>` | PASS; unregistered project reports PARTIAL / complete coverage / external count 1, unavailable project reports BLOCKED; sandbox unchanged and no shared state initialized. |
+| Changed Swift source syntax parsing | PASS; syntax verification only. |
+| Exact-source standalone Swift report/concurrency harness | PASS; legacy and new report decoding, seven issue families, per-project/global request sharing and separation. Uses stub transport; does not replace full desktop tests. |
+| `git diff --check` | PASS. |
+
+Full build/test logs are local at `/tmp/skill-flow-build-final.log`, `/tmp/skill-flow-test-final.log`, `/tmp/skill-flow-desktop-build.log`, `/tmp/doctor-swift-test.log`, and `/tmp/skill-flow-cli-smoke.log`. Supplemental Swift harness: `/tmp/doctor-interface-check.swift`; command: `swiftc -parse-as-library /tmp/doctor-interface-check.swift -o /tmp/doctor-interface-check && /tmp/doctor-interface-check`.
+
+### Remaining desktop gate
+
+Installed compiler: `/Library/Developer/CommandLineTools/usr/bin/swiftc`, Swift 6.4.0.34.1. Installed macOS SDKs 26.5 and 27.0 declare `SwiftUIMacros.EntryMacro` but the required plugin is absent. No Xcode installation or alternate toolchain was found. The build fails in `.build/checkouts/swiftui-math/Sources/SwiftUIMath/Font.swift:70`, before compiling this feature's application code.
+
+A functioning Xcode toolchain with the SwiftUI macro plugin is required to rerun `swift build` and `swift test`, fix any application/test failures they reveal, and complete the desktop presentation check. Dependencies and tests have not been patched, downgraded, or skipped to claim success. The goal must remain incomplete until this gate passes.
+
+## Local commits
+
+Branch: `feat/read-only-project-doctor`, based on `8d6a42d`.
+
+| Commit | Logical unit |
+| --- | --- |
+| `9d93174` | #6 runtime baseline/coverage/read-only entry, domain vocabulary and ADR 0004. |
+| `c4a669c` | #6 CLI/bridge and desktop entry/report presentation. |
+| `1a10808` | #7 link integrity, managed validity and conflict tests. |
+| `ebbcc21` | #9 external diagnostics and public runtime tests. |
+| `1b82024` | #8 copy diagnostics and public runtime tests. |
+| `b65a8b0` | Final interface contracts and per-project request coalescing. |
+| `1761827` | Integrated #6–#9 checks, completed coverage, naming and root-failure regressions. |
+| `60ab1d3` | Deduplicate repeated read-failure findings for one expected path. |
+
+The initial user changes to CONTEXT.md and ADR 0004 were preserved and committed with the related runtime work. No unrelated existing feature changes were included.
