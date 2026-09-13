@@ -80,7 +80,7 @@ export class InventoryService {
           ? rootLinkName
           : (path.basename(leafRoot) || rootLinkName);
       const openAiDisplayName = await this.readOpenAiDisplayName(leafRoot);
-      const parsed = this.parseSkillFile(raw, linkName, openAiDisplayName);
+      const parsed = parseSkillFile(raw, linkName, openAiDisplayName);
 
       if (!parsed.valid) {
         invalidLeafs.push({
@@ -240,77 +240,6 @@ export class InventoryService {
     }
   }
 
-  private parseSkillFile(
-    raw: string,
-    parentDirName: string,
-    openAiDisplayName?: string,
-  ): ParsedSkillFile {
-    const lines = raw.split(/\r?\n/);
-    const frontmatter = parseSkillFrontmatter(raw);
-    if (!frontmatter) {
-      return { valid: false, reason: "SKILL.md must start with YAML frontmatter" };
-    }
-
-    if (!Object.hasOwn(frontmatter.data, "name")) {
-      return {
-        valid: false,
-        reason: "SKILL.md frontmatter must include required field 'name'",
-      };
-    }
-
-    if (!Object.hasOwn(frontmatter.data, "description")) {
-      return {
-        valid: false,
-        reason: "SKILL.md frontmatter must include required field 'description'",
-      };
-    }
-
-    const bodyLines = lines.slice(frontmatter.bodyStartLine);
-    const firstHeading = bodyLines.find((line) => line.trim().startsWith("# "));
-    const rawName = (frontmatter.data.name ?? "").trim();
-    const rawDescription = frontmatter.data.description ?? "";
-    const metadataWarnings: string[] = [];
-
-    if (
-      rawName.length < 1 ||
-      rawName.length > 64 ||
-      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(rawName)
-    ) {
-      metadataWarnings.push(
-        "name should be 1-64 chars, lowercase letters/numbers/hyphens only, with no leading/trailing hyphen or consecutive '--'",
-      );
-    }
-
-    if (rawName !== parentDirName) {
-      metadataWarnings.push(
-        `name should match parent directory name '${parentDirName}'`,
-      );
-    }
-
-    if (rawDescription.trim().length === 0) {
-      metadataWarnings.push("description should be non-empty");
-    }
-
-    if (rawDescription.length > 1024) {
-      metadataWarnings.push("description should be at most 1024 characters");
-    }
-
-    const title =
-      rawName ||
-      parentDirName ||
-      openAiDisplayName ||
-      firstHeading?.trim().slice(2).trim() ||
-      "Untitled skill";
-
-    return {
-      valid: true,
-      name: rawName,
-      title,
-      description: rawDescription.trim(),
-      metadataWarnings,
-    };
-  }
-
   private dedupeCandidates(
     candidates: Array<LeafRecord & { dedupeKey: string }>,
     duplicateLeafs: DuplicateLeafRecord[],
@@ -350,3 +279,75 @@ export class InventoryService {
   }
 
 }
+
+export function parseSkillFile(
+  raw: string,
+  parentDirName: string,
+  openAiDisplayName?: string,
+): ParsedSkillFile {
+  const lines = raw.split(/\r?\n/);
+  const frontmatter = parseSkillFrontmatter(raw);
+  if (!frontmatter) {
+    return { valid: false, reason: "SKILL.md must start with YAML frontmatter" };
+  }
+
+  if (!Object.hasOwn(frontmatter.data, "name")) {
+    return {
+      valid: false,
+      reason: "SKILL.md frontmatter must include required field 'name'",
+    };
+  }
+
+  if (!Object.hasOwn(frontmatter.data, "description")) {
+    return {
+      valid: false,
+      reason: "SKILL.md frontmatter must include required field 'description'",
+    };
+  }
+
+  const bodyLines = lines.slice(frontmatter.bodyStartLine);
+  const firstHeading = bodyLines.find((line) => line.trim().startsWith("# "));
+  const rawName = (frontmatter.data.name ?? "").trim();
+  const rawDescription = frontmatter.data.description ?? "";
+  const metadataWarnings: string[] = [];
+
+  if (
+    rawName.length < 1 ||
+    rawName.length > 64 ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(rawName)
+  ) {
+    metadataWarnings.push(
+      "name should be 1-64 chars, lowercase letters/numbers/hyphens only, with no leading/trailing hyphen or consecutive '--'",
+    );
+  }
+
+  if (rawName !== parentDirName) {
+    metadataWarnings.push(
+      `name should match parent directory name '${parentDirName}'`,
+    );
+  }
+
+  if (rawDescription.trim().length === 0) {
+    metadataWarnings.push("description should be non-empty");
+  }
+
+  if (rawDescription.length > 1024) {
+    metadataWarnings.push("description should be at most 1024 characters");
+  }
+
+  const title =
+    rawName ||
+    parentDirName ||
+    openAiDisplayName ||
+    firstHeading?.trim().slice(2).trim() ||
+    "Untitled skill";
+
+  return {
+    valid: true,
+    name: rawName,
+    title,
+    description: rawDescription.trim(),
+    metadataWarnings,
+  };
+}
+

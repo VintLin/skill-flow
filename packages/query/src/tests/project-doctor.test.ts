@@ -147,6 +147,69 @@ describe.sequential("read-only Project Health Check", () => {
     expect(report.status).toBe("PARTIAL");
     expect(report.issues).toContainEqual(expect.objectContaining({ target: "unsupported-agent", code: "PROJECT_CHECK_INCOMPLETE" }));
   });
+  test.each([
+    ["healthy", undefined],
+    ["relative", undefined],
+    ["broken", "PROJECT_BROKEN_SYMLINK"],
+    ["loop", "PROJECT_BROKEN_SYMLINK"],
+    ["wrong", "PROJECT_SYMLINK_MISDIRECTED"],
+    ["file", "PROJECT_PATH_CONFLICT"],
+    ["foreign-directory", "PROJECT_PATH_CONFLICT"],
+    ["invalid", "PROJECT_SKILL_INVALID"],
+    ["missing-document", "PROJECT_SKILL_INVALID"],
+  ])("managed symlink diagnosis: %s", async (scenario, code) => {
+    const { app, project, target } = await setup();
+    const linkedSource = await fs.realpath(target);
+    if (scenario === "relative") {
+      await fs.rm(target);
+      await fs.symlink(path.relative(path.dirname(target), linkedSource), target);
+    } else if (scenario === "broken" || scenario === "loop") {
+      await fs.rm(target);
+      await fs.symlink(scenario === "loop" ? "review" : "missing-destination", target);
+    } else if (scenario === "wrong") {
+      const foreign = path.join(sandbox.sandboxRoot, "foreign");
+      await fs.mkdir(foreign);
+      await fs.writeFile(path.join(foreign, "SKILL.md"), skillDoc("review", "Valid foreign Skill."));
+      await fs.rm(target);
+      await fs.symlink(foreign, target);
+    } else if (scenario === "file" || scenario === "foreign-directory") {
+      await fs.rm(target);
+      if (scenario === "file") await fs.writeFile(target, "foreign file");
+      else {
+        await fs.mkdir(target);
+        await fs.writeFile(path.join(target, "SKILL.md"), skillDoc("review", "Foreign content must not be claimed."));
+      }
+    } else if (scenario === "invalid") await fs.writeFile(path.join(linkedSource, "SKILL.md"), "# No frontmatter");
+    else if (scenario === "missing-document") await fs.rm(path.join(linkedSource, "SKILL.md"));
+    const marker = path.join(sandbox.sandboxRoot, "executed");
+    const script = path.join(linkedSource, "never-execute.sh");
+    await fs.writeFile(script, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
+    const report = await diagnose(app, project);
+    const failures = report.issues.filter((issue) => issue.severity === "error");
+    if (code) {
+      expect(report.status).toBe("BLOCKED");
+      expect(failures).toEqual([expect.objectContaining({ code, path: target, leafId: "alpha:skills/review", target: "codex" })]);
+    } else expect(failures).toEqual([]);
+    expect(report.externalSkillCount).toBe(0);
+    expect(await snapshotTree(marker)).toBeNull();
+  });
+  test("unreadable managed SKILL.md is incomplete, not an invalid or missing Skill", async () => {
+    const { app, project, target } = await setup();
+    const readFile = fs.readFile.bind(fs);
+    const before = await snapshotTree(sandbox.sandboxRoot);
+    const spy = vi.spyOn(fs, "readFile").mockImplementation((async (location: unknown, ...args: unknown[]) => {
+      if (location === path.join(target, "SKILL.md")) throw Object.assign(new Error("denied"), { code: "EACCES" });
+      return Reflect.apply(readFile, fs, [location, ...args]);
+    }) as typeof fs.readFile);
+    const result = await app.doctor({ projectPath: project });
+    spy.mockRestore();
+    expect(await snapshotTree(sandbox.sandboxRoot)).toEqual(before);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("failed");
+    expect(result.data.status).toBe("PARTIAL");
+    expect(result.data.issues.some((issue) => issue.severity === "error")).toBe(false);
+    expect(result.data.issues).toContainEqual(expect.objectContaining({ code: "PROJECT_CHECK_INCOMPLETE", path: target }));
+  });
   test("custom project roots are inspected without using the configured global root", async () => {
     const { app, project, store } = await setup(false);
     const state = await store.readState();

@@ -4,6 +4,7 @@ import type { Stats } from "node:fs";
 import type { DoctorIssue, DoctorReport, DeploymentTargetName, LeafRecord, MergedTargetDefinition, ProjectCheckRoot } from "@skill-flow/domain/types";
 import { getMergedTargetDefinitions, resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
 import type { StateStore } from "@skill-flow/storage/state-store";
+import { inspectProjectSkillDirectory, inspectProjectSymlink } from "./project-skill-inspection.js";
 import { DeploymentReconciler } from "./deployment-reconciler.js";
 
 export type ExpectedProjectSkill = {
@@ -149,10 +150,17 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
       continue;
     }
     managedSkillCount++;
-    void stats; // Later diagnostic slices inspect the retained entry, including broken symlinks.
+    const expectedType = entry.definition.strategy === "symlink" ? stats.isSymbolicLink() : stats.isDirectory();
+    if (!expectedType) {
+      issues.push({ ...entry.issue, severity: "error", code: "PROJECT_PATH_CONFLICT",
+        message: `Expected a ${entry.definition.strategy === "symlink" ? "symlink" : "directory copy"}, but the deployment path contains another entry type.` });
+      continue;
+    }
+    if (entry.definition.strategy === "symlink") await inspectProjectSymlink(entry, inspection);
+    else await inspectProjectSkillDirectory(entry.path, inspection, entry.issue);
   }
   complete = false;
   issues.push({ sourceId: "project", severity: "warning", code: "PROJECT_CHECKS_INCOMPLETE", path: projectPath,
-    message: "Managed link/Skill validation, copy comparison, and external Skill validation are not yet complete." });
+    message: "Copy comparison and external Skill validation are not yet complete." });
   return finish(baseline, projectId);
 }
