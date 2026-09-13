@@ -1,9 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Stats } from "node:fs";
+import type { Dirent, Stats } from "node:fs";
 import type { DoctorIssue, DoctorReport, DeploymentTargetName, LeafRecord, MergedTargetDefinition, ProjectCheckRoot } from "@skill-flow/domain/types";
+import { hashDirectory, isPathInside } from "@skill-flow/integration/utils/fs";
+import { buildProjectedSkillNameCandidates, getHostedGitOwner } from "@skill-flow/integration/utils/naming";
 import { getMergedTargetDefinitions, resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
 import type { StateStore } from "@skill-flow/storage/state-store";
+import { inspectProjectCopy } from "./project-copy-inspection.js";
+import { inspectExternalProjectSkill } from "./project-external-inspection.js";
 import { inspectProjectSkillDirectory, inspectProjectSymlink } from "./project-skill-inspection.js";
 import { DeploymentReconciler } from "./deployment-reconciler.js";
 
@@ -35,6 +39,7 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
   let complete = true;
   let projectPath = path.resolve(requestedPath);
   let managedSkillCount = 0;
+  let externalSkillCount = 0;
   const inspection: ProjectInspection = {
     issues,
     incomplete(affectedPath, error, context = {}) {
@@ -46,7 +51,7 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
   const finish = (baseline: "available" | "unavailable", projectId?: string): DoctorReport => ({
     status: projectDoctorStatus(issues), issues, scope: "project", projectPath,
     ...(projectId ? { projectId } : {}), baseline, coverage: { complete, roots },
-    managedSkillCount, externalSkillCount: 0,
+    managedSkillCount, externalSkillCount,
   });
   try {
     if (!requestedPath.trim()) throw new Error("Project path is empty");
@@ -82,6 +87,10 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
       ? resolveDocumentedProjectSkillPath(definition.id as DeploymentTargetName, projectPath)
       : definition.projectPathTemplate ? path.join(projectPath, definition.projectPathTemplate) : null;
     if (!rootPath) continue;
+    if (!isPathInside(projectPath, rootPath)) {
+      inspection.incomplete(rootPath, "Configured Skill root is outside the project", { target: definition.id });
+      continue;
+    }
     let identity = path.resolve(rootPath);
     try { identity = await fs.realpath(rootPath); } catch { /* readdir below classifies absence and read failures */ }
     let root = rootsByIdentity.get(identity);
@@ -116,7 +125,21 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
             issues.push({ ...context, path: root.path, severity: "error", code: "PROJECT_SKILL_MISSING", message: "Applied Skill is missing from the current source inventory." });
             continue;
           }
-          const targetPath = path.join(root.path, names.get(target)?.get(leafId) ?? leaf.linkName);
+          const source = state.manifest.sources.find((item) => item.id === sourceId);
+          const candidateNames = buildProjectedSkillNameCandidates({
+            preferredName: names.get(target)?.get(leafId) ?? leaf.linkName,
+            groupId: sourceId, groupName: source?.displayName ?? sourceId,
+            groupAuthor: source ? getHostedGitOwner(source.locator) : undefined,
+            skillName: leaf.linkName,
+          });
+          // Earlier applications can retain a short name when later groups disambiguate.
+          const candidates = [...new Set([...candidateNames, leaf.linkName])]
+            .map((name) => path.join(root.path, name)).filter((candidate) => isPathInside(root.path, candidate));
+          const targetPath = await resolveExpectedProjectPath(candidates, leaf, definition, expected, inspection, context);
+          if (!targetPath) {
+            inspection.incomplete(root.path, "No safe deployment name is available", context);
+            continue;
+          }
           const previous = expected.get(targetPath);
           if (previous) {
             if (previous.leaf.id !== leafId || previous.definition.strategy !== definition.strategy) {
@@ -130,14 +153,21 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
     }
   }
 
+  const scannedEntries = new Map<ProjectCheckRoot, Dirent[]>();
   for (const root of roots) {
     try {
-      await fs.readdir(root.path, { withFileTypes: true });
+      scannedEntries.set(root, await fs.readdir(root.path, { withFileTypes: true }));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT" && !(await fs.lstat(root.path).catch(() => undefined))) root.status = "absent";
+      let absent = false;
+      let reason = error;
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        try { absent = await confirmedAbsentRoot(root.path, projectPath); }
+        catch (inspectionError) { reason = inspectionError; }
+      }
+      if (absent) root.status = "absent";
       else {
         root.status = "unreadable";
-        inspection.incomplete(root.path, error, { targets: root.targets });
+        inspection.incomplete(root.path, reason, { targets: root.targets });
       }
     }
   }
@@ -157,10 +187,72 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
       continue;
     }
     if (entry.definition.strategy === "symlink") await inspectProjectSymlink(entry, inspection);
-    else await inspectProjectSkillDirectory(entry.path, inspection, entry.issue);
+    else {
+      await inspectProjectSkillDirectory(entry.path, inspection, entry.issue);
+      await inspectProjectCopy(entry, inspection);
+    }
   }
-  complete = false;
-  issues.push({ sourceId: "project", severity: "warning", code: "PROJECT_CHECKS_INCOMPLETE", path: projectPath,
-    message: "Copy comparison and external Skill validation are not yet complete." });
+  for (const [root, entries] of scannedEntries) {
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const skillPath = path.join(root.path, entry.name);
+      if (expected.has(skillPath)) continue;
+      if (await inspectExternalProjectSkill(skillPath, root.targets, inspection)) externalSkillCount++;
+    }
+  }
   return finish(baseline, projectId);
+}
+
+/** Inspect naming alternatives without adopting a same-named, valid foreign Skill. */
+async function resolveExpectedProjectPath(
+  candidates: string[], leaf: LeafRecord, definition: MergedTargetDefinition,
+  expected: Map<string, ExpectedProjectSkill>, inspection: ProjectInspection, context: Partial<DoctorIssue>,
+): Promise<string | undefined> {
+  let occupied: string | undefined;
+  for (const candidate of candidates) {
+    const reserved = expected.get(candidate);
+    if (reserved) {
+      if (reserved.leaf.id === leaf.id) return candidate;
+      continue;
+    }
+    let stats: Stats;
+    try { stats = await fs.lstat(candidate); } catch (error) {
+      if (!isMissing(error)) {
+        inspection.incomplete(candidate, error, context);
+        occupied ??= candidate;
+      }
+      continue;
+    }
+    occupied ??= candidate;
+    try {
+      if (definition.strategy === "symlink" && stats.isSymbolicLink()) {
+        const linked = path.resolve(path.dirname(candidate), await fs.readlink(candidate));
+        if (linked === path.resolve(leaf.absolutePath)) return candidate;
+        const actual = await fs.realpath(candidate);
+        if (actual === await fs.realpath(leaf.absolutePath)) return candidate;
+      } else if (definition.strategy === "copy" && stats.isDirectory()) {
+        // A content match is additional evidence for an old naming alternative.
+        if (await hashDirectory(candidate, { symlinkPolicy: "preserve-safe" }) === leaf.contentHash) return candidate;
+      }
+    } catch {
+      // Retain the observed entry; the diagnostic pass distinguishes damage from read failure.
+    }
+  }
+  return occupied ?? candidates.find((candidate) => !expected.has(candidate)) ?? candidates[0];
+}
+
+/** Missing unused roots are normal; broken or unreadable ancestors are a coverage gap. */
+async function confirmedAbsentRoot(rootPath: string, projectPath: string): Promise<boolean> {
+  let candidate = rootPath;
+  while (candidate === projectPath || isPathInside(projectPath, candidate)) {
+    let stats: Stats;
+    try { stats = await fs.lstat(candidate); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      candidate = path.dirname(candidate);
+      continue;
+    }
+    if (candidate === rootPath) return false;
+    return stats.isSymbolicLink() ? (await fs.stat(candidate)).isDirectory() : stats.isDirectory();
+  }
+  return false;
 }

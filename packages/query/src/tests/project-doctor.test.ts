@@ -74,6 +74,7 @@ describe.sequential("read-only Project Health Check", () => {
     expect((await app.applyDraft("alpha", { selectedLeafIds: [], enabledTargets: [] }, { kind: "project", projectId: "p" })).ok).toBe(true);
     const empty = await diagnose(app, project);
     expect(empty.baseline).toBe("available");
+    expect(empty.status).toBe("HEALTHY");
     expect(empty.issues.some((issue) => issue.code === "PROJECT_BASELINE_UNAVAILABLE")).toBe(false);
     expect(empty.coverage?.roots.every((root) => root.status === "absent")).toBe(true);
   });
@@ -189,7 +190,11 @@ describe.sequential("read-only Project Health Check", () => {
     if (code) {
       expect(report.status).toBe("BLOCKED");
       expect(failures).toEqual([expect.objectContaining({ code, path: target, leafId: "alpha:skills/review", target: "codex" })]);
-    } else expect(failures).toEqual([]);
+    } else {
+      expect(failures).toEqual([]);
+      expect(report.status).toBe("HEALTHY");
+      expect(report.coverage?.complete).toBe(true);
+    }
     expect(report.externalSkillCount).toBe(0);
     expect(await snapshotTree(marker)).toBeNull();
   });
@@ -209,6 +214,46 @@ describe.sequential("read-only Project Health Check", () => {
     expect(result.data.status).toBe("PARTIAL");
     expect(result.data.issues.some((issue) => issue.severity === "error")).toBe(false);
     expect(result.data.issues).toContainEqual(expect.objectContaining({ code: "PROJECT_CHECK_INCOMPLETE", path: target }));
+  });
+  test("deployment naming follows applied source disambiguation across Skill groups", async () => {
+    const { app, project } = await setup();
+    const other = await createRepo(sandbox.sandboxRoot, { "skills/review/SKILL.md": skillDoc("review", "Second review.") });
+    expect((await app.addSource(other, { sourceIdOverride: "beta", project: false })).ok).toBe(true);
+    expect((await app.applyDraft("beta", { selectedLeafIds: ["beta:skills/review"], enabledTargets: ["codex"] }, { kind: "project", projectId: "p" })).ok).toBe(true);
+    const report = await diagnose(app, project);
+    expect(report.issues).toEqual([]);
+    expect(report.status).toBe("HEALTHY");
+    expect(report.managedSkillCount).toBe(2);
+    expect(report.externalSkillCount).toBe(0);
+  });
+  test("a dangling Agent directory is incomplete coverage rather than an absent unused root", async () => {
+    const { app, project } = await setup(false);
+    await fs.symlink("missing-agent-directory", path.join(project, ".claude"));
+    const report = await diagnose(app, project);
+    expect(report.status).toBe("PARTIAL");
+    expect(report.coverage?.complete).toBe(false);
+    expect(report.coverage?.roots.find((root) => root.path.endsWith(".claude/skills"))?.status).toBe("unreadable");
+  });
+  test("failed absence verification keeps coverage incomplete and successful external findings", async () => {
+    const { app, project } = await setup(false);
+    const root = path.join(project, ".claude/skills");
+    await fs.mkdir(path.join(project, ".agents/skills/external"), { recursive: true });
+    await fs.writeFile(path.join(project, ".agents/skills/external/SKILL.md"), skillDoc("external", "External."));
+    const before = await snapshotTree(sandbox.sandboxRoot);
+    const lstat = fs.lstat.bind(fs);
+    const spy = vi.spyOn(fs, "lstat").mockImplementation((async (location: unknown, ...args: unknown[]) => {
+      if (location === root) throw Object.assign(new Error("denied"), { code: "EACCES" });
+      return Reflect.apply(lstat, fs, [location, ...args]);
+    }) as typeof fs.lstat);
+    const result = await app.doctor({ projectPath: project });
+    spy.mockRestore();
+    expect(await snapshotTree(sandbox.sandboxRoot)).toEqual(before);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("failed");
+    expect(result.data.status).toBe("PARTIAL");
+    expect(result.data.coverage?.complete).toBe(false);
+    expect(result.data.coverage?.roots.find((entry) => entry.path === root)?.status).toBe("unreadable");
+    expect(result.data.externalSkillCount).toBe(1);
   });
   test("custom project roots are inspected without using the configured global root", async () => {
     const { app, project, store } = await setup(false);
