@@ -279,7 +279,6 @@ export class InventoryService {
   }
 
 }
-
 export function parseSkillFile(
   raw: string,
   parentDirName: string,
@@ -350,4 +349,3 @@ export function parseSkillFile(
     metadataWarnings,
   };
 }
-
