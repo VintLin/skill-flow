@@ -72,8 +72,11 @@ final class MainViewModelSelectionTests: XCTestCase {
         let model = MainViewModel(bridgeClient: BridgeClient())
         model.bindRouteState(appState)
         await model.runDoctor()
-        XCTAssertTrue(fixture.loggedRequests().filter { $0.command == "doctor" }.isEmpty)
-        XCTAssertNotNil(model.lastDoctorError)
+        let request = try XCTUnwrap(fixture.loggedRequests().last { $0.command == "doctor" })
+        XCTAssertEqual(request.payload?["projectPath"]?.value as? String, "")
+        XCTAssertEqual(model.doctorReport?.scope, "project")
+        XCTAssertEqual(model.doctorReport?.status, "BLOCKED")
+        XCTAssertEqual(model.doctorIssues.first?.code, "PROJECT_PATH_UNAVAILABLE")
     }
 
     func testDoctorDecodesLegacyGlobalAndProjectIssueContext() {
@@ -3462,7 +3465,7 @@ private struct TestFixture {
       };
     }
 
-    function main() {
+    async function main() {
       const request = JSON.parse(fs.readFileSync(0, 'utf8'));
       const state = readState();
       logRequest(request);
@@ -3738,6 +3741,21 @@ private struct TestFixture {
 
       if (request.command === 'doctor') {
         if (request.payload?.projectPath) await new Promise(resolve => setTimeout(resolve, 100));
+        if (request.payload?.projectPath === '') {
+          process.stdout.write(JSON.stringify(responseFor(request, true, {
+            status: 'BLOCKED',
+            scope: 'project',
+            projectPath: '',
+            issues: [{
+              sourceId: 'project',
+              path: '',
+              severity: 'error',
+              code: 'PROJECT_PATH_UNAVAILABLE',
+              message: 'Project path is unavailable.'
+            }]
+          }, [], [])));
+          return;
+        }
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           issues: []
         }, [], [])));

@@ -1100,15 +1100,16 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func runDoctor(scope: ProjectScopeSelection, projectPath: String?) async {
-        if case .project = scope, projectPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
-            stateManager.doctorReport = nil
-            stateManager.setDoctorIssues([])
-            stateManager.setLastDoctorError("Selected project path is unavailable. Select the project again to check it.")
-            stateManager.setHealthStatus(.error)
-            return
+        let requestedProjectPath: String?
+        if case .project = scope {
+            // Keep unavailable project selections on the shared Doctor path so
+            // desktop and CLI report the same BLOCKED result.
+            requestedProjectPath = projectPath ?? ""
+        } else {
+            requestedProjectPath = projectPath
         }
         do {
-            let (report, warnings) = try await sourceManagement.runDoctor(projectPath: projectPath)
+            let (report, warnings) = try await sourceManagement.runDoctor(projectPath: requestedProjectPath)
             stateManager.doctorReport = report
             stateManager.setDoctorIssues(report.issues)
             stateManager.setLastDoctorError(nil)
@@ -1118,7 +1119,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
             stateManager.doctorReport = nil
             stateManager.setDoctorIssues([])
             stateManager.setHealthStatus(.error)
-            stateManager.setLastDoctorError("\(projectPath ?? "Global"): \(error.localizedDescription)")
+            stateManager.setLastDoctorError("\(requestedProjectPath ?? "Global"): \(error.localizedDescription)")
         }
     }
 
