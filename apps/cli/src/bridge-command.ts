@@ -224,7 +224,11 @@ const bridgeCommandHandlers = {
       app as SkillFlowApp & CollectionBridgeApp
     ).restoreCollectionSources(collectionId));
   },
-  doctor: (app, request) => runBridgeResult(request, () => app.doctor()),
+  doctor: (app, request) => {
+    const payload = request.payload === undefined ? {} : expectObjectPayload(request.payload, "doctor");
+    const projectPath = expectOptionalString(payload.projectPath, "projectPath", "doctor");
+    return runBridgeResult(request, () => projectPath === undefined ? app.doctor() : app.doctor({ projectPath }));
+  },
   "adopt-external-source": async (app, request) => {
     const payload = expectObjectPayload(request.payload, "adopt-external-source");
     const paths = parseRequiredStringArray(payload.paths, "adopt-external-source.paths");

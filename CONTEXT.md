@@ -4,6 +4,24 @@ Shared vocabulary for the skill-flow monorepo (CLI, runtime, and macOS desktop s
 
 ## Language
 
+### Project diagnostics
+
+**Project Health Check**:
+A read-only assessment of one project's managed Skill deployments and external Skills in its Agent skill directories. It reports deployment inconsistencies, broken links, and basic Skill validity problems; a valid external Skill is not itself a fault. Desktop and CLI checks share this meaning.
+_Avoid_: project repair, global health check, selected Skill list
+
+**External Project Skill**:
+A Skill present in a project's Agent skill directory whose deployment is not managed by Skill Flow, including manually added Skills and Skills installed by other tools.
+_Avoid_: invalid Skill, orphaned deployment, unmanaged error
+
+**Project Deployment Baseline**:
+The Skill selections and enabled Agents from the last successful application for each Skill group in a project. Unapplied edits and selections inherited for display do not establish this baseline; without one, deployment completeness is unknown.
+_Avoid_: current checkbox state, global selection, on-disk inventory
+
+**Project Check Coverage**:
+The extent to which a Project Health Check could inspect the known project-local Agent skill directories, regardless of Agent display visibility. Shared directories are inspected once; unreadable directories make coverage incomplete.
+_Avoid_: Agent Coverage (usage analytics), enabled Agent count, healthy empty result
+
 ### Desktop workspace memory
 
 **Desktop Workspace Memory**:

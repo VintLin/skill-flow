@@ -88,7 +88,13 @@ export function formatDoctorIssue(issue: DoctorIssue): string {
     : issue.leafId
       ? ` skill:${issue.leafId}`
       : "";
-  return `[${issue.severity.toUpperCase()}] ${issue.sourceLabel ?? issue.sourceId}${target}${leaf} ${issue.message}`;
+  const summary = `[${issue.severity.toUpperCase()}] ${issue.sourceLabel ?? issue.sourceId}${target}${leaf} ${issue.message}`;
+  const context = [
+    issue.path ? `  Path: ${issue.path}` : undefined,
+    issue.targets?.length ? `  Agents: ${issue.targets.map(formatTargetName).join(", ")}` : undefined,
+    issue.advice ? `  ${issue.advice}` : undefined,
+  ].filter(Boolean);
+  return [summary, ...context].join("\n");
 }
 
 export function formatSkillCandidates(candidates: SkillCandidate[]): string {

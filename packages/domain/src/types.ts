@@ -564,13 +564,29 @@ export type DoctorIssue = {
   sourceId: string;
   sourceLabel?: string;
   target?: DeploymentTargetId;
+  targets?: DeploymentTargetId[];
+  path?: string;
+  advice?: string;
   leafId?: string;
   leafLabel?: string;
   code: string;
   message: string;
 };
 
+export type ProjectCheckRoot = {
+  path: string;
+  targets: DeploymentTargetId[];
+  status: "scanned" | "absent" | "unreadable";
+};
+
 export type DoctorReport = {
+  scope?: "global" | "project";
+  projectPath?: string;
+  projectId?: string;
+  baseline?: "available" | "unavailable";
+  coverage?: { complete: boolean; roots: ProjectCheckRoot[] };
+  managedSkillCount?: number;
+  externalSkillCount?: number;
   status: "HEALTHY" | "PARTIAL" | "BLOCKED";
   issues: DoctorIssue[];
 };

@@ -33,6 +33,51 @@ describe.sequential("bridge command dispatcher", () => {
     });
   });
 
+  test("doctor forwards explicit paths and preserves omitted global arguments", async () => {
+    const app = new SkillFlowApp();
+    const report = { status: "PARTIAL" as const, scope: "project" as const, projectPath: "/tmp/unregistered", issues: [], externalSkillCount: 2 };
+    const doctor = vi.spyOn(app, "doctor").mockResolvedValue(ok(report));
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION, command: "doctor", payload: { projectPath: "/tmp/unregistered" },
+    });
+    expect(doctor).toHaveBeenLastCalledWith({ projectPath: "/tmp/unregistered" });
+    expect(response.data).toEqual(report);
+    await executeBridgeRequest(app, { protocolVersion: PROTOCOL_VERSION, command: "doctor" });
+    expect(doctor).toHaveBeenLastCalledWith();
+    doctor.mockRestore();
+  });
+
+  test.each([
+    "PROJECT_BROKEN_SYMLINK", "PROJECT_SYMLINK_MISDIRECTED", "PROJECT_PATH_CONFLICT",
+    "PROJECT_SKILL_INVALID", "PROJECT_COPY_DIFFERENT", "PROJECT_EXTERNAL_BROKEN_SYMLINK",
+    "PROJECT_EXTERNAL_INVALID_SKILL",
+  ])("doctor preserves %s and full report context", async (code) => {
+    const app = new SkillFlowApp();
+    const report = {
+      status: "BLOCKED" as const, scope: "project" as const, projectPath: "/actual/project", projectId: "registered",
+      baseline: "available" as const, coverage: { complete: false, roots: [{ path: "/actual/project/.agents/skills", targets: ["codex", "cursor"], status: "scanned" as const }] },
+      managedSkillCount: 2, externalSkillCount: 3,
+      issues: [{ severity: "warning" as const, code, sourceId: "group", sourceLabel: "Group", leafId: "skill", leafLabel: "Skill", message: "Diagnostic detail", path: "/actual/project/.agents/skills/skill", targets: ["codex", "cursor"], advice: "Switch to symlink deployment where supported." }],
+    };
+    const doctor = vi.spyOn(app, "doctor").mockResolvedValue(ok(report));
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION, command: "doctor", payload: { projectPath: "/requested/project" },
+    });
+    expect(response.data).toEqual(report);
+    doctor.mockRestore();
+  });
+
+  test("doctor rejects malformed project paths instead of running global maintenance", async () => {
+    const app = new SkillFlowApp();
+    const doctor = vi.spyOn(app, "doctor");
+    const response = await executeBridgeRequest(app, {
+      protocolVersion: PROTOCOL_VERSION, command: "doctor", payload: { projectPath: 123 },
+    });
+    expect(response.ok).toBe(false);
+    expect(doctor).not.toHaveBeenCalled();
+    doctor.mockRestore();
+  });
+
   test("returns list envelope", async () => {
     const app = new SkillFlowApp();
     const response = await executeBridgeRequest(app, {
