@@ -161,8 +161,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         get { stateManager.pendingDetailRename }
         set { stateManager.pendingDetailRename = newValue }
     }
-    var doctorReport: DoctorReportRow? { stateManager.doctorReport }
-    var doctorIssues: [DoctorIssueRow] { stateManager.doctorReport?.issues ?? [] }
+    var doctorIssues: [DoctorIssueRow] { stateManager.doctorIssues }
     var lastDoctorError: String? { stateManager.lastDoctorError }
     var deploymentFilterTarget: String { stateManager.deploymentFilterTarget }
     var deploymentFilterKind: String { stateManager.deploymentFilterKind }
@@ -1096,28 +1095,15 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     func runDoctor() async {
-        await runDoctor(scope: currentProjectScope(), projectPath: currentProjectPath())
-    }
-
-    func runDoctor(scope: ProjectScopeSelection, projectPath: String?) async {
-        let requestedProjectPath: String?
-        if case .project = scope {
-            // Keep unavailable project selections on the shared Doctor path so
-            // desktop and CLI report the same BLOCKED result.
-            requestedProjectPath = projectPath ?? ""
-        } else {
-            requestedProjectPath = projectPath
-        }
         do {
-            let (report, warnings) = try await sourceManagement.runDoctor(projectPath: requestedProjectPath)
-            stateManager.doctorReport = report
+            let (issues, warnings) = try await sourceManagement.runDoctor()
+            stateManager.setDoctorIssues(issues)
             stateManager.setLastDoctorError(nil)
             stateManager.setLatestWarnings(warnings)
-            stateManager.setHealthStatus(report.status == "BLOCKED" ? .error : (report.status == "PARTIAL" || !warnings.isEmpty ? .warnings : .healthy))
+            stateManager.setHealthStatus(warnings.isEmpty ? .healthy : .warnings)
         } catch {
-            stateManager.doctorReport = nil
             stateManager.setHealthStatus(.error)
-            stateManager.setLastDoctorError("\(requestedProjectPath ?? "Global"): \(error.localizedDescription)")
+            stateManager.setLastDoctorError(error.localizedDescription)
         }
     }
 

@@ -129,10 +129,12 @@ final class SourceManagement {
     private var renamedSourceDisplayNameOverridesBySourceId: [String: String] = [:]
     private var renamedSourceOriginalDisplayNameOverridesBySourceId: [String: String] = [:]
 
-    @ObservationIgnored private var doctorRequestTasks: [String?: Task<BridgeResponse, Error>] = [:]
     @ObservationIgnored private var listRequestTask: Task<BridgeResponse, Error>?
     private var listRequestToken: UInt64 = 0
     private var activeListRequestToken: UInt64?
+    @ObservationIgnored private var doctorRequestTask: Task<BridgeResponse, Error>?
+    private var doctorRequestToken: UInt64 = 0
+    private var activeDoctorRequestToken: UInt64?
     @ObservationIgnored private var inspectRequestTasksBySourceId: [ScopedSourceKey: Task<BridgeResponse, Error>] = [:]
     private var inspectRequestTokensBySourceId: [ScopedSourceKey: UInt64] = [:]
     private var inspectRequestTokenSeed: UInt64 = 0
@@ -297,19 +299,9 @@ final class SourceManagement {
         try await fetchInspectResponse(sourceId: sourceId, scope: scope, intent: intent)
     }
 
-    func runDoctor(projectPath: String? = nil) async throws -> (DoctorReportRow, [BridgeIssue]) {
-        let response = try await fetchDoctorResponse(projectPath: projectPath)
-        return (DoctorReportRow(value: response.data?.value, requestedProjectPath: projectPath), response.warnings)
-    }
-
-    private func fetchDoctorResponse(projectPath: String?) async throws -> BridgeResponse {
-        if let task = doctorRequestTasks[projectPath] {
-            return try await task.value
-        }
-        let task = Task { try await bridgeClient.doctor(projectPath: projectPath) }
-        doctorRequestTasks[projectPath] = task
-        defer { doctorRequestTasks.removeValue(forKey: projectPath) }
-        return try await task.value
+    func runDoctor() async throws -> ([DoctorIssueRow], [BridgeIssue]) {
+        let response = try await fetchDoctorResponse()
+        return (parseDoctorIssues(response.data?.value), response.warnings)
     }
 
     func togglePinned(sourceId: String) async throws -> [String] {
@@ -708,6 +700,21 @@ final class SourceManagement {
             throw error
         }
     }
+    private func fetchDoctorResponse() async throws -> BridgeResponse {
+        if let existingTask = doctorRequestTask { return try await existingTask.value }
+        doctorRequestToken &+= 1
+        let token = doctorRequestToken
+        let task = Task { try await bridgeClient.doctor() }
+        doctorRequestTask = task
+        activeDoctorRequestToken = token
+        defer {
+            if activeDoctorRequestToken == token {
+                doctorRequestTask = nil
+                activeDoctorRequestToken = nil
+            }
+        }
+        return try await task.value
+    }
 
     private func fetchInspectResponse(
         sourceId: String,
@@ -1014,6 +1021,19 @@ final class SourceManagement {
         renamedSourceOriginalDisplayNameOverridesBySourceId.removeValue(forKey: sourceId)
     }
 
+    private func parseDoctorIssues(_ value: Any?) -> [DoctorIssueRow] {
+        guard let data = value as? [String: Any], let issues = data["issues"] as? [[String: Any]] else { return [] }
+        return issues.enumerated().map { index, issue in
+            DoctorIssueRow(
+                id: "\(issue["severity"] as? String ?? "info")-\(issue["code"] as? String ?? "UNKNOWN")-\(index)",
+                severity: issue["severity"] as? String ?? "info",
+                code: issue["code"] as? String ?? "UNKNOWN",
+                message: issue["message"] as? String ?? "No message",
+                sourceId: issue["sourceId"] as? String ?? "-",
+                target: issue["target"] as? String ?? "-"
+            )
+        }
+    }
 
 }
 

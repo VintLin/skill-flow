@@ -19,86 +19,6 @@ final class MainViewModelSelectionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDoctorKeepsRequestedProjectPathAfterScopeChanges() async throws {
-        let fixture = try TestFixture.install()
-        try fixture.reset(state: .baseline)
-        let appState = DesktopAppState()
-        appState.settings.selectedProjectScope = .project("repo-a")
-        appState.settings.recentProjectScopes = [RecentProjectScopeItem(projectId: "repo-a", title: "Repo A", lastActivityAt: "2026-03-30T00:00:00Z", projectPath: "/tmp/repo-a", tools: [])]
-        let model = MainViewModel(bridgeClient: BridgeClient())
-        model.bindRouteState(appState)
-        let check = Task { @MainActor in await model.runDoctor() }
-        try await fixture.waitForLoggedRequest(command: "doctor")
-        appState.settings.selectedProjectScope = .global
-        await check.value
-        let request = try XCTUnwrap(fixture.loggedRequests().last { $0.command == "doctor" })
-        XCTAssertEqual(request.payload?["projectPath"]?.value as? String, "/tmp/repo-a")
-        XCTAssertEqual(model.doctorReport?.projectPath, "/tmp/repo-a")
-        XCTAssertEqual(model.doctorReport?.scope, "project")
-        XCTAssertEqual(model.doctorReport?.status, "PARTIAL")
-    }
-
-    func testDoctorCoalescesSameProjectButKeepsDifferentProjectsSeparate() async throws {
-        let fixture = try TestFixture.install()
-        try fixture.reset(state: .baseline)
-        let appState = DesktopAppState()
-        appState.settings.selectedProjectScope = .project("repo-a")
-        appState.settings.recentProjectScopes = [
-            RecentProjectScopeItem(projectId: "repo-a", title: "A", lastActivityAt: "", projectPath: "/tmp/repo-a", tools: []),
-            RecentProjectScopeItem(projectId: "repo-b", title: "B", lastActivityAt: "", projectPath: "/tmp/repo-b", tools: [])
-        ]
-        let model = MainViewModel(bridgeClient: BridgeClient())
-        model.bindRouteState(appState)
-        let first = Task { @MainActor in await model.runDoctor() }
-        try await fixture.waitForLoggedRequest(command: "doctor")
-        let duplicate = Task { @MainActor in await model.runDoctor(scope: .project("repo-a"), projectPath: "/tmp/repo-a") }
-        await Task.yield()
-        appState.settings.selectedProjectScope = .project("repo-b")
-        let other = Task { @MainActor in await model.runDoctor() }
-        await first.value
-        await duplicate.value
-        await other.value
-        let requests = fixture.loggedRequests().filter { $0.command == "doctor" }
-        XCTAssertEqual(requests.count, 2)
-        XCTAssertEqual(requests.compactMap { $0.payload?["projectPath"]?.value as? String }, ["/tmp/repo-a", "/tmp/repo-b"])
-        XCTAssertEqual(model.doctorReport?.projectPath, "/tmp/repo-b")
-    }
-
-    func testDoctorDoesNotFallBackToGlobalForProjectWithoutPath() async throws {
-        let fixture = try TestFixture.install()
-        try fixture.reset(state: .baseline)
-        let appState = DesktopAppState()
-        appState.settings.selectedProjectScope = .project("unavailable")
-        let model = MainViewModel(bridgeClient: BridgeClient())
-        model.bindRouteState(appState)
-        await model.runDoctor()
-        let request = try XCTUnwrap(fixture.loggedRequests().last { $0.command == "doctor" })
-        XCTAssertEqual(request.payload?["projectPath"]?.value as? String, "")
-        XCTAssertEqual(model.doctorReport?.scope, "project")
-        XCTAssertEqual(model.doctorReport?.status, "BLOCKED")
-        XCTAssertEqual(model.doctorIssues.first?.code, "PROJECT_PATH_UNAVAILABLE")
-    }
-
-    func testDoctorDecodesLegacyGlobalAndProjectIssueContext() {
-        let legacy = DoctorReportRow(value: ["status": "HEALTHY", "issues": []])
-        XCTAssertEqual(legacy.scope, "global")
-        XCTAssertNil(legacy.projectPath)
-        XCTAssertEqual(legacy.status, "HEALTHY")
-        let project = DoctorReportRow(value: [
-            "status": "BLOCKED", "scope": "project", "projectPath": "/tmp/actual",
-            "baseline": "available", "managedSkillCount": 2, "externalSkillCount": 3,
-            "coverage": ["complete": false, "roots": [["path": "/tmp/actual/.agents/skills", "targets": ["codex"], "status": "scanned"]]],
-            "issues": [["severity": "warning", "code": "PROJECT_COPY_DIFFERENT", "message": "Contents differ", "path": "/tmp/actual/skill", "targets": ["codex"], "leafId": "leaf", "advice": "Switch to symlink deployment"]]
-        ], requestedProjectPath: "/tmp/requested")
-        XCTAssertEqual(project.projectPath, "/tmp/actual")
-        XCTAssertEqual(project.externalSkillCount, 3)
-        XCTAssertEqual(project.coverageComplete, false)
-        XCTAssertEqual(project.roots.first?.targets, ["codex"])
-        XCTAssertEqual(project.issues.first?.advice, "Switch to symlink deployment")
-        XCTAssertEqual(project.issues.first?.path, "/tmp/actual/skill")
-        XCTAssertEqual(project.issues.first?.leafId, "leaf")
-    }
-
     func testSelectionFallbackTriStateAndGroupSourceIds() async throws {
         let fixture = try TestFixture.install()
         try fixture.reset(state: .baseline)
@@ -3481,7 +3401,7 @@ private struct TestFixture {
       };
     }
 
-    async function main() {
+    function main() {
       const request = JSON.parse(fs.readFileSync(0, 'utf8'));
       const state = readState();
       logRequest(request);
@@ -3756,22 +3676,6 @@ private struct TestFixture {
       }
 
       if (request.command === 'doctor') {
-        if (request.payload?.projectPath) await new Promise(resolve => setTimeout(resolve, 100));
-        if (request.payload?.projectPath === '') {
-          process.stdout.write(JSON.stringify(responseFor(request, true, {
-            status: 'BLOCKED',
-            scope: 'project',
-            projectPath: '',
-            issues: [{
-              sourceId: 'project',
-              path: '',
-              severity: 'error',
-              code: 'PROJECT_PATH_UNAVAILABLE',
-              message: 'Project path is unavailable.'
-            }]
-          }, [], [])));
-          return;
-        }
         process.stdout.write(JSON.stringify(responseFor(request, true, {
           issues: []
         }, [], [])));

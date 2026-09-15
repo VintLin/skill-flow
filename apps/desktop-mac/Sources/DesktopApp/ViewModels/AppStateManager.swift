@@ -74,7 +74,7 @@ final class AppStateManager {
     var latestWarnings: [BridgeIssue] = []
     var latestWarningPresentations: [DesktopWarningPresentation] = []
     var pendingDetailRename: PendingDetailRename?
-    var doctorReport: DoctorReportRow?
+    var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?
 
     // MARK: - 状态转换方法
@@ -199,6 +199,10 @@ final class AppStateManager {
         lastDoctorError = error
     }
 
+    func setDoctorIssues(_ issues: [DoctorIssueRow]) {
+        doctorIssues = issues
+    }
+
     func resetToDefaults() {
         selectedSection = .overview
         selectedSourceId = nil
@@ -217,7 +221,7 @@ final class AppStateManager {
         latestWarnings = []
         latestWarningPresentations = []
         pendingDetailRename = nil
-        doctorReport = nil
+        doctorIssues = []
         lastDoctorError = nil
     }
 }

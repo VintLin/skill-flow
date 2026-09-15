@@ -14,7 +14,7 @@ skill-flow doctor --project /absolute/path/to/project
 skill-flow doctor
 ```
 
-Desktop keeps the shared Doctor bridge and internal synchronization behavior, but does not expose a user-facing Doctor toolbar control or report sheet. Use the CLI for an explicit project report. Changing selection while an internal request is running does not relabel its result. Requests for the same path share a running check; different projects remain separate.
+Desktop retains its existing global Doctor maintenance behavior, but does not expose a user-facing Doctor toolbar control or project report. Use the CLI for an explicit project report. Project-scoped bridge requests and desktop report decoding were intentionally removed as dead UI support.
 
 `SkillFlowApp.doctor({ projectPath })` is the shared project entry point. Omitted options preserve the global path. Project reports add optional fields to the existing report contract; legacy global reports remain decodable. `coverage.complete` describes inspection, independently of whether a deployment baseline exists. `externalSkillCount` counts valid external candidates; `managedSkillCount` counts present expected deployment paths examined, including paths with reported conflicts.
 
@@ -110,7 +110,7 @@ Full build/test logs are local at `/tmp/project-doctor-pr-build.log`, `/tmp/proj
 
 ### Desktop and packaging note
 
-The current Swift 6.4 command-line toolchain builds the application successfully. The PR branch predates current `main`, so the authoritative desktop acceptance run used a synthetic merge worktree; all 646 tests pass there. The packaged arm64 application launches and the real Doctor sheet presents the selected project report correctly.
+The current Swift 6.4 command-line toolchain builds the application successfully. The desktop selection suite passes after removing the unused project-report path; packaged-app UI acceptance for a Doctor sheet is not applicable because the desktop has no Doctor entry.
 
 Artifact validation exposed an inherited packaging issue outside this PR's diff: recursive attribute cleanup did not remove `com.apple.quarantine` from the bundled `npm` and `npx` symlink objects. Clearing those two symlink attributes made the existing signature and artifact validator pass. This should be handled separately in the release packaging workflow rather than mixed into Project Doctor.
 
@@ -140,12 +140,12 @@ The initial user changes to CONTEXT.md and ADR 0004 were preserved and committed
 
 ### Standards
 
-No hard violations were found against repository instructions, domain vocabulary, or ADR 0004. Review noted judgment-level follow-ups rather than merge blockers: the long `resolveExpectedProjectPath` parameter list, unconstrained Doctor status/scope strings in Swift UI models, duplicated `doctorReport`/`doctorIssues` state, and hard-coded English presentation strings.
+No hard violations were found against repository instructions, domain vocabulary, or ADR 0004. The desktop-specific project-report state, bridge payload, and tests were removed as unnecessary after the UI ablation; the remaining Doctor scope is CLI/runtime only.
 
 ### Spec
 
 1. **P1, fixed in `1c249ef`:** an edited deployed copy could be bypassed when another naming candidate matched the source hash. The report then incorrectly returned HEALTHY and classified the edited path as valid external content, violating #8's requirement to warn whenever current source and project copy differ. Multiple occupied candidates now lower coverage certainty, retain copy-difference evidence with uncertain-ownership wording, and never silently produce HEALTHY. Public runtime regressions cover copy/link alternatives and reversed saved group order.
-2. **P1, fixed in `2e344d8`:** the desktop returned early when a saved project had no usable path, bypassing the shared Doctor runtime and preventing the required `PROJECT_PATH_UNAVAILABLE` BLOCKED report. The desktop now sends an explicit empty project path to the shared check; the public bridge fixture and desktop regression assert the same report as CLI/runtime.
+2. **Ablated:** desktop project-path forwarding and report decoding were removed with the project Doctor UI. CLI/runtime still cover `PROJECT_PATH_UNAVAILABLE` and explicit project diagnostics.
 3. **Test-fixture blocker, fixed in `2e344d8`:** the desktop bridge helper used `await` inside a non-async JavaScript function, so project-scoped Doctor requests failed before logging. The helper is async and the full merged desktop suite passes.
 
 Review totals: Standards 0 hard findings; Spec 3 findings, all fixed. Automated gates and the packaged-app presentation smoke pass; no actionable scope creep was found.

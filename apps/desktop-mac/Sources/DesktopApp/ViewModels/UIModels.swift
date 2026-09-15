@@ -1030,45 +1030,6 @@ struct DeploymentSummary {
     static let empty = DeploymentSummary(create: 0, update: 0, remove: 0, blocked: 0, noop: 0)
 }
 
-struct DoctorReportRow {
-    let status: String
-    let scope: String
-    let projectPath: String?
-    let projectId: String?
-    let baseline: String?
-    let coverageComplete: Bool?
-    let roots: [DoctorRootRow]
-    let managedSkillCount: Int?
-    let externalSkillCount: Int?
-    let issues: [DoctorIssueRow]
-
-    init(value: Any?, requestedProjectPath: String? = nil) {
-        let data = value as? [String: Any] ?? [:]
-        status = data["status"] as? String ?? "PARTIAL"
-        scope = data["scope"] as? String ?? (requestedProjectPath == nil ? "global" : "project")
-        projectPath = data["projectPath"] as? String ?? requestedProjectPath
-        projectId = data["projectId"] as? String
-        baseline = data["baseline"] as? String
-        let coverage = data["coverage"] as? [String: Any]
-        coverageComplete = coverage?["complete"] as? Bool
-        roots = (coverage?["roots"] as? [[String: Any]] ?? []).enumerated().map { index, root in
-            DoctorRootRow(id: index, path: root["path"] as? String ?? "", targets: root["targets"] as? [String] ?? [], status: root["status"] as? String ?? "unreadable")
-        }
-        managedSkillCount = data["managedSkillCount"] as? Int
-        externalSkillCount = data["externalSkillCount"] as? Int
-        issues = (data["issues"] as? [[String: Any]] ?? []).enumerated().map { index, issue in
-            DoctorIssueRow(id: String(index), severity: issue["severity"] as? String ?? "info", code: issue["code"] as? String ?? "UNKNOWN", message: issue["message"] as? String ?? "", sourceId: issue["sourceId"] as? String ?? "-", target: issue["target"] as? String ?? "-", leafId: issue["leafId"] as? String, path: issue["path"] as? String, targets: issue["targets"] as? [String] ?? [], advice: issue["advice"] as? String, sourceLabel: issue["sourceLabel"] as? String, leafLabel: issue["leafLabel"] as? String)
-        }
-    }
-}
-
-struct DoctorRootRow: Identifiable {
-    let id: Int
-    let path: String
-    let targets: [String]
-    let status: String
-}
-
 struct DoctorIssueRow: Identifiable {
     let id: String
     let severity: String
@@ -1076,12 +1037,6 @@ struct DoctorIssueRow: Identifiable {
     let message: String
     let sourceId: String
     let target: String
-    var leafId: String? = nil
-    var path: String? = nil
-    var targets: [String] = []
-    var advice: String? = nil
-    var sourceLabel: String? = nil
-    var leafLabel: String? = nil
 }
 
 struct PendingDetailRename: Equatable {
