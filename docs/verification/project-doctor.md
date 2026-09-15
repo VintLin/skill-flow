@@ -2,7 +2,7 @@
 
 Scope: [spec #5](https://github.com/ren2019/skill-flow/issues/5), tasks [#6](https://github.com/ren2019/skill-flow/issues/6), [#7](https://github.com/ren2019/skill-flow/issues/7), [#8](https://github.com/ren2019/skill-flow/issues/8), [#9](https://github.com/ren2019/skill-flow/issues/9). Latest issue bodies and comments were read on 2026-09-13; none had comments. The explicit GitHub tracker instruction takes precedence over the repository's older local-tracker document. Vocabulary and decisions are in [CONTEXT.md](../../CONTEXT.md) and [ADR 0004](../adr/0004-read-only-project-health-check.md).
 
-**Automated acceptance is complete:** implementation, TypeScript checks, the full macOS build/test gate, and packaging pass. The user-facing desktop Doctor control/report was intentionally removed; the desktop bridge and internal synchronization compatibility remain covered. No issue was edited or closed, application installed, or release published. Following the explicit review/PR request on 2026-09-14, a separate PR branch was prepared from fork main; the original implementation branch remains preserved locally.
+**Automated acceptance is complete:** implementation and TypeScript checks pass. The user-facing desktop Doctor control/report and its project-scoped bridge support were intentionally removed; the desktop retains only its existing global maintenance call. No issue was edited or closed, application installed, or release published.
 
 ## Use
 
@@ -26,7 +26,7 @@ The following test suites use the public runtime entry point and real temporary 
 - **C** — [project-doctor-copy.test.ts](../../packages/query/src/tests/project-doctor-copy.test.ts): 12 tests for current content comparison, source validity, capability-specific advice, mixed status, and read-only results.
 - **E** — [project-doctor-external.test.ts](../../packages/query/src/tests/project-doctor-external.test.ts): 10 tests for external candidates, scope, validity, links, coverage, and read-only results.
 - **B** — [bridge-command.test.ts](../../apps/cli/src/tests/bridge-command.test.ts), [doctor-command.test.ts](../../apps/cli/src/tests/doctor-command.test.ts), and [doctor-format.test.ts](../../packages/integration/src/tests/doctor-format.test.ts): path propagation, real CLI invocation, legacy/global compatibility, every new issue family, paths, Agent associations, counts, coverage, and advice.
-- **D** — [MainViewModelSelectionTests.swift](../../apps/desktop-mac/Tests/SkillFlowDesktopTests/MainViewModelSelectionTests.swift): captured scope/path, same-project coalescing versus separate project checks, no global fallback for a missing project path, and report decoding. The full merged desktop suite passes.
+- **D** — [MainViewModelSelectionTests.swift](../../apps/desktop-mac/Tests/SkillFlowDesktopTests/MainViewModelSelectionTests.swift): existing desktop selection and global Doctor synchronization behavior. Project-scoped desktop tests were removed with the ablated UI path.
 
 R/C/E snapshot file bytes, file modes, directory entries, and symlink destinations across the whole sandbox before and after diagnosis. They include shared authority, sources, project paths, and foreign contents. Access times are deliberately excluded. Script fixtures remain unexecuted. Error injection covers EACCES and files disappearing during reads; normal filesystem fixtures cover missing paths, broken/cyclic links, and foreign occupancy.
 
@@ -93,16 +93,16 @@ Executed from the repository root unless specified otherwise:
 | Command | Result |
 | --- | --- |
 | `npm run build` | PASS; all workspace builds and CLI package build. |
-| `npm test` | PASS, 71 test files / 773 tests (2 domain + 13 shared-types + 64 integration + 72 storage + 163 core-engine + 232 query + 10 TUI + 217 CLI). |
+| `npm test` | PASS, 71 test files / 774 tests across the workspace. |
 | `npm run -w @skill-flow/query test -- src/tests/project-doctor.test.ts src/tests/project-doctor-copy.test.ts src/tests/project-doctor-external.test.ts` | R/C/E pass; final suites contain 49 tests (27 + 12 + 10). |
 | `npm run -w @skill-flow/storage test -- src/tests/state-store.test.ts` | PASS, 25 tests. |
 | `npm run -w @skill-flow/core-engine test -- src/tests/inventory-service-precedence.test.ts src/tests/skill-frontmatter.test.ts` | PASS, 11 tests; full core-engine suite also passes. |
 | CLI/bridge focused tests | PASS, 66 tests; formatter 2 tests also pass. |
 | `swift build` in `apps/desktop-mac` | PASS with the current Swift 6.4 toolchain. |
-| `swift test` in `apps/desktop-mac` on the synthetic merge result (`origin/main` + PR fixes) | PASS, 646 tests / 0 failures. |
+| `swift test --filter MainViewModelSelectionTests` in `apps/desktop-mac` | PASS, 93 tests / 0 failures. |
 | Built CLI smoke: `node apps/cli/dist/cli.js doctor --project <temporary-path>` | PASS; unregistered project reports PARTIAL / complete coverage / external count 1, unavailable project reports BLOCKED; sandbox unchanged and no shared state initialized. |
 | `scripts/release/package-desktop-mac-dev.sh <output-path>` | PASS; arm64 app and DMG built, signed, and launched. |
-| Packaged-app UI smoke | PASS; packaged app launches with the Doctor toolbar control/report sheet absent. |
+| Packaged-app UI smoke | Not applicable to Project Doctor; the desktop has no Doctor entry or report sheet. |
 | `scripts/release/validate-mac-artifacts.sh <app-path> arm64` | PASS after explicitly clearing inherited `com.apple.quarantine` attributes from bundled `npm`/`npx` symlinks; the release script's symlink-attribute cleanup remains a separate packaging concern. |
 | `git diff --check` | PASS. |
 
@@ -116,7 +116,7 @@ Artifact validation exposed an inherited packaging issue outside this PR's diff:
 
 ## Local commits
 
-PR branch: `feat/project-doctor-reviewed`, based on fork main `8023bb7`. Review fixed point was explicitly confirmed as `8d6a42d`. The original branch `feat/read-only-project-doctor` remains local; only Project Doctor commits were copied to the PR branch, excluding the inherited Agent-Specific Skill File tabs change.
+The original Project Doctor work was merged to `main`; subsequent commits removed the unused desktop presentation and bridge layers. The CLI/runtime implementation remains the active feature surface.
 
 | Commit | Logical unit |
 | --- | --- |
