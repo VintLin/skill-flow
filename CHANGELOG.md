@@ -4,6 +4,20 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.9 - 2026-09-15
+
+### Added
+
+- Added read-only Project Doctor diagnostics for explicit project paths through the CLI and shared runtime.
+
+### Changed
+
+- Kept the desktop surface focused on existing global maintenance behavior; Project Doctor reports are CLI-only.
+
+### Fixed
+
+- Preserved unavailable project-path attribution and uncertainty across deployment naming alternatives.
+
 ## v1.6.8 - 2026-09-12
 
 ### Added
