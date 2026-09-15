@@ -1,6 +1,6 @@
 # Read-only project health checks
 
-Project Doctor assesses one project's managed Skill deployments and external Skills in known Agent skill directories. Desktop follows the selected scope and displays the project path; CLI accepts an explicit project path, including an unregistered directory, without registering it. Both use the same diagnostic semantics. Omitting a CLI project path retains existing global Doctor behavior.
+Project Doctor assesses one project's managed Skill deployments and external Skills in known Agent skill directories. The desktop runtime retains the shared bridge semantics for internal synchronization, while the CLI is the explicit user-facing project entry. The desktop does not expose a Doctor toolbar control or report sheet. CLI accepts an explicit project path, including an unregistered directory, without registering it. Both use the same diagnostic semantics. Omitting a CLI project path retains existing global Doctor behavior.
 
 Project checks are read-only: they do not reconcile shared state, prune projects or sources, create target directories, remove links, or repair deployments. This deliberately differs from the existing global Doctor, which performs maintenance. Reusing that mutation pipeline would make inspecting a project change unrelated state. The first version provides diagnostics and problem locations; repair operations and changes to global Doctor are outside this decision.
 

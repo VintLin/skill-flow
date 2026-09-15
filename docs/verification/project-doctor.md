@@ -2,7 +2,7 @@
 
 Scope: [spec #5](https://github.com/ren2019/skill-flow/issues/5), tasks [#6](https://github.com/ren2019/skill-flow/issues/6), [#7](https://github.com/ren2019/skill-flow/issues/7), [#8](https://github.com/ren2019/skill-flow/issues/8), [#9](https://github.com/ren2019/skill-flow/issues/9). Latest issue bodies and comments were read on 2026-09-13; none had comments. The explicit GitHub tracker instruction takes precedence over the repository's older local-tracker document. Vocabulary and decisions are in [CONTEXT.md](../../CONTEXT.md) and [ADR 0004](../adr/0004-read-only-project-health-check.md).
 
-**Automated acceptance is complete:** implementation, TypeScript checks, the full macOS build/test gate, packaging, and a packaged-app Doctor presentation smoke all pass. No issue was edited or closed, application installed, or release published. Following the explicit review/PR request on 2026-09-14, a separate PR branch was prepared from fork main; the original implementation branch remains preserved locally.
+**Automated acceptance is complete:** implementation, TypeScript checks, the full macOS build/test gate, and packaging pass. The user-facing desktop Doctor control/report was intentionally removed; the desktop bridge and internal synchronization compatibility remain covered. No issue was edited or closed, application installed, or release published. Following the explicit review/PR request on 2026-09-14, a separate PR branch was prepared from fork main; the original implementation branch remains preserved locally.
 
 ## Use
 
@@ -14,7 +14,7 @@ skill-flow doctor --project /absolute/path/to/project
 skill-flow doctor
 ```
 
-Desktop: select a project or Global, then click the Doctor toolbar button on Home. The report includes the path captured for the request, status, baseline, directory coverage, counts, and findings. Changing selection while a request is running does not relabel its result. Requests for the same path share a running check; different projects remain separate.
+Desktop keeps the shared Doctor bridge and internal synchronization behavior, but does not expose a user-facing Doctor toolbar control or report sheet. Use the CLI for an explicit project report. Changing selection while an internal request is running does not relabel its result. Requests for the same path share a running check; different projects remain separate.
 
 `SkillFlowApp.doctor({ projectPath })` is the shared project entry point. Omitted options preserve the global path. Project reports add optional fields to the existing report contract; legacy global reports remain decodable. `coverage.complete` describes inspection, independently of whether a deployment baseline exists. `externalSkillCount` counts valid external candidates; `managedSkillCount` counts present expected deployment paths examined, including paths with reported conflicts.
 
@@ -102,7 +102,7 @@ Executed from the repository root unless specified otherwise:
 | `swift test` in `apps/desktop-mac` on the synthetic merge result (`origin/main` + PR fixes) | PASS, 646 tests / 0 failures. |
 | Built CLI smoke: `node apps/cli/dist/cli.js doctor --project <temporary-path>` | PASS; unregistered project reports PARTIAL / complete coverage / external count 1, unavailable project reports BLOCKED; sandbox unchanged and no shared state initialized. |
 | `scripts/release/package-desktop-mac-dev.sh <output-path>` | PASS; arm64 app and DMG built, signed, and launched. |
-| Packaged-app Doctor presentation smoke | PASS; selecting `020_SkillFlow` and opening Doctor displayed the captured project path, PARTIAL status, unavailable baseline, complete coverage, counts, roots, and finding details. |
+| Packaged-app UI smoke | PASS; packaged app launches with the Doctor toolbar control/report sheet absent. |
 | `scripts/release/validate-mac-artifacts.sh <app-path> arm64` | PASS after explicitly clearing inherited `com.apple.quarantine` attributes from bundled `npm`/`npx` symlinks; the release script's symlink-attribute cleanup remains a separate packaging concern. |
 | `git diff --check` | PASS. |
 

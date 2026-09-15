@@ -152,9 +152,6 @@ struct MainView: View {
     let importContainer: ImportScreenContainer
     let detailContainer: DetailScreenContainer
 
-    @State private var isDoctorPresented = false
-    @State private var isDoctorRunning = false
-    @State private var doctorRequestedPath: String?
     @State private var updateButtonRotation: Double = 0
     @State private var projectScopeRefreshButtonRotation: Double = 0
     @State private var searchFocusResetToken = 0
@@ -424,7 +421,6 @@ struct MainView: View {
                     HStack(spacing: 8) {
                         searchField
                         importButton
-                        doctorButton
                         usageButton
                         groupEditorButton
                         homeUpdateButton
@@ -441,7 +437,6 @@ struct MainView: View {
                     searchField
                     Spacer(minLength: 0)
                     importButton
-                    doctorButton
                     usageButton
                     groupEditorButton
                     homeUpdateButton
@@ -719,44 +714,6 @@ struct MainView: View {
 
     private var importButton: some View {
         toolbarIconButton(.import) { navigation.showImportPage() }
-    }
-
-    private var doctorButton: some View {
-        Button {
-            let scope = viewModel.currentProjectScope()
-            let projectPath = viewModel.currentProjectPath()
-            doctorRequestedPath = projectPath
-            isDoctorRunning = true
-            isDoctorPresented = true
-            Task {
-                await viewModel.runDoctor(scope: scope, projectPath: projectPath)
-                isDoctorRunning = false
-            }
-        } label: {
-            Image(systemName: "stethoscope")
-                .frame(width: Self.toolbarButtonSize, height: Self.toolbarButtonSize)
-        }
-        .buttonStyle(.plain)
-        .help("Doctor")
-        .accessibilityLabel("Doctor")
-        .sheet(isPresented: $isDoctorPresented) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text("Doctor").font(.title2)
-                    Spacer()
-                    Button("Close") { isDoctorPresented = false }
-                }
-                if isDoctorRunning {
-                    ProgressView("Checking \(doctorRequestedPath ?? "Global")…")
-                } else if let error = viewModel.lastDoctorError {
-                    Text(error).foregroundStyle(.red)
-                } else if let report = viewModel.doctorReport {
-                    DoctorReportView(report: report)
-                }
-            }
-            .padding(24)
-            .frame(width: 680, height: 540)
-        }
     }
 
     private var usageButton: some View {
@@ -1229,7 +1186,6 @@ struct MainView: View {
             homeSearchField(width: searchWidth)
             Spacer(minLength: 0)
             importButton
-            doctorButton
             usageButton
             groupEditorButton
             homeUpdateButton
@@ -2303,9 +2259,9 @@ extension MainView {
         includesSidebarToggle: Bool
     ) -> CGFloat {
         let toggleWidth = includesSidebarToggle ? homeSidebarToggleButtonSize : 0
-        let spacingCount: CGFloat = includesSidebarToggle ? 9 : 8
+        let spacingCount: CGFloat = includesSidebarToggle ? 8 : 7
         let itemSpacing = homeMainHeaderItemSpacing(includesSidebarToggle: includesSidebarToggle)
-        return (toolbarButtonSize * 6)
+        return (toolbarButtonSize * 5)
             + toggleWidth
             + homeMainHeaderBrandWidth
             + reservedHorizontalPadding
