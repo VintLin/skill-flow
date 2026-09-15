@@ -75,7 +75,6 @@ final class AppStateManager {
     var latestWarningPresentations: [DesktopWarningPresentation] = []
     var pendingDetailRename: PendingDetailRename?
     var doctorReport: DoctorReportRow?
-    var doctorIssues: [DoctorIssueRow] = []
     var lastDoctorError: String?
 
     // MARK: - 状态转换方法
@@ -196,10 +195,6 @@ final class AppStateManager {
         pendingDetailRename = rename
     }
 
-    func setDoctorIssues(_ issues: [DoctorIssueRow]) {
-        doctorIssues = issues
-    }
-
     func setLastDoctorError(_ error: String?) {
         lastDoctorError = error
     }
@@ -223,7 +218,6 @@ final class AppStateManager {
         latestWarningPresentations = []
         pendingDetailRename = nil
         doctorReport = nil
-        doctorIssues = []
         lastDoctorError = nil
     }
 }

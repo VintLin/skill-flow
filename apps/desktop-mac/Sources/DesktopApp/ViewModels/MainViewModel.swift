@@ -162,7 +162,7 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         set { stateManager.pendingDetailRename = newValue }
     }
     var doctorReport: DoctorReportRow? { stateManager.doctorReport }
-    var doctorIssues: [DoctorIssueRow] { stateManager.doctorIssues }
+    var doctorIssues: [DoctorIssueRow] { stateManager.doctorReport?.issues ?? [] }
     var lastDoctorError: String? { stateManager.lastDoctorError }
     var deploymentFilterTarget: String { stateManager.deploymentFilterTarget }
     var deploymentFilterKind: String { stateManager.deploymentFilterKind }
@@ -1111,13 +1111,11 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         do {
             let (report, warnings) = try await sourceManagement.runDoctor(projectPath: requestedProjectPath)
             stateManager.doctorReport = report
-            stateManager.setDoctorIssues(report.issues)
             stateManager.setLastDoctorError(nil)
             stateManager.setLatestWarnings(warnings)
             stateManager.setHealthStatus(report.status == "BLOCKED" ? .error : (report.status == "PARTIAL" || !warnings.isEmpty ? .warnings : .healthy))
         } catch {
             stateManager.doctorReport = nil
-            stateManager.setDoctorIssues([])
             stateManager.setHealthStatus(.error)
             stateManager.setLastDoctorError("\(requestedProjectPath ?? "Global"): \(error.localizedDescription)")
         }
