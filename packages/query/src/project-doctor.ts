@@ -37,7 +37,10 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
   const issues: DoctorIssue[] = [];
   const roots: ProjectCheckRoot[] = [];
   let complete = true;
-  let projectPath = path.resolve(requestedPath);
+  const normalizedPath = requestedPath.trim();
+  // Keep an empty path attributable as unavailable; path.resolve("") would
+  // incorrectly turn it into the process working directory.
+  let projectPath = normalizedPath ? path.resolve(normalizedPath) : "";
   let managedSkillCount = 0;
   let externalSkillCount = 0;
   const inspection: ProjectInspection = {
@@ -56,7 +59,7 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
     managedSkillCount, externalSkillCount,
   });
   try {
-    if (!requestedPath.trim()) throw new Error("Project path is empty");
+    if (!normalizedPath) throw new Error("Project path is empty");
     projectPath = await fs.realpath(projectPath);
     if (!(await fs.stat(projectPath)).isDirectory()) throw new Error("Project path is not a directory");
   } catch (error) {

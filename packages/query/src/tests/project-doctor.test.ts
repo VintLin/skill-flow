@@ -113,6 +113,14 @@ describe.sequential("read-only Project Health Check", () => {
     expect(result.status).toBe("BLOCKED");
     expect(result.issues[0]?.code).toBe("PROJECT_PATH_UNAVAILABLE");
   });
+  test("empty project path stays attributable instead of resolving to the process cwd", async () => {
+    const result = await new SkillFlowApp().doctor({ projectPath: "" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("failed");
+    expect(result.data.status).toBe("BLOCKED");
+    expect(result.data.projectPath).toBe("");
+    expect(result.data.issues[0]?.code).toBe("PROJECT_PATH_UNAVAILABLE");
+  });
   test("invalid shared authority yields partial coverage without migration and continues disk checks", async () => {
     const { app, project } = await setup(false);
     await fs.writeFile(path.join(sandbox.stateRoot, "manifest.json"), "{invalid");
