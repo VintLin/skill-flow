@@ -3760,9 +3760,11 @@ export class SkillFlowApp {
       lockFile,
       sourceId,
       preferences,
-      transaction
-        ? (actions) => transaction.prepareTargetMutations(actions)
-        : undefined,
+      {
+        // The planner still derives projected names from the full manifest, but a
+        // protected import transaction may only mutate its own group.
+        ...(transaction ? { transaction } : {}),
+      },
     );
     if (!reconciled.ok) {
       return fail(
@@ -4152,22 +4154,12 @@ export class SkillFlowApp {
         const manifest = this.cloneAuthorityManifest(state.manifest);
         const lockFile = this.cloneLockFile(state.lockFile);
         const adapters = this.createAdaptersForPreferences(state.preferences);
-        const projectedSourceIds = new Set(
-          lockFile.projections
-            .filter((projection) => projection.status === "active")
-            .map((projection) => projection.sourceId),
-        );
-        const planSourceIds = manifest.sources
-          .map((candidate) => candidate.id)
-          .filter((candidateId) =>
-            candidateId === sourceId
-            || this.hasActiveTargets(manifest, candidateId)
-            || projectedSourceIds.has(candidateId),
-          );
         const planned = await this.deploymentReconciler.plan({
           manifest,
           lockFile,
-          sourceIds: planSourceIds,
+          // Bulk Update already opens one transaction per group. Keep each plan
+          // inside that same ownership boundary while retaining global naming.
+          sourceIds: [sourceId],
           adapters,
         });
         warnings.push(...planned.warnings);
@@ -5730,11 +5722,15 @@ export class SkillFlowApp {
     lockFile: LockFile,
     primarySourceId: string,
     preferences: Pick<PreferencesFile, "customTargets" | "agentDisplayOrder">,
-    beforeApply?: (actions: DeploymentAction[]) => Promise<void>,
+    options: {
+      transaction?: OperationRecoveryTransaction;
+    } = {},
   ): Promise<Result<{ actions: DeploymentAction[] }>> {
-    const sourceIds = manifest.sources
-      .map((source) => source.id)
-      .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
+    const sourceIds = options.transaction
+      ? [primarySourceId]
+      : manifest.sources
+        .map((source) => source.id)
+        .filter((sourceId) => sourceId === primarySourceId || this.hasActiveTargets(manifest, sourceId));
 
     const adapters = this.createAdaptersForPreferences(preferences);
     const planned = await this.deploymentReconciler.plan({
@@ -5744,7 +5740,7 @@ export class SkillFlowApp {
       adapters,
     });
     if (!planned.ok) return planned;
-    await beforeApply?.(planned.data.actions);
+    await options.transaction?.prepareTargetMutations(planned.data.actions);
     const applied = await this.deploymentReconciler.apply({
       lockFile,
       actions: planned.data.actions,

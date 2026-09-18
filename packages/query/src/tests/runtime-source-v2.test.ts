@@ -192,6 +192,72 @@ describe.sequential("runtime source v2 write chain", () => {
     await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
   });
 
+  test("commitPreparedImportSource keeps its protected transaction scoped to the imported group", async () => {
+    const existingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/existing/SKILL.md": skillDoc("existing", "Existing."),
+    });
+    const newRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/new/SKILL.md": skillDoc("new", "New."),
+    });
+    const app = new SkillFlowApp();
+    const existing = await app.addSource(existingRepo, {
+      sourceIdOverride: "existing-source",
+      draft: { selectedLeafIds: ["existing-source:skills/existing"], enabledTargets: ["gemini-cli"] },
+    });
+    expect(existing.ok).toBe(true);
+    await fs.rm(path.join(sandbox.targetsRoot, "gemini-cli", "existing"));
+
+    const prepared = await app.prepareImportSource(newRepo);
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok || prepared.data.status !== "ready") return;
+    const imported = await app.commitPreparedImportSource(prepared.data.preparationId, {
+      selectedSkills: [{ uiId: "skill_new", selector: { kind: "repoPath", path: "skills/new" } }],
+      enabledTargets: ["gemini-cli"],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok) return;
+    expect(imported.data.status).toBe("ready");
+    await expect(pathExists(path.join(sandbox.targetsRoot, "gemini-cli", "existing"))).resolves.toBe(false);
+    await expect(pathExists(path.join(sandbox.targetsRoot, "gemini-cli", "new"))).resolves.toBe(true);
+    await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
+  });
+
+  test("commitPreparedImportSource keeps global collision-safe naming without renaming a neighboring group", async () => {
+    const existingRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/shared/SKILL.md": skillDoc("shared", "Existing shared skill."),
+    });
+    const newRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/shared/SKILL.md": skillDoc("shared", "New shared skill."),
+    });
+    const app = new SkillFlowApp();
+    expect((await app.addSource(existingRepo, {
+      sourceIdOverride: "existing-source",
+      draft: { selectedLeafIds: ["existing-source:skills/shared"], enabledTargets: ["gemini-cli"] },
+    })).ok).toBe(true);
+
+    const prepared = await app.prepareImportSource(newRepo);
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok || prepared.data.status !== "ready") return;
+    const imported = await app.commitPreparedImportSource(prepared.data.preparationId, {
+      selectedSkills: [{ uiId: "skill_shared", selector: { kind: "repoPath", path: "skills/shared" } }],
+      enabledTargets: ["gemini-cli"],
+    });
+
+    expect(imported.ok).toBe(true);
+    if (!imported.ok || imported.data.status !== "ready") return;
+    const state = await new StateStore(sandbox.stateRoot).readState();
+    const existingProjection = state.lockFile.projections.find((projection) =>
+      projection.sourceId === "existing-source"
+    );
+    const importedProjection = state.lockFile.projections.find((projection) =>
+      projection.sourceId === imported.data.sourceId
+    );
+    expect(path.basename(existingProjection?.targetPath ?? "")).toBe("shared");
+    expect(path.basename(importedProjection?.targetPath ?? "")).not.toBe("shared");
+    expect(importedProjection?.targetPath).not.toBe(existingProjection?.targetPath);
+  });
+
   test("importSource rolls back the v2 source when requested targets are invalid", async () => {
     const repoPath = await createRepo(sandbox.sandboxRoot, {
       "skills/review/SKILL.md": skillDoc("review", "Review code."),
@@ -335,6 +401,42 @@ describe.sequential("runtime source v2 write chain", () => {
         status: "active",
       }),
     ]));
+    await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
+  });
+
+  test("updateSources keeps each protected transaction scoped to its requested group", async () => {
+    const updateRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/one/SKILL.md": skillDoc("one", "One."),
+    });
+    const neighborRepo = await createRepo(sandbox.sandboxRoot, {
+      "skills/neighbor/SKILL.md": skillDoc("neighbor", "Neighbor."),
+    });
+    const app = new SkillFlowApp();
+    expect((await app.addSource(updateRepo, {
+      sourceIdOverride: "update-source",
+      draft: { selectedLeafIds: ["update-source:skills/one"], enabledTargets: ["gemini-cli"] },
+    })).ok).toBe(true);
+    expect((await app.addSource(neighborRepo, {
+      sourceIdOverride: "neighbor-source",
+      draft: { selectedLeafIds: ["neighbor-source:skills/neighbor"], enabledTargets: ["gemini-cli"] },
+    })).ok).toBe(true);
+    await fs.rm(path.join(sandbox.targetsRoot, "gemini-cli", "neighbor"));
+    await writeRepoFiles(updateRepo, {
+      "skills/two/SKILL.md": skillDoc("two", "Two."),
+    });
+
+    const updated = await app.updateSources(["update-source"]);
+
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.data.updated[0]).toEqual(expect.objectContaining({
+      sourceId: "update-source",
+      changed: true,
+      addedLeafIds: ["update-source:skills/two"],
+    }));
+    await expect(pathExists(path.join(sandbox.targetsRoot, "gemini-cli", "one"))).resolves.toBe(true);
+    await expect(pathExists(path.join(sandbox.targetsRoot, "gemini-cli", "two"))).resolves.toBe(true);
+    await expect(pathExists(path.join(sandbox.targetsRoot, "gemini-cli", "neighbor"))).resolves.toBe(false);
     await expect(fs.access(path.join(sandbox.stateRoot, "recovery", "active.json"))).rejects.toThrow();
   });
 
