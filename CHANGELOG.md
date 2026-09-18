@@ -4,6 +4,17 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.10 - 2026-09-18
+
+### Changed
+
+- Updated the CLI and all internal workspace packages from `1.6.9` to `1.6.10`.
+
+### Fixed
+
+- Isolated linked Group import and update recovery transactions to the Group being changed, so unrelated deployment drift can no longer surface as a `502` bridge failure.
+- Preserved collision-safe deployment naming from the full enabled Group set without applying neighboring Groups inside the active transaction.
+
 ## v1.6.9 - 2026-09-15
 
 ### Added
