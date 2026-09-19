@@ -12,6 +12,7 @@
 | `PRODUCT.md` | 产品定位、目标用户、核心场景和非目标。 |
 | `ARCHITECTURE.md` | 运行时分层、状态模型和 package 边界。 |
 | `DESIGN.md` | desktop UI design token、交互语言和可访问性规则。 |
+| `adr/0005-first-use-cli-mental-model.md` | CLI 首次使用路径、命名和 source/group 关系的设计决策。 |
 | `contracts/` | bridge protocol 和 state file 契约入口。 |
 | `verification/` | 验证矩阵、测试覆盖说明和 UI 状态矩阵。 |
 | `issues/` | 仍需跟踪的问题记录。 |

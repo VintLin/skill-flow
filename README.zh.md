@@ -86,8 +86,9 @@ Skill Flow Desktop release 构建会内置用于 desktop helper 和 skills.sh �
 # 添加一个 source
 skill-flow add garrytan/gstack
 
-# 查看当前 workflow group
+# 查看当前 workflow group 及其 ID
 skill-flow list
+skill-flow list --ids
 
 # 打开交互式配置 UI
 skill-flow config
@@ -102,6 +103,27 @@ skill-flow update --all
 # 诊断漂移和坏掉的部署
 skill-flow doctor
 ```
+
+### 首次使用模型
+
+这些命令的职责不同：
+
+- `add` 安装或登记新的 source，并选择要使用的 skill 与目标。
+- `list` 查看已登记的 workflow group，以及管理命令会使用的稳定 ID。
+- `config` 配置已有 group；它不是安装新 source 的入口。
+- `find` 帮助查找可安装的 skill 和 source。
+
+如果 `skill-flow config` 打开后没有任何 group，请先运行
+`skill-flow add <source>`。
+
+术语分成几个层次：
+
+- **source locator**：你提供的来源地址，例如 `mattpocock/skills`。
+- **source ID**：登记后用于命令和状态关联的稳定标识。
+- **display name**：列表和配置界面中显示的可读名称。
+- **skill group**：作为一个单位被选择和部署的一组 skill。
+
+命令要求 `sourceId` 时，请使用 `skill-flow list --ids` 显示的 ID。
 
 ### 机器桥接入口
 
@@ -187,7 +209,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | `only <sourceIds...> --targets <ids> --all-skills` | 只保留指定 group 开启；`--all-skills` 会先填充空的 skill 选择 |
 | `import-manifest <file>` | 批量导入 source manifest；带 `targets` 的 JSON 条目必须设置 `skills: "all"` |
 | `find <query>` / `search <query>` | 搜索本地技能、内置 Git 目录与 skills.sh |
-| `config` | 打开交互式配置 UI |
+| `config` | 配置已登记 group 的 skill 和目标；不会安装新的 source |
 | `update [sourceId] --all` | 更新单个或全部已注册 source |
 | `adopt <paths...> --name <name>` | 登记由其他安装器管理的已有 skill，不复制也不部署 |
 | `external status [sourceId]` | 刷新外部 source，并比较已配置的版本 |

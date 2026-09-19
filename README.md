@@ -86,8 +86,9 @@ Development builds and damaged release bundles can still fall back to system Nod
 # Add a source
 skill-flow add garrytan/gstack
 
-# Review installed workflow groups
+# Review installed workflow groups and their IDs
 skill-flow list
+skill-flow list --ids
 
 # Migrate or mirror a known source set
 skill-flow import-manifest skill-group-install-manifest.json --dry-run
@@ -108,6 +109,26 @@ skill-flow update --all
 # Diagnose drift or broken projections
 skill-flow doctor
 ```
+
+### First-use model
+
+The commands have separate jobs:
+
+- `add` installs or registers a new source and lets you choose its skills and targets.
+- `list` shows registered workflow groups and the stable IDs used by management commands.
+- `config` configures an existing group; it is not the installation command.
+- `find` helps locate installable skills and sources.
+
+If `skill-flow config` opens with no groups, run `skill-flow add <source>` first.
+
+The terminology is intentionally layered:
+
+- A **source locator** is the address you provide, such as `mattpocock/skills`.
+- A **source ID** is the stable identifier used in commands after registration.
+- A **display name** is the human-readable label shown in lists and configuration.
+- A **skill group** is the selectable and deployable set of skills presented as one unit.
+
+When a command asks for a `sourceId`, use the ID shown by `skill-flow list --ids`.
 
 ### Machine bridge
 
@@ -193,7 +214,7 @@ Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
 | `only <sourceIds...> --targets <ids> --all-skills` | Keep only selected groups ON; `--all-skills` fills empty selections first |
 | `import-manifest <file>` | Batch import source manifests; JSON entries with `targets` require `skills: "all"` |
 | `find <query>` / `search <query>` | Search installed skills, built-in Git catalogs, and skills.sh |
-| `config` | Open the interactive configuration UI |
+| `config` | Configure skills and targets for registered groups; it does not install a new source |
 | `update [sourceId] --all` | Refresh one source or all registered sources |
 | `adopt <paths...> --name <name>` | Catalogue existing skills owned by another installer without copying or deploying them |
 | `external status [sourceId]` | Refresh an external source and compare configured versions |

@@ -41,7 +41,7 @@ export function formatWorkflowList(
       }
       const suffix = suffixParts.length > 0 ? `, ${suffixParts.join(", ")}` : "";
       const label = options.showIds
-        ? `${formatGroupLabel(summary.source)}  ${summary.source.id}`
+        ? `${formatGroupLabel(summary.source)}  ${summary.source.id}  ${summary.source.locator}`
         : formatGroupLabel(summary.source);
       const lines = [
         `${label}  ${summary.health}  ${summary.leafs.length} skills  ${summary.activeTargetCount} targets${suffix}`,

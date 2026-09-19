@@ -87,8 +87,9 @@ Skill Flow Desktop は現在、対象の Mac 上でいくつかの外部コマ�
 # ソースを追加
 skill-flow add garrytan/gstack
 
-# インストールされたワークフローグループをレビュー
+# インストールされたワークフローグループと ID を確認
 skill-flow list
+skill-flow list --ids
 
 # インタラクティブな設定 UI を開く
 skill-flow config
@@ -103,6 +104,17 @@ skill-flow update --all
 # ドリフトまたは壊れたプロジェクションを診断
 skill-flow doctor
 ```
+
+### 初回利用のモデル
+
+- `add` は新しいソースを登録・インポートします。
+- `list` は登録済みグループと、管理コマンドで使う安定した ID を表示します。
+- `config` は登録済みグループを設定する画面であり、新しいソースのインストール入口ではありません。
+- `find` はインストール可能なスキルやソースを探します。
+
+`config` を開いてグループがない場合は、先に `skill-flow add <source>` を実行してください。
+
+`sourceId` を求められた場合は、`skill-flow list --ids` に表示された ID を使用します。
 
 ### マシンブリッジ
 
@@ -188,7 +200,7 @@ skill-flow add clawhub:example/skill-pack@1.2.3
 | `only <sourceIds...> --targets <ids> --all-skills` | 指定したグループだけを ON にする。`--all-skills` は空のスキル選択を先に埋めます |
 | `import-manifest <file>` | ソース manifest を一括インポート。`targets` を持つ JSON entry には `skills: "all"` が必要 |
 | `find <query>` / `search <query>` | インストールされたスキル、組み込み Git カタログ、skills.sh を検索 |
-| `config` | インタラクティブな設定 UI を開く |
+| `config` | 登録済みグループのスキルとターゲットを設定（新しいソースはインストールしない） |
 | `update [sourceId] --all` | 一つのソースまたはすべての登録されたソースを更新 |
 | `doctor` | ドリフト、欠落パス、プロジェクション問題を診断 |
 | `repair-source [sourceId] --all` | ソースチェックアウトメタデータを再構築 |

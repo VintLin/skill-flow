@@ -47,6 +47,7 @@ describe("cli utils", () => {
 
     expect(output).toContain("action-browser@vintlin");
     expect(output).toContain("vintlin-action-browser");
+    expect(output).toContain("file://vintlin-action-browser");
     expect(output).toContain("warning: unmanaged external content in codex target");
   });
 
