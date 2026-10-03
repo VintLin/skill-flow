@@ -160,7 +160,7 @@ import {
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
 import { parseSkillFrontmatter } from "@skill-flow/core-engine/services/skill-frontmatter";
 import { DeploymentReconciler } from "./deployment-reconciler.js";
-import { SourceLifecycle } from "./source-lifecycle.js";
+import { SourceLifecycle, type SourceUninstallResult } from "./source-lifecycle.js";
 import {
   SkillCollectionMemberOriginMissingError,
   materializeSkillCollectionMembers,
@@ -4372,11 +4372,7 @@ export class SkillFlowApp {
   }
 
   async uninstall(sourceIds: string[]): Promise<
-    Result<{
-      removed: string[];
-      removedRefs: Array<{ id: string; locator: string; displayName: string }>;
-      warnings: string[];
-    }>
+    Result<SourceUninstallResult>
   > {
     return this.runAuditedMutation(
       "uninstall",
@@ -4385,94 +4381,8 @@ export class SkillFlowApp {
     );
   }
 
-  private async uninstallImpl(sourceIds: string[]): Promise<
-    Result<{
-      removed: string[];
-      removedRefs: Array<{ id: string; locator: string; displayName: string }>;
-      warnings: string[];
-    }>
-  > {
-    const state = await this.stateStore.readState();
-    const warnings: string[] = [];
-    const removedRefs = sourceIds
-      .map((sourceId) => state.manifest.sources.find((source) => source.id === sourceId))
-      .filter((source): source is ManifestFile["sources"][number] => Boolean(source))
-      .map((source) => ({
-        id: source.id,
-        locator: source.locator,
-        displayName: source.displayName,
-      }));
-    const importedCleanupWarnings = await this.deploymentReconciler.cleanupImportedTargetPaths({
-      manifest: state.manifest,
-      lockFile: state.lockFile,
-      sourceIds,
-      adapters: this.createAdaptersForPreferences(state.preferences),
-    });
-
-    for (const sourceId of sourceIds) {
-      const projections = state.lockFile.projections.filter(
-        (projection) => projection.sourceId === sourceId,
-      );
-
-      for (const projection of projections) {
-        if (!(await pathExists(projection.targetPath))) {
-          continue;
-        }
-        if (
-          !projection.targetRootPath ||
-          !isPathInside(projection.targetRootPath, projection.targetPath)
-        ) {
-          warnings.push(`Refusing to remove unmanaged target path ${projection.targetPath}.`);
-          continue;
-        }
-        try {
-          const hasPersistentOwner = state.lockFile.projections.some((candidate) =>
-            candidate.targetPath === projection.targetPath &&
-            !(
-              candidate.sourceId === projection.sourceId &&
-              candidate.leafId === projection.leafId &&
-              candidate.target === projection.target
-            )
-          );
-          if (!hasPersistentOwner) {
-            await removePath(projection.targetPath);
-          }
-        } catch (error) {
-          warnings.push(`Unable to remove ${projection.targetPath}: ${String(error)}`);
-        }
-      }
-    }
-
-    if (warnings.length > 0) {
-      return fail(
-        {
-          code: "GROUP_DELETE_INCOMPLETE",
-          message: `Unable to fully delete ${warnings.length} managed path${warnings.length === 1 ? "" : "s"}.`,
-        },
-        warnings.map((message) => ({
-          code: "GROUP_DELETE_PATH_FAILED",
-          message,
-        })),
-      );
-    }
-
-    let removed;
-    try {
-      removed = await this.sourceAuthorityService.removeSource(sourceIds);
-    } catch (error) {
-      return fail({
-        code: "GROUP_DELETE_INCOMPLETE",
-        message: `Unable to fully delete selected skills groups: ${String(error)}`,
-      });
-    }
-    if (!removed.ok) {
-      return fail(removed.errors, removed.warnings);
-    }
-
-    return ok(
-      { removed: removed.data.removed, removedRefs, warnings },
-      [...importedCleanupWarnings, ...removed.warnings],
-    );
+  private async uninstallImpl(sourceIds: string[]): Promise<Result<SourceUninstallResult>> {
+    return this.sourceLifecycle.uninstall(sourceIds);
   }
 
   private uniqueCollectionSourceId(
