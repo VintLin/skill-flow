@@ -48,7 +48,6 @@ import type {
   SourceStats,
   SourceBinding,
   SourceUpdateResult,
-  SourceUpdateResultItem,
   UnifiedSourceSnapshot,
   CollectionViewRecord,
   CollectionSkillRef,
@@ -161,6 +160,7 @@ import {
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
 import { parseSkillFrontmatter } from "@skill-flow/core-engine/services/skill-frontmatter";
 import { DeploymentReconciler } from "./deployment-reconciler.js";
+import { SourceLifecycle } from "./source-lifecycle.js";
 import {
   SkillCollectionMemberOriginMissingError,
   materializeSkillCollectionMembers,
@@ -454,6 +454,7 @@ export class SkillFlowApp {
   readonly configCoordinator: ConfigCoordinator;
   readonly usageService: SkillUsageService;
   private readonly deploymentReconciler: DeploymentReconciler;
+  private readonly sourceLifecycle: SourceLifecycle;
   private readonly builtInSkillsRoot: string | undefined;
   private mutationQueue: Promise<void> = Promise.resolve();
   private metadataRefreshesBySourceId = new Map<string, Promise<void>>();
@@ -540,6 +541,25 @@ export class SkillFlowApp {
       },
     });
     this.deploymentReconciler = new DeploymentReconciler();
+    this.sourceLifecycle = new SourceLifecycle({
+      stateStore: this.stateStore,
+      sourceAuthorityService: this.sourceAuthorityService,
+      protectedGroupOperationService: this.protectedGroupOperationService,
+      externalSourceLifecycle: this.externalSourceLifecycle,
+      deploymentReconciler: this.deploymentReconciler,
+      createAdaptersForPreferences: (preferences) => this.createAdaptersForPreferences(preferences),
+      cloneAuthorityManifest: (manifest) => this.cloneAuthorityManifest(manifest),
+      cloneLockFile: (lockFile) => this.cloneLockFile(lockFile),
+      importPreparationCacheStore: this.importPreparationCacheStore,
+      importPreparationService: this.importPreparationService,
+      getAvailableTargets: () => this.getAvailableTargets(),
+      readAuthorityLockFile: async () => (await this.readRuntimeAuthorityView()).lockFile,
+      resolveImportDraftForPreparedSource: (sourceLeafs, availableTargets, canonicalRepo, draft) =>
+        this.resolveImportDraftForPreparedSource(sourceLeafs, availableTargets, canonicalRepo, draft),
+      applyDraft: (sourceId, draft, scope, transaction) => this.applyDraftImpl(sourceId, draft, scope, transaction),
+      replaceLocalImportWithManagedSymlink: (localSkillPath, sourceId, transaction) =>
+        this.replaceLocalImportWithManagedSymlink(localSkillPath, sourceId, transaction),
+    });
   }
 
   private async ensureBuiltInSourcesImpl(): Promise<Result<{ sourceIds: string[] }>> {
@@ -2299,79 +2319,12 @@ export class SkillFlowApp {
     canonicalRepo?: string,
     localSkillPath?: string,
   ): Promise<Result<ImportSourceResult>> {
-    const preparation = (await this.importPreparationCacheStore.readImportPreparationCache())
-      .records[preparationId];
-    if (!preparation || preparation.status !== "ready") {
-      return this.importPreparationService.commitPreparedImportSource(preparationId);
-    }
-    const canonicalCheckoutPath = path.join(
-      this.stateStore.rootPath,
-      "source",
-      preparation.sourceKind,
-      preparation.sourceId,
+    return this.sourceLifecycle.commitPreparedImportSource(
+      preparationId,
+      draft,
+      canonicalRepo,
+      localSkillPath,
     );
-    type ImportPromotion = {
-      committed: ImportSourceResult;
-      warnings: Warning[];
-      transaction: OperationRecoveryTransaction;
-    };
-    const protectedResult = await this.protectedGroupOperationService.execute<ImportSourceResult, ImportPromotion>(
-      {
-        kind: "import",
-        sourceId: preparation.sourceId,
-        sourceKind: preparation.sourceKind,
-        checkoutPath: canonicalCheckoutPath,
-        preparationId,
-      },
-      {
-        promote: (transaction) => this.importPreparationService
-          .commitPreparedImportSource(preparationId)
-          .then((committed) => {
-            if (!committed.ok) return fail<ImportPromotion>(committed.errors, committed.warnings);
-            return ok({ committed: committed.data, warnings: committed.warnings, transaction });
-          }),
-        apply: async ({ committed, warnings: committedWarnings, transaction }): Promise<Result<ImportSourceResult>> => {
-          if (committed.status !== "ready") {
-            return ok(committed, committedWarnings);
-          }
-          const { lockFile } = await this.readRuntimeAuthorityView();
-          const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === committed.sourceId);
-          const availableTargets = await this.getAvailableTargets();
-          const finalDraft = this.resolveImportDraftForPreparedSource(
-            sourceLeafs,
-            availableTargets,
-            canonicalRepo ?? committed.canonicalRepo,
-            draft,
-          );
-          if (!finalDraft.ok) {
-            return fail({
-              code: finalDraft.errors[0]?.code ?? "IMPORT_PREVIEW_INVALID",
-              message: "Unable to resolve the final import draft.",
-            }, [...committedWarnings, ...finalDraft.warnings]);
-          }
-          const applied = await this.applyDraftImpl(
-            committed.sourceId,
-            finalDraft.data,
-            { kind: "global" },
-            transaction,
-          );
-          if (!applied.ok) {
-            return fail({
-              code: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
-              message: "Unable to apply the imported group.",
-            }, [...committedWarnings, ...finalDraft.warnings, ...applied.warnings]);
-          }
-          await this.replaceLocalImportWithManagedSymlink(localSkillPath, committed.sourceId, transaction);
-          return ok(committed, [...committedWarnings, ...finalDraft.warnings, ...applied.warnings]);
-        },
-      },
-    );
-    if (protectedResult.ok) return protectedResult;
-    return ok({
-      status: "failed",
-      reasonCode: protectedResult.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
-      retryable: true,
-    }, protectedResult.warnings);
   }
 
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
@@ -4062,141 +4015,7 @@ export class SkillFlowApp {
   }
 
   private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
-    const precheck = await this.sourceAuthorityService.precheckUpdateSources(sourceIds);
-    if (!precheck.ok) {
-      return fail(precheck.errors, precheck.warnings);
-    }
-    const initialState = await this.stateStore.readState();
-    const requestedIds = sourceIds?.length
-      ? [...new Set(sourceIds)]
-      : initialState.manifest.sources
-        .filter((source) => source.ownership !== "external")
-        .map((source) => source.id);
-    const externalSourceIds = sourceIds?.length
-      ? []
-      : initialState.manifest.sources
-        .filter((source) => source.ownership === "external")
-        .map((source) => source.id);
-    const updatedItems: SourceUpdateResultItem[] = [];
-    const failed: NonNullable<SourceUpdateResult["failed"]> = [];
-    const warnings: Warning[] = [...precheck.warnings];
-    const precheckFallbackSourceIds: string[] = [...precheck.data.precheckFallbackSourceIds];
-    const unchangedBySourceId = new Map(
-      precheck.data.unchanged.map((item) => [item.sourceId, item]),
-    );
-    const skipRemotePrecheckSourceIds = new Set([
-      ...precheck.data.remoteChangedSourceIds,
-      ...precheck.data.precheckFallbackSourceIds,
-    ]);
-    const hardErrors: Array<{ code: string; message: string }> = [];
-    for (const sourceId of requestedIds) {
-      const unchanged = unchangedBySourceId.get(sourceId);
-      if (unchanged) {
-        updatedItems.push(unchanged);
-        continue;
-      }
-      const currentState = await this.stateStore.readState();
-      const source = currentState.manifest.sources.find((candidate) => candidate.id === sourceId);
-      const lock = currentState.lockFile.sources[sourceId];
-      const managed = source
-        && lock
-        && source.kind !== "collection"
-        && source.ownership !== "external"
-        && lock.ownership !== "external";
-      try {
-        if (!managed) {
-          const updated = await this.sourceAuthorityService.updateSources([sourceId], {
-            ...(skipRemotePrecheckSourceIds.has(sourceId) ? { skipGitRemotePrecheck: true } : {}),
-          });
-          warnings.push(...updated.warnings);
-          if (!updated.ok) {
-            hardErrors.push(...updated.errors);
-            failed.push({ sourceId, code: updated.errors[0]?.code ?? "SOURCE_UPDATE_FAILED", message: updated.errors[0]?.message ?? "Source update failed." });
-            continue;
-          }
-          precheckFallbackSourceIds.push(...(updated.data.precheckFallbackSourceIds ?? []));
-          updatedItems.push(...updated.data.updated);
-          continue;
-        }
-
-        const protectedResult = await this.protectedGroupOperationService.execute<SourceUpdateResultItem[], SourceUpdateResult>(
-          { kind: "update", sourceId, sourceKind: source.kind },
-          {
-            promote: async (transaction) => {
-              const updated = await this.sourceAuthorityService.updateSources([sourceId], {
-                ...(skipRemotePrecheckSourceIds.has(sourceId) ? { skipGitRemotePrecheck: true } : {}),
-                checkoutBackupPath: transaction.checkoutBackupPath,
-                retainCheckoutBackup: true,
-              });
-              warnings.push(...updated.warnings);
-              if (!updated.ok) return fail<SourceUpdateResult>(updated.errors, updated.warnings);
-              precheckFallbackSourceIds.push(...(updated.data.precheckFallbackSourceIds ?? []));
-              return ok(updated.data, updated.warnings);
-            },
-            apply: async (updated, transaction) => {
-              const sourceUpdate = updated.updated.find((item) => item.sourceId === sourceId);
-              if (sourceUpdate && !sourceUpdate.changed && !sourceUpdate.repaired) {
-                return ok(updated.updated);
-              }
-              const state = await this.stateStore.readState();
-              const manifest = this.cloneAuthorityManifest(state.manifest);
-              const lockFile = this.cloneLockFile(state.lockFile);
-              const adapters = this.createAdaptersForPreferences(state.preferences);
-              const planned = await this.deploymentReconciler.plan({ manifest, lockFile, sourceIds: [sourceId], adapters });
-              warnings.push(...planned.warnings);
-              if (!planned.ok) return fail<SourceUpdateResultItem[]>(planned.errors, planned.warnings);
-              await transaction.prepareTargetMutations(planned.data.actions);
-              const applied = await this.deploymentReconciler.apply({ lockFile, actions: planned.data.actions, adapters });
-              warnings.push(...applied.warnings);
-              if (!applied.ok) return fail<SourceUpdateResultItem[]>(applied.errors, applied.warnings);
-              await this.stateStore.writeState({ ...state, manifest, lockFile });
-              return ok(updated.updated);
-            },
-          },
-        );
-        if (!protectedResult.ok) {
-          hardErrors.push(...protectedResult.errors);
-          failed.push({ sourceId, code: protectedResult.errors[0]?.code ?? "SOURCE_UPDATE_FAILED", message: protectedResult.errors[0]?.message ?? "Source update failed." });
-          warnings.push(...protectedResult.warnings);
-          continue;
-        }
-        updatedItems.push(...protectedResult.data);
-      } catch (error) {
-        const failure = {
-          code: "SOURCE_UPDATE_FAILED",
-          message: `Unable to update skills group '${sourceId}': ${String(error)}`,
-        };
-        hardErrors.push(failure);
-        failed.push({ sourceId, ...failure });
-      }
-    }
-
-    if (updatedItems.length === 0 && hardErrors.length > 0) {
-      return fail(hardErrors, warnings);
-    }
-    const externalWarnings: Warning[] = [];
-    for (const sourceId of externalSourceIds) {
-      const refreshed = await this.externalSourceLifecycle.refresh(sourceId);
-      if (!refreshed.ok) {
-        externalWarnings.push(...refreshed.errors.map((error) => ({
-          code: error.code,
-          message: `External source '${sourceId}' was not refreshed: ${error.message}`,
-        })));
-      } else {
-        externalWarnings.push(...refreshed.warnings);
-      }
-    }
-    const status: SourceUpdateResult["status"] = failed.length === 0
-      ? "updated"
-      : updatedItems.length === 0
-        ? "failed"
-        : "partial";
-    return ok({
-      status,
-      updated: updatedItems,
-      ...(failed.length > 0 ? { failed } : {}),
-      ...(precheckFallbackSourceIds.length > 0 ? { precheckFallbackSourceIds } : {}),
-    }, [...warnings, ...externalWarnings]);
+    return this.sourceLifecycle.updateSources(sourceIds);
   }
 
   async doctor(options: { projectPath?: string } = {}): Promise<Result<DoctorReport>> {
