@@ -2,13 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Dirent, Stats } from "node:fs";
 import type { DoctorIssue, DoctorReport, DeploymentTargetName, LeafRecord, MergedTargetDefinition, ProjectCheckRoot } from "@skill-flow/domain/types";
+import { parseSkillFile } from "@skill-flow/core-engine/services/inventory-service";
 import { hashDirectory, isPathInside } from "@skill-flow/integration/utils/fs";
 import { buildProjectedSkillNameCandidates, getHostedGitOwner } from "@skill-flow/integration/utils/naming";
 import { getMergedTargetDefinitions, resolveDocumentedProjectSkillPath } from "@skill-flow/integration/utils/constants";
 import type { StateStore } from "@skill-flow/storage/state-store";
-import { inspectProjectCopy } from "./project-copy-inspection.js";
-import { inspectExternalProjectSkill } from "./project-external-inspection.js";
-import { inspectProjectSkillDirectory, inspectProjectSymlink } from "./project-skill-inspection.js";
 import { DeploymentReconciler } from "./deployment-reconciler.js";
 
 export type ExpectedProjectSkill = {
@@ -212,6 +210,125 @@ export async function checkProjectHealth(requestedPath: string, store: StateStor
     }
   }
   return finish(baseline, projectId);
+}
+
+/** Compare current content, without inferring which side changed or repairing either. */
+async function inspectProjectCopy(entry: ExpectedProjectSkill, inspection: ProjectInspection): Promise<void> {
+  if (entry.definition.strategy !== "copy") return;
+  const sourcePath = entry.leaf.absolutePath;
+  async function readHash(location: string, source: boolean): Promise<string | undefined> {
+    try {
+      const stats = await fs.stat(location);
+      if (!stats.isDirectory()) {
+        inspection.issues.push({ ...entry.issue, severity: "error", path: location,
+          code: source ? "PROJECT_SOURCE_INVALID" : "PROJECT_PATH_CONFLICT",
+          message: source ? "The current Skill source is not a directory." : "The expected project copy is not a directory." });
+        return undefined;
+      }
+    } catch (error) {
+      if (isMissing(error)) inspection.issues.push({ ...entry.issue, severity: "error", path: location,
+        code: source ? "PROJECT_SOURCE_MISSING" : "PROJECT_DEPLOYMENT_MISSING",
+        message: source ? "The current Skill source is missing on disk." : "Expected project deployment is missing on disk." });
+      else inspection.incomplete(location, error, entry.issue);
+      return undefined;
+    }
+    if (source && !await inspectProjectSkillDirectory(location, inspection, { ...entry.issue, code: "PROJECT_SOURCE_INVALID" })) return undefined;
+    try {
+      return await hashDirectory(location, { symlinkPolicy: "preserve-safe" });
+    } catch (error) {
+      // A missing nested file may be a concurrent edit, not a missing deployment.
+      inspection.incomplete(location, error, entry.issue);
+      return undefined;
+    }
+  }
+  const sourceHash = await readHash(sourcePath, true);
+  const copyHash = await readHash(entry.path, false);
+  if (sourceHash === undefined || copyHash === undefined || sourceHash === copyHash) return;
+  inspection.issues.push({ ...entry.issue, severity: "warning", code: "PROJECT_COPY_DIFFERENT",
+    message: "The project copy differs from the current source content. The comparison does not identify which side changed.",
+    advice: "Review both versions before choosing which content to keep."
+      + (entry.definition.kind === "custom"
+        ? " You can change this Agent's deployment strategy to symlink and apply it to reflect subsequent changes to the linked local source. This does not update a remote repository."
+        : ""),
+  });
+}
+
+/** External ownership is informational; only confirmed unusability is an error. */
+async function inspectExternalProjectSkill(
+  skillPath: string,
+  targets: string[],
+  inspection: ProjectInspection,
+): Promise<boolean> {
+  const context = { sourceId: "project", path: skillPath, targets, code: "PROJECT_EXTERNAL_INVALID_SKILL" };
+  try {
+    const entry = await fs.lstat(skillPath);
+    if (entry.isSymbolicLink()) {
+      try {
+        await fs.stat(skillPath);
+      } catch (error) {
+        if (["ENOENT", "ENOTDIR", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+          inspection.issues.push({ ...context, code: "PROJECT_EXTERNAL_BROKEN_SYMLINK", severity: "error",
+            message: "External project Skill link is broken or cyclic. Check its destination." });
+        } else {
+          inspection.incomplete(skillPath, error, context);
+        }
+        return false;
+      }
+    }
+  } catch (error) {
+    // A scanned candidate disappearing mid-check is uncertainty, not an empty root.
+    inspection.incomplete(skillPath, error, context);
+    return false;
+  }
+  return inspectProjectSkillDirectory(skillPath, inspection, context);
+}
+
+/** The same parser rules as inventory scanning, with filesystem uncertainty kept separate. */
+async function inspectProjectSkillDirectory(
+  skillPath: string,
+  inspection: ProjectInspection,
+  context: Partial<DoctorIssue> = {},
+): Promise<boolean> {
+  const invalid = (message: string) => {
+    inspection.issues.push({ sourceId: "project", ...context, severity: "error", path: skillPath,
+      code: context.code ?? "PROJECT_SKILL_INVALID", message });
+    return false;
+  };
+  try {
+    if (!(await fs.stat(skillPath)).isDirectory()) return invalid("Skill path is not a directory.");
+    const skillFilePath = path.join(skillPath, "SKILL.md");
+    if (!(await fs.stat(skillFilePath)).isFile()) return invalid("SKILL.md is not a regular file.");
+    const parsed = parseSkillFile(await fs.readFile(skillFilePath, "utf8"), path.basename(skillPath));
+    return parsed.valid || invalid(parsed.reason);
+  } catch (error) {
+    if (isMissing(error) || (error as NodeJS.ErrnoException).code === "ELOOP") {
+      return invalid(`Skill directory or SKILL.md is missing or unusable: ${String(error)}`);
+    }
+    inspection.incomplete(skillPath, error, context);
+    return false;
+  }
+}
+
+async function inspectProjectSymlink(entry: ExpectedProjectSkill, inspection: ProjectInspection): Promise<void> {
+  let actual: string;
+  try { actual = await fs.realpath(entry.path); } catch (error) {
+    if (isMissing(error) || (error as NodeJS.ErrnoException).code === "ELOOP") {
+      inspection.issues.push({ ...entry.issue, severity: "error", code: "PROJECT_BROKEN_SYMLINK", message: "Project deployment symlink is broken or cyclic." });
+    } else inspection.incomplete(entry.path, error, entry.issue);
+    return;
+  }
+  let intended: string;
+  try { intended = await fs.realpath(entry.leaf.absolutePath); } catch (error) {
+    if (isMissing(error)) inspection.issues.push({ ...entry.issue, path: entry.leaf.absolutePath, severity: "error", code: "PROJECT_SOURCE_MISSING", message: "Current source Skill is missing." });
+    else inspection.incomplete(entry.leaf.absolutePath, error, entry.issue);
+    return;
+  }
+  if (actual !== intended) {
+    inspection.issues.push({ ...entry.issue, severity: "error", code: "PROJECT_SYMLINK_MISDIRECTED",
+      message: `Project symlink points to '${actual}'; expected '${intended}'.` });
+    return;
+  }
+  await inspectProjectSkillDirectory(entry.path, inspection, entry.issue);
 }
 
 /** Inspect naming alternatives without adopting a same-named, valid foreign Skill. */

@@ -129,6 +129,7 @@ import {
   OperationRecoveryService,
   type OperationRecoveryTransaction,
 } from "@skill-flow/core-engine/services/operation-recovery-service";
+import { ProtectedGroupOperationService } from "@skill-flow/core-engine/services/protected-group-operation-service";
 import { ImportPreparationService } from "@skill-flow/core-engine/services/import-preparation-service";
 import { ImportDiscovery } from "@skill-flow/core-engine/services/import-discovery";
 import {
@@ -445,6 +446,7 @@ export class SkillFlowApp {
   readonly importDiscovery: ImportDiscovery;
   readonly importSourcePolicy: ImportSourcePolicy;
   readonly operationRecoveryService: OperationRecoveryService;
+  readonly protectedGroupOperationService: ProtectedGroupOperationService;
   readonly doctorService: DoctorService;
   readonly workflowService: WorkflowService;
   readonly recentProjectService: RecentProjectService;
@@ -504,6 +506,7 @@ export class SkillFlowApp {
         return new Map(detected);
       },
     });
+    this.protectedGroupOperationService = new ProtectedGroupOperationService(this.operationRecoveryService);
     this.doctorService = new DoctorService();
     this.workflowService = new WorkflowService();
     this.recentProjectService = new RecentProjectService();
@@ -2307,63 +2310,68 @@ export class SkillFlowApp {
       preparation.sourceKind,
       preparation.sourceId,
     );
-    const transaction = await this.operationRecoveryService.begin({
-      kind: "import",
-      sourceId: preparation.sourceId,
-      sourceKind: preparation.sourceKind,
-      checkoutPath: canonicalCheckoutPath,
-      preparationId,
-    });
-    const committed = await this.importPreparationService.commitPreparedImportSource(preparationId);
-    if (!committed.ok) {
-      return this.recoverInterruptedOperationOrReturn(committed);
-    }
-    if (committed.data.status !== "ready") {
-      await transaction.commit();
-      return ok(committed.data, committed.warnings);
-    }
-    const committedData = committed.data;
-
-    const { lockFile } = await this.readRuntimeAuthorityView();
-    const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === committedData.sourceId);
-    const availableTargets = await this.getAvailableTargets();
-    const finalDraft = this.resolveImportDraftForPreparedSource(
-      sourceLeafs,
-      availableTargets,
-      canonicalRepo ?? committedData.canonicalRepo,
-      draft,
+    type ImportPromotion = {
+      committed: ImportSourceResult;
+      warnings: Warning[];
+      transaction: OperationRecoveryTransaction;
+    };
+    const protectedResult = await this.protectedGroupOperationService.execute<ImportSourceResult, ImportPromotion>(
+      {
+        kind: "import",
+        sourceId: preparation.sourceId,
+        sourceKind: preparation.sourceKind,
+        checkoutPath: canonicalCheckoutPath,
+        preparationId,
+      },
+      {
+        promote: (transaction) => this.importPreparationService
+          .commitPreparedImportSource(preparationId)
+          .then((committed) => {
+            if (!committed.ok) return fail<ImportPromotion>(committed.errors, committed.warnings);
+            return ok({ committed: committed.data, warnings: committed.warnings, transaction });
+          }),
+        apply: async ({ committed, warnings: committedWarnings, transaction }): Promise<Result<ImportSourceResult>> => {
+          if (committed.status !== "ready") {
+            return ok(committed, committedWarnings);
+          }
+          const { lockFile } = await this.readRuntimeAuthorityView();
+          const sourceLeafs = lockFile.leafInventory.filter((leaf) => leaf.sourceId === committed.sourceId);
+          const availableTargets = await this.getAvailableTargets();
+          const finalDraft = this.resolveImportDraftForPreparedSource(
+            sourceLeafs,
+            availableTargets,
+            canonicalRepo ?? committed.canonicalRepo,
+            draft,
+          );
+          if (!finalDraft.ok) {
+            return fail({
+              code: finalDraft.errors[0]?.code ?? "IMPORT_PREVIEW_INVALID",
+              message: "Unable to resolve the final import draft.",
+            }, [...committedWarnings, ...finalDraft.warnings]);
+          }
+          const applied = await this.applyDraftImpl(
+            committed.sourceId,
+            finalDraft.data,
+            { kind: "global" },
+            transaction,
+          );
+          if (!applied.ok) {
+            return fail({
+              code: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
+              message: "Unable to apply the imported group.",
+            }, [...committedWarnings, ...finalDraft.warnings, ...applied.warnings]);
+          }
+          await this.replaceLocalImportWithManagedSymlink(localSkillPath, committed.sourceId, transaction);
+          return ok(committed, [...committedWarnings, ...finalDraft.warnings, ...applied.warnings]);
+        },
+      },
     );
-    if (!finalDraft.ok) {
-      return this.recoverInterruptedOperationOrReturn(ok({
-        status: "failed",
-        reasonCode: finalDraft.errors[0]?.code ?? "IMPORT_PREVIEW_INVALID",
-        retryable: true,
-      }, [...committed.warnings, ...finalDraft.warnings]));
-    }
-
-    const applied = await this.applyDraftImpl(
-      committedData.sourceId,
-      finalDraft.data,
-      { kind: "global" },
-      transaction,
-    );
-    if (!applied.ok) {
-      return this.recoverInterruptedOperationOrReturn(ok({
-        status: "failed",
-        reasonCode: applied.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
-        retryable: true,
-      }, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]));
-    }
-
-    await this.replaceLocalImportWithManagedSymlink(
-      localSkillPath,
-      committedData.sourceId,
-      transaction,
-    );
-    await transaction.checkpoint();
-    await transaction.commit();
-
-    return ok(committedData, [...committed.warnings, ...finalDraft.warnings, ...applied.warnings]);
+    if (protectedResult.ok) return protectedResult;
+    return ok({
+      status: "failed",
+      reasonCode: protectedResult.errors[0]?.code ?? "IMPORT_APPLY_FAILED",
+      retryable: true,
+    }, protectedResult.warnings);
   }
 
   private async previewImportSourceImpl(locator: string): Promise<Result<ImportPreviewResult>> {
@@ -4081,22 +4089,6 @@ export class SkillFlowApp {
       ...precheck.data.precheckFallbackSourceIds,
     ]);
     const hardErrors: Array<{ code: string; message: string }> = [];
-    const recordFailureAndRecover = async (
-      sourceId: string,
-      failureErrors: Array<{ code: string; message: string }>,
-      fallback: { code: string; message: string },
-      transaction: OperationRecoveryTransaction | undefined,
-    ): Promise<Result<void>> => {
-      const primary = failureErrors[0] ?? fallback;
-      hardErrors.push(...(failureErrors.length > 0 ? failureErrors : [fallback]));
-      failed.push({ sourceId, code: primary.code, message: primary.message });
-      if (!transaction) return ok(undefined);
-      const recovered = await this.recoverInterruptedOperation();
-      if (!recovered.ok) return fail(recovered.errors, recovered.warnings);
-      warnings.push(...recovered.warnings);
-      return ok(undefined);
-    };
-
     for (const sourceId of requestedIds) {
       const unchanged = unchangedBySourceId.get(sourceId);
       if (unchanged) {
@@ -4111,92 +4103,71 @@ export class SkillFlowApp {
         && source.kind !== "collection"
         && source.ownership !== "external"
         && lock.ownership !== "external";
-      let transaction: OperationRecoveryTransaction | undefined;
       try {
-        if (managed) {
-          transaction = await this.operationRecoveryService.begin({
-            kind: "update",
-            sourceId,
-            sourceKind: source.kind,
+        if (!managed) {
+          const updated = await this.sourceAuthorityService.updateSources([sourceId], {
+            ...(skipRemotePrecheckSourceIds.has(sourceId) ? { skipGitRemotePrecheck: true } : {}),
           });
-        }
-        const updated = await this.sourceAuthorityService.updateSources([sourceId], {
-          ...(skipRemotePrecheckSourceIds.has(sourceId) ? { skipGitRemotePrecheck: true } : {}),
-          ...(transaction
-            ? { checkoutBackupPath: transaction.checkoutBackupPath, retainCheckoutBackup: true }
-            : {}),
-        });
-        warnings.push(...updated.warnings);
-        if (!updated.ok) {
-          const handled = await recordFailureAndRecover(sourceId, updated.errors, {
-            code: "SOURCE_UPDATE_FAILED",
-            message: `Unable to update skills group '${sourceId}'.`,
-          }, transaction);
-          if (!handled.ok) return fail(handled.errors, handled.warnings);
-          continue;
-        }
-
-        precheckFallbackSourceIds.push(...(updated.data.precheckFallbackSourceIds ?? []));
-        if (!transaction) {
+          warnings.push(...updated.warnings);
+          if (!updated.ok) {
+            hardErrors.push(...updated.errors);
+            failed.push({ sourceId, code: updated.errors[0]?.code ?? "SOURCE_UPDATE_FAILED", message: updated.errors[0]?.message ?? "Source update failed." });
+            continue;
+          }
+          precheckFallbackSourceIds.push(...(updated.data.precheckFallbackSourceIds ?? []));
           updatedItems.push(...updated.data.updated);
           continue;
         }
 
-        const sourceUpdate = updated.data.updated.find((item) => item.sourceId === sourceId);
-        if (sourceUpdate && !sourceUpdate.changed && !sourceUpdate.repaired) {
-          await transaction.checkpoint();
-          await transaction.commit();
-          updatedItems.push(...updated.data.updated);
+        const protectedResult = await this.protectedGroupOperationService.execute<SourceUpdateResultItem[], SourceUpdateResult>(
+          { kind: "update", sourceId, sourceKind: source.kind },
+          {
+            promote: async (transaction) => {
+              const updated = await this.sourceAuthorityService.updateSources([sourceId], {
+                ...(skipRemotePrecheckSourceIds.has(sourceId) ? { skipGitRemotePrecheck: true } : {}),
+                checkoutBackupPath: transaction.checkoutBackupPath,
+                retainCheckoutBackup: true,
+              });
+              warnings.push(...updated.warnings);
+              if (!updated.ok) return fail<SourceUpdateResult>(updated.errors, updated.warnings);
+              precheckFallbackSourceIds.push(...(updated.data.precheckFallbackSourceIds ?? []));
+              return ok(updated.data, updated.warnings);
+            },
+            apply: async (updated, transaction) => {
+              const sourceUpdate = updated.updated.find((item) => item.sourceId === sourceId);
+              if (sourceUpdate && !sourceUpdate.changed && !sourceUpdate.repaired) {
+                return ok(updated.updated);
+              }
+              const state = await this.stateStore.readState();
+              const manifest = this.cloneAuthorityManifest(state.manifest);
+              const lockFile = this.cloneLockFile(state.lockFile);
+              const adapters = this.createAdaptersForPreferences(state.preferences);
+              const planned = await this.deploymentReconciler.plan({ manifest, lockFile, sourceIds: [sourceId], adapters });
+              warnings.push(...planned.warnings);
+              if (!planned.ok) return fail<SourceUpdateResultItem[]>(planned.errors, planned.warnings);
+              await transaction.prepareTargetMutations(planned.data.actions);
+              const applied = await this.deploymentReconciler.apply({ lockFile, actions: planned.data.actions, adapters });
+              warnings.push(...applied.warnings);
+              if (!applied.ok) return fail<SourceUpdateResultItem[]>(applied.errors, applied.warnings);
+              await this.stateStore.writeState({ ...state, manifest, lockFile });
+              return ok(updated.updated);
+            },
+          },
+        );
+        if (!protectedResult.ok) {
+          hardErrors.push(...protectedResult.errors);
+          failed.push({ sourceId, code: protectedResult.errors[0]?.code ?? "SOURCE_UPDATE_FAILED", message: protectedResult.errors[0]?.message ?? "Source update failed." });
+          warnings.push(...protectedResult.warnings);
           continue;
         }
-
-        const state = await this.stateStore.readState();
-        const manifest = this.cloneAuthorityManifest(state.manifest);
-        const lockFile = this.cloneLockFile(state.lockFile);
-        const adapters = this.createAdaptersForPreferences(state.preferences);
-        const planned = await this.deploymentReconciler.plan({
-          manifest,
-          lockFile,
-          // Bulk Update already opens one transaction per group. Keep each plan
-          // inside that same ownership boundary while retaining global naming.
-          sourceIds: [sourceId],
-          adapters,
-        });
-        warnings.push(...planned.warnings);
-        if (!planned.ok) {
-          const handled = await recordFailureAndRecover(sourceId, planned.errors, {
-            code: "DEPLOYMENT_PLAN_FAILED",
-            message: `Unable to plan deployment for '${sourceId}'.`,
-          }, transaction);
-          if (!handled.ok) return fail(handled.errors, handled.warnings);
-          continue;
-        }
-        await transaction.prepareTargetMutations(planned.data.actions);
-        const applied = await this.deploymentReconciler.apply({
-          lockFile,
-          actions: planned.data.actions,
-          adapters,
-        });
-        warnings.push(...applied.warnings);
-        if (!applied.ok) {
-          const handled = await recordFailureAndRecover(sourceId, applied.errors, {
-            code: "DEPLOYMENT_APPLY_FAILED",
-            message: `Unable to apply deployment for '${sourceId}'.`,
-          }, transaction);
-          if (!handled.ok) return fail(handled.errors, handled.warnings);
-          continue;
-        }
-        await this.stateStore.writeState({ ...state, manifest, lockFile });
-        await transaction.checkpoint();
-        await transaction.commit();
-        updatedItems.push(...updated.data.updated);
+        updatedItems.push(...protectedResult.data);
       } catch (error) {
         const failure = {
           code: "SOURCE_UPDATE_FAILED",
           message: `Unable to update skills group '${sourceId}': ${String(error)}`,
         };
-        const handled = await recordFailureAndRecover(sourceId, [failure], failure, transaction);
-        if (!handled.ok) return fail(handled.errors, handled.warnings);
+        hardErrors.push(failure);
+        failed.push({ sourceId, ...failure });
       }
     }
 

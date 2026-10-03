@@ -973,3 +973,5 @@ final class BridgeClient: @unchecked Sendable {
         return nil
     }
 }
+
+extension BridgeClient: DesktopQueryTransporting, DesktopCommandTransporting {}

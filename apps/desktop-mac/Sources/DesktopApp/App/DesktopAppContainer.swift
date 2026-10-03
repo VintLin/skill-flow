@@ -26,8 +26,8 @@ final class DesktopAppContainer {
         queryFacade: (any DesktopQueryTransporting)? = nil,
         commandFacade: (any DesktopCommandTransporting)? = nil
     ) {
-        let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
-        let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)
+        let resolvedQueryFacade = queryFacade ?? bridgeClient
+        let resolvedCommandFacade = commandFacade ?? bridgeClient
         let mutationCoordinator = DesktopMutationCoordinator(commandFacade: resolvedCommandFacade)
         let resolvedRuntime = runtime ?? DesktopRuntime(dependencies: .live(query: resolvedQueryFacade))
         let groupTagStore = DesktopGroupTagStore()

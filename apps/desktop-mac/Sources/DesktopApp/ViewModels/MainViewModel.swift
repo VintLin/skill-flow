@@ -183,8 +183,8 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         settingsStore: DesktopSettingsStore = DesktopSettingsStore(),
         recommendationsProvider: @escaping () -> [ImportRecommendationEntry] = { ImportRecommendationLoader.load() }
     ) {
-        let resolvedQueryFacade = queryFacade ?? DesktopBridgeQueryFacade(bridgeClient: bridgeClient)
-        let resolvedCommandFacade = commandFacade ?? DesktopBridgeCommandFacade(bridgeClient: bridgeClient)
+        let resolvedQueryFacade = queryFacade ?? bridgeClient
+        let resolvedCommandFacade = commandFacade ?? bridgeClient
         let resolvedMutationCoordinator = mutationCoordinator ?? DesktopMutationCoordinator(commandFacade: resolvedCommandFacade)
 
         self.stateManager = AppStateManager()
