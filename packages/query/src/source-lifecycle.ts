@@ -29,7 +29,17 @@ import type { SelectableImportLeaf } from "@skill-flow/core-engine/services/impo
 import type { OperationRecoveryTransaction } from "@skill-flow/core-engine/services/operation-recovery-service";
 import { DeploymentReconciler } from "./deployment-reconciler.js";
 
-type ApplyDraftOutcome = Result<unknown>;
+type ApplyDraftOutcome = Result<{ draft: DraftBinding }>;
+type AddSourceLifecycleOptions = {
+  project?: boolean;
+  draft?: DraftBinding;
+  onProgress?: (message: string) => void;
+};
+type AddSourceLifecycleResult = {
+  sourceId: string;
+  draft: DraftBinding;
+  projected: boolean;
+};
 
 type SourceLifecycleDependencies = {
   stateStore: StateStore;
@@ -75,6 +85,39 @@ type SourceLifecycleDependencies = {
  */
 export class SourceLifecycle {
   constructor(private readonly dependencies: SourceLifecycleDependencies) {}
+
+  async addSource<T extends AddSourceLifecycleResult>(
+    options: AddSourceLifecycleOptions | undefined,
+    prepare: () => Promise<Result<T>>,
+    applyDraft: (sourceId: string, draft: DraftBinding) => Promise<ApplyDraftOutcome>,
+  ): Promise<Result<T>> {
+    const prepared = await prepare();
+    if (!prepared.ok) {
+      return prepared;
+    }
+
+    if (options?.project === false) {
+      return prepared;
+    }
+
+    options?.onProgress?.("Applying projections");
+    const applied = await applyDraft(
+      prepared.data.sourceId,
+      options?.draft ?? prepared.data.draft,
+    );
+    if (!applied.ok) {
+      return fail(applied.errors, [...prepared.warnings, ...applied.warnings]);
+    }
+
+    return ok(
+      {
+        ...prepared.data,
+        draft: applied.data.draft,
+        projected: true,
+      },
+      [...prepared.warnings, ...applied.warnings],
+    );
+  }
 
   async updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
     const {

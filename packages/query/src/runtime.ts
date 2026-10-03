@@ -837,33 +837,10 @@ export class SkillFlowApp {
     locator: string,
     options?: SkillFlowAddOptions,
   ): Promise<Result<AddSourceResult>> {
-    const prepared = await this.prepareAddSourceImpl(locator, options);
-    if (!prepared.ok) {
-      return prepared;
-    }
-
-    const addOptions = options ?? {};
-    if (addOptions.project === false) {
-      return prepared;
-    }
-
-    addOptions.onProgress?.("Applying projections");
-    const applied = await this.applyDraftImpl(
-      prepared.data.sourceId,
-      addOptions.draft ?? prepared.data.draft,
-      { kind: "global" },
-    );
-    if (!applied.ok) {
-      return fail(applied.errors, [...prepared.warnings, ...applied.warnings]);
-    }
-
-    return ok(
-      {
-        ...prepared.data,
-        draft: applied.data.draft,
-        projected: true,
-      },
-      [...prepared.warnings, ...applied.warnings],
+    return this.sourceLifecycle.addSource(
+      options,
+      () => this.prepareAddSourceImpl(locator, options),
+      (sourceId, draft) => this.applyDraftImpl(sourceId, draft, { kind: "global" }),
     );
   }
 
