@@ -47,6 +47,10 @@ export type SourceUninstallResult = {
   removedRefs: Array<{ id: string; locator: string; displayName: string }>;
   warnings: string[];
 };
+export type SourceRepairStateResult = {
+  repairedSourceIds: string[];
+  removedDeploymentCount: number;
+};
 
 type SourceLifecycleDependencies = {
   stateStore: StateStore;
@@ -213,6 +217,85 @@ export class SourceLifecycle {
     return ok(
       { removed: removed.data.removed, removedRefs, warnings },
       [...importedCleanupWarnings, ...removed.warnings],
+    );
+  }
+
+  async repairState(
+    sourceIds: string[] | undefined,
+    pruneMissingCheckouts: () => Promise<Result<{ removedSourceIds: string[] }>>,
+  ): Promise<Result<SourceRepairStateResult>> {
+    const {
+      stateStore,
+      sourceAuthorityService,
+      deploymentReconciler,
+      createAdaptersForPreferences,
+      cloneAuthorityManifest,
+      cloneLockFile,
+    } = this.dependencies;
+    const pruned = await pruneMissingCheckouts();
+    if (!pruned.ok) {
+      return fail(pruned.errors, pruned.warnings);
+    }
+
+    const requestedIds = sourceIds?.filter(
+      (sourceId) => !pruned.data.removedSourceIds.includes(sourceId),
+    );
+    if (sourceIds?.length && requestedIds?.length === 0) {
+      return ok(
+        { repairedSourceIds: [], removedDeploymentCount: 0 },
+        pruned.warnings,
+      );
+    }
+
+    const reconciled = await sourceAuthorityService.reconcileInventory(requestedIds, {
+      force: true,
+    });
+    if (!reconciled.ok) {
+      return fail(reconciled.errors, [...pruned.warnings, ...reconciled.warnings]);
+    }
+
+    const state = await stateStore.readState();
+    const manifest = cloneAuthorityManifest(state.manifest);
+    const lockFile = cloneLockFile(state.lockFile);
+    const planSourceIds = requestedIds?.length
+      ? requestedIds
+      : manifest.sources.map((source) => source.id);
+    const requestedSet = new Set(planSourceIds);
+    const previousActiveProjectionCount = lockFile.projections.filter((projection) =>
+      projection.status === "active" && requestedSet.has(projection.sourceId)
+    ).length;
+
+    const applied = await deploymentReconciler.reconcile({
+      manifest,
+      lockFile,
+      sourceIds: planSourceIds,
+      adapters: createAdaptersForPreferences(state.preferences),
+    });
+    if (!applied.ok) {
+      return fail(applied.errors, [
+        ...pruned.warnings,
+        ...reconciled.warnings,
+        ...applied.warnings,
+      ]);
+    }
+
+    const nextActiveProjectionCount = lockFile.projections.filter((projection) =>
+      projection.status === "active" && requestedSet.has(projection.sourceId)
+    ).length;
+    await stateStore.writeState({
+      ...state,
+      manifest,
+      lockFile,
+    });
+    return ok(
+      {
+        repairedSourceIds: reconciled.data.updatedSourceIds,
+        removedDeploymentCount: Math.max(
+          0,
+          previousActiveProjectionCount - nextActiveProjectionCount,
+        ),
+      },
+      [...pruned.warnings, ...reconciled.warnings, ...applied.warnings],
     );
   }
 

@@ -160,7 +160,11 @@ import {
 } from "@skill-flow/core-engine/services/workspace-bootstrap-service";
 import { parseSkillFrontmatter } from "@skill-flow/core-engine/services/skill-frontmatter";
 import { DeploymentReconciler } from "./deployment-reconciler.js";
-import { SourceLifecycle, type SourceUninstallResult } from "./source-lifecycle.js";
+import {
+  SourceLifecycle,
+  type SourceRepairStateResult,
+  type SourceUninstallResult,
+} from "./source-lifecycle.js";
 import {
   SkillCollectionMemberOriginMissingError,
   materializeSkillCollectionMembers,
@@ -4300,74 +4304,10 @@ export class SkillFlowApp {
 
   private async repairStateImpl(
     sourceIds?: string[],
-  ): Promise<Result<{ repairedSourceIds: string[]; removedDeploymentCount: number }>> {
-    const pruned = await this.pruneMissingCheckoutsImpl();
-    if (!pruned.ok) {
-      return fail(pruned.errors, pruned.warnings);
-    }
-
-    const requestedIds = sourceIds?.filter(
-      (sourceId) => !pruned.data.removedSourceIds.includes(sourceId),
-    );
-    if (sourceIds?.length && requestedIds?.length === 0) {
-      return ok(
-        { repairedSourceIds: [], removedDeploymentCount: 0 },
-        pruned.warnings,
-      );
-    }
-
-    const reconciled = await this.sourceAuthorityService.reconcileInventory(requestedIds, {
-      force: true,
-    });
-    if (!reconciled.ok) {
-      return fail(reconciled.errors, [...pruned.warnings, ...reconciled.warnings]);
-    }
-
-    const state = await this.stateStore.readState();
-    const manifest = this.cloneAuthorityManifest(state.manifest);
-    const lockFile = this.cloneLockFile(state.lockFile);
-    const preferences = state.preferences;
-    const planSourceIds = requestedIds?.length
-      ? requestedIds
-      : manifest.sources.map((source) => source.id);
-    const requestedSet = new Set(planSourceIds);
-    const previousActiveProjectionCount = lockFile.projections.filter((projection) =>
-      projection.status === "active" && requestedSet.has(projection.sourceId)
-    ).length;
-
-    const applied = await this.deploymentReconciler.reconcile({
-      manifest,
-      lockFile,
-      sourceIds: planSourceIds,
-      adapters: this.createAdaptersForPreferences(preferences),
-    });
-    if (!applied.ok) {
-      return fail(applied.errors, [
-        ...pruned.warnings,
-        ...reconciled.warnings,
-        ...applied.warnings,
-      ]);
-    }
-
-    const nextActiveProjectionCount = lockFile.projections.filter((projection) =>
-      projection.status === "active" && requestedSet.has(projection.sourceId)
-    ).length;
-    await this.stateStore.writeState({
-      ...state,
-      manifest,
-      lockFile,
-    });
-    const removedDeploymentCount = Math.max(
-      0,
-      previousActiveProjectionCount - nextActiveProjectionCount,
-    );
-
-    return ok(
-      {
-        repairedSourceIds: reconciled.data.updatedSourceIds,
-        removedDeploymentCount,
-      },
-      [...pruned.warnings, ...reconciled.warnings, ...applied.warnings],
+  ): Promise<Result<SourceRepairStateResult>> {
+    return this.sourceLifecycle.repairState(
+      sourceIds,
+      () => this.pruneMissingCheckoutsImpl(),
     );
   }
 
