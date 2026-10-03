@@ -8,6 +8,8 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ### Changed
 
+- Included source locators alongside stable IDs in `skill-flow list --ids` and clarified first-use installation and configuration guidance.
+- Consolidated protected-operation recovery and removed redundant desktop bridge and project-inspection forwarding layers.
 - Centralized managed source lifecycle orchestration for add, import, update, repair, and uninstall flows.
 - Kept CLI, TUI, desktop bridge, and persisted state contracts stable while reducing runtime composition-root responsibilities.
 
