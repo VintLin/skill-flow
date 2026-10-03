@@ -4,6 +4,17 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.11 - 2026-10-03
+
+### Changed
+
+- Centralized managed source lifecycle orchestration for add, import, update, repair, and uninstall flows.
+- Kept CLI, TUI, desktop bridge, and persisted state contracts stable while reducing runtime composition-root responsibilities.
+
+### Fixed
+
+- Prevented duplicate warnings from being returned during failed source updates.
+
 ## v1.6.10 - 2026-09-18
 
 ### Changed
