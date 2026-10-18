@@ -1352,6 +1352,12 @@ export type SourceUpdateFailureItem = {
   message: string;
 };
 
+/** Session-only feedback; terminal phases follow the per-group commit/recovery boundary. */
+export type SourceUpdateProgress = {
+  sourceId: SourceId;
+  phase: "checking" | "queued" | "updating" | "completed" | "unchanged" | "failed";
+};
+
 export type SourceUpdateResult = {
   sourceId?: SourceId;
   status?: "updated" | "unchanged" | "failed" | "partial";

@@ -1215,8 +1215,11 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
 
     private func performQueuedBulkUpdate(sourceIds: [String]) async {
         let operationScope = currentProjectScope()
+        guard let operationId = groupOperations.bulkUpdateId else { return }
         do {
-            let response = try await sourceManagement.updateSourcesReturningResponse(sourceIds)
+            let response = try await sourceManagement.updateSourcesReturningResponse(sourceIds) { [weak self] event in
+                self?.groupOperations.receiveUpdateProgress(event, operationId: operationId)
+            }
             await synchronizeAfterUpdateMutation(response)
             registerRecentlyUpdatedSources(from: response.data?.value)
             let committedSourceIds = committedSourceIds(from: response.data?.value)

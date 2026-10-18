@@ -2,6 +2,10 @@ import {
   buildBridgeResponse,
   parseBridgeRequest,
   type BridgeRequest,
+  type BridgeUpdateProgress,
+  PROTOCOL_VERSION,
+  UPDATE_PROGRESS_PREFIX,
+  isJsonObject,
 } from "@skill-flow/shared-types/protocol";
 import type { SkillFlowApp } from "@skill-flow/query/runtime";
 import { executeBridgeRequest } from "./bridge-command.js";
@@ -70,7 +74,17 @@ export async function runBridgeCommand(
     return 1;
   }
 
-  const response = await executeBridgeRequest(app, request);
+  const reportProgress = request.command === "update" && request.requestId
+    && isJsonObject(request.payload) && request.payload.reportProgress === true;
+  const response = await executeBridgeRequest(app, request, reportProgress ? (progress) => {
+    const event: BridgeUpdateProgress = {
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: request.requestId!,
+      command: "update",
+      ...progress,
+    };
+    stderr(UPDATE_PROGRESS_PREFIX + JSON.stringify(event));
+  } : undefined);
   stdout(JSON.stringify(response));
   return response.ok ? 0 : 1;
 }

@@ -13,6 +13,7 @@ import type {
   SourceUpdateFailureItem,
   SourceUpdateResult,
   SourceUpdateResultItem,
+  SourceUpdateProgress,
   Warning,
 } from "@skill-flow/domain/types";
 import type { StateStore, StateStoreState } from "@skill-flow/storage/state-store";
@@ -381,7 +382,10 @@ export class SourceAuthorityService {
     return this.withMutationLock(() => this.updateSourcesUnlocked(sourceIds, options));
   }
 
-  async precheckUpdateSources(sourceIds?: string[]): Promise<Result<SourceUpdatePrecheckResult>> {
+  async precheckUpdateSources(
+    sourceIds?: string[],
+    onProgress?: (progress: SourceUpdateProgress) => void,
+  ): Promise<Result<SourceUpdatePrecheckResult>> {
     const state = await this.options.stateStore.readState();
     const requestedIds = sourceIds?.length
       ? [...new Set(sourceIds)]
@@ -400,9 +404,13 @@ export class SourceAuthorityService {
     const remoteChangedSourceIds: string[] = [];
     const precheckFallbackSourceIds: string[] = [];
     const warnings: Warning[] = [...preflight.warnings];
-    const checks = await this.mapConcurrent(preflight.data, 3, (target) =>
-      this.precheckUpdateTarget(target, state.lockFile.leafInventory)
-    );
+    const checks = await this.mapConcurrent(preflight.data, 3, async (target) => {
+      const sourceId = target.kind === "collection" ? target.sourceId : target.source.id;
+      onProgress?.({ sourceId, phase: "checking" });
+      const check = await this.precheckUpdateTarget(target, state.lockFile.leafInventory);
+      onProgress?.({ sourceId, phase: check.outcome === "unchanged" ? "unchanged" : "queued" });
+      return check;
+    });
     for (const check of checks) {
       if (check.outcome === "unchanged") {
         unchanged.push(this.emptyUpdateResult(check.sourceId));

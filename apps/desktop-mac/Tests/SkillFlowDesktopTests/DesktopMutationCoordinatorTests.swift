@@ -73,7 +73,7 @@ private final class RecordingDesktopCommandFacade: DesktopSourceMutationCommandi
         )
     }
 
-    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
+    func updateSources(_ sourceIds: [String]?, onProgress: UpdateProgressHandler?) async throws -> BridgeResponse {
         recordedMutations.append("update:\(sourceIds ?? [])")
         return .success(command: .update)
     }

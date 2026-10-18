@@ -38,7 +38,7 @@ final class DesktopMutationCoordinator {
             return .missingSelection
         }
 
-        let response = try await commandFacade.updateSources([normalizedSourceId])
+        let response = try await commandFacade.updateSources([normalizedSourceId], onProgress: nil)
         return .submitted(sourceId: normalizedSourceId, response: response)
     }
 

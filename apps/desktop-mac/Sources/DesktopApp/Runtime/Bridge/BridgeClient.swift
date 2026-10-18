@@ -102,6 +102,39 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
+    /// Pipe reads may split UTF-8/JSON at arbitrary bytes. Only complete,
+    /// correlated frames are delivered, in pipe order, to one async consumer.
+    private final class UpdateProgressReader: @unchecked Sendable {
+        private let lock = NSLock()
+        private var pending = Data()
+        private let requestId: String
+        private let continuation: AsyncStream<BridgeUpdateProgress>.Continuation
+
+        init(requestId: String, continuation: AsyncStream<BridgeUpdateProgress>.Continuation) {
+            self.requestId = requestId
+            self.continuation = continuation
+        }
+
+        func append(_ chunk: Data) {
+            lock.lock()
+            defer { lock.unlock() }
+            pending.append(chunk)
+            let prefix = Data("SKILL_FLOW_UPDATE_PROGRESS ".utf8)
+            while let newline = pending.firstIndex(of: 10) {
+                let line = pending[..<newline]
+                if line.starts(with: prefix),
+                   let event = try? JSONDecoder().decode(BridgeUpdateProgress.self, from: Data(line.dropFirst(prefix.count))),
+                   event.protocolVersion == "1.0", event.command == .update,
+                   event.requestId == requestId, !event.sourceId.isEmpty {
+                    continuation.yield(event)
+                }
+                pending.removeSubrange(...newline)
+            }
+            // Keep unrelated diagnostics or malformed unterminated output bounded.
+            if pending.count > 65_536 { pending.removeAll() }
+        }
+    }
+
     private final class ActiveHelperRegistry: @unchecked Sendable {
         private enum Mode {
             case normal
@@ -433,15 +466,16 @@ final class BridgeClient: @unchecked Sendable {
         try await updateSources(nil)
     }
 
-    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
+    func updateSources(_ sourceIds: [String]?, onProgress: UpdateProgressHandler? = nil) async throws -> BridgeResponse {
         try await mutationCoordinator.runMutation {
-            let payload: [String: AnyCodable]
+            var payload: [String: AnyCodable]
             if let sourceIds {
                 payload = ["sourceIds": AnyCodable(sourceIds)]
             } else {
                 payload = ["sourceIds": AnyCodable([String]())]
             }
-            return try await self.send(command: .update, payload: payload)
+            if onProgress != nil { payload["reportProgress"] = AnyCodable(true) }
+            return try await self.send(command: .update, payload: payload, onProgress: onProgress)
         }
     }
 
@@ -467,7 +501,10 @@ final class BridgeClient: @unchecked Sendable {
         }
     }
 
-    private func send(command: BridgeCommand, payload: [String: AnyCodable]? = nil) async throws -> BridgeResponse {
+    private func send(
+        command: BridgeCommand, payload: [String: AnyCodable]? = nil,
+        onProgress: UpdateProgressHandler? = nil
+    ) async throws -> BridgeResponse {
         if activeHelper.shouldCancelBeforeLaunch(command) {
             throw BridgeClientError.commandFailed("Protected operation cancelled because Skill Flow is terminating.")
         }
@@ -504,6 +541,14 @@ final class BridgeClient: @unchecked Sendable {
 
         let outputBuffer = ThreadSafeBuffer()
         let errorBuffer = ThreadSafeBuffer()
+        let (progressStream, progressContinuation) = AsyncStream<BridgeUpdateProgress>.makeStream()
+        let progressReader = onProgress.map { _ in
+            UpdateProgressReader(requestId: request.requestId, continuation: progressContinuation)
+        }
+        let progressConsumer = Task {
+            for await event in progressStream { await onProgress?(event) }
+        }
+        defer { progressContinuation.finish() }
         let exitWaitState = ProcessExitWaitState()
         process.terminationHandler = { _ in
             exitWaitState.resolve(.exited)
@@ -518,6 +563,7 @@ final class BridgeClient: @unchecked Sendable {
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
             errorBuffer.append(chunk)
+            progressReader?.append(chunk)
         }
 
         try activeHelper.run(process, command: command)
@@ -539,6 +585,8 @@ final class BridgeClient: @unchecked Sendable {
             if process.isRunning {
                 await terminateTimedOutProcess(process)
             }
+            progressContinuation.finish()
+            await progressConsumer.value
             throw BridgeClientError.timeout(activeTimeoutMilliseconds)
         }
 
@@ -553,7 +601,11 @@ final class BridgeClient: @unchecked Sendable {
         let errorTail = errorPipe.fileHandleForReading.readDataToEndOfFile()
         if !errorTail.isEmpty {
             errorBuffer.append(errorTail)
+            progressReader?.append(errorTail)
         }
+
+        progressContinuation.finish()
+        await progressConsumer.value
 
         let outputData = outputBuffer.snapshot()
         let errorData = errorBuffer.snapshot()
@@ -561,6 +613,9 @@ final class BridgeClient: @unchecked Sendable {
         guard !outputData.isEmpty else {
             if !errorData.isEmpty {
                 let stderrMessage = String(decoding: errorData, as: UTF8.self)
+                    .split(separator: "\n", omittingEmptySubsequences: false)
+                    .filter { onProgress == nil || !$0.hasPrefix("SKILL_FLOW_UPDATE_PROGRESS ") }
+                    .joined(separator: "\n")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 if !stderrMessage.isEmpty {
                     if let dependencyError = Self.dependencyError(for: stderrMessage) {

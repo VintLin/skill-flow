@@ -327,8 +327,8 @@ final class SourceManagement {
         removeStateForSource(sourceId)
     }
 
-    func updateSourcesReturningResponse(_ sourceIds: [String]) async throws -> BridgeResponse {
-        let response = try await bridgeClient.updateSources(sourceIds)
+    func updateSourcesReturningResponse(_ sourceIds: [String], onProgress: UpdateProgressHandler? = nil) async throws -> BridgeResponse {
+        let response = try await bridgeClient.updateSources(sourceIds, onProgress: onProgress)
         registerRecentlyUpdatedSources(from: response.data?.value)
         return response
     }

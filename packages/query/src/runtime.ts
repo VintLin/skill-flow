@@ -48,6 +48,7 @@ import type {
   SourceStats,
   SourceBinding,
   SourceUpdateResult,
+  SourceUpdateProgress,
   UnifiedSourceSnapshot,
   CollectionViewRecord,
   CollectionSkillRef,
@@ -3968,14 +3969,14 @@ export class SkillFlowApp {
     );
   }
 
-  async updateSources(sourceIds?: string[]): Promise<
+  async updateSources(sourceIds?: string[], onProgress?: (progress: SourceUpdateProgress) => void): Promise<
     Result<SourceUpdateResult>
   > {
     return this.runAuditedMutation(
       "update-sources",
       { sourceIds: sourceIds ?? [] },
       async () => {
-        const result = await this.updateSourcesImpl(sourceIds);
+        const result = await this.updateSourcesImpl(sourceIds, onProgress);
         if (!result.ok) {
           return result;
         }
@@ -3995,8 +3996,11 @@ export class SkillFlowApp {
     );
   }
 
-  private async updateSourcesImpl(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
-    return this.sourceLifecycle.updateSources(sourceIds);
+  private async updateSourcesImpl(
+    sourceIds?: string[],
+    onProgress?: (progress: SourceUpdateProgress) => void,
+  ): Promise<Result<SourceUpdateResult>> {
+    return this.sourceLifecycle.updateSources(sourceIds, onProgress);
   }
 
   async doctor(options: { projectPath?: string } = {}): Promise<Result<DoctorReport>> {

@@ -4,6 +4,14 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.12 - 2026-10-18
+
+### Fixed
+
+- Ended each desktop group card's loading state as soon as that group finishes during Update All, including unchanged and failed groups, without waiting for the rest of the batch.
+- Kept queued and updating states synchronized with per-source progress while preserving the existing UI and protected update ordering.
+- Ignored stale or duplicate progress frames and cleared pending loading states after bridge failure or timeout.
+
 ## v1.6.11 - 2026-10-03
 
 ### Changed

@@ -576,7 +576,7 @@ private final class RecordingCollectionCommandFacade: DesktopCommandTransporting
         return .success(command: .togglePin, payload: ["pinnedSourceIds": [sourceId]])
     }
 
-    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse {
+    func updateSources(_ sourceIds: [String]?, onProgress: UpdateProgressHandler?) async throws -> BridgeResponse {
         if let updateError {
             throw updateError
         }

@@ -6,7 +6,7 @@ protocol DesktopSettingsCommanding: Sendable {
 
 protocol DesktopSourceMutationCommanding: Sendable {
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse
-    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse
+    func updateSources(_ sourceIds: [String]?, onProgress: UpdateProgressHandler?) async throws -> BridgeResponse
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse
 }
 
@@ -39,7 +39,7 @@ extension DesktopSettingsCommanding {
 
 extension DesktopSourceMutationCommanding {
     func togglePinnedSource(sourceId: String) async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
-    func updateSources(_ sourceIds: [String]?) async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
+    func updateSources(_ sourceIds: [String]?, onProgress: UpdateProgressHandler?) async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
     func renameSource(sourceId: String, displayName: String) async throws -> BridgeResponse { throw BridgeClientError.invalidResponse }
 }
 

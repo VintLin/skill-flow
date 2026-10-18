@@ -179,7 +179,7 @@ Desktop state after recovery failed and the user cancelled application terminati
 _Avoid_: recovered, idle, ignore-and-quit
 
 **Bulk Update**:
-A single Group Operation that updates many installed groups in one bridge call (Home “Update All”). While it is Queued or Running, every covered group shows Card Operation Feedback; matching single-group Update entries already in the queue are absorbed so they are not run twice. Remote Git revision checks use the Bounded Preparation Pool, then required updates commit serially in the original selection order.
+A single Group Operation that updates many installed groups in one bridge call (Home “Update All”). Covered groups show the existing Card Operation Feedback while their own work is waiting or active, and individually stop loading once committed, reliably confirmed unchanged, or finished failing. The enclosing operation and its deduplication identity remain active until the entire bridge call and its completion handling finish; matching single-group Update entries already in the queue are absorbed so they are not run twice. Remote Git revision checks use the Bounded Preparation Pool, then required updates commit serially in the original selection order. See the bridge contract for opt-in progress transport.
 _Avoid_: fan-out to N single updates, bypassing the queue
 
 **Desktop-Only Operation Queue**:

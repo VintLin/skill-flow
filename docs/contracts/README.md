@@ -58,6 +58,12 @@ Bridge changes are external changes. Update parser tests, CLI bridge behavior, d
 
 `update`、`import-source` 与 `commit-import-source` 成功时会在原有 mutation data 中附带 `workspace`，其结构与 `bootstrap` data 一致。Desktop 应优先应用该快照；仅当旧 helper 或异常响应未返回 `workspace` 时，才回退到独立的 `list` / `doctor` 恢复链路。
 
+`update` 可在 payload 中传入 `reportProgress: true` 并提供非空 `requestId`，选择接收逐 group 进度。helper 在运行期间向 stderr 输出以 `SKILL_FLOW_UPDATE_PROGRESS ` 开头的 JSON 行；stdout 仍然只输出原有的最终 `BridgeResponse`。未选择进度的 bridge 请求及 CLI/TUI 输出不变，protocol version 仍为 `1.0`。
+
+每个进度对象包含 `protocolVersion: "1.0"`、原请求的 `requestId`、`command: "update"`、`sourceId` 和 `phase`。`phase` 为 `checking`、`queued`、`updating`、`completed`、`unchanged` 或 `failed`。`unchanged` 在该 group 的远端及必要完整性检查确认无需更新后发出；`completed` 在该 group 的保护事务完成后发出；`failed` 在该 group 的现有失败/恢复处理返回后发出。通知仅驱动现有卡片状态，不新增 UI 或改变整批操作的去重和提交顺序。
+
+Desktop 按完整行解析 stderr，并校验协议、命令和请求身份；忽略无效或其他请求的消息，同一 group 的终态不会被后续非终态消息覆盖。每次操作独立监听；最终响应、超时或中断沿用现有收尾与恢复路径，清除本次操作遗留的 loading。进度不是新的持久化状态，最终结果仍由原有响应及恢复结果决定。
+
 `scan-local-import-groups` 成功响应只返回 `localScanGroups`。每个 group 的状态为 `local-only`、`version-conflict` 或 `already-managed`，`importChoices` 使用 `sourceChoiceId` 与 `sourcePath` 表示最终本地导入来源；调用方不得回退解析旧 `groups` 卡片或 legacy Agents origin metadata。
 
 Desktop helper execution is always time-bounded. Ordinary commands use 60

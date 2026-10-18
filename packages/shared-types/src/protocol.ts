@@ -62,6 +62,16 @@ export type BridgeResponse = {
   errors: BridgeError[];
 };
 
+/** Opt-in stderr JSON-lines; stdout remains one final BridgeResponse. */
+export const UPDATE_PROGRESS_PREFIX = "SKILL_FLOW_UPDATE_PROGRESS ";
+export type BridgeUpdateProgress = {
+  protocolVersion: typeof PROTOCOL_VERSION;
+  requestId: string;
+  command: "update";
+  sourceId: string;
+  phase: "checking" | "queued" | "updating" | "completed" | "unchanged" | "failed";
+};
+
 export function parseBridgeRequest(input: unknown): BridgeRequest {
   if (!isJsonObject(input)) {
     throw new Error("Bridge request must be a JSON object.");

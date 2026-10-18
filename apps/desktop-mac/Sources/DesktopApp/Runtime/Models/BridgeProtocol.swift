@@ -118,6 +118,27 @@ struct BridgeRequest: Codable, Sendable {
     }
 }
 
+struct BridgeUpdateProgress: Decodable, Sendable {
+    enum Phase: String, Decodable, Sendable {
+        case checking, queued, updating, completed, unchanged, failed
+
+        var isTerminal: Bool {
+            switch self {
+            case .completed, .unchanged, .failed: true
+            case .checking, .queued, .updating: false
+            }
+        }
+    }
+
+    let protocolVersion: String
+    let requestId: String
+    let command: BridgeCommand
+    let sourceId: String
+    let phase: Phase
+}
+
+typealias UpdateProgressHandler = @MainActor @Sendable (BridgeUpdateProgress) -> Void
+
 struct BridgeIssue: Codable, Identifiable, Sendable {
     var id: String { "\(code):\(message)" }
     let code: String

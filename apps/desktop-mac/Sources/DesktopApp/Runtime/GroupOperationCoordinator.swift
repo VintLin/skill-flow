@@ -32,6 +32,9 @@ final class GroupOperationCoordinator {
     @ObservationIgnored private var importPreparationTasksByGroupId: [String: Task<Void, Never>] = [:]
     private var isDraining = false
     private var hosts: Hosts?
+    private(set) var bulkUpdateId: UUID?
+    private var bulkUpdatePhases: [String: GroupOperationQueue.Phase] = [:]
+    private var completedBulkSourceIds: Set<String> = []
     /// Test-only busy markers that do not occupy the FIFO running slot.
     private var testingImportPhaseOverrides: [String: GroupOperationQueue.Phase] = [:]
 
@@ -161,6 +164,9 @@ final class GroupOperationCoordinator {
 
     func resumeAfterRecovery() {
         queue.resumeAfterRecovery()
+        bulkUpdateId = nil
+        bulkUpdatePhases = [:]
+        completedBulkSourceIds = []
         publishPhases()
     }
 
@@ -206,7 +212,28 @@ final class GroupOperationCoordinator {
             hosts?.onSkippedMissing()
             return
         }
+        bulkUpdateId = UUID()
+        bulkUpdatePhases = Dictionary(uniqueKeysWithValues: existing.map { ($0, .queued) })
+        completedBulkSourceIds = Set(sourceIds).subtracting(existing)
+        publishPhases()
+        defer {
+            bulkUpdateId = nil
+            bulkUpdatePhases = [:]
+            completedBulkSourceIds = []
+        }
         await hosts?.performBulkUpdate(existing)
+    }
+
+    func receiveUpdateProgress(_ event: BridgeUpdateProgress, operationId: UUID) {
+        guard bulkUpdateId == operationId,
+              bulkUpdatePhases[event.sourceId] != nil,
+              !completedBulkSourceIds.contains(event.sourceId) else { return }
+        if event.phase.isTerminal {
+            completedBulkSourceIds.insert(event.sourceId)
+        } else {
+            bulkUpdatePhases[event.sourceId] = event.phase == .queued ? .queued : .running
+        }
+        publishPhases()
     }
 
     private func runImport(groupId: String) async {
@@ -245,6 +272,16 @@ final class GroupOperationCoordinator {
 
     private func publishPhases() {
         updatePhases = queue.snapshotUpdatePhases()
+        if bulkUpdateId != nil {
+            for sourceId in completedBulkSourceIds {
+                updatePhases.removeValue(forKey: sourceId)
+            }
+            for (sourceId, phase) in bulkUpdatePhases {
+                if !completedBulkSourceIds.contains(sourceId) {
+                    updatePhases[sourceId] = phase
+                }
+            }
+        }
         var nextImportPhases = queue.snapshotImportPhases()
         for (groupId, phase) in testingImportPhaseOverrides {
             if nextImportPhases[groupId] != .running {

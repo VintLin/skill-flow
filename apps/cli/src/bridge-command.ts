@@ -17,6 +17,7 @@ import {
   type UsageConfidence,
   type UsageRefreshTrigger,
   type UsageSnapshotFilters,
+  type SourceUpdateProgress,
 } from "@skill-flow/domain/types";
 import type {
   SkillFlowApp,
@@ -39,7 +40,10 @@ type BridgeResult<T> = {
   errors: Array<{ code: string; message: string }>;
 };
 
-type BridgeCommandHandler = (app: SkillFlowApp, request: BridgeRequest) => Promise<BridgeResponse>;
+type BridgeCommandHandler = (
+  app: SkillFlowApp, request: BridgeRequest,
+  onUpdateProgress?: (progress: SourceUpdateProgress) => void,
+) => Promise<BridgeResponse>;
 type BridgeCommandHandlerMap = Record<BridgeCommandName, BridgeCommandHandler>;
 type BridgeResultCommand<T> = () => Promise<BridgeResult<T>>;
 type BridgeValueCommand<T> = () => Promise<T>;
@@ -67,6 +71,7 @@ type CollectionBridgeApp = {
 export async function executeBridgeRequest(
   app: SkillFlowApp,
   request: BridgeRequest,
+  onUpdateProgress?: (progress: SourceUpdateProgress) => void,
 ): Promise<BridgeResponse> {
   try {
     const previousCaller = process.env.SKILL_FLOW_CALLER;
@@ -84,7 +89,7 @@ export async function executeBridgeRequest(
           ],
         });
       }
-      return await bridgeCommandHandlers[request.command](app, request);
+      return await bridgeCommandHandlers[request.command](app, request, onUpdateProgress);
     } finally {
       if (previousCaller === undefined) {
         delete process.env.SKILL_FLOW_CALLER;
@@ -298,10 +303,10 @@ const bridgeCommandHandlers = {
     const scope = expectProjectScope(payload.scope);
     return runBridgeResult(request, () => app.applyDraft(sourceId, draft, scope));
   },
-  update: async (app, request) => {
+  update: async (app, request, onUpdateProgress) => {
     const payload = expectOptionalObject(request.payload, "update");
     const sourceIds = parseOptionalStringArray(payload?.sourceIds, "update.sourceIds");
-    return runBridgeMutationWithWorkspace(app, request, () => app.updateSources(sourceIds));
+    return runBridgeMutationWithWorkspace(app, request, () => app.updateSources(sourceIds, onUpdateProgress));
   },
   uninstall: async (app, request) => {
     const payload = expectObjectPayload(request.payload, "uninstall");

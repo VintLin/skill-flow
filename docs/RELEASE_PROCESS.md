@@ -33,6 +33,7 @@ npm whoami
 - `packages/*/package.json`
 - `apps/cli/package.json` 内部 `@skill-flow/*` 依赖版本
 - `package-lock.json`
+- `apps/cli/src/tests/release-metadata.test.ts` 中的目标版本和 release note 路径
 
 验证：
 

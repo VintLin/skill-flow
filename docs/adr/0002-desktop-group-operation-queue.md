@@ -16,6 +16,10 @@ Desktop users need to click Update/Import on many skill groups without waiting f
 - Up to three queued imports may prepare disposable checkouts before their FIFO
   commit turn. Preparation never writes authority state or target projections.
 - Update All is one Bulk Update job that absorbs matching single-group Updates.
+- Bulk Update card feedback follows each group's own progress; a terminal card
+  stops loading while the enclosing operation retains its queue identity and
+  serial mutation ownership. Successful feedback follows the per-group commit
+  boundary in ADR 0003. The bridge contract defines progress transport.
 - Bulk Update checks remote Git revisions with at most three concurrent reads,
   then performs required protected updates serially in selection order.
 - Quit cancels all disposable preparation tasks, while at most one durable

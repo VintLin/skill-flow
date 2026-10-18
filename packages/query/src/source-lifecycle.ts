@@ -16,6 +16,7 @@ import type {
   ProjectScope,
   SourceUpdateResult,
   SourceUpdateResultItem,
+  SourceUpdateProgress,
   Warning,
 } from "@skill-flow/domain/types";
 import { ExternalSourceLifecycle } from "@skill-flow/core-engine/services/external-source-lifecycle";
@@ -299,7 +300,10 @@ export class SourceLifecycle {
     );
   }
 
-  async updateSources(sourceIds?: string[]): Promise<Result<SourceUpdateResult>> {
+  async updateSources(
+    sourceIds?: string[],
+    onProgress?: (progress: SourceUpdateProgress) => void,
+  ): Promise<Result<SourceUpdateResult>> {
     const {
       stateStore,
       sourceAuthorityService,
@@ -310,7 +314,7 @@ export class SourceLifecycle {
       cloneAuthorityManifest,
       cloneLockFile,
     } = this.dependencies;
-    const precheck = await sourceAuthorityService.precheckUpdateSources(sourceIds);
+    const precheck = await sourceAuthorityService.precheckUpdateSources(sourceIds, onProgress);
     if (!precheck.ok) {
       return fail(precheck.errors, precheck.warnings);
     }
@@ -359,6 +363,8 @@ export class SourceLifecycle {
         continue;
       }
 
+      onProgress?.({ sourceId, phase: "updating" });
+
       const currentState = await stateStore.readState();
       const source = currentState.manifest.sources.find((candidate) => candidate.id === sourceId);
       const lock = currentState.lockFile.sources[sourceId];
@@ -381,10 +387,12 @@ export class SourceLifecycle {
               code: updated.errors[0]?.code ?? "SOURCE_UPDATE_FAILED",
               message: updated.errors[0]?.message ?? "Source update failed.",
             });
+            onProgress?.({ sourceId, phase: "failed" });
             continue;
           }
           precheckFallbackSourceIds.push(...(updated.data.precheckFallbackSourceIds ?? []));
           updatedItems.push(...updated.data.updated);
+          onProgress?.({ sourceId, phase: "completed" });
           continue;
         }
 
@@ -444,9 +452,11 @@ export class SourceLifecycle {
             message: protectedResult.errors[0]?.message ?? "Source update failed.",
           });
           appendWarnings(protectedResult.warnings);
+          onProgress?.({ sourceId, phase: "failed" });
           continue;
         }
         updatedItems.push(...protectedResult.data);
+        onProgress?.({ sourceId, phase: "completed" });
       } catch (error) {
         const failure = {
           code: "SOURCE_UPDATE_FAILED",
@@ -454,6 +464,7 @@ export class SourceLifecycle {
         };
         hardErrors.push(failure);
         failed.push({ sourceId, ...failure });
+        onProgress?.({ sourceId, phase: "failed" });
       }
     }
 
