@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { StateStore } from "@skill-flow/storage/state-store";
 import { ImportPreparationCacheStore } from "@skill-flow/storage/import-preparation-cache-store";
 import { ImportPreparationService } from "../services/import-preparation-service.js";
@@ -28,6 +28,7 @@ function createService(stateRoot: string) {
   return {
     stateStore,
     cacheStore,
+    checkoutService,
     service: new ImportPreparationService({
       cacheStore,
       sourceAuthority,
@@ -89,6 +90,44 @@ describe.sequential("ImportPreparationService", () => {
     if (first.ok && second.ok && first.data.status === "ready" && second.data.status === "ready") {
       expect(second.data.preparationId).toBe(first.data.preparationId);
     }
+  });
+
+  test("waits for an in-flight preparation instead of returning preparing", async () => {
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/frontend-design/SKILL.md": skillDoc("frontend-design", "Design frontends."),
+    });
+    const { stateStore, cacheStore, checkoutService, service } = createService(sandbox.stateRoot);
+    await stateStore.init();
+
+    let releaseCheckout!: () => void;
+    const checkoutGate = new Promise<void>((resolve) => {
+      releaseCheckout = resolve;
+    });
+    const originalPrepareCheckout = checkoutService.prepareSourceCheckout.bind(checkoutService);
+    vi.spyOn(checkoutService, "prepareSourceCheckout").mockImplementation(async (...args) => {
+      await checkoutGate;
+      return originalPrepareCheckout(...args);
+    });
+
+    const first = service.prepareImportSource(repoPath);
+    await vi.waitFor(async () => {
+      const cache = await cacheStore.readImportPreparationCache();
+      expect(Object.values(cache.records).some((record) => record.status === "preparing")).toBe(true);
+    });
+
+    const second = service.prepareImportSource(repoPath);
+    releaseCheckout();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(firstResult.ok).toBe(true);
+    expect(secondResult.ok).toBe(true);
+    if (!firstResult.ok || !secondResult.ok) {
+      return;
+    }
+    expect(firstResult.data.status).toBe("ready");
+    expect(secondResult.data.status).toBe("ready");
+    expect(secondResult.data.preparationId).toBe(firstResult.data.preparationId);
   });
 
   test("reuses an available preparation when newer terminal records share the cache key", async () => {

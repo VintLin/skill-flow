@@ -40,21 +40,29 @@ export class ImportPreparationService {
     addOptions: AddSourceOptionsWithCheckout = {},
   ): Promise<Result<ImportPreparationResult>> {
     const cacheKey = this.cacheKey(locator, addOptions);
-    const cached = await this.findReusablePreparation(cacheKey);
-    if (cached) {
-      return ok(cached);
-    }
-
     const inFlight = this.inFlight.get(cacheKey);
     if (inFlight) {
       return inFlight;
     }
 
-    const task = this.prepareFreshImportSource(locator, cacheKey, addOptions).finally(() => {
+    const task = this.prepareImportSourceWithCache(locator, cacheKey, addOptions).finally(() => {
       this.inFlight.delete(cacheKey);
     });
     this.inFlight.set(cacheKey, task);
     return task;
+  }
+
+  private async prepareImportSourceWithCache(
+    locator: string,
+    cacheKey: string,
+    addOptions: AddSourceOptionsWithCheckout,
+  ): Promise<Result<ImportPreparationResult>> {
+    const cached = await this.findReusablePreparation(cacheKey);
+    if (cached) {
+      return ok(cached);
+    }
+
+    return this.prepareFreshImportSource(locator, cacheKey, addOptions);
   }
 
   async commitPreparedImportSource(preparationId: string): Promise<Result<ImportSourceResult>> {
