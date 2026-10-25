@@ -1102,6 +1102,65 @@ describe.sequential("source lifecycle", () => {
     ]);
   }, 10000);
 
+  test("find scopes remote built-in results before limiting and preserves import selection", async () => {
+    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
+    vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([
+      { locator: "https://github.com/example/catalog.git", branch: "main", path: "skills" },
+    ]);
+    vi.spyOn(githubCatalog, "fetchGitHubSkillPaths").mockResolvedValueOnce([
+      ...Array.from({ length: 6 }, (_, index) => `packages/review-${index}/SKILL.md`),
+      "skills-extra/review/SKILL.md",
+      "skills/review/SKILL.md",
+    ]);
+    const repoPath = await createRepo(sandbox.sandboxRoot, {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+      "skills/other/SKILL.md": skillDoc("other", "Another skill."),
+      "packages/review/SKILL.md": skillDoc("review", "Packaged copy."),
+    });
+    const app = new SkillFlowApp();
+
+    const result = await app.findSkills("review");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.candidates).toHaveLength(1);
+    const candidate = result.data.candidates[0]!;
+    expect(candidate.relativePath).toBe("skills/review");
+    expect(buildFindCommand(candidate)).toBe(
+      "skill-flow add https://github.com/example/catalog.git --path skills/review",
+    );
+    const prepared = await app.prepareAddSource(repoPath, { path: candidate.relativePath });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    expect(prepared.data.draft.selectedLeafIds).toEqual([
+      `${prepared.data.sourceId}:skills/review`,
+    ]);
+  });
+
+  test("find scopes checked-out built-in results to the configured path", async () => {
+    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
+    const locator = "https://github.com/example/catalog.git";
+    vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([
+      { locator, branch: "main", path: "./skills/" },
+    ]);
+    const remotePaths = vi.spyOn(githubCatalog, "fetchGitHubSkillPaths");
+    const app = new SkillFlowApp();
+    await writeRepoFiles(app.store.getCatalogCheckoutPath(deriveSourceId(locator)), {
+      "skills/review/SKILL.md": skillDoc("review", "Review code."),
+      "skills-extra/SKILL.md": skillDoc("skills-extra", "Review outside the root."),
+      "outside-review/SKILL.md": skillDoc("outside-review", "Another root."),
+    });
+
+    const result = await app.findSkills("");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.candidates.map((candidate) => candidate.relativePath)).toEqual([
+      "skills/review",
+    ]);
+    expect(remotePaths).not.toHaveBeenCalled();
+  });
+
   test("find falls back to stale built-in catalog cache with a warning", async () => {
     vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
     vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([

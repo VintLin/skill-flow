@@ -1376,6 +1376,7 @@ export class SkillFlowApp {
             sourceId,
             displayName,
             normalizedQuery,
+            builtin.path,
           );
           return {
             ok: true as const,
@@ -5751,12 +5752,18 @@ export class SkillFlowApp {
     sourceId: string,
     displayName: string,
     query: string,
+    skillRoot?: string,
   ): Promise<{ candidates: SkillCandidate[]; warnings: Warning[] }> {
+    const normalizedSkillRoot = this.importSourcePolicy.normalizeRequestedPath(skillRoot);
+    const withinSkillRoot = (relativePath: string) =>
+      !normalizedSkillRoot || relativePath === normalizedSkillRoot ||
+      relativePath.startsWith(`${normalizedSkillRoot}/`);
     const checkoutPath = this.store.getCatalogCheckoutPath(sourceId);
     if (await pathExists(checkoutPath)) {
       const scanned = await this.inventoryService.scanSource(sourceId, checkoutPath, displayName);
       return {
         candidates: scanned.leafs
+        .filter((leaf) => withinSkillRoot(leaf.relativePath))
         .filter((leaf) =>
           this.matchesQuery(query, [
             leaf.name ?? leaf.linkName,
@@ -5787,6 +5794,7 @@ export class SkillFlowApp {
     const builtinCatalog = await this.getBuiltinCatalogSkillPaths(locator, branch, sourceId);
     const skillPaths = builtinCatalog.skillPaths;
     const matchedPaths = skillPaths
+      .filter((skillFilePath) => withinSkillRoot(skillFilePath.replace(/\/SKILL\.md$/, "")))
       .filter((skillFilePath) =>
         this.matchesQuery(query, [
           skillFilePath.replace(/\/SKILL\.md$/, "").split("/").pop() ?? "",
