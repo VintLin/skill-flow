@@ -114,6 +114,27 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertEqual(model.toast?.message, "Project refresh failed: List failed")
     }
 
+    func testBootstrapFailureLoadsPersistedListInsteadOfShowingEmptyWorkspace() async {
+        let query = ProjectScopeQueryStub()
+        query.bootstrapError = NSError(
+            domain: "ProjectScopeQueryStub",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Recovery is incomplete"]
+        )
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            queryFacade: query,
+            commandFacade: ProjectScopeCommandStub()
+        )
+
+        await model.bootstrap()
+
+        XCTAssertEqual(model.loadState, .ready)
+        XCTAssertEqual(model.sourceIds, ["alpha"])
+        XCTAssertEqual(model.groupCards.map(\.id), ["alpha"])
+        XCTAssertEqual(query.listCallCount, 1)
+    }
+
     func testSelectProjectScopeShowsLocalizedToast() async {
         let query = ProjectScopeQueryStub()
         let command = ProjectScopeCommandStub()
@@ -413,10 +434,15 @@ private final class ProjectScopeQueryStub: DesktopQueryTransporting {
         ]
     ]
     var listSelectedScope: ProjectScopeSelection = .global
+    var bootstrapError: Error?
     var listError: Error?
+    var listCallCount = 0
 
     func bootstrap() async throws -> BridgeResponse {
-        BridgeResponse.success(command: .bootstrap, payload: [
+        if let bootstrapError {
+            throw bootstrapError
+        }
+        return BridgeResponse.success(command: .bootstrap, payload: [
             "availableTargets": ["codex"],
             "summaries": [
                 summaryPayload(
@@ -452,6 +478,7 @@ private final class ProjectScopeQueryStub: DesktopQueryTransporting {
     }
 
     func list() async throws -> BridgeResponse {
+        listCallCount += 1
         if let listError {
             throw listError
         }

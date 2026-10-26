@@ -4,6 +4,14 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.13 - 2026-10-26
+
+### Fixed
+
+- Preserved the saved desktop skill list when workspace bootstrap is blocked by an interrupted-operation recovery error.
+- Added a warning state and a persisted-list fallback instead of presenting an empty Home screen after restart.
+- Split a Swift usage-ranking expression so the release build remains compatible with the current Swift compiler.
+
 ## v1.6.12 - 2026-10-18
 
 ### Fixed

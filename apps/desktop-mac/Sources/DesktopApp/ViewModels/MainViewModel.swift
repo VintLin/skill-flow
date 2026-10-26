@@ -1024,8 +1024,21 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
                 _ = try? await self.usageQuery.refreshUsage(trigger: "bootstrap")
             }
         } catch {
-            stateManager.setLoadState(.failed(error.localizedDescription))
-            stateManager.setHealthStatus(.error)
+            do {
+                let response = try await sourceManagement.refreshList()
+                detectedTargets = sourceManagement.detectedTargetIds()
+                stateManager.setLatestWarnings([
+                    BridgeIssue(
+                        code: "BOOTSTRAP_FALLBACK",
+                        message: "Workspace bootstrap failed; loaded the saved skill list. (\(firstErrorLine(from: error)))"
+                    )
+                ] + response.warnings)
+                stateManager.setLoadState(.ready)
+                stateManager.setHealthStatus(.warnings)
+            } catch {
+                stateManager.setLoadState(.failed(error.localizedDescription))
+                stateManager.setHealthStatus(.error)
+            }
         }
     }
 

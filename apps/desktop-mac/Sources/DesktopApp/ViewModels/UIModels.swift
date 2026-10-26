@@ -267,8 +267,12 @@ struct UsageSnapshotViewData: Equatable {
                 counts[item.id] = (label: current?.label ?? item.skillLabel, count: (current?.count ?? 0) + item.observedUses)
             }
         }
-        let ranked = counts.map { (id: $0.key, label: $0.value.label, count: $0.value.count) }
-            .sorted { $0.count > $1.count || ($0.count == $1.count && $0.label < $1.label) }
+        var ranked: [(id: String, label: String, count: Int)] = counts.map { entry in
+            (id: entry.key, label: entry.value.label, count: entry.value.count)
+        }
+        ranked.sort { left, right in
+            left.count > right.count || (left.count == right.count && left.label < right.label)
+        }
         let topIds = Set(topSkills.map(\.id))
         let topRows = topSkills.compactMap { skill in
             counts[skill.id].map { (id: skill.id, label: skill.skillLabel, count: $0.count) }
