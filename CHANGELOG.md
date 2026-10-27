@@ -4,6 +4,18 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.14 - 2026-10-27
+
+### Added
+
+- Curated the built-in skill discovery catalog around 12 general, engineering, QA, browser, frontend, and Chinese content sources.
+- Added scoped built-in catalog entries for agent-qa, Vercel Skills, agent-browser, Vercel Agent Skills, and Matt Pocock's engineering skills.
+
+### Changed
+
+- Limited checked-out built-in catalog search results to the same five results per source as remote catalog searches.
+- Removed low-signal, duplicate, redirected, and narrowly focused sources from the default built-in recommendation list while keeping them available through explicit source addition.
+
 ## v1.6.13 - 2026-10-26
 
 ### Fixed
