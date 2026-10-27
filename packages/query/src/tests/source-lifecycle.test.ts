@@ -1161,6 +1161,33 @@ describe.sequential("source lifecycle", () => {
     expect(remotePaths).not.toHaveBeenCalled();
   });
 
+  test("limits checked-out built-in results after scoping", async () => {
+    vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
+    const locator = "https://github.com/example/catalog.git";
+    vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([
+      { locator, branch: "main", path: "skills" },
+    ]);
+    const app = new SkillFlowApp();
+    await writeRepoFiles(
+      app.store.getCatalogCheckoutPath(deriveSourceId(locator)),
+      Object.fromEntries(
+        Array.from({ length: 6 }, (_, index) => [
+          `skills/review-${index}/SKILL.md`,
+          skillDoc(`review-${index}`, "Review code."),
+        ]),
+      ),
+    );
+
+    const result = await app.findSkills("review");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.candidates).toHaveLength(5);
+    expect(result.data.candidates.every((candidate) =>
+      candidate.relativePath?.startsWith("skills/review-")
+    )).toBe(true);
+  });
+
   test("find falls back to stale built-in catalog cache with a warning", async () => {
     vi.spyOn(clawhubUtils, "searchClawHubSkills").mockResolvedValueOnce([]);
     vi.spyOn(builtinGitSources, "getBuiltinGitSources").mockReturnValue([

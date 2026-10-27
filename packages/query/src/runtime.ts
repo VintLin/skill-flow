@@ -5770,6 +5770,7 @@ export class SkillFlowApp {
             leaf.relativePath.split("/").pop() ?? "",
           ]),
         )
+        .slice(0, 5)
         .map((leaf) => ({
           id: `builtin-git:${leaf.id}`,
           title: leaf.relativePath === "." ? displayName : leaf.relativePath.split("/").pop() ?? displayName,
