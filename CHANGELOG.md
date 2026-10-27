@@ -4,6 +4,15 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.15 - 2026-10-27
+
+### Fixed
+
+- Activated the macOS main window reliably after launch so real mouse events reach Skill Flow instead of the previously active application.
+- Removed the inactive whole-card gesture from Home group cards so Agent and Skill controls receive direct mouse hit testing.
+- Preserved the normal saving state and existing group configuration while fixing real mouse clicks.
+
+
 ## v1.6.14 - 2026-10-27
 
 ### Added

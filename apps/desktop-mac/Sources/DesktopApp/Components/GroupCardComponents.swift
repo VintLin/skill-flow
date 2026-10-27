@@ -534,12 +534,12 @@ struct SharedGroupCard: View {
             isEnabled: clickPolicy.allowsWholeCardTap && onOpen != nil && !isBusy
         )
         .contentShape(RoundedRectangle(cornerRadius: scale.cornerRadius))
-        .gesture(
-            TapGesture().onEnded {
-                guard clickPolicy.allowsWholeCardTap, !isBusy else { return }
-                onOpen?()
-            },
-            including: clickPolicy.allowsWholeCardTap ? .gesture : .none
+        .modifier(
+            CardOpenGestureModifier(
+                isEnabled: clickPolicy.allowsWholeCardTap && onOpen != nil,
+                isBusy: isBusy,
+                onOpen: onOpen
+            )
         )
         .onReceive(NotificationCenter.default.publisher(for: .groupTagEditorRequested)) { notification in
             guard let sourceId = notification.userInfo?["sourceId"] as? String, sourceId != card.id else {
@@ -1432,6 +1432,26 @@ struct SharedGroupCard: View {
     private func openPath(_ path: String) {
         let url = URL(fileURLWithPath: path)
         NSWorkspace.shared.open(url)
+    }
+}
+
+private struct CardOpenGestureModifier: ViewModifier {
+    let isEnabled: Bool
+    let isBusy: Bool
+    let onOpen: (() -> Void)?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.gesture(
+                TapGesture().onEnded {
+                    guard !isBusy else { return }
+                    onOpen?()
+                }
+            )
+        } else {
+            content
+        }
     }
 }
 

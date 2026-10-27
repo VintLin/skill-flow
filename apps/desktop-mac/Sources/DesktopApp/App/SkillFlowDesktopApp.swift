@@ -63,6 +63,21 @@ struct SkillFlowDesktopApp: App {
 final class SkillFlowApplicationDelegate: NSObject, NSApplicationDelegate {
     weak var terminationCoordinator: ApplicationTerminationCoordinator?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.async {
+            self.activateMainWindow()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            self.activateMainWindow()
+        }
+    }
+
+    private func activateMainWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.first(where: { $0.identifier?.rawValue == "main-window" && $0.canBecomeKey })?.makeKeyAndOrderFront(nil)
+        NSApp.keyWindow?.orderFrontRegardless()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let terminationCoordinator else { return .terminateNow }
         let disposition = terminationCoordinator.requestTermination { allowed in
@@ -206,7 +221,24 @@ private struct WindowTitlebarConfigurator: NSViewRepresentable {
 
             NotificationCenter.default.removeObserver(self)
             configuredWindow = window
+            activate(window: window)
             observeWindowLayoutChanges(for: window)
+        }
+
+        @MainActor
+        private func activate(window: NSWindow) {
+            // SwiftUI can create the main window while the app remains inactive
+            // because the same process also owns MenuBarExtra. In that state
+            // AX actions can still invoke child buttons, while real mouse input
+            // remains with the previously active application.
+            let bringToFront = {
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+            }
+            bringToFront()
+            DispatchQueue.main.async(execute: bringToFront)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: bringToFront)
         }
 
         private func observeWindowLayoutChanges(for window: NSWindow) {
