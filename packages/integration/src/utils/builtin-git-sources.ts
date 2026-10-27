@@ -1,6 +1,7 @@
 export type BuiltinGitSource = {
   locator: string;
   branch: string;
+  path?: string;
 };
 
 export function getBuiltinGitSources(): BuiltinGitSource[] {
@@ -23,5 +24,6 @@ export function getBuiltinGitSources(): BuiltinGitSource[] {
     { locator: "https://github.com/garrytan/gstack.git", branch: "main" },
     { locator: "https://github.com/pbakaus/impeccable.git", branch: "main" },
     { locator: "https://github.com/zarazhangrui/frontend-slides.git", branch: "main" },
+    { locator: "https://github.com/vostride/agent-qa.git", branch: "main", path: "skills" },
   ];
 }
