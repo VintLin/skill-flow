@@ -232,7 +232,9 @@ final class ImportLogic {
                     delegate?.showToast(style: .neutral, text: localizedText("import.action.preparing"))
                     return
                 }
-                if item?.preparationStatus == "failed" || item?.preparationStatus == "stale" {
+                if item?.preparationStatus == "failed"
+                    || item?.preparationStatus == "stale"
+                    || item?.preparationStatus == "timeout" {
                     await prepareImportGroup(groupId: groupId, locator: locator)
                     item = importGroupItem(id: groupId)
                     if item?.preparationStatus != "ready" {
@@ -262,6 +264,7 @@ final class ImportLogic {
             guard var payload = response.data?.value as? [String: Any],
                   var status = payload["status"] as? String
             else {
+                setImportFailure(groupId: groupId, status: "failed")
                 delegate?.showToast(style: .error, text: importFailureToastText(reasonCode: "IMPORT_APPLY_FAILED"))
                 return
             }
@@ -283,6 +286,7 @@ final class ImportLogic {
                         guard let retryPayload = retryResponse.data?.value as? [String: Any],
                               let retryStatus = retryPayload["status"] as? String
                         else {
+                            setImportFailure(groupId: groupId, status: "failed")
                             delegate?.showToast(style: .error, text: importFailureToastText(reasonCode: "IMPORT_APPLY_FAILED"))
                             return
                         }
@@ -292,6 +296,7 @@ final class ImportLogic {
                     }
                 }
                 if status != "ready" {
+                    setImportFailure(groupId: groupId, status: "failed")
                     let diagnostics = parseBridgeDiagnostics(payload["diagnostics"])
                     delegate?.showToast(
                         style: .error,
@@ -336,6 +341,13 @@ final class ImportLogic {
                 delegate?.showToast(style: .success, text: localizedText("toast.import.success"))
             }
         } catch {
+            let failureStatus: String
+            if case .timeout = error as? BridgeClientError {
+                failureStatus = "timeout"
+            } else {
+                failureStatus = "failed"
+            }
+            setImportFailure(groupId: groupId, status: failureStatus)
             if case .commandFailed(_, let response) = error as? BridgeClientError,
                let response {
                 let issue = response.errors.first
@@ -390,10 +402,16 @@ final class ImportLogic {
             guard importPreparationTokensByGroupId[groupId] == activeToken else {
                 return
             }
+            let failureStatus: String
+            if case .timeout = error as? BridgeClientError {
+                failureStatus = "timeout"
+            } else {
+                failureStatus = "failed"
+            }
             setImportPreparation(
                 groupId: groupId,
                 preparationId: importGroupItem(id: groupId)?.preparationId,
-                preparationStatus: "failed",
+                preparationStatus: failureStatus,
                 preparedAt: importGroupItem(id: groupId)?.preparedAt,
                 expiresAt: importGroupItem(id: groupId)?.expiresAt
             )
@@ -1014,6 +1032,17 @@ final class ImportLogic {
                 targets: item.targets
             )
         }
+    }
+
+    private func setImportFailure(groupId: String, status: String) {
+        let item = importGroupItem(id: groupId)
+        setImportPreparation(
+            groupId: groupId,
+            preparationId: item?.preparationId,
+            preparationStatus: status,
+            preparedAt: item?.preparedAt,
+            expiresAt: item?.expiresAt
+        )
     }
 
     private func importGroupItem(id groupId: String) -> ImportGroupItem? {

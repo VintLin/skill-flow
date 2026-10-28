@@ -2011,6 +2011,78 @@ final class ImportScreenContainerTests: XCTestCase {
         XCTAssertFalse(ImportScreen.importActionIsDisabled(for: card, isAnotherImportRunning: true))
     }
 
+    func testImportActionIconReflectsInstalledAndFailureStates() {
+        let freshCard = ImportViewModel.Card(
+            id: "fresh",
+            title: "Fresh",
+            locator: "owner/fresh",
+            canonicalRepo: "owner/fresh",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @owner",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+        let installedCard = ImportViewModel.Card(
+            id: "installed",
+            title: "Installed",
+            locator: "owner/installed",
+            canonicalRepo: "owner/installed",
+            isInstalledLocally: true,
+            aliases: [],
+            summary: "",
+            subtitle: "by @owner",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+        let timeoutCard = ImportViewModel.Card(
+            id: "timeout",
+            title: "Timeout",
+            locator: "owner/timeout",
+            canonicalRepo: "owner/timeout",
+            preparationStatus: "timeout",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @owner",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+        let failedCard = ImportViewModel.Card(
+            id: "failed",
+            title: "Failed",
+            locator: "owner/failed",
+            canonicalRepo: "owner/failed",
+            preparationStatus: "failed",
+            isInstalledLocally: false,
+            aliases: [],
+            summary: "",
+            subtitle: "by @owner",
+            stats: .init(skillCount: nil, downloadCount: nil, starCount: nil, githubURL: nil),
+            skillsLoading: false,
+            targetsLoading: false,
+            skills: [],
+            targets: []
+        )
+
+        XCTAssertEqual(ImportScreen.importActionIcon(for: freshCard), .import)
+        XCTAssertEqual(ImportScreen.importActionIcon(for: installedCard), .checkmark)
+        XCTAssertEqual(ImportScreen.importActionIcon(for: timeoutCard), .timeout)
+        XCTAssertEqual(ImportScreen.importActionIcon(for: failedCard), .failure)
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: timeoutCard))
+        XCTAssertFalse(ImportScreen.importActionIsDisabled(for: failedCard))
+    }
+
     func testImportActionHelpTextUsesActiveImportDisabledReasonOnlyWhenCardHasNoActionTitle() {
         let freshCard = ImportViewModel.Card(
             id: "openai-skills",

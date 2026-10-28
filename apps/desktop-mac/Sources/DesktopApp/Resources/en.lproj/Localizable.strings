@@ -517,3 +517,6 @@
 "toast.update.detail_refresh_failed" = "The group was updated, but its details could not be refreshed. Reopen the group to retry.";
 "toast.update.partial_detail_refresh_failed" = "%@ groups updated, %@ failed (%@). The open group details may be stale; reopen it to retry.";
 "test.fallback.only_en" = "Only English";
+"import.recommendation.description.vostride_agent_qa" = "A focused QA skill collection for browser checks, regression coverage, and repeatable validation workflows.";
+"import.recommendation.description.vercel_labs_skills" = "Vercel official skills collection for frontend engineering, web development, and practical delivery workflows.";
+"import.recommendation.description.mattpocock_skills" = "Matt Pocock engineering skills for structured debugging, code review, testing, and maintainable TypeScript work.";

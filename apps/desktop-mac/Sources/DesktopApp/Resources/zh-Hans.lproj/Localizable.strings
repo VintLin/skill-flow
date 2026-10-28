@@ -516,3 +516,6 @@
 "detail.document.unavailable" = "%@ 不可用。";
 "toast.update.detail_refresh_failed" = "分组已更新，但详情刷新失败。重新打开该分组即可重试。";
 "toast.update.partial_detail_refresh_failed" = "%@ 个分组已更新，%@ 个失败（%@）。当前分组详情可能已过期；重新打开即可重试。";
+"import.recommendation.description.vostride_agent_qa" = "专注 QA 的技能集合，适合浏览器检查、回归覆盖和可重复的验证工作流。";
+"import.recommendation.description.vercel_labs_skills" = "Vercel 官方技能集合，覆盖前端工程、Web 开发和实际交付工作流。";
+"import.recommendation.description.mattpocock_skills" = "Matt Pocock 的工程技能集合，适合结构化调试、代码评审、测试和可维护的 TypeScript 开发。";

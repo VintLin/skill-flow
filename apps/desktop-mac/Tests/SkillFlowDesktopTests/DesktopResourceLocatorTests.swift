@@ -31,6 +31,35 @@ final class DesktopResourceLocatorTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testLucideImportStateIconsAreBundledAndRenderable() throws {
+        let expectedIcons = [
+            "download.svg",
+            "clock-3.svg",
+            "loader-circle.svg",
+            "check.svg",
+            "clock-alert.svg",
+            "triangle-alert.svg",
+        ]
+
+        let directories = DesktopResourceLocator.resourceDirectories(
+            subdirectory: "ActionIcons",
+            bundle: try desktopResourceBundle(),
+            sourceRoot: nil
+        )
+
+        for fileName in expectedIcons {
+            let urls = directories.map { $0.appendingPathComponent(fileName) }
+            let url = try XCTUnwrap(urls.first(where: { FileManager.default.fileExists(atPath: $0.path) }))
+            let source = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertTrue(source.contains("stroke=\"currentColor\""), "Expected Lucide stroke in \(fileName)")
+        }
+
+        for icon in [ActionIcon.import, .queued, .loading, .checkmark, .timeout, .failure] {
+            XCTAssertNotNil(icon.image(size: 16, isTemplate: true), "Expected \(icon.rawValue) to render")
+        }
+    }
+
     func testResourceLocatorFindsMenuBarAssetsInsideDesktopResourceBundle() throws {
         let directories = DesktopResourceLocator.resourceDirectories(
             subdirectory: "MenuBar",

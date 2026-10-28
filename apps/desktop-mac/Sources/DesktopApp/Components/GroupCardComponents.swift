@@ -553,7 +553,7 @@ struct SharedGroupCard: View {
             isDeletingTags = false
         }
         .overlay {
-            if isBusy {
+            if isBusy && displayMode.busyMessageStyle != .downloading {
                 RoundedRectangle(cornerRadius: scale.cornerRadius)
                     .fill(Self.busyOverlayScrimColor(for: theme))
                     .overlay {
@@ -856,12 +856,16 @@ struct SharedGroupCard: View {
     private var importButton: some View {
         let isDisabled = isBusy || isActionButtonDisabled
         let buttonTitle = actionButtonTitle ?? t("group_card.action.import")
+        let statusColor = actionButtonStatusColor
+        let keepsStatusColorWhenDisabled = actionButtonIcon == .checkmark
         let primaryForeground = isDisabled
+            && !keepsStatusColorWhenDisabled
             ? AppTheme.textMuted(for: theme)
-            : AppTheme.brand(for: accent, in: theme)
+            : statusColor ?? AppTheme.brand(for: accent, in: theme)
         let primaryBackground = isDisabled
+            && !keepsStatusColorWhenDisabled
             ? AppTheme.surface(for: theme)
-            : AppTheme.brand(for: accent, in: theme).opacity(theme == .dark ? 0.38 : 0.30)
+            : (statusColor ?? AppTheme.brand(for: accent, in: theme)).opacity(theme == .dark ? 0.38 : 0.30)
         let filledForeground = isDisabled
             ? AppTheme.textMuted(for: theme)
             : AppTheme.pageBackground(for: theme)
@@ -873,8 +877,7 @@ struct SharedGroupCard: View {
             onActionButton?()
         } label: {
             if displayMode.usesPlainPrimaryActionIcon {
-                actionIcon(actionButtonIcon, size: 12)
-                    .foregroundStyle(primaryForeground)
+                importActionContent(foreground: primaryForeground)
                     .frame(width: 28, height: 28)
                     .background(primaryBackground)
                     .overlay(
@@ -910,6 +913,41 @@ struct SharedGroupCard: View {
             isEnabled: !isDisabled
         )
         .help(actionButtonHelpText ?? buttonTitle)
+    }
+
+    @ViewBuilder
+    private func importActionContent(foreground: Color) -> some View {
+        if isBusy {
+            if isQueued {
+                actionIcon(.queued, size: 12)
+                    .foregroundStyle(foreground)
+            } else {
+                actionIcon(.loading, size: 12)
+                    .foregroundStyle(foreground)
+                    .rotationEffect(.degrees(isBusy ? 360 : 0))
+                    .animation(
+                        .linear(duration: 1).repeatForever(autoreverses: false),
+                        value: isBusy
+                    )
+            }
+        } else {
+            actionIcon(actionButtonIcon, size: 12)
+                .foregroundStyle(foreground)
+                .transition(.scale.combined(with: .opacity))
+        }
+    }
+
+    private var actionButtonStatusColor: Color? {
+        switch actionButtonIcon {
+        case .checkmark:
+            return AppTheme.statusSuccess(for: theme)
+        case .timeout:
+            return AppTheme.statusWarning(for: theme)
+        case .failure:
+            return AppTheme.statusError(for: theme)
+        default:
+            return nil
+        }
     }
 
     private var loadingMessage: String {

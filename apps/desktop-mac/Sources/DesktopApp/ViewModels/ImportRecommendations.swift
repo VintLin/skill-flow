@@ -1,5 +1,21 @@
 import Foundation
 
+private struct BuiltinSourceRecommendation: Codable, Equatable, Sendable {
+    let categoryId: String
+    let primaryTagId: String
+    let secondaryTagIds: [String]
+    let descriptionKey: String
+    let sortOrder: Int
+}
+
+private struct BuiltinSourceRecord: Codable, Equatable, Sendable {
+    let canonicalRepo: String
+    let locator: String
+    let branch: String
+    let path: String?
+    let recommendation: BuiltinSourceRecommendation?
+}
+
 struct ImportRecommendationEntry: Codable, Equatable, Sendable {
     let canonicalRepo: String
     let locator: String
@@ -32,7 +48,21 @@ enum ImportRecommendationLoader {
 
         do {
             let data = try Data(contentsOf: url)
-            return try JSONDecoder().decode([ImportRecommendationEntry].self, from: data)
+            let sources = try JSONDecoder().decode([BuiltinSourceRecord].self, from: data)
+            return sources.compactMap { source in
+                guard let recommendation = source.recommendation else {
+                    return nil
+                }
+                return ImportRecommendationEntry(
+                    canonicalRepo: source.canonicalRepo,
+                    locator: source.locator,
+                    categoryId: recommendation.categoryId,
+                    primaryTagId: recommendation.primaryTagId,
+                    secondaryTagIds: recommendation.secondaryTagIds,
+                    descriptionKey: recommendation.descriptionKey,
+                    sortOrder: recommendation.sortOrder
+                )
+            }
         } catch {
             return []
         }

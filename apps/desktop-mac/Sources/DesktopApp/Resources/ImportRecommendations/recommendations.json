@@ -1,155 +1,303 @@
 [
   {
     "canonicalRepo": "dontbesilent2025/dbskill",
-    "locator": "dontbesilent2025/dbskill",
-    "categoryId": "creation",
-    "primaryTagId": "creation",
-    "secondaryTagIds": ["research"],
-    "descriptionKey": "import.recommendation.description.dontbesilent2025_dbskill",
-    "sortOrder": 10
+    "locator": "https://github.com/dontbesilent2025/dbskill.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "creation",
+      "primaryTagId": "creation",
+      "secondaryTagIds": [
+        "research"
+      ],
+      "descriptionKey": "import.recommendation.description.dontbesilent2025_dbskill",
+      "sortOrder": 10
+    }
   },
   {
     "canonicalRepo": "lijigang/ljg-skills",
-    "locator": "lijigang/ljg-skills",
-    "categoryId": "creation",
-    "primaryTagId": "creation",
-    "secondaryTagIds": ["research"],
-    "descriptionKey": "import.recommendation.description.lijigang_ljg_skills",
-    "sortOrder": 20
+    "locator": "https://github.com/lijigang/ljg-skills.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "creation",
+      "primaryTagId": "creation",
+      "secondaryTagIds": [
+        "research"
+      ],
+      "descriptionKey": "import.recommendation.description.lijigang_ljg_skills",
+      "sortOrder": 20
+    }
   },
   {
     "canonicalRepo": "jimliu/baoyu-skills",
-    "locator": "jimliu/baoyu-skills",
-    "categoryId": "creation",
-    "primaryTagId": "creation",
-    "secondaryTagIds": ["marketing"],
-    "descriptionKey": "import.recommendation.description.jimliu_baoyu_skills",
-    "sortOrder": 30
+    "locator": "https://github.com/JimLiu/baoyu-skills.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "creation",
+      "primaryTagId": "creation",
+      "secondaryTagIds": [
+        "marketing"
+      ],
+      "descriptionKey": "import.recommendation.description.jimliu_baoyu_skills",
+      "sortOrder": 30
+    }
   },
   {
     "canonicalRepo": "op7418/humanizer-zh",
-    "locator": "op7418/humanizer-zh",
-    "categoryId": "creation",
-    "primaryTagId": "creation",
-    "secondaryTagIds": ["writing"],
-    "descriptionKey": "import.recommendation.description.op7418_humanizer_zh",
-    "sortOrder": 40
+    "locator": "https://github.com/op7418/humanizer-zh.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "creation",
+      "primaryTagId": "creation",
+      "secondaryTagIds": [
+        "writing"
+      ],
+      "descriptionKey": "import.recommendation.description.op7418_humanizer_zh",
+      "sortOrder": 40
+    }
   },
   {
     "canonicalRepo": "op7418/guizang-ppt-skill",
-    "locator": "op7418/guizang-ppt-skill",
-    "categoryId": "creation",
-    "primaryTagId": "creation",
-    "secondaryTagIds": ["design", "content"],
-    "descriptionKey": "import.recommendation.description.op7418_guizang_ppt_skill",
-    "sortOrder": 50
+    "locator": "https://github.com/op7418/guizang-ppt-skill.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "creation",
+      "primaryTagId": "creation",
+      "secondaryTagIds": [
+        "design",
+        "content"
+      ],
+      "descriptionKey": "import.recommendation.description.op7418_guizang_ppt_skill",
+      "sortOrder": 50
+    }
   },
   {
     "canonicalRepo": "obra/superpowers",
-    "locator": "obra/superpowers",
-    "categoryId": "development",
-    "primaryTagId": "development",
-    "secondaryTagIds": ["teamwork", "automation"],
-    "descriptionKey": "import.recommendation.description.obra_superpowers",
-    "sortOrder": 60
+    "locator": "https://github.com/obra/superpowers.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "development",
+      "primaryTagId": "development",
+      "secondaryTagIds": [
+        "teamwork",
+        "automation"
+      ],
+      "descriptionKey": "import.recommendation.description.obra_superpowers",
+      "sortOrder": 60
+    }
   },
   {
     "canonicalRepo": "garrytan/gstack",
-    "locator": "garrytan/gstack",
-    "categoryId": "development",
-    "primaryTagId": "development",
-    "secondaryTagIds": ["teamwork"],
-    "descriptionKey": "import.recommendation.description.garrytan_gstack",
-    "sortOrder": 70
+    "locator": "https://github.com/garrytan/gstack.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "development",
+      "primaryTagId": "development",
+      "secondaryTagIds": [
+        "teamwork"
+      ],
+      "descriptionKey": "import.recommendation.description.garrytan_gstack",
+      "sortOrder": 70
+    }
+  },
+  {
+    "canonicalRepo": "vostride/agent-qa",
+    "locator": "https://github.com/vostride/agent-qa.git",
+    "branch": "main",
+    "path": "skills",
+    "recommendation": {
+      "categoryId": "development",
+      "primaryTagId": "development",
+      "secondaryTagIds": [
+        "automation"
+      ],
+      "descriptionKey": "import.recommendation.description.vostride_agent_qa",
+      "sortOrder": 80
+    }
+  },
+  {
+    "canonicalRepo": "vercel-labs/skills",
+    "locator": "https://github.com/vercel-labs/skills.git",
+    "branch": "main",
+    "path": "skills",
+    "recommendation": {
+      "categoryId": "development",
+      "primaryTagId": "development",
+      "secondaryTagIds": [
+        "frontend"
+      ],
+      "descriptionKey": "import.recommendation.description.vercel_labs_skills",
+      "sortOrder": 90
+    }
+  },
+  {
+    "canonicalRepo": "mattpocock/skills",
+    "locator": "https://github.com/mattpocock/skills.git",
+    "branch": "main",
+    "path": "skills/engineering",
+    "recommendation": {
+      "categoryId": "development",
+      "primaryTagId": "development",
+      "secondaryTagIds": [
+        "teamwork",
+        "automation"
+      ],
+      "descriptionKey": "import.recommendation.description.mattpocock_skills",
+      "sortOrder": 100
+    }
   },
   {
     "canonicalRepo": "pbakaus/impeccable",
-    "locator": "pbakaus/impeccable",
-    "categoryId": "design",
-    "primaryTagId": "design",
-    "secondaryTagIds": ["development"],
-    "descriptionKey": "import.recommendation.description.pbakaus_impeccable",
-    "sortOrder": 80
+    "locator": "https://github.com/pbakaus/impeccable.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "design",
+      "primaryTagId": "design",
+      "secondaryTagIds": [
+        "development"
+      ],
+      "descriptionKey": "import.recommendation.description.pbakaus_impeccable",
+      "sortOrder": 110
+    }
   },
   {
     "canonicalRepo": "leonxlnx/taste-skill",
-    "locator": "leonxlnx/taste-skill",
-    "categoryId": "design",
-    "primaryTagId": "design",
-    "secondaryTagIds": ["frontend"],
-    "descriptionKey": "import.recommendation.description.leonxlnx_taste_skill",
-    "sortOrder": 90
+    "locator": "https://github.com/leonxlnx/taste-skill.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "design",
+      "primaryTagId": "design",
+      "secondaryTagIds": [
+        "frontend"
+      ],
+      "descriptionKey": "import.recommendation.description.leonxlnx_taste_skill",
+      "sortOrder": 120
+    }
   },
   {
     "canonicalRepo": "anysearch-ai/anysearch-skill",
-    "locator": "anysearch-ai/anysearch-skill",
-    "categoryId": "research",
-    "primaryTagId": "research",
-    "secondaryTagIds": ["automation"],
-    "descriptionKey": "import.recommendation.description.anysearch_ai_anysearch_skill",
-    "sortOrder": 100
+    "locator": "https://github.com/anysearch-ai/anysearch-skill.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "research",
+      "primaryTagId": "research",
+      "secondaryTagIds": [
+        "automation"
+      ],
+      "descriptionKey": "import.recommendation.description.anysearch_ai_anysearch_skill",
+      "sortOrder": 130
+    }
   },
   {
     "canonicalRepo": "199-biotechnologies/claude-deep-research-skill",
-    "locator": "199-biotechnologies/claude-deep-research-skill",
-    "categoryId": "research",
-    "primaryTagId": "research",
-    "secondaryTagIds": ["automation"],
-    "descriptionKey": "import.recommendation.description.199_biotechnologies_claude_deep_research_skill",
-    "sortOrder": 110
+    "locator": "https://github.com/199-biotechnologies/claude-deep-research-skill.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "research",
+      "primaryTagId": "research",
+      "secondaryTagIds": [
+        "automation"
+      ],
+      "descriptionKey": "import.recommendation.description.199_biotechnologies_claude_deep_research_skill",
+      "sortOrder": 140
+    }
   },
   {
     "canonicalRepo": "vercel-labs/agent-browser",
-    "locator": "vercel-labs/agent-browser",
-    "categoryId": "automation",
-    "primaryTagId": "automation",
-    "secondaryTagIds": ["development"],
-    "descriptionKey": "import.recommendation.description.vercel_labs_agent_browser",
-    "sortOrder": 120
+    "locator": "https://github.com/vercel-labs/agent-browser.git",
+    "branch": "main",
+    "path": "skills",
+    "recommendation": {
+      "categoryId": "automation",
+      "primaryTagId": "automation",
+      "secondaryTagIds": [
+        "development"
+      ],
+      "descriptionKey": "import.recommendation.description.vercel_labs_agent_browser",
+      "sortOrder": 150
+    }
   },
   {
     "canonicalRepo": "joeseesun/opencli-skill",
-    "locator": "joeseesun/opencli-skill",
-    "categoryId": "automation",
-    "primaryTagId": "automation",
-    "secondaryTagIds": ["creation", "marketing"],
-    "descriptionKey": "import.recommendation.description.joeseesun_opencli_skill",
-    "sortOrder": 130
+    "locator": "https://github.com/joeseesun/opencli-skill.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "automation",
+      "primaryTagId": "automation",
+      "secondaryTagIds": [
+        "creation",
+        "marketing"
+      ],
+      "descriptionKey": "import.recommendation.description.joeseesun_opencli_skill",
+      "sortOrder": 160
+    }
   },
   {
     "canonicalRepo": "anthropics/skills",
-    "locator": "anthropics/skills",
-    "categoryId": "general",
-    "primaryTagId": "general",
-    "secondaryTagIds": ["development", "design"],
-    "descriptionKey": "import.recommendation.description.anthropics_skills",
-    "sortOrder": 140
+    "locator": "https://github.com/anthropics/skills.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "general",
+      "primaryTagId": "general",
+      "secondaryTagIds": [
+        "development",
+        "design"
+      ],
+      "descriptionKey": "import.recommendation.description.anthropics_skills",
+      "sortOrder": 170
+    }
   },
   {
     "canonicalRepo": "vercel-labs/agent-skills",
-    "locator": "vercel-labs/agent-skills",
-    "categoryId": "general",
-    "primaryTagId": "general",
-    "secondaryTagIds": ["frontend"],
-    "descriptionKey": "import.recommendation.description.vercel_labs_agent_skills",
-    "sortOrder": 150
+    "locator": "https://github.com/vercel-labs/agent-skills.git",
+    "branch": "main",
+    "path": "skills",
+    "recommendation": {
+      "categoryId": "general",
+      "primaryTagId": "general",
+      "secondaryTagIds": [
+        "frontend"
+      ],
+      "descriptionKey": "import.recommendation.description.vercel_labs_agent_skills",
+      "sortOrder": 180
+    }
   },
   {
     "canonicalRepo": "kepano/obsidian-skills",
-    "locator": "kepano/obsidian-skills",
-    "categoryId": "general",
-    "primaryTagId": "general",
-    "secondaryTagIds": ["knowledge"],
-    "descriptionKey": "import.recommendation.description.kepano_obsidian_skills",
-    "sortOrder": 160
+    "locator": "https://github.com/kepano/obsidian-skills.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "general",
+      "primaryTagId": "general",
+      "secondaryTagIds": [
+        "knowledge"
+      ],
+      "descriptionKey": "import.recommendation.description.kepano_obsidian_skills",
+      "sortOrder": 190
+    }
   },
   {
     "canonicalRepo": "vibeforge1111/keep-codex-fast",
-    "locator": "vibeforge1111/keep-codex-fast",
-    "categoryId": "general",
-    "primaryTagId": "general",
-    "secondaryTagIds": ["development", "workflow"],
-    "descriptionKey": "import.recommendation.description.vibeforge1111_keep_codex_fast",
-    "sortOrder": 170
+    "locator": "https://github.com/vibeforge1111/keep-codex-fast.git",
+    "branch": "main",
+    "recommendation": {
+      "categoryId": "general",
+      "primaryTagId": "general",
+      "secondaryTagIds": [
+        "development",
+        "workflow"
+      ],
+      "descriptionKey": "import.recommendation.description.vibeforge1111_keep_codex_fast",
+      "sortOrder": 200
+    }
+  },
+  {
+    "canonicalRepo": "agentskills/agentskills",
+    "locator": "https://github.com/agentskills/agentskills.git",
+    "branch": "main"
+  },
+  {
+    "canonicalRepo": "nextlevelbuilder/ui-ux-pro-max-skill",
+    "locator": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git",
+    "branch": "main"
   }
 ]

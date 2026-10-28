@@ -148,7 +148,7 @@ struct ImportScreen: View {
                     activeImportDisabledReason: nil,
                     localized: { key in t(key) }
                 ),
-                actionButtonIcon: ActionIcon.import,
+                actionButtonIcon: Self.importActionIcon(for: card),
                 isActionButtonDisabled: Self.importActionIsDisabled(
                     for: card,
                     isAnotherImportRunning: false
@@ -292,6 +292,20 @@ struct ImportScreen: View {
             || card.preparationStatus == "preparing"
     }
 
+    static func importActionIcon(for card: ImportViewModel.Card) -> ActionIcon {
+        if card.isInstalledLocally {
+            return .checkmark
+        }
+        switch card.preparationStatus {
+        case "timeout":
+            return .timeout
+        case "failed", "stale":
+            return .failure
+        default:
+            return .import
+        }
+    }
+
     static func importActionTitle(
         for card: ImportViewModel.Card,
         localized: (String) -> String
@@ -305,7 +319,9 @@ struct ImportScreen: View {
         if card.preparationStatus == "preparing" {
             return localized("import.action.preparing")
         }
-        if card.preparationStatus == "failed" || card.preparationStatus == "stale" {
+        if card.preparationStatus == "failed"
+            || card.preparationStatus == "stale"
+            || card.preparationStatus == "timeout" {
             return localized("import.action.retry_prepare")
         }
         return nil

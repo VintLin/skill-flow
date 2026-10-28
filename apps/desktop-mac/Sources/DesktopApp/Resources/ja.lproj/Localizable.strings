@@ -516,3 +516,6 @@
 "detail.document.unavailable" = "%@ を利用できません。";
 "toast.update.detail_refresh_failed" = "グループは更新されましたが、詳細を更新できませんでした。グループを開き直すと再試行できます。";
 "toast.update.partial_detail_refresh_failed" = "%@ 件のグループを更新し、%@ 件が失敗しました（%@）。開いているグループの詳細は古い可能性があります。開き直すと再試行できます。";
+"import.recommendation.description.vostride_agent_qa" = "ブラウザ確認、回帰カバレッジ、再現可能な検証ワークフローに向いた QA 特化の Skill 集です。";
+"import.recommendation.description.vercel_labs_skills" = "フロントエンド開発、Web 開発、実務的なデリバリーワークフローをカバーする Vercel 公式 Skill 集です。";
+"import.recommendation.description.mattpocock_skills" = "構造化デバッグ、コードレビュー、テスト、保守しやすい TypeScript 開発に向いた Matt Pocock のエンジニアリング Skill 集です。";

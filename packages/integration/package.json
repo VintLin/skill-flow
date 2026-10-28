@@ -1,6 +1,6 @@
 {
   "name": "@skill-flow/integration",
-  "version": "1.6.15",
+  "version": "1.6.16",
   "type": "module",
   "private": true,
   "main": "dist/index.js",
@@ -10,12 +10,12 @@
     "./utils/*": "./dist/utils/*.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node ../../scripts/release/sync-builtin-source-resource.mjs",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest --passWithNoTests"
   },
   "dependencies": {
-    "@skill-flow/domain": "1.6.15"
+    "@skill-flow/domain": "1.6.16"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

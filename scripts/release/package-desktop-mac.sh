@@ -123,6 +123,7 @@ rm -rf "$APP_BUNDLE" "$DMG_PATH" "$HELPER_STAGE" "$DMG_STAGE" "$WORK_DIR"
 mkdir -p "$OUTPUT_ARCH_DIR" "$WORK_DIR" "$NODE_RUNTIME_CACHE_DIR"
 
 cd "$ROOT_DIR"
+node "$ROOT_DIR/scripts/release/sync-builtin-source-resource.mjs"
 if [[ "$SKIP_JS_BUILD" -eq 0 ]]; then
   npm run build
 fi

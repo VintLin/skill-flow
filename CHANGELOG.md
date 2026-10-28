@@ -4,6 +4,23 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.16 - 2026-10-28
+
+### Added
+
+- Added `agent-qa`, Vercel Skills, and Matt Pocock's engineering skills to the desktop recommendation catalog.
+- Added unified built-in source metadata shared by core source discovery and desktop recommendations.
+
+### Changed
+
+- Ordered recommendation Groups by their category sequence instead of appending newly added Groups at the end.
+- Updated desktop status icons and import action states for queued, loading, success, timeout, and failure states.
+
+### Fixed
+
+- Preserved real mouse click behavior for Agent and Skill controls in Home Group cards.
+
+
 ## v1.6.15 - 2026-10-27
 
 ### Fixed

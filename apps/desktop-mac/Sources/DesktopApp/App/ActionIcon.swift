@@ -2,12 +2,13 @@ import AppKit
 import Foundation
 
 @MainActor
-enum ActionIcon: String {
+enum ActionIcon: String, Equatable {
     private static let imageVariantCache = NSCache<NSString, NSImage>()
     private static let symbolCache = NSCache<NSString, NSImage>()
     private static let cachedResourceDirectories = resourceDirectories()
 
     case back
+    case checkmark
     case close
     case delete
     case dragHandle = "drag-handle"
@@ -17,11 +18,13 @@ enum ActionIcon: String {
     case importLocal = "import-local"
     case importLocalScan = "import-local-scan"
     case importRecommended = "import-recommended"
+    case loading = "loader-circle"
     case more
     case pin
     case plus
     case project
     case projectWarning = "project-warning"
+    case failure
     case rename
     case search
     case searchSubmitEnter = "search-submit-enter"
@@ -29,8 +32,10 @@ enum ActionIcon: String {
     case star
     case tagAdd = "tag-add"
     case tagDelete = "tag-delete"
+    case timeout
     case update
     case usage
+    case queued
 
     func image(size: CGFloat? = nil, isTemplate: Bool = true) -> NSImage? {
         let cacheKey = imageVariantCacheKey(size: size, isTemplate: isTemplate)
@@ -46,8 +51,9 @@ enum ActionIcon: String {
            let fallback = Self.systemSymbolImage("pencil", size: size, isTemplate: isTemplate) {
             resolvedImage = fallback
         } else {
+            let resourceName = Self.resourceName(for: self)
             resolvedImage = Self.cachedResourceDirectories.lazy.compactMap { directory in
-                NSImage(contentsOf: directory.appendingPathComponent("\(rawValue).svg"))
+                Self.resourceImage(at: directory.appendingPathComponent(resourceName))
             }.first
         }
 
@@ -142,6 +148,43 @@ enum ActionIcon: String {
         ]
         .map { String(format: "%.4f", $0) }
         .joined(separator: ",")
+    }
+
+    private static func resourceName(for icon: ActionIcon) -> String {
+        switch icon {
+        case .import:
+            return "download.svg"
+        case .checkmark:
+            return "check.svg"
+        case .queued:
+            return "clock-3.svg"
+        case .loading:
+            return "loader-circle.svg"
+        case .timeout:
+            return "clock-alert.svg"
+        case .failure:
+            return "triangle-alert.svg"
+        default:
+            return "\(icon.rawValue).svg"
+        }
+    }
+
+    private static func resourceImage(at url: URL) -> NSImage? {
+        guard url.pathExtension.lowercased() == "svg" else {
+            return NSImage(contentsOf: url)
+        }
+
+        guard let data = try? Data(contentsOf: url),
+              let source = String(data: data, encoding: .utf8),
+              let normalizedData = source
+                  .replacingOccurrences(of: "stroke=\"currentColor\"", with: "stroke=\"#000\"")
+                  .replacingOccurrences(of: "fill=\"currentColor\"", with: "fill=\"#000\"")
+                  .data(using: .utf8)
+        else {
+            return NSImage(contentsOf: url)
+        }
+
+        return NSImage(data: normalizedData) ?? NSImage(contentsOf: url)
     }
 
     private static func resourceDirectories() -> [URL] {
