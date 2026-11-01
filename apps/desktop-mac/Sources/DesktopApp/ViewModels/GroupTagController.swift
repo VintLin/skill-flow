@@ -364,6 +364,15 @@ final class GroupTagController {
             return Array(stored.prefix(Self.maximumTagCount))
         }
 
+        // The in-memory collection can be older than another desktop package's
+        // shared-suite write. Reload before initializing a missing key so a
+        // stale empty snapshot cannot erase the latest tag collection.
+        let latestCollection = store.loadTagCollection()
+        if let stored = latestCollection.tagsByGroupKey[key] {
+            state.groupTags.tagCollection = latestCollection
+            return Array(stored.prefix(Self.maximumTagCount))
+        }
+
         let defaults = Array(
             (presetTags(
                 canonicalRepo: sourceCanonicalRepo(sourceId),
@@ -371,8 +380,10 @@ final class GroupTagController {
                 locale: locale
             ) ?? []).prefix(Self.maximumTagCount)
         )
-        state.groupTags.tagCollection.tagsByGroupKey[key] = defaults
-        store.saveTagCollection(state.groupTags.tagCollection)
+        var nextCollection = latestCollection
+        nextCollection.tagsByGroupKey[key] = defaults
+        state.groupTags.tagCollection = nextCollection
+        store.saveTagCollection(nextCollection)
         return defaults
     }
 

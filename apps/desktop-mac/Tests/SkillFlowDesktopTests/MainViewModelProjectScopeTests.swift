@@ -409,6 +409,38 @@ final class MainViewModelProjectScopeTests: XCTestCase {
         XCTAssertEqual(state.settings.selectedProjectScope, .global)
         XCTAssertTrue(state.settings.recentProjectScopes.isEmpty)
     }
+
+    func testApplyingProjectScopeStateDoesNotRewriteAgentDisplayPreferencesFromStaleRouteState() {
+        let suiteName = "\(#function)-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let workspaceMemory = DesktopWorkspaceMemoryStore(
+            userDefaults: defaults,
+            legacyDomainNames: []
+        )
+        let currentPreferences = [
+            AgentDisplayPreference(targetId: "codex", isVisible: false, sortOrder: 0),
+            AgentDisplayPreference(targetId: "claude-code", isVisible: true, sortOrder: 1),
+        ]
+        workspaceMemory.saveAgentDisplayPreferences(currentPreferences)
+
+        let state = DesktopAppState()
+        state.settings.agentDisplayPreferences = AgentDisplayCatalog.defaultPreferences()
+        let model = MainViewModel(
+            bridgeClient: BridgeClient(),
+            settingsStore: DesktopSettingsStore(
+                userDefaults: defaults,
+                workspaceMemory: workspaceMemory
+            )
+        )
+        model.bindRouteState(state)
+
+        model.applyProjectScopeState([:])
+
+        XCTAssertEqual(workspaceMemory.loadAgentDisplayPreferences(), currentPreferences)
+    }
 }
 
 @MainActor

@@ -64,6 +64,16 @@ struct DesktopSettingsStore {
         userDefaults.set(encodedCustomAgents, forKey: SettingsViewModel.customAgentsKey)
     }
 
+    func saveProjectScopeState(
+        selectedProjectScope: ProjectScopeSelection,
+        recentProjectScopes: [RecentProjectScopeItem]
+    ) {
+        let encodedProjectScope = try? encoder.encode(selectedProjectScope)
+        userDefaults.set(encodedProjectScope, forKey: SettingsViewModel.selectedProjectScopeKey)
+        let encodedRecentProjectScopes = try? encoder.encode(recentProjectScopes)
+        userDefaults.set(encodedRecentProjectScopes, forKey: SettingsViewModel.recentProjectScopesKey)
+    }
+
     private func loadSelectedProjectScope() -> ProjectScopeSelection {
         guard let data = userDefaults.data(forKey: SettingsViewModel.selectedProjectScopeKey),
               let scope = try? decoder.decode(ProjectScopeSelection.self, from: data)

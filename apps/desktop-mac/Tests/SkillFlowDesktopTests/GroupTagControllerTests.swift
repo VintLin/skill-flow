@@ -3,6 +3,14 @@ import XCTest
 
 @MainActor
 final class GroupTagControllerTests: XCTestCase {
+    override func tearDown() {
+        let suiteName = "GroupTagControllerTests.isolated"
+        UserDefaults(suiteName: suiteName)?.removePersistentDomain(
+            forName: suiteName
+        )
+        super.tearDown()
+    }
+
     func testResolvedTagsFallBackToRecommendationTags() {
         let state = DesktopAppState()
         let controller = makeController(
@@ -24,6 +32,37 @@ final class GroupTagControllerTests: XCTestCase {
         let tags = controller.resolvedTags(forSourceId: "alpha", locale: Locale(identifier: "en"))
 
         XCTAssertEqual(tags.map(\.title), ["General"])
+    }
+
+    func testHomeSnapshotDoesNotOverwriteLatestTagsWithStaleEmptyState() {
+        let suiteName = "\(#function)-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let state = DesktopAppState()
+        let controller = makeController(state: state, userDefaults: defaults)
+        DesktopGroupTagStore(userDefaults: defaults).saveTagCollection(
+            GroupTagCollection(tagsByGroupKey: [
+                "source:alpha": [
+                    GroupTagPreference(title: "保留", accentRawValue: DesktopAccentColor.blue.rawValue)
+                ]
+            ])
+        )
+
+        let snapshot = controller.homeSnapshot(
+            sourceIds: ["alpha"],
+            locale: Locale(identifier: "zh-Hans")
+        )
+
+        XCTAssertEqual(snapshot.tagsBySourceID["alpha"]?.map(\.title), ["保留"])
+        XCTAssertEqual(
+            DesktopGroupTagStore(userDefaults: defaults)
+                .loadTagCollection()
+                .tagsByGroupKey["source:alpha"]?
+                .map(\.title),
+            ["保留"]
+        )
     }
 
     func testAddCustomTagPersistsTrimmedTitle() {
@@ -811,14 +850,17 @@ final class GroupTagControllerTests: XCTestCase {
     private func makeController(
         state: DesktopAppState = DesktopAppState(),
         recommendations: [ImportRecommendationEntry] = [],
-        userDefaults: UserDefaults = .standard,
+        userDefaults: UserDefaults? = nil,
         sourceCanonicalRepo: @escaping (String) -> String? = { _ in nil },
         sourceLocator: @escaping (String) -> String? = { _ in nil },
         collectionMemberSourceIds: @escaping (String) -> [String] = { _ in [] }
     ) -> GroupTagController {
-        GroupTagController(
+        let resolvedUserDefaults = userDefaults ?? UserDefaults(
+            suiteName: "GroupTagControllerTests.isolated"
+        )!
+        return GroupTagController(
             state: state,
-            store: DesktopGroupTagStore(userDefaults: userDefaults),
+            store: DesktopGroupTagStore(userDefaults: resolvedUserDefaults),
             recommendationsProvider: { recommendations },
             sourceCanonicalRepo: sourceCanonicalRepo,
             sourceLocator: sourceLocator,

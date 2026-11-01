@@ -18,13 +18,9 @@ final class DesktopLocalizationTests: XCTestCase {
     ]
 
     private func loadRecommendations() -> [ImportRecommendationEntry] {
-        let configurationURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Sources/DesktopApp/Resources/ImportRecommendations/recommendations.json")
-        let data = try! Data(contentsOf: configurationURL)
-        return try! JSONDecoder().decode([ImportRecommendationEntry].self, from: data)
+        let recommendations = ImportRecommendationLoader.load()
+        XCTAssertFalse(recommendations.isEmpty)
+        return recommendations
     }
 
     private func loadDesktopLocalizedStrings(localeIdentifier: String) throws -> [String: String] {

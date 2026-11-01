@@ -4,6 +4,15 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.17 - 2026-11-01
+
+### Fixed
+
+- Prevented project-scope persistence from overwriting Agent display preferences with stale state during app upgrades or overlapping launches.
+- Reloaded the latest shared group-tag collection before initializing missing group entries, preventing stale snapshots from clearing saved tags.
+- Added regression coverage for overlapping desktop package writes and kept release metadata aligned across the workspace.
+
+
 ## v1.6.16 - 2026-10-28
 
 ### Added

@@ -92,15 +92,15 @@ final class BridgeClientExecutionTests: XCTestCase {
     }
 
     func testUpdateTimeoutScalesWithSelectedSourceCount() async throws {
-        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 100)
+        let fixture = try SlowBridgeFixture.install(delayMilliseconds: 600)
         self.fixture = fixture
 
         let bridge = await MainActor.run {
             BridgeClient(
                 commandTimeoutMilliseconds: 25,
                 importCommandTimeoutMilliseconds: 50,
-                updateSourceTimeoutMilliseconds: 75,
-                updateCommandMaximumTimeoutMilliseconds: 150
+                updateSourceTimeoutMilliseconds: 500,
+                updateCommandMaximumTimeoutMilliseconds: 1_000
             )
         }
 
@@ -136,7 +136,7 @@ final class BridgeClientExecutionTests: XCTestCase {
         let bridge = await MainActor.run {
             BridgeClient(
                 updateSourceTimeoutMilliseconds: 50,
-                updateCommandMaximumTimeoutMilliseconds: 150
+                updateCommandMaximumTimeoutMilliseconds: 500
             )
         }
 

@@ -1766,16 +1766,10 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
     }
 
     private func persistProjectScopeSettingsIfNeeded() {
-        var persisted = settingsStore.load()
-        persisted.selectedProjectScope = cachedSelectedProjectScope
-        persisted.recentProjectScopes = cachedRecentProjectScopes
-        if let customAgents = routeState?.settings.customAgents {
-            persisted.customAgents = customAgents
-        }
-        if let preferences = routeState?.settings.agentDisplayPreferences {
-            persisted.agentDisplayPreferences = preferences
-        }
-        settingsStore.save(persisted)
+        settingsStore.saveProjectScopeState(
+            selectedProjectScope: cachedSelectedProjectScope,
+            recentProjectScopes: cachedRecentProjectScopes
+        )
     }
 
     private func projectionSummaries() -> [ProjectionSourceSummary] {
