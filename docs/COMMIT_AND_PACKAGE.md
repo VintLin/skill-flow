@@ -55,103 +55,10 @@ git commit -m "fix: handle runtime restart after source refresh"
 - 对应测试已经执行。
 - 若是 CLI、配置、bridge 协议、桌面打包行为变更，必须补测试，必要时同步 README 或 release note。
 
-## 打包
+## 打包与发布
 
-当前仓库的桌面打包脚本都在 `scripts/release/` 下，默认输出到 `dist/desktop-mac/`。
-
-### 1. 先构建 JS 部分
-
-```bash
-npm run build
-```
-
-如果你直接运行下面的主打包脚本，它默认也会先执行这一步。
-
-### 2. 打单个架构的未签名包
-
-```bash
-scripts/release/package-desktop-mac.sh --arch arm64
-scripts/release/package-desktop-mac.sh --arch x86_64
-scripts/release/package-desktop-mac.sh --arch universal
-```
-
-说明：
-
-- `arm64` 适用于 Apple Silicon。
-- `x86_64` 适用于 Intel Mac。
-- `universal` 同时包含 `arm64` 和 `x86_64`。
-
-### 3. 只打当前机器架构的开发包
-
-```bash
-scripts/release/package-desktop-mac-dev.sh
-```
-
-这个脚本会按当前机器架构生成 dev 包。
-
-### 4. 一次生成 GitHub Release 需要的全部产物
-
-```bash
-scripts/release/release-github.sh all
-```
-
-该命令会依次完成：
-
-- 构建桌面 app
-- 生成各架构 `.dmg`
-- 生成各架构 `.zip`
-- 生成 `sha256.txt`
-- 校验产物架构是否正确
-
-输出结果默认在：
-
-```text
-dist/desktop-mac/
-```
-
-### 5. 发布 GitHub Release
-
-确认本地已有对应版本的 release note，例如：
-
-```text
-releases/RELEASE_v1.2.0.md
-```
-
-然后执行：
-
-```bash
-scripts/release/publish-github-release.sh
-```
-
-如果你已经提前生成过产物，可复用已有结果：
-
-```bash
-scripts/release/publish-github-release.sh --skip-build
-```
-
-### 6. 单独补 zip 或校验
-
-只补 zip：
-
-```bash
-scripts/release/package-desktop-mac-zip.sh universal
-```
-
-只校验 app bundle：
-
-```bash
-scripts/release/validate-mac-artifacts.sh \
-  "dist/desktop-mac/universal/Skill Flow.app" \
-  "arm64,x86_64"
-```
-
-### 7. 打包自测
-
-如需快速验证打包链路，可运行：
-
-```bash
-scripts/release/test-mac-packaging.sh
-```
+桌面打包、产物校验、GitHub Release 和 npm 发布的唯一流程见
+[RELEASE_PROCESS.md](RELEASE_PROCESS.md)。本文件不复制脚本清单或产物命名。
 
 ## 最小正确流程
 
@@ -164,12 +71,7 @@ git add <相关文件>
 git commit -m "feat: 简短描述"
 ```
 
-准备桌面发布时：
-
-```bash
-scripts/release/release-github.sh all
-scripts/release/publish-github-release.sh --skip-build
-```
+准备桌面发布时，按 [RELEASE_PROCESS.md](RELEASE_PROCESS.md) 的完整顺序执行。
 
 ## 备注
 

@@ -10,7 +10,7 @@
 ├── README.md                 # 英文用户入口
 ├── README.zh.md              # 中文用户入口
 ├── README.ja.md              # 日文用户入口
-├── DESIGN.md                 # 兼容入口，指向 docs/DESIGN.md
+├── docs/                     # 当前文档入口；历史材料在 docs/archives/
 ├── apps/
 │   ├── cli/                  # npm 包 skill-flow，CLI 入口
 │   └── desktop-mac/          # macOS SwiftUI 桌面端
@@ -22,7 +22,6 @@
 │   ├── core-engine/          # inventory、source、deployment、doctor、migration 服务
 │   ├── query/                # CLI/TUI/desktop 共用 runtime 和编排入口
 │   └── tui/                  # Ink 交互界面
-├── docs/                     # 产品、架构、结构、协议、计划、参考和验证文档
 ├── releases/                 # 版本发布说明
 ├── scripts/release/          # 发布、打包、校验脚本
 ├── skills/skill-flow/        # skill-flow 自身 skill 定义
@@ -38,34 +37,15 @@
 - `apps/*`
 - `packages/*`
 
-当前有效 npm 包：
-
-| 路径 | 包名 | 职责 |
-| --- | --- | --- |
-| `apps/cli` | `skill-flow` | 发布到 npm 的 CLI 和 bridge 入口。 |
-| `packages/domain` | `@skill-flow/domain` | 领域类型和投影相关纯逻辑。 |
-| `packages/shared-types` | `@skill-flow/shared-types` | bridge protocol 类型和解析函数。 |
-| `packages/integration` | `@skill-flow/integration` | 外部源、agent target、路径和命名集成。 |
-| `packages/storage` | `@skill-flow/storage` | 本地状态文件读写、兼容和 cache。 |
-| `packages/core-engine` | `@skill-flow/core-engine` | inventory、source、deployment、doctor、migration 等核心服务。 |
-| `packages/query` | `@skill-flow/query` | 共享 runtime、bridge-facing 编排、config 协调。 |
-| `packages/tui` | `@skill-flow/tui` | Ink UI。 |
-
 `packages/bridge` 和 `packages/core` 当前没有 `package.json`，只看到产物目录；不得当作活跃 workspace 入口新增依赖。
 
 ## 文档边界
 
 `docs/` 是真实目录，不是符号链接。当前文档入口见 [docs/README.md](docs/README.md)。
 
-新需求默认写入：
+工作中的问题和方案默认写入 `.scratch/issues/<topic>/`。
 
-- `docs/superpowers/specs/`
-- `docs/superpowers/plans/`
-
-完成或废弃后归档到：
-
-- `docs/archives/specs/`
-- `docs/archives/plans/`
+稳定结论进入 `docs/` 的既有分类；完成或废弃的规格、计划、验收和研究资料归档到 `docs/archives/`。
 
 不要重新创建 `docs/plan`、`docs/plans`、`docs/specs` 这类平行目录。
 

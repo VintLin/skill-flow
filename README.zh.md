@@ -310,10 +310,10 @@ sudo xattr -dr com.apple.quarantine "/Applications/Skill Flow.app"
 ## 文档入口
 
 - [架构文档](./docs/ARCHITECTURE.md)
-- [贡献指南](./docs/CONTRIBUTING.md)
 - [文档索引](./docs/README.md)
-- [CLI 参考](./docs/references/REF_00_cli-commands.md)
-- [桌面打包参考](./docs/references/REF_09_desktop-packaging.md)
+- [协议与状态契约](./docs/contracts/README.md)
+- [验证矩阵](./docs/verification/README.md)
+- [发布流程](./docs/RELEASE_PROCESS.md)
 - [v1.5.3 发布说明](./releases/RELEASE_v1.5.3.md)
 
 ## 许可证

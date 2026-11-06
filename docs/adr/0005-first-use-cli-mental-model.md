@@ -32,9 +32,8 @@ command names or persisted identifiers.
    name is generic (for example, `Matt Pocock · Skills` rather than `Skills`).
 4. Display-name changes must not change the source ID, checkout path, bindings,
    or deployment identity.
-5. Documentation and help text will use the definitions in
-   `docs/references/REF_source-group-terminology.md` as the single terminology
-   source.
+5. Documentation and help text will use the definitions in the root
+   `CONTEXT.md` as the single terminology source.
 
 This is intentionally an additive UX/documentation change. A command rename or
 state-schema migration is not required for the first implementation slice.

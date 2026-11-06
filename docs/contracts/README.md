@@ -18,39 +18,7 @@
 
 Current protocol version: `1.0`.
 
-Current command names:
-
-```text
-bootstrap
-list
-inspect-state-migration
-migrate-state
-inspect
-inspect-enrichment
-search-import-groups
-scan-local-import-groups
-prepare-import-source
-preview-import-source
-commit-import-source
-import-source
-toggle-pin
-rename-source
-create-collection
-merge-groups
-restore-collection-sources
-doctor
-adopt-external-source
-configure-external-source
-external-status
-external-update
-refresh-usage
-usage-snapshot
-add
-apply
-update
-uninstall
-save-settings
-```
+命令名称唯一来自 `BRIDGE_COMMAND_NAMES` 和跨语言 golden fixture；本文件不复制命令清单。
 
 Bridge changes are external changes. Update parser tests, CLI bridge behavior, desktop bridge models, and release/user docs when changing this surface.
 

@@ -13,7 +13,7 @@
 - 可配置 Agent 清单：`packages/integration/src/utils/constants.ts` 中的 `TARGET_ORDER` 与 `TARGET_DEFINITIONS`。
 - Usage 边界清单：`packages/integration/src/utils/usage/agent-usage-policies.ts` 中的 `USAGE_AGENT_POLICIES`。
 - 当前已实现 Usage collector：`packages/integration/src/utils/usage-collectors.ts` 中的 `createDefaultUsageCollectors()`。
-- 使用记录调研结论：`docs/references/REF_usage-agent-collectors.md`。
+- 使用记录调研结论：`docs/archives/references/REF_usage-agent-collectors.md`。
 - 入库口径：`packages/core-engine/src/services/skill-usage-service.ts`。
 
 ## 主判定规则

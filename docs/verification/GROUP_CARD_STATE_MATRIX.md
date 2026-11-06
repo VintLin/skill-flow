@@ -29,6 +29,26 @@ SharedGroupCard
     `-- Menu / Compact       -> displayMode = .menuCompact
 ```
 
+## Canonical state model
+
+The six implementation display modes are derived from three dimensions:
+
+| Dimension | Values |
+| --- | --- |
+| Context | `home`, `menu`, `import` |
+| Variant | `comfortable`, `compact`, `search`, `recommendation` |
+| Runtime state | `skillsCollapsed`, `showsTagSummary`, `isBusy` |
+
+Mapping rules:
+
+- `homeComfortable` and `homeCompact` are Home variants.
+- `menuComfortable` and `menuCompact` are Menu variants; only Menu may use the compact scale factor.
+- `importSearch` and `importRecommendation` are Import variants and never use the scale factor.
+- `skillsCollapsed` is a runtime state and is only active in Menu compact behavior.
+- Recommendation badges and descriptions are a recommendation summary, not ordinary Group Tags.
+
+Callers and tests should reason in these dimensions first. `displayMode` remains the implementation mapping used by the SwiftUI card.
+
 ## 统一骨架
 
 所有页面的 Group Card 基本骨架一致：

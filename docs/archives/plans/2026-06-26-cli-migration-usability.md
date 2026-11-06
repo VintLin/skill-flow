@@ -13,8 +13,8 @@
 ## Source Spec
 
 - [CLI Migration Usability Design](../specs/2026-06-26-cli-migration-usability-design.md)
-- [Summary feedback](../../feedback/FEEDBACK_skill-flow-user-feedback-2026-06-26-summary.md)
-- [Detailed feedback](../../feedback/FEEDBACK_skill-flow-user-feedback-2026-06-26-detailed.md)
+- [Summary feedback](../feedback/FEEDBACK_skill-flow-user-feedback-2026-06-26-summary.md)
+- [Detailed feedback](../feedback/FEEDBACK_skill-flow-user-feedback-2026-06-26-detailed.md)
 
 ## File Structure
 

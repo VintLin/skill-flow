@@ -102,11 +102,27 @@ _Avoid_: enabled targets (that means deployment enablement for a skill group)
 Ordered list of agent IDs for presentation. `preferences.json.agentDisplayOrder` is the single canonical value used by the runtime, Group cards, the sidebar and Settings. Desktop bootstrap applies it to the in-memory settings state; desktop edits write it through the existing `save-settings` bridge command.
 _Avoid_: visibility, enabled targets
 
+**Default Count Order**:
+The default presentation order for source types and tags: descending by associated Group count, then by localized title when counts tie. It changes presentation only; it does not change source or tag authority.
+_Avoid_: changing source or tag authority
+
+**Custom Tag Order**:
+The tag order created by an explicit user reorder. It overrides Default Count Order until the user restores the default order.
+_Avoid_: Agent Display Order, tag creation order
+
+**Tag Ordering Mode**:
+The current tag ordering rule: Default Count Order or Custom Tag Order.
+_Avoid_: the order in which tags were attached to a Group
+
 ### Group tags (desktop)
 
 **Group Tag**:
 A desktop-only label attached to a skill group/card for organization and filtering. Stored in the `groupTags` section of `desktop.json`, not in core deployment state.
 _Avoid_: skill metadata tag, import recommendation tag
+
+**Group Card Overflow Popover**:
+The full Agent or Skill list opened from a Group Card section title when the rendered items do not fit the available width.
+_Avoid_: changing the Group Card selection state model
 
 ### Skill content files
 

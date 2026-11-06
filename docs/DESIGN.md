@@ -304,7 +304,7 @@ Accent 不用于：
 - 每日趋势显示 Skill 系列时使用普通图表色板；未知与 Custom Agent 同样回退到该色板。
 - 「最常用 Agent」中的未知与 Custom Agent 回退到中性色；Group Card 及其他界面不展示 Agent identity color，图标与辅助圆点使用中性前景色。
 - Agent identity color 不替代页面 accent，也不修改第三方 logo 原始资产。选中背景、focus 和主操作继续使用当前用户 accent。
-- 色值、证据等级和官方来源记录见 [Agent identity colors](references/REF_agent-identity-colors.md)。
+- Agent identity color 的外部研究不属于当前事实；本文件只维护当前使用的颜色规则。
 
 ### Semantic Color
 
@@ -766,5 +766,3 @@ Don't：
 ## Related Verification
 
 - [Group Card state matrix](verification/GROUP_CARD_STATE_MATRIX.md)
-- [Group Card usage context](references/REF_group-card-usage-context.md)
-- [Group Card element visibility matrix](references/REF_group-card-element-visibility-matrix.md)

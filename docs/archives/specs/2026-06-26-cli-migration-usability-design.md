@@ -4,8 +4,8 @@
 
 Two user feedback documents from 2026-06-26 describe the same migration workflow from two angles:
 
-- [summary feedback](../../feedback/FEEDBACK_skill-flow-user-feedback-2026-06-26-summary.md)
-- [detailed feedback](../../feedback/FEEDBACK_skill-flow-user-feedback-2026-06-26-detailed.md)
+- [summary feedback](../feedback/FEEDBACK_skill-flow-user-feedback-2026-06-26-summary.md)
+- [detailed feedback](../feedback/FEEDBACK_skill-flow-user-feedback-2026-06-26-detailed.md)
 
 The user had a list of skill group sources, imported them on a fresh Windows machine, and wanted only a small selected set to be ON for agent targets while all other groups stayed registered but OFF. The final state was achievable, but it required bridge JSON calls, direct state-file editing, manual repair, and careful interpretation of internal fields.
 

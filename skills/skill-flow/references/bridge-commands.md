@@ -1,6 +1,6 @@
 # Skill Flow Bridge Commands
 
-Use this reference when composing `skill-flow bridge --json` requests.
+Use this reference when composing `skill-flow bridge --json` requests. It is a usage guide, not a command catalog; command names and protocol version are owned by `packages/shared-types/src/protocol.ts` and its golden fixture.
 
 All bridge requests use:
 
