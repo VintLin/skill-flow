@@ -468,9 +468,9 @@ Rules：
 
 ### Home Sidebar
 
-Sidebar 负责 Status、Source Type、Tags、Agents 和 Projects 等筛选。Section header 使用 11px semibold uppercase；row title 使用 12–13px。选中项使用 accent soft fill 与明确文字/数量，不用单纯改变文字颜色。
+Sidebar 按 Status、Tags、Agents、Source Type、Projects 排列。Section header 使用 11px semibold uppercase；row title 使用 12–13px。选中项使用 accent soft fill 与明确文字/数量，不用单纯改变文字颜色。
 
-Sidebar 可折叠；折叠控制保持 28 × 28px。自定义标签支持拖拽排序，drag handle 与 insertion indicator 使用 accent。
+Sidebar 可折叠；折叠控制保持 28 × 28px。Source Type 和默认标签按关联 Group 数量降序排列，`All` 固定在首位。Agent 使用共享展示顺序，侧边栏和设置页拖拽会共同更新 Group Card。自定义标签可拖拽进入 Custom Tag Order，并通过标题旁 action 恢复 Default Count Order。
 
 ### Group Card
 
@@ -480,7 +480,8 @@ Sidebar 可折叠；折叠控制保持 28 × 28px。自定义标签支持拖拽�
 - comfortable home 模式最小高度 206px。
 - 默认 padding 12px、section spacing 10px、radius 10px、0.5px border。
 - 标题 21px regular + accent；署名和统计 12px muted。
-- Agent / Skill 区域使用水平 fade scroll，避免强制压缩 chip。
+- Agent / Skill 区域使用水平 fade scroll，避免强制压缩 chip；真实内容宽度超出当前卡片时，section 标题旁出现溢出入口。
+- 溢出入口打开约 320px 宽、最高约 280px 的 anchored popover。Item 自动换行，内容过高时在 popover 内部滚动；没有溢出的 loading / empty section 不显示入口。
 - Header、Agents、Skills、Summary 的显示由 display mode 决定，不复制出平行卡片实现。
 
 Display modes：
@@ -490,7 +491,7 @@ Display modes：
 | Home Comfortable | 主窗口完整管理 | subtitle、meta、section title、divider、最小高度 |
 | Home Compact | 主窗口快速扫描 | 移除部分 meta、section title 和 divider |
 | Menu Comfortable | menu bar 快速配置 | 0.8 visual scale，skills 可 hover 展开 |
-| Menu Compact | menu bar 高密度 | 进一步减少辅助信息 |
+| Menu Compact | menu bar 高密度 | 进一步减少辅助信息；仅在 Agent / Skill 溢出时显示对应 section 标题和入口 |
 | Import Search | 搜索导入 | 强调选择与 import action |
 | Import Recommendation | 推荐导入 | 增加推荐 badge 与说明 |
 

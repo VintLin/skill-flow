@@ -212,7 +212,7 @@ export function buildAddCompletionMessage(
       ? "no agents enabled"
       : `${targetCount} agent${targetCount === 1 ? "" : "s"} selected`;
 
-  return `Added ${formatGroupRef(source)} with ${selectedCount}/${importedCount} skills enabled, ${targetSummary}.`;
+  return `Added ${formatGroupRef(source)} with ${selectedCount}/${importedCount} skills enabled, ${targetSummary}. Next: run skill-flow list --ids to review this group.`;
 }
 
 export function areAllSelected(selectedIds: readonly string[], allIds: readonly string[]): boolean {

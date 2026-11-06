@@ -154,12 +154,26 @@ final class HomeScreenContainer {
         groupTagController.setSelectedHomeFilterKey(key)
     }
 
-    func moveHomeTag(sourceTagID: String, targetTagID: String, placement: HomeTagMovePlacement) {
+    func moveHomeTag(
+        sourceTagID: String,
+        targetTagID: String,
+        placement: HomeTagMovePlacement,
+        visibleTagIDs: [String]? = nil
+    ) {
         groupTagController.moveHomeTag(
             sourceTagID: sourceTagID,
             targetTagID: targetTagID,
-            placement: placement
+            placement: placement,
+            visibleTagIDs: visibleTagIDs
         )
+    }
+
+    func hasCustomHomeTagOrder() -> Bool {
+        groupTagController.hasCustomHomeTagOrder()
+    }
+
+    func resetHomeTagOrder() {
+        groupTagController.resetHomeTagOrder()
     }
 
     func homeAgentFilterOptions() -> [HomeAgentFilterOption] {
@@ -176,6 +190,20 @@ final class HomeScreenContainer {
 
     func setSelectedHomeAgentFilter(_ targetId: String?) {
         mainViewModel.setSelectedHomeAgentFilter(targetId)
+    }
+
+    func moveHomeAgent(
+        sourceId: String,
+        targetId: String,
+        placement: HomeTagMovePlacement,
+        visibleTargetIds: [String]
+    ) {
+        settingsViewModel.moveVisibleAgent(
+            sourceId: sourceId,
+            targetId: targetId,
+            placement: placement,
+            visibleTargetIds: visibleTargetIds
+        )
     }
 
     func homeStatusFilterOptions() -> [HomeSidebarFilterOption] {

@@ -29,7 +29,7 @@ packages/shared-types  <--> bridge protocol users
 | `packages/domain` | 领域模型、source kind、projection 纯逻辑。 |
 | `packages/shared-types` | bridge protocol request/response 类型和解析。 |
 | `packages/integration` | Git/GitHub/skills.sh/source locator/target adapter 等外部集成。 |
-| `packages/storage` | 状态根、manifest、lock、preferences、cache 读写。 |
+| `packages/storage` | 状态根、manifest、lock、preferences、desktop workspace、cache 读写。 |
 | `packages/core-engine` | source authority / checkout、Import discovery / preparation、inventory、deployment、recovery、doctor、migration。 |
 | `packages/query` | 面向 CLI/TUI/desktop 的 runtime facade 和工作流编排。 |
 | `packages/tui` | Ink add/config/find 交互 UI。 |
@@ -50,6 +50,7 @@ packages/shared-types  <--> bridge protocol users
 manifest.json
 lock.json
 preferences.json
+desktop.json
 source/*
 ```
 
@@ -83,7 +84,10 @@ User command / Desktop action
   -> updated state and target projections
 ```
 
-桌面端不直接写 `~/.skillflow`，而是通过 bridge 命令调用 CLI runtime。共享协议入口见 [contracts/README.md](contracts/README.md)。
+桌面端通过 bridge 命令调用 CLI runtime 写入核心 authority（`manifest.json`、`lock.json`、
+`preferences.json`）；桌面专属的 Agent visibility 和 Group Tags 由 macOS adapter 直接写入
+`desktop.json`，并使用与 storage package 相同的 schema、目录锁和原子替换规则。共享协议入口见
+[contracts/README.md](contracts/README.md)。
 
 ## External Contracts
 

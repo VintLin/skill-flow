@@ -585,6 +585,9 @@ final class SourceManagement {
         if let availableTargets = data["availableTargets"] as? [String] {
             detectedTargets.formUnion(availableTargets)
         }
+        if let agentDisplayOrder = data["agentDisplayOrder"] as? [String] {
+            delegate?.applyAgentDisplayOrder(agentDisplayOrder)
+        }
 
         if let initialDrafts = data["initialDrafts"] as? [String: Any] {
             for (sourceId, rawDraft) in initialDrafts {
@@ -1046,6 +1049,7 @@ protocol SourceManagementDelegate: AnyObject {
     func applyWarningsFromApplyResponse(_ warnings: [BridgeIssue])
     func applyProjectScopeState(_ data: [String: Any])
     func applyCachedGroupCardEnrichment(_ data: [String: Any])
+    func applyAgentDisplayOrder(_ ids: [String])
     func customAgentsForSourceManagement() -> [CustomAgentDefinition]
     func currentProjectScopeForSourceManagement() -> ProjectScopeSelection
     var selectedSourceId: String? { get }

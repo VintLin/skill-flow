@@ -4,6 +4,20 @@ import XCTest
 
 @MainActor
 final class MainViewModelProjectScopeTests: XCTestCase {
+    func testBootstrapAgentOrderIsAppliedToDesktopSettingsState() {
+        let state = DesktopAppState()
+        let model = MainViewModel(bridgeClient: BridgeClient())
+        model.bindRouteState(state)
+
+        model.applyAgentDisplayOrder(["cursor", "codex", "claude-code"])
+
+        XCTAssertEqual(
+            state.settings.agentDisplayPreferences.prefix(3).map(\.targetId),
+            ["cursor", "codex", "claude-code"]
+        )
+        XCTAssertTrue(state.settings.agentDisplayPreferences.allSatisfy(\.isVisible))
+    }
+
     func testProjectScopedDraftsStayIsolatedFromGlobalDrafts() async {
         let query = ProjectScopeQueryStub()
         let command = ProjectScopeCommandStub()

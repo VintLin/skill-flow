@@ -82,6 +82,9 @@ describe.sequential("add selection and find command regression", () => {
     const lines = output.split(/\r?\n/);
 
     expect(output).toContain("Added ");
+    expect(output).toMatch(/\[[^\]]+\]/);
+    expect(output).toContain("1/1 skills enabled");
+    expect(output).toContain("Next: run skill-flow list --ids to review this group.");
     expect(lines).toContain("Preparing source");
     expect(lines).toContain("Source prepared");
     expect(lines).toContain("Applying projections");

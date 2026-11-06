@@ -1675,6 +1675,30 @@ final class MainViewModel: SourceManagementDelegate, ImportLogicDelegate {
         stateManager.setHealthStatus(warnings.isEmpty ? .healthy : .warnings)
     }
 
+    func applyAgentDisplayOrder(_ ids: [String]) {
+        guard let routeState else { return }
+        let customAgents = routeState.settings.customAgents
+        let current = AgentDisplayCatalog.normalize(
+            routeState.settings.agentDisplayPreferences,
+            customAgents: customAgents
+        )
+        let currentById = Dictionary(uniqueKeysWithValues: current.map { ($0.targetId, $0) })
+        let knownIds = Set(AgentDisplayCatalog.defaultTargetOrder + customAgents.map(\.id))
+        var seenIds = Set<String>()
+        let requestedIds = ids.filter { knownIds.contains($0) && seenIds.insert($0).inserted }
+        let requestedSet = Set(requestedIds)
+        let remainingIds = current.map(\.targetId).filter { !requestedSet.contains($0) }
+        let orderedIds = requestedIds + remainingIds
+
+        routeState.settings.agentDisplayPreferences = orderedIds.enumerated().map { index, targetId in
+            AgentDisplayPreference(
+                targetId: targetId,
+                isVisible: currentById[targetId]?.isVisible ?? true,
+                sortOrder: index
+            )
+        }
+    }
+
     func applyProjectScopeState(_ data: [String: Any]) {
         if data.keys.contains("selectedProjectScope"),
            let scope = parseProjectScopeSelection(data["selectedProjectScope"]) {

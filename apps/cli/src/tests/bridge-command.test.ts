@@ -958,7 +958,7 @@ describe.sequential("bridge command dispatcher", () => {
       protocolVersion: PROTOCOL_VERSION,
       command: "search-import-groups",
       payload: {
-        query: "skills",
+        query: "research",
       },
     });
 

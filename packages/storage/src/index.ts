@@ -7,4 +7,5 @@ export * from "./source-metadata-cache.js";
 export * from "./state-schema.js";
 export * from "./state-store.js";
 export * from "./usage-store.js";
+export * from "./desktop-workspace-store.js";
 // ./store.js removed: V1 authority lives only in state-migration-service.

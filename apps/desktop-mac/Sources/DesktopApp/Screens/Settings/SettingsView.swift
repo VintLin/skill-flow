@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var openDropdown: DropdownKind?
     @State private var targetedAgentRowTargetId: String?
     @State private var isTargetingAgentListEnd = false
+    @State private var draggingAgentTargetId: String?
     @Bindable var viewModel: SettingsViewModel
 
     var theme: DesktopThemeMode = .light
@@ -440,12 +441,19 @@ struct SettingsView: View {
     private func agentDisplayRow(_ row: SettingsViewModel.AgentDisplayRow) -> some View {
         let contentOpacity = row.isVisible ? 1.0 : 0.45
         let backgroundOpacity = row.isVisible ? 1.0 : 0.55
+        let isDragging = draggingAgentTargetId == row.targetId
 
         return HStack(alignment: .center, spacing: 12) {
             AgentDragHandle(theme: theme, accent: currentAccent)
-                .draggable(row.targetId) {
+                .onDrag {
+                    withAnimation(.easeOut(duration: 0.14)) {
+                        draggingAgentTargetId = row.targetId
+                    }
+                    return NSItemProvider(object: NSString(string: row.targetId))
+                } preview: {
                     settingsAgentDragPreview(row: row)
                 }
+                .scaleEffect(isDragging ? 1.08 : 1)
                 .opacity(contentOpacity)
 
             settingsAgentIcon(targetId: row.targetId, fallbackText: row.shortLabel)
@@ -500,6 +508,14 @@ struct SettingsView: View {
                 .stroke(AppTheme.cardBorder(for: theme), lineWidth: 0.5)
                 .opacity(backgroundOpacity)
         }
+        .scaleEffect(isDragging ? 0.985 : 1)
+        .opacity(isDragging ? 0.62 : 1)
+        .shadow(
+            color: isDragging ? AppTheme.brand(for: currentAccent, in: theme).opacity(0.22) : .clear,
+            radius: isDragging ? 12 : 0,
+            y: isDragging ? 5 : 0
+        )
+        .animation(.easeOut(duration: 0.14), value: isDragging)
         .dropDestination(for: String.self) { items, _ in
             guard let sourceId = items.first,
                   let destinationIndex = agentRows.firstIndex(where: { $0.targetId == row.targetId })
@@ -590,6 +606,12 @@ struct SettingsView: View {
     }
 
     private func moveAgentIfNeeded(sourceId: String, destinationIndex: Int) {
+        defer {
+            withAnimation(.easeOut(duration: 0.14)) {
+                draggingAgentTargetId = nil
+            }
+        }
+
         guard let sourceIndex = agentRows.firstIndex(where: { $0.targetId == sourceId }) else {
             return
         }

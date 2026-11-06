@@ -6,6 +6,67 @@ final class DesktopWorkspaceMemoryStoreTests: XCTestCase {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
+    func testStateRootStoreMigratesSharedSuiteIntoDesktopJSON() throws {
+        let suiteName = uniqueName("state-root-migrate")
+        let suite = UserDefaults(suiteName: suiteName)!
+        suite.removePersistentDomain(forName: suiteName)
+        suite.set(true, forKey: DesktopWorkspaceMemoryStore.migrationCompletedKey)
+        let tags = GroupTagCollection(tagsByGroupKey: [
+            "source:state-root": [GroupTagPreference(title: "State Root", accentRawValue: DesktopAccentColor.blue.rawValue)]
+        ])
+        suite.set(
+            try encoder.encode([
+                AgentDisplayPreference(targetId: "codex", isVisible: false, sortOrder: 0),
+            ]),
+            forKey: DesktopWorkspaceMemoryStore.agentDisplayPreferencesKey
+        )
+        suite.set(try encoder.encode(tags), forKey: DesktopWorkspaceMemoryStore.tagCollectionKey)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(uniqueName("desktop-state-root"), isDirectory: true)
+
+        let store = DesktopWorkspaceMemoryStore(
+            stateRootURL: root,
+            suiteUserDefaults: suite,
+            legacyDomainNames: []
+        )
+        store.ensureMigratedFromLegacyDomains()
+
+        XCTAssertEqual(
+            store.loadAgentDisplayPreferences().first(where: { $0.targetId == "codex" })?.isVisible,
+            false
+        )
+        XCTAssertEqual(
+            store.loadTagCollection().tagsByGroupKey["source:state-root"]?.map(\.title),
+            ["State Root"]
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("desktop.json").path))
+        let migratedSuiteTags = try XCTUnwrap(suite.data(forKey: DesktopWorkspaceMemoryStore.tagCollectionKey))
+        XCTAssertEqual(try decoder.decode(GroupTagCollection.self, from: migratedSuiteTags), tags)
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    func testStateRootStoreBacksUpMalformedDesktopJSONWithoutReplacingItWithEmptyState() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(uniqueName("desktop-invalid-root"), isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let fileURL = root.appendingPathComponent("desktop.json")
+        try Data("{broken".utf8).write(to: fileURL)
+        let suite = UserDefaults(suiteName: uniqueName("desktop-invalid-suite"))!
+        let store = DesktopWorkspaceMemoryStore(
+            stateRootURL: root,
+            suiteUserDefaults: suite,
+            legacyDomainNames: []
+        )
+
+        store.ensureMigratedFromLegacyDomains()
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), Data("{broken".utf8))
+        let backups = try FileManager.default.contentsOfDirectory(atPath: root.path)
+            .filter { $0.hasPrefix("desktop.json.invalid-") && $0.hasSuffix(".bak") }
+        XCTAssertEqual(backups.count, 1)
+        try? FileManager.default.removeItem(at: root)
+    }
+
     func testEmptySuiteMigratesVisibilityAndTagsFromRichLegacyDomain() throws {
         let suiteName = uniqueName("migrate-rich")
         let suite = UserDefaults(suiteName: suiteName)!
@@ -261,6 +322,41 @@ final class DesktopWorkspaceMemoryStoreTests: XCTestCase {
             reader.loadTagCollection().tagsByGroupKey["source:beta"]?.map(\.title),
             ["Beta"]
         )
+    }
+
+    func testStaleCollectionSavePreservesTagsAddedByAnotherStore() throws {
+        let suiteName = uniqueName("stale-save-merge")
+        let suite = UserDefaults(suiteName: suiteName)!
+        suite.removePersistentDomain(forName: suiteName)
+        defer { suite.removePersistentDomain(forName: suiteName) }
+
+        let staleStore = DesktopWorkspaceMemoryStore(userDefaults: suite, legacyDomainNames: [])
+        _ = staleStore.loadTagCollection()
+
+        let newerStore = DesktopWorkspaceMemoryStore(userDefaults: suite, legacyDomainNames: [])
+        newerStore.saveTagCollection(
+            GroupTagCollection(tagsByGroupKey: [
+                "repo:anthropics/skills": [
+                    GroupTagPreference(
+                        title: "通用",
+                        accentRawValue: DesktopAccentColor.blue.rawValue,
+                        tagId: "general"
+                    )
+                ]
+            ])
+        )
+
+        staleStore.saveTagCollection(
+            GroupTagCollection(tagsByGroupKey: [
+                "source:other": [
+                    GroupTagPreference(title: "其他", accentRawValue: DesktopAccentColor.green.rawValue)
+                ]
+            ])
+        )
+
+        let saved = staleStore.loadTagCollection()
+        XCTAssertEqual(saved.tagsByGroupKey["repo:anthropics/skills"]?.map(\.tagId), ["general"])
+        XCTAssertEqual(saved.tagsByGroupKey["source:other"]?.map(\.title), ["其他"])
     }
 
     func testThemeAndChromeStayOnBundleScopedDefaultsNotSuite() throws {

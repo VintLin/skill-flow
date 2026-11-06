@@ -17,16 +17,16 @@
 SharedGroupCard
 |
 +-- Home
-|   +-- Home / Standard      -> displayMode = .home
-|   `-- Home / Compact       -> displayMode = .menu
+|   +-- Home / Standard      -> displayMode = .homeComfortable
+|   `-- Home / Compact       -> displayMode = .homeCompact
 |
 +-- Import
 |   +-- Search Result        -> displayMode = .importSearch
 |   `-- Recommendation       -> displayMode = .importRecommendation
 |
 `-- Menu Bar
-    +-- Menu / Standard      -> displayMode = .home
-    `-- Menu / Compact       -> displayMode = .menu
+    +-- Menu / Comfortable   -> displayMode = .menuComfortable
+    `-- Menu / Compact       -> displayMode = .menuCompact
 ```
 
 ## 统一骨架
@@ -40,9 +40,9 @@ SharedGroupCard
 | ------------------------------------------------ |
 | tag row OR recommendation badges / description   |
 | ------------------------------------------------ |
-| AGENTS                                           |
+| AGENTS [arrow only when overflowing]             |
 | [ALL] [Agent] [Agent] [Agent] ...               |
-| SKILLS (N)                                       |
+| SKILLS (N) [arrow only when overflowing]         |
 | [ALL] [Skill] [Skill] [Skill] ...               |
 +--------------------------------------------------+
 ```
@@ -52,19 +52,20 @@ SharedGroupCard
 - 右上角动作区：`[More/Pin]` 或 `[Import]`
 - header divider：有的页面显示，有的页面不显示
 - tag 区：显示自定义标签，或显示推荐 badge，或完全不显示
-- skills 区：在 `.menu` 模式下允许折叠
+- skills 区：在 Menu Bar display mode 下允许折叠
+- Agent / Skill overflow：以渲染后的真实 Item 宽度判断，不以数量判断
 - loading/busy 文案：`Applying` / `Updating` / `Downloading`
 
 ## 页面状态矩阵
 
-| 页面 | displayMode | 顶部动作 | tag/recommendation 区 | skills 区 | header divider | 典型用途 |
+| 页面 | displayMode | 顶部动作 | tag/recommendation 区 | skills 区 | overflow 入口 | header divider | 典型用途 |
 |---|---|---|---|---|---|---|
-| Home / Standard | `.home` | 更多菜单 | 自定义标签，可增删 | 始终展开 | 有 | 主工作台卡片 |
-| Home / Compact | `.menu` | 更多菜单 | 自定义标签，只读摘要 | 可折叠，但 Home 里实际仍传 `false`，所以保持展开 | 无 | Home 的紧凑外观 |
-| Import / Search | `.importSearch` | 导入按钮 | 无标签；无推荐 badge | 始终展开 | 有 | 搜索结果 |
-| Import / Recommendation | `.importRecommendation` | 导入按钮 | 推荐 badge + 推荐说明 | 始终展开 | 有 | 推荐流内容 |
-| Menu / Standard | `.home` | 更多菜单 | 标签摘要，只读 | 始终展开 | 有 | 菜单栏完整卡片 |
-| Menu / Compact | `.menu` | 更多菜单 | 标签摘要，只读 | 默认折叠，hover 0.5s 后展开 | 无 | 菜单栏默认紧凑卡片 |
+| Home / Standard | `.homeComfortable` | 更多菜单 | 自定义标签，可增删 | 始终展开 | 标题始终显示；溢出时加箭头 | 有 | 主工作台卡片 |
+| Home / Compact | `.homeCompact` | 更多菜单 | 自定义标签，只读摘要 | 始终展开 | 无溢出时隐藏标题；溢出时显示标题 + 箭头 | 无 | Home 的紧凑外观 |
+| Import / Search | `.importSearch` | 导入按钮 | 无标签；无推荐 badge | 始终展开 | 标题始终显示；溢出时加箭头 | 有 | 搜索结果 |
+| Import / Recommendation | `.importRecommendation` | 导入按钮 | 推荐 badge + 推荐说明 | 始终展开 | 标题始终显示；溢出时加箭头 | 有 | 推荐流内容 |
+| Menu / Comfortable | `.menuComfortable` | 更多菜单 | 标签摘要，只读 | 可折叠 | 无溢出时隐藏标题；溢出时显示标题 + 箭头 | 无 | 菜单栏完整卡片 |
+| Menu / Compact | `.menuCompact` | 更多菜单 | 标签摘要，只读 | 默认折叠，hover 0.5s 后展开 | 展开且溢出时显示标题 + 箭头 | 无 | 菜单栏默认紧凑卡片 |
 
 ## 各页面 ASCII 对照
 
@@ -78,9 +79,9 @@ SharedGroupCard
 | ------------------------------------------------ |
 | #tag-a  #tag-b  [+ add / delete when editing]    |
 | ------------------------------------------------ |
-| AGENTS                                            |
+| AGENTS ∨                                          |
 | [ALL] [C] [G] [K]                                |
-| SKILLS (12)                                       |
+| SKILLS (12) ∨                                     |
 | [ALL] [browse] [qa] [ship] ...                   |
 +--------------------------------------------------+
 ```
@@ -107,10 +108,10 @@ SharedGroupCard
 
 特征：
 
-- 使用 `.menu` 外观，因此没有 header divider
-- section title 隐藏
+- 使用 `.homeCompact` 外观，因此没有 header divider
+- section title 在没有 overflow 时隐藏
 - 目标行更紧凑
-- 虽然 `.menu` 支持折叠 skills，但 Home 中固定 `skillsCollapsed = false`
+- Home 中固定 `skillsCollapsed = false`
 
 ### 3. Import / Search
 
@@ -120,9 +121,9 @@ SharedGroupCard
 | by @owner / github.com/acme/alpha-hub            |
 | dl 5,045   star 1,200   github                    |
 | ------------------------------------------------ |
-| AGENTS                                            |
+| AGENTS ∨                                          |
 | [ALL] [C] [G] [K]                                |
-| SKILLS (12)                                       |
+| SKILLS (12) ∨                                     |
 | [ALL] [br[ow]se] [qa] [ship] ...                 |
 +--------------------------------------------------+
 ```
@@ -146,9 +147,9 @@ SharedGroupCard
 | #Development   #Research                         |
 | Best for exploring repo workflows quickly.       |
 | ------------------------------------------------ |
-| AGENTS                                            |
+| AGENTS ∨                                          |
 | [ALL] [C] [G] [K]                                |
-| SKILLS (12)                                       |
+| SKILLS (12) ∨                                     |
 | [ALL] [browse] [qa] [ship] ...                   |
 +--------------------------------------------------+
 ```
@@ -166,7 +167,7 @@ SharedGroupCard
 | Alpha Hub                      [ ... ]   |
 | by @owner                                 |
 | #tag-a  #tag-b                            |
-| AGENTS                                    |
+| AGENTS [∨ only when overflowing]          |
 | [ALL] [C] [G] [K]                         |
 |                                          |
 |  (skills collapsed by default)           |
@@ -178,18 +179,43 @@ hover 0.5s
 | Alpha Hub                      [ ... ]   |
 | by @owner                                 |
 | #tag-a  #tag-b                            |
-| AGENTS                                    |
+| AGENTS [∨ only when overflowing]          |
 | [ALL] [C] [G] [K]                         |
+| SKILLS [∨ only when overflowing]         |
 | [ALL] [browse] [qa] [ship] ...           |
 +------------------------------------------+
 ```
 
 特征：
 
-- 默认紧凑模式
+- 默认紧凑模式；无 overflow 时不显示 section title
 - 只有 Menu Bar 的 compact 模式会真实使用 `skillsCollapsed`
 - 标签只展示，不允许新增/删除
 - 标题不可点击进入 Detail；页面通过外层导航控制
+
+### 6. Agent / Skill Overflow Popover
+
+```text
+条件：真实 Item 宽度 > 卡片可视宽度
+
+AGENTS ∨  <- 点击标题或箭头
+   |
+   +--> +--------------------------------------+
+        | AGENT                                |
+        | [OFF] [Agent] [Agent] [Agent]         |
+        | [Agent] [Agent] [Agent]               |
+        |                                      |
+        | 宽度约 320px，最高约 280px             |
+        | 内容过高时在浮窗内部滚动                 |
+        +--------------------------------------+
+
+关闭：点击外部区域 / Escape
+```
+
+- loading 或 empty section 不显示箭头。
+- busy card 仍可打开浮窗，但浮窗内 mutation 保持 disabled。
+- popover 保留 tri-state、Item enabled、source title 和 search highlight 语义。
+- title / arrow 命中优先于整卡导航，点击入口不会进入 Detail。
 
 ## 关键差异清单
 
@@ -207,14 +233,14 @@ hover 0.5s
 
 ### 3. skills 展开差异
 
-- `.home`、`.importSearch`、`.importRecommendation`：skills 永远展开。
-- `.menu`：允许折叠。
-- 但真正把 `.menu` 的折叠能力用起来的只有 Menu Bar compact。
+- `.homeComfortable`、`.homeCompact`、`.importSearch`、`.importRecommendation`：skills 永远展开。
+- `.menuComfortable`、`.menuCompact`：允许折叠。
+- 真正使用默认折叠能力的只有 Menu Bar compact。
 
 ### 4. 分隔线与信息密度差异
 
-- `.home` / `import*`：显示 header divider 与 section title。
-- `.menu`：不显示 header divider，也不显示 section title，视觉更压缩。
+- `.homeComfortable` / `import*`：显示 header divider 与 section title。
+- `.homeCompact` / `.menuComfortable` / `.menuCompact`：不显示 header divider；section title 只在 overflow 时作为入口出现。
 
 ### 5. loading 文案差异
 
@@ -226,6 +252,12 @@ hover 0.5s
 
 - Home / Menu：数据来自本地已安装 group summary + draft 状态。
 - Import：数据来自 `ImportViewModel.Card`，带 `isInstalledLocally`、`recommendationBadgeItems`、搜索高亮、preview 装载态。
+
+### 7. overflow 判定差异
+
+- overflow 使用渲染宽度测量，不使用 Item 数量阈值。
+- Home / Import 通常在 section 标题常驻的布局中追加箭头。
+- Home Compact 与 Menu Bar Compact 在没有 overflow 时保持 section title 隐藏；检测到 overflow 后才显示标题与入口。
 
 ## 不属于 Group Card 的页面
 

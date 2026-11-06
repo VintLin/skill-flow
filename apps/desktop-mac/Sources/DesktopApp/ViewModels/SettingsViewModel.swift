@@ -253,6 +253,54 @@ final class SettingsViewModel {
         syncSharedSettings()
     }
 
+    func moveVisibleAgent(
+        sourceId: String,
+        targetId: String,
+        placement: HomeTagMovePlacement,
+        visibleTargetIds: [String]
+    ) {
+        guard sourceId != targetId,
+              let sourceIndex = visibleTargetIds.firstIndex(of: sourceId),
+              let targetIndex = visibleTargetIds.firstIndex(of: targetId),
+              targetId != "all"
+        else {
+            return
+        }
+
+        var reorderedVisibleIds = visibleTargetIds
+        let movedId = reorderedVisibleIds.remove(at: sourceIndex)
+        let adjustedTargetIndex = reorderedVisibleIds.firstIndex(of: targetId) ?? targetIndex
+        let insertionIndex = placement == .before ? adjustedTargetIndex : adjustedTargetIndex + 1
+        reorderedVisibleIds.insert(movedId, at: min(insertionIndex, reorderedVisibleIds.count))
+
+        let visibleSet = Set(visibleTargetIds)
+        var nextVisibleIndex = 0
+        var preferences = normalizedAgentDisplayPreferences()
+        preferences = preferences.map { preference in
+            guard visibleSet.contains(preference.targetId),
+                  nextVisibleIndex < reorderedVisibleIds.count
+            else {
+                return preference
+            }
+            defer { nextVisibleIndex += 1 }
+            return AgentDisplayPreference(
+                targetId: reorderedVisibleIds[nextVisibleIndex],
+                isVisible: preference.isVisible,
+                sortOrder: preference.sortOrder
+            )
+        }
+        preferences = preferences.enumerated().map { index, preference in
+            AgentDisplayPreference(
+                targetId: preference.targetId,
+                isVisible: preference.isVisible,
+                sortOrder: index
+            )
+        }
+
+        persistAgentDisplayPreferences(preferences)
+        syncSharedSettings()
+    }
+
     func resetAgentDisplayPreferences() {
         persistAgentDisplayPreferences(AgentDisplayCatalog.defaultPreferences(customAgents: state.settings.customAgents))
         syncSharedSettings()

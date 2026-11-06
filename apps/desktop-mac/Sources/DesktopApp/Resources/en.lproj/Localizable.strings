@@ -25,6 +25,7 @@
 "home.sidebar.collection" = "Combined";
 "home.sidebar.expand" = "Expand section";
 "home.sidebar.collapse" = "Collapse section";
+"home.sidebar.tags.reset_order" = "Reset tag order";
 "home.sidebar.all_agents" = "All Agents";
 "placeholder.home.search_group_author" = "Search Group / Author";
 "home.empty.title" = "No groups matched";

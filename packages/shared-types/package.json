@@ -1,6 +1,6 @@
 {
   "name": "@skill-flow/shared-types",
-  "version": "1.6.17",
+  "version": "1.6.18",
   "type": "module",
   "private": true,
   "main": "dist/protocol.js",

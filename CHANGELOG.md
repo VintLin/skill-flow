@@ -4,6 +4,25 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.18 - 2026-11-06
+
+### Added
+
+- Added shared Agent display ordering across Home, Group Cards, Import, Menu Bar, and Settings.
+- Added measured overflow popovers for dense Agent and Skill rows in Group Cards.
+- Added durable desktop workspace persistence for Agent visibility and group tags under the Skill Flow state root.
+- Added CLI first-use guidance after `add`, including the registered group and the next `list --ids` step.
+
+### Changed
+
+- Sorted Home Source Type and default Tag filters by the number of associated Groups within the active Project Scope.
+- Preserved hidden Agent preference slots and migrated historical tag ordering into explicit default or custom modes.
+
+### Fixed
+
+- Prevented desktop presentation state from being lost or overwritten by stale cross-process snapshots during upgrades and relaunches.
+- Kept Group Card, sidebar, Import, and Settings Agent ordering synchronized after drag and restart.
+
 ## v1.6.17 - 2026-11-01
 
 ### Fixed

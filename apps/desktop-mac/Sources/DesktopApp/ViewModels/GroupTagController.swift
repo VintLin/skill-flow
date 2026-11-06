@@ -189,6 +189,7 @@ final class GroupTagController {
 
     func homeSnapshot(sourceIds: [String], locale: Locale) -> HomeSnapshot {
         migrateTagsIfNeeded(forSourceIds: sourceIds)
+        migrateTagOrderingIfNeeded(locale: locale)
         var tagsBySourceID: [String: [GroupTagDisplayItem]] = [:]
         tagsBySourceID.reserveCapacity(sourceIds.count)
 
@@ -208,7 +209,10 @@ final class GroupTagController {
             }
         }
 
-        let orderedTags = reconciledAvailableTags(availableTags)
+        let orderedTags = reconciledAvailableTags(
+            availableTags,
+            tagCountsByID: tagCountsByID
+        )
         let tagRankByID = Dictionary(uniqueKeysWithValues: orderedTags.enumerated().map { index, item in
             (item.id, index)
         })
@@ -331,12 +335,32 @@ final class GroupTagController {
         return .removed
     }
 
-    func moveHomeTag(sourceTagID: String, targetTagID: String, placement: HomeTagMovePlacement) {
+    func hasCustomHomeTagOrder() -> Bool {
+        state.groupTags.tagCollection.orderingMode == .custom
+            || (
+                state.groupTags.tagCollection.orderingMode == .defaultCount
+                    && !state.groupTags.tagCollection.orderedTagKeys.isEmpty
+            )
+    }
+
+    func resetHomeTagOrder() {
+        state.groupTags.tagCollection.orderingMode = .defaultCount
+        state.groupTags.tagCollection.orderedTagKeys = []
+        state.groupTags.tagCollection.schemaVersion = GroupTagCollection.currentSchemaVersion
+        store.saveTagCollection(state.groupTags.tagCollection)
+    }
+
+    func moveHomeTag(
+        sourceTagID: String,
+        targetTagID: String,
+        placement: HomeTagMovePlacement,
+        visibleTagIDs: [String]? = nil
+    ) {
         guard sourceTagID != targetTagID else {
             return
         }
 
-        var ordered = state.groupTags.tagCollection.orderedTagKeys
+        var ordered = visibleTagIDs ?? state.groupTags.tagCollection.orderedTagKeys
         guard let sourceIndex = ordered.firstIndex(of: sourceTagID),
               let targetIndex = ordered.firstIndex(of: targetTagID) else {
             return
@@ -347,6 +371,8 @@ final class GroupTagController {
         let insertionIndex = placement == .before ? adjustedTargetIndex : adjustedTargetIndex + 1
         ordered.insert(source, at: min(insertionIndex, ordered.count))
         state.groupTags.tagCollection.orderedTagKeys = ordered
+        state.groupTags.tagCollection.orderingMode = .custom
+        state.groupTags.tagCollection.schemaVersion = GroupTagCollection.currentSchemaVersion
         store.saveTagCollection(state.groupTags.tagCollection)
     }
 
@@ -434,7 +460,10 @@ final class GroupTagController {
         store.saveTagCollection(migrated)
     }
 
-    private func reconciledAvailableTags(_ tags: [GroupTagDisplayItem]) -> [GroupTagDisplayItem] {
+    private func reconciledAvailableTags(
+        _ tags: [GroupTagDisplayItem],
+        tagCountsByID: [String: Int]
+    ) -> [GroupTagDisplayItem] {
         let tagsByID = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0) })
         let existingGlobalTagIDs = Set(
             state.groupTags.tagCollection.tagsByGroupKey.values
@@ -445,15 +474,77 @@ final class GroupTagController {
         let orderedVisibleIDs = Set(orderedVisible.map(\.id))
         let appended = tags
             .filter { !orderedVisibleIDs.contains($0.id) }
-            .sorted(by: Self.sortTags)
-        let reconciledOrder = currentOrder + appended.map(\.id)
+            .sorted { Self.sortTags($0, $1, tagCountsByID: tagCountsByID) }
+        let countOrderedTags = tags.sorted {
+            Self.sortTags($0, $1, tagCountsByID: tagCountsByID)
+        }
+        if state.groupTags.tagCollection.orderingMode == .defaultCount,
+           !state.groupTags.tagCollection.orderedTagKeys.isEmpty {
+            state.groupTags.tagCollection.orderingMode = .custom
+            store.saveTagCollection(state.groupTags.tagCollection)
+        }
+        let effectiveMode = state.groupTags.tagCollection.orderingMode
+        let result: [GroupTagDisplayItem]
+        let reconciledOrder: [String]
+
+        switch effectiveMode {
+        case .custom:
+            result = orderedVisible + appended
+            reconciledOrder = currentOrder + appended.map(\.id)
+        case .defaultCount:
+            result = countOrderedTags
+            reconciledOrder = state.groupTags.tagCollection.orderedTagKeys
+        case .legacy:
+            result = countOrderedTags
+            reconciledOrder = state.groupTags.tagCollection.orderedTagKeys
+        }
 
         if reconciledOrder != state.groupTags.tagCollection.orderedTagKeys {
             state.groupTags.tagCollection.orderedTagKeys = reconciledOrder
             store.saveTagCollection(state.groupTags.tagCollection)
         }
 
-        return orderedVisible + appended
+        return result
+    }
+
+    private func migrateTagOrderingIfNeeded(locale: Locale) {
+        guard state.groupTags.tagCollection.orderingMode == .legacy
+            || state.groupTags.tagCollection.schemaVersion < GroupTagCollection.currentSchemaVersion
+        else {
+            return
+        }
+
+        let allTagsByID = Dictionary(
+            state.groupTags.tagCollection.tagsByGroupKey.values
+                .flatMap { $0 }
+                .map { preference in
+                    (
+                        Self.tagKey(for: preference),
+                        GroupTagDisplayItem(
+                            id: Self.tagKey(for: preference),
+                            title: Self.displayTitle(for: preference, locale: locale),
+                            accent: preference.accent
+                        )
+                    )
+                },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let historicalDefaultOrder = allTagsByID.values
+            .sorted(by: Self.sortTagsByTitle)
+            .map(\.id)
+        let savedOrder = state.groupTags.tagCollection.orderedTagKeys.filter {
+            allTagsByID[$0] != nil
+        }
+        let mode: TagOrderingMode = savedOrder.isEmpty || savedOrder == historicalDefaultOrder
+            ? .defaultCount
+            : .custom
+
+        state.groupTags.tagCollection.schemaVersion = GroupTagCollection.currentSchemaVersion
+        state.groupTags.tagCollection.orderingMode = mode
+        if mode == .defaultCount {
+            state.groupTags.tagCollection.orderedTagKeys = []
+        }
+        store.saveTagCollection(state.groupTags.tagCollection)
     }
 
     private func presetTags(canonicalRepo: String?, locator: String?, locale: Locale) -> [GroupTagPreference]? {
@@ -499,7 +590,20 @@ final class GroupTagController {
         }
     }
 
-    private static func sortTags(_ lhs: GroupTagDisplayItem, _ rhs: GroupTagDisplayItem) -> Bool {
+    private static func sortTags(
+        _ lhs: GroupTagDisplayItem,
+        _ rhs: GroupTagDisplayItem,
+        tagCountsByID: [String: Int]
+    ) -> Bool {
+        let leftCount = tagCountsByID[lhs.id, default: 0]
+        let rightCount = tagCountsByID[rhs.id, default: 0]
+        if leftCount != rightCount {
+            return leftCount > rightCount
+        }
+        return sortTagsByTitle(lhs, rhs)
+    }
+
+    private static func sortTagsByTitle(_ lhs: GroupTagDisplayItem, _ rhs: GroupTagDisplayItem) -> Bool {
         return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
     }
 

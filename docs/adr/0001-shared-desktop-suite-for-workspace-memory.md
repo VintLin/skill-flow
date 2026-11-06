@@ -1,4 +1,6 @@
-# Shared Desktop Suite for Desktop Workspace Memory
+# Shared Desktop Suite for Desktop Workspace Memory (Superseded)
+
+> Historical decision. Superseded by [ADR 0007](0007-desktop-workspace-persistence.md), which moves durable workspace memory to `~/.skillflow/desktop.json`.
 
 Agent Display Visibility and Group Tags must survive switching between production and dev desktop packages (different Bundle IDs). We store this **Desktop Workspace Memory** in a fixed `UserDefaults` suite shared by all Skill Flow desktop packages on the same Mac, rather than elevating it into `~/.skillflow` Shared Skill State.
 

@@ -74,6 +74,244 @@ private struct HomeSidebarTagDropDelegate: DropDelegate {
     }
 }
 
+private enum HomeSidebarAgentDragCoordinateSpace {
+    static let name = "home-sidebar-agent-reorder"
+}
+
+private struct HomeSidebarChipFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
+private struct HomeSidebarAgentEventMonitor: NSViewRepresentable {
+    let frames: [String: CGRect]
+    let onDragChanged: (String, CGPoint) -> Void
+    let onDragEnded: (String, CGPoint) -> Void
+
+    func makeNSView(context: Context) -> AgentEventMonitorNSView {
+        let view = AgentEventMonitorNSView()
+        update(view)
+        return view
+    }
+
+    func updateNSView(_ view: AgentEventMonitorNSView, context: Context) {
+        update(view)
+    }
+
+    private func update(_ view: AgentEventMonitorNSView) {
+        view.frames = frames
+        view.onDragChanged = onDragChanged
+        view.onDragEnded = onDragEnded
+    }
+}
+
+private final class AgentEventMonitorNSView: NSView {
+    var frames: [String: CGRect] = [:]
+    var onDragChanged: ((String, CGPoint) -> Void)?
+    var onDragEnded: ((String, CGPoint) -> Void)?
+
+    private var localMonitor: Any?
+    private var sourceAgentID: String?
+    private var longPressWorkItem: DispatchWorkItem?
+    private var isLongPressActive = false
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        removeMonitor()
+        guard window != nil else { return }
+        localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            self?.handle(event)
+            return event
+        }
+    }
+
+    private func removeMonitor() {
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+            self.localMonitor = nil
+        }
+    }
+
+    private func handle(_ event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        switch event.type {
+        case .leftMouseDown:
+            guard sourceAgentID == nil,
+                  let source = frames.first(where: { _, frame in
+                      frame.minX...frame.maxX ~= point.x
+                  })?.key else {
+                return
+            }
+            sourceAgentID = source
+            isLongPressActive = false
+            longPressWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.sourceAgentID != nil else { return }
+                self.isLongPressActive = true
+            }
+            longPressWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: workItem)
+        case .leftMouseDragged:
+            guard let sourceAgentID, isLongPressActive else { return }
+            onDragChanged?(sourceAgentID, point)
+        case .leftMouseUp:
+            guard let sourceAgentID else { return }
+            if isLongPressActive {
+                onDragEnded?(sourceAgentID, point)
+            }
+            resetInteraction()
+        default:
+            break
+        }
+    }
+
+    private func resetInteraction() {
+        longPressWorkItem?.cancel()
+        longPressWorkItem = nil
+        sourceAgentID = nil
+        isLongPressActive = false
+    }
+}
+
+private struct HomeSidebarAgentReorderModifier: ViewModifier {
+    let agentID: String?
+    @Binding var activeAgentID: String?
+    @Binding var activeTargetAgentID: String?
+    @Binding var activePlacement: HomeTagMovePlacement
+    @Binding var activeDragTranslation: CGSize
+    let onMoveAgent: ((String, String, HomeTagMovePlacement) -> Void)?
+
+    @State private var isTargeted = false
+    @State private var placement: HomeTagMovePlacement = .before
+
+    func body(content: Content) -> some View {
+        guard let agentID, let onMoveAgent else {
+            return AnyView(content)
+        }
+
+        return AnyView(
+            content
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: HomeSidebarChipFramePreferenceKey.self,
+                            value: [
+                                agentID: proxy.frame(
+                                    in: .named(HomeSidebarAgentDragCoordinateSpace.name)
+                                )
+                            ]
+                        )
+                    }
+                }
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onDrop(
+                                of: [.text],
+                                delegate: HomeSidebarAgentDropDelegate(
+                                    targetAgentID: agentID,
+                                    targetWidth: proxy.size.width,
+                                    isTargeted: $isTargeted,
+                                    placement: $placement,
+                                    onMoveAgent: onMoveAgent
+                                )
+                            )
+                    }
+                }
+                .offset(
+                    x: activeAgentID == agentID ? activeDragTranslation.width : 0,
+                    y: activeAgentID == agentID ? -6 : 0
+                )
+                .scaleEffect(activeAgentID == agentID ? 1.06 : 1)
+                .shadow(
+                    color: activeAgentID == agentID ? Color.black.opacity(0.22) : .clear,
+                    radius: activeAgentID == agentID ? 8 : 0,
+                    y: activeAgentID == agentID ? 5 : 0
+                )
+                .zIndex(activeAgentID == agentID ? 2 : 0)
+                .overlay(alignment: placement == .before ? .leading : .trailing) {
+                    if isTargeted {
+                        Rectangle()
+                            .fill(Color.accentColor)
+                            .frame(width: 2)
+                            .padding(.vertical, 2)
+                    }
+                }
+                .overlay(alignment: activePlacement == .before ? .leading : .trailing) {
+                    if activeTargetAgentID == agentID, activeAgentID != agentID {
+                        Capsule()
+                            .fill(Color.accentColor)
+                            .frame(width: 3, height: MainView.homeFilterPillHeight + 6)
+                            .shadow(color: Color.accentColor.opacity(0.35), radius: 3)
+                            .offset(x: activePlacement == .before ? -4 : 4)
+                    }
+                }
+        )
+    }
+}
+
+private struct HomeSidebarAgentDropDelegate: DropDelegate {
+    let targetAgentID: String
+    let targetWidth: CGFloat
+    @Binding var isTargeted: Bool
+    @Binding var placement: HomeTagMovePlacement
+    let onMoveAgent: (String, String, HomeTagMovePlacement) -> Void
+
+    func dropEntered(info: DropInfo) {
+        isTargeted = true
+        updatePlacement(for: info.location.x)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updatePlacement(for: info.location.x)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        isTargeted = false
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        guard let provider = info.itemProviders(for: [.text]).first else {
+            return false
+        }
+        let dropPlacement = placement
+
+        provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, _ in
+            let value: String?
+            if let data = item as? Data {
+                value = String(data: data, encoding: .utf8)
+            } else if let string = item as? NSString {
+                value = string as String
+            } else {
+                value = item as? String
+            }
+
+            guard let sourceAgentID = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !sourceAgentID.isEmpty,
+                  sourceAgentID != "all",
+                  sourceAgentID != targetAgentID
+            else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                onMoveAgent(sourceAgentID, targetAgentID, dropPlacement)
+            }
+        }
+        return true
+    }
+
+    private func updatePlacement(for locationX: CGFloat) {
+        placement = locationX < targetWidth / 2 ? .before : .after
+    }
+}
+
 private enum GroupEditorTab: String, CaseIterable, Identifiable {
     case create
     case merge
@@ -156,6 +394,11 @@ struct MainView: View {
     @State private var projectScopeRefreshButtonRotation: Double = 0
     @State private var searchFocusResetToken = 0
     @State private var isHomeSidebarVisible = true
+    @State private var homeAgentDragFrames: [String: CGRect] = [:]
+    @State private var activeHomeAgentDragID: String?
+    @State private var activeHomeAgentDropTargetID: String?
+    @State private var activeHomeAgentDropPlacement: HomeTagMovePlacement = .before
+    @State private var activeHomeAgentDragTranslation: CGSize = .zero
     @State private var isEditCustomAgentPresented = false
     @State private var editingCustomAgentId: String?
     @State private var customAgentDraft = SettingsViewModel.CustomAgentDraft()
@@ -1549,25 +1792,50 @@ struct MainView: View {
                     homeContainer.setSelectedHomeStatusFilter(optionId)
                 }
 
-                homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType, title: t("home.sidebar.source_type"), options: homeSourceTypeChipItems(groupCards: groupCards), selectedId: homeContainer.selectedHomeSourceTypeFilterId()) { optionId in
-                    homeContainer.setSelectedHomeSourceTypeFilter(optionId)
-                }
-
+                let tagOptions = homeTagChipItems(snapshot: homeTagSnapshot, groupCards: groupCards)
                 homeSidebarChipSection(
                     sectionId: HomeSidebarSectionID.tags,
                     title: t("home.sidebar.tags"),
-                    options: homeTagChipItems(snapshot: homeTagSnapshot, groupCards: groupCards),
+                    options: tagOptions,
                     selectedId: homeTagSnapshot.selectedKey ?? "all",
                     onSelect: { optionId in
                         homeContainer.setSelectedHomeTagFilterKey(optionId == "all" ? nil : optionId)
                     },
                     onMoveTag: { sourceTagID, targetTagID, placement in
-                        homeContainer.moveHomeTag(sourceTagID: sourceTagID, targetTagID: targetTagID, placement: placement)
+                        homeContainer.moveHomeTag(
+                            sourceTagID: sourceTagID,
+                            targetTagID: targetTagID,
+                            placement: placement,
+                            visibleTagIDs: tagOptions.filter { $0.id != "all" }.map(\.id)
+                        )
+                    },
+                    headerAction: homeContainer.hasCustomHomeTagOrder()
+                        ? { homeContainer.resetHomeTagOrder() }
+                        : nil,
+                    headerActionHelp: t("home.sidebar.tags.reset_order")
+                )
+
+                let visibleAgentTargetIds = homeAgentOptions.filter { $0.id != "all" }.map(\.id)
+                homeSidebarChipSection(
+                    sectionId: HomeSidebarSectionID.agents,
+                    title: t("home.sidebar.agents"),
+                    options: homeAgentOptions,
+                    selectedId: selectedHomeAgentFilterId ?? "all",
+                    onSelect: { optionId in
+                        homeContainer.setSelectedHomeAgentFilter(optionId == "all" ? nil : optionId)
+                    },
+                    onMoveAgent: { sourceAgentID, targetAgentID, placement in
+                        homeContainer.moveHomeAgent(
+                            sourceId: sourceAgentID,
+                            targetId: targetAgentID,
+                            placement: placement,
+                            visibleTargetIds: visibleAgentTargetIds
+                        )
                     }
                 )
 
-                homeSidebarChipSection(sectionId: HomeSidebarSectionID.agents, title: t("home.sidebar.agents"), options: homeAgentOptions, selectedId: selectedHomeAgentFilterId ?? "all") { optionId in
-                    homeContainer.setSelectedHomeAgentFilter(optionId == "all" ? nil : optionId)
+                homeSidebarChipSection(sectionId: HomeSidebarSectionID.sourceType, title: t("home.sidebar.source_type"), options: homeSourceTypeChipItems(groupCards: groupCards), selectedId: homeContainer.selectedHomeSourceTypeFilterId()) { optionId in
+                    homeContainer.setSelectedHomeSourceTypeFilter(optionId)
                 }
 
                 homeSidebarProjectSection(groupCards: groupCards)
@@ -1648,6 +1916,15 @@ struct MainView: View {
                 title = t("home.sidebar.all")
             }
             return HomeSidebarChipItem(id: option.id, title: title, count: option.count, accent: nil, showsHashPrefix: false)
+        }.sorted { left, right in
+            if left.id == "all" { return true }
+            if right.id == "all" { return false }
+            let leftCount = left.count ?? 0
+            let rightCount = right.count ?? 0
+            if leftCount != rightCount {
+                return leftCount > rightCount
+            }
+            return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
         }
     }
 
@@ -1675,35 +1952,70 @@ struct MainView: View {
         options: [HomeSidebarChipItem],
         selectedId: String,
         onSelect: @escaping (String) -> Void,
-        onMoveTag: ((String, String, HomeTagMovePlacement) -> Void)? = nil
+        onMoveTag: ((String, String, HomeTagMovePlacement) -> Void)? = nil,
+        onMoveAgent: ((String, String, HomeTagMovePlacement) -> Void)? = nil,
+        headerAction: (() -> Void)? = nil,
+        headerActionHelp: String? = nil
     ) -> some View {
         let expanded = homeContainer.isHomeSidebarSectionExpanded(sectionId)
 
         return VStack(alignment: .leading, spacing: 8) {
-            Button {
-                homeContainer.toggleHomeSidebarSection(sectionId)
-            } label: {
-                HStack(spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(AppTheme.textMuted(for: theme))
-                        .lineLimit(1)
-                        .textCase(.uppercase)
-                    Spacer(minLength: 0)
+            HStack(spacing: 8) {
+                Button {
+                    homeContainer.toggleHomeSidebarSection(sectionId)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .lineLimit(1)
+                            .textCase(.uppercase)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand")): \(title)")
+
+                if let headerAction {
+                    Button(action: headerAction) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(AppTheme.textMuted(for: theme))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(headerActionHelp ?? title)
+                }
+
+                Button {
+                    homeContainer.toggleHomeSidebarSection(sectionId)
+                } label: {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(AppTheme.textMuted(for: theme))
                         .frame(width: Self.homeSidebarToggleButtonSize, alignment: .center)
+                        .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand")): \(title)")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(expanded ? t("home.sidebar.collapse") : t("home.sidebar.expand")): \(title)")
 
             if expanded {
                 WrappingHStack(horizontalSpacing: 6, verticalSpacing: 6) {
                     ForEach(options) { option in
-                        homeSidebarChip(option: option, isSelected: selectedId == option.id, onMoveTag: onMoveTag) {
+                        homeSidebarChip(
+                            option: option,
+                            isSelected: selectedId == option.id,
+                            onMoveTag: onMoveTag,
+                            onMoveAgent: onMoveAgent,
+                            agentFrames: homeAgentDragFrames,
+                            activeAgentID: $activeHomeAgentDragID,
+                            activeTargetAgentID: $activeHomeAgentDropTargetID,
+                            activePlacement: $activeHomeAgentDropPlacement,
+                            activeDragTranslation: $activeHomeAgentDragTranslation
+                        ) {
                             onSelect(option.id)
                         }
                     }
@@ -1712,7 +2024,17 @@ struct MainView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 6) {
                         ForEach(options) { option in
-                            homeSidebarChip(option: option, isSelected: selectedId == option.id, onMoveTag: onMoveTag) {
+                            homeSidebarChip(
+                                option: option,
+                                isSelected: selectedId == option.id,
+                                onMoveTag: onMoveTag,
+                                onMoveAgent: onMoveAgent,
+                                agentFrames: homeAgentDragFrames,
+                                activeAgentID: $activeHomeAgentDragID,
+                                activeTargetAgentID: $activeHomeAgentDropTargetID,
+                                activePlacement: $activeHomeAgentDropPlacement,
+                                activeDragTranslation: $activeHomeAgentDragTranslation
+                            ) {
                                 onSelect(option.id)
                             }
                         }
@@ -1723,12 +2045,77 @@ struct MainView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .coordinateSpace(name: HomeSidebarAgentDragCoordinateSpace.name)
+        .background {
+            if onMoveAgent != nil {
+                HomeSidebarAgentEventMonitor(
+                    frames: homeAgentDragFrames,
+                    onDragChanged: { sourceAgentID, location in
+                        activeHomeAgentDragID = sourceAgentID
+                        updateHomeAgentDragTranslation(sourceAgentID: sourceAgentID, location: location)
+                        updateHomeAgentDropTarget(sourceAgentID: sourceAgentID, location: location)
+                    },
+                    onDragEnded: { sourceAgentID, location in
+                        updateHomeAgentDragTranslation(sourceAgentID: sourceAgentID, location: location)
+                        updateHomeAgentDropTarget(sourceAgentID: sourceAgentID, location: location)
+                        defer {
+                            activeHomeAgentDragID = nil
+                            activeHomeAgentDropTargetID = nil
+                            activeHomeAgentDragTranslation = .zero
+                        }
+                        guard let targetAgentID = activeHomeAgentDropTargetID,
+                              targetAgentID != sourceAgentID else {
+                            return
+                        }
+                        onMoveAgent?(sourceAgentID, targetAgentID, activeHomeAgentDropPlacement)
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onPreferenceChange(HomeSidebarChipFramePreferenceKey.self) { frames in
+            guard onMoveAgent != nil else {
+                return
+            }
+            homeAgentDragFrames = frames
+        }
+    }
+
+    private func updateHomeAgentDragTranslation(sourceAgentID: String, location: CGPoint) {
+        guard let sourceFrame = homeAgentDragFrames[sourceAgentID] else {
+            activeHomeAgentDragTranslation = .zero
+            return
+        }
+        activeHomeAgentDragTranslation = CGSize(
+            width: location.x - sourceFrame.midX,
+            height: 0
+        )
+    }
+
+    private func updateHomeAgentDropTarget(sourceAgentID: String, location: CGPoint) {
+        let candidate = homeAgentDragFrames
+            .filter { id, _ in id != sourceAgentID }
+            .min { left, right in
+                abs(location.x - left.value.midX) < abs(location.x - right.value.midX)
+            }
+        guard let candidate else {
+            activeHomeAgentDropTargetID = nil
+            return
+        }
+        activeHomeAgentDropTargetID = candidate.key
+        activeHomeAgentDropPlacement = location.x < candidate.value.midX ? .before : .after
     }
 
     private func homeSidebarChip(
         option: HomeSidebarChipItem,
         isSelected: Bool,
         onMoveTag: ((String, String, HomeTagMovePlacement) -> Void)? = nil,
+        onMoveAgent: ((String, String, HomeTagMovePlacement) -> Void)? = nil,
+        agentFrames: [String: CGRect],
+        activeAgentID: Binding<String?>,
+        activeTargetAgentID: Binding<String?>,
+        activePlacement: Binding<HomeTagMovePlacement>,
+        activeDragTranslation: Binding<CGSize>,
         action: @escaping () -> Void
     ) -> some View {
         homeFilterPill(
@@ -1739,6 +2126,13 @@ struct MainView: View {
             isSelected: isSelected,
             tagID: option.id == "all" ? nil : option.id,
             onMoveTag: onMoveTag,
+            agentID: option.id == "all" ? nil : option.id,
+            agentFrames: agentFrames,
+            activeAgentID: activeAgentID,
+            activeTargetAgentID: activeTargetAgentID,
+            activePlacement: activePlacement,
+            activeDragTranslation: activeDragTranslation,
+            onMoveAgent: onMoveAgent,
             action: action
         )
     }
@@ -1906,6 +2300,13 @@ struct MainView: View {
         isSelected: Bool,
         tagID: String? = nil,
         onMoveTag: ((String, String, HomeTagMovePlacement) -> Void)? = nil,
+        agentID: String? = nil,
+        agentFrames: [String: CGRect] = [:],
+        activeAgentID: Binding<String?> = .constant(nil),
+        activeTargetAgentID: Binding<String?> = .constant(nil),
+        activePlacement: Binding<HomeTagMovePlacement> = .constant(.before),
+        activeDragTranslation: Binding<CGSize> = .constant(.zero),
+        onMoveAgent: ((String, String, HomeTagMovePlacement) -> Void)? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1941,6 +2342,16 @@ struct MainView: View {
         }
         .buttonStyle(.plain)
         .opacity(isSelected ? 1.0 : 0.58)
+        .modifier(
+            HomeSidebarAgentReorderModifier(
+                agentID: agentID,
+                activeAgentID: activeAgentID,
+                activeTargetAgentID: activeTargetAgentID,
+                activePlacement: activePlacement,
+                activeDragTranslation: activeDragTranslation,
+                onMoveAgent: onMoveAgent
+            )
+        )
         .modifier(HomeSidebarTagReorderModifier(tagID: tagID, onMoveTag: onMoveTag))
     }
 

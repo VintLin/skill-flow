@@ -16,27 +16,38 @@ struct GroupTagPreference: Codable, Equatable {
     }
 }
 
+enum TagOrderingMode: String, Codable, Equatable {
+    case legacy
+    case defaultCount
+    case custom
+}
+
 struct GroupTagCollection: Codable, Equatable {
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
 
     var schemaVersion: Int
     var tagsByGroupKey: [String: [GroupTagPreference]]
     var orderedTagKeys: [String]
+    var orderingMode: TagOrderingMode
 
     init(
         schemaVersion: Int = Self.currentSchemaVersion,
         tagsByGroupKey: [String: [GroupTagPreference]] = [:],
-        orderedTagKeys: [String] = []
+        orderedTagKeys: [String] = [],
+        orderingMode: TagOrderingMode? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.tagsByGroupKey = tagsByGroupKey
         self.orderedTagKeys = orderedTagKeys
+        self.orderingMode = orderingMode
+            ?? (orderedTagKeys.isEmpty ? .defaultCount : .custom)
     }
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
         case tagsByGroupKey
         case orderedTagKeys
+        case orderingMode
     }
 
     init(from decoder: Decoder) throws {
@@ -44,6 +55,7 @@ struct GroupTagCollection: Codable, Equatable {
         self.schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
         self.tagsByGroupKey = try container.decode([String: [GroupTagPreference]].self, forKey: .tagsByGroupKey)
         self.orderedTagKeys = try container.decodeIfPresent([String].self, forKey: .orderedTagKeys) ?? []
+        self.orderingMode = try container.decodeIfPresent(TagOrderingMode.self, forKey: .orderingMode) ?? .legacy
     }
 }
 

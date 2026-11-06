@@ -25,6 +25,7 @@
 "home.sidebar.collection" = "組み合わせ";
 "home.sidebar.expand" = "セクションを展開";
 "home.sidebar.collapse" = "セクションを折りたたむ";
+"home.sidebar.tags.reset_order" = "タグの標準順に戻す";
 "home.sidebar.all_agents" = "すべて";
 "placeholder.home.search_group_author" = "グループ / 作者を検索";
 "home.empty.title" = "一致するグループがありません";

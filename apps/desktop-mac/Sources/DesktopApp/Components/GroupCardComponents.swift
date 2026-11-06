@@ -32,6 +32,32 @@ private struct GroupCardActionButtonFrameKey: PreferenceKey {
     }
 }
 
+private struct GroupCardSectionViewportWidthKey: PreferenceKey {
+    static let defaultValue: [SharedGroupCard.BodySection: CGFloat] = [:]
+
+    static func reduce(
+        value: inout [SharedGroupCard.BodySection: CGFloat],
+        nextValue: () -> [SharedGroupCard.BodySection: CGFloat]
+    ) {
+        for (section, width) in nextValue() where width.isFinite {
+            value[section] = width
+        }
+    }
+}
+
+private struct GroupCardSectionContentWidthKey: PreferenceKey {
+    static let defaultValue: [SharedGroupCard.BodySection: CGFloat] = [:]
+
+    static func reduce(
+        value: inout [SharedGroupCard.BodySection: CGFloat],
+        nextValue: () -> [SharedGroupCard.BodySection: CGFloat]
+    ) {
+        for (section, width) in nextValue() where width.isFinite {
+            value[section] = width
+        }
+    }
+}
+
 enum GroupCardActionFrameTracking {
     static func shouldMeasure(isHovered: Bool, isMenuOpen: Bool) -> Bool {
         isHovered || isMenuOpen
@@ -345,6 +371,15 @@ struct SharedGroupCard: View {
         case localFile
     }
 
+    private typealias RowItem = (
+        id: String,
+        label: String,
+        shortLabel: String,
+        isEnabled: Bool,
+        sourceTitle: String?,
+        highlightQuery: String?
+    )
+
     @Environment(\.locale) private var locale
     let card: GroupCardModel
     let theme: DesktopThemeMode
@@ -385,8 +420,13 @@ struct SharedGroupCard: View {
     @State private var isDeletingTags = false
     @State private var actionMenuPlacement: GroupCardActionMenuPlacement = .below
     @State private var actionButtonFrame: CGRect = .zero
+    @State private var sectionViewportWidths: [BodySection: CGFloat] = [:]
+    @State private var sectionContentWidths: [BodySection: CGFloat] = [:]
+    @State private var openOverflowSection: BodySection?
 
     private let actionMenuWidth: CGFloat = 176
+    private let overflowPopoverWidth: CGFloat = 320
+    private let overflowPopoverMaxHeight: CGFloat = 280
 
     init(
         card: GroupCardModel,
@@ -495,6 +535,7 @@ struct SharedGroupCard: View {
                 switch section {
                 case .agents:
                     cardRow(
+                        section: .agents,
                         title: t("common.section.agents"),
                         selection: card.targetSelection,
                         items: card.targets.map { ($0.id, $0.label, $0.shortLabel, $0.isEnabled, nil, nil) },
@@ -515,6 +556,21 @@ struct SharedGroupCard: View {
                         summarySection
                     }
                 }
+            }
+        }
+        .onPreferenceChange(GroupCardSectionViewportWidthKey.self) { widths in
+            if sectionViewportWidths != widths {
+                sectionViewportWidths = widths
+            }
+        }
+        .onPreferenceChange(GroupCardSectionContentWidthKey.self) { widths in
+            if sectionContentWidths != widths {
+                sectionContentWidths = widths
+            }
+        }
+        .onChange(of: skillsCollapsed) { _, collapsed in
+            if collapsed, openOverflowSection == .skills {
+                openOverflowSection = nil
             }
         }
         .opacity(busyContentOpacity)
@@ -1066,66 +1122,56 @@ struct SharedGroupCard: View {
     }
 
     private func cardRow(
+        section: BodySection,
         title: String,
         selection: SelectionState,
-        items: [(id: String, label: String, shortLabel: String, isEnabled: Bool, sourceTitle: String?, highlightQuery: String?)],
+        items: [RowItem],
         compact: Bool,
         loading: Bool,
         onToggleAll: @escaping () -> Void,
         action: @escaping (String, Bool, Bool) -> Void
     ) -> some View {
-        VStack(alignment: .leading, spacing: scale.rowSpacing) {
-            if displayMode.showsSectionTitles {
-                HStack(spacing: 8) {
-                    Text(sectionTitleText(baseTitle: title, compact: compact))
-                        .font(.system(size: scale.sectionLabelSize, weight: .regular))
-                        .foregroundStyle(AppTheme.textPrimary(for: theme))
-                        .textCase(.uppercase)
-                    Spacer(minLength: 8)
-                }
-                .padding(.horizontal, scale.sectionHorizontalPadding)
-                .padding(.top, scale.sectionTopPadding)
+        let isOverflowing = sectionOverflows(section: section, itemCount: items.count, loading: loading)
+
+        return VStack(alignment: .leading, spacing: scale.rowSpacing) {
+            if displayMode.showsSectionTitles || isOverflowing {
+                sectionHeader(
+                    section: section,
+                    title: sectionTitleText(baseTitle: title, compact: compact),
+                    selection: selection,
+                    items: items,
+                    compact: compact,
+                    loading: loading,
+                    isOverflowing: isOverflowing,
+                    onToggleAll: onToggleAll,
+                    action: action
+                )
             }
 
             cardScroller(height: compact ? scale.targetScrollerHeight : scale.chipHeight) {
-                LazyHStack(spacing: scale.rowSpacing) {
-                    triStateSwitch(selection, loading: false, action: onToggleAll)
-                    if loading {
-                        ForEach(0..<3, id: \.self) { _ in
-                            loadingPill
-                        }
-                    } else {
-                        ForEach(items, id: \.id) { item in
-                            Button {
-                                action(item.id, !item.isEnabled, item.isEnabled)
-                            } label: {
-                                if compact {
-                                    targetToggle(
-                                        targetId: item.id,
-                                        fallbackText: item.shortLabel,
-                                        accessibilityLabel: item.label,
-                                        isOn: item.isEnabled
-                                    )
-                                } else {
-                                    skillToggle(
-                                        item.label,
-                                        sourceTitle: item.sourceTitle,
-                                        highlightQuery: item.highlightQuery,
-                                        isOn: item.isEnabled
-                                    )
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .desktopMotionChip(
-                                kind: .pill,
-                                theme: theme,
-                                accent: accent,
-                                isEnabled: !isBusy,
-                                isSelected: item.isEnabled
-                            )
-                            .disabled(isBusy)
-                        }
+                sectionItemRow(
+                    selection: selection,
+                    items: items,
+                    compact: compact,
+                    loading: loading,
+                    onToggleAll: onToggleAll,
+                    action: action
+                )
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: GroupCardSectionContentWidthKey.self,
+                            value: [section: proxy.size.width]
+                        )
                     }
+                }
+            }
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: GroupCardSectionViewportWidthKey.self,
+                        value: [section: proxy.size.width]
+                    )
                 }
             }
             .opacity(isBusy ? 0.68 : 1.0)
@@ -1133,11 +1179,228 @@ struct SharedGroupCard: View {
         }
     }
 
+    private func sectionOverflows(section: BodySection, itemCount: Int, loading: Bool) -> Bool {
+        guard !loading,
+              itemCount > 0,
+              let viewportWidth = sectionViewportWidths[section],
+              let contentWidth = sectionContentWidths[section],
+              viewportWidth > 0,
+              contentWidth > 0 else {
+            return false
+        }
+
+        return contentWidth + (scale.cardInset * 2) > viewportWidth + 0.5
+    }
+
+    private func sectionHeader(
+        section: BodySection,
+        title: String,
+        selection: SelectionState,
+        items: [RowItem],
+        compact: Bool,
+        loading: Bool,
+        isOverflowing: Bool,
+        onToggleAll: @escaping () -> Void,
+        action: @escaping (String, Bool, Bool) -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            if isOverflowing {
+                Button {
+                    openOverflowSection = section
+                } label: {
+                    sectionHeaderLabel(title: title, isOverflowing: true)
+                }
+                .buttonStyle(.plain)
+                .popover(
+                    isPresented: overflowPopoverBinding(for: section),
+                    attachmentAnchor: .rect(.bounds),
+                    arrowEdge: .top
+                ) {
+                    overflowPopover(
+                        title: title,
+                        selection: selection,
+                        items: items,
+                        compact: compact,
+                        loading: loading,
+                        onToggleAll: onToggleAll,
+                        action: action
+                    )
+                }
+            } else {
+                sectionHeaderLabel(title: title, isOverflowing: false)
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, scale.sectionHorizontalPadding)
+        .padding(.top, scale.sectionTopPadding)
+    }
+
+    private func sectionHeaderLabel(title: String, isOverflowing: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.system(size: scale.sectionLabelSize, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .textCase(.uppercase)
+            if isOverflowing {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: max(8, scale.sectionLabelSize - 3), weight: .semibold))
+                    .foregroundStyle(AppTheme.textMuted(for: theme))
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func overflowPopoverBinding(for section: BodySection) -> Binding<Bool> {
+        Binding(
+            get: {
+                openOverflowSection == section
+            },
+            set: { isPresented in
+                if isPresented {
+                    openOverflowSection = section
+                } else if openOverflowSection == section {
+                    openOverflowSection = nil
+                }
+            }
+        )
+    }
+
+    private func sectionItemRow(
+        selection: SelectionState,
+        items: [RowItem],
+        compact: Bool,
+        loading: Bool,
+        onToggleAll: @escaping () -> Void,
+        action: @escaping (String, Bool, Bool) -> Void
+    ) -> some View {
+        HStack(spacing: scale.rowSpacing) {
+            triStateSwitch(selection, loading: false, action: onToggleAll)
+            if loading {
+                ForEach(0..<3, id: \.self) { _ in
+                    loadingPill
+                }
+            } else {
+                ForEach(items, id: \.id) { item in
+                    sectionItemButton(item: item, compact: compact, action: action)
+                }
+            }
+        }
+    }
+
+    private func sectionItemButton(
+        item: RowItem,
+        compact: Bool,
+        action: @escaping (String, Bool, Bool) -> Void
+    ) -> some View {
+        Button {
+            action(item.id, !item.isEnabled, item.isEnabled)
+        } label: {
+            if compact {
+                targetToggle(
+                    targetId: item.id,
+                    fallbackText: item.shortLabel,
+                    accessibilityLabel: item.label,
+                    isOn: item.isEnabled
+                )
+            } else {
+                skillToggle(
+                    item.label,
+                    sourceTitle: item.sourceTitle,
+                    highlightQuery: item.highlightQuery,
+                    isOn: item.isEnabled
+                )
+            }
+        }
+        .buttonStyle(.plain)
+        .desktopMotionChip(
+            kind: .pill,
+            theme: theme,
+            accent: accent,
+            isEnabled: !isBusy,
+            isSelected: item.isEnabled
+        )
+        .disabled(isBusy)
+        .accessibilityLabel(item.label)
+    }
+
+    private func overflowPopover(
+        title: String,
+        selection: SelectionState,
+        items: [RowItem],
+        compact: Bool,
+        loading: Bool,
+        onToggleAll: @escaping () -> Void,
+        action: @escaping (String, Bool, Bool) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: scale.sectionLabelSize, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary(for: theme))
+                .textCase(.uppercase)
+
+            ViewThatFits(in: .vertical) {
+                overflowItemGrid(
+                    selection: selection,
+                    items: items,
+                    compact: compact,
+                    loading: loading,
+                    onToggleAll: onToggleAll,
+                    action: action
+                )
+                .fixedSize(horizontal: false, vertical: true)
+
+                ScrollView(.vertical, showsIndicators: true) {
+                    overflowItemGrid(
+                        selection: selection,
+                        items: items,
+                        compact: compact,
+                        loading: loading,
+                        onToggleAll: onToggleAll,
+                        action: action
+                    )
+                    .padding(.trailing, 4)
+                }
+                .frame(height: 230)
+            }
+        }
+        .padding(12)
+        .frame(width: overflowPopoverWidth, alignment: .topLeading)
+        .frame(maxHeight: overflowPopoverMaxHeight, alignment: .topLeading)
+        .background(AppTheme.pageBackground(for: theme))
+    }
+
+    private func overflowItemGrid(
+        selection: SelectionState,
+        items: [RowItem],
+        compact: Bool,
+        loading: Bool,
+        onToggleAll: @escaping () -> Void,
+        action: @escaping (String, Bool, Bool) -> Void
+    ) -> some View {
+        WrappingHStack(horizontalSpacing: scale.rowSpacing, verticalSpacing: scale.rowSpacing) {
+            triStateSwitch(selection, loading: loading, action: onToggleAll)
+            if loading {
+                ForEach(0..<3, id: \.self) { _ in
+                    loadingPill
+                }
+            } else {
+                ForEach(items, id: \.id) { item in
+                    sectionItemButton(item: item, compact: compact, action: action)
+                        .frame(maxWidth: overflowPopoverWidth - 32, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(isBusy ? 0.68 : 1.0)
+        .allowsHitTesting(!isBusy)
+    }
+
     @ViewBuilder
     private var skillsSection: some View {
         if !displayMode.supportsCollapsedSkills || !skillsCollapsed {
             VStack(alignment: .leading, spacing: scale.rowSpacing) {
                 cardRow(
+                    section: .skills,
                     title: t("group_card.section.skills"),
                     selection: card.skillSelection,
                     items: card.skills.map { ($0.id, $0.label, $0.label, $0.isEnabled, $0.sourceTitle, $0.highlightQuery) },

@@ -25,6 +25,7 @@
 "home.sidebar.collection" = "组合";
 "home.sidebar.expand" = "展开分组";
 "home.sidebar.collapse" = "收起分组";
+"home.sidebar.tags.reset_order" = "恢复标签默认排序";
 "home.sidebar.all_agents" = "全部 Agent";
 "placeholder.home.search_group_author" = "搜索分组 / 作者";
 "home.empty.title" = "没有匹配的分组";

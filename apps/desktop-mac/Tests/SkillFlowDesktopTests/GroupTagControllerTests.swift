@@ -279,7 +279,7 @@ final class GroupTagControllerTests: XCTestCase {
             locale: Locale(identifier: "zh-Hans")
         )
 
-        XCTAssertEqual(snapshot.availableTags.map(\.title), ["研究", "增长"])
+        XCTAssertEqual(snapshot.availableTags.map(\.title), ["增长", "研究"])
         XCTAssertEqual(snapshot.tagCountsByID["custom:增长"], 2)
         XCTAssertEqual(snapshot.tagCountsByID["custom:研究"], 1)
         XCTAssertEqual(snapshot.selectedKey, "custom:增长")
