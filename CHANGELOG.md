@@ -4,6 +4,20 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.19 - 2026-11-20
+
+### Added
+
+- Added desktop metadata, labels, short labels, paths, and identity colors for ten built-in icon-backed agents, including Antigravity, DeepSeek Harness, Junie, Mistral Vibe, OpenHands, Qoder, Qwen Code, Zencoder, Kilo Code, and Goose.
+
+### Changed
+
+- Added a separate Antigravity desktop configuration entry so its global skills mount at `~/.gemini/config/skills` and its project skills use `.agents/skills` alongside Gemini CLI.
+
+### Fixed
+
+- Detects Antigravity installations under both `~/.gemini/config` and `~/.gemini/antigravity` while preserving the existing write location.
+
 ## v1.6.18 - 2026-11-06
 
 ### Added
