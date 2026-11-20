@@ -386,7 +386,10 @@ export const TARGET_DEFINITIONS: Record<DeploymentTargetName, TargetDefinition> 
     envVar: "SKILL_FLOW_TARGET_ANTIGRAVITY",
     writerKey: "antigravity-home",
     writeRootCandidates: [path.join(os.homedir(), ".gemini", "config", "skills")],
-    detectionRootCandidates: [path.join(os.homedir(), ".gemini", "config")],
+    detectionRootCandidates: [
+      path.join(os.homedir(), ".gemini", "config"),
+      path.join(os.homedir(), ".gemini", "antigravity"),
+    ],
     compatReadRootCandidates: [],
     documentedProjectPath: ".agents/skills/",
     documentedGlobalPath: "~/.gemini/config/skills/",

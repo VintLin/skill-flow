@@ -288,6 +288,7 @@ final class MainViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(model.visibleTargets.map(\.id).contains("trae-cn"))
         XCTAssertTrue(model.visibleTargets.map(\.id).contains("zcode"))
         XCTAssertTrue(model.visibleTargets.map(\.id).contains("hermes-agent"))
+        XCTAssertTrue(model.visibleTargets.map(\.id).contains("antigravity"))
     }
 
     func testCustomAgentsRemainVisibleInGroupCardsWithoutDetection() async throws {

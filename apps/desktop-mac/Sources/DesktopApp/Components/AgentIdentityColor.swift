@@ -47,6 +47,16 @@ enum AgentIdentityColorCatalog {
         "kiro": .init(lightRGB: 0x7E22CE, darkRGB: 0xC084FC),
         "roo-code": .init(lightRGB: 0x0F766E, darkRGB: 0x5EEAD4),
         "cline": .init(lightRGB: 0x0369A1, darkRGB: 0x7DD3FC),
+        "deepseek-harness": .init(lightRGB: 0x3B5BDB, darkRGB: 0x8FA3FF),
+        "antigravity": .init(lightRGB: 0x2B59C3, darkRGB: 0x7AA2FF),
+        "junie": .init(lightRGB: 0x1E7E34, darkRGB: 0x4ADE80),
+        "mistral-vibe": .init(lightRGB: 0xB45309, darkRGB: 0xFBBF24),
+        "openhands": .init(lightRGB: 0x9A6700, darkRGB: 0xFACC15),
+        "qoder": .init(lightRGB: 0x047857, darkRGB: 0x34D399),
+        "qwen-code": .init(lightRGB: 0x5B21B6, darkRGB: 0xA78BFA),
+        "zencoder": .init(lightRGB: 0xBE185D, darkRGB: 0xF472B6),
+        "kilo-code": .init(lightRGB: 0xB91C1C, darkRGB: 0xF87171),
+        "goose": .init(lightRGB: 0x3F3F46, darkRGB: 0xD4D4D8),
     ]
 
     static var targetIds: [String] {

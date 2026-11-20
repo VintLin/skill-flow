@@ -58,6 +58,16 @@ describe("target definitions", () => {
       expect(TARGET_DOCUMENTED_GLOBAL_PATHS[target]).toBe(`~/${globalPath}/`);
       expect(TARGET_DOCUMENTED_PROJECT_PATHS[target]).toBe(`${projectPath}/`);
     }
+
+    expect(getTargetDetectionCandidates("antigravity")).toContain(
+      path.join(os.homedir(), ".gemini", "config"),
+    );
+    expect(getTargetDetectionCandidates("antigravity")).toContain(
+      path.join(os.homedir(), ".gemini", "antigravity"),
+    );
+    expect(getTargetWriteRootCandidates("antigravity")).toEqual([
+      path.join(os.homedir(), ".gemini", "config", "skills"),
+    ]);
   });
 
   test("includes config-based OpenCode skills directory in default detection paths", () => {

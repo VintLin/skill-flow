@@ -32,6 +32,16 @@ enum AgentDisplayCatalog {
         "kiro",
         "roo-code",
         "cline",
+        "deepseek-harness",
+        "antigravity",
+        "junie",
+        "mistral-vibe",
+        "openhands",
+        "qoder",
+        "qwen-code",
+        "zencoder",
+        "kilo-code",
+        "goose",
     ]
 
     private static let labelsByTargetId: [String: String] = [
@@ -57,6 +67,16 @@ enum AgentDisplayCatalog {
         "amp": "Amp",
         "kiro": "Kiro",
         "zcode": "ZCode",
+        "deepseek-harness": "DeepSeek Harness",
+        "antigravity": "Antigravity",
+        "junie": "Junie",
+        "mistral-vibe": "Mistral Vibe",
+        "openhands": "OpenHands",
+        "qoder": "Qoder",
+        "qwen-code": "Qwen Code",
+        "zencoder": "Zencoder",
+        "kilo-code": "Kilo Code",
+        "goose": "Goose",
     ]
 
     private static let shortLabelsByTargetId: [String: String] = [
@@ -82,6 +102,16 @@ enum AgentDisplayCatalog {
         "amp": "AM",
         "kiro": "KI",
         "zcode": "ZC",
+        "deepseek-harness": "DS",
+        "antigravity": "AG",
+        "junie": "JN",
+        "mistral-vibe": "MV",
+        "openhands": "OH",
+        "qoder": "QD",
+        "qwen-code": "QW",
+        "zencoder": "ZE",
+        "kilo-code": "KC",
+        "goose": "GS",
     ]
 
     static func defaultPreferences(customAgents: [CustomAgentDefinition] = []) -> [AgentDisplayPreference] {
@@ -181,6 +211,26 @@ enum AgentDisplayCatalog {
             return homeDirectory.appendingPathComponent(".kiro/skills", isDirectory: true).path
         case "zcode":
             return homeDirectory.appendingPathComponent(".zcode/skills", isDirectory: true).path
+        case "deepseek-harness":
+            return homeDirectory.appendingPathComponent(".dsh/skills", isDirectory: true).path
+        case "antigravity":
+            return homeDirectory.appendingPathComponent(".gemini/config/skills", isDirectory: true).path
+        case "junie":
+            return homeDirectory.appendingPathComponent(".junie/skills", isDirectory: true).path
+        case "mistral-vibe":
+            return homeDirectory.appendingPathComponent(".vibe/skills", isDirectory: true).path
+        case "openhands":
+            return homeDirectory.appendingPathComponent(".openhands/skills", isDirectory: true).path
+        case "qoder":
+            return homeDirectory.appendingPathComponent(".qoder/skills", isDirectory: true).path
+        case "qwen-code":
+            return homeDirectory.appendingPathComponent(".qwen/skills", isDirectory: true).path
+        case "zencoder":
+            return homeDirectory.appendingPathComponent(".zencoder/skills", isDirectory: true).path
+        case "kilo-code":
+            return homeDirectory.appendingPathComponent(".kilocode/skills", isDirectory: true).path
+        case "goose":
+            return homeDirectory.appendingPathComponent(".config/goose/skills", isDirectory: true).path
         default:
             return targetId
         }
@@ -194,7 +244,7 @@ enum AgentDisplayCatalog {
         switch targetId {
         case "claude-code":
             return ".claude/skills"
-        case "codex", "cursor", "github-copilot", "gemini-cli":
+        case "codex", "cursor", "github-copilot", "gemini-cli", "antigravity":
             return ".agents/skills"
         case "grok-build":
             return ".grok/skills"
@@ -230,6 +280,24 @@ enum AgentDisplayCatalog {
             return ".kiro/skills"
         case "zcode":
             return ".zcode/skills"
+        case "deepseek-harness":
+            return ".dsh/skills"
+        case "junie":
+            return ".junie/skills"
+        case "mistral-vibe":
+            return ".vibe/skills"
+        case "openhands":
+            return ".openhands/skills"
+        case "qoder":
+            return ".qoder/skills"
+        case "qwen-code":
+            return ".qwen/skills"
+        case "zencoder":
+            return ".zencoder/skills"
+        case "kilo-code":
+            return ".kilocode/skills"
+        case "goose":
+            return ".goose/skills"
         default:
             return nil
         }

@@ -418,7 +418,44 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "trae"), "\(homePath)/.trae/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "trae-cn"), "\(homePath)/.trae-cn/skills")
         XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "trae-cn"), ".trae/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "deepseek-harness"), "\(homePath)/.dsh/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "deepseek-harness"), ".dsh/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "antigravity"), "\(homePath)/.gemini/config/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "antigravity"), ".agents/skills")
+        XCTAssertEqual(AgentDisplayCatalog.label(for: "antigravity"), "Antigravity")
+        XCTAssertEqual(AgentDisplayCatalog.shortLabel(for: "antigravity"), "AG")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "junie"), "\(homePath)/.junie/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "junie"), ".junie/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "mistral-vibe"), "\(homePath)/.vibe/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "mistral-vibe"), ".vibe/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "openhands"), "\(homePath)/.openhands/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "openhands"), ".openhands/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "qoder"), "\(homePath)/.qoder/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "qoder"), ".qoder/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "qwen-code"), "\(homePath)/.qwen/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "qwen-code"), ".qwen/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "zencoder"), "\(homePath)/.zencoder/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "zencoder"), ".zencoder/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "kilo-code"), "\(homePath)/.kilocode/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "kilo-code"), ".kilocode/skills")
+        XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "goose"), "\(homePath)/.config/goose/skills")
+        XCTAssertEqual(AgentDisplayCatalog.projectPath(for: "goose"), ".goose/skills")
         XCTAssertEqual(AgentDisplayCatalog.mountPath(for: "unknown"), "unknown")
+    }
+
+    @MainActor
+    func testDetectedAgentRowsIncludeAntigravitySeparatelyFromGeminiCLI() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let state = DesktopAppState()
+        let viewModel = SettingsViewModel(state: state, store: DesktopSettingsStore(userDefaults: defaults))
+
+        let rows = viewModel.detectedAgentRows(detectedTargetIds: ["gemini-cli", "antigravity"])
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+
+        XCTAssertEqual(rows.map(\.targetId), ["gemini-cli", "antigravity"])
+        XCTAssertEqual(rows.first?.mountPath, "\(homePath)/.gemini/skills")
+        XCTAssertEqual(rows.last?.mountPath, "\(homePath)/.gemini/config/skills")
+        XCTAssertEqual(rows.last?.projectPath, ".agents/skills")
     }
 
     @MainActor
