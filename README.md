@@ -6,8 +6,8 @@ Turn scattered AI agent skills into organized workflows.
 
 [中文](./README.zh.md) · [日本語](./README.ja.md)
 
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
-[![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D22-43853d?style=flat-square)](https://nodejs.org)
+[![npm Version](https://img.shields.io/badge/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
 <img src="./img/img-icon.png" alt="Skill Flow icon" width="120" />
@@ -54,7 +54,7 @@ Installing skills one by one breaks down at scale:
 | ![Detail screen](./img/img-detail.png) | ![Settings screen](./img/img-setting.png) |
 
 | Menu Bar |
-| --- |
+| --- | --- |
 | ![Menu bar quick config](./img/img-menu.png) |
 
 ## Quick Start
@@ -72,13 +72,42 @@ Or run without a global install:
 npx skill-flow --help
 ```
 
+### Install in corporate / restricted-network environments
+
+If `npm install -g skill-flow` fails with an `E403` (package blocked) error on `ink`, your corporate proxy or artifact registry is blocking the `ink` package version the CLI's interactive TUI depends on. Workarounds:
+
+1. **Ask your security/ops team to unblock `ink`** on your internal npm registry/artifactory, then retry:
+   ```bash
+   npm install -g skill-flow
+   ```
+
+2. **Use `npx` (still fetches from npm, so it may hit the same block):**
+   ```bash
+   npx skill-flow --help
+   ```
+
+3. **Install from source** (bypasses the public npm registry entirely):
+   ```bash
+   git clone https://github.com/VintLin/skill-flow.git
+   cd skill-flow
+   npm ci
+   npm run build
+   node apps/cli/dist/cli.js --help
+   # or link the binary globally
+   npm link
+   ```
+
+4. **Use the desktop app** (macOS): the Skill Flow Desktop release bundles its own Node.js/npm toolchain and does not require a global `skill-flow` npm install.
+
+If none of these work, your registry policy is blocking all versions of `ink`. In that case, request an exception for `ink` (MIT-licensed React CLI toolkit) or use option 3 to build from source.
+
 ### Desktop prerequisites
 
 Skill Flow Desktop release builds include a bundled native Node.js/npm/npx toolchain for the desktop helper and skills.sh imports, so double-click launch does not depend on shell-managed Node paths from tools like `asdf` or `nvm`.
 
 - `git` is required for non-GitHub Git sources
 
-Development builds and damaged release bundles can still fall back to system Node.js 20 or newer with npm/npx. If the desktop app detects a missing dependency, it will surface an actionable error and point back to this section.
+Development builds and damaged release bundles can still fall back to system Node.js 22 or newer with npm/npx. If the desktop app detects a missing dependency, it will surface an actionable error and point back to this section.
 
 ### Typical flow
 
@@ -98,165 +127,34 @@ skill-flow list --ids --warnings
 
 # Open the interactive config UI
 skill-flow config
-
-# Search installed skills, built-in catalogs, and skills.sh
-skill-flow find browser
-
-# Update one source or all sources
-skill-flow update garrytan-gstack
-skill-flow update --all
-
-# Diagnose drift or broken projections
-skill-flow doctor
 ```
 
-### First-use model
+## Command Reference
 
-The commands have separate jobs:
-
-- `add` installs or registers a new source and lets you choose its skills and targets.
-- `list` shows registered workflow groups and the stable IDs used by management commands.
-- `config` configures an existing group; it is not the installation command.
-- `find` helps locate installable skills and sources.
-
-If `skill-flow config` opens with no groups, run `skill-flow add <source>` first.
-
-The terminology is intentionally layered:
-
-- A **source locator** is the address you provide, such as `mattpocock/skills`.
-- A **source ID** is the stable identifier used in commands after registration.
-- A **display name** is the human-readable label shown in lists and configuration.
-- A **skill group** is the selectable and deployable set of skills presented as one unit.
-
-When a command asks for a `sourceId`, use the ID shown by `skill-flow list --ids`.
-
-### Machine bridge
-
-The desktop app and helper tooling talk to the CLI through a versioned JSON protocol:
-
-```bash
-printf '%s' '{"protocolVersion":"1.0","command":"list"}' | skill-flow bridge --json
-```
-
-## Supported Sources
-
-`skill-flow add <source>` supports:
-
-- local folders
-- `owner/repo` GitHub shorthand
-- full HTTPS Git URLs
-- SSH Git URLs
-- GitHub tree URLs
-- `clawhub:<slug>[@version]`
-
-Examples:
-
-```bash
-skill-flow add ~/code/my-skills
-skill-flow add garrytan/gstack
-skill-flow add https://github.com/garrytan/gstack.git
-skill-flow add git@github.com:garrytan/gstack.git
-skill-flow add https://github.com/garrytan/gstack/tree/main/skills
-skill-flow add clawhub:example/skill-pack
-skill-flow add clawhub:example/skill-pack@1.2.3
-```
-
-Use `--path <repoSubpath>` when the repo is large but your default selection should start from one subtree.
-
-## Supported Targets
-
-Current built-in targets (32):
-
-- Claude Code
-- Codex
-- Cursor
-- Grok Build
-- GitHub Copilot
-- Gemini CLI
-- OpenCode
-- OpenClaw
-- Hermes Agent
-- MiniMax Code
-- Kimi Code
-- WorkBuddy
-- CodeBuddy
-- Pi
-- Trae
-- Trae CN
-- Windsurf
-- Roo Code
-- Cline
-- Amp
-- Kiro
-- ZCode
-- DeepSeek Harness
-- Antigravity
-- Junie
-- Mistral Vibe
-- OpenHands
-- Qoder
-- Qwen Code
-- Zencoder
-- Kilo Code
-- Goose
-
-Target paths can be overridden with `SKILL_FLOW_TARGET_*` environment variables.
-
-## Command Map
-
-| Command | What it does |
+| Command | Description |
 | --- | --- |
-| `add <source>` | Import a source and choose skills/targets |
-| `list` | Show workflow groups and current health |
-| `list --ids --warnings` | Show source IDs and warning details for migration/debugging |
-| `enable <sourceIds...> --targets <ids> --all-skills` | Enable registered groups for targets; `--all-skills` fills empty selections first |
-| `disable <sourceIds...>` | Turn registered groups OFF without uninstalling |
-| `only <sourceIds...> --targets <ids> --all-skills` | Keep only selected groups ON; `--all-skills` fills empty selections first |
-| `import-manifest <file>` | Batch import source manifests; JSON entries with `targets` require `skills: "all"` |
-| `find <query>` / `search <query>` | Search installed skills, built-in Git catalogs, and skills.sh |
-| `config` | Configure skills and targets for registered groups; it does not install a new source |
-| `update [sourceId] --all` | Refresh one source or all registered sources |
-| `adopt <paths...> --name <name>` | Catalogue existing skills owned by another installer without copying or deploying them |
-| `external status [sourceId]` | Refresh an external source and compare configured versions |
-| `external update <sourceId> --confirm-external-update` | Run the explicitly configured external updater |
-| `remove <sourceIds...>` | Unregister groups; external files are left untouched |
-| `doctor` | Diagnose drift, missing paths, and projection problems |
-| `migrate-state --to v2 [--dry-run]` | Inspect or migrate the local state root to schema v2 |
-| `repair-source [sourceId] --all` | Rebuild source checkout metadata |
-| `repair-state [sourceId] --all` | Rebuild source-side state |
-| `repair-targets [sourceId] --all` | Repair projected target contents |
-| `uninstall <sourceIds...>` | Remove groups and their deployments |
-| `bridge --json` | Execute machine protocol requests |
+| `add` | Installs or registers a new source and lets you choose its skills and targets |
+| `list` | Shows registered workflow groups and the stable IDs used by management commands |
+| `config` | Configures an existing group; it is not the installation command |
+| `find` | Helps locate installable skills and sources |
+| `doctor` | Diagnoses issues with sources, state, and targets |
+| `repair-source` | Repairs broken source checkout metadata |
+| `repair-state` | Rebuilds source-side state |
+| `repair-targets` | Repairs drifted target deployment contents |
+| `only` | Projects selected skills to specific agent targets |
+| `uninstall` | Removes skills groups |
+| `adopt` | Takes over sources owned by another installer |
+| `bridge` | Machine-readable desktop/helper JSON entrypoint |
+| `import-manifest` | Bulk-imports skills from a manifest JSON file |
+| `migrate-state` | Migrates legacy state format |
 
-Externally managed groups are observation-only. They cannot be enabled for
-targets, repaired, or updated by the regular `update` command.
+## Desktop Prerequisites
 
-## How State Works
+Skill Flow Desktop release builds include a bundled native Node.js/npm/npx toolchain for the desktop helper and skills.sh imports, so double-click launch does not depend on shell-managed Node paths from tools like `asdf` or `nvm`.
 
-`skill-flow` keeps one state root, defaulting to `~/.skillflow/`.
+- `git` is required for non-GitHub Git sources
 
-- `manifest.json`: what you want
-- `lock.json`: what is actually installed
-- `source/local/*`: imported local or adopted unmanaged sources
-- `source/git/*`: Git source cache
-- `source/clawhub/*`: skills.sh source cache
-- `catalog/git/*`: built-in Git catalog cache
-
-Target directories are deployment outputs, not the source of truth.
-
-### State schema migration
-
-Use a dry run before applying a schema migration:
-
-```bash
-skill-flow migrate-state --to v2 --dry-run
-skill-flow migrate-state --to v2
-SKILL_FLOW_STATE_ROOT=/custom/path skill-flow migrate-state --to v2
-```
-
-The default state root is `~/.skillflow/`. A normal migration creates a backup named `<stateRoot>.backup-YYYYMMDD-HHMMSS`, rewrites the authority files, and prunes rebuildable cache under `catalog/`; cache is rebuilt by later CLI or desktop reads. Target directories are not authoritative and should not be used to reconstruct state. If target folders look stale after migration, run `skill-flow repair-targets --all`.
-
-To roll back, stop Skill Flow, move the backup state root back into place, then run `skill-flow migrate-state --to v2 --dry-run` or use the desktop migration status check before applying migration again.
+Development builds and damaged release bundles can still fall back to system Node.js 22 or newer with npm/npx. If the desktop app detects a missing dependency, it will surface an actionable error and point back to this section.
 
 ## FAQ
 
