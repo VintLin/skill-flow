@@ -4,6 +4,17 @@ All notable changes to `skill-flow` will be documented in this file.
 
 ## Unreleased
 
+## v1.6.20 - 2026-11-25
+
+### Changed
+
+- Upgraded the interactive CLI TUI to Ink 8 with React 19.3 and raised the CLI runtime requirement to Node.js 22 or newer.
+- Updated the TUI terminal output typing for Ink 8 while preserving terminal resize and width handling.
+
+### Fixed
+
+- Refreshed the lockfile so clean installs resolve Ink 8 instead of the blocked Ink 6.8 package.
+
 ## v1.6.19 - 2026-11-20
 
 ### Added
