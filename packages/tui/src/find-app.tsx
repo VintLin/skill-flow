@@ -21,6 +21,7 @@ type InstallState =
 export function FindApp({ app, query, candidates }: FindAppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const terminal = stdout as NodeJS.WritableStream & { columns?: number };
   const [loadedCandidates, setLoadedCandidates] = useState<SkillCandidate[] | undefined>(candidates);
   const [loadError, setLoadError] = useState<string | undefined>();
   const [loadWarnings, setLoadWarnings] = useState<string[]>([]);
@@ -31,7 +32,7 @@ export function FindApp({ app, query, candidates }: FindAppProps) {
     [loadedCandidates],
   );
   const selected = visibleCandidates[cursor];
-  const columns = getColumns(stdout?.columns ?? 100);
+  const columns = getColumns(terminal.columns ?? 100);
 
   useEffect(() => {
     if (candidates) {

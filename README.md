@@ -6,7 +6,7 @@ Turn scattered AI agent skills into organized workflows.
 
 [中文](./README.zh.md) · [日本語](./README.ja.md)
 
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D22-43853d?style=flat-square)](https://nodejs.org)
 [![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
@@ -71,6 +71,19 @@ Or run without a global install:
 ```bash
 npx skill-flow --help
 ```
+
+The interactive CLI uses Ink 8 and requires Node.js 22 or newer.
+
+### Install in corporate or restricted-network environments
+
+If `npm install -g skill-flow` fails with an `E403` package-blocked error for `ink`, your corporate proxy or artifact registry may be blocking the package version used by the interactive TUI.
+
+1. Ask your security or operations team to allow `ink` in the internal registry, then retry the install.
+2. Use `npx skill-flow --help`. This still downloads from npm and may be subject to the same policy.
+3. Build from source with `npm ci` and `npm run build`.
+4. Use the Skill Flow Desktop release on macOS, which bundles its own Node.js and npm toolchain.
+
+If every Ink version is blocked, request a registry exception or use the source-build option.
 
 ### Desktop prerequisites
 

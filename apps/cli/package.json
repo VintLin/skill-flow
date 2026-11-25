@@ -47,7 +47,7 @@
   },
   "homepage": "https://github.com/VintLin/skill-flow#readme",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@skill-flow/core-engine": "1.6.19",
@@ -58,12 +58,12 @@
     "@skill-flow/storage": "1.6.19",
     "@skill-flow/tui": "1.6.19",
     "commander": "^14.0.3",
-    "ink": "^6.8.0",
-    "react": "^19.2.0"
+    "ink": "^8.0.0",
+    "react": "^19.3.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.3.0",
     "esbuild": "^0.27.7",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

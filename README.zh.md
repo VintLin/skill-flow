@@ -6,7 +6,7 @@
 
 [English](./README.md) · [日本語](./README.ja.md)
 
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D22-43853d?style=flat-square)](https://nodejs.org)
 [![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
@@ -71,6 +71,19 @@ skill-flow --help
 ```bash
 npx skill-flow --help
 ```
+
+交互式 CLI 使用 Ink 8，需要 Node.js 22 或更高版本。
+
+### 企业网络或受限网络环境中的安装
+
+如果执行 `npm install -g skill-flow` 时因为 `ink` 收到 `E403` 包被拦截错误，企业代理或内部制品仓库可能拦截了交互式 TUI 使用的版本。
+
+1. 请安全或运维团队允许内部仓库下载 `ink`，然后重试安装。
+2. 使用 `npx skill-flow --help`。该方式仍会从 npm 下载，也可能受到相同策略影响。
+3. 使用 `npm ci` 和 `npm run build` 从源码构建。
+4. 在 macOS 上使用 Skill Flow Desktop release。它内置 Node.js 和 npm 工具链。
+
+如果所有 Ink 版本都被拦截，请申请仓库例外，或使用源码构建方式。
 
 ### 桌面端前置依赖
 

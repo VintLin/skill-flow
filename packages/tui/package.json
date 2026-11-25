@@ -16,12 +16,12 @@
     "@skill-flow/domain": "1.6.19",
     "@skill-flow/integration": "1.6.19",
     "@skill-flow/query": "1.6.19",
-    "ink": "^6.8.0",
-    "react": "^19.2.0"
+    "ink": "^8.0.0",
+    "react": "^19.3.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   }
