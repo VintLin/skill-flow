@@ -1839,27 +1839,33 @@ function ConfigHeader({ title }: { title?: string }) {
   );
 }
 
-function useTerminalSize(stdout: NodeJS.WriteStream) {
+type TerminalOutput = NodeJS.WritableStream & {
+  rows?: number;
+  columns?: number;
+};
+
+function useTerminalSize(stdout: NodeJS.WritableStream) {
+  const terminal = stdout as TerminalOutput;
   const [size, setSize] = useState(() => ({
-    rows: stdout.rows ?? 24,
-    columns: stdout.columns ?? 120,
+    rows: terminal.rows ?? 24,
+    columns: terminal.columns ?? 120,
   }));
 
   useEffect(() => {
     const handleResize = () => {
       setSize({
-        rows: stdout.rows ?? 24,
-        columns: stdout.columns ?? 120,
+        rows: terminal.rows ?? 24,
+        columns: terminal.columns ?? 120,
       });
     };
 
     handleResize();
-    stdout.on("resize", handleResize);
+    terminal.on("resize", handleResize);
 
     return () => {
-      stdout.off("resize", handleResize);
+      terminal.off("resize", handleResize);
     };
-  }, [stdout]);
+  }, [terminal]);
 
   return size;
 }

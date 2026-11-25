@@ -6,7 +6,7 @@
 
 [English](./README.md) · [中文](./README.zh.md)
 
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20-43853d?style=flat-square)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D22-43853d?style=flat-square)](https://nodejs.org)
 [![npm Version](https://img.shields.io/npm/v/skill-flow?style=flat-square)](https://www.npmjs.com/package/skill-flow)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](./LICENSE)
 
@@ -70,6 +70,19 @@ skill-flow --help
 ```bash
 npx skill-flow --help
 ```
+
+インタラクティブ CLI は Ink 8 を使用するため、Node.js 22 以降が必要です。
+
+### 企業ネットワークまたは制限されたネットワークでのインストール
+
+`npm install -g skill-flow` が `ink` に対する `E403` パッケージブロックエラーで失敗する場合、企業プロキシまたは内部レジストリが TUI の依存パッケージをブロックしている可能性があります。
+
+1. セキュリティまたは運用チームに内部レジストリで `ink` を許可してもらい、再度インストールします。
+2. `npx skill-flow --help` を使います。npm から取得するため、同じ制限を受ける場合があります。
+3. `npm ci` と `npm run build` を使ってソースからビルドします。
+4. macOS では、Node.js と npm を内蔵した Skill Flow Desktop release を使います。
+
+すべての Ink バージョンがブロックされる場合は、レジストリの例外を申請するか、ソースからビルドしてください。
 
 ### デスクトップ版の前提依存
 
