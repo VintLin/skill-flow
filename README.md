@@ -74,17 +74,6 @@ npx skill-flow --help
 
 The interactive CLI uses Ink 8 and requires Node.js 22 or newer.
 
-### Install in corporate or restricted-network environments
-
-If `npm install -g skill-flow` fails with an `E403` package-blocked error for `ink`, your corporate proxy or artifact registry may be blocking the package version used by the interactive TUI.
-
-1. Ask your security or operations team to allow `ink` in the internal registry, then retry the install.
-2. Use `npx skill-flow --help`. This still downloads from npm and may be subject to the same policy.
-3. Build from source with `npm ci` and `npm run build`.
-4. Use the Skill Flow Desktop release on macOS, which bundles its own Node.js and npm toolchain.
-
-If every Ink version is blocked, request a registry exception or use the source-build option.
-
 ### Desktop prerequisites
 
 Skill Flow Desktop release builds include a bundled native Node.js/npm/npx toolchain for the desktop helper and skills.sh imports, so double-click launch does not depend on shell-managed Node paths from tools like `asdf` or `nvm`.
